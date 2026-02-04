@@ -6,6 +6,7 @@ import {
   getBattlePassRewards,
   claimBattlePassReward,
 } from '../services/battlePassService.js';
+import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
@@ -79,6 +80,10 @@ router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
     if (!result.success) {
       return res.status(400).json(result);
     }
+    try {
+      const gameServer = getGameServer();
+      await gameServer.pushCharacterUpdate(userId);
+    } catch {}
     return res.json(result);
   } catch (error) {
     console.error('领取战令奖励失败:', error);
