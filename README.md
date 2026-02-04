@@ -7,7 +7,7 @@
 - **前端**: React 19 + TypeScript + Vite + Socket.IO + Zustand
 - **后端**: Express 5 + Node.js + TypeScript + Socket.IO
 - **数据库**: PostgreSQL 16 + Redis 7
-- **部署**: Docker + Caddy
+- **部署**: Docker Swarm + Caddy
 
 ## 快速开始
 
@@ -23,9 +23,49 @@ pnpm dev
 
 ### 生产部署
 
+#### 使用 Docker Compose（简单）
+
 ```bash
-# 使用 Docker Compose
 docker-compose up -d
+```
+
+#### 使用 Docker Swarm（推荐，支持零停机更新）
+
+```bash
+# 初始化 Swarm（首次）
+docker swarm init
+
+# 部署服务
+docker stack deploy -c docker-stack.yml jiuzhou
+
+# 查看服务状态
+docker stack services jiuzhou
+```
+
+**更新服务（零停机）：**
+
+```bash
+# 更新前端
+docker service update --image ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-client:latest jiuzhou_client
+
+# 更新后端
+docker service update --image ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-server:latest jiuzhou_server
+
+# 或重新部署整个 stack
+docker stack deploy -c docker-stack.yml jiuzhou
+```
+
+**常用管理命令：**
+
+```bash
+# 查看服务日志
+docker service logs jiuzhou_server -f
+
+# 回滚到上一版本
+docker service rollback jiuzhou_client
+
+# 删除整个 stack
+docker stack rm jiuzhou
 ```
 
 ## 构建与部署
@@ -98,7 +138,8 @@ CDN_DOMAIN=cdn.example.com \
 │   │   ├── routes/        # API 路由
 │   │   └── services/      # 业务服务
 │   └── Dockerfile
-├── docker-compose.yml      # Docker 编排
+├── docker-compose.yml      # Docker Compose 配置
+├── docker-stack.yml        # Docker Swarm 配置（零停机更新）
 ├── docker-build.sh         # 构建脚本
 └── upload-cos.sh           # COS 上传脚本
 ```
@@ -109,7 +150,8 @@ CDN_DOMAIN=cdn.example.com \
 |------|------|
 | `.env.cos.example` | COS 配置示例 |
 | `client/.env.example` | 前端环境变量示例 |
-| `docker-compose.yml` | Docker 编排配置 |
+| `docker-compose.yml` | Docker Compose 配置 |
+| `docker-stack.yml` | Docker Swarm 配置 |
 
 ## License
 

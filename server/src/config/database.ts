@@ -17,20 +17,38 @@ export const pool = new Pool({
   password: process.env.DB_PASSWORD || 'zlf981216',
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000,
 });
 
-// 测试数据库连接
-export const testConnection = async (): Promise<boolean> => {
-  try {
-    const client = await pool.connect();
-    console.log('✓ 数据库连接成功');
-    client.release();
-    return true;
-  } catch (error) {
-    console.error('✗ 数据库连接失败:', error);
-    return false;
+// 延迟函数
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 测试数据库连接（带重试）
+export const testConnection = async (
+  maxRetries = 10,
+  initialDelay = 1000
+): Promise<boolean> => {
+  let retries = 0;
+  let delay = initialDelay;
+
+  while (retries < maxRetries) {
+    try {
+      const client = await pool.connect();
+      console.log('✓ 数据库连接成功');
+      client.release();
+      return true;
+    } catch (error) {
+      retries++;
+      if (retries >= maxRetries) {
+        console.error('✗ 数据库连接失败，已达最大重试次数:', error);
+        return false;
+      }
+      console.log(`✗ 数据库连接失败，${delay / 1000}秒后重试 (${retries}/${maxRetries})...`);
+      await sleep(delay);
+      delay = Math.min(delay * 1.5, 10000); // 指数退避，最大 10 秒
+    }
   }
+  return false;
 };
 
 // 执行SQL查询（默认不输出日志）

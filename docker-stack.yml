@@ -12,6 +12,8 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - jiuzhou_net
     deploy:
       replicas: 1
       update_config:
@@ -24,8 +26,9 @@ services:
         delay: 10s
       restart_policy:
         condition: on-failure
-        delay: 5s
-        max_attempts: 3
+        delay: 10s
+        max_attempts: 5
+        window: 120s
 
   server:
     image: ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-server:latest
@@ -45,6 +48,8 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
     volumes:
       - uploads:/app/server/uploads
+    networks:
+      - jiuzhou_net
     deploy:
       replicas: 1
       update_config:
@@ -54,8 +59,9 @@ services:
         failure_action: rollback
       restart_policy:
         condition: on-failure
-        delay: 5s
-        max_attempts: 3
+        delay: 10s
+        max_attempts: 5
+        window: 120s
 
   postgres:
     image: postgres:16-alpine
@@ -65,6 +71,13 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - jiuzhou_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     deploy:
       replicas: 1
       update_config:
@@ -77,6 +90,13 @@ services:
     image: redis:7-alpine
     volumes:
       - redis_data:/data
+    networks:
+      - jiuzhou_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     deploy:
       replicas: 1
       update_config:
@@ -98,3 +118,7 @@ volumes:
   caddy_config:
     external: true
     name: jiuzhou_caddy_config
+
+networks:
+  jiuzhou_net:
+    driver: overlay
