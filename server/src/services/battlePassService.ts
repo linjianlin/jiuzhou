@@ -1,4 +1,5 @@
-import { query } from '../config/database.js';
+import { query, pool } from '../config/database.js';
+import { addItemToInventoryTx } from './inventoryService.js';
 
 export type BattlePassTaskDto = {
   id: string;
@@ -148,5 +149,252 @@ export const getBattlePassTasksOverview = async (userId: number, seasonId?: stri
     weekly: rows.filter((x) => x.taskType === 'weekly'),
     season: rows.filter((x) => x.taskType === 'season'),
   };
+};
+
+export type BattlePassStatusDto = {
+  seasonId: string;
+  seasonName: string;
+  exp: number;
+  level: number;
+  maxLevel: number;
+  expPerLevel: number;
+  premiumUnlocked: boolean;
+  claimedFreeLevels: number[];
+  claimedPremiumLevels: number[];
+};
+
+export const getBattlePassStatus = async (userId: number): Promise<BattlePassStatusDto | null> => {
+  const characterId = await getCharacterIdByUserId(userId);
+  if (!characterId) return null;
+
+  const seasonId = (await getActiveBattlePassSeasonId()) ?? (await getFallbackBattlePassSeasonId());
+  if (!seasonId) return null;
+
+  const seasonRes = await query(
+    `SELECT id, name, max_level, exp_per_level FROM battle_pass_season_def WHERE id = $1`,
+    [seasonId],
+  );
+  if (seasonRes.rows.length === 0) return null;
+
+  const season = seasonRes.rows[0];
+  const maxLevel = Number(season.max_level) || 30;
+  const expPerLevel = Number(season.exp_per_level) || 1000;
+
+  const progressRes = await query(
+    `SELECT exp, premium_unlocked FROM battle_pass_progress WHERE character_id = $1 AND season_id = $2`,
+    [characterId, seasonId],
+  );
+  const exp = Number(progressRes.rows[0]?.exp ?? 0);
+  const premiumUnlocked = progressRes.rows[0]?.premium_unlocked === true;
+
+  const claimRes = await query(
+    `SELECT level, track FROM battle_pass_claim_record WHERE character_id = $1 AND season_id = $2`,
+    [characterId, seasonId],
+  );
+  const claimedFreeLevels: number[] = [];
+  const claimedPremiumLevels: number[] = [];
+  for (const row of claimRes.rows) {
+    if (row.track === 'free') claimedFreeLevels.push(Number(row.level));
+    else if (row.track === 'premium') claimedPremiumLevels.push(Number(row.level));
+  }
+
+  const level = Math.min(Math.floor(exp / expPerLevel) + 1, maxLevel);
+
+  return {
+    seasonId,
+    seasonName: String(season.name || ''),
+    exp,
+    level,
+    maxLevel,
+    expPerLevel,
+    premiumUnlocked,
+    claimedFreeLevels: claimedFreeLevels.sort((a, b) => a - b),
+    claimedPremiumLevels: claimedPremiumLevels.sort((a, b) => a - b),
+  };
+};
+
+export type BattlePassRewardDto = {
+  level: number;
+  freeRewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; qty?: number }>;
+  premiumRewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; qty?: number }>;
+};
+
+export const getBattlePassRewards = async (seasonId?: string): Promise<BattlePassRewardDto[]> => {
+  const resolvedSeasonId =
+    (typeof seasonId === 'string' && seasonId.trim() ? seasonId.trim() : null) ??
+    (await getActiveBattlePassSeasonId()) ??
+    (await getFallbackBattlePassSeasonId()) ??
+    '';
+  if (!resolvedSeasonId) return [];
+
+  const res = await query(
+    `SELECT level, free_rewards, premium_rewards FROM battle_pass_reward_def WHERE season_id = $1 ORDER BY level ASC`,
+    [resolvedSeasonId],
+  );
+
+  return res.rows.map((row) => ({
+    level: Number(row.level),
+    freeRewards: Array.isArray(row.free_rewards) ? row.free_rewards : [],
+    premiumRewards: Array.isArray(row.premium_rewards) ? row.premium_rewards : [],
+  }));
+};
+
+export type ClaimRewardResult = {
+  success: boolean;
+  message: string;
+  data?: {
+    level: number;
+    track: 'free' | 'premium';
+    rewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; qty?: number }>;
+    spiritStones?: number;
+    silver?: number;
+  };
+};
+
+export const claimBattlePassReward = async (
+  userId: number,
+  level: number,
+  track: 'free' | 'premium',
+): Promise<ClaimRewardResult> => {
+  const characterId = await getCharacterIdByUserId(userId);
+  if (!characterId) return { success: false, message: '角色不存在' };
+
+  const seasonId = (await getActiveBattlePassSeasonId()) ?? (await getFallbackBattlePassSeasonId());
+  if (!seasonId) return { success: false, message: '当前没有进行中的赛季' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 获取赛季配置
+    const seasonRes = await client.query(
+      `SELECT max_level, exp_per_level FROM battle_pass_season_def WHERE id = $1`,
+      [seasonId],
+    );
+    if (seasonRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '赛季配置不存在' };
+    }
+    const maxLevel = Number(seasonRes.rows[0].max_level) || 30;
+    const expPerLevel = Number(seasonRes.rows[0].exp_per_level) || 1000;
+
+    if (level < 1 || level > maxLevel) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '等级无效' };
+    }
+
+    // 获取玩家战令进度
+    const progressRes = await client.query(
+      `SELECT exp, premium_unlocked FROM battle_pass_progress WHERE character_id = $1 AND season_id = $2 FOR UPDATE`,
+      [characterId, seasonId],
+    );
+    const exp = Number(progressRes.rows[0]?.exp ?? 0);
+    const premiumUnlocked = progressRes.rows[0]?.premium_unlocked === true;
+    const currentLevel = Math.min(Math.floor(exp / expPerLevel) + 1, maxLevel);
+
+    if (level > currentLevel) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '等级未解锁' };
+    }
+
+    if (track === 'premium' && !premiumUnlocked) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '未解锁特权通行证' };
+    }
+
+    // 检查是否已领取
+    const claimCheck = await client.query(
+      `SELECT 1 FROM battle_pass_claim_record WHERE character_id = $1 AND season_id = $2 AND level = $3 AND track = $4`,
+      [characterId, seasonId, level, track],
+    );
+    if (claimCheck.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该等级奖励已领取' };
+    }
+
+    // 获取奖励配置
+    const rewardRes = await client.query(
+      `SELECT free_rewards, premium_rewards FROM battle_pass_reward_def WHERE season_id = $1 AND level = $2`,
+      [seasonId, level],
+    );
+    if (rewardRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '奖励配置不存在' };
+    }
+
+    const rewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; item_def_id?: string; qty?: number }> =
+      track === 'free'
+        ? (rewardRes.rows[0].free_rewards ?? [])
+        : (rewardRes.rows[0].premium_rewards ?? []);
+
+    // 发放奖励
+    let spiritStonesGained = 0;
+    let silverGained = 0;
+
+    for (const reward of rewards) {
+      if (reward.type === 'currency') {
+        const amount = Number(reward.amount) || 0;
+        if (reward.currency === 'spirit_stones' && amount > 0) {
+          await client.query(
+            `UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`,
+            [amount, characterId],
+          );
+          spiritStonesGained += amount;
+        } else if (reward.currency === 'silver' && amount > 0) {
+          await client.query(
+            `UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`,
+            [amount, characterId],
+          );
+          silverGained += amount;
+        }
+      } else if (reward.type === 'item') {
+        const itemDefId = reward.itemDefId ?? reward.item_def_id;
+        const qty = Number(reward.qty) || 1;
+        if (itemDefId && qty > 0) {
+          const addResult = await addItemToInventoryTx(client, characterId, userId, itemDefId, qty, {
+            location: 'bag',
+            obtainedFrom: 'battle_pass',
+          });
+          if (!addResult.success) {
+            await client.query('ROLLBACK');
+            return { success: false, message: addResult.message || '添加物品失败' };
+          }
+        }
+      }
+    }
+
+    // 记录领取
+    await client.query(
+      `INSERT INTO battle_pass_claim_record (character_id, season_id, level, track, claimed_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [characterId, seasonId, level, track],
+    );
+
+    // 获取更新后的灵石和银两数量
+    const charRes = await client.query(
+      `SELECT spirit_stones, silver FROM characters WHERE id = $1`,
+      [characterId],
+    );
+
+    await client.query('COMMIT');
+
+    return {
+      success: true,
+      message: '领取成功',
+      data: {
+        level,
+        track,
+        rewards,
+        spiritStones: Number(charRes.rows[0]?.spirit_stones ?? 0),
+        silver: Number(charRes.rows[0]?.silver ?? 0),
+      },
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('领取战令奖励失败:', error);
+    return { success: false, message: '服务器错误' };
+  } finally {
+    client.release();
+  }
 };
 

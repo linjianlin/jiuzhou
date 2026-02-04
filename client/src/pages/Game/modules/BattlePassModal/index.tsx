@@ -1,7 +1,14 @@
-import { App, Button, Modal, Progress, Tag } from 'antd';
+import { App, Button, Modal, Progress, Spin, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
-import { getBattlePassTasks } from '../../../../services/api';
+import {
+  getBattlePassTasks,
+  getBattlePassStatus,
+  getBattlePassRewards,
+  claimBattlePassReward,
+  type BattlePassStatusDto,
+  type BattlePassRewardDto,
+} from '../../../../services/api';
 import './index.scss';
 
 interface BattlePassModalProps {
@@ -11,13 +18,6 @@ interface BattlePassModalProps {
 
 type BattlePassTab = 'rewards' | 'daily' | 'weekly';
 
-type BattlePassReward = {
-  level: number;
-  name: string;
-  icon: string;
-  amount: number;
-};
-
 type BattlePassTask = {
   id: string;
   title: string;
@@ -25,21 +25,7 @@ type BattlePassTask = {
   exp: number;
 };
 
-const storageKeys = {
-  seasonStartAt: 'battlepass_season_start_at',
-  exp: 'battlepass_exp',
-  claimedLevels: 'battlepass_claimed_levels',
-  dailyDone: 'battlepass_daily_done',
-  weeklyDone: 'battlepass_weekly_done',
-};
-
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-
-const startOfToday = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
 
 const dateKey = (d: Date) => {
   const y = d.getFullYear();
@@ -61,12 +47,6 @@ const weekKey = (d: Date) => {
   return `${date.getFullYear()}-W${String(week).padStart(2, '0')}`;
 };
 
-const readNumber = (key: string, fallback: number) => {
-  const raw = localStorage.getItem(key);
-  const n = raw ? Number(raw) : NaN;
-  return Number.isFinite(n) ? n : fallback;
-};
-
 const readJson = <T,>(key: string, fallback: T): T => {
   const raw = localStorage.getItem(key);
   if (!raw) return fallback;
@@ -77,38 +57,56 @@ const readJson = <T,>(key: string, fallback: T): T => {
   }
 };
 
-const buildRewards = (maxLevel: number): BattlePassReward[] =>
-  Array.from({ length: maxLevel }).map((_, idx) => {
-    const level = idx + 1;
-    const isStone = level % 3 === 0;
-    return {
-      level,
-      name: isStone ? '灵石' : '修行丹',
-      icon: coin01,
-      amount: isStone ? 500 + level * 20 : 1,
-    };
-  });
+const storageKeys = {
+  dailyDone: 'battlepass_daily_done',
+  weeklyDone: 'battlepass_weekly_done',
+};
 
 const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
-  const maxLevel = 30;
-  const expPerLevel = 1000;
-  const seasonDays = 60;
 
-  const rewards = useMemo(() => buildRewards(maxLevel), [maxLevel]);
+  const [loading, setLoading] = useState(false);
   const [taskLoading, setTaskLoading] = useState(false);
+  const [claimingLevel, setClaimingLevel] = useState<number | null>(null);
+
+  const [status, setStatus] = useState<BattlePassStatusDto | null>(null);
+  const [rewards, setRewards] = useState<BattlePassRewardDto[]>([]);
   const [dailyTasks, setDailyTasks] = useState<BattlePassTask[]>([]);
   const [weeklyTasks, setWeeklyTasks] = useState<BattlePassTask[]>([]);
 
   const [tab, setTab] = useState<BattlePassTab>('rewards');
-  const [seasonStartAt, setSeasonStartAt] = useState(0);
-  const [exp, setExp] = useState(0);
-  const [claimedLevels, setClaimedLevels] = useState<number[]>([]);
   const [dailyDone, setDailyDone] = useState<Record<string, string>>({});
   const [weeklyDone, setWeeklyDone] = useState<Record<string, string>>({});
   const [todayKey, setTodayKey] = useState('');
   const [curWeekKey, setCurWeekKey] = useState('');
-  const [nowTs, setNowTs] = useState(0);
+
+  const maxLevel = status?.maxLevel ?? 30;
+  const expPerLevel = status?.expPerLevel ?? 1000;
+  const exp = status?.exp ?? 0;
+  const level = status?.level ?? 1;
+  const claimedFreeLevels = status?.claimedFreeLevels ?? [];
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const res = await getBattlePassStatus();
+      if (res.success && res.data) {
+        setStatus(res.data);
+      }
+    } catch (error) {
+      console.error('获取战令状态失败:', error);
+    }
+  }, []);
+
+  const refreshRewards = useCallback(async () => {
+    try {
+      const res = await getBattlePassRewards();
+      if (res.success && res.data) {
+        setRewards(res.data);
+      }
+    } catch (error) {
+      console.error('获取战令奖励失败:', error);
+    }
+  }, []);
 
   const refreshTasks = useCallback(async () => {
     setTaskLoading(true);
@@ -133,68 +131,61 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     }
   }, [message]);
 
+  const refreshAll = useCallback(async () => {
+    setLoading(true);
+    await Promise.all([refreshStatus(), refreshRewards(), refreshTasks()]);
+    setLoading(false);
+  }, [refreshStatus, refreshRewards, refreshTasks]);
+
   useEffect(() => {
     if (!open) return;
-    void refreshTasks();
-  }, [open, refreshTasks]);
-
-  const ready = nowTs > 0 && !!todayKey && !!curWeekKey;
-  const seasonEndAt = useMemo(() => (seasonStartAt > 0 ? seasonStartAt + seasonDays * 24 * 60 * 60 * 1000 : 0), [seasonDays, seasonStartAt]);
-  const seasonExpired = ready && seasonStartAt > 0 && seasonEndAt > 0 && nowTs >= seasonEndAt;
-
-  const level = useMemo(() => {
-    if (!ready) return 1;
-    const cappedExp = clamp(exp, 0, expPerLevel * maxLevel);
-    const rawLevel = Math.floor(cappedExp / expPerLevel) + 1;
-    return clamp(rawLevel, 1, maxLevel);
-  }, [exp, expPerLevel, maxLevel, ready]);
+    const now = new Date();
+    setTodayKey(dateKey(now));
+    setCurWeekKey(weekKey(now));
+    setDailyDone(readJson<Record<string, string>>(storageKeys.dailyDone, {}));
+    setWeeklyDone(readJson<Record<string, string>>(storageKeys.weeklyDone, {}));
+    setTab('rewards');
+    void refreshAll();
+  }, [open, refreshAll]);
 
   const levelProgress = useMemo(() => {
-    if (!ready) return { percent: 0, current: 0, need: expPerLevel };
     if (level >= maxLevel) return { percent: 100, current: expPerLevel, need: expPerLevel };
     const cappedExp = clamp(exp, 0, expPerLevel * maxLevel);
     const current = cappedExp % expPerLevel;
     const need = expPerLevel;
     return { percent: clamp((current / need) * 100, 0, 100), current, need };
-  }, [exp, expPerLevel, level, maxLevel, ready]);
+  }, [exp, expPerLevel, level, maxLevel]);
 
-  const daysLeft = useMemo(() => {
-    if (!ready) return 0;
-    if (!seasonStartAt || !seasonEndAt) return seasonDays;
-    const left = Math.ceil((seasonEndAt - nowTs) / (24 * 60 * 60 * 1000));
-    return clamp(left, 0, seasonDays);
-  }, [nowTs, ready, seasonDays, seasonEndAt, seasonStartAt]);
+  const claimLevel = async (lv: number) => {
+    if (lv > level) return;
+    if (claimedFreeLevels.includes(lv)) return;
+    if (claimingLevel !== null) return;
 
-  const resetSeason = (nextStartAt: number) => {
-    localStorage.setItem(storageKeys.seasonStartAt, String(nextStartAt));
-    localStorage.setItem(storageKeys.exp, '0');
-    localStorage.setItem(storageKeys.claimedLevels, '[]');
-    localStorage.setItem(storageKeys.dailyDone, '{}');
-    localStorage.setItem(storageKeys.weeklyDone, '{}');
-    setSeasonStartAt(nextStartAt);
-    setExp(0);
-    setClaimedLevels([]);
-    setDailyDone({});
-    setWeeklyDone({});
+    setClaimingLevel(lv);
+    try {
+      const res = await claimBattlePassReward(lv, 'free');
+      if (!res.success) {
+        message.error(res.message || '领取失败');
+        return;
+      }
+      message.success(`领取成功！`);
+      // 刷新状态以更新领取记录
+      await refreshStatus();
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      message.error(err.message || '领取失败');
+    } finally {
+      setClaimingLevel(null);
+    }
   };
 
   const addExp = (delta: number) => {
-    const next = clamp(exp + delta, 0, expPerLevel * maxLevel);
-    localStorage.setItem(storageKeys.exp, String(next));
-    setExp(next);
-  };
-
-  const claimLevel = (lv: number) => {
-    if (!ready) return;
-    if (lv > level) return;
-    if (claimedLevels.includes(lv)) return;
-    const next = [...claimedLevels, lv].sort((a, b) => a - b);
-    localStorage.setItem(storageKeys.claimedLevels, JSON.stringify(next));
-    setClaimedLevels(next);
+    if (!status) return;
+    const newExp = clamp(exp + delta, 0, expPerLevel * maxLevel);
+    setStatus({ ...status, exp: newExp, level: Math.min(Math.floor(newExp / expPerLevel) + 1, maxLevel) });
   };
 
   const completeDailyTask = (task: BattlePassTask) => {
-    if (!ready) return;
     if (dailyDone[task.id] === todayKey) return;
     const next = { ...dailyDone, [task.id]: todayKey };
     localStorage.setItem(storageKeys.dailyDone, JSON.stringify(next));
@@ -203,7 +194,6 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   };
 
   const completeWeeklyTask = (task: BattlePassTask) => {
-    if (!ready) return;
     if (weeklyDone[task.id] === curWeekKey) return;
     const next = { ...weeklyDone, [task.id]: curWeekKey };
     localStorage.setItem(storageKeys.weeklyDone, JSON.stringify(next));
@@ -220,6 +210,20 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     [],
   );
 
+  const formatRewardName = (reward: BattlePassRewardDto['freeRewards'][0]) => {
+    if (reward.type === 'currency') {
+      if (reward.currency === 'spirit_stones') return '灵石';
+      if (reward.currency === 'silver') return '银两';
+      return reward.currency ?? '货币';
+    }
+    return reward.itemDefId ?? reward.item_def_id ?? '物品';
+  };
+
+  const formatRewardAmount = (reward: BattlePassRewardDto['freeRewards'][0]) => {
+    if (reward.type === 'currency') return reward.amount ?? 0;
+    return reward.qty ?? 1;
+  };
+
   const renderHeader = () => (
     <div className="bp-pane-top">
       <div className="bp-top-row">
@@ -227,7 +231,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
         <div className="bp-tags">
           <Tag color="blue">满级 {maxLevel} 级</Tag>
           <Tag color="blue">{taskLoading ? '任务加载中...' : '实时任务'}</Tag>
-          <Tag color={seasonExpired ? 'red' : 'green'}>赛季剩余 {daysLeft} 天</Tag>
+          <Tag color="green">{status?.seasonName || '当前赛季'}</Tag>
         </div>
       </div>
       <div className="bp-progress">
@@ -248,35 +252,45 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     <div className="bp-pane">
       {renderHeader()}
       <div className="bp-pane-body">
-        <div className="bp-section">
-          <div className="bp-section-title">1 - {maxLevel} 级奖励</div>
-          <div className="bp-reward-track" role="region" aria-label="战令奖励">
-            {rewards.map((r) => {
-              const unlocked = level >= r.level;
-              const claimed = claimedLevels.includes(r.level);
-              return (
-                <div key={r.level} className={`bp-reward-card ${unlocked ? 'is-unlocked' : 'is-locked'}`}>
-                  <div className="bp-reward-level">Lv.{r.level}</div>
-                  <img className="bp-reward-icon" src={r.icon} alt={r.name} />
-                  <div className="bp-reward-name">{r.name}</div>
-                  <div className="bp-reward-amount">x{r.amount}</div>
-                  <div className="bp-reward-meta">
-                    {claimed ? <Tag color="green">已领取</Tag> : unlocked ? <Tag color="blue">可领取</Tag> : <Tag>未解锁</Tag>}
-                  </div>
-                  <Button
-                    size="small"
-                    type="primary"
-                    disabled={!unlocked || claimed}
-                    onClick={() => claimLevel(r.level)}
-                    className="bp-reward-btn"
-                  >
-                    {claimed ? '已领取' : '领取'}
-                  </Button>
-                </div>
-              );
-            })}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Spin tip="加载中..." />
           </div>
-        </div>
+        ) : (
+          <div className="bp-section">
+            <div className="bp-section-title">1 - {maxLevel} 级奖励</div>
+            <div className="bp-reward-track" role="region" aria-label="战令奖励">
+              {rewards.map((r) => {
+                const unlocked = level >= r.level;
+                const claimed = claimedFreeLevels.includes(r.level);
+                const freeReward = r.freeRewards[0];
+                const rewardName = freeReward ? formatRewardName(freeReward) : '奖励';
+                const rewardAmount = freeReward ? formatRewardAmount(freeReward) : 1;
+                return (
+                  <div key={r.level} className={`bp-reward-card ${unlocked ? 'is-unlocked' : 'is-locked'}`}>
+                    <div className="bp-reward-level">Lv.{r.level}</div>
+                    <img className="bp-reward-icon" src={coin01} alt={rewardName} />
+                    <div className="bp-reward-name">{rewardName}</div>
+                    <div className="bp-reward-amount">x{rewardAmount}</div>
+                    <div className="bp-reward-meta">
+                      {claimed ? <Tag color="green">已领取</Tag> : unlocked ? <Tag color="blue">可领取</Tag> : <Tag>未解锁</Tag>}
+                    </div>
+                    <Button
+                      size="small"
+                      type="primary"
+                      disabled={!unlocked || claimed || claimingLevel === r.level}
+                      loading={claimingLevel === r.level}
+                      onClick={() => claimLevel(r.level)}
+                      className="bp-reward-btn"
+                    >
+                      {claimed ? '已领取' : '领取'}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="bp-tip">完成任务获得经验升级，解锁并领取对应等级奖励。赛季每 2 个月刷新。</div>
       </div>
     </div>
@@ -329,30 +343,6 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
       className="bp-modal"
       destroyOnHidden
       maskClosable
-      afterOpenChange={(visible) => {
-        if (!visible) return;
-        const now = Date.now();
-        const today = dateKey(new Date(now));
-        const wk = weekKey(new Date(now));
-        const storedStart = readNumber(storageKeys.seasonStartAt, 0);
-        const nextStartAt = storedStart > 0 ? storedStart : startOfToday();
-        const storedExp = readNumber(storageKeys.exp, 0);
-        const storedClaimed = readJson<number[]>(storageKeys.claimedLevels, []);
-        const storedDailyDone = readJson<Record<string, string>>(storageKeys.dailyDone, {});
-        const storedWeeklyDone = readJson<Record<string, string>>(storageKeys.weeklyDone, {});
-        setNowTs(now);
-        setTodayKey(today);
-        setCurWeekKey(wk);
-        setTab('rewards');
-        setSeasonStartAt(nextStartAt);
-        setExp(clamp(storedExp, 0, expPerLevel * maxLevel));
-        setClaimedLevels(storedClaimed.filter((lv) => Number.isFinite(lv)).map((lv) => clamp(lv, 1, maxLevel)));
-        setDailyDone(storedDailyDone);
-        setWeeklyDone(storedWeeklyDone);
-
-        const endAt = nextStartAt + seasonDays * 24 * 60 * 60 * 1000;
-        if (now >= endAt) resetSeason(startOfToday());
-      }}
     >
       <div className="bp-shell">
         <div className="bp-left">

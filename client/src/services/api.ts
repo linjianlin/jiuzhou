@@ -471,6 +471,69 @@ export const getBattlePassTasks = (seasonId?: string): Promise<BattlePassTasksRe
   return api.get('/battlepass/tasks', { params: { seasonId } });
 };
 
+export type BattlePassStatusDto = {
+  seasonId: string;
+  seasonName: string;
+  exp: number;
+  level: number;
+  maxLevel: number;
+  expPerLevel: number;
+  premiumUnlocked: boolean;
+  claimedFreeLevels: number[];
+  claimedPremiumLevels: number[];
+};
+
+export type BattlePassStatusResponse = {
+  success: boolean;
+  message: string;
+  data?: BattlePassStatusDto;
+};
+
+export const getBattlePassStatus = (): Promise<BattlePassStatusResponse> => {
+  return api.get('/battlepass/status');
+};
+
+export type BattlePassRewardItem = {
+  type: string;
+  currency?: string;
+  amount?: number;
+  itemDefId?: string;
+  item_def_id?: string;
+  qty?: number;
+};
+
+export type BattlePassRewardDto = {
+  level: number;
+  freeRewards: BattlePassRewardItem[];
+  premiumRewards: BattlePassRewardItem[];
+};
+
+export type BattlePassRewardsResponse = {
+  success: boolean;
+  message: string;
+  data?: BattlePassRewardDto[];
+};
+
+export const getBattlePassRewards = (seasonId?: string): Promise<BattlePassRewardsResponse> => {
+  return api.get('/battlepass/rewards', { params: { seasonId } });
+};
+
+export type ClaimBattlePassRewardResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    level: number;
+    track: 'free' | 'premium';
+    rewards: BattlePassRewardItem[];
+    spiritStones?: number;
+    silver?: number;
+  };
+};
+
+export const claimBattlePassReward = (level: number, track: 'free' | 'premium'): Promise<ClaimBattlePassRewardResponse> => {
+  return api.post('/battlepass/claim', { level, track });
+};
+
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
 export type TaskStatus = 'ongoing' | 'turnin' | 'claimable' | 'completed';
