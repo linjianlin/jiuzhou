@@ -15,21 +15,34 @@ import TeamModal from './modules/TeamModal';
 import SkillFloatButton from './modules/SkillFloatButton';
 
 // 懒加载不常用的 Modal，减少首屏加载体积
+// 使用缓存确保预加载和 lazy() 共享同一个 Promise
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const lazyImportCache = new Map<string, Promise<any>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cachedImport(key: string, loader: () => Promise<any>) {
+  return () => {
+    if (!lazyImportCache.has(key)) {
+      lazyImportCache.set(key, loader());
+    }
+    return lazyImportCache.get(key)!;
+  };
+}
+
 const lazyModules = {
-  TechniqueModal: () => import('./modules/TechniqueModal'),
-  TaskModal: () => import('./modules/TaskModal'),
-  SectModal: () => import('./modules/SectModal'),
-  MarketModal: () => import('./modules/MarketModal'),
-  MonthCardModal: () => import('./modules/MonthCardModal'),
-  BattlePassModal: () => import('./modules/BattlePassModal'),
-  ArenaModal: () => import('./modules/ArenaModal'),
-  RankModal: () => import('./modules/RankModal'),
-  AchievementModal: () => import('./modules/AchievementModal'),
-  MailModal: () => import('./modules/MailModal'),
-  SettingModal: () => import('./modules/SettingModal'),
-  RealmModal: () => import('./modules/RealmModal'),
-  WarehouseModal: () => import('./modules/WarehouseModal'),
-  SignInModal: () => import('./modules/SignInModal'),
+  TechniqueModal: cachedImport('TechniqueModal', () => import('./modules/TechniqueModal')),
+  TaskModal: cachedImport('TaskModal', () => import('./modules/TaskModal')),
+  SectModal: cachedImport('SectModal', () => import('./modules/SectModal')),
+  MarketModal: cachedImport('MarketModal', () => import('./modules/MarketModal')),
+  MonthCardModal: cachedImport('MonthCardModal', () => import('./modules/MonthCardModal')),
+  BattlePassModal: cachedImport('BattlePassModal', () => import('./modules/BattlePassModal')),
+  ArenaModal: cachedImport('ArenaModal', () => import('./modules/ArenaModal')),
+  RankModal: cachedImport('RankModal', () => import('./modules/RankModal')),
+  AchievementModal: cachedImport('AchievementModal', () => import('./modules/AchievementModal')),
+  MailModal: cachedImport('MailModal', () => import('./modules/MailModal')),
+  SettingModal: cachedImport('SettingModal', () => import('./modules/SettingModal')),
+  RealmModal: cachedImport('RealmModal', () => import('./modules/RealmModal')),
+  WarehouseModal: cachedImport('WarehouseModal', () => import('./modules/WarehouseModal')),
+  SignInModal: cachedImport('SignInModal', () => import('./modules/SignInModal')),
 };
 
 const TechniqueModal = lazy(lazyModules.TechniqueModal);
