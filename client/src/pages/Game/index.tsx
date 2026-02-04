@@ -1,4 +1,4 @@
-import { App, Badge, Button, Drawer, Modal, Progress, Tag, Tabs, Tooltip } from 'antd';
+import { App, Badge, Button, Drawer, Modal, Progress, Spin, Tag, Tabs, Tooltip } from 'antd';
 import { MailOutlined, SettingOutlined, LogoutOutlined, CalendarOutlined } from '@ant-design/icons';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PlayerInfo from './modules/PlayerInfo';
@@ -15,49 +15,27 @@ import TeamModal from './modules/TeamModal';
 import SkillFloatButton from './modules/SkillFloatButton';
 
 // 懒加载不常用的 Modal，减少首屏加载体积
-const lazyModules = {
-  TechniqueModal: () => import('./modules/TechniqueModal'),
-  TaskModal: () => import('./modules/TaskModal'),
-  SectModal: () => import('./modules/SectModal'),
-  MarketModal: () => import('./modules/MarketModal'),
-  MonthCardModal: () => import('./modules/MonthCardModal'),
-  BattlePassModal: () => import('./modules/BattlePassModal'),
-  ArenaModal: () => import('./modules/ArenaModal'),
-  RankModal: () => import('./modules/RankModal'),
-  AchievementModal: () => import('./modules/AchievementModal'),
-  MailModal: () => import('./modules/MailModal'),
-  SettingModal: () => import('./modules/SettingModal'),
-  RealmModal: () => import('./modules/RealmModal'),
-  WarehouseModal: () => import('./modules/WarehouseModal'),
-  SignInModal: () => import('./modules/SignInModal'),
-};
+const TechniqueModal = lazy(() => import('./modules/TechniqueModal'));
+const TaskModal = lazy(() => import('./modules/TaskModal'));
+const SectModal = lazy(() => import('./modules/SectModal'));
+const MarketModal = lazy(() => import('./modules/MarketModal'));
+const MonthCardModal = lazy(() => import('./modules/MonthCardModal'));
+const BattlePassModal = lazy(() => import('./modules/BattlePassModal'));
+const ArenaModal = lazy(() => import('./modules/ArenaModal'));
+const RankModal = lazy(() => import('./modules/RankModal'));
+const AchievementModal = lazy(() => import('./modules/AchievementModal'));
+const MailModal = lazy(() => import('./modules/MailModal'));
+const SettingModal = lazy(() => import('./modules/SettingModal'));
+const RealmModal = lazy(() => import('./modules/RealmModal'));
+const WarehouseModal = lazy(() => import('./modules/WarehouseModal'));
+const SignInModal = lazy(() => import('./modules/SignInModal'));
 
-const TechniqueModal = lazy(lazyModules.TechniqueModal);
-const TaskModal = lazy(lazyModules.TaskModal);
-const SectModal = lazy(lazyModules.SectModal);
-const MarketModal = lazy(lazyModules.MarketModal);
-const MonthCardModal = lazy(lazyModules.MonthCardModal);
-const BattlePassModal = lazy(lazyModules.BattlePassModal);
-const ArenaModal = lazy(lazyModules.ArenaModal);
-const RankModal = lazy(lazyModules.RankModal);
-const AchievementModal = lazy(lazyModules.AchievementModal);
-const MailModal = lazy(lazyModules.MailModal);
-const SettingModal = lazy(lazyModules.SettingModal);
-const RealmModal = lazy(lazyModules.RealmModal);
-const WarehouseModal = lazy(lazyModules.WarehouseModal);
-const SignInModal = lazy(lazyModules.SignInModal);
-
-// 空闲时预加载所有懒加载模块，提升弹窗打开速度
-function preloadLazyModules() {
-  Object.values(lazyModules).forEach((loader) => loader());
-}
-const schedulePreload = () => {
-  if ('requestIdleCallback' in window) {
-    requestIdleCallback(preloadLazyModules);
-  } else {
-    setTimeout(preloadLazyModules, 2000);
-  }
-};
+// 懒加载 Modal 的 loading 状态
+const ModalSkeleton = () => (
+  <div style={{ position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+    <Spin size="large" />
+  </div>
+);
 import { gameSocket, type CharacterData } from '../../services/gameSocket';
 import {
   acceptTaskFromNpc,
@@ -917,11 +895,6 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
   useEffect(() => {
     messageRef.current = message;
   }, [message]);
-
-  // 组件挂载后空闲时预加载懒加载模块
-  useEffect(() => {
-    schedulePreload();
-  }, []);
 
   const refreshNpcTalk = useCallback(async (npcId: string): Promise<NpcTalkData | null> => {
     const nid = (npcId || '').trim();
@@ -2318,17 +2291,17 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
       />
       <BagModal open={bagModalOpen} onClose={() => setBagModalOpen(false)} />
       {warehouseModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <WarehouseModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />
         </Suspense>
       )}
       {techniqueModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <TechniqueModal open={techniqueModalOpen} onClose={() => setTechniqueModalOpen(false)} />
         </Suspense>
       )}
       {taskModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <TaskModal
             open={taskModalOpen}
             onClose={() => setTaskModalOpen(false)}
@@ -2342,17 +2315,17 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
         </Suspense>
       )}
       {monthCardModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <MonthCardModal open={monthCardModalOpen} onClose={() => setMonthCardModalOpen(false)} />
         </Suspense>
       )}
       {battlePassModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <BattlePassModal open={battlePassModalOpen} onClose={() => setBattlePassModalOpen(false)} />
         </Suspense>
       )}
       {arenaModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <ArenaModal
             open={arenaModalOpen}
             onClose={() => setArenaModalOpen(false)}
@@ -2371,12 +2344,12 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
         </Suspense>
       )}
       {rankModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <RankModal open={rankModalOpen} onClose={() => setRankModalOpen(false)} />
         </Suspense>
       )}
       {signInModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <SignInModal
             open={signInModalOpen}
             onClose={() => {
@@ -2388,17 +2361,17 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
         </Suspense>
       )}
       {mailModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <MailModal open={mailModalOpen} onClose={() => setMailModalOpen(false)} />
         </Suspense>
       )}
       {settingModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <SettingModal open={settingModalOpen} onClose={() => setSettingModalOpen(false)} />
         </Suspense>
       )}
       {achievementModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <AchievementModal
             open={achievementModalOpen}
             onClose={() => setAchievementModalOpen(false)}
@@ -2408,12 +2381,12 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
         </Suspense>
       )}
       {realmModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <RealmModal open={realmModalOpen} onClose={() => setRealmModalOpen(false)} character={character} />
         </Suspense>
       )}
       {marketModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <MarketModal open={marketModalOpen} onClose={() => setMarketModalOpen(false)} playerName={playerName} />
         </Suspense>
       )}
@@ -2428,7 +2401,7 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
         playerName={playerName}
       />
       {sectModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalSkeleton />}>
           <SectModal
             open={sectModalOpen}
             onClose={() => setSectModalOpen(false)}
