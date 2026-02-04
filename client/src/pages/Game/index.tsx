@@ -2375,7 +2375,7 @@ const Game: React.FC<GameProps> = ({ onLogout }) => {
             open={arenaModalOpen}
             onClose={() => setArenaModalOpen(false)}
             character={character}
-            onStartBattle={(battleId) => {
+            onStartBattle={(battleId: number) => {
               setArenaModalOpen(false);
               setTopTab('map');
               setBattleEnemies([]);
