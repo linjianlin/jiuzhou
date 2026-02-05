@@ -1680,7 +1680,6 @@ export const sortInventory = async (
           FROM item_instance ii
           LEFT JOIN item_def id ON ii.item_def_id = id.id
           WHERE ii.owner_character_id = $1 AND ii.location = $2
-          FOR UPDATE
         )
         UPDATE item_instance ii
         SET location_slot = ordered.new_slot,
