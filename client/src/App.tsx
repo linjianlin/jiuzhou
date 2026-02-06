@@ -128,11 +128,15 @@ function App() {
     >
       <AntdApp>
         {isLoggedIn ? (
-          <Suspense fallback={
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-              <Spin size="large" tip="加载游戏中..." />
-            </div>
-          }>
+          <Suspense
+            fallback={
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                <Spin size="large" tip="加载游戏中...">
+                  <div style={{ width: 140, height: 80 }} />
+                </Spin>
+              </div>
+            }
+          >
             <Game onLogout={handleLogout} />
           </Suspense>
         ) : (

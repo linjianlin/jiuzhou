@@ -254,7 +254,9 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
       <div className="bp-pane-body">
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>
-            <Spin tip="加载中..." />
+            <Spin tip="加载中...">
+              <div style={{ width: 120, height: 60 }} />
+            </Spin>
           </div>
         ) : (
           <div className="bp-section">
