@@ -22,7 +22,6 @@ docker-build.log
 **/.env
 **/.env.*
 !**/.env.example
-!**/.env.cos.example
 
 # IDE and tools
 .vscode

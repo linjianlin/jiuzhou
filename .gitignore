@@ -12,7 +12,6 @@ dist-ssr/
 .env.*.local
 .env.cos
 !.env.example
-!.env.cos.example
 
 # Uploaded files
 uploads/

@@ -77,47 +77,6 @@ docker stack rm jiuzhou
 ./docker-build.sh latest
 ```
 
-### 使用 CDN 加速（推荐）
-
-配置腾讯云 COS 后，构建时会自动上传静态资源到 CDN，减少源站流量。
-
-#### 1. 安装 coscmd
-
-```bash
-pip install coscmd
-```
-
-#### 2. 配置腾讯云认证
-
-```bash
-coscmd config \
-  -a <SecretId> \
-  -s <SecretKey> \
-  -b <Bucket> \
-  -r <Region>
-```
-
-#### 3. 构建并上传
-
-```bash
-# 使用 COS 默认域名
-COS_BUCKET=my-bucket-1234567890 ./docker-build.sh latest
-
-# 使用 CDN 加速域名
-COS_BUCKET=my-bucket-1234567890 \
-CDN_DOMAIN=cdn.example.com \
-./docker-build.sh latest
-```
-
-#### 环境变量
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `COS_BUCKET` | COS 存储桶名称 | - |
-| `COS_REGION` | COS 区域 | `ap-guangzhou` |
-| `COS_PATH` | COS 路径前缀 | `/jiuzhou` |
-| `CDN_DOMAIN` | CDN 加速域名 | COS 默认域名 |
-
 ## 项目结构
 
 ```
@@ -140,15 +99,13 @@ CDN_DOMAIN=cdn.example.com \
 │   └── Dockerfile
 ├── docker-compose.yml      # Docker Compose 配置
 ├── docker-stack.yml        # Docker Swarm 配置（零停机更新）
-├── docker-build.sh         # 构建脚本
-└── upload-cos.sh           # COS 上传脚本
+└── docker-build.sh         # 构建脚本
 ```
 
 ## 配置文件
 
 | 文件 | 说明 |
 |------|------|
-| `.env.cos.example` | COS 配置示例 |
 | `client/.env.example` | 前端环境变量示例 |
 | `docker-compose.yml` | Docker Compose 配置 |
 | `docker-stack.yml` | Docker Swarm 配置 |
