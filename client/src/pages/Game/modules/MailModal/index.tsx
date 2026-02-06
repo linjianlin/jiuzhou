@@ -412,12 +412,23 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
                             <span className="mail-attachment-amount">x{activeMail.attachSpiritStones.toLocaleString()}</span>
                           </div>
                         )}
-                        {activeMail.attachItems?.map((item, idx) => (
-                          <div key={idx} className="mail-attachment">
-                            <span className="mail-attachment-name">{item.item_name || item.item_def_id}</span>
-                            <span className="mail-attachment-amount">x{item.qty}</span>
-                          </div>
-                        ))}
+                        {activeMail.attachItems?.map((item, idx) => {
+                          const qualityColorMap: Record<string, string> = {
+                            '天': 'var(--rarity-tian)',
+                            '地': 'var(--rarity-di)',
+                            '玄': 'var(--rarity-xuan)',
+                            '黄': 'var(--rarity-huang)',
+                          };
+                          const nameColor = item.quality ? qualityColorMap[item.quality] : undefined;
+                          return (
+                            <div key={idx} className="mail-attachment">
+                              <span className="mail-attachment-name" style={nameColor ? { color: nameColor } : undefined}>
+                                {item.item_name || item.item_def_id}
+                              </span>
+                              <span className="mail-attachment-amount">x{item.qty}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="mail-attachments-empty">无附件</div>

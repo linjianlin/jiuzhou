@@ -68,6 +68,7 @@ export interface MailDto {
 
 type MailAttachItemView = MailAttachItem & {
   item_name?: string;
+  quality?: string;
 };
 
 const estimateRequiredSlots = async (
@@ -258,16 +259,16 @@ export const getMailList = async (
       )
     );
 
-    const itemNameMap = new Map<string, string>();
+    const itemDefMap = new Map<string, { name: string; quality: string }>();
     if (itemDefIds.length > 0) {
       const defsResult = await query(
-        'SELECT id, name FROM item_def WHERE id = ANY($1)',
+        'SELECT id, name, quality FROM item_def WHERE id = ANY($1)',
         [itemDefIds]
       );
       for (const row of defsResult.rows) {
         const id = String(row.id || '').trim();
         const name = String(row.name || '').trim();
-        if (id) itemNameMap.set(id, name || id);
+        if (id) itemDefMap.set(id, { name: name || id, quality: String(row.quality || '').trim() });
       }
     }
 
@@ -282,11 +283,13 @@ export const getMailList = async (
       attachSpiritStones: row.attach_spirit_stones,
       attachItems: (Array.isArray(row.attach_items) ? row.attach_items : []).map((item: MailAttachItem) => {
         const itemDefId = String(item.item_def_id || '').trim();
-        const itemName = itemDefId ? (itemNameMap.get(itemDefId) || item.item_name || itemDefId) : (item.item_name || '未知物品');
+        const defInfo = itemDefId ? itemDefMap.get(itemDefId) : undefined;
+        const itemName = defInfo?.name || item.item_name || itemDefId || '未知物品';
         return {
           ...item,
           item_def_id: itemDefId,
-          item_name: itemName
+          item_name: itemName,
+          quality: defInfo?.quality || '',
         } as MailAttachItemView;
       }),
       readAt: row.read_at?.toISOString() || null,
