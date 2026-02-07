@@ -110,6 +110,101 @@ const tabs: Array<{ key: AchievementTab; label: string }> = [
   { key: 'collection', label: '收集成就' },
 ];
 
+const titleEffectLabel: Record<string, string> = {
+  qixue: '气血',
+  max_qixue: '气血上限',
+  lingqi: '灵气',
+  max_lingqi: '灵气上限',
+  wugong: '物攻',
+  fagong: '法攻',
+  wufang: '物防',
+  fafang: '法防',
+  mingzhong: '命中',
+  shanbi: '闪避',
+  zhaojia: '招架',
+  baoji: '暴击',
+  baoshang: '暴伤',
+  kangbao: '抗暴',
+  zengshang: '增伤',
+  zhiliao: '治疗',
+  jianliao: '减疗',
+  xixue: '吸血',
+  lengque: '冷却',
+  sudu: '速度',
+  qixue_huifu: '气血恢复',
+  lingqi_huifu: '灵气恢复',
+  kongzhi_kangxing: '控制抗性',
+  jin_kangxing: '金抗性',
+  mu_kangxing: '木抗性',
+  shui_kangxing: '水抗性',
+  huo_kangxing: '火抗性',
+  tu_kangxing: '土抗性',
+  shuxing_shuzhi: '属性数值',
+};
+
+const titleEffectOrder: Record<string, number> = Object.fromEntries(
+  [
+    'qixue',
+    'max_qixue',
+    'lingqi',
+    'max_lingqi',
+    'wugong',
+    'fagong',
+    'wufang',
+    'fafang',
+    'mingzhong',
+    'shanbi',
+    'zhaojia',
+    'baoji',
+    'baoshang',
+    'kangbao',
+    'zengshang',
+    'zhiliao',
+    'jianliao',
+    'xixue',
+    'lengque',
+    'sudu',
+    'qixue_huifu',
+    'lingqi_huifu',
+    'kongzhi_kangxing',
+    'jin_kangxing',
+    'mu_kangxing',
+    'shui_kangxing',
+    'huo_kangxing',
+    'tu_kangxing',
+    'shuxing_shuzhi',
+  ].map((key, idx) => [key, idx]),
+);
+
+const normalizeEffectKey = (key: string): string => {
+  return key.trim().replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+};
+
+const formatEffectValue = (value: number): string | null => {
+  if (!Number.isFinite(value) || value === 0) return null;
+  return value > 0 ? `+${value}` : `${value}`;
+};
+
+const formatTitleEffects = (effects: Record<string, number>): string => {
+  const rows = Object.entries(effects || {})
+    .map(([rawKey, rawValue]) => {
+      const key = normalizeEffectKey(rawKey);
+      const value = Number(rawValue);
+      const valueText = formatEffectValue(value);
+      if (!valueText) return null;
+      const label = titleEffectLabel[key] ?? titleEffectLabel[rawKey] ?? rawKey;
+      return { key, text: `${label}${valueText}` };
+    })
+    .filter((item): item is { key: string; text: string } => item !== null)
+    .sort((a, b) => {
+      const oa = titleEffectOrder[a.key] ?? 999;
+      const ob = titleEffectOrder[b.key] ?? 999;
+      return oa - ob || a.key.localeCompare(b.key);
+    });
+
+  return rows.map((item) => item.text).join('，');
+};
+
 const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, onChanged }) => {
   const { message } = App.useApp();
 
@@ -426,9 +521,7 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, onCh
               <div className="achievement-section-title">称号</div>
               <div className="achievement-title-list">
                 {sortedTitles.map((title) => {
-                  const effectsText = Object.entries(title.effects || {})
-                    .map(([key, value]) => `${key}+${value}`)
-                    .join('，');
+                  const effectsText = formatTitleEffects(title.effects || {});
                   return (
                     <div key={title.id} className="achievement-title-item">
                       <div className="achievement-title-main">

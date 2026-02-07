@@ -872,12 +872,18 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
                 key: 'name',
                 render: (_: string, row: (typeof rows)[number]) => (
                   <div className="tech-table-name">
-                    <span>{row.name}</span>
+                    <span className="tech-table-name-text">{row.name}</span>
                     <Tag color={qualityColor[row.quality]}>{qualityText[row.quality]}</Tag>
                   </div>
                 ),
               },
-              { title: '装配', dataIndex: 'role', key: 'role', width: 90 },
+              {
+                title: '装配',
+                dataIndex: 'role',
+                key: 'role',
+                width: 90,
+                render: (value: string) => <span className="tech-table-role">{value}</span>,
+              },
               {
                 title: '属性',
                 dataIndex: 'bonuses',

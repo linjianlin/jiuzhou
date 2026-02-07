@@ -281,6 +281,10 @@
     font-size: 11px;
   }
 
+  .ant-table-cell {
+    line-height: 1.4;
+  }
+
   .ant-table-thead > tr > th {
     font-size: 11px;
     padding: 6px 8px;
@@ -289,14 +293,25 @@
   .ant-table-tbody > tr > td {
     font-size: 11px;
     padding: 6px 8px;
-    vertical-align: top;
+    vertical-align: middle;
   }
 }
 
 .tech-table-name {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 22px;
+}
+
+.tech-table-name-text {
+  min-width: 0;
+}
+
+.tech-table-role {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
 }
 
 .tech-table-name .ant-tag {
@@ -307,6 +322,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
 }
 
 .tech-bonus-line {
@@ -318,6 +334,7 @@
   background: var(--panel-bg-soft);
   border-radius: 10px;
   padding: 6px 8px;
+  min-height: 22px;
 }
 
 .tech-bonus-k {
@@ -329,7 +346,9 @@
 .tech-bonus-v {
   color: var(--text-tertiary);
   text-align: right;
+  margin-left: auto;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .skill-slots {
