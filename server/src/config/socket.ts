@@ -22,18 +22,14 @@ export const initSocket = (
   });
 
   io.on('connection', (socket: Socket) => {
-    console.log(`玩家连接: ${socket.id}`);
-
     // 加入房间
     socket.on('join:room', (roomId: string) => {
       socket.join(roomId);
-      console.log(`${socket.id} 加入房间: ${roomId}`);
     });
 
     // 离开房间
     socket.on('leave:room', (roomId: string) => {
       socket.leave(roomId);
-      console.log(`${socket.id} 离开房间: ${roomId}`);
     });
 
     // 聊天消息
@@ -46,7 +42,6 @@ export const initSocket = (
 
     // 断开连接
     socket.on('disconnect', () => {
-      console.log(`玩家断开: ${socket.id}`);
     });
   });
 

@@ -450,7 +450,6 @@ export const getInventoryInfoWithClient = async (
   }
 
   const info = result.rows[0];
-  console.log('[getInventoryInfo] characterId=%d bag_used=%d warehouse_used=%d', characterId, info.bag_used, info.warehouse_used);
   return info;
 };
 
@@ -1736,14 +1735,6 @@ export const sortInventory = async (
         RETURNING ii.id
       `,
       [characterId, location, capacity]
-    );
-
-    console.log(
-      '[sortInventory] characterId=%d location=%s itemCount=%d temp=%d',
-      characterId,
-      location,
-      result.rowCount,
-      tempResult.rowCount
     );
 
     await client.query('COMMIT');

@@ -52,8 +52,6 @@ class GameServer {
 
   private setupEventHandlers() {
     this.io.on('connection', (socket: Socket) => {
-      console.log(`游戏连接: ${socket.id}`);
-
       // 玩家认证并加入游戏
       socket.on('game:auth', async (token: string) => {
         try {
@@ -117,7 +115,6 @@ class GameServer {
           // 发送角色数据
           socket.emit('game:character', { character });
           this.scheduleEmitOnlinePlayers(true);
-          console.log(`玩家 ${userId} 加入游戏`);
         } catch (error) {
           console.error('游戏认证错误:', error);
           socket.emit('game:error', { message: '服务器错误' });
@@ -282,7 +279,6 @@ class GameServer {
           this.userSocketMap.delete(session.userId);
           this.sessions.delete(socket.id);
           this.scheduleEmitOnlinePlayers(true);
-          console.log(`玩家 ${session.userId} 离开游戏`);
         }
       });
     });
