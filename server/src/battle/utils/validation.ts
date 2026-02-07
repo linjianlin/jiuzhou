@@ -192,7 +192,9 @@ export function validateTargets(
       if (targetIds.length !== 1) {
         return { valid: false, error: '单体敌方技能只能选择一个目标' };
       }
-      if (!enemies.some(e => e.id === targetIds[0] && e.isAlive)) {
+      // 客户端战斗状态可能略滞后（如自动战斗/组队并发操作），
+      // 这里仅校验“存在可攻击敌人”，具体目标在 resolveTargets 阶段再二次解析并回退。
+      if (!enemies.some(e => e.isAlive)) {
         return { valid: false, error: '目标不是有效的敌方单位' };
       }
       break;
@@ -201,7 +203,7 @@ export function validateTargets(
       if (targetIds.length !== 1) {
         return { valid: false, error: '单体友方技能只能选择一个目标' };
       }
-      if (!allies.some(a => a.id === targetIds[0] && a.isAlive)) {
+      if (!allies.some(a => a.isAlive)) {
         return { valid: false, error: '目标不是有效的友方单位' };
       }
       break;

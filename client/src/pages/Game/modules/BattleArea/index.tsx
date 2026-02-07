@@ -186,6 +186,21 @@ const isNewerBattleState = (next: BattleStateDto, current: BattleStateDto | null
   return nextTeam === currentTeam;
 };
 
+const TRANSIENT_BATTLE_ACTION_ERRORS = new Set([
+  '当前不是玩家行动回合',
+  '不是玩家方的回合',
+  '不是该单位的行动回合',
+  '目标不是有效的敌方单位',
+  '目标不是有效的友方单位',
+]);
+
+const isTransientBattleActionError = (msg: unknown): boolean => {
+  const text = String(msg ?? '').trim();
+  if (!text) return false;
+  if (TRANSIENT_BATTLE_ACTION_ERRORS.has(text)) return true;
+  return text.includes('目标不是有效的') || text.includes('行动回合');
+};
+
 const BattleArea: React.FC<BattleAreaProps> = ({
   enemies,
   onEscape,
@@ -901,6 +916,11 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       const actualSkillId = skillId === 'basic_attack' ? 'skill-normal-attack' : skillId;
       const res = await battleAction(id, actualSkillId, targets);
       if (!res?.success || !res.data?.state) {
+        if (isTransientBattleActionError(res?.message)) {
+          // 自动战斗/组队并发时可能命中旧回合或旧目标，静默刷新状态即可。
+          void pollBattleState();
+          return false;
+        }
         message.error(res?.message || '释放失败');
         return false;
       }
@@ -934,6 +954,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       ensureBattleStartAnnounced,
       formatNewLogs,
       message,
+      pollBattleState,
       pushBattleLines,
       selectedAllyId,
       selectedEnemyId,
