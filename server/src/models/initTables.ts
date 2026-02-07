@@ -19,6 +19,7 @@ import { initBountyTables } from './bountyTable.js';
 import { initGameTimeTable } from './gameTimeTable.js';
 import { initMainQuestTables } from './mainQuestTable.js';
 import { initArenaTables } from './arenaTable.js';
+import { initAchievementTables } from './achievementTable.js';
 import { loadAllSeeds } from '../services/seedService.js';
 
 // 用户表结构定义
@@ -150,6 +151,9 @@ export const initTables = async (): Promise<void> => {
 
     // 初始化竞技场系统表
     await initArenaTables();
+
+    // 初始化成就与称号系统表
+    await initAchievementTables();
     
     // 加载种子数据
     await loadAllSeeds();

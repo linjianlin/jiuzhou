@@ -138,6 +138,54 @@ interface BountyDefSeed {
   version?: number;
 }
 
+interface AchievementDefSeed {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  rarity?: string;
+  points?: number;
+  icon?: string;
+  hidden?: boolean;
+  prerequisite_id?: string | null;
+  track_type?: string;
+  track_key: string;
+  target_value?: number;
+  target_list?: unknown[];
+  rewards?: unknown[];
+  title_id?: string | null;
+  sort_weight?: number;
+  enabled?: boolean;
+  version?: number;
+}
+
+interface TitleDefSeed {
+  id: string;
+  name: string;
+  description?: string;
+  rarity?: string;
+  color?: string;
+  icon?: string;
+  effects?: Record<string, unknown>;
+  source_type?: string;
+  source_id?: string;
+  enabled?: boolean;
+  sort_weight?: number;
+  version?: number;
+}
+
+interface AchievementPointsRewardSeed {
+  id: string;
+  points_threshold: number;
+  name: string;
+  description?: string;
+  rewards?: unknown[];
+  title_id?: string | null;
+  enabled?: boolean;
+  sort_weight?: number;
+  version?: number;
+}
+
 // 加载物品定义
 export const loadItemDefSeeds = async (): Promise<number> => {
   const data = readJsonFile<{ items: ItemDefSeed[] }>('item_def.json');
@@ -1518,6 +1566,184 @@ export const loadBountyDefSeeds = async (): Promise<number> => {
   return count;
 };
 
+export const loadAchievementDefSeeds = async (): Promise<number> => {
+  const data = readJsonFile<{ achievements: AchievementDefSeed[] }>('achievement_def.json');
+  if (!data?.achievements) return 0;
+
+  let count = 0;
+  for (const ach of data.achievements) {
+    if (!ach?.id || !ach?.track_key || !ach?.name) continue;
+
+    try {
+      const sql = `
+        INSERT INTO achievement_def (
+          id, name, description, category, rarity, points, icon, hidden,
+          prerequisite_id, track_type, track_key, target_value, target_list, rewards,
+          title_id, sort_weight, enabled, version, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, NOW()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          category = EXCLUDED.category,
+          rarity = EXCLUDED.rarity,
+          points = EXCLUDED.points,
+          icon = EXCLUDED.icon,
+          hidden = EXCLUDED.hidden,
+          prerequisite_id = EXCLUDED.prerequisite_id,
+          track_type = EXCLUDED.track_type,
+          track_key = EXCLUDED.track_key,
+          target_value = EXCLUDED.target_value,
+          target_list = EXCLUDED.target_list,
+          rewards = EXCLUDED.rewards,
+          title_id = EXCLUDED.title_id,
+          sort_weight = EXCLUDED.sort_weight,
+          enabled = EXCLUDED.enabled,
+          version = EXCLUDED.version,
+          updated_at = NOW()
+      `;
+
+      await query(sql, [
+        ach.id,
+        ach.name,
+        ach.description || '',
+        ach.category || 'combat',
+        ach.rarity || 'common',
+        Number.isFinite(Number(ach.points)) ? Math.max(0, Math.floor(Number(ach.points))) : 0,
+        ach.icon || null,
+        ach.hidden === true,
+        ach.prerequisite_id || null,
+        ach.track_type || 'counter',
+        ach.track_key,
+        Number.isFinite(Number(ach.target_value)) ? Math.max(1, Math.floor(Number(ach.target_value))) : 1,
+        JSON.stringify(Array.isArray(ach.target_list) ? ach.target_list : []),
+        JSON.stringify(Array.isArray(ach.rewards) ? ach.rewards : []),
+        ach.title_id || null,
+        Number.isFinite(Number(ach.sort_weight)) ? Number(ach.sort_weight) : 0,
+        ach.enabled !== false,
+        Number.isFinite(Number(ach.version)) ? Number(ach.version) : 1,
+      ]);
+      count += 1;
+    } catch (error) {
+      console.error(`插入成就定义失败 ${ach.id}:`, error);
+    }
+  }
+
+  return count;
+};
+
+export const loadTitleDefSeeds = async (): Promise<number> => {
+  const data = readJsonFile<{ titles: TitleDefSeed[] }>('title_def.json');
+  if (!data?.titles) return 0;
+
+  let count = 0;
+  for (const title of data.titles) {
+    if (!title?.id || !title?.name) continue;
+
+    try {
+      const sql = `
+        INSERT INTO title_def (
+          id, name, description, rarity, color, icon, effects,
+          source_type, source_id, enabled, sort_weight, version, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10, $11, $12, NOW()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          rarity = EXCLUDED.rarity,
+          color = EXCLUDED.color,
+          icon = EXCLUDED.icon,
+          effects = EXCLUDED.effects,
+          source_type = EXCLUDED.source_type,
+          source_id = EXCLUDED.source_id,
+          enabled = EXCLUDED.enabled,
+          sort_weight = EXCLUDED.sort_weight,
+          version = EXCLUDED.version,
+          updated_at = NOW()
+      `;
+
+      await query(sql, [
+        title.id,
+        title.name,
+        title.description || '',
+        title.rarity || 'common',
+        title.color || null,
+        title.icon || null,
+        JSON.stringify(title.effects ?? {}),
+        title.source_type || null,
+        title.source_id || null,
+        title.enabled !== false,
+        Number.isFinite(Number(title.sort_weight)) ? Number(title.sort_weight) : 0,
+        Number.isFinite(Number(title.version)) ? Number(title.version) : 1,
+      ]);
+      count += 1;
+    } catch (error) {
+      console.error(`插入称号定义失败 ${title.id}:`, error);
+    }
+  }
+
+  return count;
+};
+
+export const loadAchievementPointsRewardSeeds = async (): Promise<number> => {
+  const data = readJsonFile<{ rewards: AchievementPointsRewardSeed[] }>('achievement_points_rewards.json');
+  if (!data?.rewards) return 0;
+
+  let count = 0;
+  for (const reward of data.rewards) {
+    if (!reward?.id || !reward?.name) continue;
+
+    try {
+      const threshold = Number.isFinite(Number(reward.points_threshold))
+        ? Math.max(0, Math.floor(Number(reward.points_threshold)))
+        : -1;
+      if (threshold < 0) continue;
+
+      const sql = `
+        INSERT INTO achievement_points_reward_def (
+          id, points_threshold, name, description, rewards, title_id,
+          sort_weight, enabled, version, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9, NOW()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          points_threshold = EXCLUDED.points_threshold,
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          rewards = EXCLUDED.rewards,
+          title_id = EXCLUDED.title_id,
+          sort_weight = EXCLUDED.sort_weight,
+          enabled = EXCLUDED.enabled,
+          version = EXCLUDED.version,
+          updated_at = NOW()
+      `;
+
+      await query(sql, [
+        reward.id,
+        threshold,
+        reward.name,
+        reward.description || '',
+        JSON.stringify(Array.isArray(reward.rewards) ? reward.rewards : []),
+        reward.title_id || null,
+        Number.isFinite(Number(reward.sort_weight)) ? Number(reward.sort_weight) : threshold,
+        reward.enabled !== false,
+        Number.isFinite(Number(reward.version)) ? Number(reward.version) : 1,
+      ]);
+      count += 1;
+    } catch (error) {
+      console.error(`插入成就点数奖励失败 ${reward.id}:`, error);
+    }
+  }
+
+  return count;
+};
+
 // 主线任务章节接口
 interface MainQuestChapterSeed {
   id: string;
@@ -1797,6 +2023,14 @@ export const loadAllSeeds = async (): Promise<void> => {
   console.log(`  任务定义: ${taskCount} 条`);
   const bountyDefCount = await loadBountyDefSeeds();
   console.log(`  悬赏定义: ${bountyDefCount} 条`);
+
+  // 11.1 加载成就系统定义
+  const achievementDefCount = await loadAchievementDefSeeds();
+  console.log(`  成就定义: ${achievementDefCount} 条`);
+  const titleDefCount = await loadTitleDefSeeds();
+  console.log(`  称号定义: ${titleDefCount} 条`);
+  const achievementPointsRewardCount = await loadAchievementPointsRewardSeeds();
+  console.log(`  成就点奖励: ${achievementPointsRewardCount} 条`);
 
   // 12. 加载月卡定义
   const monthCardCount = await loadMonthCardSeeds();
@@ -2155,6 +2389,9 @@ export default {
   loadTechniqueDefSeeds,
   loadTechniqueLayerSeeds,
   loadSkillDefSeeds,
+  loadAchievementDefSeeds,
+  loadTitleDefSeeds,
+  loadAchievementPointsRewardSeeds,
   loadAllSeeds
 };
 

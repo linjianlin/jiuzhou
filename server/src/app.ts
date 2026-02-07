@@ -34,6 +34,8 @@ import bountyRoutes from './routes/bountyRoutes.js';
 import timeRoutes from './routes/timeRoutes.js';
 import mainQuestRoutes from './routes/mainQuestRoutes.js';
 import arenaRoutes from './routes/arenaRoutes.js';
+import achievementRoutes from './routes/achievementRoutes.js';
+import titleRoutes from './routes/titleRoutes.js';
 import { initGameTimeService } from './services/gameTimeService.js';
 import { recoverBattlesFromRedis } from './services/battleService.js';
 
@@ -124,6 +126,8 @@ app.use('/api/bounty', bountyRoutes);
 app.use('/api/time', timeRoutes);
 app.use('/api/main-quest', mainQuestRoutes);
 app.use('/api/arena', arenaRoutes);
+app.use('/api/achievement', achievementRoutes);
+app.use('/api/title', titleRoutes);
 
 // 基础路由
 app.get('/', (_req, res) => {

@@ -1,0 +1,56 @@
+{
+  "titles": [
+    {
+      "id": "title-rabbit-hunter",
+      "name": "猎兔新手",
+      "description": "击杀野兔达人",
+      "rarity": "common",
+      "color": "#d9d9d9",
+      "effects": { "wugong": 5, "qixue": 30 },
+      "source_type": "achievement",
+      "source_id": "ach-kill-rabbit-30",
+      "enabled": true,
+      "sort_weight": 10,
+      "version": 1
+    },
+    {
+      "id": "title-team-pioneer",
+      "name": "并肩先驱",
+      "description": "创建并组织队伍的修士",
+      "rarity": "rare",
+      "color": "#4da6ff",
+      "effects": { "max_qixue": 80, "wufang": 10, "fafang": 10 },
+      "source_type": "achievement",
+      "source_id": "ach-team-create-1",
+      "enabled": true,
+      "sort_weight": 20,
+      "version": 1
+    },
+    {
+      "id": "title-mystic-pathfinder",
+      "name": "秘境行者",
+      "description": "多次通关秘境的探索者",
+      "rarity": "epic",
+      "color": "#9254de",
+      "effects": { "max_lingqi": 120, "fagong": 20 },
+      "source_type": "achievement",
+      "source_id": "ach-dungeon-clear-5",
+      "enabled": true,
+      "sort_weight": 30,
+      "version": 1
+    },
+    {
+      "id": "title-achievement-elite",
+      "name": "成就精英",
+      "description": "累积成就点达标者",
+      "rarity": "legendary",
+      "color": "#fa8c16",
+      "effects": { "wugong": 25, "fagong": 25, "max_qixue": 150, "max_lingqi": 150 },
+      "source_type": "achievement_points",
+      "source_id": "apr-600",
+      "enabled": true,
+      "sort_weight": 40,
+      "version": 1
+    }
+  ]
+}

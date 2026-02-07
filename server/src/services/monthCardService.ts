@@ -1,4 +1,5 @@
 import { pool, query } from '../config/database.js';
+import { updateAchievementProgress } from './achievementService.js';
 
 export type MonthCardStatusResult = {
   success: boolean;
@@ -261,6 +262,10 @@ export const useMonthCardItem = async (
 
     await client.query('COMMIT');
 
+    try {
+      await updateAchievementProgress(characterId, 'monthcard:activate', 1);
+    } catch {}
+
     const daysLeft = Math.max(0, Math.ceil((nextExpireAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
     return {
       success: true,
@@ -357,6 +362,10 @@ export const buyMonthCard = async (userId: number, monthCardId: string): Promise
     }
 
     await client.query('COMMIT');
+
+    try {
+      await updateAchievementProgress(characterId, 'monthcard:activate', 1);
+    } catch {}
 
     const daysLeft = Math.max(0, Math.ceil((expireAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
     return {

@@ -2,6 +2,7 @@ import { query } from '../config/database.js';
 import crypto from 'crypto';
 import { getGameServer } from '../game/GameServer.js';
 import { onUserJoinTeam, onUserLeaveTeam } from './battleService.js';
+import { updateAchievementProgress } from './achievementService.js';
 
 /**
  * 九州修仙录 - 组队系统服务
@@ -274,6 +275,11 @@ export const createTeam = async (characterId: number, name?: string, goal?: stri
 
     await notifyTeamMembersChanged(teamId, [characterId], 'create_team');
 
+    try {
+      await updateAchievementProgress(characterId, 'team:create', 1);
+      await updateAchievementProgress(characterId, 'team:join', 1);
+    } catch {}
+
     return {
       success: true,
       message: '队伍创建成功',
@@ -453,6 +459,9 @@ export const applyToTeam = async (characterId: number, teamId: string, message?:
         [teamId, characterId]
       );
       await notifyTeamMembersChanged(teamId, [characterId], 'auto_join');
+      try {
+        await updateAchievementProgress(characterId, 'team:join', 1);
+      } catch {}
       return { success: true, message: '已自动加入队伍', autoJoined: true };
     }
 
@@ -588,6 +597,10 @@ export const handleApplication = async (characterId: number, applicationId: stri
       );
 
       await notifyTeamMembersChanged(app.team_id, [app.applicant_id], 'approve_application');
+
+      try {
+        await updateAchievementProgress(Number(app.applicant_id), 'team:join', 1);
+      } catch {}
 
       return { success: true, message: '已通过申请' };
     } else {

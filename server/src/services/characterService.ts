@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { createInventoryForCharacter } from '../models/inventoryTable.js';
 import { updateSectionProgress } from './mainQuestService.js';
+import { initCharacterAchievements, updateAchievementProgress } from './achievementService.js';
 
 export interface Character {
   id: number;
@@ -150,7 +151,13 @@ export const createCharacter = async (
     // 创建角色背包
     const characterId = result.rows[0].id;
     await createInventoryForCharacter(characterId);
-    
+
+    try {
+      await initCharacterAchievements(characterId);
+    } catch (error) {
+      console.error('初始化角色成就失败:', error);
+    }
+
     return {
       success: true,
       message: '角色创建成功',
@@ -223,6 +230,10 @@ export const updateCharacterPosition = async (
     if (Number.isFinite(characterId) && characterId > 0) {
       try {
         await updateSectionProgress(characterId, { type: 'reach', roomId });
+      } catch {}
+      try {
+        await updateAchievementProgress(characterId, `map:discover:${mapId}`, 1);
+        await updateAchievementProgress(characterId, `room:reach:${roomId}`, 1);
       } catch {}
     }
 

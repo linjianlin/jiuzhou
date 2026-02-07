@@ -1,264 +1,211 @@
-import { Button, Modal, Progress, Tag } from 'antd';
-import { useMemo, useState } from 'react';
-import type { CharacterData } from '../../../../services/gameSocket';
-import { getMonthCardStatus } from '../../../../services/api';
+import { App, Button, Modal, Progress, Tag } from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  claimAchievementPointsReward,
+  claimAchievementReward,
+  equipTitle,
+  getAchievementList,
+  getAchievementPointsRewards,
+  getTitleList,
+  resolveAssetUrl,
+  type AchievementItemDto,
+  type AchievementPointRewardDto,
+  type AchievementRewardView,
+  type TitleInfoDto,
+} from '../../../../services/api';
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import './index.scss';
 
 interface AchievementModalProps {
   open: boolean;
   onClose: () => void;
-  character: CharacterData | null;
-  inTeam: boolean;
+  onChanged?: () => void;
 }
 
-type AchievementTab = 'growth' | 'combat' | 'explore' | 'social';
+type AchievementTab = 'all' | 'combat' | 'cultivation' | 'exploration' | 'social' | 'collection';
 
-type AchievementReward = {
+type RewardViewModel = {
   id: string;
   name: string;
   icon: string;
-  amount: number;
+  amountText: string;
 };
 
-type AchievementDef = {
-  id: string;
-  tab: AchievementTab;
-  title: string;
-  desc: string;
-  reward: AchievementReward[];
-  progress: (ctx: AchievementContext) => { current: number; target: number };
-};
-
-type AchievementContext = {
-  character: CharacterData | null;
-  inTeam: boolean;
-  counters: Record<string, number>;
-  monthCardActive: boolean;
-};
-
-const storageKeys = {
-  claimed: 'achievement_claimed',
-  counters: 'achievement_counters',
-};
-
-const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-
-const readJson = <T,>(key: string, fallback: T): T => {
-  const raw = localStorage.getItem(key);
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
+const resolveRewardView = (reward: AchievementRewardView, index: number): RewardViewModel | null => {
+  if (!reward) return null;
+  if (reward.type === 'item') {
+    const itemName = reward.itemName || reward.itemDefId || '物品';
+    const icon = reward.itemIcon ? resolveAssetUrl(reward.itemIcon) : coin01;
+    const qty = typeof reward.qty === 'number' ? Math.max(1, Math.floor(reward.qty)) : 1;
+    return {
+      id: `${reward.type}:${reward.itemDefId || index}`,
+      name: itemName,
+      icon: icon || coin01,
+      amountText: `×${qty.toLocaleString()}`,
+    };
   }
+
+  const amount = typeof reward.amount === 'number' ? Math.max(0, Math.floor(reward.amount)) : 0;
+  const name = reward.type === 'silver' ? '银两' : reward.type === 'spirit_stones' ? '灵石' : '经验';
+  return {
+    id: `${reward.type}:${index}`,
+    name,
+    icon: coin01,
+    amountText: `×${amount.toLocaleString()}`,
+  };
 };
 
-const writeJson = (key: string, v: unknown) => {
-  localStorage.setItem(key, JSON.stringify(v));
-};
-
-const normalizeRealm = (realm: string) => {
-  const s = String(realm || '').trim();
-  if (!s) return '';
-  if (realmRank[s] != null) return s;
-  if (realmMajorToFirst[s]) return realmMajorToFirst[s];
-  if (realmSubToFull[s]) return realmSubToFull[s];
-  return s;
-};
-
-const realmOrder = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-] as const;
-const realmRank: Record<string, number> = realmOrder.reduce((acc, r, idx) => ({ ...acc, [r]: idx }), {});
-const realmMajorToFirst: Record<string, (typeof realmOrder)[number]> = {
-  凡人: '凡人',
-  炼精化炁: '炼精化炁·养气期',
-  炼炁化神: '炼炁化神·炼己期',
-  炼神返虚: '炼神返虚·养神期',
-  炼虚合道: '炼虚合道·证道期',
-};
-const realmSubToFull: Record<string, (typeof realmOrder)[number]> = {
-  养气期: '炼精化炁·养气期',
-  通脉期: '炼精化炁·通脉期',
-  凝炁期: '炼精化炁·凝炁期',
-  炼己期: '炼炁化神·炼己期',
-  采药期: '炼炁化神·采药期',
-  结胎期: '炼炁化神·结胎期',
-  养神期: '炼神返虚·养神期',
-  还虚期: '炼神返虚·还虚期',
-  合道期: '炼神返虚·合道期',
-  证道期: '炼虚合道·证道期',
-  历劫期: '炼虚合道·历劫期',
-  成圣期: '炼虚合道·成圣期',
-};
-
-const realmAtLeast = (realm: string, target: (typeof realmOrder)[number]) => {
-  const cur = realmRank[normalizeRealm(realm)] ?? -1;
-  const need = realmRank[target] ?? 999;
-  return cur >= need;
-};
-
-const buildAchievementDefs = (): AchievementDef[] => [
-  {
-    id: 'growth-realm-001',
-    tab: 'growth',
-    title: '踏入养气',
-    desc: '境界达到 炼精化炁·养气期',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 1000 }],
-    progress: (ctx) => ({ current: realmAtLeast(ctx.character?.realm ?? '', '炼精化炁·养气期') ? 1 : 0, target: 1 }),
-  },
-  {
-    id: 'growth-realm-002',
-    tab: 'growth',
-    title: '通脉有成',
-    desc: '境界达到 炼精化炁·通脉期',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 2000 }],
-    progress: (ctx) => ({ current: realmAtLeast(ctx.character?.realm ?? '', '炼精化炁·通脉期') ? 1 : 0, target: 1 }),
-  },
-  {
-    id: 'growth-coin-001',
-    tab: 'growth',
-    title: '小富即安',
-    desc: '拥有 10,000 灵石',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 500 }],
-    progress: (ctx) => ({ current: ctx.character?.spiritStones ?? 0, target: 10000 }),
-  },
-  {
-    id: 'growth-exp-001',
-    tab: 'growth',
-    title: '修为精进',
-    desc: '累计修为经验达到 100,000',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 1200 }],
-    progress: (ctx) => ({ current: ctx.character?.exp ?? 0, target: 100000 }),
-  },
-  {
-    id: 'combat-battle-001',
-    tab: 'combat',
-    title: '初试锋芒',
-    desc: '发起战斗 10 次',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 800 }],
-    progress: (ctx) => ({ current: ctx.counters.battle ?? 0, target: 10 }),
-  },
-  {
-    id: 'combat-battle-002',
-    tab: 'combat',
-    title: '百战成钢',
-    desc: '发起战斗 50 次',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 1800 }],
-    progress: (ctx) => ({ current: ctx.counters.battle ?? 0, target: 50 }),
-  },
-  {
-    id: 'explore-dungeon-001',
-    tab: 'explore',
-    title: '秘境常客',
-    desc: '打开秘境 5 次',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 700 }],
-    progress: (ctx) => ({ current: ctx.counters.dungeonOpen ?? 0, target: 5 }),
-  },
-  {
-    id: 'explore-map-001',
-    tab: 'explore',
-    title: '踏遍九州',
-    desc: '打开地图 10 次',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 900 }],
-    progress: (ctx) => ({ current: ctx.counters.mapOpen ?? 0, target: 10 }),
-  },
-  {
-    id: 'social-team-001',
-    tab: 'social',
-    title: '并肩作战',
-    desc: '加入一个队伍',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 600 }],
-    progress: (ctx) => ({ current: ctx.inTeam ? 1 : 0, target: 1 }),
-  },
-  {
-    id: 'social-monthcard-001',
-    tab: 'social',
-    title: '月卡福利',
-    desc: '解锁一次月卡',
-    reward: [{ id: 'sr', name: '灵石', icon: coin01, amount: 1000 }],
-    progress: (ctx) => ({ current: ctx.monthCardActive ? 1 : 0, target: 1 }),
-  },
+const tabs: Array<{ key: AchievementTab; label: string }> = [
+  { key: 'all', label: '全部成就' },
+  { key: 'combat', label: '战斗成就' },
+  { key: 'cultivation', label: '修炼成就' },
+  { key: 'exploration', label: '探索成就' },
+  { key: 'social', label: '社交成就' },
+  { key: 'collection', label: '收集成就' },
 ];
 
-const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, character, inTeam }) => {
-  const defs = useMemo(() => buildAchievementDefs(), []);
+const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, onChanged }) => {
+  const { message } = App.useApp();
 
-  const [tab, setTab] = useState<AchievementTab>('growth');
-  const [claimed, setClaimed] = useState<string[]>([]);
-  const [counters, setCounters] = useState<Record<string, number>>({});
-  const [monthCardActive, setMonthCardActive] = useState(false);
+  const [tab, setTab] = useState<AchievementTab>('all');
+  const [loading, setLoading] = useState(false);
+  const [achievements, setAchievements] = useState<AchievementItemDto[]>([]);
+  const [pointsInfo, setPointsInfo] = useState({
+    total: 0,
+    byCategory: { combat: 0, cultivation: 0, exploration: 0, social: 0, collection: 0 },
+  });
+  const [pointRewards, setPointRewards] = useState<AchievementPointRewardDto[]>([]);
+  const [titles, setTitles] = useState<TitleInfoDto[]>([]);
+  const [claimingId, setClaimingId] = useState('');
+  const [claimingPointThreshold, setClaimingPointThreshold] = useState<number | null>(null);
+  const [equippingTitleId, setEquippingTitleId] = useState('');
 
-  const ctx: AchievementContext = useMemo(
-    () => ({
-      character,
-      inTeam,
-      counters,
-      monthCardActive,
-    }),
-    [character, counters, inTeam, monthCardActive],
-  );
+  const refreshData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const category = tab === 'all' ? undefined : tab;
+      const [listRes, pointsRewardRes, titleRes] = await Promise.all([
+        getAchievementList({ category, page: 1, limit: 200 }),
+        getAchievementPointsRewards(),
+        getTitleList(),
+      ]);
 
-  const byTab = useMemo(() => defs.filter((d) => d.tab === tab), [defs, tab]);
+      if (listRes.success && listRes.data) {
+        setAchievements(Array.isArray(listRes.data.achievements) ? listRes.data.achievements : []);
+        setPointsInfo(listRes.data.points || {
+          total: 0,
+          byCategory: { combat: 0, cultivation: 0, exploration: 0, social: 0, collection: 0 },
+        });
+      } else {
+        setAchievements([]);
+      }
 
-  const computed = useMemo(() => {
-    return byTab.map((d) => {
-      const p = d.progress(ctx);
-      const current = clamp(p.current, 0, Number.isFinite(p.target) ? p.target : 0);
-      const target = Math.max(0, Number(p.target) || 0);
-      const percent = target > 0 ? clamp((current / target) * 100, 0, 100) : 0;
-      const done = target > 0 ? current >= target : false;
-      const isClaimed = claimed.includes(d.id);
-      return { def: d, current, target, percent, done, isClaimed };
-    });
-  }, [byTab, claimed, ctx]);
+      if (pointsRewardRes.success && pointsRewardRes.data) {
+        setPointRewards(Array.isArray(pointsRewardRes.data.rewards) ? pointsRewardRes.data.rewards : []);
+      } else {
+        setPointRewards([]);
+      }
+
+      if (titleRes.success && titleRes.data) {
+        setTitles(Array.isArray(titleRes.data.titles) ? titleRes.data.titles : []);
+      } else {
+        setTitles([]);
+      }
+    } catch {
+      setAchievements([]);
+      setPointRewards([]);
+      setTitles([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshData();
+  }, [open, refreshData]);
 
   const overall = useMemo(() => {
-    const rows = defs.map((d) => {
-      const p = d.progress(ctx);
-      const current = clamp(p.current, 0, Number.isFinite(p.target) ? p.target : 0);
-      const target = Math.max(0, Number(p.target) || 0);
-      const done = target > 0 ? current >= target : false;
-      const isClaimed = claimed.includes(d.id);
-      return { done, isClaimed };
-    });
-    const total = rows.length;
-    const doneCount = rows.filter((r) => r.done).length;
-    const claimedCount = rows.filter((r) => r.isClaimed).length;
+    const total = achievements.length;
+    const doneCount = achievements.filter((a) => a.progress?.done).length;
+    const claimedCount = achievements.filter((a) => a.status === 'claimed').length;
     return { total, doneCount, claimedCount };
-  }, [claimed, ctx, defs]);
+  }, [achievements]);
 
-  const leftItems = useMemo(
-    () => [
-      { key: 'growth' as const, label: '成长成就' },
-      { key: 'combat' as const, label: '战斗成就' },
-      { key: 'explore' as const, label: '探索成就' },
-      { key: 'social' as const, label: '社交成就' },
-    ],
-    [],
+  const claimAchievement = useCallback(
+    async (id: string) => {
+      if (!id) return;
+      setClaimingId(id);
+      try {
+        const res = await claimAchievementReward(id);
+        if (!res.success) {
+          message.error(res.message || '领取失败');
+          return;
+        }
+        message.success('领取成功');
+        await refreshData();
+        onChanged?.();
+      } catch {
+        message.error('领取失败');
+      } finally {
+        setClaimingId('');
+      }
+    },
+    [message, onChanged, refreshData],
   );
 
-  const claim = (id: string, done: boolean) => {
-    if (!id) return;
-    if (!done) return;
-    if (claimed.includes(id)) return;
-    const next = [...claimed, id];
-    writeJson(storageKeys.claimed, next);
-    setClaimed(next);
-  };
+  const claimPointReward = useCallback(
+    async (threshold: number) => {
+      setClaimingPointThreshold(threshold);
+      try {
+        const res = await claimAchievementPointsReward(threshold);
+        if (!res.success) {
+          message.error(res.message || '领取失败');
+          return;
+        }
+        message.success('点数奖励领取成功');
+        await refreshData();
+        onChanged?.();
+      } catch {
+        message.error('领取失败');
+      } finally {
+        setClaimingPointThreshold(null);
+      }
+    },
+    [message, onChanged, refreshData],
+  );
+
+  const equipTitleAction = useCallback(
+    async (titleId: string) => {
+      if (!titleId) return;
+      setEquippingTitleId(titleId);
+      try {
+        const res = await equipTitle(titleId);
+        if (!res.success) {
+          message.error(res.message || '装备失败');
+          return;
+        }
+        message.success('已装备称号');
+        await refreshData();
+        onChanged?.();
+      } catch {
+        message.error('装备失败');
+      } finally {
+        setEquippingTitleId('');
+      }
+    },
+    [message, onChanged, refreshData],
+  );
+
+  const sortedTitles = useMemo(() => {
+    const list = [...titles];
+    list.sort((a, b) => {
+      if (a.isEquipped && !b.isEquipped) return -1;
+      if (!a.isEquipped && b.isEquipped) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [titles]);
 
   return (
     <Modal
@@ -273,20 +220,7 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, char
       maskClosable
       afterOpenChange={(visible) => {
         if (!visible) return;
-        const claimedIds = readJson<string[]>(storageKeys.claimed, []);
-        const c = readJson<Record<string, number>>(storageKeys.counters, {});
-        setClaimed(Array.isArray(claimedIds) ? claimedIds.filter((x) => typeof x === 'string') : []);
-        setCounters(c);
-        setMonthCardActive(false);
-        void (async () => {
-          try {
-            const res = await getMonthCardStatus('monthcard-001');
-            if (res.success && res.data) setMonthCardActive(Boolean(res.data.active));
-          } catch {
-            setMonthCardActive(false);
-          }
-        })();
-        setTab('growth');
+        setTab('all');
       }}
     >
       <div className="achievement-shell">
@@ -296,14 +230,14 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, char
             <div className="achievement-left-name">成就</div>
           </div>
           <div className="achievement-left-list">
-            {leftItems.map((it) => (
+            {tabs.map((item) => (
               <Button
-                key={it.key}
-                type={tab === it.key ? 'primary' : 'default'}
+                key={item.key}
+                type={tab === item.key ? 'primary' : 'default'}
                 className="achievement-left-item"
-                onClick={() => setTab(it.key)}
+                onClick={() => setTab(item.key)}
               >
-                {it.label}
+                {item.label}
               </Button>
             ))}
           </div>
@@ -313,18 +247,19 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, char
           <div className="achievement-pane">
             <div className="achievement-pane-top">
               <div className="achievement-top-row">
-                <div className="achievement-title">{leftItems.find((x) => x.key === tab)?.label ?? '成就'}</div>
+                <div className="achievement-title">{tabs.find((x) => x.key === tab)?.label ?? '成就'}</div>
                 <div className="achievement-tags">
-                  <Tag color="blue">
-                    已达成 {overall.doneCount}/{overall.total}
-                  </Tag>
+                  <Tag color="blue">当前点数 {pointsInfo.total.toLocaleString()}</Tag>
                   <Tag color="green">
+                    已完成 {overall.doneCount}/{overall.total}
+                  </Tag>
+                  <Tag color="purple">
                     已领取 {overall.claimedCount}/{overall.total}
                   </Tag>
                 </div>
               </div>
               <div className="achievement-top-progress">
-                <div className="achievement-progress-left">进度</div>
+                <div className="achievement-progress-left">分类进度</div>
                 <div className="achievement-progress-right">
                   <Progress
                     percent={overall.total > 0 ? (overall.doneCount / overall.total) * 100 : 0}
@@ -337,36 +272,47 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, char
 
             <div className="achievement-pane-body">
               <div className="achievement-list">
-                {computed.map((row) => {
-                  const claimable = row.done && !row.isClaimed;
+                {achievements.map((row) => {
+                  const claimable = row.claimable && row.status !== 'claimed';
+                  const rewardRows = row.rewards
+                    .map((reward, index) => resolveRewardView(reward, index))
+                    .filter((item): item is RewardViewModel => item !== null);
                   return (
-                    <div key={row.def.id} className="achievement-item">
+                    <div key={row.id} className="achievement-item">
                       <div className="achievement-item-main">
                         <div className="achievement-item-top">
-                          <div className="achievement-item-title">{row.def.title}</div>
+                          <div className="achievement-item-title">{row.name}</div>
                           <div className="achievement-item-tags">
-                            {row.isClaimed ? (
+                            {row.status === 'claimed' ? (
                               <Tag color="green">已领取</Tag>
                             ) : claimable ? (
                               <Tag color="blue">可领取</Tag>
+                            ) : row.progress?.done ? (
+                              <Tag color="gold">已完成</Tag>
                             ) : (
                               <Tag>进行中</Tag>
                             )}
+                            <Tag>{row.rarity}</Tag>
+                            <Tag color="cyan">+{row.points}点</Tag>
                           </div>
                         </div>
-                        <div className="achievement-item-desc">{row.def.desc}</div>
+                        <div className="achievement-item-desc">{row.description}</div>
                         <div className="achievement-item-progress">
-                          <Progress percent={row.percent} showInfo={false} strokeColor="var(--primary-color)" />
+                          <Progress
+                            percent={typeof row.progress?.percent === 'number' ? row.progress.percent : 0}
+                            showInfo={false}
+                            strokeColor="var(--primary-color)"
+                          />
                           <div className="achievement-item-progress-meta">
-                            {row.current.toLocaleString()}/{row.target.toLocaleString()}
+                            {(row.progress?.current ?? 0).toLocaleString()}/{(row.progress?.target ?? 0).toLocaleString()}
                           </div>
                         </div>
                         <div className="achievement-rewards">
-                          {row.def.reward.map((r) => (
-                            <div key={r.id} className="achievement-reward">
-                              <img className="achievement-reward-icon" src={r.icon} alt={r.name} />
-                              <div className="achievement-reward-name">{r.name}</div>
-                              <div className="achievement-reward-amount">×{r.amount.toLocaleString()}</div>
+                          {rewardRows.map((reward) => (
+                            <div key={reward.id} className="achievement-reward">
+                              <img className="achievement-reward-icon" src={reward.icon} alt={reward.name} />
+                              <div className="achievement-reward-name">{reward.name}</div>
+                              <div className="achievement-reward-amount">{reward.amountText}</div>
                             </div>
                           ))}
                         </div>
@@ -376,16 +322,92 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, char
                           type="primary"
                           size="small"
                           className="achievement-claim-btn"
-                          disabled={!claimable}
-                          onClick={() => claim(row.def.id, row.done)}
+                          disabled={!claimable || loading}
+                          loading={claimingId === row.id}
+                          onClick={() => void claimAchievement(row.id)}
                         >
-                          {row.isClaimed ? '已领取' : '领取'}
+                          {row.status === 'claimed' ? '已领取' : '领取'}
                         </Button>
                       </div>
                     </div>
                   );
                 })}
-                {computed.length === 0 ? <div className="achievement-empty">暂无成就</div> : null}
+                {loading ? <div className="achievement-empty">加载中...</div> : null}
+                {!loading && achievements.length === 0 ? <div className="achievement-empty">暂无成就</div> : null}
+              </div>
+
+              <div className="achievement-section-title">成就点奖励</div>
+              <div className="achievement-points-list">
+                {pointRewards.map((row) => {
+                  const rewardRows = row.rewards
+                    .map((reward, index) => resolveRewardView(reward, index))
+                    .filter((item): item is RewardViewModel => item !== null);
+                  return (
+                    <div key={row.id} className="achievement-points-item">
+                      <div className="achievement-points-main">
+                        <div className="achievement-points-top">
+                          <div className="achievement-points-name">{row.name}</div>
+                          <Tag color="geekblue">{row.threshold} 点</Tag>
+                        </div>
+                        <div className="achievement-item-desc">{row.description}</div>
+                        <div className="achievement-rewards">
+                          {rewardRows.map((reward) => (
+                            <div key={reward.id} className="achievement-reward">
+                              <img className="achievement-reward-icon" src={reward.icon} alt={reward.name} />
+                              <div className="achievement-reward-name">{reward.name}</div>
+                              <div className="achievement-reward-amount">{reward.amountText}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="achievement-item-right">
+                        <Button
+                          type="primary"
+                          size="small"
+                          disabled={!row.claimable || row.claimed || loading}
+                          loading={claimingPointThreshold === row.threshold}
+                          onClick={() => void claimPointReward(row.threshold)}
+                        >
+                          {row.claimed ? '已领取' : row.claimable ? '领取' : '未达成'}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!loading && pointRewards.length === 0 ? <div className="achievement-empty">暂无点数奖励</div> : null}
+              </div>
+
+              <div className="achievement-section-title">称号</div>
+              <div className="achievement-title-list">
+                {sortedTitles.map((title) => {
+                  const effectsText = Object.entries(title.effects || {})
+                    .map(([key, value]) => `${key}+${value}`)
+                    .join('，');
+                  return (
+                    <div key={title.id} className="achievement-title-item">
+                      <div className="achievement-title-main">
+                        <div className="achievement-title-top">
+                          <div className="achievement-title-name">{title.name}</div>
+                          <Tag color={title.color || 'blue'}>{title.rarity}</Tag>
+                        </div>
+                        <div className="achievement-item-desc">{title.description}</div>
+                        <div className="achievement-item-desc">{effectsText || '无属性加成'}</div>
+                      </div>
+                      <div className="achievement-item-right">
+                        <Button
+                          type={title.isEquipped ? 'default' : 'primary'}
+                          size="small"
+                          disabled={title.isEquipped || loading}
+                          loading={equippingTitleId === title.id}
+                          onClick={() => void equipTitleAction(title.id)}
+                        >
+                          {title.isEquipped ? '已装备' : '装备'}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!loading && sortedTitles.length === 0 ? <div className="achievement-empty">暂无称号</div> : null}
               </div>
             </div>
           </div>

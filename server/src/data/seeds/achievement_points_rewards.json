@@ -1,0 +1,44 @@
+{
+  "rewards": [
+    {
+      "id": "apr-100",
+      "points_threshold": 100,
+      "name": "成就点奖励 I",
+      "description": "累计成就点达到 100",
+      "rewards": [
+        { "type": "silver", "amount": 2000 },
+        { "type": "item", "item_def_id": "mat-gongfa-canye", "qty": 5 }
+      ],
+      "enabled": true,
+      "sort_weight": 100,
+      "version": 1
+    },
+    {
+      "id": "apr-300",
+      "points_threshold": 300,
+      "name": "成就点奖励 II",
+      "description": "累计成就点达到 300",
+      "rewards": [
+        { "type": "spirit_stones", "amount": 120 },
+        { "type": "item", "item_def_id": "mat-lingcao", "qty": 8 }
+      ],
+      "enabled": true,
+      "sort_weight": 300,
+      "version": 1
+    },
+    {
+      "id": "apr-600",
+      "points_threshold": 600,
+      "name": "成就点奖励 III",
+      "description": "累计成就点达到 600",
+      "rewards": [
+        { "type": "spirit_stones", "amount": 260 },
+        { "type": "silver", "amount": 10000 }
+      ],
+      "title_id": "title-achievement-elite",
+      "enabled": true,
+      "sort_weight": 600,
+      "version": 1
+    }
+  ]
+}

@@ -38,6 +38,7 @@ import {
   getTaskOverview,
   npcTalk,
   getSignInOverview,
+  getAchievementList,
   nextDungeonInstance,
   startDungeonInstance,
   submitTaskToNpc,
@@ -679,6 +680,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [arenaModalOpen, setArenaModalOpen] = useState(false);
   const [rankModalOpen, setRankModalOpen] = useState(false);
   const [achievementModalOpen, setAchievementModalOpen] = useState(false);
+  const [achievementClaimableCount, setAchievementClaimableCount] = useState(0);
   const [realmModalOpen, setRealmModalOpen] = useState(false);
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [showSignInDot, setShowSignInDot] = useState(false);
@@ -1411,6 +1413,27 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     return () => window.clearTimeout(t);
   }, [refreshSignInDot]);
 
+  const refreshAchievementIndicator = useCallback(async () => {
+    try {
+      const res = await getAchievementList({ status: 'claimable', page: 1, limit: 1 });
+      if (!res.success || !res.data) {
+        setAchievementClaimableCount(0);
+        return;
+      }
+      const total = typeof res.data.total === 'number' ? Math.max(0, Math.floor(res.data.total)) : 0;
+      setAchievementClaimableCount(total);
+    } catch {
+      setAchievementClaimableCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void refreshAchievementIndicator();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [refreshAchievementIndicator]);
+
   const spiritStones = character?.spiritStones || 0;
   const silver = character?.silver || 0;
   const playerName = character?.nickname || '我';
@@ -1418,31 +1441,21 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const isFemale = genderValue === 'female' || genderValue === 'f' || genderValue === '女';
   const equipPortrait = isFemale ? equipFemale : equipMale;
   const functionIndicators: Record<string, { badgeCount?: number; badgeDot?: boolean; tooltip?: string }> | undefined = useMemo(() => {
-    if (!isTeamLeader || teamApplicationUnread <= 0) return undefined;
-    return {
-      team: {
+    const out: Record<string, { badgeCount?: number; badgeDot?: boolean; tooltip?: string }> = {};
+    if (isTeamLeader && teamApplicationUnread > 0) {
+      out.team = {
         badgeCount: teamApplicationUnread,
         tooltip: `有${teamApplicationUnread}个入队申请待处理`,
-      },
-    };
-  }, [isTeamLeader, teamApplicationUnread]);
-
-  const incAchievementCounter = (counterKey: string, delta = 1) => {
-    const storageKey = 'achievement_counters';
-    const raw = localStorage.getItem(storageKey);
-    let obj: Record<string, number> = {};
-    if (raw) {
-      try {
-        obj = JSON.parse(raw) as Record<string, number>;
-      } catch {
-        obj = {};
-      }
+      };
     }
-    const cur = Number(obj[counterKey] ?? 0);
-    const next = (Number.isFinite(cur) ? cur : 0) + delta;
-    obj[counterKey] = next;
-    localStorage.setItem(storageKey, JSON.stringify(obj));
-  };
+    if (achievementClaimableCount > 0) {
+      out.achievement = {
+        badgeCount: achievementClaimableCount,
+        tooltip: `有${achievementClaimableCount}个成就奖励可领取`,
+      };
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }, [achievementClaimableCount, isTeamLeader, teamApplicationUnread]);
 
   const handleInfoAction = (action: string, target: InfoTarget) => {
     if (action === 'attack') {
@@ -1450,7 +1463,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         messageRef.current.error('组队中只有队长可以发起战斗');
         return;
       }
-      incAchievementCounter('battle', 1);
       setBattleEnemies(buildEnemyGroup(target));
       setBattleAllies(buildAllyGroup(character));
       setViewMode('battle');
@@ -1732,12 +1744,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
               indicators={functionIndicators}
               onAction={(key) => {
                 if (key === 'map') {
-                  incAchievementCounter('mapOpen', 1);
                   setMapModalCategory('world');
                   setMapModalOpen(true);
                 }
                 if (key === 'dungeon') {
-                  incAchievementCounter('dungeonOpen', 1);
                   setMapModalCategory('dungeon');
                   setMapModalOpen(true);
                 }
@@ -1755,7 +1765,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                 if (key === 'battlepass') setBattlePassModalOpen(true);
                 if (key === 'arena') setArenaModalOpen(true);
                 if (key === 'rank') setRankModalOpen(true);
-                if (key === 'achievement') setAchievementModalOpen(true);
+                if (key === 'achievement') {
+                  setAchievementModalOpen(true);
+                  void refreshAchievementIndicator();
+                }
                 if (key === 'character') setPlayerInfoOpen(true);
               }}
             />
@@ -2408,8 +2421,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         <AchievementModal
           open={achievementModalOpen}
           onClose={() => setAchievementModalOpen(false)}
-          character={character}
-          inTeam={inTeam}
+          onChanged={() => {
+            void refreshAchievementIndicator();
+            gameSocket.refreshCharacter();
+          }}
         />
       )}
       {realmModalOpen && (

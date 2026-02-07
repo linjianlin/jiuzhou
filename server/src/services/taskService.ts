@@ -2,6 +2,7 @@ import { pool, query } from '../config/database.js';
 import { createItem } from './itemService.js';
 import type { PoolClient } from 'pg';
 import { updateSectionProgress } from './mainQuestService.js';
+import { updateAchievementProgress } from './achievementService.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -948,6 +949,9 @@ export const recordTalkNpcEvent = async (characterId: number, npcId: string): Pr
   try {
     await updateSectionProgress(characterId, { type: 'talk_npc', npcId: nid });
   } catch {}
+  try {
+    await updateAchievementProgress(characterId, `talk:npc:${nid}`, 1);
+  } catch {}
 };
 
 export const recordKillMonsterEvent = async (characterId: number, monsterId: string, count: number): Promise<void> => {
@@ -957,6 +961,9 @@ export const recordKillMonsterEvent = async (characterId: number, monsterId: str
   await applyTaskEvent(characterId, { type: 'kill_monster', monsterId: mid, count: c });
   try {
     await updateSectionProgress(characterId, { type: 'kill_monster', monsterId: mid, count: c });
+  } catch {}
+  try {
+    await updateAchievementProgress(characterId, `kill:monster:${mid}`, c);
   } catch {}
 };
 
@@ -969,6 +976,10 @@ export const recordGatherResourceEvent = async (characterId: number, resourceId:
     await updateSectionProgress(characterId, { type: 'gather_resource', resourceId: rid, count: c });
     await updateSectionProgress(characterId, { type: 'collect', itemId: rid, count: c });
   } catch {}
+  try {
+    await updateAchievementProgress(characterId, `gather:resource:${rid}`, c);
+    await updateAchievementProgress(characterId, `item:obtain:${rid}`, c);
+  } catch {}
 };
 
 export const recordCollectItemEvent = async (characterId: number, itemId: string, count: number): Promise<void> => {
@@ -977,6 +988,9 @@ export const recordCollectItemEvent = async (characterId: number, itemId: string
   const c = Math.max(1, Math.floor(Number(count)));
   try {
     await updateSectionProgress(characterId, { type: 'collect', itemId: iid, count: c });
+  } catch {}
+  try {
+    await updateAchievementProgress(characterId, `item:obtain:${iid}`, c);
   } catch {}
 };
 

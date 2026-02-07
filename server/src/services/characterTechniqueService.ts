@@ -5,6 +5,7 @@
 import { query, pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { updateSectionProgress } from './mainQuestService.js';
+import { updateAchievementProgress } from './achievementService.js';
 import { isCharacterInBattle } from './battleService.js';
 
 // ============================================
@@ -424,7 +425,12 @@ export const upgradeTechnique = async (
     } catch (error) {
       console.error('更新主线功法升级目标失败:', error);
     }
-    
+    try {
+      await updateAchievementProgress(characterId, 'skill:level:any', 1);
+      await updateAchievementProgress(characterId, `skill:level:layer:${nextLayer}`, 1);
+      await updateAchievementProgress(characterId, `skill:level:${techniqueId}`, 1);
+    } catch {}
+
     return {
       success: true,
       message: `${techName}修炼至第${nextLayer}层`,

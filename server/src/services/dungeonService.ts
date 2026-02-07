@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from './battleService.js';
 import { createItem, type CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
+import { updateAchievementProgress } from './achievementService.js';
 import type { PoolClient } from 'pg';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
@@ -1338,6 +1339,14 @@ export const nextDungeonInstance = async (
           [p.characterId, inst.dungeon_id, inst.difficulty_id, instanceId, timeSpentSec, totalDamage, deathCount, JSON.stringify({})]
         );
       }
+
+      try {
+        for (const p of participants) {
+          const characterId = Number(p.characterId);
+          if (!Number.isFinite(characterId) || characterId <= 0) continue;
+          await updateAchievementProgress(characterId, `dungeon:clear:${inst.dungeon_id}`, 1);
+        }
+      } catch {}
 
       return { success: true, data: { instanceId, status: 'cleared', finished: true } };
     }

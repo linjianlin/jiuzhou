@@ -662,6 +662,187 @@ export const submitTaskToNpc = (npcId: string, taskId: string): Promise<NpcSubmi
   return api.post('/task/npc/submit', { npcId, taskId });
 };
 
+export type AchievementListStatus = 'in_progress' | 'completed' | 'claimed' | 'claimable' | 'all';
+
+export type AchievementTrackType = 'counter' | 'flag' | 'multi';
+
+export type AchievementRewardView =
+  | { type: 'silver' | 'spirit_stones' | 'exp'; amount: number }
+  | { type: 'item'; itemDefId: string; qty: number; itemName?: string; itemIcon?: string | null };
+
+export type AchievementItemDto = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  rarity: string;
+  points: number;
+  icon: string | null;
+  hidden: boolean;
+  status: 'in_progress' | 'completed' | 'claimed';
+  claimable: boolean;
+  trackType: AchievementTrackType;
+  trackKey: string;
+  progress: {
+    current: number;
+    target: number;
+    percent: number;
+    done: boolean;
+    status: 'in_progress' | 'completed' | 'claimed';
+    progressData?: Record<string, number | boolean | string>;
+  };
+  rewards: AchievementRewardView[];
+  titleId: string | null;
+  sortWeight: number;
+};
+
+export type AchievementPointsInfoDto = {
+  total: number;
+  byCategory: {
+    combat: number;
+    cultivation: number;
+    exploration: number;
+    social: number;
+    collection: number;
+  };
+};
+
+export type AchievementListResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    achievements: AchievementItemDto[];
+    total: number;
+    page: number;
+    limit: number;
+    points: AchievementPointsInfoDto;
+  };
+};
+
+export const getAchievementList = (params?: {
+  category?: string;
+  status?: AchievementListStatus;
+  page?: number;
+  limit?: number;
+}): Promise<AchievementListResponse> => {
+  return api.get('/achievement/list', { params });
+};
+
+export type AchievementDetailResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    achievement: AchievementItemDto;
+    progress: AchievementItemDto['progress'];
+  };
+};
+
+export const getAchievementDetail = (achievementId: string): Promise<AchievementDetailResponse> => {
+  return api.get(`/achievement/${achievementId}`);
+};
+
+export type ClaimAchievementResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    achievementId: string;
+    rewards: AchievementRewardView[];
+    title?: {
+      id: string;
+      name: string;
+      rarity: string;
+      color: string | null;
+      icon: string | null;
+    };
+  };
+};
+
+export const claimAchievementReward = (achievementId: string): Promise<ClaimAchievementResponse> => {
+  return api.post('/achievement/claim', { achievementId });
+};
+
+export type AchievementPointRewardDto = {
+  id: string;
+  threshold: number;
+  name: string;
+  description: string;
+  rewards: AchievementRewardView[];
+  title?: {
+    id: string;
+    name: string;
+    rarity: string;
+    color: string | null;
+    icon: string | null;
+  };
+  claimable: boolean;
+  claimed: boolean;
+};
+
+export type AchievementPointsRewardListResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    totalPoints: number;
+    claimedThresholds: number[];
+    rewards: AchievementPointRewardDto[];
+  };
+};
+
+export const getAchievementPointsRewards = (): Promise<AchievementPointsRewardListResponse> => {
+  return api.get('/achievement/points/rewards');
+};
+
+export type ClaimAchievementPointsRewardResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    threshold: number;
+    rewards: AchievementRewardView[];
+    title?: {
+      id: string;
+      name: string;
+      rarity: string;
+      color: string | null;
+      icon: string | null;
+    };
+  };
+};
+
+export const claimAchievementPointsReward = (threshold: number): Promise<ClaimAchievementPointsRewardResponse> => {
+  return api.post('/achievement/points/claim', { threshold });
+};
+
+export type TitleInfoDto = {
+  id: string;
+  name: string;
+  description: string;
+  rarity: string;
+  color: string | null;
+  icon: string | null;
+  effects: Record<string, number>;
+  isEquipped: boolean;
+  obtainedAt: string;
+};
+
+export type TitleListResponse = {
+  success: boolean;
+  message: string;
+  data?: { titles: TitleInfoDto[]; equipped: string };
+};
+
+export const getTitleList = (): Promise<TitleListResponse> => {
+  return api.get('/title/list');
+};
+
+export type EquipTitleResponse = {
+  success: boolean;
+  message: string;
+};
+
+export const equipTitle = (titleId: string): Promise<EquipTitleResponse> => {
+  return api.post('/title/equip', { titleId });
+};
+
 export interface MonthCardUseItemResponse {
   success: boolean;
   message: string;

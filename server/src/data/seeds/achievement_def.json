@@ -1,0 +1,289 @@
+{
+  "achievements": [
+    {
+      "id": "ach-kill-rabbit-10",
+      "name": "初试锋芒",
+      "description": "击杀任意怪物 10 次",
+      "category": "combat",
+      "rarity": "common",
+      "points": 20,
+      "track_type": "counter",
+      "track_key": "kill:monster:*",
+      "target_value": 10,
+      "rewards": [
+        { "type": "silver", "amount": 300 },
+        { "type": "spirit_stones", "amount": 15 }
+      ],
+      "sort_weight": 1000,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-kill-rabbit-30",
+      "name": "猎兔老手",
+      "description": "击杀野兔 30 次",
+      "category": "combat",
+      "rarity": "uncommon",
+      "points": 40,
+      "prerequisite_id": "ach-kill-rabbit-10",
+      "track_type": "counter",
+      "track_key": "kill:monster:monster-wild-rabbit",
+      "target_value": 30,
+      "rewards": [
+        { "type": "silver", "amount": 600 },
+        { "type": "item", "item_def_id": "mat-gongfa-canye", "qty": 3 }
+      ],
+      "title_id": "title-rabbit-hunter",
+      "sort_weight": 980,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-gather-herb-20",
+      "name": "采药有道",
+      "description": "采集任意资源 20 次",
+      "category": "collection",
+      "rarity": "common",
+      "points": 30,
+      "track_type": "counter",
+      "track_key": "gather:resource:*",
+      "target_value": 20,
+      "rewards": [
+        { "type": "silver", "amount": 500 }
+      ],
+      "sort_weight": 960,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-item-obtain-20",
+      "name": "囤积癖",
+      "description": "获得任意物品 20 次",
+      "category": "collection",
+      "rarity": "common",
+      "points": 30,
+      "track_type": "counter",
+      "track_key": "item:obtain:*",
+      "target_value": 20,
+      "rewards": [
+        { "type": "spirit_stones", "amount": 20 }
+      ],
+      "sort_weight": 940,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-map-discover-2",
+      "name": "初探九州",
+      "description": "探索 2 张地图",
+      "category": "exploration",
+      "rarity": "uncommon",
+      "points": 45,
+      "track_type": "multi",
+      "track_key": "map:discover:*",
+      "target_list": [
+        "map:discover:map-qingyun-village",
+        "map:discover:map-qingyun-outskirts"
+      ],
+      "target_value": 2,
+      "rewards": [
+        { "type": "silver", "amount": 800 },
+        { "type": "item", "item_def_id": "mat-lingcao", "qty": 2 }
+      ],
+      "sort_weight": 920,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-room-reach-center",
+      "name": "回到起点",
+      "description": "抵达青云村中心",
+      "category": "exploration",
+      "rarity": "common",
+      "points": 10,
+      "track_type": "flag",
+      "track_key": "room:reach:room-village-center",
+      "target_value": 1,
+      "rewards": [
+        { "type": "silver", "amount": 120 }
+      ],
+      "sort_weight": 900,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-team-create-1",
+      "name": "并肩的起点",
+      "description": "创建 1 次队伍",
+      "category": "social",
+      "rarity": "rare",
+      "points": 60,
+      "track_type": "flag",
+      "track_key": "team:create",
+      "target_value": 1,
+      "rewards": [
+        { "type": "spirit_stones", "amount": 40 }
+      ],
+      "title_id": "title-team-pioneer",
+      "sort_weight": 880,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-team-join-3",
+      "name": "人脉渐广",
+      "description": "加入队伍 3 次",
+      "category": "social",
+      "rarity": "uncommon",
+      "points": 40,
+      "track_type": "counter",
+      "track_key": "team:join",
+      "target_value": 3,
+      "rewards": [
+        { "type": "silver", "amount": 900 }
+      ],
+      "sort_weight": 860,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-sect-join",
+      "name": "拜入仙门",
+      "description": "成功加入宗门",
+      "category": "social",
+      "rarity": "rare",
+      "points": 60,
+      "track_type": "flag",
+      "track_key": "sect:join",
+      "target_value": 1,
+      "rewards": [
+        { "type": "spirit_stones", "amount": 35 }
+      ],
+      "sort_weight": 840,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-monthcard-activate",
+      "name": "月卡体验官",
+      "description": "激活月卡 1 次",
+      "category": "social",
+      "rarity": "uncommon",
+      "points": 35,
+      "track_type": "flag",
+      "track_key": "monthcard:activate",
+      "target_value": 1,
+      "rewards": [
+        { "type": "silver", "amount": 1500 }
+      ],
+      "sort_weight": 820,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-realm-yangqi",
+      "name": "踏入修行",
+      "description": "境界达到 炼精化炁·养气期",
+      "category": "cultivation",
+      "rarity": "rare",
+      "points": 80,
+      "track_type": "flag",
+      "track_key": "realm:reach:炼精化炁·养气期",
+      "target_value": 1,
+      "rewards": [
+        { "type": "spirit_stones", "amount": 60 }
+      ],
+      "sort_weight": 800,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-tech-upgrade-any-5",
+      "name": "功法入门",
+      "description": "功法升级累计 5 次",
+      "category": "cultivation",
+      "rarity": "uncommon",
+      "points": 45,
+      "track_type": "counter",
+      "track_key": "skill:level:any",
+      "target_value": 5,
+      "rewards": [
+        { "type": "silver", "amount": 1000 }
+      ],
+      "sort_weight": 780,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-tech-layer-3",
+      "name": "初窥门径",
+      "description": "任意功法达到第 3 层",
+      "category": "cultivation",
+      "rarity": "rare",
+      "points": 70,
+      "track_type": "flag",
+      "track_key": "skill:level:layer:3",
+      "target_value": 1,
+      "rewards": [
+        { "type": "spirit_stones", "amount": 55 }
+      ],
+      "sort_weight": 760,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-dungeon-clear-1",
+      "name": "秘境初成",
+      "description": "通关任意秘境 1 次",
+      "category": "exploration",
+      "rarity": "uncommon",
+      "points": 40,
+      "track_type": "counter",
+      "track_key": "dungeon:clear:*",
+      "target_value": 1,
+      "rewards": [
+        { "type": "silver", "amount": 1200 }
+      ],
+      "sort_weight": 740,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-dungeon-clear-5",
+      "name": "秘境常客",
+      "description": "通关任意秘境 5 次",
+      "category": "exploration",
+      "rarity": "epic",
+      "points": 120,
+      "prerequisite_id": "ach-dungeon-clear-1",
+      "track_type": "counter",
+      "track_key": "dungeon:clear:*",
+      "target_value": 5,
+      "rewards": [
+        { "type": "spirit_stones", "amount": 100 },
+        { "type": "item", "item_def_id": "mat-lingcao", "qty": 6 }
+      ],
+      "title_id": "title-mystic-pathfinder",
+      "sort_weight": 720,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-talk-elder-5",
+      "name": "勤学好问",
+      "description": "与村长交谈 5 次",
+      "category": "social",
+      "rarity": "common",
+      "points": 25,
+      "track_type": "counter",
+      "track_key": "talk:npc:npc-village-elder",
+      "target_value": 5,
+      "rewards": [
+        { "type": "silver", "amount": 300 }
+      ],
+      "sort_weight": 700,
+      "enabled": true,
+      "version": 1
+    }
+  ]
+}

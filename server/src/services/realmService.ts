@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { readFile, stat } from 'fs/promises';
 import path from 'path';
 import { updateSectionProgress } from './mainQuestService.js';
+import { updateAchievementProgress } from './achievementService.js';
 
 export type RealmRequirementStatus = 'done' | 'todo' | 'unknown';
 
@@ -847,6 +848,9 @@ export const breakthroughToNextRealm = async (userId: number): Promise<RealmBrea
       } catch (error) {
         console.error('更新主线境界突破目标失败:', error);
       }
+      try {
+        await updateAchievementProgress(characterId, `realm:reach:${bt.to}`, 1);
+      } catch {}
 
       const spentItems = costsBuilt.items.map((x) => {
         const meta = itemMap[x.itemDefId];

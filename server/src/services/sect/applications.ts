@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { assertMember, compareRealmRank, getCharacterRealm, getCharacterSectId, hasPermission, toNumber } from './db.js';
 import type { Result, SectApplicationRow, SectPosition } from './types.js';
+import { updateAchievementProgress } from '../achievementService.js';
 
 const addLogTx = async (
   client: PoolClient,
@@ -71,6 +72,9 @@ export const applyToSect = async (characterId: number, sectId: string, message?:
       await client.query('UPDATE sect_def SET member_count = member_count + 1, updated_at = NOW() WHERE id = $1', [sectId]);
       await addLogTx(client, sectId, 'join', characterId, null, '加入宗门（开放加入）');
       await client.query('COMMIT');
+      try {
+        await updateAchievementProgress(characterId, 'sect:join', 1);
+      } catch {}
       return { success: true, message: '加入成功' };
     }
 
@@ -208,6 +212,9 @@ export const handleApplication = async (operatorId: number, applicationId: numbe
     );
     await addLogTx(client, me.sectId, 'approve', operatorId, app.character_id, '通过入门申请');
     await client.query('COMMIT');
+    try {
+      await updateAchievementProgress(app.character_id, 'sect:join', 1);
+    } catch {}
     return { success: true, message: '已通过' };
   } catch (error) {
     await client.query('ROLLBACK');
