@@ -54,14 +54,6 @@ const rarityLabelMap: Record<string, string> = {
   legendary: '传说',
 };
 
-const rarityTagColorMap: Record<string, string> = {
-  common: 'default',
-  uncommon: 'blue',
-  rare: 'cyan',
-  epic: 'purple',
-  legendary: 'orange',
-};
-
 const getRarityLabel = (rarity: string): string => {
   const key = String(rarity || '').trim().toLowerCase();
   return rarityLabelMap[key] ?? (String(rarity || '').trim() || '普通');
@@ -535,7 +527,7 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, onCh
                       <div className="achievement-title-main">
                         <div className="achievement-title-top">
                           <div className="achievement-title-name">{title.name}</div>
-                          <Tag color={rarityTagColorMap[title.rarity] || 'default'}>{getRarityLabel(title.rarity)}</Tag>
+                          <Tag>{getRarityLabel(title.rarity)}</Tag>
                         </div>
                         <div className="achievement-item-desc">{title.description}</div>
                         <div className="achievement-item-desc">{effectsText || '无属性加成'}</div>
