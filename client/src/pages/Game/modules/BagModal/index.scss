@@ -56,6 +56,136 @@
     font-size: 12px;
     line-height: 1.5;
   }
+
+  .bag-growth-summary-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color-soft);
+    border-radius: 10px;
+    background: var(--panel-bg-soft);
+  }
+
+  .bag-growth-summary-main {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .bag-growth-level {
+    font-size: 20px;
+    font-weight: 900;
+    color: var(--text-color);
+  }
+
+  .bag-growth-level--target {
+    color: var(--primary-color);
+  }
+
+  .bag-growth-arrow {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  .bag-growth-rate {
+    margin-left: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+
+    &::before {
+      content: '成功率 ';
+    }
+  }
+
+  .bag-growth-tip-warn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 77, 79, 0.15);
+    color: #ff4d4f;
+  }
+
+  .bag-growth-cost-card {
+    padding: 8px 14px;
+    border: 1px solid var(--border-color-soft);
+    border-radius: 10px;
+    background: var(--panel-bg-soft);
+  }
+
+  .bag-growth-cost-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+
+  .bag-growth-cost-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .bag-growth-cost-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color-soft);
+    font-size: 12px;
+    color: var(--text-color);
+
+    &.is-insufficient {
+      border-color: rgba(255, 77, 79, 0.4);
+      background: rgba(255, 77, 79, 0.08);
+
+      .bag-growth-cost-val,
+      .bag-growth-cost-own {
+        color: #ff4d4f;
+      }
+    }
+  }
+
+  .bag-growth-cost-name {
+    color: var(--text-secondary);
+    margin-right: 2px;
+  }
+
+  .bag-growth-cost-val {
+    font-weight: 700;
+  }
+
+  .bag-growth-cost-own {
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .bag-growth-attr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .bag-growth-attr-col {
+    padding: 8px 10px;
+    border: 1px solid var(--border-color-soft);
+    border-radius: 10px;
+    background: var(--panel-bg-soft);
+  }
+
+  .bag-growth-attr-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .bag-growth-attr-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    line-height: 1.7;
+  }
 }
 
 .bag-modal-shell {

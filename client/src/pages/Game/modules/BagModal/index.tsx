@@ -1725,78 +1725,82 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
           {growthMode === 'enhance' && (enhanceState ? (
             <>
-              <div>当前强化：+{enhanceState.curLv}</div>
-              <div>目标强化：+{enhanceState.targetLv}</div>
-              <div>成功率：{formatPermyriadPercent(enhanceState.successRatePermyriad)}%</div>
-              <div>
-                消耗材料：{enhanceState.materialName} ×1（拥有 {enhanceState.owned}）
+              <div className="bag-growth-summary-card">
+                <div className="bag-growth-summary-main">
+                  <span className="bag-growth-level">+{enhanceState.curLv}</span>
+                  <span className="bag-growth-arrow">→</span>
+                  <span className="bag-growth-level bag-growth-level--target">+{enhanceState.targetLv}</span>
+                  <span className="bag-growth-rate">{formatPermyriadPercent(enhanceState.successRatePermyriad)}%</span>
+                </div>
+                {enhanceState.downgradeOnFail && <div className="bag-growth-tip-warn">失败掉级</div>}
               </div>
-              {enhanceState.silverCost > 0 ? (
-                <div>
-                  消耗银两：{enhanceState.silverCost.toLocaleString()}（拥有 {playerSilver.toLocaleString()}）
-                </div>
-              ) : null}
-              {enhanceState.spiritStoneCost > 0 ? (
-                <div>
-                  消耗灵石：{enhanceState.spiritStoneCost.toLocaleString()}（拥有 {playerSpiritStones.toLocaleString()}）
-                </div>
-              ) : null}
-              <div className="bag-growth-rule-card">
-                <div className="bag-growth-rule-title">强化规则</div>
-                <div className="bag-growth-rule-item">等级上限：+15</div>
-                <div className="bag-growth-rule-item">材料：+1~+10 用淬灵石，+11~+15 用蕴灵石</div>
-                <div className="bag-growth-rule-item">
-                  失败规则：+1~+7 不掉级，+8~+15 失败掉1级
-                  {enhanceState.downgradeOnFail ? '（当前目标会掉级）' : '（当前目标不掉级）'}
+
+              <div className="bag-growth-cost-card">
+                <div className="bag-growth-cost-title">消耗</div>
+                <div className="bag-growth-cost-list">
+                  <div className={'bag-growth-cost-chip' + (enhanceState.owned < 1 ? ' is-insufficient' : '')}>
+                    <span className="bag-growth-cost-name">{enhanceState.materialName}</span>
+                    <span className="bag-growth-cost-val">×1</span>
+                    <span className="bag-growth-cost-own">/{enhanceState.owned}</span>
+                  </div>
+                  {enhanceState.silverCost > 0 && (
+                    <div className={'bag-growth-cost-chip' + (playerSilver < enhanceState.silverCost ? ' is-insufficient' : '')}>
+                      <span className="bag-growth-cost-name">银两</span>
+                      <span className="bag-growth-cost-val">{enhanceState.silverCost.toLocaleString()}</span>
+                      <span className="bag-growth-cost-own">/{playerSilver.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {enhanceState.spiritStoneCost > 0 && (
+                    <div className={'bag-growth-cost-chip' + (playerSpiritStones < enhanceState.spiritStoneCost ? ' is-insufficient' : '')}>
+                      <span className="bag-growth-cost-name">灵石</span>
+                      <span className="bag-growth-cost-val">{enhanceState.spiritStoneCost.toLocaleString()}</span>
+                      <span className="bag-growth-cost-own">/{playerSpiritStones.toLocaleString()}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>当前属性</div>
+              <div className="bag-growth-attr-grid">
+                <div className="bag-growth-attr-col">
+                  <div className="bag-growth-attr-title">当前属性</div>
                   {Object.entries(activeItem?.equip?.baseAttrs ?? {})
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
-                      <div key={`cur-${k}`}>
-                        {attrLabel[k] ?? k} {permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}
+                      <div className="bag-growth-attr-row" key={`cur-${k}`}>
+                        <span>{attrLabel[k] ?? k}</span>
+                        <span>{permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}</span>
                       </div>
                     ))}
                 </div>
-                <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>强化后属性</div>
+                <div className="bag-growth-attr-col">
+                  <div className="bag-growth-attr-title">强化后</div>
                   {Object.entries(enhanceState.previewBaseAttrs)
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
-                      <div key={`next-${k}`}>
-                        {attrLabel[k] ?? k} {permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}
+                      <div className="bag-growth-attr-row" key={`next-${k}`}>
+                        <span>{attrLabel[k] ?? k}</span>
+                        <span>{permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}</span>
                       </div>
                     ))}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <Button
-                  disabled={
-                    enhanceSubmitting ||
-                    enhanceState.curLv >= 15 ||
-                    enhanceState.owned < 1 ||
-                    playerSilver < enhanceState.silverCost ||
-                    playerSpiritStones < enhanceState.spiritStoneCost ||
-                    !!activeItem?.locked
-                  }
-                  type="primary"
-                  onClick={() => void handleEnhance()}
-                  loading={enhanceSubmitting}
-                >
-                  强化一次
-                </Button>
-              </div>
-
-              {activeItem?.locked ? <div className="bag-enhance-hint">物品已锁定</div> : null}
-              {enhanceState.curLv >= 15 ? <div className="bag-enhance-hint">强化已达上限</div> : null}
-              {enhanceState.owned < 1 ? <div className="bag-enhance-warning">材料不足</div> : null}
-              {enhanceState.silverCost > 0 && playerSilver < enhanceState.silverCost ? <div className="bag-enhance-warning">银两不足</div> : null}
-              {enhanceState.spiritStoneCost > 0 && playerSpiritStones < enhanceState.spiritStoneCost ? <div className="bag-enhance-warning">灵石不足</div> : null}
+              <Button
+                block
+                disabled={
+                  enhanceSubmitting ||
+                  enhanceState.curLv >= 15 ||
+                  enhanceState.owned < 1 ||
+                  playerSilver < enhanceState.silverCost ||
+                  playerSpiritStones < enhanceState.spiritStoneCost ||
+                  !!activeItem?.locked
+                }
+                type="primary"
+                onClick={() => void handleEnhance()}
+                loading={enhanceSubmitting}
+              >
+                {activeItem?.locked ? '物品已锁定' : enhanceState.curLv >= 15 ? '已达上限' : '强化'}
+              </Button>
             </>
           ) : (
             <div className="bag-enhance-hint">请选择可强化的装备</div>
@@ -1804,69 +1808,81 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
           {growthMode === 'refine' && (refineState ? (
             <>
-              <div>当前精炼：+{refineState.curLv}</div>
-              <div>目标精炼：+{refineState.targetLv}</div>
-              <div>成功率：{formatPermyriadPercent(refineState.successRatePermyriad)}%</div>
-              <div>
-                消耗材料：{refineState.materialName} ×{refineState.materialQty}（拥有 {refineState.owned}）
+              <div className="bag-growth-summary-card">
+                <div className="bag-growth-summary-main">
+                  <span className="bag-growth-level">+{refineState.curLv}</span>
+                  <span className="bag-growth-arrow">→</span>
+                  <span className="bag-growth-level bag-growth-level--target">+{refineState.targetLv}</span>
+                  <span className="bag-growth-rate">{formatPermyriadPercent(refineState.successRatePermyriad)}%</span>
+                </div>
               </div>
-              {refineState.silverCost > 0 ? (
-                <div>
-                  消耗银两：{refineState.silverCost.toLocaleString()}（拥有 {playerSilver.toLocaleString()}）
-                </div>
-              ) : null}
-              {refineState.spiritStoneCost > 0 ? (
-                <div>
-                  消耗灵石：{refineState.spiritStoneCost.toLocaleString()}（拥有 {playerSpiritStones.toLocaleString()}）
-                </div>
-              ) : null}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>当前属性</div>
+              <div className="bag-growth-cost-card">
+                <div className="bag-growth-cost-title">消耗</div>
+                <div className="bag-growth-cost-list">
+                  <div className={'bag-growth-cost-chip' + (refineState.owned < refineState.materialQty ? ' is-insufficient' : '')}>
+                    <span className="bag-growth-cost-name">{refineState.materialName}</span>
+                    <span className="bag-growth-cost-val">×{refineState.materialQty}</span>
+                    <span className="bag-growth-cost-own">/{refineState.owned}</span>
+                  </div>
+                  {refineState.silverCost > 0 && (
+                    <div className={'bag-growth-cost-chip' + (playerSilver < refineState.silverCost ? ' is-insufficient' : '')}>
+                      <span className="bag-growth-cost-name">银两</span>
+                      <span className="bag-growth-cost-val">{refineState.silverCost.toLocaleString()}</span>
+                      <span className="bag-growth-cost-own">/{playerSilver.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {refineState.spiritStoneCost > 0 && (
+                    <div className={'bag-growth-cost-chip' + (playerSpiritStones < refineState.spiritStoneCost ? ' is-insufficient' : '')}>
+                      <span className="bag-growth-cost-name">灵石</span>
+                      <span className="bag-growth-cost-val">{refineState.spiritStoneCost.toLocaleString()}</span>
+                      <span className="bag-growth-cost-own">/{playerSpiritStones.toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bag-growth-attr-grid">
+                <div className="bag-growth-attr-col">
+                  <div className="bag-growth-attr-title">当前属性</div>
                   {Object.entries(activeItem?.equip?.baseAttrs ?? {})
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
-                      <div key={`ref-cur-${k}`}>
-                        {attrLabel[k] ?? k} {permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}
+                      <div className="bag-growth-attr-row" key={`ref-cur-${k}`}>
+                        <span>{attrLabel[k] ?? k}</span>
+                        <span>{permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}</span>
                       </div>
                     ))}
                 </div>
-                <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>精炼后属性</div>
+                <div className="bag-growth-attr-col">
+                  <div className="bag-growth-attr-title">精炼后</div>
                   {Object.entries(refineState.previewBaseAttrs)
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
-                      <div key={`ref-next-${k}`}>
-                        {attrLabel[k] ?? k} {permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}
+                      <div className="bag-growth-attr-row" key={`ref-next-${k}`}>
+                        <span>{attrLabel[k] ?? k}</span>
+                        <span>{permyriadPercentKeys.has(k) ? formatSignedPermyriadPercent(v) : formatSignedNumber(v)}</span>
                       </div>
                     ))}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <Button
-                  disabled={
-                    refineSubmitting ||
-                    refineState.curLv >= 10 ||
-                    refineState.owned < refineState.materialQty ||
-                    playerSilver < refineState.silverCost ||
-                    playerSpiritStones < refineState.spiritStoneCost ||
-                    !!activeItem?.locked
-                  }
-                  type="primary"
-                  onClick={() => void handleRefine()}
-                  loading={refineSubmitting}
-                >
-                  精炼一次
-                </Button>
-              </div>
-
-              {activeItem?.locked ? <div className="bag-enhance-hint">物品已锁定</div> : null}
-              {refineState.curLv >= 10 ? <div className="bag-enhance-hint">精炼已达上限</div> : null}
-              {refineState.owned < refineState.materialQty ? <div className="bag-enhance-warning">材料不足</div> : null}
-              {refineState.silverCost > 0 && playerSilver < refineState.silverCost ? <div className="bag-enhance-warning">银两不足</div> : null}
-              {refineState.spiritStoneCost > 0 && playerSpiritStones < refineState.spiritStoneCost ? <div className="bag-enhance-warning">灵石不足</div> : null}
+              <Button
+                block
+                disabled={
+                  refineSubmitting ||
+                  refineState.curLv >= 10 ||
+                  refineState.owned < refineState.materialQty ||
+                  playerSilver < refineState.silverCost ||
+                  playerSpiritStones < refineState.spiritStoneCost ||
+                  !!activeItem?.locked
+                }
+                type="primary"
+                onClick={() => void handleRefine()}
+                loading={refineSubmitting}
+              >
+                {activeItem?.locked ? '物品已锁定' : refineState.curLv >= 10 ? '已达上限' : '精炼'}
+              </Button>
             </>
           ) : (
             <div className="bag-enhance-hint">请选择可精炼的装备</div>
