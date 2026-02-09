@@ -1716,11 +1716,14 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
             ]}
           />
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className="bag-growth-header">
+            <div className="bag-growth-header-name" style={{ color: activeItem?.quality ? qualityColor[activeItem.quality] : undefined }}>
               {activeItem?.name ?? '未选择'}
             </div>
-            {activeItem?.quality ? <Tag color={qualityColor[activeItem.quality]}>{qualityLabelText[activeItem.quality]}</Tag> : null}
+            <div className="bag-growth-header-meta">
+              {activeItem?.equip?.equipSlot ? <span>{getEquipSlotLabel(activeItem.equip.equipSlot)}</span> : null}
+              {activeItem?.quality ? <span className={'bag-growth-quality-badge ' + qualityClass[activeItem.quality]}>{qualityLabelText[activeItem.quality]}</span> : null}
+            </div>
           </div>
 
           {growthMode === 'enhance' && (enhanceState ? (
