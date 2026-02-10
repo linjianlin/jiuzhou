@@ -1,6 +1,7 @@
 import { App, Button, Input, Modal, Select, Tabs, Tag } from 'antd';
 import { FilterOutlined, SearchOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import MobileBagModal from './MobileBagModal';
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import { gameSocket } from '../../../../services/gameSocket';
 import {
@@ -2080,4 +2081,22 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   );
 };
 
-export default BagModal;
+const MOBILE_BREAKPOINT = 768;
+
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+};
+
+const BagModalSwitch: React.FC<{ open: boolean; onClose: () => void }> = (props) => {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileBagModal {...props} />;
+  return <BagModal {...props} />;
+};
+
+export default BagModalSwitch;
