@@ -6,6 +6,7 @@
   flex-direction: column;
   background: var(--app-bg);
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 .game-header {
@@ -535,12 +536,18 @@
   .game-page {
     height: 100vh;
     height: 100dvh;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .game-header {
     height: 56px;
     min-height: 56px;
     padding: 0 12px;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .game-header-left {
@@ -559,6 +566,9 @@
 
   .game-header-right {
     gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
   }
 
   .game-header-gather {
@@ -581,6 +591,8 @@
   .game-header-currency {
     padding: 6px 8px;
     gap: 4px;
+    min-width: 0;
+    flex-shrink: 1;
   }
 
   .game-header-currency-value {
@@ -593,6 +605,9 @@
 
   .game-container {
     flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .game-left {
@@ -607,14 +622,23 @@
   .game-center {
     flex: 1;
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .game-map-area {
     flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .game-top-tabs {
     padding: 0 8px;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .game-top-tabs .ant-tabs-nav {
@@ -634,6 +658,9 @@
     height: 200px;
     min-height: 200px;
     display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   .game-chat-right {
