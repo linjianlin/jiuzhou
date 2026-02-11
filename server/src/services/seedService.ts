@@ -2298,9 +2298,6 @@ interface SkillDefSeed {
   target_count?: number;
   damage_type?: string;
   element?: string;
-  coefficient?: number;
-  fixed_damage?: number;
-  scale_attr?: string;
   effects?: unknown[];
   trigger_type?: string;
   conditions?: unknown;
@@ -2323,11 +2320,11 @@ export const loadSkillDefSeeds = async (): Promise<number> => {
         INSERT INTO skill_def (
           id, code, name, description, icon, source_type, source_id,
           cost_lingqi, cost_qixue, cooldown, target_type, target_count,
-          damage_type, element, coefficient, fixed_damage, scale_attr,
+          damage_type, element,
           effects, trigger_type, conditions, ai_priority, ai_conditions, upgrades,
           sort_weight, enabled, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW()
         )
         ON CONFLICT (id) DO UPDATE SET
           code = EXCLUDED.code,
@@ -2343,9 +2340,6 @@ export const loadSkillDefSeeds = async (): Promise<number> => {
           target_count = EXCLUDED.target_count,
           damage_type = EXCLUDED.damage_type,
           element = EXCLUDED.element,
-          coefficient = EXCLUDED.coefficient,
-          fixed_damage = EXCLUDED.fixed_damage,
-          scale_attr = EXCLUDED.scale_attr,
           effects = EXCLUDED.effects,
           trigger_type = EXCLUDED.trigger_type,
           conditions = EXCLUDED.conditions,
@@ -2363,7 +2357,6 @@ export const loadSkillDefSeeds = async (): Promise<number> => {
         skill.cost_lingqi || 0, skill.cost_qixue || 0, skill.cooldown || 0,
         skill.target_type, skill.target_count || 1,
         skill.damage_type || null, skill.element || 'none',
-        skill.coefficient || 0, skill.fixed_damage || 0, skill.scale_attr || 'wugong',
         skill.effects ? JSON.stringify(skill.effects) : '[]',
         skill.trigger_type || 'active',
         skill.conditions ? JSON.stringify(skill.conditions) : null,

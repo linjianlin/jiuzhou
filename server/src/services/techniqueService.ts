@@ -51,10 +51,7 @@ export type SkillDefRow = {
   target_count: number;
   damage_type: string | null;
   element: string;
-  coefficient: number;
-  fixed_damage: number;
-  scale_attr: string;
-  effects: unknown;
+  effects: unknown[];
   trigger_type: string;
   conditions: unknown;
   ai_priority: number;
@@ -154,7 +151,7 @@ export const getSkillsByTechniqueId = async (techniqueId: string): Promise<Skill
       SELECT
         id, code, name, description, icon, source_type, source_id,
         cost_lingqi, cost_qixue, cooldown, target_type, target_count,
-        damage_type, element, coefficient, fixed_damage, scale_attr,
+        damage_type, element,
         effects, trigger_type, conditions, ai_priority, ai_conditions, upgrades,
         sort_weight, version, enabled
       FROM skill_def

@@ -329,6 +329,28 @@ type SkillUpgradeRule = {
   changes: Record<string, unknown>;
 };
 
+function cloneEffects(raw: unknown[]): unknown[] {
+  return raw.map((effect) => {
+    if (!effect || typeof effect !== 'object' || Array.isArray(effect)) return effect;
+    return { ...(effect as Record<string, unknown>) };
+  });
+}
+
+function isDamageEffect(effect: unknown): effect is Record<string, unknown> {
+  return Boolean(effect && typeof effect === 'object' && !Array.isArray(effect) && (effect as any).type === 'damage');
+}
+
+function findFirstDamageEffect(effects: unknown[]): Record<string, unknown> | null {
+  for (const effect of effects) {
+    if (isDamageEffect(effect)) return { ...effect };
+  }
+  return null;
+}
+
+function hasDamageEffect(effects: unknown[]): boolean {
+  return effects.some((effect) => isDamageEffect(effect));
+}
+
 function parseSkillUpgradeRules(raw: unknown): SkillUpgradeRule[] {
   if (!Array.isArray(raw)) return [];
   const rules: SkillUpgradeRule[] = [];
@@ -349,22 +371,12 @@ function applySkillUpgradeChanges(
     cost_qixue: number;
     cooldown: number;
     target_count: number;
-    coefficient: number;
-    fixed_damage: number;
     effects: unknown[];
     ai_priority: number;
   },
   changes: Record<string, unknown>
 ): void {
-  const coefficientDelta = toNumber(changes.coefficient);
-  if (coefficientDelta !== null) {
-    base.coefficient += coefficientDelta;
-  }
-
-  const fixedDamageDelta = toNumber(changes.fixed_damage);
-  if (fixedDamageDelta !== null) {
-    base.fixed_damage += fixedDamageDelta;
-  }
+  const preservedDamageEffect = findFirstDamageEffect(base.effects);
 
   const targetCount = toNumber(changes.target_count);
   if (targetCount !== null) {
@@ -392,11 +404,15 @@ function applySkillUpgradeChanges(
   }
 
   if (Array.isArray(changes.effects)) {
-    base.effects = changes.effects;
+    const nextEffects = cloneEffects(changes.effects);
+    if (preservedDamageEffect && !hasDamageEffect(nextEffects)) {
+      nextEffects.unshift({ ...preservedDamageEffect });
+    }
+    base.effects = nextEffects;
   }
   const addEffect = changes.addEffect;
   if (addEffect && typeof addEffect === 'object' && !Array.isArray(addEffect)) {
-    base.effects = [...base.effects, addEffect];
+    base.effects = [...base.effects, { ...(addEffect as Record<string, unknown>) }];
   }
 }
 
@@ -502,7 +518,6 @@ async function getCharacterBattleSkillData(characterId: number): Promise<SkillDa
         cost_lingqi, cost_qixue, cooldown,
         target_type, target_count,
         damage_type, element,
-        coefficient, fixed_damage,
         effects, ai_priority, upgrades
       FROM skill_def
       WHERE enabled = true AND id = ANY($1)
@@ -526,9 +541,7 @@ async function getCharacterBattleSkillData(characterId: number): Promise<SkillDa
       cost_qixue: Math.max(0, Math.floor(Number(row.cost_qixue) || 0)),
       cooldown: Math.max(0, Math.floor(Number(row.cooldown) || 0)),
       target_count: Math.max(1, Math.floor(Number(row.target_count) || 1)),
-      coefficient: Number(row.coefficient) || 0,
-      fixed_damage: Number(row.fixed_damage) || 0,
-      effects: Array.isArray(row.effects) ? row.effects : (row.effects ?? []),
+      effects: cloneEffects(Array.isArray(row.effects) ? row.effects : (row.effects ?? [])),
       ai_priority: Math.max(0, Math.floor(Number(row.ai_priority) || 50)),
     };
 
@@ -550,8 +563,6 @@ async function getCharacterBattleSkillData(characterId: number): Promise<SkillDa
       target_count: skillData.target_count,
       damage_type: String(row.damage_type || 'none'),
       element: String(row.element || 'none'),
-      coefficient: skillData.coefficient,
-      fixed_damage: skillData.fixed_damage,
       effects: skillData.effects,
       ai_priority: skillData.ai_priority,
     });

@@ -114,6 +114,26 @@ function selectPassiveSkill(unit: BattleUnit, availableSkills: BattleSkill[]): B
   return getNormalAttack(unit);
 }
 
+function getDamageEffects(skill: BattleSkill): Array<BattleSkill['effects'][number]> {
+  return skill.effects.filter((e) => e.type === 'damage');
+}
+
+function isDamageSkill(skill: BattleSkill): boolean {
+  return getDamageEffects(skill).length > 0;
+}
+
+function getDamageScaleScore(skill: BattleSkill): number {
+  let score = 0;
+  for (const effect of getDamageEffects(skill)) {
+    const scaleRateRaw = Number(effect.scaleRate ?? effect.value ?? 0);
+    const scaleRate = Number.isFinite(scaleRateRaw) ? Math.max(0, scaleRateRaw) : 0;
+    const hitCountRaw = Number(effect.hit_count ?? 1);
+    const hitCount = Number.isFinite(hitCountRaw) ? Math.max(1, Math.floor(hitCountRaw)) : 1;
+    score = Math.max(score, scaleRate * hitCount);
+  }
+  return score;
+}
+
 /**
  * 激进模式：优先高伤害技能
  */
@@ -123,9 +143,7 @@ function selectAggressiveSkill(
   availableSkills: BattleSkill[]
 ): BattleSkill {
   // 筛选伤害技能
-  const damageSkills = availableSkills.filter(s => 
-    s.damageType && s.coefficient > 0
-  );
+  const damageSkills = availableSkills.filter((s) => isDamageSkill(s));
   
   if (damageSkills.length === 0) {
     return getNormalAttack(unit);
@@ -133,8 +151,8 @@ function selectAggressiveSkill(
   
   // 按优先级和系数排序
   damageSkills.sort((a, b) => {
-    const scoreA = a.aiPriority + a.coefficient * 100;
-    const scoreB = b.aiPriority + b.coefficient * 100;
+    const scoreA = a.aiPriority + getDamageScaleScore(a);
+    const scoreB = b.aiPriority + getDamageScaleScore(b);
     return scoreB - scoreA;
   });
   
@@ -391,7 +409,7 @@ export function calculateSkillWeight(
   const lowHpEnemies = enemies.filter(e => 
     e.isAlive && e.qixue / e.currentAttrs.max_qixue < 0.2
   );
-  if (lowHpEnemies.length > 0 && skill.damageType) {
+  if (lowHpEnemies.length > 0 && isDamageSkill(skill)) {
     weight += 30;
   }
   

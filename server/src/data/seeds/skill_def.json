@@ -14,9 +14,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "none",
-      "coefficient": 10000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 10000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 10
     },
@@ -33,9 +38,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "none",
-      "coefficient": 11000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 11000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 50,
       "upgrades": [
@@ -43,7 +53,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 13000,
+                "value": 13000
+              }
+            ]
           }
         }
       ]
@@ -61,9 +79,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "jin",
-      "coefficient": 11000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 11000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 50,
       "upgrades": [
@@ -71,7 +94,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 13000,
+                "value": 13000
+              }
+            ]
           }
         }
       ]
@@ -89,9 +120,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "jin",
-      "coefficient": 11500,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 11500
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 50,
       "upgrades": [
@@ -99,7 +135,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2500
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 14000,
+                "value": 14000
+              }
+            ]
           }
         }
       ]
@@ -155,9 +199,14 @@
       "target_type": "single_enemy",
       "damage_type": "magic",
       "element": "none",
-      "coefficient": 11000,
-      "scale_attr": "fagong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 11000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 50,
       "upgrades": [
@@ -165,7 +214,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 13000,
+                "value": 13000
+              }
+            ]
           }
         }
       ]
@@ -223,8 +280,6 @@
       "target_type": "single_ally",
       "damage_type": "none",
       "element": "mu",
-      "coefficient": 8000,
-      "scale_attr": "fagong",
       "effects": [
         {
           "type": "heal",
@@ -241,7 +296,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2000
+            "effects": [
+              {
+                "type": "heal",
+                "value": 10000,
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 10000
+              }
+            ]
           }
         }
       ]
@@ -259,9 +322,13 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "none",
-      "coefficient": 10000,
-      "scale_attr": "wugong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 10000
+        },
         {
           "type": "buff",
           "buffId": "buff-wufang-up",
@@ -277,7 +344,22 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 12000,
+                "value": 12000
+              },
+              {
+                "type": "buff",
+                "buffId": "buff-wufang-up",
+                "duration": 2,
+                "value": 1000,
+                "target": "self"
+              }
+            ]
           }
         }
       ]
@@ -295,9 +377,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "jin",
-      "coefficient": 13000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 13000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 60,
       "upgrades": [
@@ -305,7 +392,15 @@
           "layer": 4,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 3000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 16000,
+                "value": 16000
+              }
+            ]
           }
         }
       ]
@@ -323,9 +418,13 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "jin",
-      "coefficient": 11000,
-      "scale_attr": "wugong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 11000
+        },
         {
           "type": "debuff",
           "buffId": "debuff-wufang-down",
@@ -365,9 +464,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "jin",
-      "coefficient": 12000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 12000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 55,
       "upgrades": [
@@ -375,7 +479,15 @@
           "layer": 4,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2500
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 14500,
+                "value": 14500
+              }
+            ]
           }
         }
       ]
@@ -393,11 +505,12 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "jin",
-      "coefficient": 8000,
-      "scale_attr": "wugong",
       "effects": [
         {
           "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 8000,
           "hit_count": 3
         }
       ],
@@ -408,7 +521,16 @@
           "layer": 5,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 10000,
+                "hit_count": 3,
+                "value": 10000
+              }
+            ]
           }
         }
       ]
@@ -426,8 +548,6 @@
       "target_type": "single_ally",
       "damage_type": "none",
       "element": "mu",
-      "coefficient": 12000,
-      "scale_attr": "fagong",
       "effects": [
         {
           "type": "heal",
@@ -444,7 +564,15 @@
           "layer": 4,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 3000
+            "effects": [
+              {
+                "type": "heal",
+                "value": 15000,
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 15000
+              }
+            ]
           }
         }
       ]
@@ -556,8 +684,6 @@
       "target_type": "self",
       "damage_type": "none",
       "element": "tu",
-      "coefficient": 15000,
-      "scale_attr": "max_qixue",
       "effects": [
         {
           "type": "shield",
@@ -575,7 +701,16 @@
           "layer": 5,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 5000
+            "effects": [
+              {
+                "type": "shield",
+                "value": 20000,
+                "valueType": "scale",
+                "scaleAttr": "max_qixue",
+                "scaleRate": 20000,
+                "duration": 3
+              }
+            ]
           }
         }
       ]
@@ -643,8 +778,6 @@
       "target_type": "self",
       "damage_type": "none",
       "element": "none",
-      "coefficient": 8000,
-      "scale_attr": "max_qixue",
       "effects": [
         {
           "type": "heal",
@@ -661,7 +794,15 @@
           "layer": 5,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 3000
+            "effects": [
+              {
+                "type": "heal",
+                "value": 11000,
+                "valueType": "scale",
+                "scaleAttr": "max_qixue",
+                "scaleRate": 11000
+              }
+            ]
           }
         }
       ]
@@ -729,9 +870,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "shui",
-      "coefficient": 11000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 11000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 50,
       "upgrades": [
@@ -739,7 +885,15 @@
           "layer": 4,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2500
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 13500,
+                "value": 13500
+              }
+            ]
           }
         }
       ]
@@ -757,9 +911,13 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "shui",
-      "coefficient": 13000,
-      "scale_attr": "wugong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 13000
+        },
         {
           "type": "lifesteal",
           "value": 2000
@@ -772,8 +930,14 @@
           "layer": 5,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 3000,
             "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 16000,
+                "value": 16000
+              },
               {
                 "type": "lifesteal",
                 "value": 3000
@@ -936,8 +1100,6 @@
       "target_type": "single_ally",
       "damage_type": "none",
       "element": "huo",
-      "coefficient": 15000,
-      "scale_attr": "fagong",
       "effects": [
         {
           "type": "heal",
@@ -954,7 +1116,15 @@
           "layer": 4,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 4000
+            "effects": [
+              {
+                "type": "heal",
+                "value": 19000,
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 19000
+              }
+            ]
           }
         }
       ]
@@ -972,8 +1142,6 @@
       "target_type": "single_ally",
       "damage_type": "none",
       "element": "huo",
-      "coefficient": 12000,
-      "scale_attr": "fagong",
       "effects": [
         {
           "type": "shield",
@@ -991,7 +1159,16 @@
           "layer": 6,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 4000
+            "effects": [
+              {
+                "type": "shield",
+                "value": 16000,
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 16000,
+                "duration": 3
+              }
+            ]
           }
         }
       ]
@@ -1061,9 +1238,14 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "huo",
-      "coefficient": 15000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 15000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 65,
       "upgrades": [
@@ -1071,7 +1253,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 3000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 18000,
+                "value": 18000
+              }
+            ]
           }
         }
       ]
@@ -1089,9 +1279,14 @@
       "target_type": "all_enemy",
       "damage_type": "physical",
       "element": "huo",
-      "coefficient": 10000,
-      "scale_attr": "wugong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 10000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 70,
       "upgrades": [
@@ -1099,7 +1294,15 @@
           "layer": 5,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2500
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 12500,
+                "value": 12500
+              }
+            ]
           }
         }
       ]
@@ -1117,9 +1320,13 @@
       "target_type": "single_enemy",
       "damage_type": "physical",
       "element": "huo",
-      "coefficient": 20000,
-      "scale_attr": "wugong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 20000
+        },
         {
           "type": "debuff",
           "buffId": "debuff-burn",
@@ -1134,7 +1341,21 @@
           "layer": 7,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 5000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 25000,
+                "value": 25000
+              },
+              {
+                "type": "debuff",
+                "buffId": "debuff-burn",
+                "duration": 3,
+                "value": 3000
+              }
+            ]
           }
         }
       ]
@@ -1152,9 +1373,13 @@
       "target_type": "all_enemy",
       "damage_type": "physical",
       "element": "huo",
-      "coefficient": 25000,
-      "scale_attr": "wugong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 25000
+        },
         {
           "type": "debuff",
           "buffId": "debuff-burn",
@@ -1178,9 +1403,14 @@
       "target_type": "single_enemy",
       "damage_type": "magic",
       "element": "shui",
-      "coefficient": 15000,
-      "scale_attr": "fagong",
-      "effects": [],
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 15000
+        }
+      ],
       "trigger_type": "active",
       "ai_priority": 65,
       "upgrades": [
@@ -1188,7 +1418,15 @@
           "layer": 3,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 3000
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 18000,
+                "value": 18000
+              }
+            ]
           }
         }
       ]
@@ -1206,9 +1444,13 @@
       "target_type": "all_enemy",
       "damage_type": "magic",
       "element": "shui",
-      "coefficient": 10000,
-      "scale_attr": "fagong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 10000
+        },
         {
           "type": "debuff",
           "buffId": "debuff-sudu-down",
@@ -1223,7 +1465,21 @@
           "layer": 5,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 2500
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 12500,
+                "value": 12500
+              },
+              {
+                "type": "debuff",
+                "buffId": "debuff-sudu-down",
+                "duration": 2,
+                "value": 200
+              }
+            ]
           }
         }
       ]
@@ -1241,9 +1497,13 @@
       "target_type": "single_enemy",
       "damage_type": "magic",
       "element": "shui",
-      "coefficient": 18000,
-      "scale_attr": "fagong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 18000
+        },
         {
           "type": "control",
           "controlType": "freeze",
@@ -1258,8 +1518,14 @@
           "layer": 7,
           "upgradeType": "value",
           "changes": {
-            "coefficient": 4000,
             "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 22000,
+                "value": 22000
+              },
               {
                 "type": "control",
                 "controlType": "freeze",
@@ -1284,9 +1550,13 @@
       "target_type": "all_enemy",
       "damage_type": "magic",
       "element": "shui",
-      "coefficient": 22000,
-      "scale_attr": "fagong",
       "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 22000
+        },
         {
           "type": "control",
           "controlType": "freeze",

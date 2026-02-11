@@ -130,9 +130,6 @@ CREATE TABLE IF NOT EXISTS skill_def (
   -- 伤害/治疗
   damage_type VARCHAR(20),                            -- physical/magic/true/null
   element VARCHAR(10) DEFAULT 'none',                 -- 元素：none/jin/mu/shui/huo/tu
-  coefficient INTEGER DEFAULT 0,                      -- 攻击系数（万分比）
-  fixed_damage INTEGER DEFAULT 0,                     -- 固定伤害/治疗值
-  scale_attr VARCHAR(32) DEFAULT 'wugong',            -- 缩放属性：wugong/fagong
   
   -- 效果列表
   effects JSONB DEFAULT '[]',                         -- SkillEffect[]
@@ -167,7 +164,6 @@ COMMENT ON COLUMN skill_def.source_id IS '来源ID（功法ID/装备ID）';
 COMMENT ON COLUMN skill_def.target_type IS '目标类型：self/single_enemy/single_ally/all_enemy/all_ally/random_enemy/random_ally';
 COMMENT ON COLUMN skill_def.damage_type IS '伤害类型：physical/magic/true';
 COMMENT ON COLUMN skill_def.element IS '元素：none/jin/mu/shui/huo/tu';
-COMMENT ON COLUMN skill_def.coefficient IS '攻击系数（万分比）';
 COMMENT ON COLUMN skill_def.effects IS '技能效果列表';
 COMMENT ON COLUMN skill_def.trigger_type IS '触发类型：active/passive/counter/chase';
 COMMENT ON COLUMN skill_def.upgrades IS '技能升级定义';

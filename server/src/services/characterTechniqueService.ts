@@ -716,9 +716,7 @@ export const getAvailableSkills = async (
   targetCount: number;
   damageType: string | null;
   element: string;
-  coefficient: number;
-  fixedDamage: number;
-  scaleAttr: string;
+  effects: unknown[];
 }[]>> => {
   try {
     const sql = `
@@ -727,7 +725,7 @@ export const getAvailableSkills = async (
         td.id as technique_id, td.name as technique_name,
         sd.description, sd.cost_lingqi, sd.cost_qixue, sd.cooldown,
         sd.target_type, sd.target_count, sd.damage_type, sd.element,
-        sd.coefficient, sd.fixed_damage, sd.scale_attr
+        sd.effects
       FROM character_technique ct
       JOIN technique_def td ON ct.technique_id = td.id
       JOIN technique_layer tl ON tl.technique_id = ct.technique_id AND tl.layer <= ct.current_layer
@@ -751,9 +749,7 @@ export const getAvailableSkills = async (
       targetCount: row.target_count ?? 1,
       damageType: row.damage_type,
       element: row.element ?? 'none',
-      coefficient: row.coefficient ?? 0,
-      fixedDamage: row.fixed_damage ?? 0,
-      scaleAttr: row.scale_attr ?? ''
+      effects: Array.isArray(row.effects) ? row.effects : []
     }));
     
     return { success: true, message: '获取成功', data: skills };
@@ -1001,6 +997,7 @@ export const getCharacterTechniqueStatus = async (
     skillName: string; 
     skillIcon: string; 
     techniqueId: string;
+    techniqueName: string;
     description: string | null;
     costLingqi: number;
     costQixue: number;
@@ -1009,9 +1006,7 @@ export const getCharacterTechniqueStatus = async (
     targetCount: number;
     damageType: string | null;
     element: string;
-    coefficient: number;
-    fixedDamage: number;
-    scaleAttr: string;
+    effects: unknown[];
   }[];
   passives: Record<string, number>;
 }>> => {

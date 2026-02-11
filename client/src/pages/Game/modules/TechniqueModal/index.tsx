@@ -57,9 +57,7 @@ type TechniqueSkill = {
   target_count?: number;
   damage_type?: string | null;
   element?: string;
-  coefficient?: number;
-  fixed_damage?: number;
-  scale_attr?: string;
+  effects?: unknown[];
 };
 
 type TechniqueCostItem = { id: string; name: string; icon: string; amount: number };
@@ -197,6 +195,100 @@ const scaleAttrLabel: Record<string, string> = {
   sudu: '速度',
 };
 
+type SkillEffectView = {
+  type?: string;
+  value?: number;
+  valueType?: string;
+  scaleAttr?: string;
+  scaleRate?: number;
+  damageType?: string;
+  element?: string;
+  hit_count?: number;
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const toSkillEffects = (raw: unknown): SkillEffectView[] => {
+  if (!Array.isArray(raw)) return [];
+  const effects: SkillEffectView[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    effects.push({
+      type: typeof row.type === 'string' ? row.type : undefined,
+      value: toFiniteNumber(row.value) ?? undefined,
+      valueType: typeof row.valueType === 'string' ? row.valueType : undefined,
+      scaleAttr: typeof row.scaleAttr === 'string' ? row.scaleAttr : undefined,
+      scaleRate: toFiniteNumber(row.scaleRate) ?? undefined,
+      damageType: typeof row.damageType === 'string' ? row.damageType : undefined,
+      element: typeof row.element === 'string' ? row.element : undefined,
+      hit_count: toFiniteNumber(row.hit_count) ?? undefined,
+    });
+  }
+  return effects;
+};
+
+const formatPermyriadPercent = (value: number): string => {
+  const percent = value / 100;
+  return Number.isInteger(percent) ? `${percent}` : `${Number(percent.toFixed(2))}`;
+};
+
+const buildDamageEffectDetailItems = (skill: TechniqueSkill): Array<{ label: string; value: string }> => {
+  const effects = toSkillEffects(skill.effects);
+  const damageEffect = effects.find((effect) => effect.type === 'damage');
+  if (!damageEffect) return [];
+
+  const items: Array<{ label: string; value: string }> = [];
+  const damageType = damageEffect.damageType || skill.damage_type || '';
+  if (damageType && damageType !== 'none') {
+    items.push({ label: '伤害类型', value: damageTypeLabel[damageType] || damageType });
+  }
+
+  const element = damageEffect.element || skill.element || '';
+  if (element && element !== 'none') {
+    items.push({ label: '元素属性', value: elementLabel[element] || element });
+  }
+
+  const valueType = damageEffect.valueType || 'scale';
+  if (valueType === 'scale') {
+    const scaleRate = damageEffect.scaleRate ?? damageEffect.value ?? 0;
+    if (scaleRate > 0) {
+      const scaleAttr = damageEffect.scaleAttr || '';
+      const scaleAttrText = scaleAttr ? (scaleAttrLabel[scaleAttr] || scaleAttr) : '';
+      const baseText = `${formatPermyriadPercent(scaleRate)}%`;
+      items.push({
+        label: '伤害倍率',
+        value: scaleAttrText ? `${baseText}（${scaleAttrText}）` : baseText,
+      });
+    }
+  } else if (valueType === 'flat') {
+    if ((damageEffect.value ?? 0) > 0) {
+      items.push({ label: '固定伤害', value: String(Math.floor(damageEffect.value || 0)) });
+    }
+  } else if (valueType === 'percent') {
+    if ((damageEffect.value ?? 0) > 0) {
+      items.push({
+        label: '伤害比例',
+        value: `${formatPermyriadPercent(damageEffect.value || 0)}%（目标气血）`,
+      });
+    }
+  }
+
+  const hitCount = Math.max(1, Math.floor(damageEffect.hit_count ?? 1));
+  if (hitCount > 1) {
+    items.push({ label: '连击次数', value: `${hitCount}` });
+  }
+
+  return items;
+};
+
 const getSkillDetailItems = (skill: TechniqueSkill): Array<{ label: string; value: string }> => {
   const items: Array<{ label: string; value: string }> = [];
 
@@ -218,22 +310,7 @@ const getSkillDetailItems = (skill: TechniqueSkill): Array<{ label: string; valu
   if (skill.target_count && skill.target_count > 0) {
     items.push({ label: '目标数量', value: String(skill.target_count) });
   }
-  if (skill.damage_type) {
-    items.push({ label: '伤害类型', value: damageTypeLabel[skill.damage_type] || skill.damage_type });
-  }
-  if (skill.element && skill.element !== 'none') {
-    items.push({ label: '元素属性', value: elementLabel[skill.element] || skill.element });
-  }
-  if (skill.coefficient && skill.coefficient > 0) {
-    const percent = (skill.coefficient / 100).toFixed(0);
-    items.push({ label: '伤害系数', value: `${percent}%` });
-  }
-  if (skill.fixed_damage && skill.fixed_damage > 0) {
-    items.push({ label: '固定伤害', value: String(skill.fixed_damage) });
-  }
-  if (skill.scale_attr) {
-    items.push({ label: '缩放属性', value: scaleAttrLabel[skill.scale_attr] || skill.scale_attr });
-  }
+  items.push(...buildDamageEffectDetailItems(skill));
 
   return items;
 };
@@ -245,8 +322,10 @@ const INLINE_SKILL_DETAIL_ORDER = [
   '目标类型',
   '目标数量',
   '伤害类型',
-  '伤害系数',
-  '缩放属性',
+  '元素属性',
+  '伤害倍率',
+  '伤害比例',
+  '连击次数',
   '气血消耗',
   '固定伤害',
 ] as const;
@@ -497,9 +576,7 @@ const buildTechniqueView = (
           target_count: def?.target_count ?? undefined,
           damage_type: def?.damage_type ?? undefined,
           element: def?.element ?? undefined,
-          coefficient: def?.coefficient ?? undefined,
-          fixed_damage: def?.fixed_damage ?? undefined,
-          scale_attr: def?.scale_attr ?? undefined,
+          effects: Array.isArray(def?.effects) ? def.effects : undefined,
         };
       });
       const cost: TechniqueCostItem[] = [];
@@ -649,9 +726,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
           target_count: s.targetCount ?? undefined,
           damage_type: s.damageType ?? undefined,
           element: s.element ?? undefined,
-          coefficient: s.coefficient ?? undefined,
-          fixed_damage: s.fixedDamage ?? undefined,
-          scale_attr: s.scaleAttr ?? undefined,
+          effects: Array.isArray(s.effects) ? s.effects : undefined,
         })),
       );
 

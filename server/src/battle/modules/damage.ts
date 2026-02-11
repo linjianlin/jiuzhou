@@ -2,9 +2,15 @@
  * 九州修仙录 - 伤害计算模块
  */
 
-import type { BattleState, BattleUnit, BattleSkill, DamageResult, Shield } from '../types.js';
+import type { BattleState, BattleUnit, DamageResult } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
+
+export interface DamageProfile {
+  damageType: 'physical' | 'magic' | 'true';
+  element?: string;
+  baseDamage: number;
+}
 
 /**
  * 计算伤害
@@ -13,7 +19,7 @@ export function calculateDamage(
   state: BattleState,
   attacker: BattleUnit,
   defender: BattleUnit,
-  skill: BattleSkill
+  profile: DamageProfile
 ): DamageResult {
   const result: DamageResult = {
     damage: 0,
@@ -26,10 +32,8 @@ export function calculateDamage(
   };
 
   // 1. 基础伤害
-  const atkPower = skill.damageType === 'physical' 
-    ? attacker.currentAttrs.wugong 
-    : attacker.currentAttrs.fagong;
-  let damage = skill.coefficient * atkPower + skill.fixedDamage;
+  let damage = Math.max(0, profile.baseDamage);
+  if (damage <= 0) return result;
 
   // 2. 命中判定
   const hitRate = clamp(
@@ -44,8 +48,8 @@ export function calculateDamage(
   }
 
   // 3. 防御减伤（真实伤害跳过）
-  if (skill.damageType !== 'true') {
-    const defense = skill.damageType === 'physical' 
+  if (profile.damageType !== 'true') {
+    const defense = profile.damageType === 'physical' 
       ? defender.currentAttrs.wufang 
       : defender.currentAttrs.fafang;
     const defenseConstant = getDefenseConstant(defender.currentAttrs.realm);
@@ -78,13 +82,13 @@ export function calculateDamage(
   damage *= (1 + damageBonus / 10000);
 
   // 7. 五行克制
-  if (isElementCounter(skill.element, defender.currentAttrs.element)) {
+  if (isElementCounter(profile.element, defender.currentAttrs.element)) {
     result.isElementBonus = true;
     damage *= (1 + BATTLE_CONSTANTS.ELEMENT_COUNTER_BONUS / 10000);
   }
 
   // 8. 五行抗性
-  const resistance = getElementResistance(defender, skill.element);
+  const resistance = getElementResistance(defender, profile.element);
   const cappedResistance = Math.min(resistance, BATTLE_CONSTANTS.MAX_ELEMENT_RESIST);
   damage *= (1 - cappedResistance / 10000);
 

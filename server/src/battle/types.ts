@@ -159,8 +159,6 @@ export interface BattleSkill {
   
   damageType?: 'physical' | 'magic' | 'true';
   element: string;
-  coefficient: number;
-  fixedDamage: number;
   
   effects: SkillEffect[];
   conditions?: SkillConditions;
@@ -210,6 +208,8 @@ export interface SkillEffect {
   chance?: number;  // 万分比
   resourceType?: 'lingqi' | 'qixue';  // 资源类型
   target?: 'self' | 'enemy' | 'ally';
+  damageType?: 'physical' | 'magic' | 'true';
+  element?: string;
   hit_count?: number;
 }
 

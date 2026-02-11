@@ -11,13 +11,12 @@ import type {
   DotEffect,
   HotEffect,
   ActionLog,
-  TargetResult,
-  DamageResult
+  TargetResult
 } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
 import { calculateDamage, applyDamage } from './damage.js';
-import { calculateHealing, applyHealing, applyLifesteal } from './healing.js';
+import { applyHealing, applyLifesteal } from './healing.js';
 import { addBuff, addShield, removeBuff } from './buff.js';
 import { tryApplyControl, canUseSkill, isSilenced, isDisarmed } from './control.js';
 import { resolveTargets } from './target.js';
@@ -157,16 +156,132 @@ function isDirectDamageType(damageType: unknown): damageType is 'physical' | 'ma
   return damageType === 'physical' || damageType === 'magic' || damageType === 'true';
 }
 
-function resolveDamageHitCount(skill: BattleSkill): number {
-  let hitCount = 1;
-  for (const effect of skill.effects) {
-    if (effect.type !== 'damage') continue;
-    const effectHitCount = Math.floor(toFiniteNumber(effect.hit_count, 1));
-    if (effectHitCount > hitCount) {
-      hitCount = effectHitCount;
+function resolveEffectDamageType(skill: BattleSkill, effect: SkillEffect): 'physical' | 'magic' | 'true' | null {
+  const raw = effect.damageType;
+  if (isDirectDamageType(raw)) return raw;
+  if (isDirectDamageType(skill.damageType)) return skill.damageType;
+  return null;
+}
+
+function resolveEffectDamageElement(skill: BattleSkill, effect: SkillEffect): string {
+  const raw = effect.element;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw : (skill.element || 'none');
+}
+
+function resolveDamageHitCount(effect: SkillEffect): number {
+  return Math.max(1, Math.floor(toFiniteNumber(effect.hit_count, 1)));
+}
+
+function resolveDamageBaseValue(
+  caster: BattleUnit,
+  target: BattleUnit,
+  skill: BattleSkill,
+  effect: SkillEffect,
+  damageType: 'physical' | 'magic' | 'true'
+): number {
+  const value = toFiniteNumber(effect.value, 0);
+  const valueType = effect.valueType || 'scale';
+
+  if (valueType === 'flat') {
+    return Math.max(0, Math.floor(value));
+  }
+
+  if (valueType === 'percent') {
+    return Math.max(0, Math.floor(target.currentAttrs.max_qixue * value / 10000));
+  }
+
+  const fallbackScaleAttr = damageType === 'magic' ? 'fagong' : 'wugong';
+  const scaleAttrRaw = typeof effect.scaleAttr === 'string' ? effect.scaleAttr.trim() : '';
+  const scaleAttr = scaleAttrRaw || fallbackScaleAttr;
+  const scaleRate = toFiniteNumber(effect.scaleRate, value);
+  return Math.max(0, Math.floor(getAttrValue(caster, scaleAttr) * scaleRate / 10000));
+}
+
+type DamageExecutionSummary = {
+  attempted: boolean;
+  landed: boolean;
+};
+
+function executeDamageEffect(
+  state: BattleState,
+  caster: BattleUnit,
+  target: BattleUnit,
+  skill: BattleSkill,
+  effect: SkillEffect,
+  result: TargetResult
+): DamageExecutionSummary {
+  const damageType = resolveEffectDamageType(skill, effect);
+  if (!damageType) return { attempted: false, landed: false };
+
+  const hitCount = resolveDamageHitCount(effect);
+  const baseDamage = resolveDamageBaseValue(caster, target, skill, effect, damageType);
+  if (baseDamage <= 0) return { attempted: false, landed: false };
+
+  let attempted = false;
+  let landed = false;
+
+  for (let i = 0; i < hitCount; i++) {
+    if (!target.isAlive) break;
+    attempted = true;
+
+    const damageResult = calculateDamage(state, caster, target, {
+      damageType,
+      element: resolveEffectDamageElement(skill, effect),
+      baseDamage,
+    });
+    if (damageResult.isMiss) {
+      continue;
+    }
+
+    landed = true;
+    const { actualDamage: damageApplied, shieldAbsorbed } = applyDamage(
+      state, target, damageResult.damage, damageType
+    );
+    const actualDamage = Math.max(0, damageApplied);
+
+    result.damage = (result.damage || 0) + actualDamage;
+    result.shieldAbsorbed = (result.shieldAbsorbed || 0) + shieldAbsorbed;
+    result.isCrit = Boolean(result.isCrit || damageResult.isCrit);
+    result.isParry = Boolean(result.isParry || damageResult.isParry);
+    result.isElementBonus = Boolean(result.isElementBonus || damageResult.isElementBonus);
+
+    caster.stats.damageDealt += actualDamage;
+    if (actualDamage > 0) {
+      applyLifesteal(caster, actualDamage);
+    }
+
+    if (!target.isAlive) {
+      caster.stats.killCount++;
+      state.logs.push({
+        type: 'death',
+        round: state.roundCount,
+        unitId: target.id,
+        unitName: target.name,
+        killerId: caster.id,
+        killerName: caster.name,
+      });
+    }
+
+    const onHitLogs = triggerSetBonusEffects(state, 'on_hit', caster, {
+      target,
+      damage: actualDamage,
+    });
+    state.logs.push(...onHitLogs);
+    const onBeHitLogs = triggerSetBonusEffects(state, 'on_be_hit', target, {
+      target: caster,
+      damage: actualDamage,
+    });
+    state.logs.push(...onBeHitLogs);
+    if (damageResult.isCrit) {
+      const onCritLogs = triggerSetBonusEffects(state, 'on_crit', caster, {
+        target,
+        damage: actualDamage,
+      });
+      state.logs.push(...onCritLogs);
     }
   }
-  return Math.max(1, hitCount);
+
+  return { attempted, landed };
 }
 
 /**
@@ -267,90 +382,27 @@ function executeSkillOnTarget(
     buffsApplied: [],
     buffsRemoved: [],
   };
-  
-  // 处理伤害
-  if (isDirectDamageType(skill.damageType) && skill.coefficient > 0) {
-    const hitCount = resolveDamageHitCount(skill);
-    let totalDamage = 0;
-    let totalShieldAbsorbed = 0;
-    let hasLandedHit = false;
-    let hasCrit = false;
-    let hasParry = false;
-    let hasElementBonus = false;
 
-    for (let i = 0; i < hitCount; i++) {
-      if (!target.isAlive) break;
-
-      const damageResult = calculateDamage(state, caster, target, skill);
-      if (damageResult.isMiss) {
-        continue;
-      }
-
-      hasLandedHit = true;
-      const { actualDamage: damageApplied, shieldAbsorbed } = applyDamage(
-        state, target, damageResult.damage, skill.damageType
-      );
-      const actualDamage = Math.max(0, damageApplied);
-
-      totalDamage += actualDamage;
-      totalShieldAbsorbed += shieldAbsorbed;
-      hasCrit = hasCrit || damageResult.isCrit;
-      hasParry = hasParry || damageResult.isParry;
-      hasElementBonus = hasElementBonus || damageResult.isElementBonus;
-      
-      // 更新统计
-      caster.stats.damageDealt += actualDamage;
-      
-      // 吸血
-      if (actualDamage > 0) {
-        applyLifesteal(caster, actualDamage);
-      }
-      
-      // 检查击杀
-      if (!target.isAlive) {
-        caster.stats.killCount++;
-        state.logs.push({
-          type: 'death',
-          round: state.roundCount,
-          unitId: target.id,
-          unitName: target.name,
-          killerId: caster.id,
-          killerName: caster.name,
-        });
-      }
-
-      const onHitLogs = triggerSetBonusEffects(state, 'on_hit', caster, {
-        target,
-        damage: actualDamage,
-      });
-      state.logs.push(...onHitLogs);
-      const onBeHitLogs = triggerSetBonusEffects(state, 'on_be_hit', target, {
-        target: caster,
-        damage: actualDamage,
-      });
-      state.logs.push(...onBeHitLogs);
-      if (damageResult.isCrit) {
-        const onCritLogs = triggerSetBonusEffects(state, 'on_crit', caster, {
-          target,
-          damage: actualDamage,
-        });
-        state.logs.push(...onCritLogs);
-      }
-    }
-
-    if (!hasLandedHit) {
-      result.isMiss = true;
-    } else {
-      result.damage = totalDamage;
-      result.shieldAbsorbed = totalShieldAbsorbed;
-      result.isCrit = hasCrit;
-      result.isParry = hasParry;
-      result.isElementBonus = hasElementBonus;
-    }
-  }
-  
-  // 处理技能效果
+  // 先处理伤害效果，保持“先伤害后附加效果”的执行顺序
+  let attemptedDamage = false;
+  let landedDamage = false;
   for (const effect of skill.effects) {
+    if (effect.type !== 'damage') continue;
+    if (effect.chance && !rollChance(state, effect.chance)) {
+      continue;
+    }
+
+    const summary = executeDamageEffect(state, caster, target, skill, effect, result);
+    attemptedDamage = attemptedDamage || summary.attempted;
+    landedDamage = landedDamage || summary.landed;
+  }
+  if (attemptedDamage && !landedDamage) {
+    result.isMiss = true;
+  }
+
+  // 再处理非伤害技能效果
+  for (const effect of skill.effects) {
+    if (effect.type === 'damage') continue;
     // 控制效果走独立命中流程，避免重复概率判定
     if (effect.type !== 'control' && effect.chance && !rollChance(state, effect.chance)) {
       continue;
@@ -375,7 +427,7 @@ function executeEffect(
 ): void {
   switch (effect.type) {
     case 'damage':
-      // 额外伤害（已在主伤害中处理）
+      // 伤害效果在 executeSkillOnTarget 中统一执行
       break;
       
     case 'heal':
@@ -684,9 +736,12 @@ export function getNormalAttack(unit: BattleUnit): BattleSkill {
     targetCount: 1,
     damageType,
     element: (unit.currentAttrs.element as string) || 'none',
-    coefficient: 1.0,
-    fixedDamage: 0,
-    effects: [],
+    effects: [{
+      type: 'damage',
+      valueType: 'scale',
+      scaleAttr: damageType === 'magic' ? 'fagong' : 'wugong',
+      scaleRate: 10000,
+    }],
     triggerType: 'active',
     aiPriority: 0,
   };

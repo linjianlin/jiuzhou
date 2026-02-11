@@ -18,18 +18,11 @@ export function calculateHealing(
   state: BattleState,
   healer: BattleUnit,
   target: BattleUnit,
-  skill: BattleSkill,
+  _skill: BattleSkill,
   healValue?: number
 ): HealResult {
   // 基础治疗
-  let baseHeal: number;
-  
-  if (healValue !== undefined) {
-    baseHeal = healValue;
-  } else {
-    // 默认按法攻计算
-    baseHeal = skill.coefficient * healer.currentAttrs.fagong + skill.fixedDamage;
-  }
+  let baseHeal = Math.max(0, Math.floor(Number(healValue) || 0));
 
   // 治疗加成
   const healBonus = Math.min(healer.currentAttrs.zhiliao, BATTLE_CONSTANTS.MAX_HEAL_BONUS);

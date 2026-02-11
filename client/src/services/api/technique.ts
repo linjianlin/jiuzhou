@@ -51,10 +51,7 @@ export type SkillDefDto = {
   target_count: number;
   damage_type: string | null;
   element: string;
-  coefficient: number;
-  fixed_damage: number;
-  scale_attr: string;
-  effects: unknown;
+  effects: unknown[];
   trigger_type: string;
   conditions: unknown;
   ai_priority: number;
@@ -135,9 +132,7 @@ export interface CharacterTechniqueStatusResponse {
       targetCount: number;
       damageType: string | null;
       element: string;
-      coefficient: number;
-      fixedDamage: number;
-      scaleAttr: string;
+      effects: unknown[];
     }>;
     passives: Record<string, number>;
   };
