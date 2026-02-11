@@ -144,6 +144,7 @@ const passiveLabel: Record<string, string> = {
   fafang: '法防',
   mingzhong: '命中',
   shanbi: '闪避',
+  zhaojia: '招架',
   baoji: '暴击',
   baoshang: '暴伤',
   kangbao: '抗暴',
@@ -155,7 +156,22 @@ const passiveLabel: Record<string, string> = {
   sudu: '速度',
   qixue_huifu: '气血恢复',
   lingqi_huifu: '灵气恢复',
+  kongzhi_kangxing: '控制抗性',
+  jin_kangxing: '金抗性',
+  mu_kangxing: '木抗性',
+  shui_kangxing: '水抗性',
+  huo_kangxing: '火抗性',
+  tu_kangxing: '土抗性',
+  fuyuan: '福缘',
+  shuxing_shuzhi: '属性数值',
 };
+
+const normalizePassiveKey = (raw: string): string =>
+  raw
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/-/g, '_')
+    .toLowerCase();
 
 // 技能目标类型中文映射
 const targetTypeLabel: Record<string, string> = {
@@ -401,10 +417,12 @@ const coercePassiveEntries = (raw: unknown): PassiveEntry[] => {
   return raw
     .map((x) => {
       if (!x || typeof x !== 'object') return null;
-      const key = (x as { key?: unknown }).key;
+      const rawKey = (x as { key?: unknown }).key;
       const value = (x as { value?: unknown }).value;
-      if (typeof key !== 'string') return null;
+      if (typeof rawKey !== 'string') return null;
       if (typeof value !== 'number') return null;
+      const key = normalizePassiveKey(rawKey);
+      if (!key) return null;
       return { key, value };
     })
     .filter((v): v is PassiveEntry => !!v);
