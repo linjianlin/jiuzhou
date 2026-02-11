@@ -708,17 +708,27 @@
 }
 
 .bag-craft-loading {
-  height: 360px;
+  height: 400px;
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: craft-fade-in 0.15s ease-out;
+}
+
+@keyframes craft-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .bag-craft-body {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 12px;
-  min-height: 400px;
+  height: 400px;
 }
 
 .bag-craft-list {
@@ -726,7 +736,8 @@
   border-radius: 12px;
   background: var(--panel-bg-soft);
   padding: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .bag-craft-item {
@@ -739,6 +750,8 @@
   padding: 8px 10px;
   margin-bottom: 8px;
   cursor: pointer;
+  will-change: transform;
+  transform: translateZ(0);
 
   &.is-active {
     border-color: var(--primary-color);
@@ -766,7 +779,19 @@
   padding: 12px;
   display: flex;
   flex-direction: column;
+  height: 400px;
+  overflow: hidden;
+}
+
+.bag-craft-detail-content {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  will-change: contents;
+  contain: layout style paint;
 }
 
 .bag-craft-detail-title {
@@ -784,6 +809,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .bag-craft-cost-line {

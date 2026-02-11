@@ -1,5 +1,5 @@
 import { App, Button, Empty, InputNumber, Modal, Segmented, Spin, Tag } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   executeInventoryCraftRecipe,
   getInventoryCraftRecipes,
@@ -37,6 +37,12 @@ const CraftModal: React.FC<CraftModalProps> = ({ open, onClose, onSuccess, focus
   const [selectedRecipeId, setSelectedRecipeId] = useState('');
   const [times, setTimes] = useState(1);
   const [character, setCharacter] = useState<{ realm: string; exp: number; silver: number; spiritStones: number } | null>(null);
+  const selectedRecipeIdRef = useRef('');
+  const prevRecipeIdRef = useRef<string>('');
+
+  useEffect(() => {
+    selectedRecipeIdRef.current = selectedRecipeId;
+  }, [selectedRecipeId]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -47,8 +53,9 @@ const CraftModal: React.FC<CraftModalProps> = ({ open, onClose, onSuccess, focus
       setRecipes(nextRecipes);
       setCharacter(res.data.character);
 
-      let nextSelected = selectedRecipeId;
-      const hasSelected = nextRecipes.some((x) => x.id === selectedRecipeId);
+      const currentSelectedRecipeId = selectedRecipeIdRef.current;
+      let nextSelected = currentSelectedRecipeId;
+      const hasSelected = nextRecipes.some((x) => x.id === currentSelectedRecipeId);
       if (!hasSelected) {
         const focus = (focusItemDefId || '').trim();
         if (focus) {
@@ -72,7 +79,7 @@ const CraftModal: React.FC<CraftModalProps> = ({ open, onClose, onSuccess, focus
     } finally {
       setLoading(false);
     }
-  }, [focusItemDefId, message, selectedRecipeId]);
+  }, [focusItemDefId, message]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,11 +99,23 @@ const CraftModal: React.FC<CraftModalProps> = ({ open, onClose, onSuccess, focus
 
   useEffect(() => {
     if (!selectedRecipe) return;
-    if (selectedRecipe.id !== selectedRecipeId) setSelectedRecipeId(selectedRecipe.id);
-    setTimes((prev) => clampTimes(prev, selectedRecipe.maxCraftTimes));
-  }, [selectedRecipe, selectedRecipeId]);
+    // 仅在配方真正变化时调整次数
+    if (selectedRecipe.id !== prevRecipeIdRef.current) {
+      prevRecipeIdRef.current = selectedRecipe.id;
+      setTimes((prev) => clampTimes(prev, selectedRecipe.maxCraftTimes));
+    }
+  }, [selectedRecipe]);
+
+  const handleSelectRecipe = useCallback(
+    (recipeId: string) => {
+      if (recipeId === selectedRecipeId) return;
+      setSelectedRecipeId(recipeId);
+    },
+    [selectedRecipeId],
+  );
 
   const canCraftNow = !!selectedRecipe && selectedRecipe.craftable && selectedRecipe.maxCraftTimes > 0;
+  const isInitialLoading = loading && recipes.length === 0;
   const executeCraft = useCallback(async () => {
     if (!selectedRecipe) return;
     const recipeTimes = clampTimes(times, selectedRecipe.maxCraftTimes);
@@ -159,97 +178,99 @@ const CraftModal: React.FC<CraftModalProps> = ({ open, onClose, onSuccess, focus
           ) : null}
         </div>
 
-        {loading ? (
-          <div className="bag-craft-loading">
-            <Spin />
-          </div>
-        ) : (
-          <div className="bag-craft-body">
-            <div className="bag-craft-list">
-              {filteredRecipes.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用配方" />
-              ) : (
-                filteredRecipes.map((recipe) => (
-                  <button
-                    key={recipe.id}
-                    type="button"
-                    className={`bag-craft-item ${selectedRecipe?.id === recipe.id ? 'is-active' : ''}`}
-                    onClick={() => setSelectedRecipeId(recipe.id)}
-                  >
-                    <div className="bag-craft-item-title">{recipe.name}</div>
-                    <div className="bag-craft-item-meta">
-                      <span>{kindLabel[recipe.craftKind]}</span>
-                      <span>{recipe.product.name} ×{recipe.product.qty}</span>
-                    </div>
-                    <div className="bag-craft-item-meta">
-                      <span>{recipe.craftable ? `可制作 ${recipe.maxCraftTimes}` : '不可制作'}</span>
-                      <span>成功率 {recipe.successRate}%</span>
-                    </div>
-                  </button>
-                ))
-              )}
+        <div className="bag-craft-body">
+          {isInitialLoading ? (
+            <div className="bag-craft-loading">
+              <Spin />
             </div>
-
-            <div className="bag-craft-detail">
-              {selectedRecipe ? (
-                <>
-                  <div className="bag-craft-detail-title">{selectedRecipe.name}</div>
-                  <div className="bag-craft-detail-meta">
-                    <Tag color="blue">{kindLabel[selectedRecipe.craftKind]}</Tag>
-                    <Tag color="default">产物：{selectedRecipe.product.name} ×{selectedRecipe.product.qty}</Tag>
-                    <Tag color={selectedRecipe.requirements.realmMet ? 'green' : 'red'}>
-                      境界需求：{selectedRecipe.requirements.realm || '无'}
-                    </Tag>
-                  </div>
-
-                  <div className="bag-craft-costs">
-                    <div className="bag-craft-cost-line">
-                      <span>银两</span>
-                      <span>{selectedRecipe.costs.silver.toLocaleString()}</span>
-                    </div>
-                    <div className="bag-craft-cost-line">
-                      <span>灵石</span>
-                      <span>{selectedRecipe.costs.spiritStones.toLocaleString()}</span>
-                    </div>
-                    <div className="bag-craft-cost-line">
-                      <span>修为</span>
-                      <span>{selectedRecipe.costs.exp.toLocaleString()}</span>
-                    </div>
-                    {selectedRecipe.costs.items.map((cost) => (
-                      <div className={`bag-craft-cost-line ${cost.missing > 0 ? 'is-missing' : ''}`} key={cost.itemDefId}>
-                        <span>{cost.itemName}</span>
-                        <span>{cost.required} / {cost.owned}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="bag-craft-submit">
-                    <div className="bag-craft-submit-input">
-                      <span>次数</span>
-                      <InputNumber
-                        min={1}
-                        max={Math.max(1, selectedRecipe.maxCraftTimes)}
-                        value={times}
-                        onChange={(value) => setTimes(clampTimes(Number(value || 1), selectedRecipe.maxCraftTimes))}
-                      />
-                      <span>最多 {selectedRecipe.maxCraftTimes}</span>
-                    </div>
-                    <Button
-                      type="primary"
-                      disabled={!canCraftNow || submitting}
-                      loading={submitting}
-                      onClick={() => void executeCraft()}
+          ) : (
+            <>
+              <div className="bag-craft-list">
+                {filteredRecipes.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用配方" />
+                ) : (
+                  filteredRecipes.map((recipe) => (
+                    <button
+                      key={recipe.id}
+                      type="button"
+                      className={`bag-craft-item ${selectedRecipe?.id === recipe.id ? 'is-active' : ''}`}
+                      onClick={() => handleSelectRecipe(recipe.id)}
                     >
-                      {canCraftNow ? '开始炼制' : '材料或境界不足'}
-                    </Button>
+                      <div className="bag-craft-item-title">{recipe.name}</div>
+                      <div className="bag-craft-item-meta">
+                        <span>{kindLabel[recipe.craftKind]}</span>
+                        <span>{recipe.product.name} ×{recipe.product.qty}</span>
+                      </div>
+                      <div className="bag-craft-item-meta">
+                        <span>{recipe.craftable ? `可制作 ${recipe.maxCraftTimes}` : '不可制作'}</span>
+                        <span>成功率 {recipe.successRate}%</span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="bag-craft-detail">
+                {selectedRecipe ? (
+                  <div className="bag-craft-detail-content">
+                    <div className="bag-craft-detail-title">{selectedRecipe.name}</div>
+                    <div className="bag-craft-detail-meta">
+                      <Tag color="blue">{kindLabel[selectedRecipe.craftKind]}</Tag>
+                      <Tag color="default">产物：{selectedRecipe.product.name} ×{selectedRecipe.product.qty}</Tag>
+                      <Tag color={selectedRecipe.requirements.realmMet ? 'green' : 'red'}>
+                        境界需求：{selectedRecipe.requirements.realm || '无'}
+                      </Tag>
+                    </div>
+
+                    <div className="bag-craft-costs">
+                      <div className="bag-craft-cost-line">
+                        <span>银两</span>
+                        <span>{selectedRecipe.costs.silver.toLocaleString()}</span>
+                      </div>
+                      <div className="bag-craft-cost-line">
+                        <span>灵石</span>
+                        <span>{selectedRecipe.costs.spiritStones.toLocaleString()}</span>
+                      </div>
+                      <div className="bag-craft-cost-line">
+                        <span>修为</span>
+                        <span>{selectedRecipe.costs.exp.toLocaleString()}</span>
+                      </div>
+                      {selectedRecipe.costs.items.map((cost) => (
+                        <div className={`bag-craft-cost-line ${cost.missing > 0 ? 'is-missing' : ''}`} key={cost.itemDefId}>
+                          <span>{cost.itemName}</span>
+                          <span>{cost.required} / {cost.owned}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="bag-craft-submit">
+                      <div className="bag-craft-submit-input">
+                        <span>次数</span>
+                        <InputNumber
+                          min={1}
+                          max={Math.max(1, selectedRecipe.maxCraftTimes)}
+                          value={times}
+                          onChange={(value) => setTimes(clampTimes(Number(value || 1), selectedRecipe.maxCraftTimes))}
+                        />
+                        <span>最多 {selectedRecipe.maxCraftTimes}</span>
+                      </div>
+                      <Button
+                        type="primary"
+                        disabled={!canCraftNow || submitting}
+                        loading={submitting}
+                        onClick={() => void executeCraft()}
+                      >
+                        {canCraftNow ? '开始炼制' : '材料或境界不足'}
+                      </Button>
+                    </div>
                   </div>
-                </>
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择配方" />
-              )}
-            </div>
-          </div>
-        )}
+                ) : (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择配方" />
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </Modal>
   );
