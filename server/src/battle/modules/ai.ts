@@ -13,9 +13,9 @@ import {
 import { isStunned, isFeared, getTauntSource } from './control.js';
 
 // AI行为模式
-export type AIBehavior = 'passive' | 'aggressive' | 'defensive' | 'support' | 'boss';
+type AIBehavior = 'passive' | 'aggressive' | 'defensive' | 'support' | 'boss';
 
-export interface AIDecision {
+interface AIDecision {
   skill: BattleSkill;
   targetIds: string[];
 }

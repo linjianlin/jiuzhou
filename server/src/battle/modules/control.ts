@@ -25,7 +25,7 @@ const CONTROL_DEFINITIONS: Record<string, {
   fear: { name: '恐惧', category: 'control', tags: ['hard_control', 'fear'] },
 };
 
-export interface ControlResult {
+interface ControlResult {
   success: boolean;
   resisted: boolean;
   duration: number;

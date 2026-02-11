@@ -184,7 +184,7 @@ export function processRoundEndBuffs(
 /**
  * 计算DOT伤害
  */
-export function calculateDotDamage(dot: DotEffect, target: BattleUnit): number {
+function calculateDotDamage(dot: DotEffect, target: BattleUnit): number {
   // DOT伤害不受防御影响，但受五行抗性影响
   let damage = dot.damage;
   
@@ -199,7 +199,7 @@ export function calculateDotDamage(dot: DotEffect, target: BattleUnit): number {
 /**
  * 计算HOT治疗
  */
-export function calculateHotHeal(hot: HotEffect, target: BattleUnit): number {
+function calculateHotHeal(hot: HotEffect, target: BattleUnit): number {
   let heal = hot.heal;
   
   // 受减疗影响
@@ -212,7 +212,7 @@ export function calculateHotHeal(hot: HotEffect, target: BattleUnit): number {
 /**
  * 重新计算单位属性
  */
-export function recalculateUnitAttrs(unit: BattleUnit): void {
+function recalculateUnitAttrs(unit: BattleUnit): void {
   // 从基础属性开始
   unit.currentAttrs = { ...unit.baseAttrs };
   

@@ -679,11 +679,3 @@ export const getItemDefInfo = async (itemDefId: string): Promise<{
   return result.rows[0] || null;
 };
 
-export default {
-  getDropPool,
-  rollDrops,
-  calculateAllDrops,
-  distributeBattleRewards,
-  quickDistributeRewards,
-  getItemDefInfo,
-};

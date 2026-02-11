@@ -60,5 +60,3 @@ export const query = async (text: string, params?: unknown[]) => {
   }
   return result;
 };
-
-export default pool;

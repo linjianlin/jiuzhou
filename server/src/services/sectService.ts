@@ -40,27 +40,4 @@ export {
   buyFromSectShop,
 };
 
-export default {
-  createSect,
-  getSectInfo,
-  getCharacterSect,
-  searchSects,
-  applyToSect,
-  listApplications,
-  handleApplication,
-  cancelMyApplication,
-  leaveSect,
-  kickMember,
-  appointPosition,
-  transferLeader,
-  disbandSect,
-  donate,
-  getBuildings,
-  upgradeBuilding,
-  getSectBonuses,
-  getSectQuests,
-  acceptSectQuest,
-  getSectShop,
-  buyFromSectShop,
-};
 

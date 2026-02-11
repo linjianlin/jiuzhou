@@ -175,4 +175,3 @@ export const initAchievementTables = async (): Promise<void> => {
   console.log('✓ 成就与称号系统表检测完成');
 };
 
-export default initAchievementTables;

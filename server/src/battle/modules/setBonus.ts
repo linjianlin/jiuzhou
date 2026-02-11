@@ -15,7 +15,7 @@ import { addBuff } from './buff.js';
 import { applyDamage } from './damage.js';
 import { applyHealing } from './healing.js';
 
-export interface SetBonusTriggerContext {
+interface SetBonusTriggerContext {
   target?: BattleUnit;
   damage?: number;
   heal?: number;

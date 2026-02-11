@@ -6,9 +6,9 @@ import { updateAchievementProgress } from './achievementService.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
-export type TaskStatus = 'ongoing' | 'turnin' | 'claimable' | 'completed';
+type TaskStatus = 'ongoing' | 'turnin' | 'claimable' | 'completed';
 
-export type TaskObjectiveDto = {
+type TaskObjectiveDto = {
   id: string;
   type: string;
   text: string;
@@ -17,12 +17,12 @@ export type TaskObjectiveDto = {
   params?: Record<string, unknown>;
 };
 
-export type TaskRewardDto =
+type TaskRewardDto =
   | { type: 'silver'; name: string; amount: number }
   | { type: 'spirit_stones'; name: string; amount: number }
   | { type: 'item'; itemDefId: string; name: string; icon: string | null; amount: number };
 
-export type TaskOverviewDto = {
+type TaskOverviewDto = {
   id: string;
   category: TaskCategory;
   title: string;
@@ -36,9 +36,9 @@ export type TaskOverviewDto = {
   rewards: TaskRewardDto[];
 };
 
-export type BountyTaskSourceType = 'daily' | 'player';
+type BountyTaskSourceType = 'daily' | 'player';
 
-export type BountyTaskOverviewDto = Omit<TaskOverviewDto, 'category'> & {
+type BountyTaskOverviewDto = Omit<TaskOverviewDto, 'category'> & {
   category: 'bounty';
   bountyInstanceId: number;
   sourceType: BountyTaskSourceType;
@@ -998,7 +998,7 @@ const normalizePositiveInt = (value: unknown, fallback = 1): number => {
   return floor > 0 ? floor : fallback;
 };
 
-export const recordTalkNpcEvent = async (characterId: number, npcId: string): Promise<void> => {
+const recordTalkNpcEvent = async (characterId: number, npcId: string): Promise<void> => {
   const nid = asNonEmptyString(npcId);
   if (!nid) return;
 
@@ -1170,14 +1170,14 @@ export const recordCraftItemEvent = async (
   }
 };
 
-export type NpcTalkTaskOption = {
+type NpcTalkTaskOption = {
   taskId: string;
   title: string;
   category: TaskCategory;
   status: 'locked' | 'available' | 'accepted' | 'turnin' | 'claimable' | 'claimed';
 };
 
-export type NpcTalkMainQuestOption = {
+type NpcTalkMainQuestOption = {
   sectionId: string;
   sectionName: string;
   chapterName: string;

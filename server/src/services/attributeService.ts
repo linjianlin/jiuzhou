@@ -236,4 +236,3 @@ export const resetAttributePoints = async (
   }
 };
 
-export default { addAttributePoint, batchAddPoints, resetAttributePoints };

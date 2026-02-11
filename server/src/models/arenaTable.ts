@@ -58,4 +58,3 @@ export const initArenaTables = async (): Promise<void> => {
   console.log('✓ 竞技场系统表检测完成');
 };
 
-export default initArenaTables;

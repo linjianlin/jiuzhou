@@ -59,26 +59,6 @@ export interface CharacterAttributes {
   currentRoomId: string;
 }
 
-// 玩家状态
-export interface PlayerState {
-  id: string;
-  character: CharacterAttributes | null;
-  online: boolean;
-  lastUpdate: number;
-}
-
-// 游戏状态
-export interface GameState {
-  players: Record<string, PlayerState>;
-  version: number;
-}
-
-// 初始游戏状态
-export const initialGameState: GameState = {
-  players: {},
-  version: 0,
-};
-
 // 数据库字段到驼峰命名的转换
 export const dbToCharacterAttributes = (dbRow: Record<string, unknown>): CharacterAttributes => ({
   id: dbRow.id as number,

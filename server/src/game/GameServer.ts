@@ -538,5 +538,3 @@ export const getGameServer = (): GameServer => {
   }
   return gameServer;
 };
-
-export default { initGameServer, getGameServer };

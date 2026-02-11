@@ -285,5 +285,4 @@ export const initDungeonTables = async (): Promise<void> => {
   }
 };
 
-export default initDungeonTables;
 

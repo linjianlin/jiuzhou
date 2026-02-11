@@ -67,4 +67,3 @@ export const initSignInTable = async (): Promise<void> => {
   }
 };
 
-export default initSignInTable;

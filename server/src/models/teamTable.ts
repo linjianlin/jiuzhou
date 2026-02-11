@@ -148,4 +148,3 @@ export const initTeamTables = async (): Promise<void> => {
   }
 };
 
-export default initTeamTables;

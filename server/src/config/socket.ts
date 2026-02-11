@@ -48,13 +48,3 @@ export const initSocket = (
   console.log('Socket.io 初始化完成');
   return io;
 };
-
-// 获取Socket.io实例
-export const getIO = (): Server => {
-  if (!io) {
-    throw new Error('Socket.io 未初始化');
-  }
-  return io;
-};
-
-export default { initSocket, getIO };

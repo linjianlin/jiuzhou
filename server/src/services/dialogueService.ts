@@ -219,13 +219,3 @@ export const applyDialogueEffectsTx = async (
   return { success: true, message: 'ok', results };
 };
 
-export default {
-  loadDialogue,
-  getDialogueNode,
-  getStartNode,
-  processChoice,
-  advanceToNextNode,
-  isDialogueComplete,
-  createDialogueState,
-  applyDialogueEffectsTx,
-};

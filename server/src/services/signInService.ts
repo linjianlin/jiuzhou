@@ -219,4 +219,3 @@ export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
   }
 };
 
-export default { getSignInOverview, doSignIn };

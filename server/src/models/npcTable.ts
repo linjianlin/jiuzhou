@@ -103,4 +103,3 @@ export const initNpcTable = async (): Promise<void> => {
   }
 };
 
-export default initNpcTable;

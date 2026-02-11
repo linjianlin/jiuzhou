@@ -779,4 +779,3 @@ export const submitBountyMaterials = async (
   }
 };
 
-export default { ensureDailyBountyInstances, getBountyBoard, claimBounty, publishBounty, searchItemDefsForBounty, submitBountyMaterials };

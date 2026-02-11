@@ -85,4 +85,3 @@ export const initMonthCardTables = async (): Promise<void> => {
   console.log('✓ 月卡系统表检测完成');
 };
 
-export default initMonthCardTables;

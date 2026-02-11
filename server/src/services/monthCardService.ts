@@ -488,4 +488,3 @@ export const claimMonthCardReward = async (userId: number, monthCardId: string):
   }
 };
 
-export default { getMonthCardStatus, useMonthCardItem, buyMonthCard, claimMonthCardReward };

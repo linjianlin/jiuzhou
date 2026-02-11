@@ -303,11 +303,3 @@ export const updateCharacterAutoDisassembleSettings = async (
   }
 };
 
-export default {
-  checkCharacter,
-  createCharacter,
-  getCharacter,
-  updateCharacterPosition,
-  updateCharacterAutoCastSkills,
-  updateCharacterAutoDisassembleSettings,
-};

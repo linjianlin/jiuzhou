@@ -5,7 +5,7 @@
 
 import type { BattleState, BattleUnit, BattleSkill, BattleAttrs } from '../types.js';
 
-export interface ValidationResult {
+interface ValidationResult {
   valid: boolean;
   error?: string;
 }
@@ -47,7 +47,7 @@ export function validateBattleState(state: BattleState): ValidationResult {
 /**
  * 验证战斗单位数据
  */
-export function validateBattleUnit(unit: BattleUnit): ValidationResult {
+function validateBattleUnit(unit: BattleUnit): ValidationResult {
   if (!unit.id || !unit.name) {
     return { valid: false, error: '单位ID或名称不能为空' };
   }
@@ -76,7 +76,7 @@ export function validateBattleUnit(unit: BattleUnit): ValidationResult {
  * 验证属性值范围
  * 注意：万分比属性允许超出范围，在实际计算时会被钳制
  */
-export function validateBattleAttrs(attrs: BattleAttrs): ValidationResult {
+function validateBattleAttrs(attrs: BattleAttrs): ValidationResult {
   // 基础属性必须为正数
   if (attrs.max_qixue <= 0) {
     return { valid: false, error: '最大气血必须大于0' };
@@ -170,7 +170,7 @@ export function validateSkillUse(
 /**
  * 验证目标合法性
  */
-export function validateTargets(
+function validateTargets(
   state: BattleState,
   unit: BattleUnit,
   skill: BattleSkill,
@@ -230,7 +230,7 @@ export function validateTargets(
 /**
  * 验证技能条件
  */
-export function validateSkillConditions(
+function validateSkillConditions(
   unit: BattleUnit,
   conditions: NonNullable<BattleSkill['conditions']>
 ): ValidationResult {

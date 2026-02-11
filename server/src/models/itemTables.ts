@@ -674,4 +674,3 @@ export const initItemTables = async (): Promise<void> => {
   }
 };
 
-export default initItemTables;

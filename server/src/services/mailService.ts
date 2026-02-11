@@ -745,15 +745,3 @@ export const getUnreadCount = async (
   }
 };
 
-export default {
-  sendMail,
-  sendSystemMail,
-  getMailList,
-  readMail,
-  claimAttachments,
-  claimAllAttachments,
-  deleteMail,
-  deleteAllMails,
-  markAllRead,
-  getUnreadCount
-};

@@ -326,4 +326,3 @@ export const initCharacterTable = async (): Promise<void> => {
   }
 };
 
-export default initCharacterTable;

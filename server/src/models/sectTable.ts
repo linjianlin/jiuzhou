@@ -179,5 +179,4 @@ export const initSectTables = async (): Promise<void> => {
   console.log('✓ 宗门系统表检测完成');
 };
 
-export default initSectTables;
 

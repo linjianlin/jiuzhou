@@ -9,7 +9,7 @@ import type { BattleState } from '../types.js';
  * 基于种子的伪随机数生成器（Mulberry32）
  * 确保相同种子产生相同序列，便于验证和回放
  */
-export function seededRandom(seed: number): number {
+function seededRandom(seed: number): number {
   let t = seed + 0x6D2B79F5;
   t = Math.imul(t ^ t >>> 15, t | 1);
   t ^= t + Math.imul(t ^ t >>> 7, t | 61);

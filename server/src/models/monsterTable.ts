@@ -210,4 +210,3 @@ export const initMonsterTables = async (): Promise<void> => {
   }
 };
 
-export default initMonsterTables;

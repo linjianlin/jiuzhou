@@ -177,4 +177,3 @@ export const verifyTokenAndSession = async (
   return { valid: true, decoded };
 };
 
-export default { register, login, verifyToken, verifySession, verifyTokenAndSession };

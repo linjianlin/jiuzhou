@@ -1,6 +1,6 @@
 export type SectPosition = 'leader' | 'vice_leader' | 'elder' | 'elite' | 'disciple';
 
-export type SectJoinType = 'open' | 'apply' | 'invite';
+type SectJoinType = 'open' | 'apply' | 'invite';
 
 export interface SectDefRow {
   id: string;
@@ -106,7 +106,7 @@ export interface ShopItem {
   limitDaily?: number;
 }
 
-export interface SectListItem {
+interface SectListItem {
   id: string;
   name: string;
   level: number;

@@ -274,4 +274,3 @@ export const initTechniqueTables = async (): Promise<void> => {
   }
 };
 
-export default initTechniqueTables;

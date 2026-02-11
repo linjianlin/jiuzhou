@@ -1035,19 +1035,3 @@ export const getCharacterTechniqueStatus = async (
   }
 };
 
-export default {
-  getCharacterTechniques,
-  getEquippedTechniques,
-  learnTechnique,
-  getTechniqueUpgradeCost,
-  upgradeTechnique,
-  equipTechnique,
-  unequipTechnique,
-  getAvailableSkills,
-  getEquippedSkills,
-  equipSkill,
-  unequipSkill,
-  calculateTechniquePassives,
-  getBattleSkills,
-  getCharacterTechniqueStatus
-};

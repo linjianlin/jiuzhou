@@ -173,4 +173,3 @@ export const initBattlePassTables = async (): Promise<void> => {
   console.log('✓ 战令系统表检测完成');
 };
 
-export default initBattlePassTables;

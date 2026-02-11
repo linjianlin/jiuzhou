@@ -25,7 +25,7 @@ export function applyHealing(
 /**
  * 计算吸血
  */
-export function calculateLifesteal(
+function calculateLifesteal(
   attacker: BattleUnit,
   damage: number
 ): number {

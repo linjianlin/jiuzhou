@@ -751,13 +751,3 @@ export const getEquipmentInstance = async (instanceId: number): Promise<any | nu
   };
 };
 
-export default {
-  generateEquipment,
-  createEquipmentInstance,
-  generateAndCreateEquipment,
-  getEquipmentInstance,
-  getEquipmentDef,
-  getAffixPool,
-  rollQuality,
-  rollAffixes
-};

@@ -6,7 +6,7 @@ import type { BattleState, BattleUnit, DamageResult } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
 
-export interface DamageProfile {
+interface DamageProfile {
   damageType: 'physical' | 'magic' | 'true';
   element?: string;
   baseDamage: number;
@@ -151,7 +151,7 @@ export function applyDamage(
 /**
  * 获取防御常数
  */
-export function getDefenseConstant(realm?: string): number {
+function getDefenseConstant(realm?: string): number {
   if (!realm) return BATTLE_CONSTANTS.DEFENSE_CONSTANT['凡人'];
   return BATTLE_CONSTANTS.DEFENSE_CONSTANT[realm] || BATTLE_CONSTANTS.DEFENSE_CONSTANT['凡人'];
 }
@@ -159,7 +159,7 @@ export function getDefenseConstant(realm?: string): number {
 /**
  * 判断五行克制
  */
-export function isElementCounter(attackElement?: string, defendElement?: string): boolean {
+function isElementCounter(attackElement?: string, defendElement?: string): boolean {
   if (!attackElement || !defendElement || attackElement === 'none' || defendElement === 'none') {
     return false;
   }
@@ -169,7 +169,7 @@ export function isElementCounter(attackElement?: string, defendElement?: string)
 /**
  * 获取五行抗性
  */
-export function getElementResistance(unit: BattleUnit, element?: string): number {
+function getElementResistance(unit: BattleUnit, element?: string): number {
   if (!element || element === 'none') return 0;
   
   const resistanceMap: Record<string, keyof typeof unit.currentAttrs> = {

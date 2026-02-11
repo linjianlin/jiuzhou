@@ -81,4 +81,3 @@ export const initMailTable = async (): Promise<void> => {
   }
 };
 
-export default initMailTable;

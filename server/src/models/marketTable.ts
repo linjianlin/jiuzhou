@@ -108,4 +108,3 @@ export const initMarketTable = async (): Promise<void> => {
   console.log('✓ 坊市系统表检测完成');
 };
 
-export default initMarketTable;

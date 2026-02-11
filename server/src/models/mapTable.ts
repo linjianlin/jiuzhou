@@ -169,4 +169,3 @@ export const initMapTable = async (): Promise<void> => {
   }
 };
 
-export default initMapTable;

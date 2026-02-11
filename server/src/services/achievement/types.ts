@@ -53,7 +53,7 @@ export interface CharacterAchievementRow {
 
 export type AchievementListStatusFilter = 'in_progress' | 'completed' | 'claimed' | 'claimable' | 'all';
 
-export interface AchievementProgressView {
+interface AchievementProgressView {
   current: number;
   target: number;
   percent: number;

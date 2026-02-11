@@ -1226,14 +1226,3 @@ export const setMainQuestTracked = async (
   return { success: true, message: 'ok', data: { tracked: saved } };
 };
 
-export default {
-  getMainQuestProgress,
-  startDialogue,
-  advanceDialogue,
-  selectDialogueChoice,
-  updateSectionProgress,
-  completeCurrentSection,
-  getChapterList,
-  getSectionList,
-  setMainQuestTracked,
-};

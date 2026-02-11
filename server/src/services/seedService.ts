@@ -2373,20 +2373,6 @@ export const loadSkillDefSeeds = async (): Promise<number> => {
   return count;
 };
 
-export default {
-  loadItemDefSeeds,
-  loadEquipmentDefSeeds,
-  loadAffixPoolSeeds,
-  loadItemSetSeeds,
-  loadRecipeSeeds,
-  loadTechniqueDefSeeds,
-  loadTechniqueLayerSeeds,
-  loadSkillDefSeeds,
-  loadAchievementDefSeeds,
-  loadTitleDefSeeds,
-  loadAchievementPointsRewardSeeds,
-  loadAllSeeds
-};
 
 const isDirectRun = (() => {
   const arg = process.argv[1];

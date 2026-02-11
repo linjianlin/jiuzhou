@@ -23,7 +23,7 @@ import { tryApplyControl, canUseSkill, isSilenced, isDisarmed } from './control.
 import { resolveTargets } from './target.js';
 import { triggerSetBonusEffects } from './setBonus.js';
 
-export interface SkillExecutionResult {
+interface SkillExecutionResult {
   success: boolean;
   log?: ActionLog;
   error?: string;

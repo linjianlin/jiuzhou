@@ -164,4 +164,3 @@ export const createInventoryForCharacter = async (characterId: number): Promise<
   await query(sql, [characterId]);
 };
 
-export default initInventoryTable;

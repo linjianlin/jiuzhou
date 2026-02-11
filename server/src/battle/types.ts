@@ -84,7 +84,7 @@ export interface BattleStats {
   killCount: number;
 }
 
-export interface ControlDiminishing {
+interface ControlDiminishing {
   count: number;
   resetRound: number;
 }
@@ -167,12 +167,12 @@ export interface BattleSkill {
   aiPriority: number;
 }
 
-export interface SkillCost {
+interface SkillCost {
   lingqi?: number;
   qixue?: number;
 }
 
-export type SkillTargetType = 
+type SkillTargetType = 
   | 'self' 
   | 'single_enemy' 
   | 'single_ally' 
@@ -213,7 +213,7 @@ export interface SkillEffect {
   hit_count?: number;
 }
 
-export interface SkillConditions {
+interface SkillConditions {
   minQixuePercent?: number;
   maxQixuePercent?: number;
   requireBuff?: string;
@@ -269,7 +269,7 @@ export interface BattleState {
   randomIndex: number;
 }
 
-export interface BattleTeam {
+interface BattleTeam {
   odwnerId?: number;  // 玩家用户ID
   units: BattleUnit[];
   totalSpeed: number;
@@ -323,7 +323,7 @@ export interface TargetResult {
   controlResisted?: boolean;
 }
 
-export interface DotLog {
+interface DotLog {
   type: 'dot';
   round: number;
   unitId: string;
@@ -332,7 +332,7 @@ export interface DotLog {
   damage: number;
 }
 
-export interface HotLog {
+interface HotLog {
   type: 'hot';
   round: number;
   unitId: string;
@@ -341,7 +341,7 @@ export interface HotLog {
   heal: number;
 }
 
-export interface BuffExpireLog {
+interface BuffExpireLog {
   type: 'buff_expire';
   round: number;
   unitId: string;
@@ -349,7 +349,7 @@ export interface BuffExpireLog {
   buffName: string;
 }
 
-export interface DeathLog {
+interface DeathLog {
   type: 'death';
   round: number;
   unitId: string;
@@ -366,7 +366,7 @@ export interface RoundLog {
 // ============================================
 // 战斗奖励
 // ============================================
-export interface BattleRewards {
+interface BattleRewards {
   exp: number;
   silver: number;
   items: Array<{

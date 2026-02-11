@@ -165,4 +165,3 @@ export const initTables = async (): Promise<void> => {
   }
 };
 
-export default initTables;

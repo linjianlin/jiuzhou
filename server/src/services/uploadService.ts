@@ -112,4 +112,3 @@ export const deleteAvatar = async (
   }
 };
 
-export default { avatarUpload, updateAvatar, deleteAvatar };

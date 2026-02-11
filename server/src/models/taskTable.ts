@@ -81,4 +81,3 @@ export const initTaskTables = async (): Promise<void> => {
   console.log('✓ 任务系统表检测完成');
 };
 
-export default initTaskTables;

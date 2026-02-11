@@ -153,4 +153,3 @@ export const initMainQuestTables = async (): Promise<void> => {
   console.log('✓ 主线任务系统表检测完成');
 };
 
-export default initMainQuestTables;
