@@ -102,6 +102,11 @@ const formatTargetType = (t: string): string => {
 const formatElement = (e: string): string => {
   const v = (e || '').trim();
   if (v === 'none') return '无';
+  if (v === 'jin') return '金';
+  if (v === 'mu') return '木';
+  if (v === 'shui') return '水';
+  if (v === 'huo') return '火';
+  if (v === 'tu') return '土';
   return v || '无';
 };
 

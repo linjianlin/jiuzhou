@@ -246,6 +246,36 @@ const getTechniqueDefMap = async (
   return out;
 };
 
+const getDungeonDefMap = async (
+  client: PoolClient,
+  dungeonIds: string[]
+): Promise<Record<string, { name: string }>> => {
+  const ids = Array.from(new Set(dungeonIds.map((s) => String(s || '').trim()).filter((s) => !!s)));
+  if (ids.length === 0) return {};
+  const res = await client.query(`SELECT id, name FROM dungeon_def WHERE id = ANY($1::text[])`, [ids]);
+  const out: Record<string, { name: string }> = {};
+  for (const r of res.rows as any[]) {
+    if (!r?.id) continue;
+    out[String(r.id)] = { name: String(r.name || r.id) };
+  }
+  return out;
+};
+
+const getDungeonDifficultyMap = async (
+  client: PoolClient,
+  difficultyIds: string[]
+): Promise<Record<string, { name: string }>> => {
+  const ids = Array.from(new Set(difficultyIds.map((s) => String(s || '').trim()).filter((s) => !!s)));
+  if (ids.length === 0) return {};
+  const res = await client.query(`SELECT id, name FROM dungeon_difficulty WHERE id = ANY($1::text[])`, [ids]);
+  const out: Record<string, { name: string }> = {};
+  for (const r of res.rows as any[]) {
+    if (!r?.id) continue;
+    out[String(r.id)] = { name: String(r.name || r.id) };
+  }
+  return out;
+};
+
 const getItemQtyInBag = async (client: PoolClient, characterId: number, itemDefId: string): Promise<number> => {
   const res = await client.query(
     `
@@ -368,12 +398,20 @@ const evaluateRequirements = async (args: {
 
   const itemIds: string[] = [];
   const techniqueIds: string[] = [];
+  const dungeonIds: string[] = [];
+  const difficultyIds: string[] = [];
   for (const r of reqs) {
     if (r && (r as any).type === 'item_qty_min') itemIds.push(String((r as any).itemDefId || ''));
     if (r && (r as any).type === 'technique_layer_min') techniqueIds.push(String((r as any).techniqueId || ''));
+    if (r && (r as any).type === 'dungeon_clear_min') {
+      dungeonIds.push(String((r as any).dungeonId || ''));
+      difficultyIds.push(String((r as any).difficultyId || ''));
+    }
   }
   const itemMap = await getItemDefMap(client, itemIds);
   const techniqueMap = await getTechniqueDefMap(client, techniqueIds);
+  const dungeonMap = await getDungeonDefMap(client, dungeonIds);
+  const difficultyMap = await getDungeonDifficultyMap(client, difficultyIds);
 
   const out: RealmRequirementView[] = [];
   const mainTech = await getEquippedMainTechnique(client, characterId);
@@ -521,11 +559,15 @@ const evaluateRequirements = async (args: {
       const difficultyId = String((r as any).difficultyId || '').trim();
       const clearCount = await getCachedDungeonClearCount(dungeonId, difficultyId);
       const ok = clearCount >= minCount;
+      const dungeonName = dungeonId ? (dungeonMap[dungeonId]?.name ?? '目标秘境') : '';
+      const difficultyName = difficultyId ? (difficultyMap[difficultyId]?.name ?? '指定难度') : '';
       const scopeText = dungeonId
         ? difficultyId
-          ? `${dungeonId}（${difficultyId}）`
-          : dungeonId
-        : '任意秘境';
+          ? `${dungeonName}（${difficultyName}）`
+          : dungeonName
+        : difficultyId
+          ? `任意秘境（${difficultyName}）`
+          : '任意秘境';
 
       out.push({
         id: id || `dungeon-clear-${dungeonId || 'any'}-${difficultyId || 'any'}-${minCount}`,
