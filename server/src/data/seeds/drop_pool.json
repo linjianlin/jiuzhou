@@ -118,6 +118,13 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-tiebu-quan",
+          "chance": 0.015,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
         }
       ]
     },
@@ -181,6 +188,13 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-houtu-gong",
+          "chance": 0.01,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
         }
       ]
     },
@@ -241,6 +255,13 @@
         {
           "item_def_id": "set-qingfeng-artifact",
           "chance": 0.045,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-qingfeng-jian",
+          "chance": 0.012,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -412,6 +433,13 @@
           "qty_min": 1,
           "qty_max": 3,
           "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-qingmu-jue",
+          "chance": 0.012,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
         }
       ]
     },
@@ -468,6 +496,13 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-jingang-quan",
+          "chance": 0.01,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
         }
       ]
     },
@@ -521,6 +556,13 @@
         {
           "item_def_id": "equip-clothes-001",
           "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-shuiyun-zhang",
+          "chance": 0.01,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -719,6 +761,13 @@
           "chance": 0.45,
           "qty_min": 1,
           "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-lingbo-weibu",
+          "chance": 0.008,
+          "qty_min": 1,
+          "qty_max": 1,
           "show_in_ui": true
         }
       ]

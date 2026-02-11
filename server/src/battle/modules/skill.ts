@@ -7,6 +7,9 @@ import type {
   BattleUnit, 
   BattleSkill, 
   SkillEffect,
+  AttrModifier,
+  DotEffect,
+  HotEffect,
   ActionLog,
   TargetResult,
   DamageResult
@@ -15,7 +18,7 @@ import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
 import { calculateDamage, applyDamage } from './damage.js';
 import { calculateHealing, applyHealing, applyLifesteal } from './healing.js';
-import { addBuff, addShield } from './buff.js';
+import { addBuff, addShield, removeBuff } from './buff.js';
 import { tryApplyControl, canUseSkill, isSilenced, isDisarmed } from './control.js';
 import { resolveTargets } from './target.js';
 import { triggerSetBonusEffects } from './setBonus.js';
@@ -24,6 +27,130 @@ export interface SkillExecutionResult {
   success: boolean;
   log?: ActionLog;
   error?: string;
+}
+
+const PERCENT_BUFF_ATTR_SET = new Set(['wugong', 'fagong', 'wufang', 'fafang']);
+const BUFF_ATTR_ALIAS: Record<string, string> = {
+  'max-lingqi': 'max_lingqi',
+  'kongzhi-kangxing': 'kongzhi_kangxing',
+};
+
+type BuffRuntimeData = {
+  attrModifiers?: AttrModifier[];
+  dot?: DotEffect;
+  hot?: HotEffect;
+};
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function getAttrValue(unit: BattleUnit, attrKey: string): number {
+  const attrs = unit.currentAttrs as unknown as Record<string, unknown>;
+  const value = attrs[attrKey];
+  return toFiniteNumber(value, 0);
+}
+
+function normalizeBuffAttrKey(raw: string): string {
+  const lowered = raw.trim().toLowerCase();
+  if (!lowered) return '';
+  if (BUFF_ATTR_ALIAS[lowered]) return BUFF_ATTR_ALIAS[lowered];
+  return lowered.replace(/-/g, '_');
+}
+
+function resolveEffectValue(
+  caster: BattleUnit,
+  skill: BattleSkill,
+  effect: SkillEffect,
+  fallbackScaleAttr: string
+): number {
+  const value = toFiniteNumber(effect.value, 0);
+  const scaleAttrRaw = typeof effect.scaleAttr === 'string' ? effect.scaleAttr.trim() : '';
+  const scaleAttr = scaleAttrRaw || fallbackScaleAttr;
+  if (!scaleAttr) return Math.floor(value);
+
+  if (effect.valueType === 'scale') {
+    const rate = toFiniteNumber(effect.scaleRate, value);
+    return Math.floor(getAttrValue(caster, scaleAttr) * rate / 10000);
+  }
+
+  if (scaleAttrRaw) {
+    return Math.floor(getAttrValue(caster, scaleAttr) * value / 10000);
+  }
+
+  if (effect.valueType === 'percent') {
+    return Math.floor(getAttrValue(caster, scaleAttr) * value / 10000);
+  }
+
+  if (effect.valueType === 'flat') {
+    return Math.floor(value);
+  }
+
+  const defaultScaleAttr = skill.damageType === 'magic' ? 'fagong' : 'wugong';
+  if (scaleAttr === defaultScaleAttr && value > 0 && value <= 10000) {
+    return Math.floor(getAttrValue(caster, scaleAttr) * value / 10000);
+  }
+
+  return Math.floor(value);
+}
+
+function buildBuffRuntimeData(
+  caster: BattleUnit,
+  target: BattleUnit,
+  skill: BattleSkill,
+  effect: SkillEffect
+): BuffRuntimeData {
+  const buffId = typeof effect.buffId === 'string' ? effect.buffId.trim() : '';
+  if (!buffId) return {};
+
+  if (buffId === 'debuff-burn') {
+    const scaleAttr = skill.damageType === 'magic' ? 'fagong' : 'wugong';
+    const dotDamage = Math.max(1, resolveEffectValue(caster, skill, effect, scaleAttr));
+    return {
+      dot: {
+        damage: dotDamage,
+        damageType: skill.damageType === 'magic' ? 'magic' : 'physical',
+        element: skill.element || 'none',
+      },
+    };
+  }
+
+  if (buffId === 'buff-hot') {
+    const heal = Math.max(1, resolveEffectValue(caster, skill, effect, 'fagong'));
+    return { hot: { heal } };
+  }
+
+  if (buffId === 'buff-dodge-next') {
+    const stacks = Math.max(1, Math.floor(toFiniteNumber(effect.stacks, 1)));
+    return {
+      attrModifiers: [{ attr: 'shanbi', value: 10000 * stacks, mode: 'flat' }],
+    };
+  }
+
+  const matched = /^(buff|debuff)-([a-z0-9-]+)-(up|down)$/.exec(buffId);
+  if (!matched) return {};
+
+  const attr = normalizeBuffAttrKey(matched[2]);
+  if (!attr) return {};
+  const baseValue = Math.floor(Math.abs(toFiniteNumber(effect.value, 0)));
+  if (baseValue <= 0) return {};
+  const upOrDown = matched[3] === 'down' ? -1 : 1;
+  const buffOrDebuff = matched[1] === 'debuff' ? -1 : 1;
+  const value = baseValue * upOrDown * buffOrDebuff;
+  const mode: AttrModifier['mode'] = PERCENT_BUFF_ATTR_SET.has(attr) ? 'percent' : 'flat';
+
+  if (effect.type === 'buff' && target.currentAttrs[attr as keyof typeof target.currentAttrs] == null) {
+    return {};
+  }
+
+  return {
+    attrModifiers: [{ attr, value, mode }],
+  };
 }
 
 /**
@@ -186,12 +313,12 @@ function executeSkillOnTarget(
   
   // 处理技能效果
   for (const effect of skill.effects) {
-    // 概率判定
-    if (effect.chance && !rollChance(state, effect.chance)) {
+    // 控制效果走独立命中流程，避免重复概率判定
+    if (effect.type !== 'control' && effect.chance && !rollChance(state, effect.chance)) {
       continue;
     }
     
-    executeEffect(state, caster, target, effect, result);
+    executeEffect(state, caster, target, skill, effect, result);
   }
   
   return result;
@@ -204,6 +331,7 @@ function executeEffect(
   state: BattleState,
   caster: BattleUnit,
   target: BattleUnit,
+  skill: BattleSkill,
   effect: SkillEffect,
   result: TargetResult
 ): void {
@@ -217,12 +345,12 @@ function executeEffect(
       break;
       
     case 'shield':
-      executeShieldEffect(target, effect, result);
+      executeShieldEffect(caster, target, skill, effect, result);
       break;
       
     case 'buff':
     case 'debuff':
-      executeBuffEffect(caster, target, effect, result);
+      executeBuffEffect(caster, target, skill, effect, result);
       break;
       
     case 'dispel':
@@ -232,22 +360,26 @@ function executeEffect(
     case 'resource':
       executeResourceEffect(target, effect);
       break;
-  }
-  
-  // 控制效果
-  if (effect.controlType && effect.controlRate && effect.controlDuration) {
-    const controlResult = tryApplyControl(
-      state, caster, target,
-      effect.controlType,
-      effect.controlRate,
-      effect.controlDuration
-    );
-    
-    if (controlResult.success) {
-      result.controlApplied = effect.controlType;
-    } else if (controlResult.resisted) {
-      result.controlResisted = true;
-    }
+
+    case 'restore_lingqi':
+      executeRestoreLingqiEffect(target, effect);
+      break;
+
+    case 'cleanse':
+      executeCleanseEffect(target, effect, result);
+      break;
+
+    case 'cleanse_control':
+      executeCleanseControlEffect(target, effect, result);
+      break;
+
+    case 'lifesteal':
+      executeLifestealEffect(caster, result, effect);
+      break;
+
+    case 'control':
+      executeControlEffect(state, caster, target, effect, result);
+      break;
   }
 }
 
@@ -294,16 +426,19 @@ function executeHealEffect(
  * 执行护盾效果
  */
 function executeShieldEffect(
+  caster: BattleUnit,
   target: BattleUnit,
+  skill: BattleSkill,
   effect: SkillEffect,
   result: TargetResult
 ): void {
-  const shieldValue = effect.value || 0;
+  const shieldValue = Math.max(1, resolveEffectValue(caster, skill, effect, 'max_qixue'));
+  const duration = Math.max(1, Math.floor(toFiniteNumber(effect.duration, 2)));
   
   addShield(target, {
     value: shieldValue,
     maxValue: shieldValue,
-    duration: effect.buffDuration || 2,
+    duration,
     absorbType: 'all',
     priority: 1,
     sourceSkillId: '',
@@ -318,26 +453,34 @@ function executeShieldEffect(
 function executeBuffEffect(
   caster: BattleUnit,
   target: BattleUnit,
+  skill: BattleSkill,
   effect: SkillEffect,
   result: TargetResult
 ): void {
-  if (!effect.buffDefId) return;
+  const buffId = typeof effect.buffId === 'string' ? effect.buffId.trim() : '';
+  if (!buffId) return;
   
   const buffType = effect.type === 'buff' ? 'buff' : 'debuff';
+  const stacks = Math.max(1, Math.floor(toFiniteNumber(effect.stacks, 1)));
+  const duration = Math.max(1, Math.floor(toFiniteNumber(effect.duration, 1)));
+  const runtimeData = buildBuffRuntimeData(caster, target, skill, effect);
   
   addBuff(target, {
-    id: `${effect.buffDefId}-${Date.now()}`,
-    buffDefId: effect.buffDefId,
-    name: effect.buffDefId,
+    id: `${buffId}-${Date.now()}`,
+    buffDefId: buffId,
+    name: buffId,
     type: buffType,
     category: 'skill',
     sourceUnitId: caster.id,
-    maxStacks: effect.buffStacks || 1,
+    maxStacks: stacks,
+    attrModifiers: runtimeData.attrModifiers,
+    dot: runtimeData.dot,
+    hot: runtimeData.hot,
     tags: [],
     dispellable: true,
-  }, effect.buffDuration || 1, effect.buffStacks || 1);
+  }, duration, stacks);
   
-  result.buffsApplied?.push(effect.buffDefId);
+  result.buffsApplied?.push(buffId);
 }
 
 /**
@@ -348,25 +491,119 @@ function executeDispelEffect(
   effect: SkillEffect,
   result: TargetResult
 ): void {
-  const dispelCount = effect.dispelCount || 1;
+  const dispelCount = Math.max(1, Math.floor(toFiniteNumber(effect.count, 1)));
   const dispelType = effect.dispelType || 'debuff';
-  
-  let removed = 0;
-  const toRemove: string[] = [];
-  
-  for (const buff of target.buffs) {
-    if (removed >= dispelCount) break;
-    
-    if (!buff.dispellable) continue;
-    
-    if (dispelType === 'all' || buff.type === dispelType) {
-      toRemove.push(buff.id);
+  const toRemove = target.buffs
+    .filter((buff) => buff.dispellable)
+    .filter((buff) => dispelType === 'all' || buff.type === dispelType)
+    .slice(0, dispelCount);
+
+  for (const buff of toRemove) {
+    if (removeBuff(target, buff.id)) {
       result.buffsRemoved?.push(buff.name);
-      removed++;
     }
   }
+}
+
+/**
+ * 执行净化效果（移除Debuff）
+ */
+function executeCleanseEffect(
+  target: BattleUnit,
+  effect: SkillEffect,
+  result: TargetResult
+): void {
+  const count = Math.max(1, Math.floor(toFiniteNumber(effect.count, 1)));
+  const tempEffect: SkillEffect = {
+    type: 'dispel',
+    dispelType: 'debuff',
+    count,
+  };
+  executeDispelEffect(target, tempEffect, result);
+}
+
+/**
+ * 执行净控效果（仅移除控制Debuff）
+ */
+function executeCleanseControlEffect(
+  target: BattleUnit,
+  effect: SkillEffect,
+  result: TargetResult
+): void {
+  const count = Math.max(1, Math.floor(toFiniteNumber(effect.count, 1)));
+  const toRemove = target.buffs
+    .filter((buff) => buff.type === 'debuff' && !!buff.control)
+    .slice(0, count);
+
+  for (const buff of toRemove) {
+    if (removeBuff(target, buff.id)) {
+      result.buffsRemoved?.push(buff.name);
+    }
+  }
+}
+
+/**
+ * 执行吸血效果（按本次命中伤害比例回复施法者）
+ */
+function executeLifestealEffect(
+  caster: BattleUnit,
+  result: TargetResult,
+  effect: SkillEffect
+): void {
+  const damage = Math.max(0, Math.floor(toFiniteNumber(result.damage, 0)));
+  if (damage <= 0) return;
+  const rate = Math.max(0, Math.floor(toFiniteNumber(effect.value, 0)));
+  if (rate <= 0) return;
+  const healAmount = Math.floor(damage * rate / 10000);
+  if (healAmount <= 0) return;
+
+  const actualHeal = applyHealing(caster, healAmount);
+  if (actualHeal > 0) {
+    caster.stats.healingDone += actualHeal;
+  }
+}
+
+/**
+ * 执行控制效果
+ */
+function executeControlEffect(
+  state: BattleState,
+  caster: BattleUnit,
+  target: BattleUnit,
+  effect: SkillEffect,
+  result: TargetResult
+): void {
+  const controlType = typeof effect.controlType === 'string' ? effect.controlType.trim() : '';
+  if (!controlType) return;
+  const controlRate = Math.max(0, Math.floor(toFiniteNumber(effect.chance, 10000)));
+  const controlDuration = Math.max(1, Math.floor(toFiniteNumber(effect.duration, 1)));
+
+  const controlResult = tryApplyControl(
+    state,
+    caster,
+    target,
+    controlType,
+    controlRate,
+    controlDuration
+  );
   
-  target.buffs = target.buffs.filter(b => !toRemove.includes(b.id));
+  if (controlResult.success) {
+    result.controlApplied = controlType;
+  } else if (controlResult.resisted) {
+    result.controlResisted = true;
+  }
+}
+
+/**
+ * 执行灵气回复效果
+ */
+function executeRestoreLingqiEffect(
+  target: BattleUnit,
+  effect: SkillEffect
+): void {
+  const value = Math.max(0, Math.floor(toFiniteNumber(effect.value, 0)));
+  if (value <= 0) return;
+  target.lingqi = Math.min(target.lingqi + value, target.currentAttrs.max_lingqi);
 }
 
 /**

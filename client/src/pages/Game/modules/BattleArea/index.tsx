@@ -10,6 +10,7 @@ import {
   type BattleStateDto,
 } from '../../../../services/api';
 import { gameSocket } from '../../../../services/gameSocket';
+import { translateBuffName, translateBuffNames, translateControlName } from './logNameMap';
 import './index.scss';
 
 export type BattleUnit = {
@@ -360,9 +361,9 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     if (!log) return null;
     if (log.type === 'round_start') return `——第${log.round}回合开始——`;
     if (log.type === 'round_end') return `——第${log.round}回合结束——`;
-    if (log.type === 'dot') return `第${log.round}回合 ${log.unitName} 受到【${log.buffName}】持续伤害 -${Math.floor(log.damage)}`;
-    if (log.type === 'hot') return `第${log.round}回合 ${log.unitName} 获得【${log.buffName}】持续治疗 +${Math.floor(log.heal)}`;
-    if (log.type === 'buff_expire') return `第${log.round}回合 ${log.unitName} 的【${log.buffName}】效果结束`;
+    if (log.type === 'dot') return `第${log.round}回合 ${log.unitName} 受到【${translateBuffName(log.buffName)}】持续伤害 -${Math.floor(log.damage)}`;
+    if (log.type === 'hot') return `第${log.round}回合 ${log.unitName} 获得【${translateBuffName(log.buffName)}】持续治疗 +${Math.floor(log.heal)}`;
+    if (log.type === 'buff_expire') return `第${log.round}回合 ${log.unitName} 的【${translateBuffName(log.buffName)}】效果结束`;
     if (log.type === 'death') {
       const killer = log.killerName?.trim();
       return killer ? `第${log.round}回合 ${log.unitName} 被 ${killer} 击败` : `第${log.round}回合 ${log.unitName} 倒下`;
@@ -376,12 +377,14 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           if (t.isCrit) parts.push('暴击');
           if (t.isElementBonus) parts.push('克制');
           if (t.controlResisted) parts.push('抵抗控制');
-          if (t.controlApplied) parts.push(`附加${t.controlApplied}`);
+          if (t.controlApplied) parts.push(`附加${translateControlName(t.controlApplied)}`);
           if (t.shieldAbsorbed && t.shieldAbsorbed > 0) parts.push(`护盾吸收${Math.floor(t.shieldAbsorbed)}`);
           if (t.damage && t.damage > 0) parts.push(`伤害${Math.floor(t.damage)}`);
           if (t.heal && t.heal > 0) parts.push(`治疗${Math.floor(t.heal)}`);
-          if ((t.buffsApplied ?? []).length > 0) parts.push(`获得${(t.buffsApplied ?? []).join('、')}`);
-          if ((t.buffsRemoved ?? []).length > 0) parts.push(`移除${(t.buffsRemoved ?? []).join('、')}`);
+          const buffsApplied = translateBuffNames(t.buffsApplied);
+          if (buffsApplied.length > 0) parts.push(`获得${buffsApplied.join('、')}`);
+          const buffsRemoved = translateBuffNames(t.buffsRemoved);
+          if (buffsRemoved.length > 0) parts.push(`移除${buffsRemoved.join('、')}`);
           return parts.length > 0 ? `${t.targetName}（${parts.join('，')}）` : t.targetName;
         })
         .filter(Boolean);

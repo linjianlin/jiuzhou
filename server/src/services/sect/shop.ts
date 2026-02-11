@@ -8,6 +8,7 @@ const SHOP: ShopItem[] = [
   { id: 'sect-shop-001', name: '淬灵石×10', costContribution: 100, itemDefId: 'enhance-001', qty: 10 },
   { id: 'sect-shop-002', name: '强化符·黄×1', costContribution: 120, itemDefId: 'enhance-003', qty: 1 },
   { id: 'sect-shop-003', name: '保护符×1', costContribution: 300, itemDefId: 'enhance-005', qty: 1 },
+  { id: 'sect-shop-004', name: '《纯阳功》×1', costContribution: 2200, itemDefId: 'book-chunyang-gong', qty: 1 },
 ];
 
 export const getSectShop = async (
@@ -91,4 +92,3 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
     client.release();
   }
 };
-

@@ -42,6 +42,72 @@ export interface CreateItemResult {
   equipment?: GeneratedEquipment;
 }
 
+const REALM_ORDER = [
+  '凡人',
+  '炼精化炁·养气期',
+  '炼精化炁·通脉期',
+  '炼精化炁·凝炁期',
+  '炼炁化神·炼己期',
+  '炼炁化神·采药期',
+  '炼炁化神·结胎期',
+  '炼神返虚·养神期',
+  '炼神返虚·还虚期',
+  '炼神返虚·合道期',
+  '炼虚合道·证道期',
+  '炼虚合道·历劫期',
+  '炼虚合道·成圣期',
+] as const;
+
+const REALM_MAJOR_TO_FIRST: Record<string, string> = {
+  凡人: '凡人',
+  炼精化炁: '炼精化炁·养气期',
+  炼炁化神: '炼炁化神·炼己期',
+  炼神返虚: '炼神返虚·养神期',
+  炼虚合道: '炼虚合道·证道期',
+};
+
+const REALM_SUB_TO_FULL: Record<string, string> = {
+  养气期: '炼精化炁·养气期',
+  通脉期: '炼精化炁·通脉期',
+  凝炁期: '炼精化炁·凝炁期',
+  炼己期: '炼炁化神·炼己期',
+  采药期: '炼炁化神·采药期',
+  结胎期: '炼炁化神·结胎期',
+  养神期: '炼神返虚·养神期',
+  还虚期: '炼神返虚·还虚期',
+  合道期: '炼神返虚·合道期',
+  证道期: '炼虚合道·证道期',
+  历劫期: '炼虚合道·历劫期',
+  成圣期: '炼虚合道·成圣期',
+};
+
+const normalizeRealm = (realmRaw: unknown, subRealmRaw?: unknown): string => {
+  const realm = typeof realmRaw === 'string' ? realmRaw.trim() : '';
+  const subRealm = typeof subRealmRaw === 'string' ? subRealmRaw.trim() : '';
+  if (!realm && !subRealm) return '凡人';
+  if (realm && REALM_ORDER.includes(realm as (typeof REALM_ORDER)[number])) return realm;
+  if (realm && subRealm) {
+    const full = `${realm}·${subRealm}`;
+    if (REALM_ORDER.includes(full as (typeof REALM_ORDER)[number])) return full;
+  }
+  if (realm && REALM_MAJOR_TO_FIRST[realm]) return REALM_MAJOR_TO_FIRST[realm];
+  if (realm && REALM_SUB_TO_FULL[realm]) return REALM_SUB_TO_FULL[realm];
+  if (!realm && subRealm && REALM_SUB_TO_FULL[subRealm]) return REALM_SUB_TO_FULL[subRealm];
+  return realm || '凡人';
+};
+
+const getRealmRank = (realmRaw: unknown, subRealmRaw?: unknown): number => {
+  const normalized = normalizeRealm(realmRaw, subRealmRaw);
+  const idx = REALM_ORDER.indexOf(normalized as (typeof REALM_ORDER)[number]);
+  return idx >= 0 ? idx : 0;
+};
+
+const isRealmSufficient = (currentRealm: unknown, requiredRealm: unknown, currentSubRealm?: unknown): boolean => {
+  const required = typeof requiredRealm === 'string' ? requiredRealm.trim() : '';
+  if (!required) return true;
+  return getRealmRank(currentRealm, currentSubRealm) >= getRealmRank(required);
+};
+
 /**
  * 获取物品定义
  */
@@ -305,10 +371,21 @@ export const useItem = async (
       }
     }
 
+    const charResult = await client.query(
+      'SELECT id, realm, sub_realm, qixue, max_qixue, lingqi, max_lingqi FROM characters WHERE id = $1 FOR UPDATE',
+      [characterId]
+    );
+    if (charResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '角色不存在' };
+    }
+    const charRow = charResult.rows[0];
+
     const effectDefs = Array.isArray(item.effect_defs) ? item.effect_defs : [];
     let deltaQixue = 0;
     let deltaLingqi = 0;
     let hasLoot = false;
+    let hasLearnTechnique = false;
     const lootResults: { type: string; name?: string; amount: number }[] = [];
     const lootItemsToAdd: { itemDefId: string; qty: number }[] = [];
     let deltaSilver = 0;
@@ -366,6 +443,53 @@ export const useItem = async (
         continue;
       }
 
+      if (effectType === 'learn_technique') {
+        const params = effect.params && typeof effect.params === 'object' ? effect.params : {};
+        const techniqueId = String(params.technique_id || '').trim();
+        if (!techniqueId) {
+          await client.query('ROLLBACK');
+          return { success: false, message: '功法书配置异常，缺少功法ID' };
+        }
+
+        const techniqueRes = await client.query(
+          'SELECT id, name, required_realm FROM technique_def WHERE id = $1 AND enabled = true LIMIT 1',
+          [techniqueId]
+        );
+        if (techniqueRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return { success: false, message: '目标功法不存在或未开放' };
+        }
+
+        const requiredRealm = String(techniqueRes.rows[0].required_realm || '').trim();
+        if (!isRealmSufficient(charRow.realm, requiredRealm, charRow.sub_realm)) {
+          await client.query('ROLLBACK');
+          return { success: false, message: `境界不足，需要达到${requiredRealm}` };
+        }
+
+        const existsRes = await client.query(
+          'SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1',
+          [characterId, techniqueId]
+        );
+        if (existsRes.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return { success: false, message: '已学习该功法' };
+        }
+
+        await client.query(
+          `INSERT INTO character_technique (
+            character_id, technique_id, current_layer, obtained_from, obtained_ref_id, acquired_at
+          ) VALUES ($1, $2, 1, $3, $4, NOW())`,
+          [characterId, techniqueId, `use_item:${itemDefId}`, itemDefId]
+        );
+        hasLearnTechnique = true;
+        lootResults.push({
+          type: 'technique',
+          name: String(techniqueRes.rows[0].name || techniqueId),
+          amount: 1,
+        });
+        continue;
+      }
+
       const value = Number(effect.value);
       if (!Number.isFinite(value)) continue;
 
@@ -385,27 +509,18 @@ export const useItem = async (
       }
     }
 
-    if (deltaQixue === 0 && deltaLingqi === 0 && !hasLoot) {
+    if (deltaQixue === 0 && deltaLingqi === 0 && !hasLoot && !hasLearnTechnique) {
       await client.query('ROLLBACK');
       return { success: false, message: '该物品暂不支持使用效果' };
     }
 
-    const charResult = await client.query(
-      'SELECT id, qixue, max_qixue, lingqi, max_lingqi FROM characters WHERE id = $1 FOR UPDATE',
-      [characterId]
-    );
-    if (charResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-
     const nextQixue = Math.min(
-      Number(charResult.rows[0].max_qixue) || 0,
-      Math.max(0, (Number(charResult.rows[0].qixue) || 0) + deltaQixue)
+      Number(charRow.max_qixue) || 0,
+      Math.max(0, (Number(charRow.qixue) || 0) + deltaQixue)
     );
     const nextLingqi = Math.min(
-      Number(charResult.rows[0].max_lingqi) || 0,
-      Math.max(0, (Number(charResult.rows[0].lingqi) || 0) + deltaLingqi)
+      Number(charRow.max_lingqi) || 0,
+      Math.max(0, (Number(charRow.lingqi) || 0) + deltaLingqi)
     );
 
     const setClauses = ['qixue = $2', 'lingqi = $3', 'updated_at = NOW()'];

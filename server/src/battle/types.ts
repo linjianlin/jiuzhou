@@ -184,21 +184,32 @@ export type SkillTargetType =
   | 'random_ally';
 
 export interface SkillEffect {
-  type: 'damage' | 'heal' | 'shield' | 'buff' | 'debuff' | 'dispel' | 'resource';
+  type:
+    | 'damage'
+    | 'heal'
+    | 'shield'
+    | 'buff'
+    | 'debuff'
+    | 'dispel'
+    | 'resource'
+    | 'restore_lingqi'
+    | 'cleanse'
+    | 'cleanse_control'
+    | 'lifesteal'
+    | 'control';
   value?: number;
   valueType?: 'flat' | 'percent' | 'scale';
   scaleAttr?: string;
   scaleRate?: number;
-  buffDefId?: string;
-  buffDuration?: number;
-  buffStacks?: number;
+  buffId?: string;
+  duration?: number;
+  stacks?: number;
   dispelType?: 'buff' | 'debuff' | 'all';
-  dispelCount?: number;
+  count?: number;
   controlType?: string;
-  controlRate?: number;  // 万分比
-  controlDuration?: number;
   chance?: number;  // 万分比
   resourceType?: 'lingqi' | 'qixue';  // 资源类型
+  target?: 'self' | 'enemy' | 'ally';
 }
 
 export interface SkillConditions {

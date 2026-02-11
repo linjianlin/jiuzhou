@@ -70,7 +70,7 @@
           "params": { "monster_id": "monster-wild-rabbit" }
         }
       ],
-      "rewards": { "exp": 50, "silver": 80, "items": [{ "item_def_id": "cons-001", "quantity": 5 }] },
+      "rewards": { "exp": 50, "silver": 80, "items": [{ "item_def_id": "cons-001", "quantity": 5 }], "techniques": ["tech-jichu-daofa"] },
       "auto_accept": true,
       "auto_complete": false,
       "is_chapter_final": false,
@@ -154,7 +154,7 @@
           "params": { "monster_id": "monster-venomous-snake" }
         }
       ],
-      "rewards": { "exp": 100, "silver": 120, "items": [{ "item_def_id": "cons-006", "quantity": 5 }, { "item_def_id": "mat-001", "quantity": 20 }] },
+      "rewards": { "exp": 100, "silver": 120, "items": [{ "item_def_id": "cons-006", "quantity": 5 }, { "item_def_id": "mat-001", "quantity": 20 }], "techniques": ["tech-jichu-fushu"] },
       "auto_accept": true,
       "auto_complete": false,
       "is_chapter_final": false,
@@ -196,7 +196,7 @@
           "params": { "monster_id": "monster-mountain-wolf" }
         }
       ],
-      "rewards": { "exp": 150, "silver": 200, "items": [{ "item_def_id": "mat-gongfa-canye", "quantity": 20 }], "techniques": ["tech-jichu-jianfa"] },
+      "rewards": { "exp": 150, "silver": 200, "items": [{ "item_def_id": "mat-gongfa-canye", "quantity": 20 }], "techniques": ["tech-jichu-jianfa", "tech-qinggong-ru"] },
       "auto_accept": true,
       "auto_complete": false,
       "is_chapter_final": false,
@@ -231,7 +231,7 @@
           "params": { "realm": "炼精化炁·养气期" }
         }
       ],
-      "rewards": { "exp": 300, "silver": 300, "spirit_stones": 30, "items": [{ "item_def_id": "box-002", "quantity": 1 }], "techniques": ["tech-tunajue"] },
+      "rewards": { "exp": 300, "silver": 300, "spirit_stones": 30, "items": [{ "item_def_id": "box-002", "quantity": 1 }], "techniques": ["tech-tunajue", "tech-huifu-shu"] },
       "auto_accept": true,
       "auto_complete": false,
       "is_chapter_final": false,

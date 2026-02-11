@@ -320,6 +320,82 @@ function toText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+type SkillUpgradeRule = {
+  layer: number;
+  changes: Record<string, unknown>;
+};
+
+function parseSkillUpgradeRules(raw: unknown): SkillUpgradeRule[] {
+  if (!Array.isArray(raw)) return [];
+  const rules: SkillUpgradeRule[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const row = toRecord(raw[i]);
+    const changes = toRecord(row.changes);
+    if (Object.keys(changes).length === 0) continue;
+    const layer = Math.max(1, Math.floor(toNumber(row.layer) ?? i + 1));
+    rules.push({ layer, changes });
+  }
+  rules.sort((a, b) => a.layer - b.layer);
+  return rules;
+}
+
+function applySkillUpgradeChanges(
+  base: {
+    cost_lingqi: number;
+    cost_qixue: number;
+    cooldown: number;
+    target_count: number;
+    coefficient: number;
+    fixed_damage: number;
+    effects: unknown[];
+    ai_priority: number;
+  },
+  changes: Record<string, unknown>
+): void {
+  const coefficientDelta = toNumber(changes.coefficient);
+  if (coefficientDelta !== null) {
+    base.coefficient += coefficientDelta;
+  }
+
+  const fixedDamageDelta = toNumber(changes.fixed_damage);
+  if (fixedDamageDelta !== null) {
+    base.fixed_damage += fixedDamageDelta;
+  }
+
+  const targetCount = toNumber(changes.target_count);
+  if (targetCount !== null) {
+    base.target_count = Math.max(1, Math.floor(targetCount));
+  }
+
+  const cooldownDelta = toNumber(changes.cooldown);
+  if (cooldownDelta !== null) {
+    base.cooldown = Math.max(0, Math.floor(base.cooldown + cooldownDelta));
+  }
+
+  const costLingqiDelta = toNumber(changes.cost_lingqi);
+  if (costLingqiDelta !== null) {
+    base.cost_lingqi = Math.max(0, Math.floor(base.cost_lingqi + costLingqiDelta));
+  }
+
+  const costQixueDelta = toNumber(changes.cost_qixue);
+  if (costQixueDelta !== null) {
+    base.cost_qixue = Math.max(0, Math.floor(base.cost_qixue + costQixueDelta));
+  }
+
+  const aiPriorityDelta = toNumber(changes.ai_priority);
+  if (aiPriorityDelta !== null) {
+    base.ai_priority = Math.max(0, Math.floor(base.ai_priority + aiPriorityDelta));
+  }
+
+  if (Array.isArray(changes.effects)) {
+    base.effects = changes.effects;
+  }
+  const addEffect = changes.addEffect;
+  if (addEffect && typeof addEffect === 'object' && !Array.isArray(addEffect)) {
+    base.effects = [...base.effects, addEffect];
+  }
+}
+
 async function getCharacterBattleSetBonusEffects(characterId: number): Promise<BattleSetBonusEffect[]> {
   if (!Number.isFinite(characterId) || characterId <= 0) return [];
 
@@ -403,9 +479,14 @@ async function getCharacterBattleSkillData(characterId: number): Promise<SkillDa
   const battleSkillsRes = await getBattleSkills(characterId);
   if (!battleSkillsRes.success || !battleSkillsRes.data) return [];
 
-  const orderedSkillIds = battleSkillsRes.data
-    .map((s) => String(s?.skillId ?? '').trim())
-    .filter((x) => x.length > 0);
+  const orderedSkillSlots = battleSkillsRes.data
+    .map((s) => ({
+      skillId: String(s?.skillId ?? '').trim(),
+      upgradeLevel: Math.max(0, Math.floor(toNumber(s?.upgradeLevel) ?? 0)),
+    }))
+    .filter((x) => x.skillId.length > 0);
+
+  const orderedSkillIds = orderedSkillSlots.map((x) => x.skillId);
 
   if (orderedSkillIds.length === 0) return [];
 
@@ -418,7 +499,7 @@ async function getCharacterBattleSkillData(characterId: number): Promise<SkillDa
         target_type, target_count,
         damage_type, element,
         coefficient, fixed_damage,
-        effects, ai_priority
+        effects, ai_priority, upgrades
       FROM skill_def
       WHERE enabled = true AND id = ANY($1)
     `,
@@ -432,23 +513,43 @@ async function getCharacterBattleSkillData(characterId: number): Promise<SkillDa
   }
 
   const skills: SkillData[] = [];
-  for (const skillId of orderedSkillIds) {
-    const row = byId.get(skillId);
+  for (const slot of orderedSkillSlots) {
+    const row = byId.get(slot.skillId);
     if (!row) continue;
-    skills.push({
-      id: String(row.id),
-      name: String(row.name || row.id),
-      cost_lingqi: Number(row.cost_lingqi) || 0,
-      cost_qixue: Number(row.cost_qixue) || 0,
-      cooldown: Number(row.cooldown) || 0,
-      target_type: String(row.target_type || 'single_enemy'),
+
+    const skillData = {
+      cost_lingqi: Math.max(0, Math.floor(Number(row.cost_lingqi) || 0)),
+      cost_qixue: Math.max(0, Math.floor(Number(row.cost_qixue) || 0)),
+      cooldown: Math.max(0, Math.floor(Number(row.cooldown) || 0)),
       target_count: Math.max(1, Math.floor(Number(row.target_count) || 1)),
-      damage_type: String(row.damage_type || 'none'),
-      element: String(row.element || 'none'),
       coefficient: Number(row.coefficient) || 0,
       fixed_damage: Number(row.fixed_damage) || 0,
       effects: Array.isArray(row.effects) ? row.effects : (row.effects ?? []),
-      ai_priority: Number(row.ai_priority) || 50,
+      ai_priority: Math.max(0, Math.floor(Number(row.ai_priority) || 50)),
+    };
+
+    if (slot.upgradeLevel > 0) {
+      const rules = parseSkillUpgradeRules(row.upgrades);
+      const applyRules = rules.slice(0, slot.upgradeLevel);
+      for (const rule of applyRules) {
+        applySkillUpgradeChanges(skillData, rule.changes);
+      }
+    }
+
+    skills.push({
+      id: String(row.id),
+      name: String(row.name || row.id),
+      cost_lingqi: skillData.cost_lingqi,
+      cost_qixue: skillData.cost_qixue,
+      cooldown: skillData.cooldown,
+      target_type: String(row.target_type || 'single_enemy'),
+      target_count: skillData.target_count,
+      damage_type: String(row.damage_type || 'none'),
+      element: String(row.element || 'none'),
+      coefficient: skillData.coefficient,
+      fixed_damage: skillData.fixed_damage,
+      effects: skillData.effects,
+      ai_priority: skillData.ai_priority,
     });
   }
 
