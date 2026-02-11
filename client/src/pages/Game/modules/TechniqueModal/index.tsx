@@ -24,6 +24,7 @@ import {
   unequipCharacterTechnique,
   upgradeCharacterTechnique,
 } from '../../../../services/api';
+import { formatSkillEffectLines } from '../skillEffectFormatter';
 import './index.scss';
 
 // 动态加载所有图片资源
@@ -163,132 +164,6 @@ const targetTypeLabel: Record<string, string> = {
   lowest_hp_enemy: '血量最低敌人',
 };
 
-// 伤害类型中文映射
-const damageTypeLabel: Record<string, string> = {
-  physical: '物理伤害',
-  magic: '法术伤害',
-  true: '真实伤害',
-  heal: '治疗',
-  buff: '增益',
-  debuff: '减益',
-  control: '控制',
-};
-
-// 元素类型中文映射
-const elementLabel: Record<string, string> = {
-  none: '无',
-  jin: '金',
-  mu: '木',
-  shui: '水',
-  huo: '火',
-  tu: '土',
-};
-
-// 缩放属性中文映射
-const scaleAttrLabel: Record<string, string> = {
-  wugong: '物攻',
-  fagong: '法攻',
-  wufang: '物防',
-  fafang: '法防',
-  max_qixue: '气血上限',
-  max_lingqi: '灵气上限',
-  sudu: '速度',
-};
-
-type SkillEffectView = {
-  type?: string;
-  value?: number;
-  valueType?: string;
-  scaleAttr?: string;
-  scaleRate?: number;
-  damageType?: string;
-  element?: string;
-  hit_count?: number;
-};
-
-const toFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-};
-
-const toSkillEffects = (raw: unknown): SkillEffectView[] => {
-  if (!Array.isArray(raw)) return [];
-  const effects: SkillEffectView[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const row = item as Record<string, unknown>;
-    effects.push({
-      type: typeof row.type === 'string' ? row.type : undefined,
-      value: toFiniteNumber(row.value) ?? undefined,
-      valueType: typeof row.valueType === 'string' ? row.valueType : undefined,
-      scaleAttr: typeof row.scaleAttr === 'string' ? row.scaleAttr : undefined,
-      scaleRate: toFiniteNumber(row.scaleRate) ?? undefined,
-      damageType: typeof row.damageType === 'string' ? row.damageType : undefined,
-      element: typeof row.element === 'string' ? row.element : undefined,
-      hit_count: toFiniteNumber(row.hit_count) ?? undefined,
-    });
-  }
-  return effects;
-};
-
-const formatPermyriadPercent = (value: number): string => {
-  const percent = value / 100;
-  return Number.isInteger(percent) ? `${percent}` : `${Number(percent.toFixed(2))}`;
-};
-
-const buildDamageEffectDetailItems = (skill: TechniqueSkill): Array<{ label: string; value: string }> => {
-  const effects = toSkillEffects(skill.effects);
-  const damageEffect = effects.find((effect) => effect.type === 'damage');
-  if (!damageEffect) return [];
-
-  const items: Array<{ label: string; value: string }> = [];
-  const damageType = damageEffect.damageType || skill.damage_type || '';
-  if (damageType && damageType !== 'none') {
-    items.push({ label: '伤害类型', value: damageTypeLabel[damageType] || damageType });
-  }
-
-  const element = damageEffect.element || skill.element || '';
-  if (element && element !== 'none') {
-    items.push({ label: '元素属性', value: elementLabel[element] || element });
-  }
-
-  const valueType = damageEffect.valueType || 'scale';
-  if (valueType === 'scale') {
-    const scaleRate = damageEffect.scaleRate ?? damageEffect.value ?? 0;
-    if (scaleRate > 0) {
-      const scaleAttr = damageEffect.scaleAttr || '';
-      const scaleAttrText = scaleAttr ? (scaleAttrLabel[scaleAttr] || scaleAttr) : '';
-      const baseText = `${formatPermyriadPercent(scaleRate)}%`;
-      items.push({
-        label: '伤害倍率',
-        value: scaleAttrText ? `${baseText}（${scaleAttrText}）` : baseText,
-      });
-    }
-  } else if (valueType === 'flat') {
-    if ((damageEffect.value ?? 0) > 0) {
-      items.push({ label: '固定伤害', value: String(Math.floor(damageEffect.value || 0)) });
-    }
-  } else if (valueType === 'percent') {
-    if ((damageEffect.value ?? 0) > 0) {
-      items.push({
-        label: '伤害比例',
-        value: `${formatPermyriadPercent(damageEffect.value || 0)}%（目标气血）`,
-      });
-    }
-  }
-
-  const hitCount = Math.max(1, Math.floor(damageEffect.hit_count ?? 1));
-  if (hitCount > 1) {
-    items.push({ label: '连击次数', value: `${hitCount}` });
-  }
-
-  return items;
-};
-
 const getSkillDetailItems = (skill: TechniqueSkill): Array<{ label: string; value: string }> => {
   const items: Array<{ label: string; value: string }> = [];
 
@@ -310,7 +185,13 @@ const getSkillDetailItems = (skill: TechniqueSkill): Array<{ label: string; valu
   if (skill.target_count && skill.target_count > 0) {
     items.push({ label: '目标数量', value: String(skill.target_count) });
   }
-  items.push(...buildDamageEffectDetailItems(skill));
+  const effectLines = formatSkillEffectLines(skill.effects, {
+    damageType: skill.damage_type,
+    element: skill.element,
+  });
+  effectLines.forEach((line, idx) => {
+    items.push({ label: `效果${idx + 1}`, value: line });
+  });
 
   return items;
 };
@@ -321,13 +202,7 @@ const INLINE_SKILL_DETAIL_ORDER = [
   '冷却回合',
   '目标类型',
   '目标数量',
-  '伤害类型',
-  '元素属性',
-  '伤害倍率',
-  '伤害比例',
-  '连击次数',
   '气血消耗',
-  '固定伤害',
 ] as const;
 
 const getSkillInlineDetailItems = (skill: TechniqueSkill): Array<{ label: string; value: string }> => {
@@ -344,8 +219,10 @@ const getSkillInlineDetailItems = (skill: TechniqueSkill): Array<{ label: string
     return acc;
   }, []);
 
+  const effectItems = allItems.filter((item) => item.label.startsWith('效果'));
+
   // 控制卡片信息密度，避免列表卡片过高
-  return inlineItems.slice(0, 7);
+  return [...inlineItems, ...effectItems].slice(0, 7);
 };
 
 const getSkillInlineSummary = (skill: TechniqueSkill): string => {

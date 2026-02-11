@@ -2,6 +2,7 @@ import { App, Tooltip } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { SERVER_BASE, getCharacterTechniqueStatus, type CharacterSkillSlotDto } from '../../../../services/api';
 import { gameSocket } from '../../../../services/gameSocket';
+import { formatSkillEffectLines } from '../skillEffectFormatter';
 import './index.scss';
 
 type ExpandDirection = 'left' | 'right';
@@ -99,83 +100,6 @@ const formatElement = (e: string): string => {
   if (v === 'huo') return '火';
   if (v === 'tu') return '土';
   return v || '无';
-};
-
-const formatScaleAttr = (value: string): string => {
-  const v = value.trim();
-  if (v === 'wugong') return '物攻';
-  if (v === 'fagong') return '法攻';
-  if (v === 'wufang') return '物防';
-  if (v === 'fafang') return '法防';
-  if (v === 'max_qixue') return '气血上限';
-  if (v === 'max_lingqi') return '灵气上限';
-  if (v === 'sudu') return '速度';
-  return v || '未知';
-};
-
-type SkillEffectView = {
-  type?: string;
-  value?: number;
-  valueType?: string;
-  scaleAttr?: string;
-  scaleRate?: number;
-  hit_count?: number;
-};
-
-const toFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-};
-
-const toSkillEffects = (raw: unknown): SkillEffectView[] => {
-  if (!Array.isArray(raw)) return [];
-  const effects: SkillEffectView[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const row = item as Record<string, unknown>;
-    effects.push({
-      type: typeof row.type === 'string' ? row.type : undefined,
-      value: toFiniteNumber(row.value) ?? undefined,
-      valueType: typeof row.valueType === 'string' ? row.valueType : undefined,
-      scaleAttr: typeof row.scaleAttr === 'string' ? row.scaleAttr : undefined,
-      scaleRate: toFiniteNumber(row.scaleRate) ?? undefined,
-      hit_count: toFiniteNumber(row.hit_count) ?? undefined,
-    });
-  }
-  return effects;
-};
-
-const formatPermyriadPercent = (value: number): string => {
-  const percent = value / 100;
-  return Number.isInteger(percent) ? `${percent}` : `${Number(percent.toFixed(2))}`;
-};
-
-const getDamageEffectSummary = (effects: unknown[]): string => {
-  const damageEffect = toSkillEffects(effects).find((effect) => effect.type === 'damage');
-  if (!damageEffect) return '无';
-
-  const hitCount = Math.max(1, Math.floor(damageEffect.hit_count ?? 1));
-  const valueType = damageEffect.valueType || 'scale';
-  const segments: string[] = [];
-
-  if (valueType === 'scale') {
-    const rate = damageEffect.scaleRate ?? damageEffect.value ?? 0;
-    if (rate > 0) {
-      const scaleAttr = damageEffect.scaleAttr ? `(${formatScaleAttr(damageEffect.scaleAttr)})` : '';
-      segments.push(`倍率 ${formatPermyriadPercent(rate)}%${scaleAttr}`);
-    }
-  } else if (valueType === 'flat') {
-    segments.push(`固定 ${Math.max(0, Math.floor(damageEffect.value ?? 0))}`);
-  } else if (valueType === 'percent') {
-    segments.push(`比例 ${formatPermyriadPercent(damageEffect.value ?? 0)}%目标气血`);
-  }
-
-  if (hitCount > 1) segments.push(`连击 ${hitCount}`);
-  return segments.length > 0 ? segments.join(' · ') : '无';
 };
 
 const SKILL_ICON_GLOB_SKILLS = import.meta.glob('../../../../assets/images/skills/*.{png,jpg,jpeg,webp,gif}', {
@@ -749,6 +673,10 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
           const isDisabled = s.cooldownLeft > 0 || isCasting || (turn != null && isBattleRunning && !isMyTurn);
           const cdReduction = gameSocket.getCharacter()?.lengque ?? 0;
           const actualCd = computeActualCooldown(s.cooldownTurns, cdReduction);
+          const effectLines = formatSkillEffectLines(s.effects, {
+            damageType: s.damageType,
+            element: s.element,
+          });
           const tooltipTitle = (
             <div style={{ maxWidth: 260 }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>{s.name}</div>
@@ -759,8 +687,11 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
                 {s.targetCount > 1 ? `（${s.targetCount}）` : ''}
               </div>
               <div>
-                五行：{formatElement(s.element)} · 伤害：{getDamageEffectSummary(s.effects)}
+                五行：{formatElement(s.element)}
               </div>
+              {effectLines.length > 0 ? effectLines.map((line, idx) => (
+                <div key={`${s.id}-effect-${idx}`}>效果{idx + 1}：{line}</div>
+              )) : <div>效果：无</div>}
               {s.description ? <div style={{ marginTop: 6, opacity: 0.9, whiteSpace: 'pre-wrap' }}>{s.description}</div> : null}
             </div>
           );
