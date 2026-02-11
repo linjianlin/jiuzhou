@@ -384,6 +384,7 @@ export const useItem = async (
     const effectDefs = Array.isArray(item.effect_defs) ? item.effect_defs : [];
     let deltaQixue = 0;
     let deltaLingqi = 0;
+    let deltaExp = 0;
     let hasLoot = false;
     let hasLearnTechnique = false;
     const lootResults: { type: string; name?: string; amount: number }[] = [];
@@ -506,10 +507,13 @@ export const useItem = async (
         if (resource === 'lingqi') {
           deltaLingqi += value * qty;
         }
+        if (resource === 'exp') {
+          deltaExp += Math.floor(value * qty);
+        }
       }
     }
 
-    if (deltaQixue === 0 && deltaLingqi === 0 && !hasLoot && !hasLearnTechnique) {
+    if (deltaQixue === 0 && deltaLingqi === 0 && deltaExp === 0 && !hasLoot && !hasLearnTechnique) {
       await client.query('ROLLBACK');
       return { success: false, message: '该物品暂不支持使用效果' };
     }
@@ -527,6 +531,11 @@ export const useItem = async (
     const setValues: any[] = [characterId, nextQixue, nextLingqi];
     let paramIdx = 4;
 
+    if (deltaExp !== 0) {
+      setClauses.push(`exp = exp + $${paramIdx}`);
+      setValues.push(deltaExp);
+      paramIdx++;
+    }
     if (deltaSilver > 0) {
       setClauses.push(`silver = silver + $${paramIdx}`);
       setValues.push(deltaSilver);
@@ -539,7 +548,7 @@ export const useItem = async (
     }
 
     const updatedCharResult = await client.query(
-      `UPDATE characters SET ${setClauses.join(', ')} WHERE id = $1 RETURNING id, qixue, max_qixue, lingqi, max_lingqi, silver, spirit_stones`,
+      `UPDATE characters SET ${setClauses.join(', ')} WHERE id = $1 RETURNING id, qixue, max_qixue, lingqi, max_lingqi, exp, silver, spirit_stones`,
       setValues
     );
 

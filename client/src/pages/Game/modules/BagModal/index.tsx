@@ -253,7 +253,15 @@ const buildEffects = (def?: ItemDefLite): string[] => {
     const durationRound = (e as { duration_round?: unknown }).duration_round;
 
     if (effectType === 'heal' && typeof value === 'number') effects.push(`恢复气血 ${value}`);
-    else if ((effectType === 'restore_mana' || effectType === 'mana') && typeof value === 'number') effects.push(`恢复灵气 ${value}`);
+    else if (effectType === 'resource' && typeof value === 'number') {
+      const params = (e as { params?: unknown }).params;
+      const paramsRecord = params && typeof params === 'object' ? (params as Record<string, unknown>) : null;
+      const resource = paramsRecord ? String(paramsRecord.resource || paramsRecord.resource_type || '') : '';
+      const resourceName =
+        resource === 'lingqi' ? '灵气' : resource === 'qixue' ? '气血' : resource === 'exp' ? '经验' : '资源';
+      const action = resource === 'exp' ? '获得' : '恢复';
+      effects.push(`${action}${resourceName} ${value}`);
+    } else if ((effectType === 'restore_mana' || effectType === 'mana') && typeof value === 'number') effects.push(`恢复灵气 ${value}`);
     else if (effectType === 'learn_technique') effects.push('学习功法');
     else if (typeof effectType === 'string') effects.push(`效果：${effectType}`);
 
@@ -475,9 +483,16 @@ const formatSetEffectLine = (raw: unknown): string | null => {
     main = `恢复气血 ${Math.floor(value)}`;
   } else if (effectType === 'resource') {
     const value = toFiniteNumber(params.value) ?? 0;
-    const resource = typeof params.resource_type === 'string' ? params.resource_type : '';
-    const resourceName = resource === 'lingqi' ? '灵气' : resource === 'qixue' ? '气血' : '资源';
-    main = `恢复${resourceName} ${Math.floor(value)}`;
+    const resource =
+      typeof params.resource_type === 'string'
+        ? params.resource_type
+        : typeof params.resource === 'string'
+          ? params.resource
+          : '';
+    const resourceName =
+      resource === 'lingqi' ? '灵气' : resource === 'qixue' ? '气血' : resource === 'exp' ? '经验' : '资源';
+    const action = resource === 'exp' ? '获得' : '恢复';
+    main = `${action}${resourceName} ${Math.floor(value)}`;
   } else {
     main = effectType;
   }
@@ -901,10 +916,11 @@ const pickNumber = (obj: unknown, keys: string[]): number | null => {
   return null;
 };
 
-const calcUseEffectDelta = (effects: unknown, qty: number): { qixue: number; lingqi: number } => {
-  if (!Array.isArray(effects)) return { qixue: 0, lingqi: 0 };
+const calcUseEffectDelta = (effects: unknown, qty: number): { qixue: number; lingqi: number; exp: number } => {
+  if (!Array.isArray(effects)) return { qixue: 0, lingqi: 0, exp: 0 };
   let deltaQixue = 0;
   let deltaLingqi = 0;
+  let deltaExp = 0;
   const safeQty = Math.max(1, Math.floor(Number(qty) || 1));
 
   for (const rawEffect of effects) {
@@ -927,10 +943,11 @@ const calcUseEffectDelta = (effects: unknown, qty: number): { qixue: number; lin
       const resource = params ? String(params.resource || '') : '';
       if (resource === 'qixue') deltaQixue += value * safeQty;
       if (resource === 'lingqi') deltaLingqi += value * safeQty;
+      if (resource === 'exp') deltaExp += value * safeQty;
     }
   }
 
-  return { qixue: Math.floor(deltaQixue), lingqi: Math.floor(deltaLingqi) };
+  return { qixue: Math.floor(deltaQixue), lingqi: Math.floor(deltaLingqi), exp: Math.floor(deltaExp) };
 };
 
 interface BagModalProps {
@@ -1202,16 +1219,33 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       } else {
         const afterChar = res.data?.character;
         const beforeQixue = beforeChar?.qixue ?? null;
+        const beforeLingqi = beforeChar?.lingqi ?? null;
+        const beforeExp = beforeChar?.exp ?? null;
         const afterQixue = pickNumber(afterChar, ['qixue']);
+        const afterLingqi = pickNumber(afterChar, ['lingqi']);
+        const afterExp = pickNumber(afterChar, ['exp']);
         const effectDelta = calcUseEffectDelta(res.effects, 1);
 
-        const restoredByStat =
+        const qixueByStat =
           beforeQixue !== null && afterQixue !== null ? Math.max(0, Math.floor(afterQixue - beforeQixue)) : null;
-        const restored = restoredByStat !== null ? restoredByStat : Math.max(0, Math.floor(effectDelta.qixue));
+        const lingqiByStat =
+          beforeLingqi !== null && afterLingqi !== null ? Math.max(0, Math.floor(afterLingqi - beforeLingqi)) : null;
+        const expByStat = beforeExp !== null && afterExp !== null ? Math.max(0, Math.floor(afterExp - beforeExp)) : null;
+
+        const restoredQixue = qixueByStat !== null ? qixueByStat : Math.max(0, Math.floor(effectDelta.qixue));
+        const restoredLingqi = lingqiByStat !== null ? lingqiByStat : Math.max(0, Math.floor(effectDelta.lingqi));
+        const gainedExp = expByStat !== null ? expByStat : Math.max(0, Math.floor(effectDelta.exp));
+
+        const effectParts: string[] = [];
+        if (restoredQixue > 0) effectParts.push(`恢复了${restoredQixue}点气血`);
+        if (restoredLingqi > 0) effectParts.push(`恢复了${restoredLingqi}点灵气`);
+        if (gainedExp > 0) effectParts.push(`获得了${gainedExp}点经验`);
 
         content =
           activeItem.category === 'consumable'
-            ? `使用【${activeItem.name}】成功，恢复了${restored}点气血，背包剩余${remaining}。`
+            ? effectParts.length > 0
+              ? `使用【${activeItem.name}】成功，${effectParts.join('，')}，背包剩余${remaining}。`
+              : `使用【${activeItem.name}】成功，背包剩余${remaining}。`
             : `使用【${activeItem.name}】成功，背包剩余${remaining}。`;
       }
       window.dispatchEvent(new CustomEvent('chat:append', { detail: { channel: 'system', content } }));

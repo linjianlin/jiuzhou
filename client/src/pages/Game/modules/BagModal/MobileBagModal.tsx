@@ -652,13 +652,28 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
       } else {
         const afterChar = res.data?.character;
         const beforeQixue = beforeChar?.qixue ?? null;
+        const beforeLingqi = beforeChar?.lingqi ?? null;
+        const beforeExp = beforeChar?.exp ?? null;
         const afterQixue = pickNumber(afterChar, ['qixue']);
+        const afterLingqi = pickNumber(afterChar, ['lingqi']);
+        const afterExp = pickNumber(afterChar, ['exp']);
         const effectDelta = calcUseEffectDelta(res.effects, 1);
-        const restoredByStat =
+        const qixueByStat =
           beforeQixue !== null && afterQixue !== null ? Math.max(0, Math.floor(afterQixue - beforeQixue)) : null;
-        const restored = restoredByStat !== null ? restoredByStat : Math.max(0, effectDelta.qixue);
+        const lingqiByStat =
+          beforeLingqi !== null && afterLingqi !== null ? Math.max(0, Math.floor(afterLingqi - beforeLingqi)) : null;
+        const expByStat = beforeExp !== null && afterExp !== null ? Math.max(0, Math.floor(afterExp - beforeExp)) : null;
+        const restoredQixue = qixueByStat !== null ? qixueByStat : Math.max(0, effectDelta.qixue);
+        const restoredLingqi = lingqiByStat !== null ? lingqiByStat : Math.max(0, effectDelta.lingqi);
+        const gainedExp = expByStat !== null ? expByStat : Math.max(0, effectDelta.exp);
+        const effectParts: string[] = [];
+        if (restoredQixue > 0) effectParts.push(`恢复了${restoredQixue}点气血`);
+        if (restoredLingqi > 0) effectParts.push(`恢复了${restoredLingqi}点灵气`);
+        if (gainedExp > 0) effectParts.push(`获得了${gainedExp}点经验`);
         content = activeItem.category === 'consumable'
-          ? `使用【${activeItem.name}】成功，恢复了${restored}点气血，背包剩余${remaining}。`
+          ? effectParts.length > 0
+            ? `使用【${activeItem.name}】成功，${effectParts.join('，')}，背包剩余${remaining}。`
+            : `使用【${activeItem.name}】成功，背包剩余${remaining}。`
           : `使用【${activeItem.name}】成功，背包剩余${remaining}。`;
       }
       window.dispatchEvent(new CustomEvent('chat:append', { detail: { channel: 'system', content } }));
