@@ -510,7 +510,7 @@
           "type": "damage",
           "valueType": "scale",
           "scaleAttr": "wugong",
-          "scaleRate": 8000,
+          "scaleRate": 6000,
           "hit_count": 3
         }
       ],

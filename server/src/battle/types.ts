@@ -296,9 +296,20 @@ export interface ActionLog {
   targets: TargetResult[];
 }
 
+export interface TargetHitResult {
+  index: number;
+  damage: number;
+  isMiss: boolean;
+  isCrit: boolean;
+  isParry: boolean;
+  isElementBonus: boolean;
+  shieldAbsorbed: number;
+}
+
 export interface TargetResult {
   targetId: string;
   targetName: string;
+  hits: TargetHitResult[];
   damage?: number;
   heal?: number;
   isMiss?: boolean;

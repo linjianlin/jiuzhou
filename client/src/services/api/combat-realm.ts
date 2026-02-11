@@ -26,6 +26,33 @@ export type BattleUnitDto = {
   isAlive: boolean;
 };
 
+export type BattleActionTargetHitDto = {
+  index: number;
+  damage: number;
+  isMiss: boolean;
+  isCrit: boolean;
+  isParry: boolean;
+  isElementBonus: boolean;
+  shieldAbsorbed: number;
+};
+
+export type BattleActionTargetDto = {
+  targetId: string;
+  targetName: string;
+  hits: BattleActionTargetHitDto[];
+  damage?: number;
+  heal?: number;
+  isMiss?: boolean;
+  isCrit?: boolean;
+  isParry?: boolean;
+  isElementBonus?: boolean;
+  shieldAbsorbed?: number;
+  buffsApplied?: string[];
+  buffsRemoved?: string[];
+  controlApplied?: string;
+  controlResisted?: boolean;
+};
+
 export type BattleLogEntryDto =
   | {
       type: 'action';
@@ -34,21 +61,7 @@ export type BattleLogEntryDto =
       actorName: string;
       skillId: string;
       skillName: string;
-      targets: Array<{
-        targetId: string;
-        targetName: string;
-        damage?: number;
-        heal?: number;
-        isMiss?: boolean;
-        isCrit?: boolean;
-        isParry?: boolean;
-        isElementBonus?: boolean;
-        shieldAbsorbed?: number;
-        buffsApplied?: string[];
-        buffsRemoved?: string[];
-        controlApplied?: string;
-        controlResisted?: boolean;
-      }>;
+      targets: BattleActionTargetDto[];
     }
   | { type: 'dot'; round: number; unitId: string; unitName: string; buffName: string; damage: number }
   | { type: 'hot'; round: number; unitId: string; unitName: string; buffName: string; heal: number }

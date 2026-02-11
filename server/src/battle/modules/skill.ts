@@ -11,6 +11,7 @@ import type {
   DotEffect,
   HotEffect,
   ActionLog,
+  TargetHitResult,
   TargetResult
 } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
@@ -223,6 +224,7 @@ function executeDamageEffect(
   for (let i = 0; i < hitCount; i++) {
     if (!target.isAlive) break;
     attempted = true;
+    const hitIndex = result.hits.length + 1;
 
     const damageResult = calculateDamage(state, caster, target, {
       damageType,
@@ -230,6 +232,16 @@ function executeDamageEffect(
       baseDamage,
     });
     if (damageResult.isMiss) {
+      const missedHit: TargetHitResult = {
+        index: hitIndex,
+        damage: 0,
+        isMiss: true,
+        isCrit: false,
+        isParry: false,
+        isElementBonus: false,
+        shieldAbsorbed: 0,
+      };
+      result.hits.push(missedHit);
       continue;
     }
 
@@ -238,6 +250,16 @@ function executeDamageEffect(
       state, target, damageResult.damage, damageType
     );
     const actualDamage = Math.max(0, damageApplied);
+    const landedHit: TargetHitResult = {
+      index: hitIndex,
+      damage: actualDamage,
+      isMiss: false,
+      isCrit: damageResult.isCrit,
+      isParry: damageResult.isParry,
+      isElementBonus: damageResult.isElementBonus,
+      shieldAbsorbed,
+    };
+    result.hits.push(landedHit);
 
     result.damage = (result.damage || 0) + actualDamage;
     result.shieldAbsorbed = (result.shieldAbsorbed || 0) + shieldAbsorbed;
@@ -379,6 +401,7 @@ function executeSkillOnTarget(
   const result: TargetResult = {
     targetId: target.id,
     targetName: target.name,
+    hits: [],
     buffsApplied: [],
     buffsRemoved: [],
   };

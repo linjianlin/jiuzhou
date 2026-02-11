@@ -524,18 +524,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           const pickTargetVariant = (kind: string, variants: readonly string[]) => pickVariant(`${targetSeed}:${kind}`, variants);
           const markState = (seed: string, variants: readonly string[]) => battleInlineToken('state', pickTargetVariant(seed, variants));
           const parts: string[] = [];
-          if (t.isMiss) {
-            parts.push(markState('miss', ['一击落空', '此击未中', '被身法避开', '擦身而过', '招式偏离要害', '闪身躲过', '被轻巧避过', '攻势未能命中', '出手扑空', '对手避其锋芒']));
-          }
-          if (t.isParry) {
-            parts.push(markState('parry', ['招式被格', '攻势被架开', '被对手卸去锋芒', '刀势被拦下', '出手被稳稳挡住', '攻击遭格挡', '被正面招架', '劲道被化开', '进攻被截断', '来势被封住']));
-          }
-          if (t.isCrit) {
-            parts.push(markState('crit', ['会心一击', '命中要害', '重击得手', '一击破势', '锐势贯体', '狠击入肉', '招式直中命门', '这一击尤为凶猛', '灵力暴发命中', '重招击实']));
-          }
-          if (t.isElementBonus) {
-            parts.push(markState('element', ['五行克制', '借五行之势占优', '属性压制', '行属相克', '灵根克制生效', '五行相胜', '对位相克', '属性优势显现', '克制之势成形', '五行压制到位']));
-          }
           if (t.controlResisted) {
             parts.push(markState('resist', ['稳住心神', '强行破开控制', '以灵识抗下', '定神抵住压制', '心法护住神台', '凭意志挣脱', '迅速稳住气机', '抗住控制冲击', '神识未乱', '化去控制之力']));
           }
@@ -543,32 +531,114 @@ const BattleArea: React.FC<BattleAreaProps> = ({
             const controlName = translateControlName(t.controlApplied);
             parts.push(markState(`control:${controlName}`, [`受${controlName}`, `陷入${controlName}`, `被施以${controlName}`, `遭${controlName}束缚`, `身中${controlName}`, `状态转为${controlName}`, `被${controlName}命中`, `受${controlName}影响`, `当场进入${controlName}`, `行动受${controlName}牵制`]));
           }
-          if (t.shieldAbsorbed && t.shieldAbsorbed > 0) {
-            const value = Math.floor(t.shieldAbsorbed);
+          if (t.hits.length > 1) {
+            const value = t.hits.length;
             parts.push(
               battleInlineToken(
                 'state',
-                pickTargetVariant(`shield:${value}`, [`护体化解${value}`, `护盾抵消${value}`, `罡气卸去${value}`, `外层护罩吸收${value}`, `护身灵光挡下${value}`, `护体真气吞掉${value}`, `护盾拦截${value}`, `守势化去${value}`, `防护层承受${value}`, `护身屏障吸纳${value}`]),
+                pickTargetVariant(`combo:${value}`, [
+                  `连击${value}段`,
+                  `连环出手${value}次`,
+                  `连续斩击${value}次`,
+                  `一式连打${value}击`,
+                  `攻势连贯${value}段`,
+                  `转瞬连发${value}击`,
+                ]),
               ),
             );
           }
-          if (t.damage && t.damage > 0) {
-            const value = Math.floor(t.damage);
-            const damageText = battleInlineToken('damage', String(value));
-            parts.push(
-              pickTargetVariant(`damage:${value}`, [
-                '气血-{v}',
-                '受创-{v}',
-                '损血-{v}',
-                '伤势-{v}',
-                '血量下跌{v}',
-                '气机受损{v}',
-                '被打掉{v}点气血',
-                '这一击造成{v}伤害',
-                '受到{v}点伤害',
-                '身受{v}伤',
-              ]).replace('{v}', damageText),
-            );
+          if (t.hits.length > 0) {
+            const hitTexts = t.hits.map((hit) => {
+              const hitSeed = `hit:${hit.index}`;
+              const hitParts: string[] = [];
+              if (hit.isMiss) {
+                hitParts.push(markState(`${hitSeed}:miss`, ['未命中', '这一击落空', '被闪身避开', '攻势扑空', '未能触及对手']));
+              }
+              if (hit.isParry) {
+                hitParts.push(markState(`${hitSeed}:parry`, ['被招架', '被稳稳格开', '来势被架住', '攻势被截断', '这一击被挡下']));
+              }
+              if (hit.isCrit) {
+                hitParts.push(markState(`${hitSeed}:crit`, ['暴击', '会心重击', '命中要害', '重招得手', '狠击入肉']));
+              }
+              if (hit.isElementBonus) {
+                hitParts.push(markState(`${hitSeed}:element`, ['五行克制', '属性压制', '行属相克', '克制优势生效', '灵根克制显现']));
+              }
+              if (hit.shieldAbsorbed > 0) {
+                const absorbed = Math.floor(hit.shieldAbsorbed);
+                hitParts.push(
+                  battleInlineToken(
+                    'state',
+                    pickTargetVariant(`${hitSeed}:shield:${absorbed}`, [
+                      `护体化解${absorbed}`,
+                      `护盾抵消${absorbed}`,
+                      `罡气卸去${absorbed}`,
+                      `护身屏障吸收${absorbed}`,
+                      `守势拦截${absorbed}`,
+                    ]),
+                  ),
+                );
+              }
+              if (hit.damage > 0) {
+                const damageValue = Math.floor(hit.damage);
+                const damageText = battleInlineToken('damage', String(damageValue));
+                hitParts.push(
+                  pickTargetVariant(`${hitSeed}:damage:${damageValue}`, [
+                    '气血-{v}',
+                    '受创-{v}',
+                    '损血-{v}',
+                    '伤势-{v}',
+                    '受到{v}点伤害',
+                    '身受{v}伤',
+                  ]).replace('{v}', damageText),
+                );
+              }
+              if (hitParts.length === 0) {
+                hitParts.push(markState(`${hitSeed}:empty`, ['未造成伤害', '攻势受阻', '这一击未见成效']));
+              }
+              const hitLabel = battleInlineToken('state', `第${hit.index}击`);
+              return `${hitLabel}${hitParts.join('，')}`;
+            });
+            parts.push(hitTexts.join('；'));
+          } else {
+            if (t.isMiss) {
+              parts.push(markState('miss', ['一击落空', '此击未中', '被身法避开', '擦身而过', '招式偏离要害', '闪身躲过', '被轻巧避过', '攻势未能命中', '出手扑空', '对手避其锋芒']));
+            }
+            if (t.isParry) {
+              parts.push(markState('parry', ['招式被格', '攻势被架开', '被对手卸去锋芒', '刀势被拦下', '出手被稳稳挡住', '攻击遭格挡', '被正面招架', '劲道被化开', '进攻被截断', '来势被封住']));
+            }
+            if (t.isCrit) {
+              parts.push(markState('crit', ['会心一击', '命中要害', '重击得手', '一击破势', '锐势贯体', '狠击入肉', '招式直中命门', '这一击尤为凶猛', '灵力暴发命中', '重招击实']));
+            }
+            if (t.isElementBonus) {
+              parts.push(markState('element', ['五行克制', '借五行之势占优', '属性压制', '行属相克', '灵根克制生效', '五行相胜', '对位相克', '属性优势显现', '克制之势成形', '五行压制到位']));
+            }
+            if (t.shieldAbsorbed && t.shieldAbsorbed > 0) {
+              const value = Math.floor(t.shieldAbsorbed);
+              parts.push(
+                battleInlineToken(
+                  'state',
+                  pickTargetVariant(`shield:${value}`, [`护体化解${value}`, `护盾抵消${value}`, `罡气卸去${value}`, `外层护罩吸收${value}`, `护身灵光挡下${value}`, `护体真气吞掉${value}`, `护盾拦截${value}`, `守势化去${value}`, `防护层承受${value}`, `护身屏障吸纳${value}`]),
+                ),
+              );
+            }
+            if (t.damage && t.damage > 0) {
+              const value = Math.floor(t.damage);
+              const damageText = battleInlineToken('damage', String(value));
+              parts.push(
+                pickTargetVariant(`damage:${value}`, [
+                  '气血-{v}',
+                  '受创-{v}',
+                  '损血-{v}',
+                  '伤势-{v}',
+                  '血量下跌{v}',
+                  '气机受损{v}',
+                  '被打掉{v}点气血',
+                  '这一击造成{v}伤害',
+                  '受到{v}点伤害',
+                  '身受{v}伤',
+                ]).replace('{v}', damageText),
+              );
+            }
           }
           if (t.heal && t.heal > 0) {
             const value = Math.floor(t.heal);
@@ -731,7 +801,9 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       for (const log of slice) {
         if (log.type === 'action') {
           for (const t of log.targets ?? []) {
-            if (t.damage && t.damage > 0) addFloat(t.targetId, -Math.floor(t.damage));
+            for (const hit of t.hits) {
+              if (hit.damage > 0) addFloat(t.targetId, -Math.floor(hit.damage));
+            }
             if (t.heal && t.heal > 0) addFloat(t.targetId, Math.floor(t.heal));
           }
         } else if (log.type === 'dot') {
