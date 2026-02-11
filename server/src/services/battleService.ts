@@ -8,7 +8,6 @@ import {
   BattleEngine,
   createPVEBattle,
   createPVPBattle,
-  calculateRewards,
   type BattleState,
   type BattleSetBonusEffect,
   type CharacterData,
@@ -1622,8 +1621,7 @@ export function cleanupExpiredBattles(): void {
   const now = Date.now();
   const maxAge = 30 * 60 * 1000; // 30分钟
   
-  for (const [battleId, engine] of activeBattles.entries()) {
-    const state = engine.getState();
+  for (const battleId of activeBattles.keys()) {
     const parts = String(battleId || '').split('-');
     let battleTime = 0;
     for (let i = parts.length - 1; i >= 0; i--) {

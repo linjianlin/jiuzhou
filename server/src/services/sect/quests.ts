@@ -1,4 +1,3 @@
-import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { assertMember, toNumber } from './db.js';
 import type { Result, SectQuest } from './types.js';
@@ -93,4 +92,3 @@ export const acceptSectQuest = async (characterId: number, questId: string): Pro
     client.release();
   }
 };
-

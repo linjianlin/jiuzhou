@@ -8,8 +8,7 @@ import { getAvailableSkills, getNormalAttack } from './skill.js';
 import { 
   getLowestHpTarget, 
   getHighestThreatTarget, 
-  getHealTargets,
-  resolveTargets 
+  getHealTargets
 } from './target.js';
 import { isStunned, isFeared, getTauntSource } from './control.js';
 
@@ -59,7 +58,7 @@ export function makeAIDecision(
       selectedSkill = selectAggressiveSkill(state, unit, availableSkills);
       break;
     case 'defensive':
-      selectedSkill = selectDefensiveSkill(state, unit, availableSkills);
+      selectedSkill = selectDefensiveSkill(unit, availableSkills);
       break;
     case 'support':
       selectedSkill = selectSupportSkill(state, unit, availableSkills);
@@ -68,7 +67,7 @@ export function makeAIDecision(
       selectedSkill = selectBossSkill(state, unit, availableSkills);
       break;
     default:
-      selectedSkill = selectPassiveSkill(unit, availableSkills);
+      selectedSkill = selectPassiveSkill(unit);
   }
   
   // 选择目标
@@ -80,7 +79,7 @@ export function makeAIDecision(
 /**
  * 获取AI行为模式
  */
-function getAIBehavior(unit: BattleUnit): AIBehavior {
+function getAIBehavior(_unit: BattleUnit): AIBehavior {
   // 可以从unit的扩展属性中读取，这里默认aggressive
   return 'aggressive';
 }
@@ -110,7 +109,7 @@ function makeFearDecision(state: BattleState, unit: BattleUnit): AIDecision {
 /**
  * 被动模式：只用普攻
  */
-function selectPassiveSkill(unit: BattleUnit, availableSkills: BattleSkill[]): BattleSkill {
+function selectPassiveSkill(unit: BattleUnit): BattleSkill {
   return getNormalAttack(unit);
 }
 
@@ -168,7 +167,6 @@ function selectAggressiveSkill(
  * 防守模式：优先生存技能
  */
 function selectDefensiveSkill(
-  state: BattleState,
   unit: BattleUnit,
   availableSkills: BattleSkill[]
 ): BattleSkill {
@@ -282,10 +280,10 @@ function selectTargets(
       return [unit.id];
       
     case 'single_enemy':
-      return selectSingleEnemyTarget(state, unit, aliveEnemies);
+      return selectSingleEnemyTarget(unit, aliveEnemies);
       
     case 'single_ally':
-      return selectSingleAllyTarget(state, unit, skill, aliveAllies);
+      return selectSingleAllyTarget(unit, skill, aliveAllies);
       
     case 'all_enemy':
     case 'all_ally':
@@ -303,7 +301,6 @@ function selectTargets(
  * 选择单体敌方目标
  */
 function selectSingleEnemyTarget(
-  state: BattleState,
   unit: BattleUnit,
   enemies: BattleUnit[]
 ): string[] {
@@ -338,7 +335,6 @@ function selectSingleEnemyTarget(
  * 选择单体友方目标
  */
 function selectSingleAllyTarget(
-  state: BattleState,
   unit: BattleUnit,
   skill: BattleSkill,
   allies: BattleUnit[]
@@ -371,7 +367,7 @@ function selectSingleAllyTarget(
  * 计算技能权重
  */
 export function calculateSkillWeight(
-  state: BattleState,
+  _state: BattleState,
   unit: BattleUnit,
   skill: BattleSkill,
   enemies: BattleUnit[],

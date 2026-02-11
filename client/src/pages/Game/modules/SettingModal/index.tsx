@@ -1,6 +1,7 @@
 import { App, Button, Input, Menu, Modal, Select, Space, Switch, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { getCharacterInfo, updateCharacterAutoDisassemble } from '../../../../services/api';
+import { emitThemeModeChange, getStoredThemeMode, persistThemeMode, type ThemeMode } from '../../../../constants/theme';
 import './index.scss';
 
 type SettingKey = 'base' | 'battle' | 'cdk';
@@ -11,14 +12,7 @@ interface SettingModalProps {
 }
 
 const CDK_STORAGE_KEY = 'cdk_redeemed_v1';
-const THEME_STORAGE_KEY = 'ui_theme_v1';
-const THEME_EVENT_NAME = 'app:theme';
 const MOBILE_BREAKPOINT = 768;
-
-const loadThemeMode = () => {
-  const raw = localStorage.getItem(THEME_STORAGE_KEY);
-  return raw === 'dark' ? 'dark' : 'light';
-};
 
 const loadRedeemedCdks = () => {
   const raw = localStorage.getItem(CDK_STORAGE_KEY);
@@ -45,7 +39,7 @@ const clampQualityRank = (value: unknown): number => {
 const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
   const [activeKey, setActiveKey] = useState<SettingKey>('base');
-  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => loadThemeMode());
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
   const [autoBattle, setAutoBattle] = useState(false);
   const [fastBattle, setFastBattle] = useState(false);
   const [autoDisassembleEnabled, setAutoDisassembleEnabled] = useState(false);
@@ -91,10 +85,10 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   };
 
   const toggleDarkTheme = (enabled: boolean) => {
-    const nextMode: 'light' | 'dark' = enabled ? 'dark' : 'light';
+    const nextMode: ThemeMode = enabled ? 'dark' : 'light';
     setThemeMode(nextMode);
-    localStorage.setItem(THEME_STORAGE_KEY, nextMode);
-    window.dispatchEvent(new CustomEvent(THEME_EVENT_NAME, { detail: { mode: nextMode } }));
+    persistThemeMode(nextMode);
+    emitThemeModeChange(nextMode);
   };
 
   useEffect(() => {

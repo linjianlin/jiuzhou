@@ -6,7 +6,6 @@ import type {
   BattleState, 
   BattleUnit, 
   ActiveBuff, 
-  AttrModifier,
   DotEffect,
   HotEffect,
   Shield,

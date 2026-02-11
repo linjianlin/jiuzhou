@@ -265,7 +265,7 @@ export function validateSkillConditions(
  */
 export function validatePlayerAction(
   state: BattleState,
-  userId: number,
+  _userId: number,
   unitId: string
 ): ValidationResult {
   // 检查是否轮到攻击方行动

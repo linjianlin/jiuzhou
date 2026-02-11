@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { createItem } from '../itemService.js';
 import { assertMember, getCharacterUserId, toNumber } from './db.js';
-import type { BuyResult, Result, ShopItem } from './types.js';
+import type { BuyResult, ShopItem } from './types.js';
 
 const SHOP: ShopItem[] = [
   { id: 'sect-shop-001', name: '淬灵石×10', costContribution: 100, itemDefId: 'enhance-001', qty: 10 },

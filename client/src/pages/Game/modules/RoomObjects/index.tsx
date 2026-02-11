@@ -135,7 +135,6 @@ const RoomObjects: React.FC<RoomObjectsProps> = ({ mapId, roomId, onSelect }) =>
         })
         .catch(() => {
           if (cancelled) return;
-          void 0;
         });
     };
 
@@ -150,11 +149,9 @@ const RoomObjects: React.FC<RoomObjectsProps> = ({ mapId, roomId, onSelect }) =>
   useEffect(() => {
     let cancelled = false;
     const fetchObjects = () => {
-      Promise.resolve().then(() => {
-        if (cancelled) return;
-        setLoading(true);
-        setError('');
-      });
+      if (cancelled) return;
+      setLoading(true);
+      setError('');
       getRoomObjects(mapId, roomId)
         .then((res) => {
           if (cancelled) return;

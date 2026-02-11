@@ -2729,7 +2729,7 @@ export const sortInventory = async (
     const capacity = getSlottedCapacity(info, location);
 
     // 分两步更新：先写入不冲突的临时槽位，再写回最终槽位，避免唯一索引冲突
-    const tempResult = await client.query(
+    await client.query(
       `
         WITH ordered AS (
           SELECT
@@ -2760,7 +2760,7 @@ export const sortInventory = async (
       [characterId, location, capacity]
     );
 
-    const result = await client.query(
+    await client.query(
       `
         WITH ordered AS (
           SELECT

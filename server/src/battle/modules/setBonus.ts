@@ -46,7 +46,7 @@ export function triggerSetBonusEffects(
         applySetBuffOrDebuff(effect, owner, target, params);
         break;
       case 'damage':
-        logs.push(...applySetDamage(state, effect, owner, target, params, context.damage));
+        logs.push(...applySetDamage(state, owner, target, params, context.damage));
         break;
       case 'heal':
         applySetHeal(owner, target, params);
@@ -129,7 +129,6 @@ function applySetBuffOrDebuff(
 
 function applySetDamage(
   state: BattleState,
-  effect: BattleSetBonusEffect,
   owner: BattleUnit,
   target: BattleUnit,
   params: Record<string, unknown>,

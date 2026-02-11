@@ -138,50 +138,54 @@ const InfoModal: React.FC<InfoModalProps> = ({ open, target, onClose, onAction }
     let cancelled = false;
     const seq = (requestSeqRef.current += 1);
 
-    Promise.resolve().then(() => {
-      if (cancelled) return;
+    if (!open || !target) {
+      setResolvedTarget(null);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
 
-      if (!open || !target) {
-        setResolvedTarget(null);
+    setResolvedTarget(target);
+    if (target.type === 'item' && target.object_kind === 'resource') {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (target.type === 'item' && target.object_kind === 'board') {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (target.type === 'player') {
+      const idOk = /^\d+$/.test(String(target.id || '').trim());
+      if (!idOk) {
         setLoading(false);
-        return;
+        return () => {
+          cancelled = true;
+        };
       }
+    }
 
-      setResolvedTarget(target);
-      if (target.type === 'item' && target.object_kind === 'resource') {
+    setLoading(true);
+    getInfoTargetDetail(target.type, target.id)
+      .then((res) => {
+        if (cancelled) return;
+        if (requestSeqRef.current !== seq) return;
+        if (!res?.success || !res.data?.target) return;
+        setResolvedTarget(res.data.target as unknown as InfoTarget);
+      })
+      .catch(() => {
+        if (cancelled) return;
+      })
+      .finally(() => {
+        if (cancelled) return;
+        if (requestSeqRef.current !== seq) return;
         setLoading(false);
-        return;
-      }
-      if (target.type === 'item' && target.object_kind === 'board') {
-        setLoading(false);
-        return;
-      }
-
-      if (target.type === 'player') {
-        const idOk = /^\d+$/.test(String(target.id || '').trim());
-        if (!idOk) {
-          setLoading(false);
-          return;
-        }
-      }
-
-      setLoading(true);
-      getInfoTargetDetail(target.type, target.id)
-        .then((res) => {
-          if (cancelled) return;
-          if (requestSeqRef.current !== seq) return;
-          if (!res?.success || !res.data?.target) return;
-          setResolvedTarget(res.data.target as unknown as InfoTarget);
-        })
-        .catch(() => {
-          if (cancelled) return;
-        })
-        .finally(() => {
-          if (cancelled) return;
-          if (requestSeqRef.current !== seq) return;
-          setLoading(false);
-        });
-    });
+      });
 
     return () => {
       cancelled = true;

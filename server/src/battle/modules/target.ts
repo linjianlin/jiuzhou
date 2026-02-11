@@ -3,7 +3,7 @@
  */
 
 import type { BattleState, BattleUnit, BattleSkill, SkillTargetType } from '../types.js';
-import { getRandomInt, randomPick, shuffle } from '../utils/random.js';
+import { shuffle } from '../utils/random.js';
 import { getTauntSource } from './control.js';
 
 /**
@@ -27,7 +27,7 @@ export function resolveTargets(
       return [caster];
       
     case 'single_enemy':
-      return resolveSingleEnemy(state, caster, aliveEnemies, selectedTargetIds);
+      return resolveSingleEnemy(caster, aliveEnemies, selectedTargetIds);
       
     case 'single_ally':
       return resolveSingleAlly(aliveAllies, selectedTargetIds);
@@ -53,7 +53,6 @@ export function resolveTargets(
  * 解析单体敌方目标（考虑嘲讽）
  */
 function resolveSingleEnemy(
-  state: BattleState,
   caster: BattleUnit,
   enemies: BattleUnit[],
   selectedTargetIds?: string[]

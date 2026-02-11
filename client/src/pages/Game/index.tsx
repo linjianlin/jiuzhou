@@ -1341,18 +1341,13 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
   useEffect(() => {
     if (!character || hydratedPositionRef.current) return;
-    let cancelled = false;
     const mapId = String(character.currentMapId || '').trim();
     const roomId = String(character.currentRoomId || '').trim();
-    Promise.resolve().then(() => {
-      if (cancelled || hydratedPositionRef.current) return;
+    if (!hydratedPositionRef.current) {
       if (mapId) setCurrentMapId(mapId);
       if (roomId) setCurrentRoomId(roomId);
       hydratedPositionRef.current = true;
-    });
-    return () => {
-      cancelled = true;
-    };
+    }
   }, [character]);
 
   const savePosition = useCallback((mapId: string, roomId: string) => {

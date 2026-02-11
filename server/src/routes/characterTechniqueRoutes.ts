@@ -220,7 +220,7 @@ router.post('/:characterId/technique/:techniqueId/upgrade', async (req: AuthRequ
       res.status(401).json({ success: false, message: '未登录' });
       return;
     }
-    const result = await upgradeTechnique(characterId, userId, techniqueId);
+    const result = await upgradeTechnique(characterId, techniqueId);
 
     if (result.success) {
       try {

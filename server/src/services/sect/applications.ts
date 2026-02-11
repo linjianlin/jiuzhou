@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { assertMember, compareRealmRank, getCharacterRealm, getCharacterSectId, hasPermission, toNumber } from './db.js';
-import type { Result, SectApplicationRow, SectPosition } from './types.js';
+import type { Result, SectApplicationRow } from './types.js';
 import { updateAchievementProgress } from '../achievementService.js';
 
 const addLogTx = async (
@@ -260,4 +260,3 @@ export const cancelMyApplication = async (characterId: number, applicationId: nu
     client.release();
   }
 };
-

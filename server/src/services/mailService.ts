@@ -10,7 +10,7 @@
  * 6. 批量操作
  */
 import { query, pool } from '../config/database.js';
-import { createItem, createItems } from './itemService.js';
+import { createItem } from './itemService.js';
 import { getInventoryInfoWithClient } from './inventoryService.js';
 import { recordCollectItemEvent } from './taskService.js';
 

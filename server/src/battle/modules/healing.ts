@@ -58,7 +58,7 @@ export function calculateHealing(
 export function applyHealing(
   target: BattleUnit,
   healAmount: number,
-  healerId?: string
+  _healerId?: string
 ): number {
   const missingHp = target.currentAttrs.max_qixue - target.qixue;
   const actualHeal = Math.min(healAmount, missingHp);

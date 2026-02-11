@@ -6,16 +6,15 @@
 import type { 
   BattleState, 
   BattleUnit, 
-  BattleSkill,
   BattleLogEntry,
   RoundLog
 } from './types.js';
 import { BATTLE_CONSTANTS } from './types.js';
 import { validateBattleState, validateSkillUse, validatePlayerAction } from './utils/validation.js';
-import { processRoundStartEffects, processRoundEndBuffs, recalculateUnitAttrs } from './modules/buff.js';
-import { executeSkill, getNormalAttack, getAvailableSkills } from './modules/skill.js';
+import { processRoundStartEffects, processRoundEndBuffs } from './modules/buff.js';
+import { executeSkill, getNormalAttack } from './modules/skill.js';
 import { makeAIDecision } from './modules/ai.js';
-import { isStunned, isFeared } from './modules/control.js';
+import { isStunned } from './modules/control.js';
 import { triggerSetBonusEffects } from './modules/setBonus.js';
 
 export class BattleEngine {

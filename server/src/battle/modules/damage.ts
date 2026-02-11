@@ -102,7 +102,7 @@ export function calculateDamage(
  * 应用伤害到目标（含护盾吸收）
  */
 export function applyDamage(
-  state: BattleState,
+  _state: BattleState,
   target: BattleUnit,
   damage: number,
   damageType: 'physical' | 'magic' | 'true'

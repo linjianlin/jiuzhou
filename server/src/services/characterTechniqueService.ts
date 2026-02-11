@@ -3,7 +3,6 @@
  * 功能：学习功法、修炼升级、装备功法、技能配置、属性计算
  */
 import { query, pool } from '../config/database.js';
-import type { PoolClient } from 'pg';
 import { updateSectionProgress } from './mainQuestService.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { isCharacterInBattle } from './battleService.js';
@@ -56,11 +55,6 @@ export interface ServiceResult<T = unknown> {
 // ============================================
 // 辅助函数
 // ============================================
-const runQuery = (client: PoolClient | null, text: string, params?: unknown[]) => {
-  if (client) return client.query(text, params);
-  return query(text, params);
-};
-
 const coerceCostMaterials = (raw: unknown): Array<{ itemId: string; qty: number }> => {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -365,7 +359,6 @@ export const getTechniqueUpgradeCost = async (
 // ============================================
 export const upgradeTechnique = async (
   characterId: number,
-  userId: number,
   techniqueId: string
 ): Promise<ServiceResult<{ newLayer: number; unlockedSkills: string[]; upgradedSkills: string[] }>> => {
   const client = await pool.connect();

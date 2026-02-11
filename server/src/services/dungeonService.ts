@@ -613,7 +613,6 @@ export const getDungeonPreview = async (
   const monsters = monstersRes.rows as MonsterLiteRow[];
 
   const stageNameById = new Map(stages.map((s) => [s.id, s.name ?? `第${s.stage_index}关`]));
-  const stageById = new Map(stages.map((s) => [s.id, s]));
   const monsterById = new Map(monsters.map((m) => [m.id, m]));
 
   const monsterDropPoolIds: string[] = [];
@@ -869,13 +868,6 @@ type DungeonInstanceRow = {
 const asString = (v: unknown, fallback: string = ''): string => {
   if (typeof v === 'string') return v;
   if (typeof v === 'number' && Number.isFinite(v)) return String(v);
-  return fallback;
-};
-
-const asBool = (v: unknown, fallback: boolean = false): boolean => {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return v !== 0;
-  if (typeof v === 'string') return v === 'true' || v === '1';
   return fallback;
 };
 
@@ -1473,9 +1465,7 @@ export const startDungeonInstance = async (
   } catch (error) {
     try {
       await client.query('ROLLBACK');
-    } catch {
-      void 0;
-    }
+    } catch {}
     console.error('开始秘境失败:', error);
     return { success: false, message: '开始秘境失败' };
   } finally {
@@ -1733,9 +1723,7 @@ export const nextDungeonInstance = async (
       } catch (error) {
         try {
           await client.query('ROLLBACK');
-        } catch {
-          void 0;
-        }
+        } catch {}
         console.error('秘境结算失败:', error);
         return { success: false, message: '秘境结算失败' };
       } finally {

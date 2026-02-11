@@ -779,7 +779,6 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
           try {
             e.dataTransfer.setData('application/json', JSON.stringify(payload));
           } catch {
-            void 0;
           }
           e.dataTransfer.effectAllowed = 'move';
         }}

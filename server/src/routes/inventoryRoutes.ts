@@ -44,12 +44,6 @@ const isAllowedLocation = (value: unknown): value is InventoryLocation =>
 const isAllowedSlottedLocation = (value: unknown): value is (typeof allowedSlottedLocations)[number] =>
   typeof value === 'string' && (allowedSlottedLocations as readonly string[]).includes(value);
 
-const clampInt = (value: number, min: number, max: number): number => {
-  const v = Number(value);
-  if (!Number.isFinite(v)) return min;
-  return Math.max(min, Math.min(max, Math.floor(v)));
-};
-
 const parsePositiveInt = (value: unknown): number | null => {
   if (value === undefined || value === null) return null;
   const parsed = Number(value);

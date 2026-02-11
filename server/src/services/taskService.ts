@@ -1347,7 +1347,6 @@ export const npcTalk = async (
   if (mainQuestRes.rows?.[0]) {
     const mq = mainQuestRes.rows[0];
     const sectionStatus = mq.section_status as 'not_started' | 'dialogue' | 'objectives' | 'turnin' | 'completed';
-    const objectives = Array.isArray(mq.objectives) ? mq.objectives : [];
     
     // 判断是否可以开始对话（未开始或对话中）
     const canStartDialogue = sectionStatus === 'not_started' || sectionStatus === 'dialogue';

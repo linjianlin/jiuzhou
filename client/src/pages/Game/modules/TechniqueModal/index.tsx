@@ -788,9 +788,9 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
   }, [equipped]);
 
   const leftItems: Array<{ key: TechniquePanel; label: string }> = [
-    { key: 'slots', label: isMobile ? '功法栏' : '功法栏' },
-    { key: 'learned', label: isMobile ? '已学功法' : '已学功法' },
-    { key: 'bonus', label: isMobile ? '功法加成' : '功法加成' },
+    { key: 'slots', label: '功法栏' },
+    { key: 'learned', label: '已学功法' },
+    { key: 'bonus', label: '功法加成' },
     { key: 'skills', label: isMobile ? '技能' : '技能配置' },
   ];
 
@@ -1022,7 +1022,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
                 key: 'name',
                 render: (_: string, row: (typeof rows)[number]) => (
                   <div className="tech-table-name">
-mu                    <span className="tech-table-name-text">{row.name}</span>
+                    <span className="tech-table-name-text">{row.name}</span>
                     <Tag color={qualityColor[row.quality]}>{qualityText[row.quality]}</Tag>
                   </div>
                 ),

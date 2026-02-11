@@ -836,7 +836,6 @@ export const getMarketTradeRecords = async (params: {
     const total = Number(countResult.rows[0]?.cnt ?? 0);
     const records: MarketTradeRecordDto[] = listResult.rows.map((r) => {
       const buyerId = Number(r.buyer_character_id);
-      const sellerId = Number(r.seller_character_id);
       const type: '买入' | '卖出' = params.characterId === buyerId ? '买入' : '卖出';
       const counterparty = type === '买入' ? String(r.seller_name ?? '') : String(r.buyer_name ?? '');
       return {

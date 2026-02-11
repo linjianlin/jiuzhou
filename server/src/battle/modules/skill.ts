@@ -176,7 +176,6 @@ function resolveDamageHitCount(effect: SkillEffect): number {
 function resolveDamageBaseValue(
   caster: BattleUnit,
   target: BattleUnit,
-  skill: BattleSkill,
   effect: SkillEffect,
   damageType: 'physical' | 'magic' | 'true'
 ): number {
@@ -215,7 +214,7 @@ function executeDamageEffect(
   if (!damageType) return { attempted: false, landed: false };
 
   const hitCount = resolveDamageHitCount(effect);
-  const baseDamage = resolveDamageBaseValue(caster, target, skill, effect, damageType);
+  const baseDamage = resolveDamageBaseValue(caster, target, effect, damageType);
   if (baseDamage <= 0) return { attempted: false, landed: false };
 
   let attempted = false;

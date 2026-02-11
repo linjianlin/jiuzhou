@@ -12,7 +12,7 @@ type AttributeKey = 'jing' | 'qi' | 'shen';
 // 游戏动作
 const moves = {
   // 玩家加入游戏
-  joinGame: ({ G, playerID }: { G: GameState; ctx: Ctx; playerID: string }, userId: number) => {
+  joinGame: ({ G, playerID }: { G: GameState; ctx: Ctx; playerID: string }, _userId: number) => {
     if (!G.players[playerID]) {
       G.players[playerID] = {
         id: playerID,

@@ -6,7 +6,6 @@
 import type { 
   BattleState, 
   BattleUnit, 
-  BattleTeam,
   BattleAttrs,
   BattleSkill,
   BattleStats,
@@ -491,7 +490,7 @@ function createEmptyStats(): BattleStats {
 export function calculateRewards(
   state: BattleState,
   monsters: MonsterData[],
-  playerRealm: string
+  _playerRealm: string
 ): { exp: number; silver: number; drops: Array<{ itemDefId: string; quantity: number }> } {
   if (state.result !== 'attacker_win') {
     return { exp: 0, silver: 0, drops: [] };

@@ -4,25 +4,37 @@ import zhCN from 'antd/locale/zh_CN';
 import Auth from './pages/Auth';
 import { verifySession, checkCharacter } from './services/api';
 import { gameSocket } from './services/gameSocket';
+import { THEME_EVENT_NAME, getStoredThemeMode, persistThemeMode, type ThemeMode } from './constants/theme';
 import './App.css';
 
 // 懒加载 Game 组件，减少首屏加载体积
 const Game = lazy(() => import('./pages/Game'));
 
-const THEME_STORAGE_KEY = 'ui_theme_v1';
+const TOKEN_STORAGE_KEY = 'token';
+const USER_STORAGE_KEY = 'user';
+const centeredViewportStyle = {
+  display: 'flex',
+  justifyContent: 'center',
+  alignItems: 'center',
+  minHeight: '100dvh',
+  height: '100%',
+} as const;
+const modalThemeCompat: Record<string, number> = { contentPadding: 8 };
+
+const clearAuthStorage = () => {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(USER_STORAGE_KEY);
+};
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(() => {
-    const raw = localStorage.getItem(THEME_STORAGE_KEY);
-    return raw === 'dark' ? 'dark' : 'light';
-  });
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
 
   // 持久登录检查
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem(TOKEN_STORAGE_KEY);
       if (!token) {
         setIsLoading(false);
         return;
@@ -38,8 +50,7 @@ function App() {
           }
         } else {
           // 清除无效的登录信息
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
+          clearAuthStorage();
           if (result.kicked) {
             Modal.warning({
               title: '登录已失效',
@@ -48,8 +59,7 @@ function App() {
           }
         }
       } catch {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        clearAuthStorage();
       } finally {
         setIsLoading(false);
       }
@@ -60,25 +70,26 @@ function App() {
 
   useEffect(() => {
     document.body.classList.toggle('theme-dark', themeMode === 'dark');
+  }, [themeMode]);
 
+  useEffect(() => {
     const onThemeEvent = (e: Event) => {
-      const ce = e as CustomEvent<{ mode?: 'light' | 'dark' }>;
+      const ce = e as CustomEvent<{ mode?: ThemeMode }>;
       const mode = ce.detail?.mode;
       if (mode === 'dark' || mode === 'light') {
-        localStorage.setItem(THEME_STORAGE_KEY, mode);
+        persistThemeMode(mode);
         setThemeMode(mode);
       }
     };
 
-    window.addEventListener('app:theme', onThemeEvent as EventListener);
-    return () => window.removeEventListener('app:theme', onThemeEvent as EventListener);
-  }, [themeMode]);
+    window.addEventListener(THEME_EVENT_NAME, onThemeEvent);
+    return () => window.removeEventListener(THEME_EVENT_NAME, onThemeEvent);
+  }, []);
 
   // 监听被踢出事件
   useEffect(() => {
     const handleKicked = (data: { message: string }) => {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearAuthStorage();
       setIsLoggedIn(false);
       Modal.warning({
         title: '登录已失效',
@@ -91,8 +102,7 @@ function App() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearAuthStorage();
     gameSocket.disconnect();
     setIsLoggedIn(false);
   };
@@ -102,11 +112,7 @@ function App() {
       <ConfigProvider locale={zhCN}>
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: '100dvh',
-            height: '100%',
+            ...centeredViewportStyle,
             background: 'var(--app-bg)',
             color: 'var(--text-color)',
           }}
@@ -128,8 +134,8 @@ function App() {
         components: {
           Modal: {
             contentBg: 'var(--panel-bg)',
-            contentPadding: 8,
-          } as any,
+            ...modalThemeCompat,
+          },
         },
       }}
     >
@@ -139,11 +145,7 @@ function App() {
             fallback={
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  minHeight: '100dvh',
-                  height: '100%',
+                  ...centeredViewportStyle,
                 }}
               >
                 <Spin size="large" tip="加载游戏中...">

@@ -136,10 +136,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setListLoading(true);
-    });
+    setListLoading(true);
     Promise.all([
       getEnabledMaps(),
       getDungeonList().catch(() => ({ success: false } as { success: boolean; data?: { dungeons: DungeonDefLite[] } })),
@@ -228,10 +225,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
     if (!safeActiveId) return;
     if (detailById[safeActiveId]) return;
     let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setDetailLoading(true);
-    });
+    setDetailLoading(true);
     const entry = filtered.find((m) => m.id === safeActiveId) ?? null;
     const isDungeon = entry?.category === 'dungeon';
 

@@ -5,7 +5,6 @@ import {
   startDialogue,
   advanceDialogue,
   selectDialogueChoice,
-  updateSectionProgress,
   completeCurrentSection,
   getChapterList,
   getSectionList,

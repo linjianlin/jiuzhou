@@ -61,10 +61,7 @@ const GameMap: React.FC<GameMapProps> = ({ currentMapId, currentRoomId, trackedR
 
   useEffect(() => {
     let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setLoading(true);
-    });
+    setLoading(true);
     getMapDetail(currentMapId)
       .then((res) => {
         if (cancelled) return;
