@@ -40,6 +40,11 @@ body {
   --battle-hp-grad-end: #ff9b9b;
   --battle-qi-grad-start: #1677ff;
   --battle-qi-grad-end: #69b1ff;
+  --battle-log-role-color: #2563eb;
+  --battle-log-skill-color: #b45309;
+  --battle-log-state-color: #0e7490;
+  --battle-log-damage-color: #dc2626;
+  --battle-log-heal-color: #15803d;
   --disabled-color: #cccccc;
   --hover-bg: #f0f0f0;
   --active-bg: #e8e8e8;
@@ -81,6 +86,11 @@ body.theme-dark {
   --battle-hp-grad-end: #ff9b9b;
   --battle-qi-grad-start: #1677ff;
   --battle-qi-grad-end: #69b1ff;
+  --battle-log-role-color: #93c5fd;
+  --battle-log-skill-color: #fcd34d;
+  --battle-log-state-color: #67e8f9;
+  --battle-log-damage-color: #fca5a5;
+  --battle-log-heal-color: #86efac;
   --disabled-color: rgba(255, 255, 255, 0.25);
   --hover-bg: rgba(255, 255, 255, 0.08);
   --active-bg: rgba(255, 255, 255, 0.12);

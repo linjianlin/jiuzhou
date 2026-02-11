@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, Drawer, Input, Popover, Select, Table, Tabs, Tooltip, type InputRef } from 'antd';
 import { BarChartOutlined, CloseOutlined, LineChartOutlined, SendOutlined } from '@ant-design/icons';
 import { gameSocket, type CharacterData, type OnlinePlayerDto } from '../../../../services/gameSocket';
@@ -88,6 +88,8 @@ interface PieSlice {
   color: string;
   percent: number;
 }
+
+type BattleInlineTokenKind = 'role' | 'skill' | 'damage' | 'heal' | 'state' | 'round';
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -198,6 +200,79 @@ const trimMessagesByChannel = (list: Message[]): Message[] => {
   kept.reverse();
   return kept;
 };
+
+const BATTLE_INLINE_TOKEN_RE = /⟦(role|skill|damage|heal|state|round)\|([^⟧]*)⟧/g;
+
+const decodeBattleInlineTokenText = (raw: string): string => {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+};
+
+const parseBattleInlineTokens = (line: string): Array<{ text: string; kind?: BattleInlineTokenKind }> => {
+  const text = String(line ?? '');
+  if (!text) return [];
+
+  const out: Array<{ text: string; kind?: BattleInlineTokenKind }> = [];
+  let cursor = 0;
+  BATTLE_INLINE_TOKEN_RE.lastIndex = 0;
+
+  for (const m of text.matchAll(BATTLE_INLINE_TOKEN_RE)) {
+    const idx = m.index ?? -1;
+    if (idx < 0) continue;
+    if (cursor < idx) out.push({ text: text.slice(cursor, idx) });
+    const kind = m[1] as BattleInlineTokenKind;
+    const encoded = m[2] ?? '';
+    out.push({ text: decodeBattleInlineTokenText(encoded), kind });
+    cursor = idx + m[0].length;
+  }
+
+  if (cursor < text.length) out.push({ text: text.slice(cursor) });
+  return out;
+};
+
+const stripBattleInlineTokens = (line: string): string => parseBattleInlineTokens(line).map((x) => x.text).join('');
+
+const renderBattleMessageContent = (line: string): Array<string | ReactNode> => {
+  const segments = parseBattleInlineTokens(line);
+  if (segments.length === 0) return [''];
+  return segments.map((seg, idx) => {
+    if (!seg.kind) return seg.text;
+    return (
+      <span key={`battle-token-${idx}`} className={`battle-token battle-token-${seg.kind}`}>
+        {seg.text}
+      </span>
+    );
+  });
+};
+
+const BATTLE_CRIT_STATE_TEXT = new Set([
+  '会心一击',
+  '命中要害',
+  '重击得手',
+  '一击破势',
+  '锐势贯体',
+  '狠击入肉',
+  '招式直中命门',
+  '这一击尤为凶猛',
+  '灵力暴发命中',
+  '重招击实',
+]);
+
+const BATTLE_MISS_STATE_TEXT = new Set([
+  '一击落空',
+  '此击未中',
+  '被身法避开',
+  '擦身而过',
+  '招式偏离要害',
+  '闪身躲过',
+  '被轻巧避过',
+  '攻势未能命中',
+  '出手扑空',
+  '对手避其锋芒',
+]);
 
 interface ChatPanelProps {
   onSelectPlayer?: (target: InfoTarget) => void;
@@ -483,6 +558,13 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
 
   const activePrivateTarget = privateTargets.find((t) => t.id === activePrivateTargetId) ?? null;
 
+  const renderMessageContent = useCallback((msg: Message): Array<string | ReactNode> | string => {
+    const text = String(msg.content ?? '');
+    if (!text) return '';
+    if (msg.channel !== 'battle') return text;
+    return renderBattleMessageContent(text);
+  }, []);
+
   const handleRemovePrivateTarget = (targetId: string) => {
     const nextTargets = privateTargets.filter((t) => t.id !== targetId);
     setPrivateTargets(nextTargets);
@@ -578,7 +660,10 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
     return messages
       .filter((m) => m.channel === 'battle')
       .filter((m) => (battleStatsFromTs > 0 ? m.timestamp >= battleStatsFromTs : true))
-      .map((m) => ({ content: String(m.content ?? '').trim(), timestamp: m.timestamp }))
+      .map((m) => {
+        const raw = String(m.content ?? '');
+        return { raw, content: stripBattleInlineTokens(raw).trim(), timestamp: m.timestamp };
+      })
       .filter((m) => Boolean(m.content));
   }, [battleStatsFromTs, messages]);
 
@@ -591,11 +676,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
 
     for (const bm of battleMessages) {
       const line = bm.content;
-      const m = /^【战斗掉落】(.+?)×(\d+)\s+分配给\s+(.+)$/.exec(line);
+      const m = /^【战利分配】(.+?)\s+取走\s+(.+?)×(\d+)$/.exec(line);
       if (!m) continue;
-      const itemName = String(m[1] ?? '').trim();
-      const qty = Math.max(1, Math.floor(Number(m[2]) || 1));
-      const receiverName = String(m[3] ?? '').trim();
+      const receiverName = String(m[1] ?? '').trim();
+      const itemName = String(m[2] ?? '').trim();
+      const qty = Math.max(1, Math.floor(Number(m[3]) || 1));
       if (!itemName) continue;
 
       details.push({ itemName, quantity: qty, receiverName, timestamp: bm.timestamp, raw: line });
@@ -685,7 +770,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
 
     for (const bm of battleMessages) {
       const line = bm.content;
-      const actionMatch = /^第(\d+)回合\s+(.+?)\s+使用【(.+?)】/.exec(line);
+      const actionMatch = /^第(\d+)回合\s+(.+?)\s+.+?【(.+?)】/.exec(line);
       if (!actionMatch) continue;
 
       const round = Math.max(0, Math.floor(Number(actionMatch[1]) || 0));
@@ -693,17 +778,24 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
       const skillName = String(actionMatch[3] ?? '').trim() || '未知技能';
       if (!actorName) continue;
 
+      const tokenSegments = parseBattleInlineTokens(bm.raw);
       let damage = 0;
       let heal = 0;
-      const critCount = (line.match(/暴击/g) ?? []).length;
-      const missCount = (line.match(/未命中/g) ?? []).length;
+      let critCount = 0;
+      let missCount = 0;
 
-      for (const m of line.matchAll(/伤害(\d+)/g)) {
-        damage += Math.max(0, Math.floor(Number(m[1]) || 0));
-      }
-
-      for (const m of line.matchAll(/治疗(\d+)/g)) {
-        heal += Math.max(0, Math.floor(Number(m[1]) || 0));
+      for (const seg of tokenSegments) {
+        if (seg.kind === 'damage' || seg.kind === 'heal') {
+          const value = Math.max(0, Math.floor(Number(seg.text) || 0));
+          if (value > 0) {
+            if (seg.kind === 'damage') damage += value;
+            if (seg.kind === 'heal') heal += value;
+          }
+          continue;
+        }
+        if (seg.kind !== 'state') continue;
+        if (BATTLE_CRIT_STATE_TEXT.has(seg.text)) critCount += 1;
+        if (BATTLE_MISS_STATE_TEXT.has(seg.text)) missCount += 1;
       }
 
       details.push({ round, actorName, skillName, damage, heal, critCount, missCount, raw: line });
@@ -1301,7 +1393,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
                     >
                       {getDisplayName(msg.senderTitle, msg.senderName)}:
                     </span>
-                    <span className="message-content">{msg.content}</span>
+                    <span className={`message-content ${msg.channel === 'battle' ? 'message-content-battle' : ''}`}>
+                      {renderMessageContent(msg)}
+                    </span>
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
@@ -1330,7 +1424,9 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
                 >
                   {getDisplayName(msg.senderTitle, msg.senderName)}:
                 </span>
-                <span className="message-content">{msg.content}</span>
+                <span className={`message-content ${msg.channel === 'battle' ? 'message-content-battle' : ''}`}>
+                  {renderMessageContent(msg)}
+                </span>
               </div>
             ))}
             <div ref={messagesEndRef} />

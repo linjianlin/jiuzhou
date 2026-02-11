@@ -321,6 +321,38 @@
       overflow-wrap: anywhere;
       word-break: break-word;
     }
+
+    .message-content.message-content-battle {
+      .battle-token {
+        font-weight: 600;
+      }
+
+      .battle-token-round {
+        color: var(--text-secondary);
+      }
+
+      .battle-token-role {
+        color: var(--battle-log-role-color, #3b82f6);
+      }
+
+      .battle-token-skill {
+        color: var(--battle-log-skill-color, #f59e0b);
+      }
+
+      .battle-token-state {
+        color: var(--battle-log-state-color, #06b6d4);
+      }
+
+      .battle-token-damage {
+        color: var(--battle-log-damage-color, #e11d48);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .battle-token-heal {
+        color: var(--battle-log-heal-color, #16a34a);
+        font-variant-numeric: tabular-nums;
+      }
+    }
   }
 }
 
