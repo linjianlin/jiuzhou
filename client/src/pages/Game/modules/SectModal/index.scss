@@ -379,4 +379,143 @@
   .sect-buildings {
     grid-template-columns: 1fr;
   }
+
+  .sect-applications-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sect-manage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+// 宗门申请列表样式
+.sect-manage-section {
+  margin-bottom: 16px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.sect-manage-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.sect-manage-section-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.sect-refresh-icon {
+  font-size: 14px;
+  margin-right: 4px;
+}
+
+.sect-applications-empty {
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg-soft);
+  border-radius: 14px;
+  padding: 24px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 900;
+}
+
+.sect-applications-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.sect-application-card {
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg-soft);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sect-application-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sect-application-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color-light) 0%, var(--primary-color) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sect-application-avatar-text {
+  font-size: 16px;
+  font-weight: 900;
+  color: #fff;
+}
+
+.sect-application-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sect-application-name {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text-color);
+  margin-bottom: 4px;
+}
+
+.sect-application-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sect-application-meta .ant-tag {
+  margin: 0;
+  font-size: 11px;
+  padding: 0 6px;
+  line-height: 18px;
+}
+
+.sect-application-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.sect-application-message {
+  border-top: 1px solid var(--border-color);
+  padding-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.sect-application-message-label {
+  font-weight: 900;
+  color: var(--text-tertiary);
+}
+
+.sect-application-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+
+  .ant-btn {
+    flex: 1;
+  }
 }

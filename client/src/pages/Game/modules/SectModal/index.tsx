@@ -9,6 +9,9 @@ import {
   searchSects,
   type SectInfoDto,
   upgradeSectBuilding,
+  type SectApplicationDto,
+  getSectApplications,
+  handleSectApplication,
 } from '../../../../services/api';
 import './index.scss';
 
@@ -69,6 +72,9 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
   const [actionLoadingKey, setActionLoadingKey] = useState<string | null>(null);
   const [sects, setSects] = useState<SectItem[]>([]);
   const [mySectInfo, setMySectInfo] = useState<SectInfoDto | null>(null);
+  const [applications, setApplications] = useState<SectApplicationDto[]>([]);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [hasPermission, setHasPermission] = useState(false);
 
   const joinedSect = useMemo(() => {
     if (!mySectInfo?.sect) return null;
@@ -282,6 +288,80 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
       setActionLoadingKey(null);
     }
   }, [canAffordCreate, createName, createNotice, message, refreshList, refreshMySect]);
+
+  // 检查是否有管理权限（宗主、副宗主、长老）
+  const checkPermission = useCallback(() => {
+    const myMember = mySectInfo?.members.find((m) => m.nickname === playerName);
+    if (!myMember) {
+      setHasPermission(false);
+      return false;
+    }
+    const permitted = myMember.position === 'leader' || myMember.position === 'vice_leader' || myMember.position === 'elder';
+    setHasPermission(permitted);
+    return permitted;
+  }, [mySectInfo, playerName]);
+
+  // 获取申请列表
+  const fetchApplications = useCallback(async () => {
+    if (!checkPermission()) {
+      setApplications([]);
+      return;
+    }
+    setApplicationsLoading(true);
+    try {
+      const res = await getSectApplications();
+      if (res.success && res.data) {
+        setApplications(res.data);
+      } else {
+        setApplications([]);
+      }
+    } catch {
+      setApplications([]);
+    } finally {
+      setApplicationsLoading(false);
+    }
+  }, [checkPermission]);
+
+  // 处理申请
+  const handleAppAction = useCallback(
+    async (applicationId: number, approve: boolean) => {
+      setActionLoadingKey(`app-${applicationId}`);
+      try {
+        const res = await handleSectApplication(applicationId, approve);
+        if (!res.success) throw new Error(res.message || '操作失败');
+        message.success(res.message || '操作成功');
+        await fetchApplications();
+        await refreshMySect(false);
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        message.error(err.message || '操作失败');
+      } finally {
+        setActionLoadingKey(null);
+      }
+    },
+    [message, fetchApplications, refreshMySect]
+  );
+
+  // 切换到宗门管理标签页时加载申请列表
+  useEffect(() => {
+    if (tab === 'manage' && joinState === 'joined') {
+      void fetchApplications();
+    }
+  }, [tab, joinState, fetchApplications]);
+
+  // 格式化相对时间
+  const formatRelativeTime = useCallback((dateString: string) => {
+    const now = Date.now();
+    const past = new Date(dateString).getTime();
+    const diff = now - past;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}分钟前`;
+    if (hours < 24) return `${hours}小时前`;
+    return `${days}天前`;
+  }, []);
 
   const renderNoSect = () => (
     <div className="sect-pane">
@@ -523,35 +603,108 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
     </div>
   );
 
-  const renderManage = () => (
-    <div className="sect-panel">
-      <div className="sect-panel-title">宗门管理</div>
-      <div className="sect-panel-body">
-        <div className="sect-manage-grid">
-          <div className="sect-manage-card">
-            <div className="sect-manage-name">宗门捐献</div>
-            <div className="sect-manage-desc">捐献灵石，获得贡献与宗门资金。</div>
-            <Button type="primary">立即捐献</Button>
+  const renderManage = () => {
+    const renderApplications = () => {
+      if (!hasPermission) return null;
+      return (
+        <div className="sect-manage-section">
+          <div className="sect-manage-section-header">
+            <div className="sect-manage-section-title">入门申请</div>
+            <Button
+              size="small"
+              loading={applicationsLoading}
+              onClick={() => fetchApplications()}
+              icon={<span className="sect-refresh-icon">↻</span>}
+            >
+              刷新
+            </Button>
           </div>
-          <div className="sect-manage-card">
-            <div className="sect-manage-name">成员管理</div>
-            <div className="sect-manage-desc">任命职位、处理申请、清理成员。</div>
-            <Button>打开</Button>
-          </div>
-          <div className="sect-manage-card">
-            <div className="sect-manage-name">公告设置</div>
-            <div className="sect-manage-desc">编辑宗门宣言与公告内容。</div>
-            <Button>编辑</Button>
-          </div>
-          <div className="sect-manage-card">
-            <div className="sect-manage-name">宗门任务</div>
-            <div className="sect-manage-desc">开启宗门任务，提高活跃度。</div>
-            <Button>查看</Button>
+          {applications.length === 0 ? (
+            <div className="sect-applications-empty">暂无入门申请</div>
+          ) : (
+            <div className="sect-applications-grid">
+              {applications.map((app) => (
+                <div key={app.id} className="sect-application-card">
+                  <div className="sect-application-header">
+                    <div className="sect-application-avatar">
+                      <span className="sect-application-avatar-text">{app.nickname.charAt(0)}</span>
+                    </div>
+                    <div className="sect-application-info">
+                      <div className="sect-application-name">{app.nickname}</div>
+                      <div className="sect-application-meta">
+                        <Tag color="cyan">{app.realm}</Tag>
+                        <span className="sect-application-time">{formatRelativeTime(app.createdAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {app.message && (
+                    <div className="sect-application-message">
+                      <span className="sect-application-message-label">申请留言：</span>
+                      {app.message}
+                    </div>
+                  )}
+                  <div className="sect-application-actions">
+                    <Button
+                      size="small"
+                      danger
+                      loading={actionLoadingKey === `app-${app.id}`}
+                      onClick={() => handleAppAction(app.id, false)}
+                      disabled={actionLoadingKey !== null}
+                    >
+                      拒绝
+                    </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={actionLoadingKey === `app-${app.id}`}
+                      onClick={() => handleAppAction(app.id, true)}
+                      disabled={actionLoadingKey !== null}
+                    >
+                      同意
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="sect-panel">
+        <div className="sect-panel-title">宗门管理</div>
+        <div className="sect-panel-body">
+          {renderApplications()}
+          <div className="sect-manage-section">
+            <div className="sect-manage-section-title">管理功能</div>
+            <div className="sect-manage-grid">
+              <div className="sect-manage-card">
+                <div className="sect-manage-name">宗门捐献</div>
+                <div className="sect-manage-desc">捐献灵石，获得贡献与宗门资金。</div>
+                <Button type="primary">立即捐献</Button>
+              </div>
+              <div className="sect-manage-card">
+                <div className="sect-manage-name">成员管理</div>
+                <div className="sect-manage-desc">任命职位、处理申请、清理成员。</div>
+                <Button>打开</Button>
+              </div>
+              <div className="sect-manage-card">
+                <div className="sect-manage-name">公告设置</div>
+                <div className="sect-manage-desc">编辑宗门宣言与公告内容。</div>
+                <Button>编辑</Button>
+              </div>
+              <div className="sect-manage-card">
+                <div className="sect-manage-name">宗门任务</div>
+                <div className="sect-manage-desc">开启宗门任务，提高活跃度。</div>
+                <Button>查看</Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderJoined = () => (
     <div className="sect-joined">

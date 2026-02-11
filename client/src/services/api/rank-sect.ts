@@ -160,3 +160,33 @@ export const getSectBuildings = (): Promise<{ success: boolean; message: string;
 export const upgradeSectBuilding = (buildingType: string): Promise<{ success: boolean; message: string }> => {
   return api.post('/sect/buildings/upgrade', { buildingType });
 };
+
+export type SectApplicationDto = {
+  id: number;
+  characterId: number;
+  nickname: string;
+  realm: string;
+  message: string | null;
+  createdAt: string;
+};
+
+export interface SectApplicationsResponse {
+  success: boolean;
+  message: string;
+  data?: SectApplicationDto[];
+}
+
+export const getSectApplications = (): Promise<SectApplicationsResponse> => {
+  return api.get('/sect/applications/list');
+};
+
+export const handleSectApplication = (
+  applicationId: number,
+  approve: boolean
+): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/applications/handle', { applicationId, approve });
+};
+
+export const cancelSectApplication = (applicationId: number): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/applications/cancel', { applicationId });
+};
