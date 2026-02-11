@@ -111,6 +111,7 @@ const ItemSheet: React.FC<SheetProps> = ({
   const equipLines = useMemo(() => buildEquipmentLines(item), [item]);
   const hasDesc = Boolean(item.desc?.trim());
   const hasEquipAttrs = item.category === 'equipment' && equipLines.length > 0;
+  const hasSetInfo = Boolean(item.setInfo && item.setInfo.bonuses.length > 0);
   const hasEffects = (item.effects?.length ?? 0) > 0;
   const isEquipped = item.location === 'equipped';
 
@@ -187,6 +188,22 @@ const ItemSheet: React.FC<SheetProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {hasSetInfo && (
+            <div className="mbag-sheet-section">
+              <div className="mbag-sheet-section-title">套装效果</div>
+              <div className="mbag-sheet-section-text">
+                套装：{item.setInfo?.setName}（已穿戴 {item.setInfo?.equippedCount ?? 0} 件）
+              </div>
+              <div className="mbag-sheet-effect-list">
+                {item.setInfo?.bonuses.map((bonus) => (
+                  <div key={`${bonus.pieceCount}-${bonus.lines.join('|')}`} className="mbag-sheet-effect-chip">
+                    {bonus.active ? '已激活' : '未激活'} {bonus.pieceCount} 件：{bonus.lines.join('；')}
+                  </div>
+                ))}
               </div>
             </div>
           )}

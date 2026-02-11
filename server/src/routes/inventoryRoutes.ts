@@ -129,18 +129,81 @@ router.get('/items', async (req: Request, res: Response) => {
       const itemDefIds = [...new Set(result.items.map(i => i.item_def_id))];
       const defResult = await query(
         `SELECT 
-           id, name, icon, quality, quality_rank, category, sub_category, stack_max,
-           description, long_desc, tags, effect_defs, base_attrs, equip_slot, use_type, socket_max, gem_slot_types, level
-         FROM item_def WHERE id = ANY($1)`,
+           d.id, d.name, d.icon, d.quality, d.quality_rank, d.category, d.sub_category, d.stack_max,
+           d.description, d.long_desc, d.tags, d.effect_defs, d.base_attrs, d.equip_slot, d.use_type, d.socket_max, d.gem_slot_types, d.level,
+           d.set_id, s.name AS set_name
+         FROM item_def d
+         LEFT JOIN item_set s ON s.id = d.set_id
+         WHERE d.id = ANY($1)`,
         [itemDefIds]
       );
+
+      const setIds = [...new Set(
+        defResult.rows
+          .map((d: any) => (typeof d.set_id === 'string' ? d.set_id.trim() : ''))
+          .filter((x) => x.length > 0)
+      )];
+
+      const setBonusMap = new Map<string, Array<{ piece_count: number; effect_defs: unknown }>>();
+      const equippedSetCountMap = new Map<string, number>();
+
+      if (setIds.length > 0) {
+        const setBonusResult = await query(
+          `
+            SELECT set_id, piece_count, effect_defs
+            FROM item_set_bonus
+            WHERE set_id = ANY($1)
+            ORDER BY priority ASC, piece_count ASC
+          `,
+          [setIds]
+        );
+        for (const row of setBonusResult.rows as Array<{ set_id: string; piece_count: number; effect_defs: unknown }>) {
+          const setId = String(row.set_id || '').trim();
+          if (!setId) continue;
+          const list = setBonusMap.get(setId) || [];
+          list.push({
+            piece_count: Number(row.piece_count) || 0,
+            effect_defs: Array.isArray(row.effect_defs) ? row.effect_defs : [],
+          });
+          setBonusMap.set(setId, list);
+        }
+
+        const equippedResult = await query(
+          `
+            SELECT id.set_id, COUNT(*)::int AS equipped_count
+            FROM item_instance ii
+            JOIN item_def id ON id.id = ii.item_def_id
+            WHERE ii.owner_character_id = $1
+              AND ii.location = 'equipped'
+              AND id.set_id = ANY($2)
+            GROUP BY id.set_id
+          `,
+          [characterId, setIds]
+        );
+        for (const row of equippedResult.rows as Array<{ set_id: string; equipped_count: number }>) {
+          const setId = String(row.set_id || '').trim();
+          if (!setId) continue;
+          equippedSetCountMap.set(setId, Number(row.equipped_count) || 0);
+        }
+      }
       
       const defMap = new Map(defResult.rows.map(d => [d.id, d]));
       const itemsWithDef = result.items.map((item: any) => {
         const def = defMap.get(item.item_def_id) as any;
         if (!def) return { ...item, def: undefined };
 
-        if (def.category !== 'equipment') return { ...item, def };
+        const setId = typeof def.set_id === 'string' ? def.set_id.trim() : '';
+        const setBonuses = setId ? (setBonusMap.get(setId) || []) : [];
+        const setEquippedCount = setId ? (equippedSetCountMap.get(setId) || 0) : 0;
+        const baseDef = {
+          ...def,
+          set_id: setId || null,
+          set_name: typeof def.set_name === 'string' ? def.set_name : null,
+          set_bonuses: setBonuses,
+          set_equipped_count: setEquippedCount,
+        };
+
+        if (def.category !== 'equipment') return { ...item, def: baseDef };
 
         const displayBaseAttrs = buildEquipmentDisplayBaseAttrs({
           baseAttrsRaw: def.base_attrs,
@@ -151,7 +214,7 @@ router.get('/items', async (req: Request, res: Response) => {
           socketedGemsRaw: item.socketed_gems,
         });
         const mergedDef = {
-          ...def,
+          ...baseDef,
           base_attrs_raw: def.base_attrs,
           base_attrs: displayBaseAttrs,
         };

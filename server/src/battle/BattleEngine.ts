@@ -16,6 +16,7 @@ import { processRoundStartEffects, processRoundEndBuffs, recalculateUnitAttrs } 
 import { executeSkill, getNormalAttack, getAvailableSkills } from './modules/skill.js';
 import { makeAIDecision } from './modules/ai.js';
 import { isStunned, isFeared } from './modules/control.js';
+import { triggerSetBonusEffects } from './modules/setBonus.js';
 
 export class BattleEngine {
   private state: BattleState;
@@ -106,6 +107,9 @@ export class BattleEngine {
       // DOT/HOT结算
       const effectLogs = processRoundStartEffects(this.state, unit);
       this.state.logs.push(...effectLogs);
+
+      const setLogs = triggerSetBonusEffects(this.state, 'on_turn_start', unit);
+      this.state.logs.push(...setLogs);
       
       // 气血/灵气恢复（只有属性值才恢复，没有基础恢复）
       this.recoverResources(unit);

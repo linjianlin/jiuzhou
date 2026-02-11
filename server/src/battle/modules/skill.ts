@@ -18,6 +18,7 @@ import { calculateHealing, applyHealing, applyLifesteal } from './healing.js';
 import { addBuff, addShield } from './buff.js';
 import { tryApplyControl, canUseSkill, isSilenced, isDisarmed } from './control.js';
 import { resolveTargets } from './target.js';
+import { triggerSetBonusEffects } from './setBonus.js';
 
 export interface SkillExecutionResult {
   success: boolean;
@@ -84,6 +85,8 @@ export function executeSkill(
   
   // 执行技能效果
   const targetResults: TargetResult[] = [];
+  const onSkillLogs = triggerSetBonusEffects(state, 'on_skill', caster);
+  state.logs.push(...onSkillLogs);
   
   for (const target of targets) {
     const result = executeSkillOnTarget(state, caster, target, skill);
@@ -129,10 +132,11 @@ function executeSkillOnTarget(
     if (damageResult.isMiss) {
       result.isMiss = true;
     } else {
-      const { actualDamage, shieldAbsorbed } = applyDamage(
+      const { actualDamage: damageApplied, shieldAbsorbed } = applyDamage(
         state, target, damageResult.damage, skill.damageType
       );
-      
+      const actualDamage = Math.max(0, damageApplied);
+
       result.damage = actualDamage;
       result.shieldAbsorbed = shieldAbsorbed;
       result.isCrit = damageResult.isCrit;
@@ -158,6 +162,24 @@ function executeSkillOnTarget(
           killerId: caster.id,
           killerName: caster.name,
         });
+      }
+
+      const onHitLogs = triggerSetBonusEffects(state, 'on_hit', caster, {
+        target,
+        damage: actualDamage,
+      });
+      state.logs.push(...onHitLogs);
+      const onBeHitLogs = triggerSetBonusEffects(state, 'on_be_hit', target, {
+        target: caster,
+        damage: actualDamage,
+      });
+      state.logs.push(...onBeHitLogs);
+      if (damageResult.isCrit) {
+        const onCritLogs = triggerSetBonusEffects(state, 'on_crit', caster, {
+          target,
+          damage: actualDamage,
+        });
+        state.logs.push(...onCritLogs);
       }
     }
   }
@@ -191,7 +213,7 @@ function executeEffect(
       break;
       
     case 'heal':
-      executeHealEffect(caster, target, effect, result);
+      executeHealEffect(state, caster, target, effect, result);
       break;
       
     case 'shield':
@@ -233,6 +255,7 @@ function executeEffect(
  * 执行治疗效果
  */
 function executeHealEffect(
+  state: BattleState,
   caster: BattleUnit,
   target: BattleUnit,
   effect: SkillEffect,
@@ -258,6 +281,13 @@ function executeHealEffect(
   const actualHeal = applyHealing(target, healValue);
   result.heal = actualHeal;
   caster.stats.healingDone += actualHeal;
+  if (actualHeal > 0) {
+    const logs = triggerSetBonusEffects(state, 'on_heal', caster, {
+      target,
+      heal: actualHeal,
+    });
+    state.logs.push(...logs);
+  }
 }
 
 /**

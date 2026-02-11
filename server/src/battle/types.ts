@@ -29,6 +29,9 @@ export interface BattleUnit {
   // 技能与冷却
   skills: BattleSkill[];
   skillCooldowns: Record<string, number>;
+
+  // 套装战斗效果（仅战斗期触发型效果）
+  setBonusEffects: BattleSetBonusEffect[];
   
   // 控制递减（PVP用）
   controlDiminishing: Record<string, ControlDiminishing>;
@@ -203,6 +206,26 @@ export interface SkillConditions {
   maxQixuePercent?: number;
   requireBuff?: string;
   requireDebuff?: string;
+}
+
+export type BattleSetBonusTrigger =
+  | 'on_turn_start'
+  | 'on_skill'
+  | 'on_hit'
+  | 'on_crit'
+  | 'on_be_hit'
+  | 'on_heal';
+
+export interface BattleSetBonusEffect {
+  setId: string;
+  setName: string;
+  pieceCount: number;
+  trigger: BattleSetBonusTrigger;
+  target: 'self' | 'enemy';
+  effectType: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource';
+  durationRound?: number;
+  element?: string;
+  params: Record<string, unknown>;
 }
 
 // ============================================

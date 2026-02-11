@@ -9,7 +9,8 @@ import type {
   BattleTeam,
   BattleAttrs,
   BattleSkill,
-  BattleStats
+  BattleStats,
+  BattleSetBonusEffect
 } from './types.js';
 import { generateBattleSeed, getNextRandom } from './utils/random.js';
 import { getNormalAttack } from './modules/skill.js';
@@ -49,6 +50,7 @@ export interface CharacterData {
   tu_kangxing: number;
   qixue_huifu: number;
   lingqi_huifu: number;
+  setBonusEffects?: BattleSetBonusEffect[];
 }
 
 // 怪物数据接口（来自数据库）
@@ -327,6 +329,7 @@ function createCharacterUnit(data: CharacterData, skills: SkillData[], type: 'pl
     lingqi: data.lingqi,
     shields: [],
     buffs: [],
+    setBonusEffects: Array.isArray(data.setBonusEffects) ? data.setBonusEffects : [],
     skills: battleSkills,
     skillCooldowns: {},
     controlDiminishing: {},
@@ -364,6 +367,7 @@ function createMonsterUnit(state: BattleState, data: MonsterData, skills: SkillD
     lingqi: finalAttrs.max_lingqi,
     shields: [],
     buffs: [],
+    setBonusEffects: [],
     skills: battleSkills,
     skillCooldowns: {},
     controlDiminishing: {},

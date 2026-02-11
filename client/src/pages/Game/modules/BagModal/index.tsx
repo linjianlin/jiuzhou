@@ -57,6 +57,19 @@ type SocketedGemEntry = {
   icon?: string;
 };
 
+type SetBonusLineGroup = {
+  pieceCount: number;
+  lines: string[];
+  active: boolean;
+};
+
+type SetInfo = {
+  setId: string;
+  setName: string;
+  equippedCount: number;
+  bonuses: SetBonusLineGroup[];
+};
+
 type BagItem = {
   id: number;
   itemDefId: string;
@@ -74,6 +87,7 @@ type BagItem = {
   desc: string;
   effects: string[];
   actions: BagAction[];
+  setInfo: SetInfo | null;
   equip:
     | {
         equipSlot: string | null;
@@ -370,6 +384,112 @@ const formatSignedPermyriadPercent = (value: number): string => {
 
 const formatPermyriadPercent = (value: number): string => {
   return (value / 100).toFixed(2).replace(/\.00$/, '');
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const toRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+};
+
+const formatSetEffectLine = (raw: unknown): string | null => {
+  const row = toRecord(raw);
+  const effectType = typeof row.effect_type === 'string' ? row.effect_type : '';
+  if (!effectType) return null;
+
+  const trigger = typeof row.trigger === 'string' ? row.trigger : 'equip';
+  const triggerLabel: Record<string, string> = {
+    equip: '穿戴',
+    on_turn_start: '回合开始',
+    on_skill: '施法',
+    on_hit: '命中',
+    on_crit: '暴击',
+    on_be_hit: '受击',
+    on_heal: '治疗',
+  };
+  const params = toRecord(row.params);
+  const chance = toFiniteNumber(params.chance);
+  const durationRound = toFiniteNumber(row.duration_round);
+
+  let main = '';
+  if (effectType === 'buff' || effectType === 'debuff') {
+    const attrKey = typeof params.attr_key === 'string' ? params.attr_key : '';
+    const value = toFiniteNumber(params.value);
+    const applyType = typeof params.apply_type === 'string' ? params.apply_type : 'flat';
+    if (attrKey && value !== null) {
+      const label = attrLabel[attrKey] ?? attrKey;
+      const isPercent = applyType === 'percent' || permyriadPercentKeys.has(attrKey);
+      const valText = isPercent ? formatSignedPermyriadPercent(value) : formatSignedNumber(value);
+      main = `${label} ${valText}`;
+    } else {
+      const debuffType = typeof params.debuff_type === 'string' ? params.debuff_type : '';
+      if (debuffType) main = `附加${debuffType}`;
+    }
+  } else if (effectType === 'damage') {
+    const value = toFiniteNumber(params.value) ?? 0;
+    main = `额外伤害 ${Math.floor(value)}`;
+  } else if (effectType === 'heal') {
+    const value = toFiniteNumber(params.value) ?? 0;
+    main = `恢复气血 ${Math.floor(value)}`;
+  } else if (effectType === 'resource') {
+    const value = toFiniteNumber(params.value) ?? 0;
+    const resource = typeof params.resource_type === 'string' ? params.resource_type : '';
+    const resourceName = resource === 'lingqi' ? '灵气' : resource === 'qixue' ? '气血' : '资源';
+    main = `恢复${resourceName} ${Math.floor(value)}`;
+  } else {
+    main = effectType;
+  }
+
+  if (!main) return null;
+  const pieces: string[] = [];
+  if (trigger !== 'equip') pieces.push(`触发：${triggerLabel[trigger] ?? trigger}`);
+  pieces.push(main);
+  if (chance !== null) pieces.push(`概率 ${formatPermyriadPercent(chance)}%`);
+  if (durationRound !== null && durationRound > 0) pieces.push(`持续 ${Math.floor(durationRound)} 回合`);
+
+  return pieces.join('，');
+};
+
+const buildSetInfo = (def: ItemDefLite): SetInfo | null => {
+  const setId = typeof def.set_id === 'string' ? def.set_id.trim() : '';
+  if (!setId) return null;
+
+  const setNameRaw = typeof def.set_name === 'string' ? def.set_name.trim() : '';
+  const setName = setNameRaw || setId;
+  const equippedCount = Math.max(0, Math.floor(Number(def.set_equipped_count) || 0));
+  const rawBonuses = Array.isArray(def.set_bonuses) ? def.set_bonuses : [];
+  const bonuses: SetBonusLineGroup[] = [];
+
+  for (const bonusRaw of rawBonuses) {
+    const bonus = toRecord(bonusRaw);
+    const pieceCount = Math.max(1, Math.floor(toFiniteNumber(bonus.piece_count) ?? 1));
+    const effectDefs = Array.isArray(bonus.effect_defs) ? bonus.effect_defs : [];
+    const lines = effectDefs
+      .map((effect) => formatSetEffectLine(effect))
+      .filter((line): line is string => Boolean(line));
+    if (lines.length === 0) continue;
+    bonuses.push({
+      pieceCount,
+      lines,
+      active: equippedCount >= pieceCount,
+    });
+  }
+
+  bonuses.sort((a, b) => a.pieceCount - b.pieceCount);
+  return {
+    setId,
+    setName,
+    equippedCount,
+    bonuses,
+  };
 };
 
 const getStrengthenMultiplier = (strengthenLevel: number): number => {
@@ -710,6 +830,7 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
     desc: def.long_desc || def.description || '',
     effects: buildEffects(def),
     actions: mapActions(def.category),
+    setInfo: buildSetInfo(def),
     equip: isEquip
         ? {
             equipSlot: def.equip_slot ?? null,
@@ -935,6 +1056,10 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const equipLines = useMemo(() => buildEquipmentLines(activeItem), [activeItem]);
   const hasDesc = useMemo(() => Boolean(activeItem?.desc?.trim()), [activeItem?.desc]);
   const hasEquipAttrs = useMemo(() => activeItem?.category === 'equipment' && equipLines.length > 0, [activeItem, equipLines]);
+  const hasSetInfo = useMemo(
+    () => Boolean(activeItem?.setInfo && activeItem.setInfo.bonuses.length > 0),
+    [activeItem]
+  );
   const hasEffects = useMemo(() => (activeItem?.effects?.length ?? 0) > 0, [activeItem?.effects]);
 
   const usedSlots = info?.bag_used ?? items.filter((i) => i.location === 'bag').length;
@@ -1508,6 +1633,22 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                           {equipLines.map((line, idx) => (
                             <div key={`${idx}-${line}`} className="bag-detail-attr-item">
                               {line}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {hasSetInfo ? (
+                      <div className="bag-detail-section">
+                        <div className="bag-detail-title">套装效果</div>
+                        <div className="bag-detail-lines">
+                          <div className="bag-detail-line">
+                            套装：{activeItem?.setInfo?.setName}（已穿戴 {activeItem?.setInfo?.equippedCount ?? 0} 件）
+                          </div>
+                          {activeItem?.setInfo?.bonuses.map((bonus) => (
+                            <div key={`${bonus.pieceCount}-${bonus.lines.join('|')}`} className="bag-detail-line">
+                              {bonus.active ? '已激活' : '未激活'} {bonus.pieceCount} 件：{bonus.lines.join('；')}
                             </div>
                           ))}
                         </div>

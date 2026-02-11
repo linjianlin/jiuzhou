@@ -10,6 +10,7 @@ import {
   createPVPBattle,
   calculateRewards,
   type BattleState,
+  type BattleSetBonusEffect,
   type CharacterData,
   type MonsterData,
   type SkillData
@@ -40,6 +41,21 @@ const CHARACTER_OWNER_CACHE_TTL_MS = 5000;
 const BATTLE_TICK_MS = 650;
 const battleLastEmittedLogLen = new Map<string, number>();
 const MAX_BATTLE_LOG_DELTA = 80;
+const BATTLE_SET_BONUS_TRIGGER_SET = new Set([
+  'on_turn_start',
+  'on_skill',
+  'on_hit',
+  'on_crit',
+  'on_be_hit',
+  'on_heal',
+]);
+const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
+  'buff',
+  'debuff',
+  'damage',
+  'heal',
+  'resource',
+]);
 
 // Redis 战斗持久化常量
 const REDIS_BATTLE_KEY_PREFIX = 'battle:state:';
@@ -286,6 +302,101 @@ async function applyTechniquePassivesToCharacterData<T extends Record<string, an
   }
 }
 
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function toText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function getCharacterBattleSetBonusEffects(characterId: number): Promise<BattleSetBonusEffect[]> {
+  if (!Number.isFinite(characterId) || characterId <= 0) return [];
+
+  const result = await query(
+    `
+      WITH set_counts AS (
+        SELECT id.set_id, COUNT(*)::int AS equipped_count
+        FROM item_instance ii
+        JOIN item_def id ON id.id = ii.item_def_id
+        WHERE ii.owner_character_id = $1
+          AND ii.location = 'equipped'
+          AND id.set_id IS NOT NULL
+        GROUP BY id.set_id
+      )
+      SELECT sc.set_id, s.name AS set_name, b.piece_count, b.effect_defs
+      FROM set_counts sc
+      JOIN item_set s ON s.id = sc.set_id
+      JOIN item_set_bonus b ON b.set_id = sc.set_id
+      WHERE sc.equipped_count >= b.piece_count
+      ORDER BY b.priority ASC, b.piece_count ASC
+    `,
+    [characterId]
+  );
+
+  const out: BattleSetBonusEffect[] = [];
+  for (const row of result.rows) {
+    const setId = toText((row as any).set_id);
+    const setName = toText((row as any).set_name) || setId;
+    const pieceCount = Math.max(1, Math.floor(toNumber((row as any).piece_count) ?? 1));
+    const effectDefs = Array.isArray((row as any).effect_defs) ? (row as any).effect_defs as unknown[] : [];
+
+    for (const raw of effectDefs) {
+      const effectRow = toRecord(raw);
+      const trigger = toText(effectRow.trigger);
+      const effectType = toText(effectRow.effect_type);
+      if (!BATTLE_SET_BONUS_TRIGGER_SET.has(trigger)) continue;
+      if (!BATTLE_SET_BONUS_EFFECT_TYPE_SET.has(effectType)) continue;
+
+      const targetRaw = toText(effectRow.target);
+      const target = targetRaw === 'enemy' ? 'enemy' : 'self';
+      const params = toRecord(effectRow.params);
+      const duration = toNumber(effectRow.duration_round);
+      const element = toText(effectRow.element);
+
+      out.push({
+        setId,
+        setName,
+        pieceCount,
+        trigger: trigger as BattleSetBonusEffect['trigger'],
+        target,
+        effectType: effectType as BattleSetBonusEffect['effectType'],
+        durationRound: duration === null ? undefined : Math.max(1, Math.floor(duration)),
+        element: element || undefined,
+        params,
+      });
+    }
+  }
+
+  return out;
+}
+
+async function attachSetBonusEffectsToCharacterData<T extends CharacterData>(
+  characterId: number,
+  data: T
+): Promise<T> {
+  try {
+    const setBonusEffects = await getCharacterBattleSetBonusEffects(characterId);
+    if (setBonusEffects.length === 0) return data;
+    return {
+      ...data,
+      setBonusEffects,
+    };
+  } catch {
+    return data;
+  }
+}
+
 async function getCharacterBattleSkillData(characterId: number): Promise<SkillData[]> {
   if (!Number.isFinite(characterId) || characterId <= 0) return [];
 
@@ -524,7 +635,8 @@ async function getTeamMembersData(userId: number, characterId: number): Promise<
   for (const row of teamMembersResult.rows) {
     const base = row as CharacterData;
     const memberCharacterId = Number((row as any)?.id);
-    const data = await applyTechniquePassivesToCharacterData(memberCharacterId, base);
+    const withPassives = await applyTechniquePassivesToCharacterData(memberCharacterId, base);
+    const data = await attachSetBonusEffectsToCharacterData(memberCharacterId, withPassives);
     const skills = await getCharacterBattleSkillData(memberCharacterId);
     members.push({
       data,
@@ -559,14 +671,15 @@ export async function startPVEBattle(
       current_room_id?: string;
     };
     const characterWithPassives = await applyTechniquePassivesToCharacterData(characterId, characterBase);
+    const characterWithSetBonus = await attachSetBonusEffectsToCharacterData(characterId, characterWithPassives);
     
-    if (characterWithPassives.qixue <= 0) {
+    if (characterWithSetBonus.qixue <= 0) {
       return { success: false, message: '气血不足，无法战斗' };
     }
     if (isCharacterInBattle(characterId)) {
       return { success: false, message: '角色正在战斗中' };
     }
-    const character = withBattleStartResources(characterWithPassives);
+    const character = withBattleStartResources(characterWithSetBonus);
 
     const requestedMonsterIds = monsterIds.filter((x) => typeof x === 'string' && x.length > 0);
     const selectedMonsterId = requestedMonsterIds[0];
@@ -800,13 +913,14 @@ export async function startDungeonPVEBattle(userId: number, monsterDefIds: strin
     const baseCharacter = charResult.rows[0] as CharacterData;
     const characterId = Number((baseCharacter as any)?.id);
     const characterWithPassives = await applyTechniquePassivesToCharacterData(characterId, baseCharacter);
-    if (characterWithPassives.qixue <= 0) {
+    const characterWithSetBonus = await attachSetBonusEffectsToCharacterData(characterId, characterWithPassives);
+    if (characterWithSetBonus.qixue <= 0) {
       return { success: false, message: '气血不足，无法战斗' };
     }
     if (isCharacterInBattle(characterId)) {
       return { success: false, message: '角色正在战斗中' };
     }
-    const character = withBattleStartResources(characterWithPassives);
+    const character = withBattleStartResources(characterWithSetBonus);
 
     const requestedMonsterIds = monsterDefIds.filter((x) => typeof x === 'string' && x.length > 0);
     if (requestedMonsterIds.length === 0) {
@@ -943,8 +1057,10 @@ export async function startPVPBattle(
       return { success: false, message: '角色正在战斗中' };
     }
 
-    const challenger = await applyTechniquePassivesToCharacterData(challengerCharacterId, challengerBase);
-    const opponent = await applyTechniquePassivesToCharacterData(oppId, opponentBase);
+    const challengerWithPassives = await applyTechniquePassivesToCharacterData(challengerCharacterId, challengerBase);
+    const opponentWithPassives = await applyTechniquePassivesToCharacterData(oppId, opponentBase);
+    const challenger = await attachSetBonusEffectsToCharacterData(challengerCharacterId, challengerWithPassives);
+    const opponent = await attachSetBonusEffectsToCharacterData(oppId, opponentWithPassives);
     const recoveredChallenger = withBattleStartResources(challenger);
     const recoveredOpponent = withBattleStartResources(opponent);
 
