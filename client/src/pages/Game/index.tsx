@@ -665,6 +665,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [trackedRoomIds, setTrackedRoomIds] = useState<string[]>([]);
   const [isMobile, setIsMobile] = useState(false);
   const [topTab, setTopTab] = useState<'map' | 'room'>('map');
+  const [mobileBattleChatOpen, setMobileBattleChatOpen] = useState(false);
   const [playerInfoOpen, setPlayerInfoOpen] = useState(false);
   const [mapModalOpen, setMapModalOpen] = useState(false);
   const [mapModalCategory, setMapModalCategory] = useState<'world' | 'dungeon' | 'event'>('world');
@@ -754,6 +755,11 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   }, [teamInfo]);
   const characterId = character?.id ?? null;
   const myBattleUnitId = useMemo(() => (characterId ? `player-${characterId}` : null), [characterId]);
+  const isMobileBattleMode = isMobile && viewMode === 'battle';
+
+  useEffect(() => {
+    if (!isMobileBattleMode) setMobileBattleChatOpen(false);
+  }, [isMobileBattleMode]);
 
   const stopGatherLoop = useCallback(() => {
     gatherActionKeyRef.current = '';
@@ -1521,7 +1527,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   };
 
   return (
-    <div className="game-page">
+    <div className={`game-page${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
       <SkillFloatButton
         turn={viewMode === 'battle' ? battleTurn : undefined}
         turnSide={viewMode === 'battle' ? battleTurnSide : undefined}
@@ -1589,83 +1595,125 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           </aside>
         ) : null}
 
-        <main className="game-center">
-          <div className="game-map-area">
+        <main className={`game-center${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
+          <div className={`game-map-area${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
             {isMobile ? (
-              <div className="game-top-tabs">
-                <Tabs
-                  size="small"
-                  activeKey={topTab}
-                  onChange={(key) => setTopTab(key as 'map' | 'room')}
-                  items={[
-                    {
-                      key: 'map',
-                      label: '地图',
-                      children: (
-                        <div className="game-top-tab-panel">
-                          {viewMode === 'battle' ? (
-                            <BattleArea
-                              enemies={battleEnemies}
-                              allies={battleAllies}
-                              externalBattleId={externalBattleId}
-                              allowAutoNext={allowAutoNextBattle}
-                              onNext={battleOnNext}
-                              nextLabel="继续"
-                              onAppendBattleLines={appendBattleLinesToChat}
-                              onBindSkillCaster={(caster) => {
-                                battleSkillCasterRef.current = caster;
-                              }}
-                              onEscape={
-                                !inTeam || isTeamLeader
-                                  ? () => {
-                                      setViewMode('map');
-                                      setBattleTurn(0);
-                                      setBattleActiveUnitId(null);
-                                      setArenaBattleId(null);
-                                      setDungeonBattleId(null);
-                                      setDungeonInstanceId(null);
-                                    }
-                                  : undefined
-                              }
-                              onTurnChange={(
-                                turnCount: number,
-                                turnSide: 'enemy' | 'ally',
-                                actionKey: string,
-                                activeUnitId: string | null,
-                              ) => {
-                                setBattleTurn(turnCount);
-                                setBattleTurnSide(turnSide);
-                                setBattleActionKey(actionKey);
-                                setBattleActiveUnitId(activeUnitId);
-                              }}
-                            />
-                          ) : (
-                            <GameMap
-                              currentMapId={currentMapId}
-                              currentRoomId={currentRoomId}
-                              trackedRoomIds={trackedRoomIds}
-                              onMove={(next) => {
-                                setCurrentMapId(next.mapId);
-                                setCurrentRoomId(next.roomId);
-                                scheduleSavePosition(next.mapId, next.roomId);
-                              }}
-                            />
-                          )}
-                        </div>
-                      ),
-                    },
-                    {
-                      key: 'room',
-                      label: '房间',
-                      children: (
-                        <div className="game-top-tab-panel">
-                          <RoomObjects mapId={currentMapId} roomId={currentRoomId} onSelect={handleRoomObjectSelect} />
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
-              </div>
+              isMobileBattleMode ? (
+                <div className="game-mobile-battle-page">
+                  <div className="game-mobile-battle-stage">
+                    <BattleArea
+                      enemies={battleEnemies}
+                      allies={battleAllies}
+                      externalBattleId={externalBattleId}
+                      allowAutoNext={allowAutoNextBattle}
+                      onNext={battleOnNext}
+                      nextLabel="继续"
+                      onAppendBattleLines={appendBattleLinesToChat}
+                      onBindSkillCaster={(caster) => {
+                        battleSkillCasterRef.current = caster;
+                      }}
+                      onEscape={
+                        !inTeam || isTeamLeader
+                          ? () => {
+                              setViewMode('map');
+                              setBattleTurn(0);
+                              setBattleActiveUnitId(null);
+                              setArenaBattleId(null);
+                              setDungeonBattleId(null);
+                              setDungeonInstanceId(null);
+                            }
+                          : undefined
+                      }
+                      onTurnChange={(
+                        turnCount: number,
+                        turnSide: 'enemy' | 'ally',
+                        actionKey: string,
+                        activeUnitId: string | null,
+                      ) => {
+                        setBattleTurn(turnCount);
+                        setBattleTurnSide(turnSide);
+                        setBattleActionKey(actionKey);
+                        setBattleActiveUnitId(activeUnitId);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className={`game-top-tabs${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
+                  <Tabs
+                    size="small"
+                    activeKey={topTab}
+                    onChange={(key) => setTopTab(key as 'map' | 'room')}
+                    items={[
+                      {
+                        key: 'map',
+                        label: '地图',
+                        children: (
+                          <div className={`game-top-tab-panel${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
+                            {viewMode === 'battle' ? (
+                              <BattleArea
+                                enemies={battleEnemies}
+                                allies={battleAllies}
+                                externalBattleId={externalBattleId}
+                                allowAutoNext={allowAutoNextBattle}
+                                onNext={battleOnNext}
+                                nextLabel="继续"
+                                onAppendBattleLines={appendBattleLinesToChat}
+                                onBindSkillCaster={(caster) => {
+                                  battleSkillCasterRef.current = caster;
+                                }}
+                                onEscape={
+                                  !inTeam || isTeamLeader
+                                    ? () => {
+                                        setViewMode('map');
+                                        setBattleTurn(0);
+                                        setBattleActiveUnitId(null);
+                                        setArenaBattleId(null);
+                                        setDungeonBattleId(null);
+                                        setDungeonInstanceId(null);
+                                      }
+                                    : undefined
+                                }
+                                onTurnChange={(
+                                  turnCount: number,
+                                  turnSide: 'enemy' | 'ally',
+                                  actionKey: string,
+                                  activeUnitId: string | null,
+                                ) => {
+                                  setBattleTurn(turnCount);
+                                  setBattleTurnSide(turnSide);
+                                  setBattleActionKey(actionKey);
+                                  setBattleActiveUnitId(activeUnitId);
+                                }}
+                              />
+                            ) : (
+                              <GameMap
+                                currentMapId={currentMapId}
+                                currentRoomId={currentRoomId}
+                                trackedRoomIds={trackedRoomIds}
+                                onMove={(next) => {
+                                  setCurrentMapId(next.mapId);
+                                  setCurrentRoomId(next.roomId);
+                                  scheduleSavePosition(next.mapId, next.roomId);
+                                }}
+                              />
+                            )}
+                          </div>
+                        ),
+                      },
+                      {
+                        key: 'room',
+                        label: '房间',
+                        children: (
+                          <div className={`game-top-tab-panel${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
+                            <RoomObjects mapId={currentMapId} roomId={currentRoomId} onSelect={handleRoomObjectSelect} />
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              )
             ) : (
               <div className="game-top-area">
                 <section className="game-map-pane">
@@ -1724,7 +1772,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
               </div>
             )}
           </div>
-          <div className="game-chat-area">
+          <div className={`game-chat-area${isMobileBattleMode ? ' is-mobile-battle' : ''}${isMobileBattleMode && mobileBattleChatOpen ? ' is-open' : ''}`}>
             <div className="game-chat-left">
               <ChatPanel ref={chatPanelRef} onSelectPlayer={setInfoTarget} isMobile={isMobile} />
             </div>
@@ -1736,6 +1784,22 @@ const Game: FC<GameProps> = ({ onLogout }) => {
               />
             </div>
           </div>
+          {isMobileBattleMode ? (
+            <>
+              <Button
+                type="primary"
+                className="game-mobile-battle-chat-toggle"
+                onClick={() => setMobileBattleChatOpen((prev) => !prev)}
+              >
+                {mobileBattleChatOpen ? '收起战况' : '战况'}
+              </Button>
+              <div
+                className={`game-mobile-battle-chat-mask${mobileBattleChatOpen ? ' is-open' : ''}`}
+                onClick={() => setMobileBattleChatOpen(false)}
+                aria-hidden
+              />
+            </>
+          ) : null}
         </main>
 
         <aside className="game-right">

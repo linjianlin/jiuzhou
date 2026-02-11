@@ -1253,12 +1253,12 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         </div>
         <div className="battle-top-right">
           {battleState?.phase === 'finished' && onNext ? (
-            <Button size="small" type="primary" loading={nexting} onClick={handleNext}>
+            <Button size="small" type="primary" className="battle-top-action" loading={nexting} onClick={handleNext}>
               {nextLabel || '继续'}
             </Button>
           ) : null}
           {onEscape ? (
-            <Button size="small" onClick={handleEscape}>
+            <Button size="small" className="battle-top-action" onClick={handleEscape}>
               逃跑
             </Button>
           ) : null}

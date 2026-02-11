@@ -42,6 +42,13 @@
 
 .battle-top-right {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.battle-top-action {
+  border-radius: 10px;
 }
 
 .battle-area-panels {
@@ -56,6 +63,11 @@
   min-height: 0;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
+}
+
+.battle-panel-title {
+  display: none;
 }
 
 .battle-panel-inner {
@@ -245,10 +257,127 @@
 }
 
 @media screen and (max-width: 768px) {
-  .battle-panel-inner {
-    padding: 12px;
+  .battle-area {
+    background: var(--panel-bg);
   }
 
+  .battle-area-topbar {
+    min-height: 38px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  .battle-top-left {
+    flex: 1;
+    min-width: 0;
+    gap: 1px;
+  }
+
+  .battle-top-round {
+    font-size: 13px;
+    line-height: 17px;
+  }
+
+  .battle-top-status {
+    font-size: 11px;
+    line-height: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .battle-top-right {
+    width: auto;
+    gap: 6px;
+  }
+
+  .battle-top-action {
+    flex: 0 0 auto;
+    min-width: 56px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .battle-area-panels {
+    overflow: hidden;
+    padding: 0;
+    gap: 0;
+  }
+
+  .battle-panel {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    border: none;
+    border-radius: 0;
+    background: var(--panel-bg);
+  }
+
+  .battle-panel-title {
+    display: none;
+  }
+
+  .battle-panel-inner {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 6px 8px;
+  }
+
+  .battle-divider {
+    display: block;
+  }
+
+  .battle-units {
+    --battle-card-w: 100%;
+
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: none;
+    gap: 6px;
+  }
+
+  .battle-unit-card {
+    border-radius: 9px;
+    padding: 7px 8px;
+  }
+
+  .battle-unit-head {
+    margin-bottom: 5px;
+    gap: 6px;
+  }
+
+  .battle-unit-name {
+    font-size: 12px;
+  }
+
+  .battle-unit-tag {
+    height: 17px;
+    padding: 0 6px;
+    font-size: 10px;
+  }
+
+  .battle-unit-bars {
+    gap: 4px;
+  }
+
+  .battle-bar {
+    height: 11px;
+  }
+
+  .battle-bar-text {
+    font-size: 9px;
+  }
+
+  .battle-float {
+    top: 18px;
+    font-size: 13px;
+  }
+}
+
+@media screen and (max-width: 340px) {
   .battle-units {
     grid-template-columns: 1fr;
   }

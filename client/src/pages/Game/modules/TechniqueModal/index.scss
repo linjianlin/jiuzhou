@@ -534,7 +534,8 @@
 
 .skill-item-summary .skill-inline-row:not(.is-description) .skill-inline-value {
   text-align: right;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .skill-item-summary .skill-inline-row.is-description .skill-inline-value {
