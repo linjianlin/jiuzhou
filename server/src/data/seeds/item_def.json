@@ -183,7 +183,7 @@
       ],
       "use_type": "instant",
       "use_cd_round": 0,
-      "use_limit_daily": 1,
+      "use_limit_daily": 5,
       "use_req_realm": "炼精化炁·养气期",
       "effect_defs": [
         {
