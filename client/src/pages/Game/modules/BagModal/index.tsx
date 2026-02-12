@@ -11,7 +11,6 @@ import {
   getInventoryItems,
   refineInventoryItem,
   removeInventoryItemsBatch,
-  removeInventorySocketGem,
   socketInventoryGem,
   sortInventory,
   unequipInventoryItem,
@@ -50,6 +49,7 @@ import {
 import type { BagAction, BagCategory, BagItem, BagQuality, BagSort, BatchMode } from './bagShared';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
+import GemSynthesisModal from './GemSynthesisModal';
 import './index.scss';
 
 interface BagModalProps {
@@ -76,9 +76,9 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [socketSubmitting, setSocketSubmitting] = useState(false);
   const [socketSlot, setSocketSlot] = useState<number | undefined>(undefined);
   const [selectedGemItemId, setSelectedGemItemId] = useState<number | undefined>(undefined);
-  const [removeSlot, setRemoveSlot] = useState<number | undefined>(undefined);
   const [batchOpen, setBatchOpen] = useState(false);
   const [craftOpen, setCraftOpen] = useState(false);
+  const [gemSynthesisOpen, setGemSynthesisOpen] = useState(false);
   const [batchMode, setBatchMode] = useState<BatchMode>('disassemble');
   const [batchQualities, setBatchQualities] = useState<BagQuality[]>(qualityLabels);
   const [batchCategory, setBatchCategory] = useState<BagCategory>('all');
@@ -476,6 +476,14 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     const selectedGem = candidates.find((x) => x.id === selectedGemItemId) ?? null;
     const selectedGemType = selectedGem ? normalizeGemType(selectedGem.subCategory || selectedGem.name) : 'all';
     const slotValid = selectedSlot !== undefined && selectedSlot >= 0 && selectedSlot < equip.socketMax;
+    const replacedGem =
+      selectedSlot !== undefined && selectedSlot !== null
+        ? equip.socketedGems.find((g) => g.slot === selectedSlot) ?? null
+        : null;
+    const duplicateGem =
+      selectedGem && selectedSlot !== undefined
+        ? equip.socketedGems.some((g) => g.itemDefId === selectedGem.itemDefId && g.slot !== selectedSlot)
+        : false;
     const typeValid =
       selectedGem && selectedSlot !== undefined
         ? isGemTypeAllowedInSlot(equip.gemSlotTypes, selectedSlot, selectedGemType)
@@ -490,6 +498,9 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       selectedGemType,
       slotValid,
       typeValid,
+      duplicateGem,
+      replacedGem,
+      silverCost: replacedGem ? 100 : 50,
     };
   }, [activeItem, items, selectedGemItemId, socketSlot]);
 
@@ -546,7 +557,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     if (!socketState) return;
     if (!socketState.selectedGem) return;
     if (socketState.selectedSlot === undefined) return;
-    if (!socketState.slotValid || !socketState.typeValid) return;
+    if (!socketState.slotValid || !socketState.typeValid || socketState.duplicateGem) return;
 
     setSocketSubmitting(true);
     try {
@@ -568,26 +579,6 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       setSocketSubmitting(false);
     }
   }, [activeItem, message, refresh, socketState]);
-
-  const handleRemoveSocket = useCallback(async () => {
-    if (!activeItem?.equip || activeItem.category !== 'equipment') return;
-    if (removeSlot === undefined || removeSlot === null) return;
-
-    setSocketSubmitting(true);
-    try {
-      const res = await removeInventorySocketGem({ itemId: activeItem.id, slot: removeSlot });
-      if (!res.success) throw new Error(res.message || '卸下宝石失败');
-      message.success(res.message || '卸下宝石成功');
-      await refresh();
-      window.dispatchEvent(new Event('inventory:changed'));
-      setRemoveSlot(undefined);
-    } catch (error: unknown) {
-      const err = error as { message?: string };
-      message.error(err.message || '卸下宝石失败');
-    } finally {
-      setSocketSubmitting(false);
-    }
-  }, [activeItem, message, refresh, removeSlot]);
 
   const bagOnlyItems = useMemo(() => items.filter((i) => i.location === 'bag'), [items]);
 
@@ -768,6 +759,15 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 }}
               >
                 炼丹炼器
+              </Button>
+              <Button
+                disabled={loading}
+                onClick={() => {
+                  if (loading) return;
+                  setGemSynthesisOpen(true);
+                }}
+              >
+                宝石合成
               </Button>
               <Button
                 disabled={loading}
@@ -1110,6 +1110,15 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
         }}
       />
 
+      <GemSynthesisModal
+        open={gemSynthesisOpen}
+        onClose={() => setGemSynthesisOpen(false)}
+        onSuccess={async () => {
+          await refresh();
+          window.dispatchEvent(new Event('inventory:changed'));
+        }}
+      />
+
       <Modal
         open={enhanceOpen}
         onCancel={() => {
@@ -1340,42 +1349,34 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                   ? `已选宝石：${socketState.selectedGem.name}（类型：${socketState.selectedGemType}）`
                   : '请选择可镶嵌宝石'}
               </div>
+              <div style={{ color: 'var(--text-secondary)' }}>
+                {socketState.replacedGem ? `替换镶嵌消耗银两：${socketState.silverCost}` : `首次镶嵌消耗银两：${socketState.silverCost}`}
+              </div>
+              <div style={{ color: 'var(--text-secondary)' }}>宝石不可卸下，仅可通过替换镶嵌覆盖原孔位宝石（原宝石销毁）。</div>
               {socketState.selectedGem && socketState.selectedSlot !== undefined && !socketState.typeValid ? (
                 <div className="bag-enhance-warning">宝石类型与孔位不匹配</div>
               ) : null}
+              {socketState.selectedGem && socketState.selectedSlot !== undefined && socketState.duplicateGem ? (
+                <div className="bag-enhance-warning">同一件装备不可镶嵌相同宝石</div>
+              ) : null}
 
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
-                <Select
-                  value={removeSlot}
-                  onChange={(v) => setRemoveSlot(typeof v === 'number' ? v : undefined)}
-                  placeholder="选择卸下孔位"
-                  style={{ minWidth: 220 }}
-                  options={socketState.socketed.map((g) => ({ value: g.slot, label: `孔位${g.slot}：${g.name ?? g.itemDefId}` }))}
-                />
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <Button
-                    disabled={socketSubmitting || removeSlot === undefined || !!activeItem?.locked}
-                    onClick={() => void handleRemoveSocket()}
-                    loading={socketSubmitting}
-                  >
-                    卸下宝石
-                  </Button>
-                  <Button
-                    type="primary"
-                    disabled={
-                      socketSubmitting ||
-                      !socketState.selectedGem ||
-                      socketState.selectedSlot === undefined ||
-                      !socketState.slotValid ||
-                      !socketState.typeValid ||
-                      !!activeItem?.locked
-                    }
-                    onClick={() => void handleSocket()}
-                    loading={socketSubmitting}
-                  >
-                    镶嵌宝石
-                  </Button>
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  type="primary"
+                  disabled={
+                    socketSubmitting ||
+                    !socketState.selectedGem ||
+                    socketState.selectedSlot === undefined ||
+                    !socketState.slotValid ||
+                    !socketState.typeValid ||
+                    socketState.duplicateGem ||
+                    !!activeItem?.locked
+                  }
+                  onClick={() => void handleSocket()}
+                  loading={socketSubmitting}
+                >
+                  {socketState.replacedGem ? '替换镶嵌' : '镶嵌宝石'}
+                </Button>
               </div>
 
               {activeItem?.locked ? <div className="bag-enhance-hint">物品已锁定</div> : null}

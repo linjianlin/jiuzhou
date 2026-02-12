@@ -1,0 +1,4974 @@
+{
+  "version": 2,
+  "description": "宝石定义（等级1-10，多子类型分线；普通获取途径最高3级，4-10需合成）",
+  "items": [
+    {
+      "id": "gem-atk-wg-1",
+      "code": "gem_atk_wg_1",
+      "name": "赤焰石·物攻·1级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 2,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+2"
+    },
+    {
+      "id": "gem-atk-wg-2",
+      "code": "gem_atk_wg_2",
+      "name": "赤焰石·物攻·2级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+4"
+    },
+    {
+      "id": "gem-atk-wg-3",
+      "code": "gem_atk_wg_3",
+      "name": "赤焰石·物攻·3级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 6,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+6"
+    },
+    {
+      "id": "gem-atk-wg-4",
+      "code": "gem_atk_wg_4",
+      "name": "赤焰石·物攻·4级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 9,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+9"
+    },
+    {
+      "id": "gem-atk-wg-5",
+      "code": "gem_atk_wg_5",
+      "name": "赤焰石·物攻·5级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 13,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+13"
+    },
+    {
+      "id": "gem-atk-wg-6",
+      "code": "gem_atk_wg_6",
+      "name": "赤焰石·物攻·6级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+17"
+    },
+    {
+      "id": "gem-atk-wg-7",
+      "code": "gem_atk_wg_7",
+      "name": "赤焰石·物攻·7级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 22,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+22"
+    },
+    {
+      "id": "gem-atk-wg-8",
+      "code": "gem_atk_wg_8",
+      "name": "赤焰石·物攻·8级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 28,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+28"
+    },
+    {
+      "id": "gem-atk-wg-9",
+      "code": "gem_atk_wg_9",
+      "name": "赤焰石·物攻·9级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+34"
+    },
+    {
+      "id": "gem-atk-wg-10",
+      "code": "gem_atk_wg_10",
+      "name": "赤焰石·物攻·10级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "物攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wugong",
+            "value": 41,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物攻+41"
+    },
+    {
+      "id": "gem-atk-fg-1",
+      "code": "gem_atk_fg_1",
+      "name": "灵焰石·法攻·1级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 2,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+2"
+    },
+    {
+      "id": "gem-atk-fg-2",
+      "code": "gem_atk_fg_2",
+      "name": "灵焰石·法攻·2级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+4"
+    },
+    {
+      "id": "gem-atk-fg-3",
+      "code": "gem_atk_fg_3",
+      "name": "灵焰石·法攻·3级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 6,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+6"
+    },
+    {
+      "id": "gem-atk-fg-4",
+      "code": "gem_atk_fg_4",
+      "name": "灵焰石·法攻·4级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 9,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+9"
+    },
+    {
+      "id": "gem-atk-fg-5",
+      "code": "gem_atk_fg_5",
+      "name": "灵焰石·法攻·5级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 13,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+13"
+    },
+    {
+      "id": "gem-atk-fg-6",
+      "code": "gem_atk_fg_6",
+      "name": "灵焰石·法攻·6级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+17"
+    },
+    {
+      "id": "gem-atk-fg-7",
+      "code": "gem_atk_fg_7",
+      "name": "灵焰石·法攻·7级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 22,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+22"
+    },
+    {
+      "id": "gem-atk-fg-8",
+      "code": "gem_atk_fg_8",
+      "name": "灵焰石·法攻·8级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 28,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+28"
+    },
+    {
+      "id": "gem-atk-fg-9",
+      "code": "gem_atk_fg_9",
+      "name": "灵焰石·法攻·9级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+34"
+    },
+    {
+      "id": "gem-atk-fg-10",
+      "code": "gem_atk_fg_10",
+      "name": "灵焰石·法攻·10级",
+      "category": "material",
+      "sub_category": "gem_attack",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "攻击",
+        "法攻",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fagong",
+            "value": 41,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法攻+41"
+    },
+    {
+      "id": "gem-def-wf-1",
+      "code": "gem_def_wf_1",
+      "name": "玄甲石·物防·1级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 2,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+2"
+    },
+    {
+      "id": "gem-def-wf-2",
+      "code": "gem_def_wf_2",
+      "name": "玄甲石·物防·2级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+4"
+    },
+    {
+      "id": "gem-def-wf-3",
+      "code": "gem_def_wf_3",
+      "name": "玄甲石·物防·3级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 6,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+6"
+    },
+    {
+      "id": "gem-def-wf-4",
+      "code": "gem_def_wf_4",
+      "name": "玄甲石·物防·4级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 9,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+9"
+    },
+    {
+      "id": "gem-def-wf-5",
+      "code": "gem_def_wf_5",
+      "name": "玄甲石·物防·5级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 13,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+13"
+    },
+    {
+      "id": "gem-def-wf-6",
+      "code": "gem_def_wf_6",
+      "name": "玄甲石·物防·6级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+17"
+    },
+    {
+      "id": "gem-def-wf-7",
+      "code": "gem_def_wf_7",
+      "name": "玄甲石·物防·7级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 22,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+22"
+    },
+    {
+      "id": "gem-def-wf-8",
+      "code": "gem_def_wf_8",
+      "name": "玄甲石·物防·8级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 28,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+28"
+    },
+    {
+      "id": "gem-def-wf-9",
+      "code": "gem_def_wf_9",
+      "name": "玄甲石·物防·9级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+34"
+    },
+    {
+      "id": "gem-def-wf-10",
+      "code": "gem_def_wf_10",
+      "name": "玄甲石·物防·10级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "物防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "wufang",
+            "value": 41,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后物防+41"
+    },
+    {
+      "id": "gem-def-ff-1",
+      "code": "gem_def_ff_1",
+      "name": "玄罡石·法防·1级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 2,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+2"
+    },
+    {
+      "id": "gem-def-ff-2",
+      "code": "gem_def_ff_2",
+      "name": "玄罡石·法防·2级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+4"
+    },
+    {
+      "id": "gem-def-ff-3",
+      "code": "gem_def_ff_3",
+      "name": "玄罡石·法防·3级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 6,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+6"
+    },
+    {
+      "id": "gem-def-ff-4",
+      "code": "gem_def_ff_4",
+      "name": "玄罡石·法防·4级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 9,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+9"
+    },
+    {
+      "id": "gem-def-ff-5",
+      "code": "gem_def_ff_5",
+      "name": "玄罡石·法防·5级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 13,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+13"
+    },
+    {
+      "id": "gem-def-ff-6",
+      "code": "gem_def_ff_6",
+      "name": "玄罡石·法防·6级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+17"
+    },
+    {
+      "id": "gem-def-ff-7",
+      "code": "gem_def_ff_7",
+      "name": "玄罡石·法防·7级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 22,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+22"
+    },
+    {
+      "id": "gem-def-ff-8",
+      "code": "gem_def_ff_8",
+      "name": "玄罡石·法防·8级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 28,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+28"
+    },
+    {
+      "id": "gem-def-ff-9",
+      "code": "gem_def_ff_9",
+      "name": "玄罡石·法防·9级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+34"
+    },
+    {
+      "id": "gem-def-ff-10",
+      "code": "gem_def_ff_10",
+      "name": "玄罡石·法防·10级",
+      "category": "material",
+      "sub_category": "gem_defense",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "防御",
+        "法防",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "fafang",
+            "value": 41,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后法防+41"
+    },
+    {
+      "id": "gem-sur-hp-1",
+      "code": "gem_sur_hp_1",
+      "name": "长生石·气血·1级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 2,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+2"
+    },
+    {
+      "id": "gem-sur-hp-2",
+      "code": "gem_sur_hp_2",
+      "name": "长生石·气血·2级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+4"
+    },
+    {
+      "id": "gem-sur-hp-3",
+      "code": "gem_sur_hp_3",
+      "name": "长生石·气血·3级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 6,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+6"
+    },
+    {
+      "id": "gem-sur-hp-4",
+      "code": "gem_sur_hp_4",
+      "name": "长生石·气血·4级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 9,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+9"
+    },
+    {
+      "id": "gem-sur-hp-5",
+      "code": "gem_sur_hp_5",
+      "name": "长生石·气血·5级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 13,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+13"
+    },
+    {
+      "id": "gem-sur-hp-6",
+      "code": "gem_sur_hp_6",
+      "name": "长生石·气血·6级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+17"
+    },
+    {
+      "id": "gem-sur-hp-7",
+      "code": "gem_sur_hp_7",
+      "name": "长生石·气血·7级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 22,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+22"
+    },
+    {
+      "id": "gem-sur-hp-8",
+      "code": "gem_sur_hp_8",
+      "name": "长生石·气血·8级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 28,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+28"
+    },
+    {
+      "id": "gem-sur-hp-9",
+      "code": "gem_sur_hp_9",
+      "name": "长生石·气血·9级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+34"
+    },
+    {
+      "id": "gem-sur-hp-10",
+      "code": "gem_sur_hp_10",
+      "name": "长生石·气血·10级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "气血",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_qixue",
+            "value": 41,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后气血上限+41"
+    },
+    {
+      "id": "gem-sur-lq-1",
+      "code": "gem_sur_lq_1",
+      "name": "聚灵石·灵气·1级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 2,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+2"
+    },
+    {
+      "id": "gem-sur-lq-2",
+      "code": "gem_sur_lq_2",
+      "name": "聚灵石·灵气·2级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+4"
+    },
+    {
+      "id": "gem-sur-lq-3",
+      "code": "gem_sur_lq_3",
+      "name": "聚灵石·灵气·3级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "可掉落"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 6,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+6"
+    },
+    {
+      "id": "gem-sur-lq-4",
+      "code": "gem_sur_lq_4",
+      "name": "聚灵石·灵气·4级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 9,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+9"
+    },
+    {
+      "id": "gem-sur-lq-5",
+      "code": "gem_sur_lq_5",
+      "name": "聚灵石·灵气·5级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 13,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+13"
+    },
+    {
+      "id": "gem-sur-lq-6",
+      "code": "gem_sur_lq_6",
+      "name": "聚灵石·灵气·6级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+17"
+    },
+    {
+      "id": "gem-sur-lq-7",
+      "code": "gem_sur_lq_7",
+      "name": "聚灵石·灵气·7级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 22,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+22"
+    },
+    {
+      "id": "gem-sur-lq-8",
+      "code": "gem_sur_lq_8",
+      "name": "聚灵石·灵气·8级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 28,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+28"
+    },
+    {
+      "id": "gem-sur-lq-9",
+      "code": "gem_sur_lq_9",
+      "name": "聚灵石·灵气·9级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+34"
+    },
+    {
+      "id": "gem-sur-lq-10",
+      "code": "gem_sur_lq_10",
+      "name": "聚灵石·灵气·10级",
+      "category": "material",
+      "sub_category": "gem_survival",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "生存",
+        "灵气",
+        "镶嵌",
+        "需合成"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "max_lingqi",
+            "value": 41,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后灵气上限+41"
+    },
+    {
+      "id": "gem-all-mz-1",
+      "code": "gem_all_mz_1",
+      "name": "万象石·命中·1级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 12,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+0.12%"
+    },
+    {
+      "id": "gem-all-mz-2",
+      "code": "gem_all_mz_2",
+      "name": "万象石·命中·2级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 24,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+0.24%"
+    },
+    {
+      "id": "gem-all-mz-3",
+      "code": "gem_all_mz_3",
+      "name": "万象石·命中·3级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 36,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+0.36%"
+    },
+    {
+      "id": "gem-all-mz-4",
+      "code": "gem_all_mz_4",
+      "name": "万象石·命中·4级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 52,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+0.52%"
+    },
+    {
+      "id": "gem-all-mz-5",
+      "code": "gem_all_mz_5",
+      "name": "万象石·命中·5级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 70,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+0.7%"
+    },
+    {
+      "id": "gem-all-mz-6",
+      "code": "gem_all_mz_6",
+      "name": "万象石·命中·6级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 90,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+0.9%"
+    },
+    {
+      "id": "gem-all-mz-7",
+      "code": "gem_all_mz_7",
+      "name": "万象石·命中·7级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 112,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+1.12%"
+    },
+    {
+      "id": "gem-all-mz-8",
+      "code": "gem_all_mz_8",
+      "name": "万象石·命中·8级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 136,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+1.36%"
+    },
+    {
+      "id": "gem-all-mz-9",
+      "code": "gem_all_mz_9",
+      "name": "万象石·命中·9级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 162,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+1.62%"
+    },
+    {
+      "id": "gem-all-mz-10",
+      "code": "gem_all_mz_10",
+      "name": "万象石·命中·10级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "命中"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "mingzhong",
+            "value": 190,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后命中+1.9%"
+    },
+    {
+      "id": "gem-all-sb-1",
+      "code": "gem_all_sb_1",
+      "name": "万象石·闪避·1级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 12,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+0.12%"
+    },
+    {
+      "id": "gem-all-sb-2",
+      "code": "gem_all_sb_2",
+      "name": "万象石·闪避·2级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 24,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+0.24%"
+    },
+    {
+      "id": "gem-all-sb-3",
+      "code": "gem_all_sb_3",
+      "name": "万象石·闪避·3级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 36,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+0.36%"
+    },
+    {
+      "id": "gem-all-sb-4",
+      "code": "gem_all_sb_4",
+      "name": "万象石·闪避·4级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 52,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+0.52%"
+    },
+    {
+      "id": "gem-all-sb-5",
+      "code": "gem_all_sb_5",
+      "name": "万象石·闪避·5级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 70,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+0.7%"
+    },
+    {
+      "id": "gem-all-sb-6",
+      "code": "gem_all_sb_6",
+      "name": "万象石·闪避·6级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 90,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+0.9%"
+    },
+    {
+      "id": "gem-all-sb-7",
+      "code": "gem_all_sb_7",
+      "name": "万象石·闪避·7级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 112,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+1.12%"
+    },
+    {
+      "id": "gem-all-sb-8",
+      "code": "gem_all_sb_8",
+      "name": "万象石·闪避·8级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 136,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+1.36%"
+    },
+    {
+      "id": "gem-all-sb-9",
+      "code": "gem_all_sb_9",
+      "name": "万象石·闪避·9级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 162,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+1.62%"
+    },
+    {
+      "id": "gem-all-sb-10",
+      "code": "gem_all_sb_10",
+      "name": "万象石·闪避·10级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "闪避"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "shanbi",
+            "value": 190,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后闪避+1.9%"
+    },
+    {
+      "id": "gem-all-bj-1",
+      "code": "gem_all_bj_1",
+      "name": "万象石·暴击·1级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 8,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.08%"
+    },
+    {
+      "id": "gem-all-bj-2",
+      "code": "gem_all_bj_2",
+      "name": "万象石·暴击·2级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 16,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.16%"
+    },
+    {
+      "id": "gem-all-bj-3",
+      "code": "gem_all_bj_3",
+      "name": "万象石·暴击·3级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 24,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.24%"
+    },
+    {
+      "id": "gem-all-bj-4",
+      "code": "gem_all_bj_4",
+      "name": "万象石·暴击·4级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.34%"
+    },
+    {
+      "id": "gem-all-bj-5",
+      "code": "gem_all_bj_5",
+      "name": "万象石·暴击·5级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 46,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.46%"
+    },
+    {
+      "id": "gem-all-bj-6",
+      "code": "gem_all_bj_6",
+      "name": "万象石·暴击·6级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 60,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.6%"
+    },
+    {
+      "id": "gem-all-bj-7",
+      "code": "gem_all_bj_7",
+      "name": "万象石·暴击·7级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 76,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.76%"
+    },
+    {
+      "id": "gem-all-bj-8",
+      "code": "gem_all_bj_8",
+      "name": "万象石·暴击·8级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 94,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+0.94%"
+    },
+    {
+      "id": "gem-all-bj-9",
+      "code": "gem_all_bj_9",
+      "name": "万象石·暴击·9级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 114,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+1.14%"
+    },
+    {
+      "id": "gem-all-bj-10",
+      "code": "gem_all_bj_10",
+      "name": "万象石·暴击·10级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "暴击"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "baoji",
+            "value": 136,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后暴击+1.36%"
+    },
+    {
+      "id": "gem-all-zj-1",
+      "code": "gem_all_zj_1",
+      "name": "万象石·招架·1级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 8,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.08%"
+    },
+    {
+      "id": "gem-all-zj-2",
+      "code": "gem_all_zj_2",
+      "name": "万象石·招架·2级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 16,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.16%"
+    },
+    {
+      "id": "gem-all-zj-3",
+      "code": "gem_all_zj_3",
+      "name": "万象石·招架·3级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 24,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.24%"
+    },
+    {
+      "id": "gem-all-zj-4",
+      "code": "gem_all_zj_4",
+      "name": "万象石·招架·4级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.34%"
+    },
+    {
+      "id": "gem-all-zj-5",
+      "code": "gem_all_zj_5",
+      "name": "万象石·招架·5级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 46,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.46%"
+    },
+    {
+      "id": "gem-all-zj-6",
+      "code": "gem_all_zj_6",
+      "name": "万象石·招架·6级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 60,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.6%"
+    },
+    {
+      "id": "gem-all-zj-7",
+      "code": "gem_all_zj_7",
+      "name": "万象石·招架·7级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 76,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.76%"
+    },
+    {
+      "id": "gem-all-zj-8",
+      "code": "gem_all_zj_8",
+      "name": "万象石·招架·8级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 94,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+0.94%"
+    },
+    {
+      "id": "gem-all-zj-9",
+      "code": "gem_all_zj_9",
+      "name": "万象石·招架·9级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 114,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+1.14%"
+    },
+    {
+      "id": "gem-all-zj-10",
+      "code": "gem_all_zj_10",
+      "name": "万象石·招架·10级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "招架"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zhaojia",
+            "value": 136,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后招架+1.36%"
+    },
+    {
+      "id": "gem-all-kb-1",
+      "code": "gem_all_kb_1",
+      "name": "万象石·抗暴·1级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 8,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.08%"
+    },
+    {
+      "id": "gem-all-kb-2",
+      "code": "gem_all_kb_2",
+      "name": "万象石·抗暴·2级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 16,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.16%"
+    },
+    {
+      "id": "gem-all-kb-3",
+      "code": "gem_all_kb_3",
+      "name": "万象石·抗暴·3级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 24,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.24%"
+    },
+    {
+      "id": "gem-all-kb-4",
+      "code": "gem_all_kb_4",
+      "name": "万象石·抗暴·4级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 34,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.34%"
+    },
+    {
+      "id": "gem-all-kb-5",
+      "code": "gem_all_kb_5",
+      "name": "万象石·抗暴·5级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 46,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.46%"
+    },
+    {
+      "id": "gem-all-kb-6",
+      "code": "gem_all_kb_6",
+      "name": "万象石·抗暴·6级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 60,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.6%"
+    },
+    {
+      "id": "gem-all-kb-7",
+      "code": "gem_all_kb_7",
+      "name": "万象石·抗暴·7级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 76,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.76%"
+    },
+    {
+      "id": "gem-all-kb-8",
+      "code": "gem_all_kb_8",
+      "name": "万象石·抗暴·8级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 94,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+0.94%"
+    },
+    {
+      "id": "gem-all-kb-9",
+      "code": "gem_all_kb_9",
+      "name": "万象石·抗暴·9级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 114,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+1.14%"
+    },
+    {
+      "id": "gem-all-kb-10",
+      "code": "gem_all_kb_10",
+      "name": "万象石·抗暴·10级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "抗暴"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "kangbao",
+            "value": 136,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后抗暴+1.36%"
+    },
+    {
+      "id": "gem-all-zs-1",
+      "code": "gem_all_zs_1",
+      "name": "万象石·增伤·1级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 1,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 30,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "青云村外围地图掉落（凡人）",
+        "凡人主线/支线任务奖励",
+        "凡人日常任务奖励",
+        "坊市基础宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 4,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.04%"
+    },
+    {
+      "id": "gem-all-zs-2",
+      "code": "gem_all_zs_2",
+      "name": "万象石·增伤·2级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 2,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 60,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "养气期地图掉落",
+        "养气期秘境怪物掉落",
+        "养气期日常任务奖励",
+        "坊市养气宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 8,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.08%"
+    },
+    {
+      "id": "gem-all-zs-3",
+      "code": "gem_all_zs_3",
+      "name": "万象石·增伤·3级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "黄",
+      "quality_rank": 1,
+      "rarity": "common",
+      "level": 3,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 90,
+      "sell_price_spirit_stones": 0,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "可掉落",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "通脉期地图掉落",
+        "通脉期秘境怪物掉落",
+        "通脉期日常/周常奖励",
+        "坊市通脉宝石货架"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 12,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.12%"
+    },
+    {
+      "id": "gem-all-zs-4",
+      "code": "gem_all_zs_4",
+      "name": "万象石·增伤·4级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 4,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 17,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.17%"
+    },
+    {
+      "id": "gem-all-zs-5",
+      "code": "gem_all_zs_5",
+      "name": "万象石·增伤·5级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 5,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 23,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.23%"
+    },
+    {
+      "id": "gem-all-zs-6",
+      "code": "gem_all_zs_6",
+      "name": "万象石·增伤·6级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "rare",
+      "level": 6,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 30,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.3%"
+    },
+    {
+      "id": "gem-all-zs-7",
+      "code": "gem_all_zs_7",
+      "name": "万象石·增伤·7级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 7,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 210,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 38,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.38%"
+    },
+    {
+      "id": "gem-all-zs-8",
+      "code": "gem_all_zs_8",
+      "name": "万象石·增伤·8级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 8,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 47,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.47%"
+    },
+    {
+      "id": "gem-all-zs-9",
+      "code": "gem_all_zs_9",
+      "name": "万象石·增伤·9级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 9,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 270,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 57,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.57%"
+    },
+    {
+      "id": "gem-all-zs-10",
+      "code": "gem_all_zs_10",
+      "name": "万象石·增伤·10级",
+      "category": "material",
+      "sub_category": "gem_all",
+      "quality": "天",
+      "quality_rank": 4,
+      "rarity": "legendary",
+      "level": 10,
+      "stack_max": 99,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 5,
+      "icon": "/assets/ui/sh_icon_0006_jinbi_02.png",
+      "tags": [
+        "宝石",
+        "通用",
+        "镶嵌",
+        "需合成",
+        "副属性",
+        "增伤"
+      ],
+      "source_hint": [
+        "仅可通过宝石合成提升至该等级"
+      ],
+      "effect_defs": [
+        {
+          "trigger": "socket",
+          "effect_type": "buff",
+          "params": {
+            "attr_key": "zengshang",
+            "value": 68,
+            "apply_type": "flat"
+          }
+        }
+      ],
+      "description": "镶嵌后增伤+0.68%"
+    }
+  ]
+}

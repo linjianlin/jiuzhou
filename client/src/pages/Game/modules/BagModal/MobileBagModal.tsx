@@ -52,6 +52,7 @@ import {
 import type { BagAction, BagCategory, BagItem, BagSort } from './bagShared';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
+import GemSynthesisModal from './GemSynthesisModal';
 import './MobileBagModal.scss';
 
 /* ─── 排序面板 ─── */
@@ -604,6 +605,7 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
   const [growthOpen, setGrowthOpen] = useState(false);
   const [disassembleOpen, setDisassembleOpen] = useState(false);
   const [craftOpen, setCraftOpen] = useState(false);
+  const [gemSynthesisOpen, setGemSynthesisOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<InventoryInfoData | null>(null);
   const [items, setItems] = useState<BagItem[]>([]);
@@ -897,6 +899,9 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
           <button className="mbag-footer-btn" disabled={loading} onClick={() => setCraftOpen(true)}>
             炼制
           </button>
+          <button className="mbag-footer-btn" disabled={loading} onClick={() => setGemSynthesisOpen(true)}>
+            宝石合成
+          </button>
           <button className="mbag-footer-btn" disabled={loading} onClick={() => void handleBatchDisassemble()}>
             分解
           </button>
@@ -959,6 +964,15 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
         open={craftOpen}
         onClose={() => setCraftOpen(false)}
         focusItemDefId={activeItem?.itemDefId}
+        onSuccess={async () => {
+          await refresh();
+          window.dispatchEvent(new Event('inventory:changed'));
+        }}
+      />
+
+      <GemSynthesisModal
+        open={gemSynthesisOpen}
+        onClose={() => setGemSynthesisOpen(false)}
         onSuccess={async () => {
           await refresh();
           window.dispatchEvent(new Event('inventory:changed'));

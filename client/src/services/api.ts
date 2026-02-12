@@ -11,3 +11,4 @@ export * from './api/inventory';
 export * from './api/market-mail';
 export * from './api/technique';
 export * from './api/combat-realm';
+export * from './api/gemSynthesis';

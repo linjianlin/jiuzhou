@@ -97,6 +97,11 @@
         {
           "type": "spirit_stones",
           "amount": 5
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-atk-wg-1",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [
@@ -194,6 +199,11 @@
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
           "qty": 3
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-def-wf-1",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [],
@@ -231,6 +241,11 @@
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
           "qty": 5
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-sur-hp-2",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [],
@@ -279,6 +294,11 @@
         {
           "type": "item",
           "item_def_id": "mat-lingmo",
+          "qty": 1
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-atk-fg-3",
           "qty": 1
         }
       ],
@@ -329,6 +349,11 @@
           "type": "item",
           "item_def_id": "mat-lingmo",
           "qty": 2
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-def-ff-3",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [],
@@ -376,6 +401,11 @@
           "type": "item",
           "item_def_id": "mat-lingmo",
           "qty": 3
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-sur-lq-3",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [],
@@ -463,6 +493,11 @@
           "type": "item",
           "item_def_id": "mat-012",
           "qty": 6
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-atk-wg-3",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [],
@@ -602,6 +637,11 @@
         {
           "type": "silver",
           "amount": 380
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-def-wf-3",
+          "qty": 1
         }
       ],
       "prereq_task_ids": [],
@@ -645,6 +685,11 @@
         {
           "type": "item",
           "item_def_id": "box-003",
+          "qty": 1
+        },
+        {
+          "type": "item",
+          "item_def_id": "gem-sur-hp-3",
           "qty": 1
         }
       ],

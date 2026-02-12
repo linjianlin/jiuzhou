@@ -616,6 +616,9 @@ export const normalizeGemType = (value: unknown): string => {
     .trim()
     .toLowerCase();
   if (!raw) return "all";
+  if (raw === "gem") return "all";
+  if (raw.startsWith("gem_")) return normalizeGemType(raw.slice(4));
+  if (raw.startsWith("gem-")) return normalizeGemType(raw.slice(4));
   if (["all", "any", "*", "universal"].includes(raw)) return "all";
   if (["atk", "attack", "gongji", "offense"].includes(raw)) return "attack";
   if (["def", "defense", "fangyu"].includes(raw)) return "defense";
@@ -683,16 +686,20 @@ export const isGemTypeAllowedInSlot = (
 };
 
 export const collectGemCandidates = (items: BagItem[]): BagItem[] => {
-  const gemDefIdSet = new Set(["gem-001", "gem-002", "gem-003", "gem-004"]);
   const out: BagItem[] = [];
   for (const it of items) {
     if (it.location !== "bag") continue;
     if (it.locked) continue;
     if (it.category !== "material") continue;
-    if (gemDefIdSet.has(it.itemDefId)) {
+
+    const subCategory = String(it.subCategory || "")
+      .trim()
+      .toLowerCase();
+    if (subCategory === "gem" || subCategory.startsWith("gem_")) {
       out.push(it);
       continue;
     }
+
     const effects = it.effects;
     if (
       !effects.some(

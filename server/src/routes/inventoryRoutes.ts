@@ -5,6 +5,7 @@ import { Router, Request, Response } from 'express';
 import inventoryService, { InventoryLocation } from '../services/inventoryService.js';
 import itemService from '../services/itemService.js';
 import craftService from '../services/craftService.js';
+import gemSynthesisService from '../services/gemSynthesisService.js';
 import { query } from '../config/database.js';
 import { verifyToken } from '../services/authService.js';
 import { getGameServer } from '../game/GameServer.js';
@@ -286,6 +287,123 @@ router.post('/craft/execute', async (req: Request, res: Response) => {
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     console.error('执行炼制失败:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ============================================
+// 获取宝石合成配方列表
+// GET /api/inventory/gem/recipes
+// ============================================
+router.get('/gem/recipes', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) {
+      return res.status(404).json({ success: false, message: '角色不存在' });
+    }
+
+    const result = await gemSynthesisService.getGemSynthesisRecipeList(characterId);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('获取宝石合成配方失败:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ============================================
+// 执行宝石合成
+// POST /api/inventory/gem/synthesize
+// Body: { recipeId: string, times?: number }
+// ============================================
+router.post('/gem/synthesize', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) {
+      return res.status(404).json({ success: false, message: '角色不存在' });
+    }
+
+    const recipeId = typeof req.body?.recipeId === 'string' ? req.body.recipeId : '';
+    if (!recipeId.trim()) {
+      return res.status(400).json({ success: false, message: 'recipeId参数错误' });
+    }
+
+    const parsedTimes = parseOptionalPositiveInt(req.body?.times);
+    if (Number.isNaN(parsedTimes)) {
+      return res.status(400).json({ success: false, message: 'times参数错误' });
+    }
+
+    const result = await gemSynthesisService.synthesizeGem(characterId, userId, {
+      recipeId,
+      ...(parsedTimes !== undefined ? { times: parsedTimes } : {}),
+    });
+
+    if (result.success) {
+      try {
+        const gameServer = getGameServer();
+        await gameServer.pushCharacterUpdate(userId);
+      } catch {
+      }
+    }
+
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('执行宝石合成失败:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+// ============================================
+// 批量宝石合成到目标等级
+// POST /api/inventory/gem/synthesize/batch
+// Body: { gemType: string, targetLevel: number, sourceLevel?: number, seriesKey?: string }
+// ============================================
+router.post('/gem/synthesize/batch', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) {
+      return res.status(404).json({ success: false, message: '角色不存在' });
+    }
+
+    const gemType = typeof req.body?.gemType === 'string' ? req.body.gemType : '';
+    if (!gemType.trim()) {
+      return res.status(400).json({ success: false, message: 'gemType参数错误' });
+    }
+
+    const targetLevel = Number(req.body?.targetLevel);
+    if (!Number.isInteger(targetLevel) || targetLevel < 2 || targetLevel > 10) {
+      return res.status(400).json({ success: false, message: 'targetLevel参数错误' });
+    }
+
+    const parsedSourceLevel = parseOptionalPositiveInt(req.body?.sourceLevel);
+    if (Number.isNaN(parsedSourceLevel)) {
+      return res.status(400).json({ success: false, message: 'sourceLevel参数错误' });
+    }
+    const seriesKey =
+      typeof req.body?.seriesKey === 'string' && req.body.seriesKey.trim()
+        ? req.body.seriesKey.trim()
+        : undefined;
+
+    const result = await gemSynthesisService.synthesizeGemBatch(characterId, userId, {
+      gemType,
+      targetLevel,
+      ...(parsedSourceLevel !== undefined ? { sourceLevel: parsedSourceLevel } : {}),
+      ...(seriesKey ? { seriesKey } : {}),
+    });
+
+    if (result.success) {
+      try {
+        const gameServer = getGameServer();
+        await gameServer.pushCharacterUpdate(userId);
+      } catch {
+      }
+    }
+
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('批量宝石合成失败:', error);
     return res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
@@ -688,63 +806,6 @@ router.post('/socket', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('镶嵌宝石失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
-  }
-});
-
-// ============================================
-// 卸下宝石
-// POST /api/inventory/socket/remove
-// Body: { itemId: number, slot: number }
-// ============================================
-router.post('/socket/remove', async (req: Request, res: Response) => {
-  try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
-
-    if (!characterId) {
-      return res.status(404).json({ success: false, message: '角色不存在' });
-    }
-
-    const { itemId, itemInstanceId, instanceId, slot } = req.body as {
-      itemId?: unknown;
-      itemInstanceId?: unknown;
-      instanceId?: unknown;
-      slot?: unknown;
-    };
-
-    const rawItemInstanceId = itemInstanceId ?? instanceId ?? itemId;
-    if (rawItemInstanceId === undefined || rawItemInstanceId === null || slot === undefined || slot === null) {
-      return res.status(400).json({ success: false, message: '参数不完整' });
-    }
-
-    const parsedItemId = Number(rawItemInstanceId);
-    if (!Number.isInteger(parsedItemId) || parsedItemId <= 0) {
-      return res.status(400).json({ success: false, message: 'itemId参数错误' });
-    }
-
-    const parsedSlot = parseOptionalNonNegativeInt(slot);
-    if (parsedSlot === undefined || Number.isNaN(parsedSlot)) {
-      return res.status(400).json({ success: false, message: 'slot参数错误' });
-    }
-
-    const result = await inventoryService.removeSocketGem(characterId, userId, parsedItemId, parsedSlot);
-
-    if (result.success) {
-      try {
-        const gameServer = getGameServer();
-        await gameServer.pushCharacterUpdate(userId);
-      } catch {
-      }
-    }
-
-    return res.json({
-      success: result.success,
-      message: result.message,
-      data: result.data ?? null,
-    });
-  } catch (error) {
-    console.error('卸下宝石失败:', error);
     return res.status(500).json({ success: false, message: '服务器错误' });
   }
 });

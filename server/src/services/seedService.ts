@@ -188,11 +188,18 @@ interface AchievementPointsRewardSeed {
 
 // 加载物品定义
 export const loadItemDefSeeds = async (): Promise<number> => {
-  const data = readJsonFile<{ items: ItemDefSeed[] }>('item_def.json');
-  if (!data?.items) return 0;
+  const baseData = readJsonFile<{ items: ItemDefSeed[] }>('item_def.json');
+  const gemData = readJsonFile<{ items: ItemDefSeed[] }>('gem_def.json');
+  const mergedItems = [
+    ...(Array.isArray(baseData?.items) ? baseData.items : []),
+    ...(Array.isArray(gemData?.items) ? gemData.items : []),
+  ];
+  if (mergedItems.length === 0) return 0;
+
+  const dedupItems = [...new Map(mergedItems.filter((item) => !!item?.id).map((item) => [item.id, item])).values()];
 
   let count = 0;
-  for (const item of data.items) {
+  for (const item of dedupItems) {
     try {
       const sql = `
         INSERT INTO item_def (
@@ -2104,11 +2111,18 @@ interface RecipeSeed {
 
 // 加载配方
 export const loadRecipeSeeds = async (): Promise<number> => {
-  const data = readJsonFile<{ recipes: RecipeSeed[] }>('item_recipe.json');
-  if (!data?.recipes) return 0;
+  const baseData = readJsonFile<{ recipes: RecipeSeed[] }>('item_recipe.json');
+  const gemData = readJsonFile<{ recipes: RecipeSeed[] }>('gem_synthesis_recipe.json');
+  const mergedRecipes = [
+    ...(Array.isArray(baseData?.recipes) ? baseData.recipes : []),
+    ...(Array.isArray(gemData?.recipes) ? gemData.recipes : []),
+  ];
+  if (mergedRecipes.length === 0) return 0;
+
+  const dedupRecipes = [...new Map(mergedRecipes.filter((recipe) => !!recipe?.id).map((recipe) => [recipe.id, recipe])).values()];
 
   let count = 0;
-  for (const recipe of data.recipes) {
+  for (const recipe of dedupRecipes) {
     try {
       const sql = `
         INSERT INTO item_recipe (

@@ -336,15 +336,11 @@ const main = async () => {
     token,
   );
 
-  const removeSocketRes = await postJson(
-    `${base}/api/inventory/socket/remove`,
-    { itemId: equipId, slot: 0 },
-    token,
+  const removeSocketGone = await postInventory('/api/inventory/socket/remove', { itemId: equipId, slot: 0 }, token);
+  must(
+    !removeSocketGone.ok || !Boolean(removeSocketGone.payload?.success),
+    'socket/remove endpoint should be unavailable',
   );
-  must(Boolean(removeSocketRes?.success), `remove socket failed: ${String(removeSocketRes?.message ?? '')}`);
-  must(String(removeSocketRes?.data?.removedGem?.itemDefId || '') === 'gem-002', 'removed gem mismatch');
-
-  const removeSocketEmpty = await postInventory('/api/inventory/socket/remove', { itemId: equipId, slot: 0 }, token);
 
   await equipIfNeeded(token, equipId);
   const charBeforeSocket = await getCharAttrs(characterId);
@@ -363,17 +359,18 @@ const main = async () => {
     return row;
   }, 5);
 
-  const equipRemoveRes = await postJson(
-    `${base}/api/inventory/socket/remove`,
-    { itemId: equipId, slot: 0 },
+  const equipReplaceRes = await postJson(
+    `${base}/api/inventory/socket`,
+    { itemId: equipId, gemItemId: gemDefItemId, slot: 0 },
     token,
   );
-  must(Boolean(equipRemoveRes?.success), 'remove socket on equipped item failed');
+  must(Boolean(equipReplaceRes?.success), 'replace socket on equipped item failed');
+  must(Boolean(equipReplaceRes?.data?.replacedGem), 'expected replacedGem on equipped replace socket');
 
-  const charAfterRemove = await withRetry(async () => {
+  const charAfterReplace = await withRetry(async () => {
     const row = await getCharAttrs(characterId);
     if (row.maxQixue > charAfterSocket.maxQixue - 20) {
-      throw new Error('max_qixue not rolled back yet');
+      throw new Error('max_qixue not updated after replace yet');
     }
     return row;
   }, 5);
@@ -556,23 +553,22 @@ const main = async () => {
         success: Boolean(invalidSocket.payload?.success),
         msg: String(invalidSocket.payload?.message ?? ''),
       },
-      remove: { success: Boolean(removeSocketRes?.success), msg: String(removeSocketRes?.message ?? '') },
-      removeEmpty: {
-        ok: removeSocketEmpty.ok,
-        success: Boolean(removeSocketEmpty.payload?.success),
-        msg: String(removeSocketEmpty.payload?.message ?? ''),
+      removeEndpoint: {
+        ok: removeSocketGone.ok,
+        success: Boolean(removeSocketGone.payload?.success),
+        msg: String(removeSocketGone.payload?.message ?? ''),
       },
       onEquipped: {
         socketSuccess: Boolean(equipSocketRes?.success),
-        removeSuccess: Boolean(equipRemoveRes?.success),
+        replaceSuccess: Boolean(equipReplaceRes?.success),
       },
     },
     equippedAttrRefresh: {
       before: charBeforeSocket,
       afterSocket: charAfterSocket,
-      afterRemove: charAfterRemove,
+      afterReplace: charAfterReplace,
       maxQixueRaised: charAfterSocket.maxQixue - charBeforeSocket.maxQixue,
-      maxQixueRestored: charAfterSocket.maxQixue - charAfterRemove.maxQixue,
+      maxQixueReplaced: charAfterSocket.maxQixue - charAfterReplace.maxQixue,
     },
     negativeCases: {
       enhanceNoMaterial: {
@@ -618,7 +614,7 @@ const main = async () => {
   must(Boolean(summary.refineLogs.some((x) => x.success)), 'refine should have at least one success in random attempts');
   must(Boolean(summary.refineLogs.some((x) => !x.success)), 'refine should have at least one fail in random attempts');
   must(summary.equippedAttrRefresh.maxQixueRaised >= 20, 'equipped socket should raise max_qixue by gem effect');
-  must(summary.equippedAttrRefresh.maxQixueRestored >= 20, 'remove socket should rollback max_qixue by gem effect');
+  must(summary.equippedAttrRefresh.maxQixueReplaced >= 20, 'replace socket should refresh max_qixue by gem effect');
   must(!summary.negativeCases.enhanceNoMaterial.success, 'enhanceNoMaterial should fail');
   must(!summary.negativeCases.refineNoMaterial.success, 'refineNoMaterial should fail');
   must(!summary.negativeCases.enhanceNoMoney.success, 'enhanceNoMoney should fail');

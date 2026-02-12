@@ -801,7 +801,23 @@ const loadGemItemForSocketTx = async (
     effect_defs: unknown;
   };
 
-  if (row.category !== 'material' || String(row.sub_category || '') !== 'gem') {
+  const isGemSubCategory = (subCategoryRaw: unknown): boolean => {
+    const subCategory = String(subCategoryRaw || '').trim().toLowerCase();
+    if (!subCategory) return false;
+    if (subCategory === 'gem') return true;
+    return ['gem_attack', 'gem_defense', 'gem_survival', 'gem_all'].includes(subCategory);
+  };
+
+  const resolveGemTypeBySubCategory = (subCategoryRaw: unknown, effects: SocketEffect[]): string => {
+    const subCategory = String(subCategoryRaw || '').trim().toLowerCase();
+    if (subCategory === 'gem_attack') return 'attack';
+    if (subCategory === 'gem_defense') return 'defense';
+    if (subCategory === 'gem_survival') return 'survival';
+    if (subCategory === 'gem_all') return 'all';
+    return inferGemTypeFromEffects(effects);
+  };
+
+  if (row.category !== 'material' || !isGemSubCategory(row.sub_category)) {
     return { success: false, message: '该物品不是宝石' };
   }
   const effects = parseSocketEffectsFromItemEffectDefs(row.effect_defs);
@@ -815,7 +831,7 @@ const loadGemItemForSocketTx = async (
       itemDefId: row.id,
       name: row.name,
       icon: row.icon,
-      gemType: inferGemTypeFromEffects(effects),
+      gemType: resolveGemTypeBySubCategory(row.sub_category, effects),
       effects,
     },
   };
@@ -2076,6 +2092,7 @@ export const socketEquipment = async (
     slot: number;
     gem: { itemDefId: string; name: string; icon: string | null; gemType: string };
     replacedGem?: SocketedGemEntry;
+    costs?: { silver: number };
     character?: unknown;
   };
 }> => {
@@ -2126,16 +2143,25 @@ export const socketEquipment = async (
       return { success: false, message: '该宝石类型与孔位不匹配' };
     }
 
+    const duplicatedGem = equip.socketedEntries.find(
+      (entry) =>
+        String(entry.itemDefId || '') === String(gem.itemDefId || '') &&
+        clampInt(Number(entry.slot) || 0, 0, 999) !== slot
+    );
+    if (duplicatedGem) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '同一件装备不可镶嵌相同宝石' };
+    }
+
     const replacedGem = findSocketEntryBySlot(equip.socketedEntries, slot);
-    if (replacedGem) {
-      const addRes = await addItemToInventoryTx(client, characterId, userId, replacedGem.itemDefId, 1, {
-        location: 'bag',
-        obtainedFrom: 'socket-remove',
-      });
-      if (!addRes.success) {
-        await client.query('ROLLBACK');
-        return { success: false, message: `原宝石返还失败：${addRes.message}` };
-      }
+
+    const silverCost = replacedGem ? 100 : 50;
+    const currencyRes = await consumeCharacterCurrenciesTx(client, characterId, {
+      silver: silverCost,
+    });
+    if (!currencyRes.success) {
+      await client.query('ROLLBACK');
+      return { success: false, message: currencyRes.message };
     }
 
     const nextEntries = upsertSocketEntry(equip.socketedEntries, {
@@ -2189,6 +2215,7 @@ export const socketEquipment = async (
           gemType: gem.gemType,
         },
         replacedGem: replacedGem ?? undefined,
+        costs: { silver: silverCost },
         character: character ?? null,
       },
     };
@@ -2196,95 +2223,6 @@ export const socketEquipment = async (
     await client.query('ROLLBACK');
     console.error('镶嵌宝石失败:', error);
     return { success: false, message: '镶嵌宝石失败' };
-  } finally {
-    client.release();
-  }
-};
-
-export const removeSocketGem = async (
-  characterId: number,
-  userId: number,
-  itemInstanceId: number,
-  slot: number
-): Promise<{
-  success: boolean;
-  message: string;
-  data?: {
-    socketedGems: SocketedGemEntry[];
-    socketMax: number;
-    removedGem: SocketedGemEntry;
-    character?: unknown;
-  };
-}> => {
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const socketState = await readEquipmentSocketStateTx(client, characterId, itemInstanceId);
-    if (!socketState.success || !socketState.item) {
-      await client.query('ROLLBACK');
-      return { success: false, message: socketState.message };
-    }
-    const equip = socketState.item;
-
-    const targetSlot = clampInt(Number(slot) || 0, 0, Math.max(0, equip.socketMax - 1));
-    const removed = findSocketEntryBySlot(equip.socketedEntries, targetSlot);
-    if (!removed) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '该孔位没有已镶嵌宝石' };
-    }
-
-    const beforeDiffRes = await diffEquipmentAttrIfEquippedTx(client, characterId, itemInstanceId, equip.location);
-    if (!beforeDiffRes.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: beforeDiffRes.message };
-    }
-
-    const addRes = await addItemToInventoryTx(client, characterId, userId, removed.itemDefId, 1, {
-      location: 'bag',
-      obtainedFrom: 'socket-remove',
-    });
-    if (!addRes.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `宝石返还失败：${addRes.message}` };
-    }
-
-    const nextEntries = removeSocketEntryBySlot(equip.socketedEntries, targetSlot);
-    await client.query(
-      `UPDATE item_instance SET socketed_gems = $1::jsonb, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3`,
-      [toSocketedGemsJson(nextEntries), itemInstanceId, characterId]
-    );
-
-    const applyDiffRes = await applyEquipmentDiffIfEquippedTx(
-      client,
-      characterId,
-      itemInstanceId,
-      equip.location,
-      beforeDiffRes.before
-    );
-    if (!applyDiffRes.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: applyDiffRes.message };
-    }
-
-    const character = await getCharacterSnapshotTx(client, characterId, userId);
-
-    await client.query('COMMIT');
-    return {
-      success: true,
-      message: '卸下宝石成功',
-      data: {
-        socketedGems: nextEntries,
-        socketMax: equip.socketMax,
-        removedGem: removed,
-        character: character ?? null,
-      },
-    };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('卸下宝石失败:', error);
-    return { success: false, message: '卸下宝石失败' };
   } finally {
     client.release();
   }
@@ -2815,7 +2753,6 @@ export default {
   enhanceEquipment,
   refineEquipment,
   socketEquipment,
-  removeSocketGem,
   disassembleEquipment,
   disassembleEquipmentBatch,
   removeItemsBatch,

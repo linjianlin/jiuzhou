@@ -244,30 +244,6 @@ export const socketInventoryGem = (body: InventorySocketRequest): Promise<Invent
   return api.post('/inventory/socket', body);
 };
 
-export interface InventoryRemoveSocketGemResponse {
-  success: boolean;
-  message: string;
-  data?: {
-    socketedGems: SocketedGemEntryDto[];
-    socketMax: number;
-    removedGem: SocketedGemEntryDto;
-    character?: unknown;
-  } | null;
-}
-
-export interface InventoryRemoveSocketGemRequest {
-  itemId?: number;
-  itemInstanceId?: number;
-  instanceId?: number;
-  slot: number;
-}
-
-export const removeInventorySocketGem = (
-  body: InventoryRemoveSocketGemRequest
-): Promise<InventoryRemoveSocketGemResponse> => {
-  return api.post('/inventory/socket/remove', body);
-};
-
 export interface InventoryDisassembleResponse {
   success: boolean;
   message: string;

@@ -1,0 +1,1842 @@
+{
+  "version": 2,
+  "description": "宝石合成配方（3个同子类型低级宝石合成1个高级宝石；6级以上存在失败率，失败损失材料）",
+  "recipes": [
+    {
+      "id": "gem-synth-atk-wg-1-2",
+      "name": "物攻宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-2-3",
+      "name": "物攻宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-3-4",
+      "name": "物攻宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-4-5",
+      "name": "物攻宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-5-6",
+      "name": "物攻宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-6-7",
+      "name": "物攻宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-7-8",
+      "name": "物攻宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-8-9",
+      "name": "物攻宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-wg-9-10",
+      "name": "物攻宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-wg-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-wg-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-1-2",
+      "name": "法攻宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-2-3",
+      "name": "法攻宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-3-4",
+      "name": "法攻宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-4-5",
+      "name": "法攻宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-5-6",
+      "name": "法攻宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-6-7",
+      "name": "法攻宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-7-8",
+      "name": "法攻宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-8-9",
+      "name": "法攻宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-atk-fg-9-10",
+      "name": "法攻宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-atk-fg-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-atk-fg-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-1-2",
+      "name": "物防宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-2-3",
+      "name": "物防宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-3-4",
+      "name": "物防宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-4-5",
+      "name": "物防宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-5-6",
+      "name": "物防宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-6-7",
+      "name": "物防宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-7-8",
+      "name": "物防宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-8-9",
+      "name": "物防宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-wf-9-10",
+      "name": "物防宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-wf-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-wf-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-1-2",
+      "name": "法防宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-2-3",
+      "name": "法防宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-3-4",
+      "name": "法防宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-4-5",
+      "name": "法防宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-5-6",
+      "name": "法防宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-6-7",
+      "name": "法防宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-7-8",
+      "name": "法防宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-8-9",
+      "name": "法防宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-def-ff-9-10",
+      "name": "法防宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-def-ff-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-def-ff-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-1-2",
+      "name": "气血宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-2-3",
+      "name": "气血宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-3-4",
+      "name": "气血宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-4-5",
+      "name": "气血宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-5-6",
+      "name": "气血宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-6-7",
+      "name": "气血宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-7-8",
+      "name": "气血宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-8-9",
+      "name": "气血宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-hp-9-10",
+      "name": "气血宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-hp-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-hp-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-1-2",
+      "name": "灵气宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-2-3",
+      "name": "灵气宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-3-4",
+      "name": "灵气宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-4-5",
+      "name": "灵气宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-5-6",
+      "name": "灵气宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-6-7",
+      "name": "灵气宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-7-8",
+      "name": "灵气宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-8-9",
+      "name": "灵气宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-sur-lq-9-10",
+      "name": "灵气宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-sur-lq-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-sur-lq-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-1-2",
+      "name": "命中通用宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-2-3",
+      "name": "命中通用宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-3-4",
+      "name": "命中通用宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-4-5",
+      "name": "命中通用宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-5-6",
+      "name": "命中通用宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-6-7",
+      "name": "命中通用宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-7-8",
+      "name": "命中通用宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-8-9",
+      "name": "命中通用宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-mz-9-10",
+      "name": "命中通用宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-mz-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-mz-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-1-2",
+      "name": "闪避通用宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-2-3",
+      "name": "闪避通用宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-3-4",
+      "name": "闪避通用宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-4-5",
+      "name": "闪避通用宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-5-6",
+      "name": "闪避通用宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-6-7",
+      "name": "闪避通用宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-7-8",
+      "name": "闪避通用宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-8-9",
+      "name": "闪避通用宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-sb-9-10",
+      "name": "闪避通用宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-sb-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-sb-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-1-2",
+      "name": "暴击通用宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-2-3",
+      "name": "暴击通用宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-3-4",
+      "name": "暴击通用宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-4-5",
+      "name": "暴击通用宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-5-6",
+      "name": "暴击通用宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-6-7",
+      "name": "暴击通用宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-7-8",
+      "name": "暴击通用宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-8-9",
+      "name": "暴击通用宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-bj-9-10",
+      "name": "暴击通用宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-bj-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-bj-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-1-2",
+      "name": "招架通用宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-2-3",
+      "name": "招架通用宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-3-4",
+      "name": "招架通用宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-4-5",
+      "name": "招架通用宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-5-6",
+      "name": "招架通用宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-6-7",
+      "name": "招架通用宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-7-8",
+      "name": "招架通用宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-8-9",
+      "name": "招架通用宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zj-9-10",
+      "name": "招架通用宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zj-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zj-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-1-2",
+      "name": "抗暴通用宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-2-3",
+      "name": "抗暴通用宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-3-4",
+      "name": "抗暴通用宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-4-5",
+      "name": "抗暴通用宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-5-6",
+      "name": "抗暴通用宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-6-7",
+      "name": "抗暴通用宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-7-8",
+      "name": "抗暴通用宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-8-9",
+      "name": "抗暴通用宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-kb-9-10",
+      "name": "抗暴通用宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-kb-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-kb-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-1-2",
+      "name": "增伤通用宝石 1级→2级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-2",
+      "product_qty": 1,
+      "cost_silver": 100,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-1",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-2-3",
+      "name": "增伤通用宝石 2级→3级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-3",
+      "product_qty": 1,
+      "cost_silver": 200,
+      "cost_spirit_stones": 0,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-2",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-3-4",
+      "name": "增伤通用宝石 3级→4级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-4",
+      "product_qty": 1,
+      "cost_silver": 400,
+      "cost_spirit_stones": 1,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-3",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-4-5",
+      "name": "增伤通用宝石 4级→5级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-5",
+      "product_qty": 1,
+      "cost_silver": 800,
+      "cost_spirit_stones": 2,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-4",
+          "qty": 3
+        }
+      ],
+      "success_rate": 100,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-5-6",
+      "name": "增伤通用宝石 5级→6级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-6",
+      "product_qty": 1,
+      "cost_silver": 1500,
+      "cost_spirit_stones": 4,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-5",
+          "qty": 3
+        }
+      ],
+      "success_rate": 85,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-6-7",
+      "name": "增伤通用宝石 6级→7级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-7",
+      "product_qty": 1,
+      "cost_silver": 3000,
+      "cost_spirit_stones": 8,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-6",
+          "qty": 3
+        }
+      ],
+      "success_rate": 70,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-7-8",
+      "name": "增伤通用宝石 7级→8级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-8",
+      "product_qty": 1,
+      "cost_silver": 6000,
+      "cost_spirit_stones": 15,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-7",
+          "qty": 3
+        }
+      ],
+      "success_rate": 55,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-8-9",
+      "name": "增伤通用宝石 8级→9级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-9",
+      "product_qty": 1,
+      "cost_silver": 12000,
+      "cost_spirit_stones": 30,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-8",
+          "qty": 3
+        }
+      ],
+      "success_rate": 40,
+      "fail_return_rate": 0
+    },
+    {
+      "id": "gem-synth-all-zs-9-10",
+      "name": "增伤通用宝石 9级→10级",
+      "recipe_type": "gem_synthesis",
+      "product_item_def_id": "gem-all-zs-10",
+      "product_qty": 1,
+      "cost_silver": 24000,
+      "cost_spirit_stones": 60,
+      "cost_items": [
+        {
+          "item_def_id": "gem-all-zs-9",
+          "qty": 3
+        }
+      ],
+      "success_rate": 25,
+      "fail_return_rate": 0
+    }
+  ]
+}
