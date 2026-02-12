@@ -318,8 +318,11 @@ router.post('/buildings/upgrade', async (req: Request, res: Response) => {
     const characterId = await getCharacterId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { buildingType?: unknown };
-    const buildingType = typeof body?.buildingType === 'string' ? body.buildingType : '';
+    const buildingType = typeof body?.buildingType === 'string' ? body.buildingType.trim() : '';
     if (!buildingType) return res.status(400).json({ success: false, message: '参数错误' });
+    if (buildingType !== 'hall') {
+      return res.status(400).json({ success: false, message: '当前仅开放宗门大殿升级' });
+    }
     const result = await upgradeBuilding(characterId, buildingType);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {

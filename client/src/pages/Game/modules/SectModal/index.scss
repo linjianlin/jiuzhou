@@ -242,6 +242,10 @@
   gap: 10px;
 }
 
+.sect-building-disabled {
+  opacity: 0.92;
+}
+
 .sect-building-top {
   display: flex;
   align-items: center;
@@ -275,6 +279,13 @@
   display: flex;
   gap: 10px;
   margin-top: auto;
+}
+
+.sect-building-upgrade-btn.ant-btn[disabled],
+.sect-building-upgrade-btn.ant-btn:disabled {
+  color: var(--text-tertiary);
+  border-color: var(--border-color);
+  background: var(--panel-bg);
 }
 
 .sect-shop-head {

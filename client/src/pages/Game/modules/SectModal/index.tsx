@@ -134,10 +134,17 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
     }));
   }, [mySectInfo]);
 
-  const myContribution = useMemo(() => {
-    const myMember = mySectInfo?.members.find((m) => m.nickname === playerName);
-    return Number(myMember?.contribution) || 0;
-  }, [mySectInfo, playerName]);
+  const myMember = useMemo(
+    () => mySectInfo?.members.find((m) => m.nickname === playerName) ?? null,
+    [mySectInfo, playerName]
+  );
+
+  const myContribution = useMemo(() => Number(myMember?.contribution) || 0, [myMember]);
+
+  const canUpgradeBuilding = useMemo(() => {
+    if (!myMember) return false;
+    return myMember.position === 'leader' || myMember.position === 'vice_leader' || myMember.position === 'elder';
+  }, [myMember]);
 
   const buildings = useMemo((): SectBuilding[] => {
     const metaByType: Record<string, { name: string; desc: string }> = {
@@ -196,7 +203,7 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
     return { canSubmit: true, reason: '', added };
   }, [donateSpiritStonesAmount, spiritStones]);
 
-  const isLeader = (joinedSect?.leader ?? '—') === playerName;
+  const isLeader = myMember?.position === 'leader';
 
   const reset = () => {
     setJoinState('none');
@@ -398,15 +405,10 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
 
   // 检查是否有管理权限（宗主、副宗主、长老）
   const checkPermission = useCallback(() => {
-    const myMember = mySectInfo?.members.find((m) => m.nickname === playerName);
-    if (!myMember) {
-      setHasPermission(false);
-      return false;
-    }
-    const permitted = myMember.position === 'leader' || myMember.position === 'vice_leader' || myMember.position === 'elder';
+    const permitted = myMember?.position === 'leader' || myMember?.position === 'vice_leader' || myMember?.position === 'elder';
     setHasPermission(permitted);
     return permitted;
-  }, [mySectInfo, playerName]);
+  }, [myMember]);
 
   // 获取申请列表
   const fetchApplications = useCallback(async () => {
@@ -657,42 +659,45 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
       <div className="sect-panel-title">宗门建筑</div>
       <div className="sect-panel-body">
         <div className="sect-buildings">
-          {buildings.map((b) => (
-            <div key={b.id} className="sect-building">
-              <div className="sect-building-top">
-                <div className="sect-building-name">{b.name}</div>
-                <Tag color="blue">Lv.{b.level}</Tag>
+          {buildings.map((b) => {
+            const isHall = b.buildingType === 'hall';
+            const loadingKey = `upgrade-${b.buildingType}`;
+            return (
+              <div key={b.id} className={`sect-building${isHall ? '' : ' sect-building-disabled'}`}>
+                <div className="sect-building-top">
+                  <div className="sect-building-name">{b.name}</div>
+                  <Tag color="blue">Lv.{b.level}</Tag>
+                </div>
+                <div className="sect-building-desc">{b.desc}</div>
+                <div className="sect-building-effect">{b.effect}</div>
+                <div className="sect-building-actions">
+                  <Button
+                    className="sect-building-upgrade-btn"
+                    size="small"
+                    onClick={async () => {
+                      if (!isHall || !canUpgradeBuilding) return;
+                      setActionLoadingKey(loadingKey);
+                      try {
+                        const res = await upgradeSectBuilding(b.buildingType);
+                        if (!res.success) throw new Error(res.message || '升级失败');
+                        message.success(res.message || '升级成功');
+                        await refreshMySect(false);
+                      } catch (error: unknown) {
+                        const err = error as { message?: string };
+                        message.error(err.message || '升级失败');
+                      } finally {
+                        setActionLoadingKey(null);
+                      }
+                    }}
+                    loading={actionLoadingKey === loadingKey}
+                    disabled={!isHall || !canUpgradeBuilding}
+                  >
+                    {isHall ? '升级' : '暂未开放'}
+                  </Button>
+                </div>
               </div>
-              <div className="sect-building-desc">{b.desc}</div>
-              <div className="sect-building-effect">{b.effect}</div>
-              <div className="sect-building-actions">
-                <Button
-                  size="small"
-                  onClick={async () => {
-                    setActionLoadingKey(`upgrade-${b.buildingType}`);
-                    try {
-                      const res = await upgradeSectBuilding(b.buildingType);
-                      if (!res.success) throw new Error(res.message || '升级失败');
-                      message.success(res.message || '升级成功');
-                      await refreshMySect(false);
-                    } catch (error: unknown) {
-                      const err = error as { message?: string };
-                      message.error(err.message || '升级失败');
-                    } finally {
-                      setActionLoadingKey(null);
-                    }
-                  }}
-                  loading={actionLoadingKey === `upgrade-${b.buildingType}`}
-                  disabled={!isLeader}
-                >
-                  升级
-                </Button>
-                <Button size="small" type="primary">
-                  查看
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

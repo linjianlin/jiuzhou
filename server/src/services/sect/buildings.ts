@@ -17,6 +17,9 @@ const addLogTx = async (
   );
 };
 
+const HALL_BUILDING_TYPE = 'hall';
+const ONLY_HALL_UPGRADE_MESSAGE = '当前仅开放宗门大殿升级';
+
 export const getBuildings = async (
   characterId: number
 ): Promise<{ success: boolean; message: string; data?: SectBuildingRow[] }> => {
@@ -32,30 +35,18 @@ export const getBuildings = async (
 
 const buildingMaxLevel = 10;
 
-const calcUpgradeCost = (buildingType: string, currentLevel: number): { funds: number; buildPoints: number } => {
-  const baseFunds = 1000;
-  const basePoints = 10;
-  const typeFactor: Record<string, number> = {
-    hall: 1.2,
-    library: 1.0,
-    training_hall: 1.0,
-    alchemy_room: 1.0,
-    forge_house: 1.0,
-    spirit_array: 1.1,
-    defense_array: 1.3,
-  };
-  const f = typeFactor[buildingType] ?? 1.0;
-  const next = currentLevel + 1;
+const calcHallUpgradeCost = (currentLevel: number): { funds: number; buildPoints: number } => {
+  const nextLevel = currentLevel + 1;
   return {
-    funds: Math.floor(baseFunds * f * next * next),
-    buildPoints: Math.floor(basePoints * next),
+    funds: Math.floor(1000 * 1.2 * nextLevel * nextLevel),
+    buildPoints: Math.floor(10 * nextLevel),
   };
 };
 
 const applyHallMemberCapTx = async (client: PoolClient, sectId: string): Promise<void> => {
   const hallRes = await client.query(
-    `SELECT level FROM sect_building WHERE sect_id = $1 AND building_type = 'hall'`,
-    [sectId]
+    `SELECT level FROM sect_building WHERE sect_id = $1 AND building_type = $2`,
+    [sectId, HALL_BUILDING_TYPE]
   );
   const hallLevel = hallRes.rows.length > 0 ? toNumber(hallRes.rows[0].level) : 1;
   const cap = 20 + Math.max(0, hallLevel - 1) * 5;
@@ -63,6 +54,10 @@ const applyHallMemberCapTx = async (client: PoolClient, sectId: string): Promise
 };
 
 export const upgradeBuilding = async (characterId: number, buildingType: string): Promise<Result> => {
+  if (buildingType !== HALL_BUILDING_TYPE) {
+    return { success: false, message: ONLY_HALL_UPGRADE_MESSAGE };
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -74,7 +69,7 @@ export const upgradeBuilding = async (characterId: number, buildingType: string)
 
     const buildingRes = await client.query(
       `SELECT * FROM sect_building WHERE sect_id = $1 AND building_type = $2 FOR UPDATE`,
-      [member.sectId, buildingType]
+      [member.sectId, HALL_BUILDING_TYPE]
     );
     if (buildingRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -87,7 +82,7 @@ export const upgradeBuilding = async (characterId: number, buildingType: string)
       return { success: false, message: '建筑已满级' };
     }
 
-    const cost = calcUpgradeCost(buildingType, building.level);
+    const cost = calcHallUpgradeCost(building.level);
     const sectRes = await client.query(`SELECT funds, build_points FROM sect_def WHERE id = $1 FOR UPDATE`, [member.sectId]);
     if (sectRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -113,11 +108,9 @@ export const upgradeBuilding = async (characterId: number, buildingType: string)
       [building.id]
     );
 
-    if (buildingType === 'hall') {
-      await applyHallMemberCapTx(client, member.sectId);
-    }
+    await applyHallMemberCapTx(client, member.sectId);
+    await addLogTx(client, member.sectId, 'upgrade_building', characterId, null, `升级建筑：${HALL_BUILDING_TYPE}`);
 
-    await addLogTx(client, member.sectId, 'upgrade_building', characterId, null, `升级建筑：${buildingType}`);
     await client.query('COMMIT');
     return { success: true, message: '升级成功' };
   } catch (error) {
@@ -128,4 +121,3 @@ export const upgradeBuilding = async (characterId: number, buildingType: string)
     client.release();
   }
 };
-
