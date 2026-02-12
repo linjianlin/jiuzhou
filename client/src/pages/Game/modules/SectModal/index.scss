@@ -331,6 +331,27 @@
   line-height: 1.5;
 }
 
+.sect-shop-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sect-shop-limit-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
 .sect-shop-meta {
   display: flex;
   flex-wrap: wrap;

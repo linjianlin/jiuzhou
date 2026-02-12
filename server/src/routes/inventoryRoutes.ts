@@ -980,38 +980,9 @@ router.post('/sort', async (req: Request, res: Response) => {
 // POST /api/inventory/expand
 // ============================================
 router.post('/expand', async (req: Request, res: Response) => {
-  try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
-    
-    if (!characterId) {
-      return res.status(404).json({ success: false, message: '角色不存在' });
-    }
-    
-    const { location, expandSize } = req.body;
-
-    const resolvedLocation = location === undefined || location === null ? 'bag' : location;
-    if (!isAllowedSlottedLocation(resolvedLocation)) {
-      return res.status(400).json({ success: false, message: 'location参数错误' });
-    }
-
-    const parsedExpandSize = expandSize === undefined || expandSize === null ? 10 : Number(expandSize);
-    if (!Number.isInteger(parsedExpandSize) || parsedExpandSize <= 0 || parsedExpandSize > 1000) {
-      return res.status(400).json({ success: false, message: 'expandSize参数错误' });
-    }
-    
-    // TODO: 这里应该检查并消耗扩容道具
-    const result = await inventoryService.expandInventory(
-      characterId,
-      resolvedLocation,
-      parsedExpandSize
-    );
-    
-    res.json(result);
-  } catch (error) {
-    console.error('扩容背包失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
-  }
+  return res
+    .status(403)
+    .json({ success: false, message: '请通过使用扩容道具进行扩容' });
 });
 
 // ============================================

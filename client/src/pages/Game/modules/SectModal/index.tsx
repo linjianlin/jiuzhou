@@ -721,10 +721,15 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
             {shopItems.map((item) => {
               const affordable = myContribution >= item.costContribution;
               const loadingKey = `shop-buy-${item.id}`;
+              const rawDailyLimit = Number(item.limitDaily);
+              const dailyLimit = Number.isFinite(rawDailyLimit) ? Math.max(0, Math.floor(rawDailyLimit)) : 0;
               return (
                 <div key={item.id} className="sect-shop-card">
                   <div className="sect-shop-card-top">
-                    <div className="sect-shop-name">{item.name}</div>
+                    <div className="sect-shop-name-wrap">
+                      <div className="sect-shop-name">{item.name}</div>
+                      {dailyLimit > 0 ? <div className="sect-shop-limit-chip">每日限购 {dailyLimit}</div> : null}
+                    </div>
                     <Tag color={affordable ? 'blue' : 'default'}>贡献 {item.costContribution.toLocaleString()}</Tag>
                   </div>
                   <div className="sect-shop-meta">

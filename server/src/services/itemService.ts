@@ -7,7 +7,12 @@
 import { query, pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { generateEquipment, createEquipmentInstance, createEquipmentInstanceTx, GenerateOptions, GeneratedEquipment } from './equipmentService.js';
-import { addItemToInventory, addItemToInventoryTx, SlottedInventoryLocation } from './inventoryService.js';
+import {
+  addItemToInventory,
+  addItemToInventoryTx,
+  expandInventoryWithClient,
+  SlottedInventoryLocation,
+} from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
 
@@ -398,14 +403,16 @@ export const useItem = async (
     let deltaExp = 0;
     let hasLoot = false;
     let hasLearnTechnique = false;
+    let hasExpandEffect = false;
     const lootResults: { type: string; name?: string; amount: number }[] = [];
     const lootItemsToAdd: { itemDefId: string; qty: number }[] = [];
+    let totalExpandSize = 0;
     let deltaSilver = 0;
     let deltaSpiritStones = 0;
 
     for (const rawEffect of effectDefs) {
       if (!rawEffect || typeof rawEffect !== 'object') continue;
-      const effect: any = rawEffect;
+      const effect = rawEffect as Record<string, unknown>;
       if (String(effect.trigger || '') !== 'use') continue;
       if (String(effect.target || 'self') !== 'self') continue;
 
@@ -413,13 +420,16 @@ export const useItem = async (
 
       if (effectType === 'loot') {
         hasLoot = true;
-        const params = effect.params && typeof effect.params === 'object' ? effect.params : {};
-        const lootType = String(params.loot_type || '');
+        const params =
+          effect.params && typeof effect.params === 'object'
+            ? (effect.params as Record<string, unknown>)
+            : null;
+        const lootType = params ? String(params.loot_type || '') : '';
 
         if (lootType === 'currency') {
-          const currency = String(params.currency || '');
-          const min = Math.max(0, Math.floor(Number(params.min) || 0));
-          const max = Math.max(min, Math.floor(Number(params.max) || 0));
+          const currency = params ? String(params.currency || '') : '';
+          const min = Math.max(0, Math.floor(params ? Number(params.min) || 0 : 0));
+          const max = Math.max(min, Math.floor(params ? Number(params.max) || 0 : 0));
           const amount = (min === max ? min : Math.floor(Math.random() * (max - min + 1)) + min) * qty;
           if (amount > 0) {
             if (currency === 'spirit_stones') {
@@ -431,18 +441,22 @@ export const useItem = async (
             }
           }
         } else if (lootType === 'multi') {
-          const items = Array.isArray(params.items) ? params.items : [];
+          const items = params && Array.isArray(params.items) ? params.items : [];
           for (const li of items) {
             if (!li || typeof li !== 'object') continue;
-            const itemDefId = String(li.item_id || '');
-            const itemQty = Math.max(1, Math.floor(Number(li.qty) || 1)) * qty;
+            const row = li as Record<string, unknown>;
+            const itemDefId = String(row.item_id || '');
+            const itemQty = Math.max(1, Math.floor(Number(row.qty) || 1)) * qty;
             if (itemDefId) {
               lootItemsToAdd.push({ itemDefId, qty: itemQty });
             }
           }
-          const currency = params.currency && typeof params.currency === 'object' ? params.currency : {};
-          const silverAmt = Math.max(0, Math.floor(Number(currency.silver) || 0)) * qty;
-          const ssAmt = Math.max(0, Math.floor(Number(currency.spirit_stones) || 0)) * qty;
+          const currency =
+            params && params.currency && typeof params.currency === 'object'
+              ? (params.currency as Record<string, unknown>)
+              : null;
+          const silverAmt = Math.max(0, Math.floor(currency ? Number(currency.silver) || 0 : 0)) * qty;
+          const ssAmt = Math.max(0, Math.floor(currency ? Number(currency.spirit_stones) || 0 : 0)) * qty;
           if (silverAmt > 0) {
             deltaSilver += silverAmt;
             lootResults.push({ type: 'silver', name: '银两', amount: silverAmt });
@@ -452,11 +466,11 @@ export const useItem = async (
             lootResults.push({ type: 'spirit_stones', name: '灵石', amount: ssAmt });
           }
         } else if (lootType === 'random_gem') {
-          const subCategoriesRaw = toStringArray((params as { sub_categories?: unknown }).sub_categories);
+          const subCategoriesRaw = toStringArray(params?.sub_categories);
           const subCategories = subCategoriesRaw.length > 0 ? subCategoriesRaw : [...DEFAULT_RANDOM_GEM_SUB_CATEGORIES];
-          const minLevel = toPositiveInt((params as { min_level?: unknown }).min_level, 1);
-          const maxLevel = Math.max(minLevel, toPositiveInt((params as { max_level?: unknown }).max_level, 3));
-          const gemsPerUse = toPositiveInt((params as { gems_per_use?: unknown }).gems_per_use, 1);
+          const minLevel = toPositiveInt(params?.min_level, 1);
+          const maxLevel = Math.max(minLevel, toPositiveInt(params?.max_level, 3));
+          const gemsPerUse = toPositiveInt(params?.gems_per_use, 1);
           const rollCount = qty * gemsPerUse;
 
           const gemRes = await client.query(
@@ -495,9 +509,35 @@ export const useItem = async (
         continue;
       }
 
+      if (effectType === 'expand') {
+        const params =
+          effect.params && typeof effect.params === 'object'
+            ? (effect.params as Record<string, unknown>)
+            : null;
+        const expandType = params ? String(params.expand_type || '') : '';
+        if (expandType !== 'bag') {
+          await client.query('ROLLBACK');
+          return { success: false, message: '该道具暂不支持当前扩容类型' };
+        }
+
+        const valueRaw = params ? Number(params.value) : NaN;
+        const expandValue = Number.isInteger(valueRaw) ? valueRaw : Math.floor(valueRaw);
+        if (!Number.isInteger(expandValue) || expandValue <= 0) {
+          await client.query('ROLLBACK');
+          return { success: false, message: '扩容道具配置错误' };
+        }
+
+        totalExpandSize += expandValue * qty;
+        hasExpandEffect = true;
+        continue;
+      }
+
       if (effectType === 'learn_technique') {
-        const params = effect.params && typeof effect.params === 'object' ? effect.params : {};
-        const techniqueId = String(params.technique_id || '').trim();
+        const params =
+          effect.params && typeof effect.params === 'object'
+            ? (effect.params as Record<string, unknown>)
+            : null;
+        const techniqueId = params ? String(params.technique_id || '').trim() : '';
         if (!techniqueId) {
           await client.query('ROLLBACK');
           return { success: false, message: '功法书配置异常，缺少功法ID' };
@@ -551,7 +591,11 @@ export const useItem = async (
       }
 
       if (effectType === 'resource') {
-        const resource = effect.params && typeof effect.params === 'object' ? String(effect.params.resource || '') : '';
+        const params =
+          effect.params && typeof effect.params === 'object'
+            ? (effect.params as Record<string, unknown>)
+            : null;
+        const resource = params ? String(params.resource || '') : '';
         if (resource === 'qixue') {
           deltaQixue += value * qty;
         }
@@ -564,9 +608,24 @@ export const useItem = async (
       }
     }
 
-    if (deltaQixue === 0 && deltaLingqi === 0 && deltaExp === 0 && !hasLoot && !hasLearnTechnique) {
+    if (
+      deltaQixue === 0 &&
+      deltaLingqi === 0 &&
+      deltaExp === 0 &&
+      !hasLoot &&
+      !hasLearnTechnique &&
+      !hasExpandEffect
+    ) {
       await client.query('ROLLBACK');
       return { success: false, message: '该物品暂不支持使用效果' };
+    }
+
+    if (hasExpandEffect) {
+      const expandResult = await expandInventoryWithClient(client, characterId, 'bag', totalExpandSize);
+      if (!expandResult.success) {
+        await client.query('ROLLBACK');
+        return { success: false, message: expandResult.message };
+      }
     }
 
     const nextQixue = Math.min(

@@ -130,6 +130,7 @@ const allowedCharacterAttrKeys = new Set<CharacterAttrKey>([
 ]);
 
 const clampInt = clampGrowthInt;
+export const BAG_CAPACITY_MAX = 200;
 
 const getSlottedCapacity = (info: InventoryInfo, location: SlottedInventoryLocation): number =>
   location === 'bag' ? info.bag_capacity : info.warehouse_capacity;
@@ -2241,42 +2242,90 @@ export const socketEquipment = async (
 // ============================================
 // 扩容背包
 // ============================================
+export const expandInventoryWithClient = async (
+  client: PoolClient,
+  characterId: number,
+  location: SlottedInventoryLocation,
+  expandSize: number = 10
+): Promise<{ success: boolean; message: string; newCapacity?: number }> => {
+  const validExpandSize = Number.isInteger(expandSize) ? expandSize : Math.floor(Number(expandSize));
+  if (!Number.isInteger(validExpandSize) || validExpandSize <= 0) {
+    return { success: false, message: 'expandSize参数错误' };
+  }
+
+  const column = location === 'bag' ? 'bag_capacity' : 'warehouse_capacity';
+  const countColumn = location === 'bag' ? 'bag_expand_count' : 'warehouse_expand_count';
+
+  const infoResult = await client.query(
+    `
+      SELECT bag_capacity, warehouse_capacity
+      FROM inventory
+      WHERE character_id = $1
+      FOR UPDATE
+    `,
+    [characterId]
+  );
+
+  if (infoResult.rows.length === 0) {
+    return { success: false, message: '背包不存在' };
+  }
+
+  const currentBagCapacity = Number(infoResult.rows[0]?.bag_capacity) || 0;
+  const currentWarehouseCapacity = Number(infoResult.rows[0]?.warehouse_capacity) || 0;
+  const currentCapacity = location === 'bag' ? currentBagCapacity : currentWarehouseCapacity;
+  const nextCapacity = currentCapacity + validExpandSize;
+
+  if (location === 'bag') {
+    if (currentCapacity >= BAG_CAPACITY_MAX) {
+      return { success: false, message: `背包容量已达上限（${BAG_CAPACITY_MAX}格）` };
+    }
+    if (nextCapacity > BAG_CAPACITY_MAX) {
+      return { success: false, message: `扩容后超过上限（${BAG_CAPACITY_MAX}格）` };
+    }
+  }
+
+  const result = await client.query(
+    `
+      UPDATE inventory
+      SET ${column} = ${column} + $1,
+          ${countColumn} = ${countColumn} + 1,
+          updated_at = NOW()
+      WHERE character_id = $2
+      RETURNING ${column} as new_capacity
+    `,
+    [validExpandSize, characterId]
+  );
+
+  if (result.rows.length === 0) {
+    return { success: false, message: '背包不存在' };
+  }
+
+  return {
+    success: true,
+    message: '扩容成功',
+    newCapacity: Number(result.rows[0].new_capacity) || nextCapacity,
+  };
+};
+
 export const expandInventory = async (
   characterId: number,
-  location: 'bag' | 'warehouse',
+  location: SlottedInventoryLocation,
   expandSize: number = 10
 ): Promise<{ success: boolean; message: string; newCapacity?: number }> => {
   const client = await pool.connect();
-  const column = location === 'bag' ? 'bag_capacity' : 'warehouse_capacity';
-  const countColumn = location === 'bag' ? 'bag_expand_count' : 'warehouse_expand_count';
 
   try {
     await client.query('BEGIN');
     await lockCharacterInventoryMutexTx(client, characterId);
 
-    const result = await client.query(
-      `
-        UPDATE inventory
-        SET ${column} = ${column} + $1,
-            ${countColumn} = ${countColumn} + 1,
-            updated_at = NOW()
-        WHERE character_id = $2
-        RETURNING ${column} as new_capacity
-      `,
-      [expandSize, characterId]
-    );
-
-    if (result.rows.length === 0) {
+    const result = await expandInventoryWithClient(client, characterId, location, expandSize);
+    if (!result.success) {
       await client.query('ROLLBACK');
-      return { success: false, message: '背包不存在' };
+      return result;
     }
 
     await client.query('COMMIT');
-    return {
-      success: true,
-      message: '扩容成功',
-      newCapacity: result.rows[0].new_capacity,
-    };
+    return result;
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('扩容背包失败:', error);
