@@ -352,16 +352,6 @@
   background: var(--panel-bg-soft);
 }
 
-.sect-building-requirements-note {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-tertiary);
-}
-
-.sect-building-requirements-note.is-lack {
-  color: var(--danger-color);
-}
-
 .sect-building-actions {
   display: flex;
   gap: 10px;

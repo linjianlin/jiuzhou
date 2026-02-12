@@ -683,7 +683,7 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
             <div className="sect-stat-v">{s.funds.toLocaleString()}</div>
           </div>
           <div className="sect-stat">
-            <div className="sect-stat-k">建设点</div>
+            <div className="sect-stat-k">建筑点</div>
             <div className="sect-stat-v">{s.buildPoints.toLocaleString()}</div>
           </div>
           <div className="sect-stat">
@@ -783,14 +783,6 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
           {buildings.map((b) => {
             const loadingKey = `upgrade-${b.buildingType}`;
             const canTriggerUpgrade = b.requirement.upgradable && canUpgradeBuilding && b.canAfford;
-            const missingParts: string[] = [];
-            if (b.fundsGap > 0) missingParts.push(`资金 ${b.fundsGap.toLocaleString()}`);
-            if (b.buildPointsGap > 0) missingParts.push(`建设点 ${b.buildPointsGap.toLocaleString()}`);
-            const requirementStatusText = b.requirement.upgradable
-              ? b.canAfford
-                ? '资源满足，可进行升级'
-                : `资源不足：${missingParts.join('，')}`
-              : b.requirement.reason || '暂不可升级';
             const upgradeBtnText = !b.requirement.upgradable
               ? b.requirement.reason || '暂不可升级'
               : !canUpgradeBuilding
@@ -829,9 +821,6 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
                   ) : (
                     <div className="sect-building-requirement-locked">{b.requirement.reason || '暂不可升级'}</div>
                   )}
-                  <div className={`sect-building-requirements-note${b.requirement.upgradable && !b.canAfford ? ' is-lack' : ''}`}>
-                    {requirementStatusText}
-                  </div>
                 </div>
                 <div className="sect-building-actions">
                   <Button
