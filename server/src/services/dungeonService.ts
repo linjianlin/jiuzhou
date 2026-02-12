@@ -1,10 +1,16 @@
 import { pool, query } from '../config/database.js';
 import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from './battleService.js';
-import { createItem, type CreateItemOptions } from './itemService.js';
+import { createItem } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordDungeonClearEvent } from './taskService.js';
 import { applyStaminaRecoveryTx, STAMINA_MAX } from './staminaService.js';
+import { clampQualityRank } from './equipmentDisassembleRules.js';
+import {
+  grantRewardItemWithAutoDisassemble,
+  type AutoDisassembleSetting,
+  type PendingMailItem,
+} from './autoDisassembleRewardService.js';
 import type { PoolClient } from 'pg';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
@@ -1580,6 +1586,67 @@ export const nextDungeonInstance = async (
         );
         const participantCharacterIds = participants.map((p) => Number(p.characterId)).filter((id) => Number.isFinite(id) && id > 0);
         const clearCountMap = new Map<number, number>();
+        const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
+        const itemCategoryCache = new Map<string, string>();
+
+        const appendGrantedItem = (
+          list: Array<{ item_def_id: string; qty: number; item_ids: number[] }>,
+          itemDefId: string,
+          qty: number,
+          itemIds: number[]
+        ) => {
+          const normalizedQty = Math.max(0, Math.floor(qty));
+          if (normalizedQty <= 0) return;
+          const safeItemIds = itemIds.filter((id) => Number.isInteger(id) && id > 0);
+          const existing = list.find((item) => item.item_def_id === itemDefId);
+          if (existing) {
+            existing.qty += normalizedQty;
+            if (safeItemIds.length > 0) {
+              existing.item_ids.push(...safeItemIds);
+            }
+            return;
+          }
+          list.push({
+            item_def_id: itemDefId,
+            qty: normalizedQty,
+            item_ids: safeItemIds,
+          });
+        };
+
+        const appendPendingMailItems = (characterId: number, userId: number, items: PendingMailItem[]) => {
+          if (items.length <= 0) return;
+          const pending = pendingMailByCharacter.get(characterId) || { userId, items: [] as MailAttachItem[] };
+          for (const item of items) {
+            const targetBindType = item.options?.bindType || 'none';
+            const targetEquipOptionsKey = JSON.stringify(item.options?.equipOptions || null);
+            const existing = pending.items.find((x) => {
+              const bindType = x.options?.bindType || 'none';
+              const equipOptionsKey = JSON.stringify(x.options?.equipOptions || null);
+              return x.item_def_id === item.item_def_id && bindType === targetBindType && equipOptionsKey === targetEquipOptionsKey;
+            });
+            if (existing) {
+              existing.qty += item.qty;
+              continue;
+            }
+            pending.items.push({
+              item_def_id: item.item_def_id,
+              qty: item.qty,
+              ...(item.options ? { options: { ...item.options } } : {}),
+            });
+          }
+          pendingMailByCharacter.set(characterId, pending);
+        };
+
+        const getItemCategory = async (itemDefId: string): Promise<string> => {
+          const cached = itemCategoryCache.get(itemDefId);
+          if (cached) return cached;
+          const itemDefRes = await client.query('SELECT category FROM item_def WHERE id = $1 LIMIT 1', [itemDefId]);
+          const categoryRaw = itemDefRes.rows?.[0]?.category;
+          const category = typeof categoryRaw === 'string' && categoryRaw.length > 0 ? categoryRaw : 'misc';
+          itemCategoryCache.set(itemDefId, category);
+          return category;
+        };
+
         if (participantCharacterIds.length > 0) {
           const clearCountRes = await client.query(
             `
@@ -1595,6 +1662,27 @@ export const nextDungeonInstance = async (
           );
           for (const row of clearCountRes.rows as Array<{ character_id: unknown; cnt: unknown }>) {
             clearCountMap.set(asNumber(row.character_id, 0), asNumber(row.cnt, 0));
+          }
+
+          const settingRes = await client.query(
+            `
+              SELECT id, auto_disassemble_enabled, auto_disassemble_max_quality_rank
+              FROM characters
+              WHERE id = ANY($1)
+            `,
+            [participantCharacterIds]
+          );
+          for (const row of settingRes.rows as Array<{
+            id: unknown;
+            auto_disassemble_enabled: boolean | null;
+            auto_disassemble_max_quality_rank: number | null;
+          }>) {
+            const id = asNumber(row.id, 0);
+            if (!Number.isFinite(id) || id <= 0) continue;
+            autoDisassembleSettings.set(id, {
+              enabled: Boolean(row.auto_disassemble_enabled),
+              maxQualityRank: clampQualityRank(row.auto_disassemble_max_quality_rank, 1),
+            });
           }
         }
 
@@ -1624,50 +1712,47 @@ export const nextDungeonInstance = async (
             );
           }
 
+          const autoDisassembleSetting = autoDisassembleSettings.get(characterId) || {
+            enabled: false,
+            maxQualityRank: 1,
+          };
           const grantedItems: Array<{ item_def_id: string; qty: number; item_ids: number[] }> = [];
           for (const rewardItem of rewardBundle.items) {
-            const createOptions: CreateItemOptions = {
-              location: 'bag',
-              obtainedFrom: 'dungeon_clear_reward',
+            const itemCategory = await getItemCategory(rewardItem.itemDefId);
+            const grantResult = await grantRewardItemWithAutoDisassemble({
+              characterId,
+              itemDefId: rewardItem.itemDefId,
+              qty: rewardItem.qty,
               ...(rewardItem.bindType ? { bindType: rewardItem.bindType } : {}),
-              dbClient: client,
-            };
-            const createResult = await createItem(p.userId, characterId, rewardItem.itemDefId, rewardItem.qty, createOptions);
-            if (createResult.success) {
-              grantedItems.push({
-                item_def_id: rewardItem.itemDefId,
-                qty: rewardItem.qty,
-                item_ids: createResult.itemIds || [],
-              });
-              continue;
-            }
-
-            if (createResult.message === '背包已满') {
-              const pending = pendingMailByCharacter.get(characterId) || { userId: p.userId, items: [] };
-              const existing = pending.items.find(
-                (x) =>
-                  x.item_def_id === rewardItem.itemDefId &&
-                  (x.options?.bindType || 'none') === (rewardItem.bindType || 'none')
-              );
-              if (existing) {
-                existing.qty += rewardItem.qty;
-              } else {
-                pending.items.push({
-                  item_def_id: rewardItem.itemDefId,
-                  qty: rewardItem.qty,
-                  ...(rewardItem.bindType ? { options: { bindType: rewardItem.bindType } } : {}),
+              itemCategory,
+              autoDisassembleSetting,
+              sourceObtainedFrom: 'dungeon_clear_reward',
+              createItem: async ({ itemDefId, qty, bindType, obtainedFrom, equipOptions }) => {
+                return createItem(p.userId, characterId, itemDefId, qty, {
+                  location: 'bag',
+                  obtainedFrom,
+                  ...(bindType ? { bindType } : {}),
+                  ...(equipOptions ? { equipOptions } : {}),
+                  dbClient: client,
                 });
-              }
-              pendingMailByCharacter.set(characterId, pending);
-              grantedItems.push({
-                item_def_id: rewardItem.itemDefId,
-                qty: rewardItem.qty,
-                item_ids: [],
-              });
-              continue;
-            }
+              },
+              deleteItemInstances: async (ownerCharacterId, itemIds) => {
+                const safeItemIds = itemIds.filter((id) => Number.isInteger(id) && id > 0);
+                if (safeItemIds.length <= 0) return;
+                await client.query(
+                  'DELETE FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2)',
+                  [ownerCharacterId, safeItemIds]
+                );
+              },
+            });
 
-            console.warn(`秘境结算发奖失败: ${rewardItem.itemDefId}, ${createResult.message}`);
+            for (const warning of grantResult.warnings) {
+              console.warn(`秘境结算发奖失败: ${warning}`);
+            }
+            for (const granted of grantResult.grantedItems) {
+              appendGrantedItem(grantedItems, granted.itemDefId, granted.qty, granted.itemIds);
+            }
+            appendPendingMailItems(characterId, p.userId, grantResult.pendingMailItems);
           }
 
           const rewardsPayload = {
