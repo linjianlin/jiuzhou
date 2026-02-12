@@ -140,10 +140,11 @@
   }
 
   .bar-label {
-    width: 34px;
+    width: 24px;
     font-size: 12px;
     color: var(--text-tertiary);
     flex: 0 0 auto;
+    text-align: center;
   }
 
   .ant-progress {

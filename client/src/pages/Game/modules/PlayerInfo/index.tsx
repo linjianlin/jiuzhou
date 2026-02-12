@@ -6,6 +6,10 @@ import { gameSocket, type CharacterData } from '../../../../services/gameSocket'
 import { SERVER_BASE, getRealmOverview, uploadAvatar, addAttributePoint, removeAttributePoint, type RealmOverviewDto } from '../../../../services/api';
 import './index.scss';
 
+const staminaMaxFromEnv = Number(import.meta.env.VITE_STAMINA_MAX);
+const STAMINA_DISPLAY_MAX = Number.isFinite(staminaMaxFromEnv) && staminaMaxFromEnv > 0 ? Math.floor(staminaMaxFromEnv) : 100;
+const CHARACTER_REFRESH_INTERVAL_MS = 30_000;
+
 const PlayerInfo: React.FC = () => {
   const { message } = App.useApp();
   const messageRef = useRef(message);
@@ -21,6 +25,12 @@ const PlayerInfo: React.FC = () => {
   // 连接游戏服务器并订阅角色数据
   useEffect(() => {
     gameSocket.connect();
+    gameSocket.refreshCharacter();
+
+    const refreshTimer = window.setInterval(() => {
+      if (document.hidden) return;
+      gameSocket.refreshCharacter();
+    }, CHARACTER_REFRESH_INTERVAL_MS);
 
     const unsubscribe = gameSocket.onCharacterUpdate((data) => {
       setCharacter(data);
@@ -31,6 +41,7 @@ const PlayerInfo: React.FC = () => {
     });
 
     return () => {
+      window.clearInterval(refreshTimer);
       unsubscribe();
       unsubError();
     };
@@ -179,8 +190,11 @@ const PlayerInfo: React.FC = () => {
   const avatarUrl = character.avatar ? `${SERVER_BASE}${character.avatar}` : null;
   const qixueCurrent = Math.min(character.qixue, character.maxQixue);
   const lingqiCurrent = Math.min(character.lingqi, character.maxLingqi);
+  const staminaMax = STAMINA_DISPLAY_MAX;
+  const staminaCurrent = Math.min(staminaMax, Math.max(0, Number(character.stamina) || 0));
   const qixuePercent = clampPercent(character.maxQixue > 0 ? (qixueCurrent / character.maxQixue) * 100 : 0);
   const lingqiPercent = clampPercent(character.maxLingqi > 0 ? (lingqiCurrent / character.maxLingqi) * 100 : 0);
+  const staminaPercent = clampPercent(staminaMax > 0 ? (staminaCurrent / staminaMax) * 100 : 0);
   const expCurrent = Math.max(0, Number(character.exp) || 0);
   const expPercent = clampPercent(
     expNeed && expNeed > 0 ? (expCurrent / expNeed) * 100 : realmOverview?.nextRealm ? 0 : 100,
@@ -269,6 +283,7 @@ const PlayerInfo: React.FC = () => {
 
           <div className="player-bars">
             <div className="bar-item">
+              <span className="bar-label">血</span>
               <div className="bar-progress">
                 <Progress
                   percent={qixuePercent}
@@ -283,6 +298,7 @@ const PlayerInfo: React.FC = () => {
               </div>
             </div>
             <div className="bar-item">
+              <span className="bar-label">灵</span>
               <div className="bar-progress">
                 <Progress
                   percent={lingqiPercent}
@@ -297,6 +313,22 @@ const PlayerInfo: React.FC = () => {
               </div>
             </div>
             <div className="bar-item">
+              <span className="bar-label">体</span>
+              <div className="bar-progress">
+                <Progress
+                  percent={staminaPercent}
+                  strokeColor="var(--success-color)"
+                  railColor="var(--progress-rail-color)"
+                  showInfo={false}
+                  size={{ height: 12 }}
+                />
+                <div className="bar-progress-text">
+                  {staminaCurrent}/{staminaMax}
+                </div>
+              </div>
+            </div>
+            <div className="bar-item">
+              <span className="bar-label">修</span>
               <div className="bar-exp">
                 <div className="bar-progress">
                   <Progress

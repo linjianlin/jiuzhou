@@ -2,6 +2,7 @@ import { query } from '../config/database.js';
 import { createInventoryForCharacter } from '../models/inventoryTable.js';
 import { updateSectionProgress } from './mainQuestService.js';
 import { initCharacterAchievements, updateAchievementProgress } from './achievementService.js';
+import { applyStaminaRecoveryByUserId } from './staminaService.js';
 
 export interface Character {
   id: number;
@@ -73,6 +74,7 @@ export interface CharacterResult {
 // 检查用户是否有角色
 export const checkCharacter = async (userId: number): Promise<CharacterResult> => {
   try {
+    await applyStaminaRecoveryByUserId(userId);
     const result = await query('SELECT * FROM characters WHERE user_id = $1', [userId]);
     
     if (result.rows.length > 0) {
@@ -177,6 +179,7 @@ export const createCharacter = async (
 // 获取角色信息
 export const getCharacter = async (userId: number): Promise<CharacterResult> => {
   try {
+    await applyStaminaRecoveryByUserId(userId);
     const result = await query('SELECT * FROM characters WHERE user_id = $1', [userId]);
     
     if (result.rows.length === 0) {
@@ -302,4 +305,3 @@ export const updateCharacterAutoDisassembleSettings = async (
     return { success: false, message: '更新设置失败' };
   }
 };
-

@@ -4,6 +4,7 @@ import { getBattleState, startDungeonPVEBattle } from './battleService.js';
 import { createItem, type CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordDungeonClearEvent } from './taskService.js';
+import { applyStaminaRecoveryTx, STAMINA_MAX } from './staminaService.js';
 import type { PoolClient } from 'pg';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
@@ -1402,12 +1403,12 @@ export const startDungeonInstance = async (
 
     if (staminaCost > 0) {
       for (const p of participants) {
-        const staminaRes = await client.query(`SELECT stamina FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE`, [p.characterId]);
-        if (staminaRes.rows.length === 0) {
+        const staminaState = await applyStaminaRecoveryTx(client, p.characterId);
+        if (!staminaState) {
           await client.query('ROLLBACK');
           return { success: false, message: '角色不存在' };
         }
-        const stamina = asNumber(staminaRes.rows[0]?.stamina, 0);
+        const stamina = asNumber(staminaState.stamina, 0);
         if (stamina < staminaCost) {
           await client.query('ROLLBACK');
           return { success: false, message: `体力不足，需要${staminaCost}，当前${stamina}` };
@@ -1422,8 +1423,12 @@ export const startDungeonInstance = async (
     if (staminaCost > 0) {
       for (const p of participants) {
         const updRes = await client.query(
-          `UPDATE characters SET stamina = stamina - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND stamina >= $1`,
-          [staminaCost, p.characterId]
+          `UPDATE characters
+              SET stamina = stamina - $1,
+                  stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND stamina >= $1`,
+          [staminaCost, p.characterId, STAMINA_MAX]
         );
         if ((updRes.rowCount ?? 0) === 0) {
           await client.query('ROLLBACK');

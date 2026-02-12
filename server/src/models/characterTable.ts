@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS characters (
   spirit_stones BIGINT DEFAULT 0,                     -- 灵石
   silver BIGINT DEFAULT 0,                            -- 银两
   stamina INTEGER NOT NULL DEFAULT 100,               -- 体力
+  stamina_recover_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- 体力恢复基准时间
   
   -- 境界与经验
   realm VARCHAR(50) DEFAULT '凡人',                   -- 境界
@@ -149,6 +150,16 @@ DO $do$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'characters' AND column_name = 'stamina_recover_at'
+  ) THEN
+    EXECUTE $$COMMENT ON COLUMN characters.stamina_recover_at IS '体力恢复基准时间'$$;
+  END IF;
+END
+$do$;
+DO $do$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
     WHERE table_name = 'characters' AND column_name = 'auto_cast_skills'
   ) THEN
     EXECUTE $$COMMENT ON COLUMN characters.auto_cast_skills IS '自动释放技能开关'$$;
@@ -236,6 +247,7 @@ const columnsToCheck = [
   { name: 'title', type: "VARCHAR(50) DEFAULT '散修'", comment: '称号' },
   { name: 'avatar', type: 'VARCHAR(255) DEFAULT NULL', comment: '头像路径' },
   { name: 'stamina', type: 'INTEGER NOT NULL DEFAULT 100', comment: '体力' },
+  { name: 'stamina_recover_at', type: 'TIMESTAMPTZ NOT NULL DEFAULT NOW()', comment: '体力恢复基准时间' },
   { name: 'attribute_type', type: "VARCHAR(20) DEFAULT 'physical'", comment: '属性类型' },
   { name: 'attribute_element', type: "VARCHAR(10) DEFAULT 'none'", comment: '五行属性' },
   { name: 'lengque', type: 'INTEGER DEFAULT 0', comment: '技能冷却（万分比）' },
@@ -325,4 +337,3 @@ export const initCharacterTable = async (): Promise<void> => {
     throw error;
   }
 };
-

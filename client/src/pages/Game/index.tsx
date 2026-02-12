@@ -2378,6 +2378,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
             }
 
             setDungeonBattleId(String(startRes.data.battleId));
+            gameSocket.refreshCharacter();
           } catch (e) {
             messageRef.current.error((e as { message?: string })?.message || '进入秘境失败');
             setViewMode('map');

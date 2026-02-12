@@ -9,6 +9,7 @@ import { dbToCharacterAttributes } from './GameState.js';
 import { query } from '../config/database.js';
 import { verifyToken, verifySession } from '../services/authService.js';
 import { calculateTechniquePassives } from '../services/characterTechniqueService.js';
+import { applyStaminaRecoveryByUserId } from '../services/staminaService.js';
 
 // 玩家会话
 interface PlayerSession {
@@ -331,6 +332,7 @@ class GameServer {
   // 加载角色数据
   private async loadCharacter(userId: number): Promise<CharacterAttributes | null> {
     try {
+      await applyStaminaRecoveryByUserId(userId);
       const result = await query('SELECT * FROM characters WHERE user_id = $1', [userId]);
       if (result.rows.length === 0) return null;
       const row = result.rows[0] as any;
