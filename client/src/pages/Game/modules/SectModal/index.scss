@@ -229,60 +229,21 @@
 .sect-buildings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .sect-building {
-  --building-accent: var(--primary-color);
-  position: relative;
   border: 1px solid var(--border-color);
-  background: linear-gradient(160deg, var(--panel-bg-soft) 0%, var(--panel-bg) 100%);
+  background: var(--panel-bg-soft);
   border-radius: 14px;
-  padding: 14px 14px;
+  padding: 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  overflow: hidden;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.06);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
-.sect-building::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.08) 0%, transparent 55%);
-  pointer-events: none;
-}
-
-.sect-building:hover {
-  transform: translateY(-2px);
-  border-color: var(--building-accent);
-  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.1);
-}
-
-.sect-building-tone-core {
-  --building-accent: #1677ff;
-}
-
-.sect-building-tone-scripture {
-  --building-accent: #13a8a8;
-}
-
-.sect-building-tone-martial {
-  --building-accent: #fa8c16;
-}
-
-.sect-building-tone-craft {
-  --building-accent: #722ed1;
-}
-
-.sect-building-tone-array {
-  --building-accent: #2f54eb;
+  gap: 10px;
 }
 
 .sect-building-disabled {
-  opacity: 0.96;
+  opacity: 0.92;
 }
 
 .sect-building-top {
@@ -295,37 +256,15 @@
 .sect-building-name-wrap {
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.sect-building-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  border: 1px solid var(--building-accent);
-  background: var(--panel-bg);
-  color: var(--building-accent);
-  font-size: 14px;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.sect-building-name-stack {
-  min-width: 0;
-  display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .sect-building-name {
   font-size: 14px;
   font-weight: 900;
   color: var(--text-color);
-  line-height: 1.2;
+  line-height: 1.4;
 }
 
 .sect-building-level-path {
@@ -396,7 +335,7 @@
 
 .sect-building-requirement-item.is-lack {
   border-color: var(--danger-color);
-  background: rgba(255, 77, 79, 0.12);
+  background: rgba(255, 77, 79, 0.08);
 }
 
 .sect-building-requirement-item.is-lack strong {
