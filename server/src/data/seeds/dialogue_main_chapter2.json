@@ -1,0 +1,198 @@
+{
+  "dialogues": [
+    {
+      "id": "dlg-main-2-001",
+      "name": "第二章-001 灵力波动",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "narration",
+          "text": "灵海忽起波澜，你感知到药王谷方向有一股陌生灵压，似在呼唤。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "药王谷长老",
+          "text": "来得正好。谷中药灵失衡，心魔之气正沿地脉蔓延。先随我入谷。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：前往药王谷深处。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-002",
+      "name": "第二章-002 药王谷探秘",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "药王谷长老",
+          "text": "药圃中的灵植正在异化，先探明源头，再谈炼丹。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：与长老交谈后前往药圃深处。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-003",
+      "name": "第二章-003 灵药采集",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "灵药商人",
+          "text": "镇心丹缺两味主材：灵药与灵珠。先把材料取来，我替你配比。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：采集灵药并收集南海灵珠。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-004",
+      "name": "第二章-004 幽冥谷调查",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "narration",
+          "text": "幽冥谷阴风如刃，鬼卒在石阶间巡游，似在守护某个入口。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：清理幽冥鬼卒，打开前路。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-005",
+      "name": "第二章-005 守墓人的警告",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "幽冥守墓人",
+          "text": "心魔已在幻境中凝形。若你道心不稳，进得去未必出得来。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：准备进入心魔幻境。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-006",
+      "name": "第二章-006 心魔初试",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "幽冥守墓人",
+          "text": "记住，幻境中的敌人并非外物，而是你未曾斩断的执念。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：通关心魔幻境（普通）。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-007",
+      "name": "第二章-007 南海寻踪",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "矿脉探索者",
+          "text": "矿渊里有能稳固神识的灵核，但守矿巨灵非常棘手。你若同行，我愿带路。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：前往灵脉矿渊入口并接取探索。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-008",
+      "name": "第二章-008 矿渊探索",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "narration",
+          "text": "矿洞深处灵光明灭，巨石震颤，像有古老存在在呼吸。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：通关灵脉矿渊（普通）。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-009",
+      "name": "第二章-009 心魔再临",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "幽冥守墓人",
+          "text": "你已具备再战资格。这一次，心魔会以你最强的姿态出现。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：通关心魔幻境（困难）。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-2-010",
+      "name": "第二章-010 炼己成道",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "药王谷长老",
+          "text": "你能直面心魔而不退，已踏入炼己真义。此后之路，便可问鼎采药。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "第二章完成：炼己成道。"
+        }
+      ],
+      "enabled": true
+    }
+  ]
+}

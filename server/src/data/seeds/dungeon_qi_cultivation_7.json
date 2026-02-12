@@ -1,0 +1,845 @@
+{
+  "version": 1,
+  "description": "秘境种子数据 - 炼己期 - 灵脉矿渊",
+  "dungeons": [
+    {
+      "def": {
+        "id": "dungeon-lianqi-lingmai-kuangyuan",
+        "name": "灵脉矿渊",
+        "type": "equipment",
+        "category": "境界",
+        "description": "南海岸地脉裂开后形成的古矿渊，灵晶与煞气并生。矿渊巨灵守护着深层灵核，是炼己期装备的核心产地。",
+        "icon": "/assets/dungeon/storm_rift.png",
+        "background": "/assets/dungeon/bg_storm_rift.png",
+        "min_players": 1,
+        "max_players": 4,
+        "min_realm": "炼炁化神·炼己期",
+        "recommended_realm": "炼炁化神·炼己期",
+        "unlock_condition": {},
+        "daily_limit": 5,
+        "weekly_limit": 0,
+        "stamina_cost": 14,
+        "time_limit_sec": 1080,
+        "revive_limit": 2,
+        "tags": [
+          "炼己期",
+          "装备",
+          "灵脉矿渊"
+        ],
+        "sort_weight": 137,
+        "enabled": true,
+        "version": 1
+      },
+      "difficulties": [
+        {
+          "id": "dd-lianqi-lingmai-n",
+          "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan",
+          "name": "普通",
+          "difficulty_rank": 1,
+          "monster_level_add": 0,
+          "monster_attr_mult": 1.16,
+          "reward_mult": 1,
+          "min_realm": "炼炁化神·炼己期",
+          "unlock_prev_difficulty": false,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-lingmai-jingshi",
+                "qty": 6
+              },
+              {
+                "item_def_id": "mat-youming-gupi",
+                "qty": 4
+              },
+              {
+                "item_def_id": "set-xuanwu-head",
+                "qty": 1
+              }
+            ],
+            "silver": 480,
+            "exp": 500
+          },
+          "drop_pool_id": null,
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-lianqi-lingmai-n-1",
+              "difficulty_id": "dd-lianqi-lingmai-n",
+              "stage_index": 1,
+              "name": "矿道守卫",
+              "type": "battle",
+              "description": "矿道入口遍布石魔与矿兽，必须迅速清理通道。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 90,
+                  "max": 140
+                },
+                "exp": 220,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 2,
+                    "qty_max": 4,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "enhance-001",
+                    "qty_min": 1,
+                    "qty_max": 2,
+                    "chance": 0.8
+                  },
+                  {
+                    "item_def_id": "set-xuanwu-gloves",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.05
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-nanhai-haijiao",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-n-2",
+              "difficulty_id": "dd-lianqi-lingmai-n",
+              "stage_index": 2,
+              "name": "深层矿脉",
+              "type": "battle",
+              "description": "灵晶兽在深层矿脉盘踞，矿渊能量剧烈波动。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 110,
+                  "max": 165
+                },
+                "exp": 260,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 3,
+                    "qty_max": 5,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "mat-youming-gupi",
+                    "qty_min": 1,
+                    "qty_max": 2,
+                    "chance": 0.7
+                  },
+                  {
+                    "item_def_id": "enhance-002",
+                    "qty_min": 1,
+                    "qty_max": 2,
+                    "chance": 0.45
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-n-3",
+              "difficulty_id": "dd-lianqi-lingmai-n",
+              "stage_index": 3,
+              "name": "矿渊核心",
+              "type": "boss",
+              "description": "矿渊巨灵苏醒，矿壁不断坍塌，必须速战速决。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 190,
+                  "max": 280
+                },
+                "exp": 420,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 4,
+                    "qty_max": 7,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "mat-youming-gupi",
+                    "qty_min": 2,
+                    "qty_max": 3,
+                    "chance": 0.8
+                  },
+                  {
+                    "item_def_id": "set-xuanwu-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.07
+                  },
+                  {
+                    "item_def_id": "set-chiyan-artifact",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.05
+                  },
+                  {
+                    "item_def_id": "box-003",
+                    "qty_min": 1,
+                    "qty_max": 2,
+                    "chance": 0.6
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-kuangyuan-juling",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dd-lianqi-lingmai-h",
+          "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan",
+          "name": "困难",
+          "difficulty_rank": 2,
+          "monster_level_add": 2,
+          "monster_attr_mult": 1.34,
+          "reward_mult": 1.35,
+          "min_realm": "炼炁化神·炼己期",
+          "unlock_prev_difficulty": true,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-lingmai-jingshi",
+                "qty": 10
+              },
+              {
+                "item_def_id": "mat-youming-gupi",
+                "qty": 6
+              },
+              {
+                "item_def_id": "set-chiyan-head",
+                "qty": 1
+              }
+            ],
+            "silver": 700,
+            "exp": 760
+          },
+          "drop_pool_id": null,
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-lianqi-lingmai-h-1",
+              "difficulty_id": "dd-lianqi-lingmai-h",
+              "stage_index": 1,
+              "name": "矿道守卫·极",
+              "type": "battle",
+              "description": "石魔连携突袭，前排承伤压力显著提高。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 140,
+                  "max": 205
+                },
+                "exp": 320,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 3,
+                    "qty_max": 5,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "enhance-002",
+                    "qty_min": 1,
+                    "qty_max": 2,
+                    "chance": 0.55
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-h-2",
+              "difficulty_id": "dd-lianqi-lingmai-h",
+              "stage_index": 2,
+              "name": "深层矿脉·极",
+              "type": "battle",
+              "description": "精英晶兽领队突进，需分配火力优先处理。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 165,
+                  "max": 240
+                },
+                "exp": 360,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 4,
+                    "qty_max": 6,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "mat-youming-gupi",
+                    "qty_min": 2,
+                    "qty_max": 3,
+                    "chance": 0.85
+                  },
+                  {
+                    "item_def_id": "set-xuanwu-clothes",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.07
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-h-3",
+              "difficulty_id": "dd-lianqi-lingmai-h",
+              "stage_index": 3,
+              "name": "矿渊核心·极",
+              "type": "boss",
+              "description": "矿渊巨灵吸收灵核后力量飙升。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 260,
+                  "max": 360
+                },
+                "exp": 560,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 6,
+                    "qty_max": 9,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "mat-youming-gupi",
+                    "qty_min": 3,
+                    "qty_max": 4,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "set-xuanwu-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.09
+                  },
+                  {
+                    "item_def_id": "set-chiyan-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.08
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-kuangyuan-juling",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-h-4",
+              "difficulty_id": "dd-lianqi-lingmai-h",
+              "stage_index": 4,
+              "name": "秘宝矿室",
+              "type": "battle",
+              "description": "破开封印后出现守宝傀儡，击败后可获得额外材料。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 120,
+                  "max": 180
+                },
+                "exp": 260,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 5,
+                    "qty_max": 8,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "enhance-002",
+                    "qty_min": 2,
+                    "qty_max": 3,
+                    "chance": 0.85
+                  },
+                  {
+                    "item_def_id": "set-tianxuan-necklace",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.08
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dd-lianqi-lingmai-m",
+          "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan",
+          "name": "噩梦",
+          "difficulty_rank": 3,
+          "monster_level_add": 4,
+          "monster_attr_mult": 1.56,
+          "reward_mult": 1.72,
+          "min_realm": "炼炁化神·炼己期",
+          "unlock_prev_difficulty": true,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-lingmai-jingshi",
+                "qty": 14
+              },
+              {
+                "item_def_id": "mat-youming-gupi",
+                "qty": 10
+              },
+              {
+                "item_def_id": "set-tianxuan-artifact",
+                "qty": 1
+              }
+            ],
+            "silver": 980,
+            "exp": 1080
+          },
+          "drop_pool_id": null,
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-lianqi-lingmai-m-1",
+              "difficulty_id": "dd-lianqi-lingmai-m",
+              "stage_index": 1,
+              "name": "矿道守卫·噩",
+              "type": "battle",
+              "description": "守卫石魔持续召唤矿灵，节奏极快。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 210,
+                  "max": 300
+                },
+                "exp": 430,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 5,
+                    "qty_max": 8,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "enhance-002",
+                    "qty_min": 2,
+                    "qty_max": 3,
+                    "chance": 0.8
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-lingmai-shimo",
+                      "count": 4
+                    },
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-m-2",
+              "difficulty_id": "dd-lianqi-lingmai-m",
+              "stage_index": 2,
+              "name": "深层矿脉·噩",
+              "type": "battle",
+              "description": "矿脉气潮失控，灵晶兽获得额外护甲。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 240,
+                  "max": 340
+                },
+                "exp": 480,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 6,
+                    "qty_max": 9,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "mat-youming-gupi",
+                    "qty_min": 3,
+                    "qty_max": 5,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "set-xuanwu-clothes",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.1
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 3
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-m-3",
+              "difficulty_id": "dd-lianqi-lingmai-m",
+              "stage_index": 3,
+              "name": "矿渊核心·噩",
+              "type": "boss",
+              "description": "矿渊巨灵完全共鸣地脉，防御与输出同步暴涨。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 360,
+                  "max": 500
+                },
+                "exp": 780,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 8,
+                    "qty_max": 12,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "mat-youming-gupi",
+                    "qty_min": 4,
+                    "qty_max": 6,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "set-chiyan-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.12
+                  },
+                  {
+                    "item_def_id": "set-xuanwu-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.12
+                  },
+                  {
+                    "item_def_id": "set-tianxuan-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.12
+                  },
+                  {
+                    "item_def_id": "set-qinglian-weapon",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.12
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-kuangyuan-juling",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-lianqi-lingmai-m-4",
+              "difficulty_id": "dd-lianqi-lingmai-m",
+              "stage_index": 4,
+              "name": "秘宝矿室·噩",
+              "type": "battle",
+              "description": "矿室封印解除后，守宝怪群会发起最后反扑。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "stage_rewards": {
+                "silver": {
+                  "min": 180,
+                  "max": 260
+                },
+                "exp": 350,
+                "items": [
+                  {
+                    "item_def_id": "mat-lingmai-jingshi",
+                    "qty_min": 7,
+                    "qty_max": 10,
+                    "chance": 1
+                  },
+                  {
+                    "item_def_id": "enhance-002",
+                    "qty_min": 3,
+                    "qty_max": 4,
+                    "chance": 0.9
+                  },
+                  {
+                    "item_def_id": "set-tianxuan-artifact",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.1
+                  },
+                  {
+                    "item_def_id": "set-qinglian-artifact",
+                    "qty_min": 1,
+                    "qty_max": 1,
+                    "chance": 0.1
+                  }
+                ]
+              },
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

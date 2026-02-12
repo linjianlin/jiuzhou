@@ -1864,6 +1864,1310 @@
       ],
       "quality_min": "玄",
       "quality_max": "天"
+    },
+    {
+      "_comment": "========== 炼己期地品套装：赤焰套装 =========="
+    },
+    {
+      "id": "set-chiyan-weapon",
+      "code": "chiyan_weapon",
+      "name": "赤焰斩刀",
+      "category": "equipment",
+      "sub_category": "sword",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 30,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 520,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/xuan_tie_chong_jian.png",
+      "description": "赤焰套装·武器，偏向物攻构筑。",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "wugong": 16,
+        "baoji": 120
+      },
+      "implicit_attrs": {
+        "wugong": 8,
+        "mingzhong": 90
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "affix_count_min": 3,
+      "affix_count_max": 4,
+      "set_id": "set-chiyan",
+      "tags": [
+        "武器",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-head",
+      "code": "chiyan_head",
+      "name": "赤焰战盔",
+      "category": "equipment",
+      "sub_category": "hat",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 360,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_guan.png",
+      "description": "赤焰套装·头部，偏向物攻构筑。",
+      "equip_slot": "head",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 120,
+        "wufang": 10,
+        "baoji": 60
+      },
+      "implicit_attrs": {
+        "max_qixue": 90
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-chiyan",
+      "tags": [
+        "头部",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-clothes",
+      "code": "chiyan_clothes",
+      "name": "赤焰战甲",
+      "category": "equipment",
+      "sub_category": "robe",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 410,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_pao.png",
+      "description": "赤焰套装·衣服，偏向物攻构筑。",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 180,
+        "wufang": 14,
+        "zengshang": 80
+      },
+      "implicit_attrs": {
+        "wufang": 12
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-chiyan",
+      "tags": [
+        "衣服",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-gloves",
+      "code": "chiyan_gloves",
+      "name": "赤焰护手",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 330,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_shou.png",
+      "description": "赤焰套装·手部，偏向物攻构筑。",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "wugong": 10,
+        "baoji": 80
+      },
+      "implicit_attrs": {
+        "baoji": 70
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-chiyan",
+      "tags": [
+        "手部",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-pants",
+      "code": "chiyan_pants",
+      "name": "赤焰胫甲",
+      "category": "equipment",
+      "sub_category": "pants",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 350,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_ku.png",
+      "description": "赤焰套装·腿部，偏向物攻构筑。",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 150,
+        "wufang": 12,
+        "shanbi": 80
+      },
+      "implicit_attrs": {
+        "max_qixue": 100
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-chiyan",
+      "tags": [
+        "腿部",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-necklace",
+      "code": "chiyan_necklace",
+      "name": "赤焰坠",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/zi_xiao_lian.png",
+      "description": "赤焰套装·项链，偏向物攻构筑。",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "wugong": 8,
+        "baoshang": 160
+      },
+      "implicit_attrs": {
+        "baoshang": 80
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-chiyan",
+      "tags": [
+        "项链",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-accessory",
+      "code": "chiyan_accessory",
+      "name": "赤焰戒",
+      "category": "equipment",
+      "sub_category": "ring",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_jie.png",
+      "description": "赤焰套装·戒指，偏向物攻构筑。",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "baoji": 120,
+        "baoshang": 120
+      },
+      "implicit_attrs": {
+        "baoji": 60
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-chiyan",
+      "tags": [
+        "戒指",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-chiyan-artifact",
+      "code": "chiyan_artifact",
+      "name": "赤焰火印",
+      "category": "equipment",
+      "sub_category": "token",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 420,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_zhang.png",
+      "description": "赤焰套装·法宝，偏向物攻构筑。",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "zengshang": 160,
+        "huo_kangxing": 140
+      },
+      "implicit_attrs": {
+        "zengshang": 90
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-chiyan",
+      "tags": [
+        "法宝",
+        "赤焰套装",
+        "物攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "_comment": "========== 炼己期地品套装：玄武套装 =========="
+    },
+    {
+      "id": "set-xuanwu-weapon",
+      "code": "xuanwu_weapon",
+      "name": "玄武重戟",
+      "category": "equipment",
+      "sub_category": "sword",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 30,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 520,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/xuan_tie_chong_jian.png",
+      "description": "玄武套装·武器，偏向坦克构筑。",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "wugong": 12,
+        "wufang": 12
+      },
+      "implicit_attrs": {
+        "wugong": 6,
+        "wufang": 8
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "affix_count_min": 3,
+      "affix_count_max": 4,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "武器",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-head",
+      "code": "xuanwu_head",
+      "name": "玄武铁盔",
+      "category": "equipment",
+      "sub_category": "hat",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 360,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_guan.png",
+      "description": "玄武套装·头部，偏向坦克构筑。",
+      "equip_slot": "head",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 220,
+        "wufang": 16,
+        "kangbao": 120
+      },
+      "implicit_attrs": {
+        "max_qixue": 120
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "头部",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-clothes",
+      "code": "xuanwu_clothes",
+      "name": "玄武重铠",
+      "category": "equipment",
+      "sub_category": "robe",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 410,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_pao.png",
+      "description": "玄武套装·衣服，偏向坦克构筑。",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 320,
+        "wufang": 20,
+        "fafang": 16
+      },
+      "implicit_attrs": {
+        "max_qixue": 160
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "衣服",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-gloves",
+      "code": "xuanwu_gloves",
+      "name": "玄武臂铠",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 330,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_shou.png",
+      "description": "玄武套装·手部，偏向坦克构筑。",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "wufang": 14,
+        "zhaojia": 120
+      },
+      "implicit_attrs": {
+        "zhaojia": 80
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "手部",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-pants",
+      "code": "xuanwu_pants",
+      "name": "玄武腿铠",
+      "category": "equipment",
+      "sub_category": "pants",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 350,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_ku.png",
+      "description": "玄武套装·腿部，偏向坦克构筑。",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 260,
+        "fafang": 16
+      },
+      "implicit_attrs": {
+        "fafang": 10
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "腿部",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-necklace",
+      "code": "xuanwu_necklace",
+      "name": "玄武护链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/zi_xiao_lian.png",
+      "description": "玄武套装·项链，偏向坦克构筑。",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 180,
+        "kangbao": 140
+      },
+      "implicit_attrs": {
+        "kangbao": 80
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "项链",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-accessory",
+      "code": "xuanwu_accessory",
+      "name": "玄武玄环",
+      "category": "equipment",
+      "sub_category": "ring",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_jie.png",
+      "description": "玄武套装·戒指，偏向坦克构筑。",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "wufang": 12,
+        "fafang": 12
+      },
+      "implicit_attrs": {
+        "wufang": 8
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "戒指",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-xuanwu-artifact",
+      "code": "xuanwu_artifact",
+      "name": "玄武龟甲印",
+      "category": "equipment",
+      "sub_category": "token",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 420,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_zhang.png",
+      "description": "玄武套装·法宝，偏向坦克构筑。",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "kongzhi_kangxing": 180,
+        "zhaojia": 160
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing": 120
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-xuanwu",
+      "tags": [
+        "法宝",
+        "玄武套装",
+        "坦克",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "_comment": "========== 炼己期地品套装：天璇套装 =========="
+    },
+    {
+      "id": "set-tianxuan-weapon",
+      "code": "tianxuan_weapon",
+      "name": "天璇法杖",
+      "category": "equipment",
+      "sub_category": "sword",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 30,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 520,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/xuan_tie_chong_jian.png",
+      "description": "天璇套装·武器，偏向法攻构筑。",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "fagong": 18,
+        "baoji": 90
+      },
+      "implicit_attrs": {
+        "fagong": 9,
+        "mingzhong": 90
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "affix_count_min": 3,
+      "affix_count_max": 4,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "武器",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-head",
+      "code": "tianxuan_head",
+      "name": "天璇灵冠",
+      "category": "equipment",
+      "sub_category": "hat",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 360,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_guan.png",
+      "description": "天璇套装·头部，偏向法攻构筑。",
+      "equip_slot": "head",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_lingqi": 100,
+        "fafang": 12,
+        "baoji": 70
+      },
+      "implicit_attrs": {
+        "max_lingqi": 80
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "头部",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-clothes",
+      "code": "tianxuan_clothes",
+      "name": "天璇法袍",
+      "category": "equipment",
+      "sub_category": "robe",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 410,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_pao.png",
+      "description": "天璇套装·衣服，偏向法攻构筑。",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_lingqi": 130,
+        "fafang": 16,
+        "lengque": 120
+      },
+      "implicit_attrs": {
+        "fafang": 10
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "衣服",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-gloves",
+      "code": "tianxuan_gloves",
+      "name": "天璇护腕",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 330,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_shou.png",
+      "description": "天璇套装·手部，偏向法攻构筑。",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "fagong": 10,
+        "baoji": 80
+      },
+      "implicit_attrs": {
+        "baoji": 70
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "手部",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-pants",
+      "code": "tianxuan_pants",
+      "name": "天璇灵履",
+      "category": "equipment",
+      "sub_category": "pants",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 350,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_ku.png",
+      "description": "天璇套装·腿部，偏向法攻构筑。",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 120,
+        "fafang": 14,
+        "max_lingqi": 80
+      },
+      "implicit_attrs": {
+        "max_lingqi": 60
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "腿部",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-necklace",
+      "code": "tianxuan_necklace",
+      "name": "天璇星链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/zi_xiao_lian.png",
+      "description": "天璇套装·项链，偏向法攻构筑。",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "fagong": 9,
+        "max_lingqi": 80
+      },
+      "implicit_attrs": {
+        "fagong": 6
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "项链",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-accessory",
+      "code": "tianxuan_accessory",
+      "name": "天璇星戒",
+      "category": "equipment",
+      "sub_category": "ring",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_jie.png",
+      "description": "天璇套装·戒指，偏向法攻构筑。",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "baoji": 130,
+        "lengque": 120
+      },
+      "implicit_attrs": {
+        "lengque": 80
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "戒指",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-tianxuan-artifact",
+      "code": "tianxuan_artifact",
+      "name": "天璇星盘",
+      "category": "equipment",
+      "sub_category": "token",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 420,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_zhang.png",
+      "description": "天璇套装·法宝，偏向法攻构筑。",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "zengshang": 180,
+        "lingqi_huifu": 120
+      },
+      "implicit_attrs": {
+        "lingqi_huifu": 90
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-tianxuan",
+      "tags": [
+        "法宝",
+        "天璇套装",
+        "法攻",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "_comment": "========== 炼己期地品套装：青莲套装 =========="
+    },
+    {
+      "id": "set-qinglian-weapon",
+      "code": "qinglian_weapon",
+      "name": "青莲玉扇",
+      "category": "equipment",
+      "sub_category": "sword",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 30,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 520,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/xuan_tie_chong_jian.png",
+      "description": "青莲套装·武器，偏向治疗构筑。",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "zhiliao": 220,
+        "fagong": 10
+      },
+      "implicit_attrs": {
+        "zhiliao": 120
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "affix_count_min": 3,
+      "affix_count_max": 4,
+      "set_id": "set-qinglian",
+      "tags": [
+        "武器",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-head",
+      "code": "qinglian_head",
+      "name": "青莲灵冠",
+      "category": "equipment",
+      "sub_category": "hat",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 360,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_guan.png",
+      "description": "青莲套装·头部，偏向治疗构筑。",
+      "equip_slot": "head",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 180,
+        "max_lingqi": 80
+      },
+      "implicit_attrs": {
+        "max_qixue": 100
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-qinglian",
+      "tags": [
+        "头部",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-clothes",
+      "code": "qinglian_clothes",
+      "name": "青莲羽衣",
+      "category": "equipment",
+      "sub_category": "robe",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 410,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_pao.png",
+      "description": "青莲套装·衣服，偏向治疗构筑。",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 260,
+        "fafang": 18,
+        "zhiliao": 120
+      },
+      "implicit_attrs": {
+        "fafang": 12
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-qinglian",
+      "tags": [
+        "衣服",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-gloves",
+      "code": "qinglian_gloves",
+      "name": "青莲纱手",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 330,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_shou.png",
+      "description": "青莲套装·手部，偏向治疗构筑。",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "zhiliao": 160,
+        "qixue_huifu": 120
+      },
+      "implicit_attrs": {
+        "qixue_huifu": 80
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-qinglian",
+      "tags": [
+        "手部",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-pants",
+      "code": "qinglian_pants",
+      "name": "青莲云履",
+      "category": "equipment",
+      "sub_category": "pants",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 350,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/qing_feng_ku.png",
+      "description": "青莲套装·腿部，偏向治疗构筑。",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_qixue": 200,
+        "fafang": 16
+      },
+      "implicit_attrs": {
+        "max_qixue": 100
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "set_id": "set-qinglian",
+      "tags": [
+        "腿部",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-necklace",
+      "code": "qinglian_necklace",
+      "name": "青莲心链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/zi_xiao_lian.png",
+      "description": "青莲套装·项链，偏向治疗构筑。",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "max_lingqi": 100,
+        "zhiliao": 140
+      },
+      "implicit_attrs": {
+        "zhiliao": 90
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-qinglian",
+      "tags": [
+        "项链",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-accessory",
+      "code": "qinglian_accessory",
+      "name": "青莲灵佩",
+      "category": "equipment",
+      "sub_category": "ring",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 300,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_jie.png",
+      "description": "青莲套装·戒指，偏向治疗构筑。",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "qixue_huifu": 160,
+        "xixue": 100
+      },
+      "implicit_attrs": {
+        "xixue": 60
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-qinglian",
+      "tags": [
+        "戒指",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "set-qinglian-artifact",
+      "code": "qinglian_artifact",
+      "name": "青莲宝莲台",
+      "category": "equipment",
+      "sub_category": "token",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 28,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 420,
+      "sell_price_spirit_stones": 8,
+      "icon": "/assets/items/bi_luo_zhang.png",
+      "description": "青莲套装·法宝，偏向治疗构筑。",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼炁化神·炼己期",
+      "base_attrs": {
+        "zhiliao": 220,
+        "kongzhi_kangxing": 120
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing": 90
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 3,
+      "set_id": "set-qinglian",
+      "tags": [
+        "法宝",
+        "青莲套装",
+        "治疗",
+        "炼己期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
     }
   ]
 }

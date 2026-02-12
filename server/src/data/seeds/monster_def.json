@@ -31,11 +31,26 @@
       "attr_multiplier_min": 0.95,
       "attr_multiplier_max": 1.1,
       "display_stats": [
-        { "label": "等级", "value": 1 },
-        { "label": "气血", "value": 60 },
-        { "label": "物攻", "value": 5 },
-        { "label": "物防", "value": 2 },
-        { "label": "速度", "value": 4 }
+        {
+          "label": "等级",
+          "value": 1
+        },
+        {
+          "label": "气血",
+          "value": 60
+        },
+        {
+          "label": "物攻",
+          "value": 5
+        },
+        {
+          "label": "物防",
+          "value": 2
+        },
+        {
+          "label": "速度",
+          "value": 4
+        }
       ],
       "ai_profile": {
         "behavior": "passive",
@@ -76,11 +91,26 @@
       "attr_multiplier_min": 1.05,
       "attr_multiplier_max": 1.2,
       "display_stats": [
-        { "label": "等级", "value": 2 },
-        { "label": "气血", "value": 110 },
-        { "label": "物攻", "value": 10 },
-        { "label": "物防", "value": 6 },
-        { "label": "速度", "value": 3 }
+        {
+          "label": "等级",
+          "value": 2
+        },
+        {
+          "label": "气血",
+          "value": 110
+        },
+        {
+          "label": "物攻",
+          "value": 10
+        },
+        {
+          "label": "物防",
+          "value": 6
+        },
+        {
+          "label": "速度",
+          "value": 3
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
@@ -121,15 +151,32 @@
       "attr_multiplier_min": 1.08,
       "attr_multiplier_max": 1.25,
       "display_stats": [
-        { "label": "等级", "value": 3 },
-        { "label": "气血", "value": 170 },
-        { "label": "物攻", "value": 15 },
-        { "label": "物防", "value": 7 },
-        { "label": "速度", "value": 5 }
+        {
+          "label": "等级",
+          "value": 3
+        },
+        {
+          "label": "气血",
+          "value": 170
+        },
+        {
+          "label": "物攻",
+          "value": 15
+        },
+        {
+          "label": "物防",
+          "value": 7
+        },
+        {
+          "label": "速度",
+          "value": 5
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-bite"]
+        "skills": [
+          "sk-bite"
+        ]
       },
       "drop_pool_id": "dp-gray-wolf",
       "exp_reward": 12,
@@ -166,15 +213,33 @@
       "attr_multiplier_min": 1.12,
       "attr_multiplier_max": 1.3,
       "display_stats": [
-        { "label": "等级", "value": 5 },
-        { "label": "气血", "value": 260 },
-        { "label": "物攻", "value": 22 },
-        { "label": "物防", "value": 10 },
-        { "label": "速度", "value": 6 }
+        {
+          "label": "等级",
+          "value": 5
+        },
+        {
+          "label": "气血",
+          "value": 260
+        },
+        {
+          "label": "物攻",
+          "value": 22
+        },
+        {
+          "label": "物防",
+          "value": 10
+        },
+        {
+          "label": "速度",
+          "value": 6
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-bite", "sk-howl"]
+        "skills": [
+          "sk-bite",
+          "sk-howl"
+        ]
       },
       "drop_pool_id": "dp-mountain-wolf",
       "exp_reward": 20,
@@ -211,15 +276,32 @@
       "attr_multiplier_min": 1.1,
       "attr_multiplier_max": 1.28,
       "display_stats": [
-        { "label": "等级", "value": 4 },
-        { "label": "气血", "value": 140 },
-        { "label": "物攻", "value": 16 },
-        { "label": "物防", "value": 5 },
-        { "label": "速度", "value": 7 }
+        {
+          "label": "等级",
+          "value": 4
+        },
+        {
+          "label": "气血",
+          "value": 140
+        },
+        {
+          "label": "物攻",
+          "value": 16
+        },
+        {
+          "label": "物防",
+          "value": 5
+        },
+        {
+          "label": "速度",
+          "value": 7
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-poison-bite"]
+        "skills": [
+          "sk-poison-bite"
+        ]
       },
       "drop_pool_id": "dp-venomous-snake",
       "exp_reward": 15,
@@ -256,15 +338,32 @@
       "attr_multiplier_min": 1.1,
       "attr_multiplier_max": 1.3,
       "display_stats": [
-        { "label": "等级", "value": 6 },
-        { "label": "气血", "value": 340 },
-        { "label": "物攻", "value": 24 },
-        { "label": "物防", "value": 20 },
-        { "label": "速度", "value": 2 }
+        {
+          "label": "等级",
+          "value": 6
+        },
+        {
+          "label": "气血",
+          "value": 340
+        },
+        {
+          "label": "物攻",
+          "value": 24
+        },
+        {
+          "label": "物防",
+          "value": 20
+        },
+        {
+          "label": "速度",
+          "value": 2
+        }
       ],
       "ai_profile": {
         "behavior": "passive",
-        "skills": ["sk-stone-smash"]
+        "skills": [
+          "sk-stone-smash"
+        ]
       },
       "drop_pool_id": "dp-stone-golem",
       "exp_reward": 25,
@@ -301,16 +400,39 @@
       "attr_multiplier_min": 1.15,
       "attr_multiplier_max": 1.35,
       "display_stats": [
-        { "label": "等级", "value": 8 },
-        { "label": "气血", "value": 500 },
-        { "label": "物攻", "value": 40 },
-        { "label": "物防", "value": 22 },
-        { "label": "速度", "value": 8 }
+        {
+          "label": "等级",
+          "value": 8
+        },
+        {
+          "label": "气血",
+          "value": 500
+        },
+        {
+          "label": "物攻",
+          "value": 40
+        },
+        {
+          "label": "物防",
+          "value": 22
+        },
+        {
+          "label": "速度",
+          "value": 8
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-bite", "sk-howl", "sk-pack-attack"],
-        "skill_weights": { "sk-bite": 50, "sk-howl": 30, "sk-pack-attack": 20 }
+        "skills": [
+          "sk-bite",
+          "sk-howl",
+          "sk-pack-attack"
+        ],
+        "skill_weights": {
+          "sk-bite": 50,
+          "sk-howl": 30,
+          "sk-pack-attack": 20
+        }
       },
       "drop_pool_id": "dp-wolf-king",
       "exp_reward": 80,
@@ -348,19 +470,52 @@
       "attr_multiplier_min": 1.15,
       "attr_multiplier_max": 1.35,
       "display_stats": [
-        { "label": "等级", "value": 10 },
-        { "label": "气血", "value": 2000 },
-        { "label": "法攻", "value": 50 },
-        { "label": "物防", "value": 30 },
-        { "label": "法防", "value": 40 }
+        {
+          "label": "等级",
+          "value": 10
+        },
+        {
+          "label": "气血",
+          "value": 2000
+        },
+        {
+          "label": "法攻",
+          "value": 50
+        },
+        {
+          "label": "物防",
+          "value": 30
+        },
+        {
+          "label": "法防",
+          "value": 40
+        }
       ],
       "ai_profile": {
         "behavior": "boss",
-        "skills": ["sk-vine-whip", "sk-poison-spore", "sk-root-bind", "sk-nature-heal"],
-        "skill_weights": { "sk-vine-whip": 40, "sk-poison-spore": 25, "sk-root-bind": 20, "sk-nature-heal": 15 },
+        "skills": [
+          "sk-vine-whip",
+          "sk-poison-spore",
+          "sk-root-bind",
+          "sk-nature-heal"
+        ],
+        "skill_weights": {
+          "sk-vine-whip": 40,
+          "sk-poison-spore": 25,
+          "sk-root-bind": 20,
+          "sk-nature-heal": 15
+        },
         "phase_triggers": [
-          { "hp_percent": 50, "action": "enrage", "buff": "damage_up_20" },
-          { "hp_percent": 20, "action": "summon", "summon_id": "monster-tree-spirit" }
+          {
+            "hp_percent": 50,
+            "action": "enrage",
+            "buff": "damage_up_20"
+          },
+          {
+            "hp_percent": 20,
+            "action": "summon",
+            "summon_id": "monster-tree-spirit"
+          }
         ]
       },
       "drop_pool_id": "dp-ancient-tree",
@@ -398,15 +553,32 @@
       "attr_multiplier_min": 1.1,
       "attr_multiplier_max": 1.28,
       "display_stats": [
-        { "label": "等级", "value": 6 },
-        { "label": "气血", "value": 320 },
-        { "label": "物攻", "value": 28 },
-        { "label": "物防", "value": 12 },
-        { "label": "速度", "value": 6 }
+        {
+          "label": "等级",
+          "value": 6
+        },
+        {
+          "label": "气血",
+          "value": 320
+        },
+        {
+          "label": "物攻",
+          "value": 28
+        },
+        {
+          "label": "物防",
+          "value": 12
+        },
+        {
+          "label": "速度",
+          "value": 6
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-bite"]
+        "skills": [
+          "sk-bite"
+        ]
       },
       "drop_pool_id": "dp-ruins-jackal",
       "exp_reward": 28,
@@ -443,15 +615,32 @@
       "attr_multiplier_min": 1.12,
       "attr_multiplier_max": 1.3,
       "display_stats": [
-        { "label": "等级", "value": 7 },
-        { "label": "气血", "value": 300 },
-        { "label": "法攻", "value": 18 },
-        { "label": "法防", "value": 16 },
-        { "label": "速度", "value": 8 }
+        {
+          "label": "等级",
+          "value": 7
+        },
+        {
+          "label": "气血",
+          "value": 300
+        },
+        {
+          "label": "法攻",
+          "value": 18
+        },
+        {
+          "label": "法防",
+          "value": 16
+        },
+        {
+          "label": "速度",
+          "value": 8
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-poison-bite"]
+        "skills": [
+          "sk-poison-bite"
+        ]
       },
       "drop_pool_id": "dp-shadow-viper",
       "exp_reward": 34,
@@ -488,15 +677,32 @@
       "attr_multiplier_min": 1.12,
       "attr_multiplier_max": 1.32,
       "display_stats": [
-        { "label": "等级", "value": 8 },
-        { "label": "气血", "value": 560 },
-        { "label": "物攻", "value": 34 },
-        { "label": "物防", "value": 30 },
-        { "label": "速度", "value": 2 }
+        {
+          "label": "等级",
+          "value": 8
+        },
+        {
+          "label": "气血",
+          "value": 560
+        },
+        {
+          "label": "物攻",
+          "value": 34
+        },
+        {
+          "label": "物防",
+          "value": 30
+        },
+        {
+          "label": "速度",
+          "value": 2
+        }
       ],
       "ai_profile": {
         "behavior": "passive",
-        "skills": ["sk-stone-smash"]
+        "skills": [
+          "sk-stone-smash"
+        ]
       },
       "drop_pool_id": "dp-rune-golem",
       "exp_reward": 46,
@@ -533,15 +739,33 @@
       "attr_multiplier_min": 1.14,
       "attr_multiplier_max": 1.35,
       "display_stats": [
-        { "label": "等级", "value": 9 },
-        { "label": "气血", "value": 460 },
-        { "label": "物攻", "value": 38 },
-        { "label": "物防", "value": 18 },
-        { "label": "速度", "value": 10 }
+        {
+          "label": "等级",
+          "value": 9
+        },
+        {
+          "label": "气血",
+          "value": 460
+        },
+        {
+          "label": "物攻",
+          "value": 38
+        },
+        {
+          "label": "物防",
+          "value": 18
+        },
+        {
+          "label": "速度",
+          "value": 10
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-bite", "sk-howl"]
+        "skills": [
+          "sk-bite",
+          "sk-howl"
+        ]
       },
       "drop_pool_id": "dp-gale-falcon",
       "exp_reward": 60,
@@ -578,16 +802,39 @@
       "attr_multiplier_min": 1.18,
       "attr_multiplier_max": 1.4,
       "display_stats": [
-        { "label": "等级", "value": 11 },
-        { "label": "气血", "value": 980 },
-        { "label": "物攻", "value": 66 },
-        { "label": "物防", "value": 36 },
-        { "label": "速度", "value": 11 }
+        {
+          "label": "等级",
+          "value": 11
+        },
+        {
+          "label": "气血",
+          "value": 980
+        },
+        {
+          "label": "物攻",
+          "value": 66
+        },
+        {
+          "label": "物防",
+          "value": 36
+        },
+        {
+          "label": "速度",
+          "value": 11
+        }
       ],
       "ai_profile": {
         "behavior": "aggressive",
-        "skills": ["sk-bite", "sk-howl", "sk-pack-attack"],
-        "skill_weights": { "sk-bite": 45, "sk-howl": 25, "sk-pack-attack": 30 }
+        "skills": [
+          "sk-bite",
+          "sk-howl",
+          "sk-pack-attack"
+        ],
+        "skill_weights": {
+          "sk-bite": 45,
+          "sk-howl": 25,
+          "sk-pack-attack": 30
+        }
       },
       "drop_pool_id": "dp-storm-wolf-lord",
       "exp_reward": 150,
@@ -625,25 +872,774 @@
       "attr_multiplier_min": 1.2,
       "attr_multiplier_max": 1.45,
       "display_stats": [
-        { "label": "等级", "value": 12 },
-        { "label": "气血", "value": 2800 },
-        { "label": "法攻", "value": 72 },
-        { "label": "物防", "value": 44 },
-        { "label": "法防", "value": 56 }
+        {
+          "label": "等级",
+          "value": 12
+        },
+        {
+          "label": "气血",
+          "value": 2800
+        },
+        {
+          "label": "法攻",
+          "value": 72
+        },
+        {
+          "label": "物防",
+          "value": 44
+        },
+        {
+          "label": "法防",
+          "value": 56
+        }
       ],
       "ai_profile": {
         "behavior": "boss",
-        "skills": ["sk-vine-whip", "sk-poison-spore", "sk-root-bind", "sk-nature-heal"],
-        "skill_weights": { "sk-vine-whip": 35, "sk-poison-spore": 30, "sk-root-bind": 20, "sk-nature-heal": 15 },
+        "skills": [
+          "sk-vine-whip",
+          "sk-poison-spore",
+          "sk-root-bind",
+          "sk-nature-heal"
+        ],
+        "skill_weights": {
+          "sk-vine-whip": 35,
+          "sk-poison-spore": 30,
+          "sk-root-bind": 20,
+          "sk-nature-heal": 15
+        },
         "phase_triggers": [
-          { "hp_percent": 60, "action": "enrage", "buff": "damage_up_20" },
-          { "hp_percent": 30, "action": "summon", "summon_id": "monster-shadow-viper" }
+          {
+            "hp_percent": 60,
+            "action": "enrage",
+            "buff": "damage_up_20"
+          },
+          {
+            "hp_percent": 30,
+            "action": "summon",
+            "summon_id": "monster-shadow-viper"
+          }
         ]
       },
       "drop_pool_id": "dp-withered-ent",
       "exp_reward": 680,
       "silver_reward_min": 180,
       "silver_reward_max": 360,
+      "enabled": true
+    },
+    {
+      "id": "monster-lingmai-shimo",
+      "code": "lingmai_shimo",
+      "name": "灵脉石魔",
+      "title": "矿渊守卫",
+      "realm": "炼炁化神·炼己期",
+      "level": 26,
+      "avatar": "/assets/monster/stone_golem.png",
+      "kind": "normal",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 3200,
+        "max_qixue": 3200,
+        "lingqi": 260,
+        "max_lingqi": 260,
+        "wugong": 118,
+        "fagong": 62,
+        "wufang": 94,
+        "fafang": 78,
+        "mingzhong": 11200,
+        "shanbi": 820,
+        "baoji": 1150,
+        "baoshang": 18500,
+        "sudu": 6,
+        "kongzhi_kangxing": 7600
+      },
+      "attr_variance": 0.06,
+      "attr_multiplier_min": 1.08,
+      "attr_multiplier_max": 1.24,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 26
+        },
+        {
+          "label": "气血",
+          "value": 3200
+        },
+        {
+          "label": "物攻",
+          "value": 118
+        },
+        {
+          "label": "物防",
+          "value": 94
+        },
+        {
+          "label": "法防",
+          "value": 78
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-stone-smash",
+          "sk-quake-stomp"
+        ],
+        "skill_weights": {
+          "sk-stone-smash": 70,
+          "sk-quake-stomp": 30
+        }
+      },
+      "drop_pool_id": "dp-lianji-lingmai-shimo",
+      "exp_reward": 220,
+      "silver_reward_min": 90,
+      "silver_reward_max": 140,
+      "enabled": true
+    },
+    {
+      "id": "monster-youming-guizu",
+      "code": "youming_guizu",
+      "name": "幽冥鬼卒",
+      "title": "巡夜",
+      "realm": "炼炁化神·炼己期",
+      "level": 26,
+      "avatar": "/assets/monster/shadow_viper.png",
+      "kind": "normal",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 2900,
+        "max_qixue": 2900,
+        "lingqi": 320,
+        "max_lingqi": 320,
+        "wugong": 98,
+        "fagong": 128,
+        "wufang": 76,
+        "fafang": 90,
+        "mingzhong": 11400,
+        "shanbi": 980,
+        "baoji": 1380,
+        "baoshang": 19800,
+        "sudu": 8,
+        "kongzhi_kangxing": 7000
+      },
+      "attr_variance": 0.08,
+      "attr_multiplier_min": 1.06,
+      "attr_multiplier_max": 1.22,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 26
+        },
+        {
+          "label": "气血",
+          "value": 2900
+        },
+        {
+          "label": "法攻",
+          "value": 128
+        },
+        {
+          "label": "物防",
+          "value": 76
+        },
+        {
+          "label": "法防",
+          "value": 90
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-shadow-claw",
+          "sk-ghost-curse"
+        ],
+        "skill_weights": {
+          "sk-shadow-claw": 65,
+          "sk-ghost-curse": 35
+        }
+      },
+      "drop_pool_id": "dp-lianji-youming-guizu",
+      "exp_reward": 228,
+      "silver_reward_min": 95,
+      "silver_reward_max": 145,
+      "enabled": true
+    },
+    {
+      "id": "monster-duzhang-guchong",
+      "code": "duzhang_guchong",
+      "name": "毒瘴蛊虫",
+      "title": "异虫",
+      "realm": "炼炁化神·炼己期",
+      "level": 25,
+      "avatar": "/assets/monster/venomous_snake.png",
+      "kind": "normal",
+      "element": "木",
+      "base_attrs": {
+        "qixue": 2600,
+        "max_qixue": 2600,
+        "lingqi": 210,
+        "max_lingqi": 210,
+        "wugong": 126,
+        "fagong": 72,
+        "wufang": 68,
+        "fafang": 66,
+        "mingzhong": 11800,
+        "shanbi": 1220,
+        "baoji": 1520,
+        "baoshang": 20500,
+        "sudu": 9,
+        "kongzhi_kangxing": 6600
+      },
+      "attr_variance": 0.1,
+      "attr_multiplier_min": 1.04,
+      "attr_multiplier_max": 1.2,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 25
+        },
+        {
+          "label": "气血",
+          "value": 2600
+        },
+        {
+          "label": "物攻",
+          "value": 126
+        },
+        {
+          "label": "物防",
+          "value": 68
+        },
+        {
+          "label": "法防",
+          "value": 66
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-poison-bite",
+          "sk-venom-spray"
+        ],
+        "skill_weights": {
+          "sk-poison-bite": 72,
+          "sk-venom-spray": 28
+        }
+      },
+      "drop_pool_id": "dp-lianji-duzhang-guchong",
+      "exp_reward": 210,
+      "silver_reward_min": 82,
+      "silver_reward_max": 132,
+      "enabled": true
+    },
+    {
+      "id": "monster-nanhai-haijiao",
+      "code": "nanhai_haijiao",
+      "name": "南海海妖",
+      "title": "潮汐潜袭者",
+      "realm": "炼炁化神·炼己期",
+      "level": 27,
+      "avatar": "/assets/monster/gale_falcon.png",
+      "kind": "normal",
+      "element": "水",
+      "base_attrs": {
+        "qixue": 3000,
+        "max_qixue": 3000,
+        "lingqi": 300,
+        "max_lingqi": 300,
+        "wugong": 108,
+        "fagong": 132,
+        "wufang": 82,
+        "fafang": 86,
+        "mingzhong": 11600,
+        "shanbi": 1040,
+        "baoji": 1460,
+        "baoshang": 20200,
+        "sudu": 8,
+        "kongzhi_kangxing": 7100
+      },
+      "attr_variance": 0.07,
+      "attr_multiplier_min": 1.06,
+      "attr_multiplier_max": 1.24,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 27
+        },
+        {
+          "label": "气血",
+          "value": 3000
+        },
+        {
+          "label": "法攻",
+          "value": 132
+        },
+        {
+          "label": "物防",
+          "value": 82
+        },
+        {
+          "label": "法防",
+          "value": 86
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-tide-spike",
+          "sk-cold-surge"
+        ],
+        "skill_weights": {
+          "sk-tide-spike": 62,
+          "sk-cold-surge": 38
+        }
+      },
+      "drop_pool_id": "dp-lianji-nanhai-haijiao",
+      "exp_reward": 236,
+      "silver_reward_min": 100,
+      "silver_reward_max": 150,
+      "enabled": true
+    },
+    {
+      "id": "monster-xinmo-huanying",
+      "code": "xinmo_huanying",
+      "name": "心魔幻影",
+      "title": "执念映像",
+      "realm": "炼炁化神·炼己期",
+      "level": 27,
+      "avatar": "/assets/monster/shadow_viper.png",
+      "kind": "normal",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 3400,
+        "max_qixue": 3400,
+        "lingqi": 360,
+        "max_lingqi": 360,
+        "wugong": 136,
+        "fagong": 136,
+        "wufang": 88,
+        "fafang": 88,
+        "mingzhong": 12000,
+        "shanbi": 980,
+        "baoji": 1660,
+        "baoshang": 21800,
+        "sudu": 7,
+        "kongzhi_kangxing": 7600
+      },
+      "attr_variance": 0.08,
+      "attr_multiplier_min": 1.08,
+      "attr_multiplier_max": 1.26,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 27
+        },
+        {
+          "label": "气血",
+          "value": 3400
+        },
+        {
+          "label": "双攻",
+          "value": 136
+        },
+        {
+          "label": "物防",
+          "value": 88
+        },
+        {
+          "label": "法防",
+          "value": 88
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-xinmo-thorn",
+          "sk-xinmo-whisper"
+        ],
+        "skill_weights": {
+          "sk-xinmo-thorn": 60,
+          "sk-xinmo-whisper": 40
+        }
+      },
+      "drop_pool_id": "dp-lianji-xinmo-huanying",
+      "exp_reward": 246,
+      "silver_reward_min": 106,
+      "silver_reward_max": 158,
+      "enabled": true
+    },
+    {
+      "id": "monster-lingmai-jingkuangshou",
+      "code": "lingmai_jingkuangshou",
+      "name": "灵脉晶矿兽",
+      "title": "矿脉异化体",
+      "realm": "炼炁化神·炼己期",
+      "level": 27,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "normal",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 3600,
+        "max_qixue": 3600,
+        "lingqi": 240,
+        "max_lingqi": 240,
+        "wugong": 142,
+        "fagong": 88,
+        "wufang": 96,
+        "fafang": 82,
+        "mingzhong": 11500,
+        "shanbi": 780,
+        "baoji": 1320,
+        "baoshang": 19400,
+        "sudu": 6,
+        "kongzhi_kangxing": 8000
+      },
+      "attr_variance": 0.06,
+      "attr_multiplier_min": 1.1,
+      "attr_multiplier_max": 1.28,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 27
+        },
+        {
+          "label": "气血",
+          "value": 3600
+        },
+        {
+          "label": "物攻",
+          "value": 142
+        },
+        {
+          "label": "物防",
+          "value": 96
+        },
+        {
+          "label": "法防",
+          "value": 82
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-crystal-bash",
+          "sk-earth-shock"
+        ],
+        "skill_weights": {
+          "sk-crystal-bash": 68,
+          "sk-earth-shock": 32
+        }
+      },
+      "drop_pool_id": "dp-lianji-jingkuangshou",
+      "exp_reward": 252,
+      "silver_reward_min": 110,
+      "silver_reward_max": 164,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-youming-jiangjun",
+      "code": "elite_youming_jiangjun",
+      "name": "幽冥将军",
+      "title": "精英",
+      "realm": "炼炁化神·炼己期",
+      "level": 28,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "elite",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 9200,
+        "max_qixue": 9200,
+        "lingqi": 520,
+        "max_lingqi": 520,
+        "wugong": 188,
+        "fagong": 176,
+        "wufang": 128,
+        "fafang": 132,
+        "mingzhong": 13200,
+        "shanbi": 940,
+        "baoji": 1760,
+        "baoshang": 23500,
+        "sudu": 7,
+        "kongzhi_kangxing": 8800
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.22,
+      "attr_multiplier_max": 1.42,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 28
+        },
+        {
+          "label": "气血",
+          "value": 9200
+        },
+        {
+          "label": "双攻",
+          "value": 188
+        },
+        {
+          "label": "物防",
+          "value": 128
+        },
+        {
+          "label": "法防",
+          "value": 132
+        }
+      ],
+      "ai_profile": {
+        "behavior": "elite",
+        "skills": [
+          "sk-youming-slash",
+          "sk-soul-chain",
+          "sk-ghost-curse"
+        ],
+        "skill_weights": {
+          "sk-youming-slash": 48,
+          "sk-soul-chain": 30,
+          "sk-ghost-curse": 22
+        }
+      },
+      "drop_pool_id": "dp-lianji-elite-youming-jiangjun",
+      "exp_reward": 620,
+      "silver_reward_min": 220,
+      "silver_reward_max": 340,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-lingmai-jingshou",
+      "code": "elite_lingmai_jingshou",
+      "name": "灵脉晶兽",
+      "title": "精英",
+      "realm": "炼炁化神·炼己期",
+      "level": 28,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "elite",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 9800,
+        "max_qixue": 9800,
+        "lingqi": 420,
+        "max_lingqi": 420,
+        "wugong": 204,
+        "fagong": 142,
+        "wufang": 146,
+        "fafang": 124,
+        "mingzhong": 12800,
+        "shanbi": 860,
+        "baoji": 1620,
+        "baoshang": 22500,
+        "sudu": 6,
+        "kongzhi_kangxing": 9200
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.2,
+      "attr_multiplier_max": 1.44,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 28
+        },
+        {
+          "label": "气血",
+          "value": 9800
+        },
+        {
+          "label": "物攻",
+          "value": 204
+        },
+        {
+          "label": "物防",
+          "value": 146
+        },
+        {
+          "label": "法防",
+          "value": 124
+        }
+      ],
+      "ai_profile": {
+        "behavior": "elite",
+        "skills": [
+          "sk-crystal-bash",
+          "sk-earth-shock",
+          "sk-stone-wall"
+        ],
+        "skill_weights": {
+          "sk-crystal-bash": 52,
+          "sk-earth-shock": 30,
+          "sk-stone-wall": 18
+        }
+      },
+      "drop_pool_id": "dp-lianji-elite-lingmai-jingshou",
+      "exp_reward": 650,
+      "silver_reward_min": 230,
+      "silver_reward_max": 360,
+      "enabled": true
+    },
+    {
+      "id": "monster-boss-xinmo-huashen",
+      "code": "boss_xinmo_huashen",
+      "name": "心魔化身",
+      "title": "首领",
+      "realm": "炼炁化神·炼己期",
+      "level": 30,
+      "avatar": "/assets/monster/withered_ent.png",
+      "kind": "boss",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 22800,
+        "max_qixue": 22800,
+        "lingqi": 1200,
+        "max_lingqi": 1200,
+        "wugong": 296,
+        "fagong": 318,
+        "wufang": 198,
+        "fafang": 205,
+        "mingzhong": 15200,
+        "shanbi": 1020,
+        "baoji": 2100,
+        "baoshang": 26500,
+        "sudu": 6,
+        "kongzhi_kangxing": 9800
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.28,
+      "attr_multiplier_max": 1.56,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 30
+        },
+        {
+          "label": "气血",
+          "value": 22800
+        },
+        {
+          "label": "双攻",
+          "value": 318
+        },
+        {
+          "label": "物防",
+          "value": 198
+        },
+        {
+          "label": "法防",
+          "value": 205
+        }
+      ],
+      "ai_profile": {
+        "behavior": "boss",
+        "skills": [
+          "sk-xinmo-pierce",
+          "sk-xinmo-fear",
+          "sk-soul-chain",
+          "sk-dark-heal"
+        ],
+        "skill_weights": {
+          "sk-xinmo-pierce": 36,
+          "sk-xinmo-fear": 26,
+          "sk-soul-chain": 22,
+          "sk-dark-heal": 16
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 60,
+            "action": "enrage",
+            "buff": "damage_up_25"
+          },
+          {
+            "hp_percent": 35,
+            "action": "summon",
+            "summon_id": "monster-xinmo-huanying"
+          }
+        ]
+      },
+      "drop_pool_id": "dp-lianji-boss-xinmo-huashen",
+      "exp_reward": 1480,
+      "silver_reward_min": 500,
+      "silver_reward_max": 780,
+      "enabled": true
+    },
+    {
+      "id": "monster-boss-kuangyuan-juling",
+      "code": "boss_kuangyuan_juling",
+      "name": "矿渊巨灵",
+      "title": "首领",
+      "realm": "炼炁化神·炼己期",
+      "level": 30,
+      "avatar": "/assets/monster/ancient_tree.png",
+      "kind": "boss",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 24500,
+        "max_qixue": 24500,
+        "lingqi": 920,
+        "max_lingqi": 920,
+        "wugong": 332,
+        "fagong": 242,
+        "wufang": 228,
+        "fafang": 188,
+        "mingzhong": 14800,
+        "shanbi": 760,
+        "baoji": 1820,
+        "baoshang": 24800,
+        "sudu": 5,
+        "kongzhi_kangxing": 10400
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.3,
+      "attr_multiplier_max": 1.58,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 30
+        },
+        {
+          "label": "气血",
+          "value": 24500
+        },
+        {
+          "label": "物攻",
+          "value": 332
+        },
+        {
+          "label": "物防",
+          "value": 228
+        },
+        {
+          "label": "法防",
+          "value": 188
+        }
+      ],
+      "ai_profile": {
+        "behavior": "boss",
+        "skills": [
+          "sk-earth-crush",
+          "sk-crystal-rain",
+          "sk-stone-wall",
+          "sk-core-pulse"
+        ],
+        "skill_weights": {
+          "sk-earth-crush": 40,
+          "sk-crystal-rain": 24,
+          "sk-stone-wall": 18,
+          "sk-core-pulse": 18
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 65,
+            "action": "enrage",
+            "buff": "def_up_20"
+          },
+          {
+            "hp_percent": 30,
+            "action": "summon",
+            "summon_id": "monster-lingmai-jingkuangshou"
+          }
+        ]
+      },
+      "drop_pool_id": "dp-lianji-boss-kuangyuan-juling",
+      "exp_reward": 1540,
+      "silver_reward_min": 520,
+      "silver_reward_max": 820,
       "enabled": true
     }
   ]

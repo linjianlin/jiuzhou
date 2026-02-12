@@ -7,10 +7,18 @@
       "name": "每日登录",
       "description": "登录游戏1次",
       "task_type": "daily",
-      "condition": { "event": "login" },
+      "condition": {
+        "event": "login"
+      },
       "target_value": 1,
       "reward_exp": 100,
-      "reward_extra": [{ "type": "currency", "currency": "silver", "amount": 50 }],
+      "reward_extra": [
+        {
+          "type": "currency",
+          "currency": "silver",
+          "amount": 50
+        }
+      ],
       "enabled": true,
       "sort_weight": 10
     },
@@ -20,10 +28,18 @@
       "name": "每日胜利",
       "description": "战斗胜利3次",
       "task_type": "daily",
-      "condition": { "event": "battle_win" },
+      "condition": {
+        "event": "battle_win"
+      },
       "target_value": 3,
       "reward_exp": 180,
-      "reward_extra": [{ "type": "item", "item_def_id": "cons-001", "qty": 2 }],
+      "reward_extra": [
+        {
+          "type": "item",
+          "item_def_id": "cons-001",
+          "qty": 2
+        }
+      ],
       "enabled": true,
       "sort_weight": 20
     },
@@ -33,10 +49,18 @@
       "name": "每日秘境",
       "description": "通关秘境1次",
       "task_type": "daily",
-      "condition": { "event": "dungeon_clear" },
+      "condition": {
+        "event": "dungeon_clear"
+      },
       "target_value": 1,
       "reward_exp": 220,
-      "reward_extra": [{ "type": "item", "item_def_id": "token-001", "qty": 2 }],
+      "reward_extra": [
+        {
+          "type": "item",
+          "item_def_id": "token-001",
+          "qty": 2
+        }
+      ],
       "enabled": true,
       "sort_weight": 30
     },
@@ -46,10 +70,18 @@
       "name": "周常胜利",
       "description": "战斗胜利20次",
       "task_type": "weekly",
-      "condition": { "event": "battle_win" },
+      "condition": {
+        "event": "battle_win"
+      },
       "target_value": 20,
       "reward_exp": 1200,
-      "reward_extra": [{ "type": "currency", "currency": "silver", "amount": 800 }],
+      "reward_extra": [
+        {
+          "type": "currency",
+          "currency": "silver",
+          "amount": 800
+        }
+      ],
       "enabled": true,
       "sort_weight": 110
     },
@@ -59,10 +91,18 @@
       "name": "周常秘境",
       "description": "通关秘境5次",
       "task_type": "weekly",
-      "condition": { "event": "dungeon_clear" },
+      "condition": {
+        "event": "dungeon_clear"
+      },
       "target_value": 5,
       "reward_exp": 1500,
-      "reward_extra": [{ "type": "item", "item_def_id": "box-001", "qty": 1 }],
+      "reward_extra": [
+        {
+          "type": "item",
+          "item_def_id": "box-001",
+          "qty": 1
+        }
+      ],
       "enabled": true,
       "sort_weight": 120
     },
@@ -72,12 +112,127 @@
       "name": "赛季挑战",
       "description": "战斗胜利100次",
       "task_type": "season",
-      "condition": { "event": "battle_win" },
+      "condition": {
+        "event": "battle_win"
+      },
       "target_value": 100,
       "reward_exp": 6000,
-      "reward_extra": [{ "type": "currency", "currency": "spirit_stones", "amount": 30 }],
+      "reward_extra": [
+        {
+          "type": "currency",
+          "currency": "spirit_stones",
+          "amount": 30
+        }
+      ],
       "enabled": true,
       "sort_weight": 210
+    },
+    {
+      "id": "bp-task-weekly-003",
+      "code": "weekly_lianji_dungeon_clear",
+      "name": "周常炼己秘境",
+      "description": "通关炼己期秘境3次",
+      "task_type": "weekly",
+      "condition": {
+        "event": "dungeon_clear",
+        "params": {
+          "dungeon_ids": [
+            "dungeon-lianqi-xinmo-huanjing",
+            "dungeon-lianqi-lingmai-kuangyuan"
+          ]
+        }
+      },
+      "target_value": 3,
+      "reward_exp": 1800,
+      "reward_extra": [
+        {
+          "type": "item",
+          "item_def_id": "mat-xinmo-jinghua",
+          "qty": 2
+        }
+      ],
+      "enabled": true,
+      "sort_weight": 130
+    },
+    {
+      "id": "bp-task-weekly-004",
+      "code": "weekly_lianji_boss_kill",
+      "name": "周常炼己首领",
+      "description": "击败炼己期Boss 2次",
+      "task_type": "weekly",
+      "condition": {
+        "event": "kill_monster",
+        "params": {
+          "monster_ids": [
+            "monster-boss-xinmo-huashen",
+            "monster-boss-kuangyuan-juling"
+          ]
+        }
+      },
+      "target_value": 2,
+      "reward_exp": 2200,
+      "reward_extra": [
+        {
+          "type": "item",
+          "item_def_id": "mat-lianji-dan",
+          "qty": 1
+        }
+      ],
+      "enabled": true,
+      "sort_weight": 140
+    },
+    {
+      "id": "bp-task-season-002",
+      "code": "season_lianji_set_collect",
+      "name": "赛季套装收集",
+      "description": "收集任意一套炼己期8件套",
+      "task_type": "season",
+      "condition": {
+        "event": "collect_set",
+        "params": {
+          "set_ids": [
+            "set-chiyan",
+            "set-xuanwu",
+            "set-tianxuan",
+            "set-qinglian"
+          ]
+        }
+      },
+      "target_value": 1,
+      "reward_exp": 7000,
+      "reward_extra": [
+        {
+          "type": "currency",
+          "currency": "spirit_stones",
+          "amount": 60
+        }
+      ],
+      "enabled": true,
+      "sort_weight": 220
+    },
+    {
+      "id": "bp-task-season-003",
+      "code": "season_main_chapter2",
+      "name": "赛季主线二章",
+      "description": "完成主线第二章「炼己成道」",
+      "task_type": "season",
+      "condition": {
+        "event": "main_quest_complete",
+        "params": {
+          "chapter_id": "mq-chapter-2"
+        }
+      },
+      "target_value": 1,
+      "reward_exp": 6500,
+      "reward_extra": [
+        {
+          "type": "item",
+          "item_def_id": "box-003",
+          "qty": 1
+        }
+      ],
+      "enabled": true,
+      "sort_weight": 230
     }
   ]
 }

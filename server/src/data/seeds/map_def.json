@@ -10,7 +10,10 @@
       "background_image": "/assets/map/qingyun_village.png",
       "map_type": "city",
       "region": "东洲",
-      "world_position": { "x": 100, "y": 200 },
+      "world_position": {
+        "x": 100,
+        "y": 200
+      },
       "req_realm_min": null,
       "safe_zone": true,
       "pk_mode": "normal",
@@ -23,39 +26,79 @@
           "id": "room-village-entrance",
           "name": "村口",
           "description": "青云村的入口，一块刻有'青云村'三字的石碑立于道旁。远处可见袅袅炊烟。",
-          "position": { "x": 0, "y": 2 },
+          "position": {
+            "x": 0,
+            "y": 2
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "north", "target_room_id": "room-village-center" },
-            { "direction": "south", "target_room_id": "room-south-forest", "target_map_id": "map-qingyun-outskirts" }
+            {
+              "direction": "north",
+              "target_room_id": "room-village-center"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-south-forest",
+              "target_map_id": "map-qingyun-outskirts"
+            }
           ],
-          "npcs": ["npc-guide"],
+          "npcs": [
+            "npc-guide"
+          ],
           "monsters": [],
           "resources": [],
           "items": [],
           "portals": [],
           "events": [
-            { "event_id": "evt-newbie-welcome", "trigger": "enter", "once": true }
+            {
+              "event_id": "evt-newbie-welcome",
+              "trigger": "enter",
+              "once": true
+            }
           ]
         },
         {
           "id": "room-village-center",
           "name": "村中广场",
           "description": "青云村的中心广场，村民们常在此聚集。村长的宅邸就在广场北侧。",
-          "position": { "x": 0, "y": 1 },
+          "position": {
+            "x": 0,
+            "y": 1
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "south", "target_room_id": "room-village-entrance" },
-            { "direction": "north", "target_room_id": "room-elder-house" },
-            { "direction": "east", "target_room_id": "room-blacksmith" },
-            { "direction": "west", "target_room_id": "room-herb-shop" }
+            {
+              "direction": "south",
+              "target_room_id": "room-village-entrance"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-elder-house"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-blacksmith"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-herb-shop"
+            }
           ],
-          "npcs": ["npc-village-elder", "npc-bounty-board", "npc-teleporter"],
+          "npcs": [
+            "npc-village-elder",
+            "npc-bounty-board",
+            "npc-teleporter"
+          ],
           "monsters": [],
           "resources": [],
           "items": [],
           "portals": [
-            { "target_map_id": "map-dongzhou-city", "target_room_id": "room-teleport-hall", "name": "东洲城传送阵", "req_realm_min": "炼精化炁·通脉期" }
+            {
+              "target_map_id": "map-dongzhou-city",
+              "target_room_id": "room-teleport-hall",
+              "name": "东洲城传送阵",
+              "req_realm_min": "炼精化炁·通脉期"
+            }
           ],
           "events": []
         },
@@ -63,15 +106,26 @@
           "id": "room-elder-house",
           "name": "村长宅邸",
           "description": "村长居住的宅院，院内种满了灵草，隐约能感受到一丝灵气波动。",
-          "position": { "x": 0, "y": 0 },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "south", "target_room_id": "room-village-center" }
+            {
+              "direction": "south",
+              "target_room_id": "room-village-center"
+            }
           ],
           "npcs": [],
           "monsters": [],
           "resources": [
-            { "resource_id": "res-spirit-grass", "count": 20, "collect_limit": 20, "respawn_sec": 180 }
+            {
+              "resource_id": "res-spirit-grass",
+              "count": 20,
+              "collect_limit": 20,
+              "respawn_sec": 180
+            }
           ],
           "items": [],
           "portals": [],
@@ -81,13 +135,24 @@
           "id": "room-blacksmith",
           "name": "铁匠铺",
           "description": "叮叮当当的打铁声不绝于耳，铁匠张正在锻造兵器。",
-          "position": { "x": 1, "y": 1 },
+          "position": {
+            "x": 1,
+            "y": 1
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "west", "target_room_id": "room-village-center" },
-            { "direction": "east", "target_room_id": "room-warehouse" }
+            {
+              "direction": "west",
+              "target_room_id": "room-village-center"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-warehouse"
+            }
           ],
-          "npcs": ["npc-blacksmith"],
+          "npcs": [
+            "npc-blacksmith"
+          ],
           "monsters": [],
           "resources": [],
           "items": [],
@@ -98,16 +163,28 @@
           "id": "room-warehouse",
           "name": "仓库",
           "description": "村中的公共仓库，由管事看守，可以存放物品。",
-          "position": { "x": 2, "y": 1 },
+          "position": {
+            "x": 2,
+            "y": 1
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "west", "target_room_id": "room-blacksmith" }
+            {
+              "direction": "west",
+              "target_room_id": "room-blacksmith"
+            }
           ],
-          "npcs": ["npc-warehouse-keeper"],
+          "npcs": [
+            "npc-warehouse-keeper"
+          ],
           "monsters": [],
           "resources": [],
           "items": [
-            { "item_def_id": "obj-warehouse", "once": false, "chance": 0 }
+            {
+              "item_def_id": "obj-warehouse",
+              "once": false,
+              "chance": 0
+            }
           ],
           "portals": [],
           "events": []
@@ -116,13 +193,24 @@
           "id": "room-herb-shop",
           "name": "药草铺",
           "description": "空气中弥漫着草药的清香，药婆婆正在整理各种药材。",
-          "position": { "x": -1, "y": 1 },
+          "position": {
+            "x": -1,
+            "y": 1
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "east", "target_room_id": "room-village-center" },
-            { "direction": "north", "target_room_id": "room-mysterious-corner" }
+            {
+              "direction": "east",
+              "target_room_id": "room-village-center"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-mysterious-corner"
+            }
           ],
-          "npcs": ["npc-herbalist"],
+          "npcs": [
+            "npc-herbalist"
+          ],
           "monsters": [],
           "resources": [],
           "items": [],
@@ -133,16 +221,28 @@
           "id": "room-mysterious-corner",
           "name": "幽暗角落",
           "description": "村子西北角的一处僻静之地，偶尔会有神秘商人出没。",
-          "position": { "x": -1, "y": 0 },
+          "position": {
+            "x": -1,
+            "y": 0
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "south", "target_room_id": "room-herb-shop" }
+            {
+              "direction": "south",
+              "target_room_id": "room-herb-shop"
+            }
           ],
-          "npcs": ["npc-mysterious-merchant"],
+          "npcs": [
+            "npc-mysterious-merchant"
+          ],
           "monsters": [],
           "resources": [],
           "items": [
-            { "item_def_id": "item-hidden-chest", "once": true, "req_quest_id": "quest-find-treasure" }
+            {
+              "item_def_id": "item-hidden-chest",
+              "once": true,
+              "req_quest_id": "quest-find-treasure"
+            }
           ],
           "portals": [],
           "events": []
@@ -158,7 +258,10 @@
       "map_type": "field",
       "parent_map_id": "map-qingyun-village",
       "region": "东洲",
-      "world_position": { "x": 100, "y": 210 },
+      "world_position": {
+        "x": 100,
+        "y": 210
+      },
       "req_realm_min": null,
       "safe_zone": false,
       "pk_mode": "normal",
@@ -171,19 +274,41 @@
           "id": "room-south-forest",
           "name": "南林小道",
           "description": "通往青云村的林间小道，偶尔能看到野兔出没。",
-          "position": { "x": 0, "y": 0 },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-village-entrance", "target_map_id": "map-qingyun-village" },
-            { "direction": "south", "target_room_id": "room-forest-clearing" },
-            { "direction": "east", "target_room_id": "room-east-grassland" }
+            {
+              "direction": "north",
+              "target_room_id": "room-village-entrance",
+              "target_map_id": "map-qingyun-village"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-forest-clearing"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-east-grassland"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-wild-rabbit", "count": 3, "respawn_sec": 30 }
+            {
+              "monster_def_id": "monster-wild-rabbit",
+              "count": 3,
+              "respawn_sec": 30
+            }
           ],
           "resources": [
-            { "resource_id": "res-wild-herb", "count": 50, "collect_limit": 50, "respawn_sec": 180 }
+            {
+              "resource_id": "res-wild-herb",
+              "count": 50,
+              "collect_limit": 50,
+              "respawn_sec": 180
+            }
           ],
           "items": [],
           "portals": [],
@@ -193,17 +318,37 @@
           "id": "room-forest-clearing",
           "name": "林中空地",
           "description": "森林中的一片空地，野猪经常在此觅食。",
-          "position": { "x": 0, "y": 1 },
+          "position": {
+            "x": 0,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-south-forest" },
-            { "direction": "south", "target_room_id": "room-deep-forest" },
-            { "direction": "west", "target_room_id": "room-west-stream" }
+            {
+              "direction": "north",
+              "target_room_id": "room-south-forest"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-deep-forest"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-west-stream"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-wild-rabbit", "count": 2, "respawn_sec": 30 },
-            { "monster_def_id": "monster-wild-boar", "count": 2, "respawn_sec": 45 }
+            {
+              "monster_def_id": "monster-wild-rabbit",
+              "count": 2,
+              "respawn_sec": 30
+            },
+            {
+              "monster_def_id": "monster-wild-boar",
+              "count": 2,
+              "respawn_sec": 45
+            }
           ],
           "resources": [],
           "items": [],
@@ -214,16 +359,33 @@
           "id": "room-east-grassland",
           "name": "东边草地",
           "description": "村东的一片草地，灰狼偶尔会在此出没。",
-          "position": { "x": 1, "y": 0 },
+          "position": {
+            "x": 1,
+            "y": 0
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "west", "target_room_id": "room-south-forest" },
-            { "direction": "south", "target_room_id": "room-rocky-area" }
+            {
+              "direction": "west",
+              "target_room_id": "room-south-forest"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-rocky-area"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-wild-boar", "count": 2, "respawn_sec": 45 },
-            { "monster_def_id": "monster-gray-wolf", "count": 1, "respawn_sec": 60 }
+            {
+              "monster_def_id": "monster-wild-boar",
+              "count": 2,
+              "respawn_sec": 45
+            },
+            {
+              "monster_def_id": "monster-gray-wolf",
+              "count": 1,
+              "respawn_sec": 60
+            }
           ],
           "resources": [],
           "items": [],
@@ -234,18 +396,36 @@
           "id": "room-west-stream",
           "name": "西溪边",
           "description": "一条清澈的小溪从此流过，溪边长满了药草，但也有毒蛇出没。",
-          "position": { "x": -1, "y": 1 },
+          "position": {
+            "x": -1,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "east", "target_room_id": "room-forest-clearing" },
-            { "direction": "south", "target_room_id": "room-snake-nest" }
+            {
+              "direction": "east",
+              "target_room_id": "room-forest-clearing"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-snake-nest"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-venomous-snake", "count": 2, "respawn_sec": 60 }
+            {
+              "monster_def_id": "monster-venomous-snake",
+              "count": 2,
+              "respawn_sec": 60
+            }
           ],
           "resources": [
-            { "resource_id": "mat-001", "count": 20, "collect_limit": 20, "respawn_sec": 300 }
+            {
+              "resource_id": "mat-001",
+              "count": 20,
+              "collect_limit": 20,
+              "respawn_sec": 300
+            }
           ],
           "items": [],
           "portals": [],
@@ -255,18 +435,32 @@
           "id": "room-snake-nest",
           "name": "蛇窟入口",
           "description": "阴暗潮湿的洞穴入口，空气中弥漫着腥臭味，是毒蛇的巢穴。",
-          "position": { "x": -1, "y": 2 },
+          "position": {
+            "x": -1,
+            "y": 2
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-west-stream" }
+            {
+              "direction": "north",
+              "target_room_id": "room-west-stream"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-venomous-snake", "count": 4, "respawn_sec": 45 }
+            {
+              "monster_def_id": "monster-venomous-snake",
+              "count": 4,
+              "respawn_sec": 45
+            }
           ],
           "resources": [],
           "items": [
-            { "item_def_id": "item-snake-egg", "once": false, "chance": 0.1 }
+            {
+              "item_def_id": "item-snake-egg",
+              "once": false,
+              "chance": 0.1
+            }
           ],
           "portals": [],
           "events": []
@@ -275,17 +469,37 @@
           "id": "room-deep-forest",
           "name": "密林深处",
           "description": "森林深处，树木遮天蔽日，山野妖狼在此游荡。",
-          "position": { "x": 0, "y": 2 },
+          "position": {
+            "x": 0,
+            "y": 2
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-forest-clearing" },
-            { "direction": "east", "target_room_id": "room-rocky-area" },
-            { "direction": "south", "target_room_id": "room-wolf-den" }
+            {
+              "direction": "north",
+              "target_room_id": "room-forest-clearing"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-rocky-area"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-wolf-den"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-gray-wolf", "count": 2, "respawn_sec": 60 },
-            { "monster_def_id": "monster-mountain-wolf", "count": 1, "respawn_sec": 90 }
+            {
+              "monster_def_id": "monster-gray-wolf",
+              "count": 2,
+              "respawn_sec": 60
+            },
+            {
+              "monster_def_id": "monster-mountain-wolf",
+              "count": 1,
+              "respawn_sec": 90
+            }
           ],
           "resources": [],
           "items": [],
@@ -296,18 +510,36 @@
           "id": "room-rocky-area",
           "name": "乱石岗",
           "description": "布满巨石的区域，石傀儡在此徘徊，据说是上古阵法的残留。",
-          "position": { "x": 1, "y": 1 },
+          "position": {
+            "x": 1,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-east-grassland" },
-            { "direction": "west", "target_room_id": "room-deep-forest" }
+            {
+              "direction": "north",
+              "target_room_id": "room-east-grassland"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-deep-forest"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-stone-golem", "count": 2, "respawn_sec": 120 }
+            {
+              "monster_def_id": "monster-stone-golem",
+              "count": 2,
+              "respawn_sec": 120
+            }
           ],
           "resources": [
-            { "resource_id": "res-spirit-stone-ore", "count": 10, "collect_limit": 10, "respawn_sec": 600 }
+            {
+              "resource_id": "res-spirit-stone-ore",
+              "count": 10,
+              "collect_limit": 10,
+              "respawn_sec": 600
+            }
           ],
           "items": [],
           "portals": [],
@@ -317,43 +549,82 @@
           "id": "room-wolf-den",
           "name": "狼窝",
           "description": "山野妖狼的巢穴，狼王就在此处。危险区域，需要做好准备再进入。",
-          "position": { "x": 0, "y": 3 },
+          "position": {
+            "x": 0,
+            "y": 3
+          },
           "room_type": "boss",
           "connections": [
-            { "direction": "north", "target_room_id": "room-deep-forest" },
-            { "direction": "south", "target_room_id": "room-ancient-tree" }
+            {
+              "direction": "north",
+              "target_room_id": "room-deep-forest"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-ancient-tree"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-mountain-wolf", "count": 2, "respawn_sec": 90 },
-            { "monster_def_id": "monster-elite-wolf-king", "count": 1, "respawn_sec": 600 }
+            {
+              "monster_def_id": "monster-mountain-wolf",
+              "count": 2,
+              "respawn_sec": 90
+            },
+            {
+              "monster_def_id": "monster-elite-wolf-king",
+              "count": 1,
+              "respawn_sec": 600
+            }
           ],
           "resources": [],
           "items": [],
           "portals": [],
           "events": [
-            { "event_id": "evt-wolf-king-spawn", "trigger": "enter", "once": false }
+            {
+              "event_id": "evt-wolf-king-spawn",
+              "trigger": "enter",
+              "once": false
+            }
           ]
         },
         {
           "id": "room-ancient-tree",
           "name": "古树之地",
           "description": "一棵参天古树矗立于此，树身散发着诡异的绿光。传说这是一只修炼千年的树妖。",
-          "position": { "x": 0, "y": 4 },
+          "position": {
+            "x": 0,
+            "y": 4
+          },
           "room_type": "boss",
           "connections": [
-            { "direction": "north", "target_room_id": "room-wolf-den" },
-            { "direction": "south", "target_room_id": "room-ruins-entrance", "target_map_id": "map-fallen-ruins" }
+            {
+              "direction": "north",
+              "target_room_id": "room-wolf-den"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-ruins-entrance",
+              "target_map_id": "map-fallen-ruins"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-boss-ancient-tree", "count": 1, "respawn_sec": 3600 }
+            {
+              "monster_def_id": "monster-boss-ancient-tree",
+              "count": 1,
+              "respawn_sec": 3600
+            }
           ],
           "resources": [],
           "items": [],
           "portals": [],
           "events": [
-            { "event_id": "evt-boss-ancient-tree", "trigger": "enter", "once": false }
+            {
+              "event_id": "evt-boss-ancient-tree",
+              "trigger": "enter",
+              "once": false
+            }
           ]
         }
       ]
@@ -367,7 +638,10 @@
       "map_type": "field",
       "parent_map_id": "map-qingyun-outskirts",
       "region": "东洲",
-      "world_position": { "x": 112, "y": 224 },
+      "world_position": {
+        "x": 112,
+        "y": 224
+      },
       "req_realm_min": "炼精化炁·养气期",
       "safe_zone": false,
       "pk_mode": "normal",
@@ -380,19 +654,41 @@
           "id": "room-ruins-entrance",
           "name": "遗迹入口",
           "description": "半塌的石门立在山坳间，门扉上仍可见古老符纹。沿着石阶向下便是遗迹深处。",
-          "position": { "x": 0, "y": 0 },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "east", "target_room_id": "room-broken-courtyard" },
-            { "direction": "south", "target_room_id": "room-ruins-canyon" },
-            { "direction": "north", "target_room_id": "room-ancient-tree", "target_map_id": "map-qingyun-outskirts" }
+            {
+              "direction": "east",
+              "target_room_id": "room-broken-courtyard"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-ruins-canyon"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-ancient-tree",
+              "target_map_id": "map-qingyun-outskirts"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-ruins-jackal", "count": 2, "respawn_sec": 50 }
+            {
+              "monster_def_id": "monster-ruins-jackal",
+              "count": 2,
+              "respawn_sec": 50
+            }
           ],
           "resources": [
-            { "resource_id": "res-wild-herb", "count": 30, "collect_limit": 30, "respawn_sec": 240 }
+            {
+              "resource_id": "res-wild-herb",
+              "count": 30,
+              "collect_limit": 30,
+              "respawn_sec": 240
+            }
           ],
           "items": [],
           "portals": [],
@@ -402,17 +698,37 @@
           "id": "room-broken-courtyard",
           "name": "残破庭院",
           "description": "石柱倾倒，青苔遍布，庭院中央的阵图仍隐约闪烁着微光。",
-          "position": { "x": 1, "y": 0 },
+          "position": {
+            "x": 1,
+            "y": 0
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "west", "target_room_id": "room-ruins-entrance" },
-            { "direction": "north", "target_room_id": "room-collapsed-tower" },
-            { "direction": "east", "target_room_id": "room-stone-altar" }
+            {
+              "direction": "west",
+              "target_room_id": "room-ruins-entrance"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-collapsed-tower"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-stone-altar"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-shadow-viper", "count": 1, "respawn_sec": 70 },
-            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+            {
+              "monster_def_id": "monster-shadow-viper",
+              "count": 1,
+              "respawn_sec": 70
+            },
+            {
+              "monster_def_id": "monster-rune-golem",
+              "count": 1,
+              "respawn_sec": 140
+            }
           ],
           "resources": [],
           "items": [],
@@ -423,18 +739,32 @@
           "id": "room-collapsed-tower",
           "name": "坍塌塔楼",
           "description": "塔楼上层早已崩毁，只剩断裂石阶盘旋而上，空气中充满尘土与灵压。",
-          "position": { "x": 1, "y": -1 },
+          "position": {
+            "x": 1,
+            "y": -1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "south", "target_room_id": "room-broken-courtyard" }
+            {
+              "direction": "south",
+              "target_room_id": "room-broken-courtyard"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-rune-golem", "count": 2, "respawn_sec": 140 }
+            {
+              "monster_def_id": "monster-rune-golem",
+              "count": 2,
+              "respawn_sec": 140
+            }
           ],
           "resources": [],
           "items": [
-            { "item_def_id": "mat-001", "once": false, "chance": 0.2 }
+            {
+              "item_def_id": "mat-001",
+              "once": false,
+              "chance": 0.2
+            }
           ],
           "portals": [],
           "events": []
@@ -443,39 +773,76 @@
           "id": "room-stone-altar",
           "name": "古祭坛",
           "description": "祭坛四周散落着破碎玉简，中央石台刻满血色纹路，时常有妖狼在此徘徊。",
-          "position": { "x": 2, "y": 0 },
+          "position": {
+            "x": 2,
+            "y": 0
+          },
           "room_type": "boss",
           "connections": [
-            { "direction": "west", "target_room_id": "room-broken-courtyard" },
-            { "direction": "north", "target_room_id": "room-ridge-camp", "target_map_id": "map-howling-ridge" }
+            {
+              "direction": "west",
+              "target_room_id": "room-broken-courtyard"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-ridge-camp",
+              "target_map_id": "map-howling-ridge"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 90 },
-            { "monster_def_id": "monster-elite-storm-wolf", "count": 1, "respawn_sec": 900 }
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 2,
+              "respawn_sec": 90
+            },
+            {
+              "monster_def_id": "monster-elite-storm-wolf",
+              "count": 1,
+              "respawn_sec": 900
+            }
           ],
           "resources": [],
           "items": [],
           "portals": [],
           "events": [
-            { "event_id": "evt-fallen-ruins-altar", "trigger": "enter", "once": false }
+            {
+              "event_id": "evt-fallen-ruins-altar",
+              "trigger": "enter",
+              "once": false
+            }
           ]
         },
         {
           "id": "room-ruins-canyon",
           "name": "断崖峡道",
           "description": "遗迹下方的狭窄峡道，阴风穿行，远处不时传来狼嚎。",
-          "position": { "x": 0, "y": 1 },
+          "position": {
+            "x": 0,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-ruins-entrance" }
+            {
+              "direction": "north",
+              "target_room_id": "room-ruins-entrance"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-ruins-jackal", "count": 2, "respawn_sec": 55 }
+            {
+              "monster_def_id": "monster-ruins-jackal",
+              "count": 2,
+              "respawn_sec": 55
+            }
           ],
           "resources": [
-            { "resource_id": "res-spirit-grass", "count": 18, "collect_limit": 18, "respawn_sec": 300 }
+            {
+              "resource_id": "res-spirit-grass",
+              "count": 18,
+              "collect_limit": 18,
+              "respawn_sec": 300
+            }
           ],
           "items": [],
           "portals": [],
@@ -492,7 +859,10 @@
       "map_type": "field",
       "parent_map_id": "map-fallen-ruins",
       "region": "东洲",
-      "world_position": { "x": 126, "y": 236 },
+      "world_position": {
+        "x": 126,
+        "y": 236
+      },
       "req_realm_min": "炼精化炁·通脉期",
       "safe_zone": false,
       "pk_mode": "normal",
@@ -505,11 +875,21 @@
           "id": "room-ridge-camp",
           "name": "岭前营地",
           "description": "猎户留下的简易营地，篝火余烬尚温，是进入啸风岭前最后的休整点。",
-          "position": { "x": 0, "y": 0 },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "north", "target_room_id": "room-gale-trail" },
-            { "direction": "south", "target_room_id": "room-stone-altar", "target_map_id": "map-fallen-ruins" }
+            {
+              "direction": "north",
+              "target_room_id": "room-gale-trail"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-stone-altar",
+              "target_map_id": "map-fallen-ruins"
+            }
           ],
           "npcs": [],
           "monsters": [],
@@ -522,17 +902,37 @@
           "id": "room-gale-trail",
           "name": "风切小径",
           "description": "狭长山路两侧峭壁如刀，强风夹杂砂石，行进时需格外小心。",
-          "position": { "x": 0, "y": 1 },
+          "position": {
+            "x": 0,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "south", "target_room_id": "room-ridge-camp" },
-            { "direction": "west", "target_room_id": "room-pine-slope" },
-            { "direction": "east", "target_room_id": "room-hanging-cliff" }
+            {
+              "direction": "south",
+              "target_room_id": "room-ridge-camp"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-pine-slope"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-hanging-cliff"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-ruins-jackal", "count": 1, "respawn_sec": 55 },
-            { "monster_def_id": "monster-gale-falcon", "count": 1, "respawn_sec": 90 }
+            {
+              "monster_def_id": "monster-ruins-jackal",
+              "count": 1,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 1,
+              "respawn_sec": 90
+            }
           ],
           "resources": [],
           "items": [],
@@ -543,15 +943,28 @@
           "id": "room-pine-slope",
           "name": "松岭斜坡",
           "description": "稀疏松林覆盖的坡地，妖狼善于借林木掩护突袭过路修士。",
-          "position": { "x": -1, "y": 1 },
+          "position": {
+            "x": -1,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "east", "target_room_id": "room-gale-trail" },
-            { "direction": "north", "target_room_id": "room-wolf-howl-pass" }
+            {
+              "direction": "east",
+              "target_room_id": "room-gale-trail"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-wolf-howl-pass"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-gale-falcon", "count": 1, "respawn_sec": 95 }
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 1,
+              "respawn_sec": 95
+            }
           ],
           "resources": [],
           "items": [],
@@ -562,18 +975,36 @@
           "id": "room-hanging-cliff",
           "name": "悬崖窄道",
           "description": "贴着峭壁开凿的窄道，下方深不见底，偶有石傀儡从裂缝中爬出。",
-          "position": { "x": 1, "y": 1 },
+          "position": {
+            "x": 1,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "west", "target_room_id": "room-gale-trail" },
-            { "direction": "north", "target_room_id": "room-wolf-howl-pass" }
+            {
+              "direction": "west",
+              "target_room_id": "room-gale-trail"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-wolf-howl-pass"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+            {
+              "monster_def_id": "monster-rune-golem",
+              "count": 1,
+              "respawn_sec": 140
+            }
           ],
           "resources": [
-            { "resource_id": "res-spirit-stone-ore", "count": 8, "collect_limit": 8, "respawn_sec": 720 }
+            {
+              "resource_id": "res-spirit-stone-ore",
+              "count": 8,
+              "collect_limit": 8,
+              "respawn_sec": 720
+            }
           ],
           "items": [],
           "portals": [],
@@ -583,17 +1014,37 @@
           "id": "room-wolf-howl-pass",
           "name": "狼啸隘口",
           "description": "啸风岭最狭窄的隘口，风声与狼嚎交织，让人难辨敌踪。",
-          "position": { "x": 0, "y": 2 },
+          "position": {
+            "x": 0,
+            "y": 2
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "west", "target_room_id": "room-pine-slope" },
-            { "direction": "east", "target_room_id": "room-hanging-cliff" },
-            { "direction": "north", "target_room_id": "room-wind-throne" }
+            {
+              "direction": "west",
+              "target_room_id": "room-pine-slope"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-hanging-cliff"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-wind-throne"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-ruins-jackal", "count": 1, "respawn_sec": 55 },
-            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 90 }
+            {
+              "monster_def_id": "monster-ruins-jackal",
+              "count": 1,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 2,
+              "respawn_sec": 90
+            }
           ],
           "resources": [],
           "items": [],
@@ -604,22 +1055,44 @@
           "id": "room-wind-throne",
           "name": "风王台",
           "description": "高岭尽头的巨石平台，常年被飓风笼罩，是狼王争夺地盘的核心区域。",
-          "position": { "x": 0, "y": 3 },
+          "position": {
+            "x": 0,
+            "y": 3
+          },
           "room_type": "boss",
           "connections": [
-            { "direction": "south", "target_room_id": "room-wolf-howl-pass" },
-            { "direction": "north", "target_room_id": "room-grove-edge", "target_map_id": "map-withered-grove" }
+            {
+              "direction": "south",
+              "target_room_id": "room-wolf-howl-pass"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-grove-edge",
+              "target_map_id": "map-withered-grove"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 90 },
-            { "monster_def_id": "monster-elite-storm-wolf", "count": 1, "respawn_sec": 720 }
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 2,
+              "respawn_sec": 90
+            },
+            {
+              "monster_def_id": "monster-elite-storm-wolf",
+              "count": 1,
+              "respawn_sec": 720
+            }
           ],
           "resources": [],
           "items": [],
           "portals": [],
           "events": [
-            { "event_id": "evt-howling-ridge-king", "trigger": "enter", "once": false }
+            {
+              "event_id": "evt-howling-ridge-king",
+              "trigger": "enter",
+              "once": false
+            }
           ]
         }
       ]
@@ -633,7 +1106,10 @@
       "map_type": "field",
       "parent_map_id": "map-howling-ridge",
       "region": "东洲北境",
-      "world_position": { "x": 133, "y": 248 },
+      "world_position": {
+        "x": 133,
+        "y": 248
+      },
       "req_realm_min": "炼精化炁·凝炁期",
       "safe_zone": false,
       "pk_mode": "normal",
@@ -646,16 +1122,33 @@
           "id": "room-grove-edge",
           "name": "幽林边缘",
           "description": "树影层叠，光线昏暗，地面覆盖厚厚腐叶，踏入后便难辨方向。",
-          "position": { "x": 0, "y": 0 },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "north", "target_room_id": "room-decay-path" },
-            { "direction": "east", "target_room_id": "room-spore-marsh" },
-            { "direction": "south", "target_room_id": "room-wind-throne", "target_map_id": "map-howling-ridge" }
+            {
+              "direction": "north",
+              "target_room_id": "room-decay-path"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-spore-marsh"
+            },
+            {
+              "direction": "south",
+              "target_room_id": "room-wind-throne",
+              "target_map_id": "map-howling-ridge"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-shadow-viper", "count": 2, "respawn_sec": 70 }
+            {
+              "monster_def_id": "monster-shadow-viper",
+              "count": 2,
+              "respawn_sec": 70
+            }
           ],
           "resources": [],
           "items": [],
@@ -666,17 +1159,37 @@
           "id": "room-decay-path",
           "name": "腐叶古道",
           "description": "古道两旁尽是枯木，偶尔会有石傀儡破土而出阻挡去路。",
-          "position": { "x": 0, "y": 1 },
+          "position": {
+            "x": 0,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "south", "target_room_id": "room-grove-edge" },
-            { "direction": "west", "target_room_id": "room-root-maze" },
-            { "direction": "north", "target_room_id": "room-dead-lake" }
+            {
+              "direction": "south",
+              "target_room_id": "room-grove-edge"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-root-maze"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-dead-lake"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-ruins-jackal", "count": 1, "respawn_sec": 55 },
-            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+            {
+              "monster_def_id": "monster-ruins-jackal",
+              "count": 1,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-rune-golem",
+              "count": 1,
+              "respawn_sec": 140
+            }
           ],
           "resources": [],
           "items": [],
@@ -687,18 +1200,36 @@
           "id": "room-spore-marsh",
           "name": "孢雾沼泽",
           "description": "低洼沼地终年弥漫灰白孢雾，毒蛇在泥潭中潜伏，危险难测。",
-          "position": { "x": 1, "y": 0 },
+          "position": {
+            "x": 1,
+            "y": 0
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "west", "target_room_id": "room-grove-edge" },
-            { "direction": "north", "target_room_id": "room-dead-lake" }
+            {
+              "direction": "west",
+              "target_room_id": "room-grove-edge"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-dead-lake"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-shadow-viper", "count": 3, "respawn_sec": 70 }
+            {
+              "monster_def_id": "monster-shadow-viper",
+              "count": 3,
+              "respawn_sec": 70
+            }
           ],
           "resources": [
-            { "resource_id": "res-spirit-grass", "count": 24, "collect_limit": 24, "respawn_sec": 360 }
+            {
+              "resource_id": "res-spirit-grass",
+              "count": 24,
+              "collect_limit": 24,
+              "respawn_sec": 360
+            }
           ],
           "items": [],
           "portals": [],
@@ -708,16 +1239,33 @@
           "id": "room-root-maze",
           "name": "盘根迷阵",
           "description": "无数粗壮树根盘结成天然迷阵，稍有不慎便会被困其中。",
-          "position": { "x": -1, "y": 1 },
+          "position": {
+            "x": -1,
+            "y": 1
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "east", "target_room_id": "room-decay-path" },
-            { "direction": "north", "target_room_id": "room-ancient-stump" }
+            {
+              "direction": "east",
+              "target_room_id": "room-decay-path"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-ancient-stump"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-gale-falcon", "count": 1, "respawn_sec": 95 },
-            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 1,
+              "respawn_sec": 95
+            },
+            {
+              "monster_def_id": "monster-rune-golem",
+              "count": 1,
+              "respawn_sec": 140
+            }
           ],
           "resources": [],
           "items": [],
@@ -728,18 +1276,41 @@
           "id": "room-dead-lake",
           "name": "寂水死湖",
           "description": "湖面如镜却不见生机，湖底偶尔泛起诡异涟漪，像有巨物游动。",
-          "position": { "x": 0, "y": 2 },
+          "position": {
+            "x": 0,
+            "y": 2
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "south", "target_room_id": "room-decay-path" },
-            { "direction": "east", "target_room_id": "room-spore-marsh" },
-            { "direction": "west", "target_room_id": "room-ancient-stump" },
-            { "direction": "north", "target_room_id": "room-withered-heart" }
+            {
+              "direction": "south",
+              "target_room_id": "room-decay-path"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-spore-marsh"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-ancient-stump"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-withered-heart"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-shadow-viper", "count": 1, "respawn_sec": 70 },
-            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 95 }
+            {
+              "monster_def_id": "monster-shadow-viper",
+              "count": 1,
+              "respawn_sec": 70
+            },
+            {
+              "monster_def_id": "monster-gale-falcon",
+              "count": 2,
+              "respawn_sec": 95
+            }
           ],
           "resources": [],
           "items": [],
@@ -750,18 +1321,36 @@
           "id": "room-ancient-stump",
           "name": "古木残桩",
           "description": "高如楼阁的树桩横卧林间，内部空洞中蕴藏着稀有矿脉。",
-          "position": { "x": -1, "y": 2 },
+          "position": {
+            "x": -1,
+            "y": 2
+          },
           "room_type": "normal",
           "connections": [
-            { "direction": "south", "target_room_id": "room-root-maze" },
-            { "direction": "east", "target_room_id": "room-dead-lake" }
+            {
+              "direction": "south",
+              "target_room_id": "room-root-maze"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-dead-lake"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-rune-golem", "count": 2, "respawn_sec": 140 }
+            {
+              "monster_def_id": "monster-rune-golem",
+              "count": 2,
+              "respawn_sec": 140
+            }
           ],
           "resources": [
-            { "resource_id": "res-spirit-stone-ore", "count": 6, "collect_limit": 6, "respawn_sec": 900 }
+            {
+              "resource_id": "res-spirit-stone-ore",
+              "count": 6,
+              "collect_limit": 6,
+              "respawn_sec": 900
+            }
           ],
           "items": [],
           "portals": [],
@@ -771,22 +1360,813 @@
           "id": "room-withered-heart",
           "name": "枯心祭场",
           "description": "幽林核心的古老祭场，树妖王在此沉眠，苏醒时会吞噬一切闯入者。",
-          "position": { "x": 0, "y": 3 },
+          "position": {
+            "x": 0,
+            "y": 3
+          },
           "room_type": "boss",
           "connections": [
-            { "direction": "south", "target_room_id": "room-dead-lake" }
+            {
+              "direction": "south",
+              "target_room_id": "room-dead-lake"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-elite-storm-wolf", "count": 1, "respawn_sec": 900 },
-            { "monster_def_id": "monster-boss-withered-ent", "count": 1, "respawn_sec": 3600 }
+            {
+              "monster_def_id": "monster-elite-storm-wolf",
+              "count": 1,
+              "respawn_sec": 900
+            },
+            {
+              "monster_def_id": "monster-boss-withered-ent",
+              "count": 1,
+              "respawn_sec": 3600
+            }
           ],
           "resources": [],
           "items": [],
           "portals": [],
           "events": [
-            { "event_id": "evt-withered-grove-boss", "trigger": "enter", "once": false }
+            {
+              "event_id": "evt-withered-grove-boss",
+              "trigger": "enter",
+              "once": false
+            }
           ]
+        }
+      ]
+    },
+    {
+      "id": "map-yaowang-valley",
+      "code": "yaowang_valley",
+      "name": "药王谷",
+      "description": "灵药遍地的谷地，木土灵气浓郁，亦潜伏着异化灵物。",
+      "background_image": "/assets/map/yaowang_valley.png",
+      "map_type": "field",
+      "parent_map_id": "map-withered-grove",
+      "region": "东洲",
+      "world_position": {
+        "x": 146,
+        "y": 258
+      },
+      "req_realm_min": "炼炁化神·炼己期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-yaowang-valley",
+      "revive_room_id": "room-yaowang-valley-entrance",
+      "sort_weight": 620,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-yaowang-valley-entrance",
+          "name": "谷口",
+          "description": "药王谷入口雾气缭绕，石碑上刻着古老药纹。",
+          "position": {
+            "x": 0,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "north",
+              "target_room_id": "room-yaowang-herb-field"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-yaowang-spring"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-duzhang-guchong",
+              "count": 3,
+              "respawn_sec": 60
+            }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-yaowang-herb-field",
+          "name": "药田",
+          "description": "整齐药畦间灵草丛生，但已有部分灵植异化。",
+          "position": {
+            "x": 0,
+            "y": 2
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-yaowang-valley-entrance"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-yaowang-deep-garden"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-duzhang-guchong",
+              "count": 4,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-xinmo-huanying",
+              "count": 1,
+              "respawn_sec": 70
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "res-spirit-herb",
+              "count": 24,
+              "collect_limit": 24,
+              "respawn_sec": 180
+            },
+            {
+              "resource_id": "res-spirit-grass",
+              "count": 24,
+              "collect_limit": 24,
+              "respawn_sec": 180
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-yaowang-spring",
+          "name": "灵泉池",
+          "description": "泉水泛着翠光，池边可见炼丹残痕。",
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "west",
+              "target_room_id": "room-yaowang-valley-entrance"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-yaowang-alchemy-terrace"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-duzhang-guchong",
+              "count": 2,
+              "respawn_sec": 60
+            },
+            {
+              "monster_def_id": "monster-youming-guizu",
+              "count": 2,
+              "respawn_sec": 75
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-lianji-dan",
+              "count": 8,
+              "collect_limit": 8,
+              "respawn_sec": 420
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-yaowang-deep-garden",
+          "name": "药圃深处",
+          "description": "药圃深处毒瘴弥漫，偶有心魔幻影闪现。",
+          "position": {
+            "x": 0,
+            "y": 3
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-yaowang-herb-field"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-yaowang-alchemy-terrace"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-yaowang-cave"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-xinmo-huanying",
+              "count": 3,
+              "respawn_sec": 65
+            },
+            {
+              "monster_def_id": "monster-duzhang-guchong",
+              "count": 2,
+              "respawn_sec": 55
+            }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-yaowang-alchemy-terrace",
+          "name": "炼丹台",
+          "description": "青石炼丹台仍有余温，长老与商人常在此交换情报。",
+          "position": {
+            "x": 1,
+            "y": 2
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-yaowang-spring"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-yaowang-deep-garden"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-yaowang-cave"
+            }
+          ],
+          "npcs": [
+            "npc-yaowang-elder",
+            "npc-lingyao-merchant"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-yaowang-cave",
+          "name": "药王洞",
+          "description": "洞窟内壁刻有古方与心法，偶有幽影掠过。",
+          "position": {
+            "x": 1,
+            "y": 3
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-yaowang-alchemy-terrace"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-yaowang-deep-garden"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-xinmo-huanying",
+              "count": 2,
+              "respawn_sec": 70
+            },
+            {
+              "monster_def_id": "monster-elite-youming-jiangjun",
+              "count": 1,
+              "respawn_sec": 180
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-xinmo-jinghua",
+              "count": 6,
+              "collect_limit": 6,
+              "respawn_sec": 480
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        }
+      ]
+    },
+    {
+      "id": "map-youming-valley",
+      "code": "youming_valley",
+      "name": "幽冥谷",
+      "description": "幽冥阴煞汇聚之地，鬼火终夜不灭，心魔入口隐于殿前。",
+      "background_image": "/assets/map/youming_valley.png",
+      "map_type": "field",
+      "parent_map_id": "map-yaowang-valley",
+      "region": "东洲",
+      "world_position": {
+        "x": 156,
+        "y": 262
+      },
+      "req_realm_min": "炼炁化神·炼己期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-youming-valley",
+      "revive_room_id": "room-youming-stone-steps",
+      "sort_weight": 610,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-youming-stone-steps",
+          "name": "谷口石阶",
+          "description": "通往幽冥谷的石阶潮湿阴冷，鬼火在两侧摇曳。",
+          "position": {
+            "x": 0,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "north",
+              "target_room_id": "room-youming-wind-path"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-youming-marsh"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-youming-guizu",
+              "count": 3,
+              "respawn_sec": 55
+            }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-youming-wind-path",
+          "name": "阴风栈道",
+          "description": "狭长栈道受阴风冲刷，稍有不慎便会坠入深渊。",
+          "position": {
+            "x": 0,
+            "y": 2
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-youming-stone-steps"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-youming-palace-front"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-youming-guizu",
+              "count": 4,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-xinmo-huanying",
+              "count": 1,
+              "respawn_sec": 70
+            }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-youming-marsh",
+          "name": "鬼火沼泽",
+          "description": "沼泽深处鬼火飘散，偶有骨质残片浮出泥面。",
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "west",
+              "target_room_id": "room-youming-stone-steps"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-youming-palace-hall"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-duzhang-guchong",
+              "count": 2,
+              "respawn_sec": 60
+            },
+            {
+              "monster_def_id": "monster-youming-guizu",
+              "count": 2,
+              "respawn_sec": 55
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-youming-gupi",
+              "count": 14,
+              "collect_limit": 14,
+              "respawn_sec": 240
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-youming-palace-front",
+          "name": "幽冥殿前",
+          "description": "殿前古碑裂痕中溢出黑雾，守墓人于此守望入口。",
+          "position": {
+            "x": 0,
+            "y": 3
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-youming-wind-path"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-youming-palace-hall"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-youming-underground-river"
+            }
+          ],
+          "npcs": [
+            "npc-youming-guardian"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": [
+            {
+              "event_id": "evt-xinmo-gate",
+              "trigger": "enter",
+              "once": false
+            }
+          ]
+        },
+        {
+          "id": "room-youming-palace-hall",
+          "name": "幽冥大殿",
+          "description": "殿内符灯长明，暗市商人常与过客交换禁物。",
+          "position": {
+            "x": 1,
+            "y": 2
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-youming-marsh"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-youming-palace-front"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-youming-underground-river"
+            }
+          ],
+          "npcs": [
+            "npc-anshi-merchant"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-youming-underground-river",
+          "name": "地下暗河",
+          "description": "暗河冰冷刺骨，河岸残留着心魔侵蚀后的痕迹。",
+          "position": {
+            "x": 1,
+            "y": 3
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-youming-palace-hall"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-youming-palace-front"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-youming-guizu",
+              "count": 3,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-elite-youming-jiangjun",
+              "count": 1,
+              "respawn_sec": 180
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-xinmo-jinghua",
+              "count": 8,
+              "collect_limit": 8,
+              "respawn_sec": 420
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        }
+      ]
+    },
+    {
+      "id": "map-nanhai-coast",
+      "code": "nanhai_coast",
+      "name": "南海岸",
+      "description": "海潮与地火交错的边境地带，矿渊入口隐于礁岸深处。",
+      "background_image": "/assets/map/nanhai_coast.png",
+      "map_type": "field",
+      "parent_map_id": "map-youming-valley",
+      "region": "东洲",
+      "world_position": {
+        "x": 166,
+        "y": 270
+      },
+      "req_realm_min": "炼炁化神·炼己期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-nanhai-coast",
+      "revive_room_id": "room-nanhai-port",
+      "sort_weight": 600,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-nanhai-port",
+          "name": "海滨渡口",
+          "description": "渡口停泊着灵舟，海商在潮声中叫卖。",
+          "position": {
+            "x": 0,
+            "y": 1
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "north",
+              "target_room_id": "room-nanhai-coral-beach"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-nanhai-mine-entrance"
+            }
+          ],
+          "npcs": [
+            "npc-nanhai-merchant"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-nanhai-coral-beach",
+          "name": "珊瑚滩",
+          "description": "潮退后珊瑚外露，海妖与蛟兽在浅海游弋。",
+          "position": {
+            "x": 0,
+            "y": 2
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-nanhai-port"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-nanhai-deep-reef"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-nanhai-haijiao",
+              "count": 4,
+              "respawn_sec": 55
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-nanhai-lingzhu",
+              "count": 16,
+              "collect_limit": 16,
+              "respawn_sec": 220
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-nanhai-mine-entrance",
+          "name": "灵脉矿洞入口",
+          "description": "矿洞入口有断裂符阵，探索者在此驻守。",
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "west",
+              "target_room_id": "room-nanhai-port"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-nanhai-dragon-bone"
+            }
+          ],
+          "npcs": [
+            "npc-kuangmai-explorer"
+          ],
+          "monsters": [],
+          "resources": [
+            {
+              "resource_id": "mat-lingmai-jingshi",
+              "count": 12,
+              "collect_limit": 12,
+              "respawn_sec": 260
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": [
+            {
+              "event_id": "evt-lingmai-gate",
+              "trigger": "enter",
+              "once": false
+            }
+          ]
+        },
+        {
+          "id": "room-nanhai-deep-reef",
+          "name": "深海暗礁",
+          "description": "暗礁下海流紊乱，海妖擅长借潮偷袭。",
+          "position": {
+            "x": 0,
+            "y": 3
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-nanhai-coral-beach"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-nanhai-dragon-bone"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-nanhai-haijiao",
+              "count": 3,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-lingmai-shimo",
+              "count": 2,
+              "respawn_sec": 65
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-nanhai-lingzhu",
+              "count": 12,
+              "collect_limit": 12,
+              "respawn_sec": 240
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-nanhai-dragon-bone",
+          "name": "龙骨残骸",
+          "description": "巨大龙骨横陈海岸，矿渊晶兽盘踞其旁。",
+          "position": {
+            "x": 1,
+            "y": 2
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-nanhai-mine-entrance"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-nanhai-deep-reef"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-nanhai-island-pier"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-lingmai-jingkuangshou",
+              "count": 3,
+              "respawn_sec": 60
+            },
+            {
+              "monster_def_id": "monster-elite-lingmai-jingshou",
+              "count": 1,
+              "respawn_sec": 180
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-lingmai-jingshi",
+              "count": 10,
+              "collect_limit": 10,
+              "respawn_sec": 260
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-nanhai-island-pier",
+          "name": "仙岛码头",
+          "description": "古旧栈桥通向迷雾仙岛，远处可见赤潮翻涌。",
+          "position": {
+            "x": 1,
+            "y": 3
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-nanhai-dragon-bone"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-nanhai-haijiao",
+              "count": 2,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-elite-lingmai-jingshou",
+              "count": 1,
+              "respawn_sec": 180
+            }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
         }
       ]
     }

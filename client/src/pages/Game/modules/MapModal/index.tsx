@@ -1,4 +1,4 @@
-import { Button, Input, Modal, Table, Tabs, Tag } from 'antd';
+import { Button, Input, Modal, Select, Table, Tabs, Tag } from 'antd';
 import { LeftOutlined, SearchOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import map01 from '../../../../assets/images/map/cp_icon_map01.png';
@@ -40,6 +40,11 @@ type MapEntry = {
   drops: MapDrop[];
   dungeonStages?: NonNullable<DungeonPreviewResponse['data']>['stages'];
   dungeonEntry?: NonNullable<DungeonPreviewResponse['data']>['entry'];
+};
+
+type DungeonDifficultyOption = {
+  value: number;
+  label: string;
 };
 
 const REALM_ORDER = [
@@ -94,6 +99,16 @@ const dungeonTypeLabels: Record<string, string> = {
   event: '活动秘境',
 };
 
+const DUNGEON_DIFFICULTY_CANDIDATES = [1, 2, 3] as const;
+
+const dungeonDifficultyFallbackLabels: Record<number, string> = {
+  1: '普通',
+  2: '困难',
+  3: '噩梦',
+};
+
+const getDungeonDetailCacheKey = (dungeonId: string, rank: number): string => `${dungeonId}@@${rank}`;
+
 interface MapModalProps {
   open: boolean;
   onClose: () => void;
@@ -121,6 +136,9 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
   const [detailLoading, setDetailLoading] = useState(false);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [dungeonRankById, setDungeonRankById] = useState<Record<string, number>>({});
+  const [dungeonDifficultyOptionsById, setDungeonDifficultyOptionsById] = useState<Record<string, DungeonDifficultyOption[]>>({});
+  const [dungeonDifficultyLoadingById, setDungeonDifficultyLoadingById] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -220,17 +238,77 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
 
   const activeMap = useMemo(() => filtered.find((m) => m.id === safeActiveId) ?? null, [filtered, safeActiveId]);
 
+  const activeDungeonRank = useMemo(() => {
+    if (!activeMap || activeMap.category !== 'dungeon') return 1;
+    const rank = dungeonRankById[activeMap.id];
+    if (typeof rank === 'number' && Number.isFinite(rank) && rank > 0) return Math.floor(rank);
+    return 1;
+  }, [activeMap, dungeonRankById]);
+
+  const activeDetailKey = useMemo(() => {
+    if (!activeMap) return '';
+    return activeMap.category === 'dungeon' ? getDungeonDetailCacheKey(activeMap.id, activeDungeonRank) : activeMap.id;
+  }, [activeDungeonRank, activeMap]);
+
+  useEffect(() => {
+    if (!open || !activeMap || activeMap.category !== 'dungeon') return;
+    if (dungeonDifficultyOptionsById[activeMap.id]) return;
+    let cancelled = false;
+    const dungeonId = activeMap.id;
+    setDungeonDifficultyLoadingById((prev) => ({ ...prev, [dungeonId]: true }));
+    const loadOptions = async () => {
+      try {
+        const optionByRank = new Map<number, DungeonDifficultyOption>();
+        for (const rank of DUNGEON_DIFFICULTY_CANDIDATES) {
+          const res = await getDungeonPreview(dungeonId, rank).catch(() => null);
+          const difficulty = res?.success ? (res.data?.difficulty ?? null) : null;
+          if (!difficulty) continue;
+          const parsedRank =
+            typeof difficulty.difficulty_rank === 'number' && Number.isFinite(difficulty.difficulty_rank)
+              ? Math.floor(difficulty.difficulty_rank)
+              : rank;
+          if (parsedRank <= 0 || optionByRank.has(parsedRank)) continue;
+          const name =
+            typeof difficulty.name === 'string' && difficulty.name.trim()
+              ? difficulty.name.trim()
+              : dungeonDifficultyFallbackLabels[parsedRank] || `难度${parsedRank}`;
+          optionByRank.set(parsedRank, { value: parsedRank, label: name });
+        }
+        if (cancelled) return;
+        const options = Array.from(optionByRank.values()).sort((a, b) => a.value - b.value);
+        const normalizedOptions =
+          options.length > 0 ? options : [{ value: 1, label: dungeonDifficultyFallbackLabels[1] || '普通' }];
+        setDungeonDifficultyOptionsById((prev) => ({ ...prev, [dungeonId]: normalizedOptions }));
+        setDungeonRankById((prev) => {
+          const currentRank = prev[dungeonId];
+          if (typeof currentRank === 'number' && normalizedOptions.some((opt) => opt.value === currentRank)) {
+            return prev;
+          }
+          return { ...prev, [dungeonId]: normalizedOptions[0].value };
+        });
+      } finally {
+        if (cancelled) return;
+        setDungeonDifficultyLoadingById((prev) => ({ ...prev, [dungeonId]: false }));
+      }
+    };
+    void loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMap, dungeonDifficultyOptionsById, open]);
+
   useEffect(() => {
     if (!open) return;
     if (!safeActiveId) return;
-    if (detailById[safeActiveId]) return;
-    let cancelled = false;
-    setDetailLoading(true);
     const entry = filtered.find((m) => m.id === safeActiveId) ?? null;
     const isDungeon = entry?.category === 'dungeon';
+    const detailKey = isDungeon ? getDungeonDetailCacheKey(safeActiveId, activeDungeonRank) : safeActiveId;
+    if (detailById[detailKey]) return;
+    let cancelled = false;
+    setDetailLoading(true);
 
     if (isDungeon) {
-      getDungeonPreview(safeActiveId, 1)
+      getDungeonPreview(safeActiveId, activeDungeonRank)
         .then((detailRes) => {
           if (cancelled) return;
           const monsters = detailRes?.success && detailRes.data?.monsters ? detailRes.data.monsters : [];
@@ -239,7 +317,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
           const dungeonEntry = detailRes?.success ? (detailRes.data?.entry ?? null) : null;
           setDetailById((prev) => ({
             ...prev,
-            [safeActiveId]: {
+            [detailKey]: {
               npcs: [],
               monsters: monsters.map((m) => m.name).filter(Boolean),
               monsterObjs: monsters.map((m) => ({ id: m.id, name: m.name })).filter((m) => m.id && m.name),
@@ -254,7 +332,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
           if (cancelled) return;
           setDetailById((prev) => ({
             ...prev,
-            [safeActiveId]: { npcs: [], monsters: [], drops: [], dungeonStages: [], dungeonEntry: null, startRoomId: '' },
+            [detailKey]: { npcs: [], monsters: [], drops: [], dungeonStages: [], dungeonEntry: null, startRoomId: '' },
           }));
         })
         .finally(() => {
@@ -363,34 +441,50 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
     return () => {
       cancelled = true;
     };
-  }, [detailById, filtered, open, safeActiveId]);
+  }, [activeDungeonRank, detailById, filtered, open, safeActiveId]);
 
   const mergedActiveMap = useMemo(() => {
     if (!activeMap) return null;
-    const d = detailById[activeMap.id];
+    const d = detailById[activeDetailKey];
     if (!d) return activeMap;
     return { ...activeMap, ...d };
-  }, [activeMap, detailById]);
+  }, [activeDetailKey, activeMap, detailById]);
+
+  const activeDetail = useMemo(() => {
+    if (!activeDetailKey) return null;
+    return detailById[activeDetailKey] ?? null;
+  }, [activeDetailKey, detailById]);
 
   useEffect(() => {
     if (open) setShowMobileDetail(false);
   }, [open]);
 
   const activeRealmText = useMemo(() => normalizeRealmText(mergedActiveMap?.realm), [mergedActiveMap?.realm]);
+  const activeDungeonDifficultyOptions = useMemo(() => {
+    if (!activeMap || activeMap.category !== 'dungeon') return [] as DungeonDifficultyOption[];
+    return dungeonDifficultyOptionsById[activeMap.id] ?? [{ value: 1, label: dungeonDifficultyFallbackLabels[1] || '普通' }];
+  }, [activeMap, dungeonDifficultyOptionsById]);
+  const activeDungeonDifficultyLoading = useMemo(() => {
+    if (!activeMap || activeMap.category !== 'dungeon') return false;
+    return dungeonDifficultyLoadingById[activeMap.id] === true;
+  }, [activeMap, dungeonDifficultyLoadingById]);
+  const activeDungeonDifficultyText = useMemo(() => {
+    if (!activeMap || activeMap.category !== 'dungeon') return '';
+    const matched = activeDungeonDifficultyOptions.find((opt) => opt.value === activeDungeonRank);
+    return matched?.label ?? '';
+  }, [activeDungeonDifficultyOptions, activeDungeonRank, activeMap]);
 
   const monsterRows = useMemo(() => {
     if (!mergedActiveMap) return [] as MapMonster[];
-    const d = detailById[mergedActiveMap.id];
-    if (d?.monsterObjs) return d.monsterObjs;
+    if (activeDetail?.monsterObjs) return activeDetail.monsterObjs;
     return (mergedActiveMap.monsters ?? []).map((name) => ({ id: name, name }));
-  }, [detailById, mergedActiveMap]);
+  }, [activeDetail, mergedActiveMap]);
   const dropRows = useMemo(() => mergedActiveMap?.drops ?? [], [mergedActiveMap]);
   const monsterDropRows = useMemo(() => {
     if (!mergedActiveMap) return [];
     if (mergedActiveMap.category === 'dungeon') return [];
-    const d = detailById[mergedActiveMap.id];
-    const monsters = d?.monsterObjs ?? [];
-    const byId = d?.monsterDropsById ?? {};
+    const monsters = activeDetail?.monsterObjs ?? [];
+    const byId = activeDetail?.monsterDropsById ?? {};
     const rows: Array<{ key: string; monster: string; name: string; quality: string; chance: string }> = [];
     for (const m of monsters) {
       const drops = byId[m.id] ?? [];
@@ -406,7 +500,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
       }
     }
     return rows;
-  }, [detailById, mergedActiveMap]);
+  }, [activeDetail, mergedActiveMap]);
   const waveRows = useMemo(() => {
     if (!mergedActiveMap || mergedActiveMap.category !== 'dungeon') return [];
     const stages = mergedActiveMap.dungeonStages ?? [];
@@ -445,16 +539,16 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
   }, [mergedActiveMap]);
   const shouldShowNpcSection = useMemo(() => {
     if (!mergedActiveMap) return false;
-    return (detailLoading && !detailById[mergedActiveMap.id]) || mergedActiveMap.npcs.length > 0;
-  }, [detailById, detailLoading, mergedActiveMap]);
+    return (detailLoading && !activeDetail) || mergedActiveMap.npcs.length > 0;
+  }, [activeDetail, detailLoading, mergedActiveMap]);
   const shouldShowMonsterSection = useMemo(() => {
     if (!mergedActiveMap) return false;
-    return (detailLoading && !detailById[mergedActiveMap.id]) || mergedActiveMap.monsters.length > 0;
-  }, [detailById, detailLoading, mergedActiveMap]);
+    return (detailLoading && !activeDetail) || mergedActiveMap.monsters.length > 0;
+  }, [activeDetail, detailLoading, mergedActiveMap]);
   const shouldShowWaveSection = useMemo(() => {
     if (!mergedActiveMap || mergedActiveMap.category !== 'dungeon') return false;
-    return (detailLoading && !detailById[mergedActiveMap.id]) || waveRows.length > 0;
-  }, [detailById, detailLoading, mergedActiveMap, waveRows.length]);
+    return (detailLoading && !activeDetail) || waveRows.length > 0;
+  }, [activeDetail, detailLoading, mergedActiveMap, waveRows.length]);
 
   const monsterColumns = useMemo(
     () => [{ title: '怪物', dataIndex: 'name', key: 'name' }],
@@ -645,12 +739,34 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                   <div className="map-modal-hero-tags">
                     <Tag color="blue">{mergedActiveMap.tag}</Tag>
                     <Tag color="default">{activeRealmText}</Tag>
+                    {mergedActiveMap.category === 'dungeon' && activeDungeonDifficultyText ? (
+                      <Tag color="gold">{activeDungeonDifficultyText}</Tag>
+                    ) : null}
                     {mergedActiveMap.category === 'dungeon' && dungeonEntryText ? <Tag color="orange">{dungeonEntryText}</Tag> : null}
                   </div>
                 </div>
               </div>
 
               <div className="map-modal-detail">
+                {mergedActiveMap.category === 'dungeon' ? (
+                  <div className="map-modal-section">
+                    <div className="map-modal-section-title">挑战难度</div>
+                    <div className="map-modal-difficulty-row">
+                      <div className="map-modal-difficulty-label">预览与进入将使用当前难度</div>
+                      <Select
+                        className="map-modal-difficulty-select"
+                        value={activeDungeonRank}
+                        options={activeDungeonDifficultyOptions}
+                        loading={activeDungeonDifficultyLoading}
+                        onChange={(value) => {
+                          const nextRank = Number(value);
+                          if (!Number.isFinite(nextRank) || nextRank <= 0) return;
+                          setDungeonRankById((prev) => ({ ...prev, [mergedActiveMap.id]: Math.floor(nextRank) }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
                 <div className="map-modal-section">
                   <div className="map-modal-section-title">{mergedActiveMap.category === 'dungeon' ? '秘境描述' : '地图描述'}</div>
                   <div className="map-modal-section-text">{mergedActiveMap.desc || '暂无描述'}</div>
@@ -660,7 +776,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                   <div className="map-modal-section">
                     <div className="map-modal-section-title">存在的 NPC</div>
                     <div className="map-modal-section-text">
-                      {detailLoading && !detailById[mergedActiveMap.id] ? '加载中...' : mergedActiveMap.npcs.join('、')}
+                      {detailLoading && !activeDetail ? '加载中...' : mergedActiveMap.npcs.join('、')}
                     </div>
                   </div>
                 ) : null}
@@ -675,7 +791,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                         columns={monsterColumns}
                         dataSource={monsterRows}
                         pagination={false}
-                        locale={{ emptyText: detailLoading && !detailById[mergedActiveMap.id] ? '加载中...' : '暂无怪物' }}
+                        locale={{ emptyText: detailLoading && !activeDetail ? '加载中...' : '暂无怪物' }}
                       />
                     </div>
                   </div>
@@ -697,7 +813,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                             if (monsterNames.length === 0) {
                               return (
                                 <div className="map-modal-empty">
-                                  {detailLoading && !detailById[mergedActiveMap.id]
+                                  {detailLoading && !activeDetail
                                     ? '加载中...'
                                     : monsterRows.length > 0
                                       ? '暂无怪物掉落'
@@ -731,12 +847,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                           dataSource={monsterDropRows}
                           pagination={false}
                           locale={{
-                            emptyText:
-                              detailLoading && !detailById[mergedActiveMap.id]
-                                ? '加载中...'
-                                : monsterRows.length > 0
-                                  ? '暂无怪物掉落'
-                                  : '暂无怪物',
+                            emptyText: detailLoading && !activeDetail ? '加载中...' : monsterRows.length > 0 ? '暂无怪物掉落' : '暂无怪物',
                           }}
                         />
                       )}
@@ -754,7 +865,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                         columns={waveColumns}
                         dataSource={waveRows}
                         pagination={false}
-                        locale={{ emptyText: detailLoading && !detailById[mergedActiveMap.id] ? '加载中...' : '暂无波次' }}
+                        locale={{ emptyText: detailLoading && !activeDetail ? '加载中...' : '暂无波次' }}
                       />
                     </div>
                   </div>
@@ -770,7 +881,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                         columns={dropColumns}
                         dataSource={dropRows}
                         pagination={false}
-                        locale={{ emptyText: detailLoading && !detailById[mergedActiveMap.id] ? '加载中...' : '暂无掉落' }}
+                        locale={{ emptyText: detailLoading && !activeDetail ? '加载中...' : '暂无掉落' }}
                       />
                     </div>
                   </div>
@@ -782,11 +893,11 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                   type="primary"
                   onClick={async () => {
                     if (mergedActiveMap.category === 'dungeon') {
-                      onEnterDungeon?.({ dungeonId: mergedActiveMap.id, rank: 1 });
+                      onEnterDungeon?.({ dungeonId: mergedActiveMap.id, rank: activeDungeonRank });
                       onClose();
                       return;
                     }
-                    const startRoomId = detailById[mergedActiveMap.id]?.startRoomId;
+                    const startRoomId = activeDetail?.startRoomId;
                     if (startRoomId) {
                       onEnter?.({ mapId: mergedActiveMap.id, roomId: startRoomId });
                       onClose();

@@ -1816,101 +1816,109 @@ export const loadMainQuestSeeds = async (): Promise<{ chapters: number; sections
   let sectionsCount = 0;
   let dialoguesCount = 0;
 
-  // 加载章节和任务节
-  const chapterData = readJsonFile<{ chapters: MainQuestChapterSeed[]; sections: MainQuestSectionSeed[] }>('main_quest_chapter1.json');
-  
-  if (chapterData?.chapters) {
-    for (const chapter of chapterData.chapters) {
-      try {
-        const sql = `
-          INSERT INTO main_quest_chapter (
-            id, chapter_num, name, description, background, min_realm,
-            chapter_rewards, unlock_features, sort_weight, enabled
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-          ON CONFLICT (id) DO UPDATE SET
-            chapter_num = EXCLUDED.chapter_num,
-            name = EXCLUDED.name,
-            description = EXCLUDED.description,
-            background = EXCLUDED.background,
-            min_realm = EXCLUDED.min_realm,
-            chapter_rewards = EXCLUDED.chapter_rewards,
-            unlock_features = EXCLUDED.unlock_features,
-            sort_weight = EXCLUDED.sort_weight,
-            enabled = EXCLUDED.enabled
-        `;
-        await query(sql, [
-          chapter.id,
-          chapter.chapter_num,
-          chapter.name,
-          chapter.description || null,
-          chapter.background || null,
-          chapter.min_realm || '凡人',
-          chapter.chapter_rewards ? JSON.stringify(chapter.chapter_rewards) : '{}',
-          chapter.unlock_features ? JSON.stringify(chapter.unlock_features) : '[]',
-          chapter.sort_weight || 0,
-          chapter.enabled !== false
-        ]);
-        chaptersCount++;
-      } catch (error) {
-        console.error(`插入主线章节失败 ${chapter.id}:`, error);
+  const chapterFiles = fs.existsSync(SEEDS_DIR)
+    ? fs
+        .readdirSync(SEEDS_DIR)
+        .filter((filename) => /^main_quest_chapter\d+\.json$/i.test(filename))
+        .sort((a, b) => a.localeCompare(b))
+    : [];
+
+  for (const chapterFile of chapterFiles) {
+    const chapterData = readJsonFile<{ chapters: MainQuestChapterSeed[]; sections: MainQuestSectionSeed[] }>(chapterFile);
+
+    if (chapterData?.chapters) {
+      for (const chapter of chapterData.chapters) {
+        try {
+          const sql = `
+            INSERT INTO main_quest_chapter (
+              id, chapter_num, name, description, background, min_realm,
+              chapter_rewards, unlock_features, sort_weight, enabled
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (id) DO UPDATE SET
+              chapter_num = EXCLUDED.chapter_num,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              background = EXCLUDED.background,
+              min_realm = EXCLUDED.min_realm,
+              chapter_rewards = EXCLUDED.chapter_rewards,
+              unlock_features = EXCLUDED.unlock_features,
+              sort_weight = EXCLUDED.sort_weight,
+              enabled = EXCLUDED.enabled
+          `;
+          await query(sql, [
+            chapter.id,
+            chapter.chapter_num,
+            chapter.name,
+            chapter.description || null,
+            chapter.background || null,
+            chapter.min_realm || '凡人',
+            chapter.chapter_rewards ? JSON.stringify(chapter.chapter_rewards) : '{}',
+            chapter.unlock_features ? JSON.stringify(chapter.unlock_features) : '[]',
+            chapter.sort_weight || 0,
+            chapter.enabled !== false
+          ]);
+          chaptersCount++;
+        } catch (error) {
+          console.error(`插入主线章节失败 ${chapter.id}:`, error);
+        }
       }
     }
-  }
 
-  if (chapterData?.sections) {
-    for (const section of chapterData.sections) {
-      try {
-        const sql = `
-          INSERT INTO main_quest_section (
-            id, chapter_id, section_num, name, description, brief,
-            npc_id, map_id, room_id, min_realm,
-            dialogue_id, dialogue_complete_id, objectives, rewards,
-            auto_accept, auto_complete, is_chapter_final, sort_weight, enabled
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-          ON CONFLICT (id) DO UPDATE SET
-            chapter_id = EXCLUDED.chapter_id,
-            section_num = EXCLUDED.section_num,
-            name = EXCLUDED.name,
-            description = EXCLUDED.description,
-            brief = EXCLUDED.brief,
-            npc_id = EXCLUDED.npc_id,
-            map_id = EXCLUDED.map_id,
-            room_id = EXCLUDED.room_id,
-            min_realm = EXCLUDED.min_realm,
-            dialogue_id = EXCLUDED.dialogue_id,
-            dialogue_complete_id = EXCLUDED.dialogue_complete_id,
-            objectives = EXCLUDED.objectives,
-            rewards = EXCLUDED.rewards,
-            auto_accept = EXCLUDED.auto_accept,
-            auto_complete = EXCLUDED.auto_complete,
-            is_chapter_final = EXCLUDED.is_chapter_final,
-            sort_weight = EXCLUDED.sort_weight,
-            enabled = EXCLUDED.enabled
-        `;
-        await query(sql, [
-          section.id,
-          section.chapter_id,
-          section.section_num,
-          section.name,
-          section.description || null,
-          section.brief || null,
-          section.npc_id || null,
-          section.map_id || null,
-          section.room_id || null,
-          section.min_realm || null,
-          section.dialogue_id || null,
-          section.dialogue_complete_id || null,
-          section.objectives ? JSON.stringify(section.objectives) : '[]',
-          section.rewards ? JSON.stringify(section.rewards) : '{}',
-          section.auto_accept !== false,
-          section.auto_complete || false,
-          section.is_chapter_final || false,
-          section.sort_weight || 0,
-          section.enabled !== false
-        ]);
-        sectionsCount++;
-      } catch (error) {
-        console.error(`插入主线任务节失败 ${section.id}:`, error);
+    if (chapterData?.sections) {
+      for (const section of chapterData.sections) {
+        try {
+          const sql = `
+            INSERT INTO main_quest_section (
+              id, chapter_id, section_num, name, description, brief,
+              npc_id, map_id, room_id, min_realm,
+              dialogue_id, dialogue_complete_id, objectives, rewards,
+              auto_accept, auto_complete, is_chapter_final, sort_weight, enabled
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            ON CONFLICT (id) DO UPDATE SET
+              chapter_id = EXCLUDED.chapter_id,
+              section_num = EXCLUDED.section_num,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              brief = EXCLUDED.brief,
+              npc_id = EXCLUDED.npc_id,
+              map_id = EXCLUDED.map_id,
+              room_id = EXCLUDED.room_id,
+              min_realm = EXCLUDED.min_realm,
+              dialogue_id = EXCLUDED.dialogue_id,
+              dialogue_complete_id = EXCLUDED.dialogue_complete_id,
+              objectives = EXCLUDED.objectives,
+              rewards = EXCLUDED.rewards,
+              auto_accept = EXCLUDED.auto_accept,
+              auto_complete = EXCLUDED.auto_complete,
+              is_chapter_final = EXCLUDED.is_chapter_final,
+              sort_weight = EXCLUDED.sort_weight,
+              enabled = EXCLUDED.enabled
+          `;
+          await query(sql, [
+            section.id,
+            section.chapter_id,
+            section.section_num,
+            section.name,
+            section.description || null,
+            section.brief || null,
+            section.npc_id || null,
+            section.map_id || null,
+            section.room_id || null,
+            section.min_realm || null,
+            section.dialogue_id || null,
+            section.dialogue_complete_id || null,
+            section.objectives ? JSON.stringify(section.objectives) : '[]',
+            section.rewards ? JSON.stringify(section.rewards) : '{}',
+            section.auto_accept !== false,
+            section.auto_complete || false,
+            section.is_chapter_final || false,
+            section.sort_weight || 0,
+            section.enabled !== false
+          ]);
+          sectionsCount++;
+        } catch (error) {
+          console.error(`插入主线任务节失败 ${section.id}:`, error);
+        }
       }
     }
   }
@@ -1940,10 +1948,17 @@ export const loadMainQuestSeeds = async (): Promise<{ chapters: number; sections
       AND cs.enabled_sections < b.max_sections
   `);
 
-  // 加载对话定义
-  const dialogueData = readJsonFile<{ dialogues: DialogueDefSeed[] }>('dialogue_main_chapter1.json');
-  
-  if (dialogueData?.dialogues) {
+  const dialogueFiles = fs.existsSync(SEEDS_DIR)
+    ? fs
+        .readdirSync(SEEDS_DIR)
+        .filter((filename) => /^dialogue_main_chapter\d+\.json$/i.test(filename))
+        .sort((a, b) => a.localeCompare(b))
+    : [];
+
+  for (const dialogueFile of dialogueFiles) {
+    const dialogueData = readJsonFile<{ dialogues: DialogueDefSeed[] }>(dialogueFile);
+    if (!dialogueData?.dialogues) continue;
+
     for (const dialogue of dialogueData.dialogues) {
       try {
         const sql = `

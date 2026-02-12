@@ -170,13 +170,166 @@
       "shop_id": "shop-mysterious",
       "sort_weight": 60,
       "enabled": true
+    },
+    {
+      "id": "npc-yaowang-elder",
+      "code": "yaowang_elder",
+      "name": "药王谷长老",
+      "title": "药王谷执事",
+      "gender": "男",
+      "realm": "炼炁化神·炼己期",
+      "avatar": "/assets/npc/village_elder.png",
+      "description": "掌管药王谷内务的长老，深谙丹道与心境修行。",
+      "npc_type": "quest",
+      "area": "NE",
+      "base_attrs": {
+        "qixue": 6200,
+        "max_qixue": 6200,
+        "wugong": 180,
+        "fagong": 210,
+        "wufang": 160,
+        "fafang": 180,
+        "sudu": 10
+      },
+      "talk_tree_id": "talk-yaowang-elder",
+      "quest_giver_id": "qg-lianji-main",
+      "sort_weight": 230,
+      "enabled": true
+    },
+    {
+      "id": "npc-lingyao-merchant",
+      "code": "lingyao_merchant",
+      "name": "灵药商人",
+      "title": "药谷行商",
+      "gender": "女",
+      "realm": "炼炁化神·炼己期",
+      "avatar": "/assets/npc/herbalist.png",
+      "description": "常年奔走于药王谷与东洲城，收售高阶药材。",
+      "npc_type": "merchant",
+      "area": "NE",
+      "base_attrs": {
+        "qixue": 4200,
+        "max_qixue": 4200,
+        "wugong": 120,
+        "fagong": 150,
+        "wufang": 110,
+        "fafang": 130,
+        "sudu": 11
+      },
+      "talk_tree_id": "talk-lingyao-merchant",
+      "shop_id": "shop-lingyao",
+      "sort_weight": 220,
+      "enabled": true
+    },
+    {
+      "id": "npc-youming-guardian",
+      "code": "youming_guardian",
+      "name": "幽冥守墓人",
+      "title": "冥殿守望者",
+      "gender": "男",
+      "realm": "炼炁化神·炼己期",
+      "avatar": "/assets/npc/warehouse_keeper.png",
+      "description": "常驻幽冥殿前，负责封印与引导心魔试炼。",
+      "npc_type": "quest",
+      "area": "E",
+      "base_attrs": {
+        "qixue": 6800,
+        "max_qixue": 6800,
+        "wugong": 200,
+        "fagong": 180,
+        "wufang": 180,
+        "fafang": 170,
+        "sudu": 9
+      },
+      "talk_tree_id": "talk-youming-guardian",
+      "quest_giver_id": "qg-lianji-main",
+      "sort_weight": 230,
+      "enabled": true
+    },
+    {
+      "id": "npc-anshi-merchant",
+      "code": "anshi_merchant",
+      "name": "暗市商人",
+      "title": "黑市中间人",
+      "gender": "女",
+      "realm": "炼炁化神·炼己期",
+      "avatar": "/assets/npc/mysterious_merchant.png",
+      "description": "经营稀有材料与来路不明的装备，价格浮动极大。",
+      "npc_type": "merchant",
+      "area": "E",
+      "base_attrs": {
+        "qixue": 4300,
+        "max_qixue": 4300,
+        "wugong": 130,
+        "fagong": 150,
+        "wufang": 120,
+        "fafang": 120,
+        "sudu": 11
+      },
+      "talk_tree_id": "talk-anshi-merchant",
+      "shop_id": "shop-anshi",
+      "sort_weight": 220,
+      "enabled": true
+    },
+    {
+      "id": "npc-nanhai-merchant",
+      "code": "nanhai_merchant",
+      "name": "南海商人",
+      "title": "海路总商",
+      "gender": "男",
+      "realm": "炼炁化神·炼己期",
+      "avatar": "/assets/npc/blacksmith.png",
+      "description": "掌握南海航线与矿材交易渠道的老练商人。",
+      "npc_type": "merchant",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 4500,
+        "max_qixue": 4500,
+        "wugong": 140,
+        "fagong": 140,
+        "wufang": 130,
+        "fafang": 130,
+        "sudu": 10
+      },
+      "talk_tree_id": "talk-nanhai-merchant",
+      "shop_id": "shop-nanhai",
+      "sort_weight": 220,
+      "enabled": true
+    },
+    {
+      "id": "npc-kuangmai-explorer",
+      "code": "kuangmai_explorer",
+      "name": "矿脉探索者",
+      "title": "矿渊向导",
+      "gender": "男",
+      "realm": "炼炁化神·炼己期",
+      "avatar": "/assets/npc/teleporter.png",
+      "description": "熟悉矿渊路线与危险点位，为修士提供探索引导。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 6400,
+        "max_qixue": 6400,
+        "wugong": 190,
+        "fagong": 170,
+        "wufang": 175,
+        "fafang": 160,
+        "sudu": 9
+      },
+      "talk_tree_id": "talk-kuangmai-explorer",
+      "quest_giver_id": "qg-lianji-main",
+      "sort_weight": 230,
+      "enabled": true
     }
   ],
   "talk_trees": [
     {
       "id": "talk-guide",
       "name": "引路童子对话",
-      "greeting_lines": ["欢迎来到青云村！修行之路漫漫，先从认识这里开始吧。", "你若有疑问，尽管问我。"],
+      "greeting_lines": [
+        "欢迎来到青云村！修行之路漫漫，先从认识这里开始吧。",
+        "你若有疑问，尽管问我。"
+      ],
       "enabled": true,
       "sort_weight": 100,
       "version": 1
@@ -184,9 +337,78 @@
     {
       "id": "talk-village-elder",
       "name": "村长对话",
-      "greeting_lines": ["你来了。青云村虽小，却也暗流涌动。", "若想在这世道立足，先练胆，再练心。"],
+      "greeting_lines": [
+        "你来了。青云村虽小，却也暗流涌动。",
+        "若想在这世道立足，先练胆，再练心。"
+      ],
       "enabled": true,
       "sort_weight": 90,
+      "version": 1
+    },
+    {
+      "id": "talk-yaowang-elder",
+      "name": "药王谷长老对话",
+      "greeting_lines": [
+        "心魔不只在敌人身上，也在你的念头里。",
+        "先稳心，再谈突破。"
+      ],
+      "enabled": true,
+      "sort_weight": 230,
+      "version": 1
+    },
+    {
+      "id": "talk-lingyao-merchant",
+      "name": "灵药商人对话",
+      "greeting_lines": [
+        "药材讲究时机，错过一炷香就可能失灵。",
+        "你若要配丹，我这里有最稳的方子。"
+      ],
+      "enabled": true,
+      "sort_weight": 220,
+      "version": 1
+    },
+    {
+      "id": "talk-youming-guardian",
+      "name": "幽冥守墓人对话",
+      "greeting_lines": [
+        "想入心魔幻境，先问问自己的道心够不够稳。",
+        "退一步是活路，进一步是成道。"
+      ],
+      "enabled": true,
+      "sort_weight": 230,
+      "version": 1
+    },
+    {
+      "id": "talk-anshi-merchant",
+      "name": "暗市商人对话",
+      "greeting_lines": [
+        "这里不问来路，只看你付不付得起代价。",
+        "稀有货只卖有准备的人。"
+      ],
+      "enabled": true,
+      "sort_weight": 220,
+      "version": 1
+    },
+    {
+      "id": "talk-nanhai-merchant",
+      "name": "南海商人对话",
+      "greeting_lines": [
+        "海路风险大，货也值钱。",
+        "要走矿渊线，记得带足补给。"
+      ],
+      "enabled": true,
+      "sort_weight": 220,
+      "version": 1
+    },
+    {
+      "id": "talk-kuangmai-explorer",
+      "name": "矿脉探索者对话",
+      "greeting_lines": [
+        "矿渊每天都在变化，别轻信旧地图。",
+        "跟紧我，能少走很多弯路。"
+      ],
+      "enabled": true,
+      "sort_weight": 230,
       "version": 1
     }
   ]

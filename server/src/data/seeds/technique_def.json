@@ -13,10 +13,16 @@
       "required_realm": "凡人",
       "attribute_type": "physical",
       "attribute_element": "none",
-      "tags": ["武技", "拳", "入门"],
+      "tags": [
+        "武技",
+        "拳",
+        "入门"
+      ],
       "description": "最基础的拳法，适合初学者",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 10
     },
     {
@@ -30,10 +36,16 @@
       "required_realm": "凡人",
       "attribute_type": "physical",
       "attribute_element": "jin",
-      "tags": ["武技", "剑", "入门"],
+      "tags": [
+        "武技",
+        "剑",
+        "入门"
+      ],
       "description": "最基础的剑法，适合初学者",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 11
     },
     {
@@ -47,10 +59,16 @@
       "required_realm": "凡人",
       "attribute_type": "physical",
       "attribute_element": "jin",
-      "tags": ["武技", "刀", "入门"],
+      "tags": [
+        "武技",
+        "刀",
+        "入门"
+      ],
       "description": "最基础的刀法，适合初学者",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 12
     },
     {
@@ -64,10 +82,16 @@
       "required_realm": "凡人",
       "attribute_type": "magic",
       "attribute_element": "none",
-      "tags": ["心法", "回气", "入门"],
+      "tags": [
+        "心法",
+        "回气",
+        "入门"
+      ],
       "description": "入门心法，可提升灵气恢复",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 13
     },
     {
@@ -81,10 +105,16 @@
       "required_realm": "凡人",
       "attribute_type": "magic",
       "attribute_element": "none",
-      "tags": ["法诀", "符", "入门"],
+      "tags": [
+        "法诀",
+        "符",
+        "入门"
+      ],
       "description": "最基础的符术，以符纸为媒介释放法术",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 14
     },
     {
@@ -98,10 +128,16 @@
       "required_realm": "凡人",
       "attribute_type": "physical",
       "attribute_element": "none",
-      "tags": ["身法", "闪避", "入门"],
+      "tags": [
+        "身法",
+        "闪避",
+        "入门"
+      ],
       "description": "基础轻功，略微提升闪避",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 15
     },
     {
@@ -115,10 +151,16 @@
       "required_realm": "凡人",
       "attribute_type": "magic",
       "attribute_element": "mu",
-      "tags": ["辅修", "治疗", "入门"],
+      "tags": [
+        "辅修",
+        "治疗",
+        "入门"
+      ],
       "description": "基础治疗术，可恢复少量气血",
       "obtain_type": "quest",
-      "obtain_hint": ["新手任务"],
+      "obtain_hint": [
+        "新手任务"
+      ],
       "sort_weight": 16
     },
     {
@@ -132,10 +174,16 @@
       "required_realm": "凡人",
       "attribute_type": "physical",
       "attribute_element": "none",
-      "tags": ["武技", "拳", "防御"],
+      "tags": [
+        "武技",
+        "拳",
+        "防御"
+      ],
       "description": "刚猛拳法，兼具攻防",
       "obtain_type": "drop",
-      "obtain_hint": ["野外掉落"],
+      "obtain_hint": [
+        "野外掉落"
+      ],
       "sort_weight": 17
     },
     {
@@ -149,10 +197,18 @@
       "required_realm": "炼精化炁·养气期",
       "attribute_type": "physical",
       "attribute_element": "jin",
-      "tags": ["武技", "拳", "金", "破甲"],
+      "tags": [
+        "武技",
+        "拳",
+        "金",
+        "破甲"
+      ],
       "description": "刚猛拳法，附带金属性破甲效果",
       "obtain_type": "drop",
-      "obtain_hint": ["矿洞", "金属性怪物掉落"],
+      "obtain_hint": [
+        "矿洞",
+        "金属性怪物掉落"
+      ],
       "sort_weight": 25
     },
     {
@@ -166,10 +222,17 @@
       "required_realm": "炼精化炁·养气期",
       "attribute_type": "physical",
       "attribute_element": "jin",
-      "tags": ["武技", "剑", "速度"],
+      "tags": [
+        "武技",
+        "剑",
+        "速度"
+      ],
       "description": "轻灵剑法，出剑如风",
       "obtain_type": "drop",
-      "obtain_hint": ["清风山", "剑修遗迹"],
+      "obtain_hint": [
+        "清风山",
+        "剑修遗迹"
+      ],
       "sort_weight": 26
     },
     {
@@ -183,10 +246,18 @@
       "required_realm": "炼精化炁·养气期",
       "attribute_type": "magic",
       "attribute_element": "mu",
-      "tags": ["法诀", "木", "治疗", "持续"],
+      "tags": [
+        "法诀",
+        "木",
+        "治疗",
+        "持续"
+      ],
       "description": "木属性法诀，擅长持续治疗",
       "obtain_type": "drop",
-      "obtain_hint": ["青木林", "木属性怪物掉落"],
+      "obtain_hint": [
+        "青木林",
+        "木属性怪物掉落"
+      ],
       "sort_weight": 27
     },
     {
@@ -200,10 +271,18 @@
       "required_realm": "炼精化炁·养气期",
       "attribute_type": "physical",
       "attribute_element": "tu",
-      "tags": ["心法", "土", "防御", "护盾"],
+      "tags": [
+        "心法",
+        "土",
+        "防御",
+        "护盾"
+      ],
       "description": "土属性心法，大幅提升防御与护盾",
       "obtain_type": "drop",
-      "obtain_hint": ["黄土高原", "土属性怪物掉落"],
+      "obtain_hint": [
+        "黄土高原",
+        "土属性怪物掉落"
+      ],
       "sort_weight": 28
     },
     {
@@ -217,10 +296,17 @@
       "required_realm": "凡人",
       "attribute_type": "magic",
       "attribute_element": "none",
-      "tags": ["心法", "回气", "护体", "净化"],
+      "tags": [
+        "心法",
+        "回气",
+        "护体",
+        "净化"
+      ],
       "description": "进阶心法，增强灵气循环与生存能力",
       "obtain_type": "quest",
-      "obtain_hint": ["宗门传授"],
+      "obtain_hint": [
+        "宗门传授"
+      ],
       "sort_weight": 29
     },
     {
@@ -234,10 +320,18 @@
       "required_realm": "炼精化炁·养气期",
       "attribute_type": "physical",
       "attribute_element": "shui",
-      "tags": ["武技", "掌", "水", "柔"],
+      "tags": [
+        "武技",
+        "掌",
+        "水",
+        "柔"
+      ],
       "description": "水属性掌法，以柔克刚",
       "obtain_type": "drop",
-      "obtain_hint": ["水域", "水属性怪物掉落"],
+      "obtain_hint": [
+        "水域",
+        "水属性怪物掉落"
+      ],
       "sort_weight": 30
     },
     {
@@ -251,10 +345,18 @@
       "required_realm": "炼精化炁·通脉期",
       "attribute_type": "physical",
       "attribute_element": "none",
-      "tags": ["身法", "闪避", "速度", "解控"],
+      "tags": [
+        "身法",
+        "闪避",
+        "速度",
+        "解控"
+      ],
       "description": "轻灵身法，大幅提升闪避与速度",
       "obtain_type": "drop",
-      "obtain_hint": ["云梦泽", "逍遥派遗迹"],
+      "obtain_hint": [
+        "云梦泽",
+        "逍遥派遗迹"
+      ],
       "sort_weight": 40
     },
     {
@@ -268,10 +370,18 @@
       "required_realm": "炼精化炁·通脉期",
       "attribute_type": "magic",
       "attribute_element": "huo",
-      "tags": ["辅修", "治疗", "护盾", "增益"],
+      "tags": [
+        "辅修",
+        "治疗",
+        "护盾",
+        "增益"
+      ],
       "description": "纯阳正气，可治疗队友并提供护盾",
       "obtain_type": "shop",
-      "obtain_hint": ["宗门商店", "医仙谷"],
+      "obtain_hint": [
+        "宗门商店",
+        "医仙谷"
+      ],
       "sort_weight": 41
     },
     {
@@ -285,10 +395,19 @@
       "required_realm": "炼精化炁·凝炁期",
       "attribute_type": "physical",
       "attribute_element": "huo",
-      "tags": ["武技", "剑", "火", "爆发", "单体"],
+      "tags": [
+        "武技",
+        "剑",
+        "火",
+        "爆发",
+        "单体"
+      ],
       "description": "以烈阳之力灌注剑身，造成高额火属性伤害",
       "obtain_type": "drop",
-      "obtain_hint": ["火焰秘境", "烈阳宗遗迹"],
+      "obtain_hint": [
+        "火焰秘境",
+        "烈阳宗遗迹"
+      ],
       "sort_weight": 50
     },
     {
@@ -302,11 +421,70 @@
       "required_realm": "炼精化炁·凝炁期",
       "attribute_type": "magic",
       "attribute_element": "shui",
-      "tags": ["法诀", "水", "控制", "减速", "群体"],
+      "tags": [
+        "法诀",
+        "水",
+        "控制",
+        "减速",
+        "群体"
+      ],
       "description": "操控寒冰之力，冻结敌人并造成法术伤害",
       "obtain_type": "drop",
-      "obtain_hint": ["寒冰洞窟", "北冥宗秘境"],
+      "obtain_hint": [
+        "寒冰洞窟",
+        "北冥宗秘境"
+      ],
       "sort_weight": 51
+    },
+    {
+      "id": "tech-xuanming-zhang",
+      "code": "xuanming_zhang",
+      "name": "玄冥掌",
+      "type": "武技",
+      "quality": "地",
+      "quality_rank": 3,
+      "max_layer": 7,
+      "required_realm": "炼炁化神·炼己期",
+      "attribute_type": "physical",
+      "attribute_element": "shui",
+      "tags": [
+        "武技",
+        "水",
+        "控制",
+        "爆发"
+      ],
+      "description": "以玄冥寒劲行掌，兼具压制与爆发能力。",
+      "obtain_type": "drop",
+      "obtain_hint": [
+        "幽冥谷",
+        "心魔幻境"
+      ],
+      "sort_weight": 62
+    },
+    {
+      "id": "tech-houtu-xinjing",
+      "code": "houtu_xinjing",
+      "name": "厚土心经",
+      "type": "辅修",
+      "quality": "地",
+      "quality_rank": 3,
+      "max_layer": 7,
+      "required_realm": "炼炁化神·炼己期",
+      "attribute_type": "support",
+      "attribute_element": "tu",
+      "tags": [
+        "辅修",
+        "土",
+        "防御",
+        "续航"
+      ],
+      "description": "厚土化守，稳固气血与灵识，擅长持久战。",
+      "obtain_type": "drop",
+      "obtain_hint": [
+        "灵脉矿渊",
+        "南海岸"
+      ],
+      "sort_weight": 63
     }
   ]
 }

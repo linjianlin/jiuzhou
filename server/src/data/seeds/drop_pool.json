@@ -1009,6 +1009,447 @@
           "show_in_ui": true
         }
       ]
+    },
+    {
+      "id": "dp-lianji-lingmai-shimo",
+      "name": "灵脉石魔掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-lingmai-jingshi",
+          "chance": 1,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-001",
+          "chance": 0.7,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 0.85,
+          "qty_min": 3,
+          "qty_max": 6,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lingmo",
+          "chance": 0.45,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-youming-guizu",
+      "name": "幽冥鬼卒掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-youming-gupi",
+          "chance": 0.95,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 0.9,
+          "qty_min": 3,
+          "qty_max": 6,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lingmo",
+          "chance": 0.6,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-001",
+          "chance": 0.5,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-duzhang-guchong",
+      "name": "毒瘴蛊虫掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-youming-gupi",
+          "chance": 0.6,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 0.9,
+          "qty_min": 2,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "cons-010",
+          "chance": 0.35,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-001",
+          "chance": 0.45,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-nanhai-haijiao",
+      "name": "南海海妖掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-nanhai-lingzhu",
+          "chance": 0.9,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lingmai-jingshi",
+          "chance": 0.6,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 0.85,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-001",
+          "chance": 0.55,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-xinmo-huanying",
+      "name": "心魔幻影掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xinmo-jinghua",
+          "chance": 0.75,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 1,
+          "qty_min": 4,
+          "qty_max": 7,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lingmo",
+          "chance": 0.75,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-002",
+          "chance": 0.35,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-jingkuangshou",
+      "name": "灵脉晶矿兽掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-lingmai-jingshi",
+          "chance": 1,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-youming-gupi",
+          "chance": 0.55,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-002",
+          "chance": 0.4,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 0.8,
+          "qty_min": 4,
+          "qty_max": 6,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-elite-youming-jiangjun",
+      "name": "幽冥将军掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xinmo-jinghua",
+          "chance": 1,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-youming-gupi",
+          "chance": 1,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-002",
+          "chance": 0.75,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-head",
+          "chance": 0.05,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-head",
+          "chance": 0.05,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-gloves",
+          "chance": 0.05,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-elite-lingmai-jingshou",
+      "name": "灵脉晶兽掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-lingmai-jingshi",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-youming-gupi",
+          "chance": 0.95,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-002",
+          "chance": 0.8,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-head",
+          "chance": 0.05,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-head",
+          "chance": 0.05,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-gloves",
+          "chance": 0.05,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-boss-xinmo-huashen",
+      "name": "心魔化身掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xinmo-jinghua",
+          "chance": 1,
+          "qty_min": 4,
+          "qty_max": 7,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lianji-dan",
+          "chance": 0.75,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-gongfa-canye",
+          "chance": 1,
+          "qty_min": 10,
+          "qty_max": 14,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lingmo",
+          "chance": 1,
+          "qty_min": 4,
+          "qty_max": 7,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-002",
+          "chance": 0.9,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-weapon",
+          "chance": 0.07,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-weapon",
+          "chance": 0.07,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-artifact",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "box-003",
+          "chance": 0.78,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        }
+      ]
+    },
+    {
+      "id": "dp-lianji-boss-kuangyuan-juling",
+      "name": "矿渊巨灵掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-lingmai-jingshi",
+          "chance": 1,
+          "qty_min": 6,
+          "qty_max": 10,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-youming-gupi",
+          "chance": 1,
+          "qty_min": 4,
+          "qty_max": 7,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-lianji-dan",
+          "chance": 0.65,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "enhance-002",
+          "chance": 0.95,
+          "qty_min": 2,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-weapon",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-weapon",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-artifact",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "box-003",
+          "chance": 0.8,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        }
+      ]
     }
   ]
 }

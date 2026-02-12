@@ -18,8 +18,8 @@ interface BattlePassModalProps {
   onClose: () => void;
 }
 
-type BattlePassTab = 'rewards' | 'daily' | 'weekly';
-const battlePassTabKeys: BattlePassTab[] = ['rewards', 'daily', 'weekly'];
+type BattlePassTab = 'rewards' | 'daily' | 'weekly' | 'season';
+const battlePassTabKeys: BattlePassTab[] = ['rewards', 'daily', 'weekly', 'season'];
 
 type BattlePassTask = {
   id: string;
@@ -45,6 +45,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const [rewards, setRewards] = useState<BattlePassRewardDto[]>([]);
   const [dailyTasks, setDailyTasks] = useState<BattlePassTask[]>([]);
   const [weeklyTasks, setWeeklyTasks] = useState<BattlePassTask[]>([]);
+  const [seasonTasks, setSeasonTasks] = useState<BattlePassTask[]>([]);
 
   const [tab, setTab] = useState<BattlePassTab>('rewards');
   const [isMobile, setIsMobile] = useState<boolean>(() => {
@@ -96,11 +97,13 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
       });
       setDailyTasks((res.data.daily ?? []).map(toTask));
       setWeeklyTasks((res.data.weekly ?? []).map(toTask));
+      setSeasonTasks((res.data.season ?? []).map(toTask));
     } catch (error: unknown) {
       const err = error as { message?: string };
       message.error(err.message || '加载战令任务失败');
       setDailyTasks([]);
       setWeeklyTasks([]);
+      setSeasonTasks([]);
     } finally {
       setTaskLoading(false);
     }
@@ -182,6 +185,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
       { key: 'rewards' as const, label: '战令奖励' },
       { key: 'daily' as const, label: '每日任务' },
       { key: 'weekly' as const, label: '每周任务' },
+      { key: 'season' as const, label: '赛季任务' },
     ],
     [],
   );
@@ -191,6 +195,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
       { value: 'rewards', label: '奖励' },
       { value: 'daily', label: '每日' },
       { value: 'weekly', label: '每周' },
+      { value: 'season', label: '赛季' },
     ],
     [],
   );
@@ -327,7 +332,8 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const panelContent = () => {
     if (tab === 'rewards') return renderRewardTrack();
     if (tab === 'daily') return renderTaskList('每日任务', dailyTasks);
-    return renderTaskList('每周任务', weeklyTasks);
+    if (tab === 'weekly') return renderTaskList('每周任务', weeklyTasks);
+    return renderTaskList('赛季任务', seasonTasks);
   };
 
   return (

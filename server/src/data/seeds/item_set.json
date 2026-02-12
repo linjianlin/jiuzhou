@@ -9,45 +9,153 @@
       "quality_rank": 2,
       "min_realm": "炼精化炁·养气期",
       "pieces": [
-        { "equip_slot": "weapon", "item_def_id": "set-qingfeng-weapon", "piece_key": "weapon" },
-        { "equip_slot": "head", "item_def_id": "set-qingfeng-head", "piece_key": "head" },
-        { "equip_slot": "clothes", "item_def_id": "set-qingfeng-clothes", "piece_key": "clothes" },
-        { "equip_slot": "gloves", "item_def_id": "set-qingfeng-gloves", "piece_key": "gloves" },
-        { "equip_slot": "pants", "item_def_id": "set-qingfeng-pants", "piece_key": "pants" },
-        { "equip_slot": "necklace", "item_def_id": "set-qingfeng-necklace", "piece_key": "necklace" },
-        { "equip_slot": "accessory", "item_def_id": "set-qingfeng-accessory", "piece_key": "accessory" },
-        { "equip_slot": "artifact", "item_def_id": "set-qingfeng-artifact", "piece_key": "artifact" }
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-qingfeng-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-qingfeng-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-qingfeng-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-qingfeng-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-qingfeng-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-qingfeng-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-qingfeng-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-qingfeng-artifact",
+          "piece_key": "artifact"
+        }
       ],
       "bonuses": [
         {
           "piece_count": 2,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "wugong", "value": 8, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "baoji", "value": 150, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wugong",
+                "value": 8,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji",
+                "value": 150,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 0
         },
         {
           "piece_count": 4,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "baoshang", "value": 300, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "mingzhong", "value": 200, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoshang",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "mingzhong",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 1
         },
         {
           "piece_count": 6,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "baoji", "value": 300, "apply_type": "flat" }},
-            { "trigger": "on_crit", "target": "self", "effect_type": "buff", "duration_round": 2, "params": { "attr_key": "sudu", "value": 2, "apply_type": "flat", "chance": 5000 }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_crit",
+              "target": "self",
+              "effect_type": "buff",
+              "duration_round": 2,
+              "params": {
+                "attr_key": "sudu",
+                "value": 2,
+                "apply_type": "flat",
+                "chance": 5000
+              }
+            }
           ],
           "priority": 2
         },
         {
           "piece_count": 8,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "baoshang", "value": 500, "apply_type": "flat" }},
-            { "trigger": "on_crit", "target": "enemy", "effect_type": "debuff", "duration_round": 2, "params": { "debuff_type": "bleed", "value": 100, "chance": 3000, "description": "暴击时30%几率使敌人流血" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoshang",
+                "value": 500,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_crit",
+              "target": "enemy",
+              "effect_type": "debuff",
+              "duration_round": 2,
+              "params": {
+                "debuff_type": "bleed",
+                "value": 100,
+                "chance": 3000,
+                "description": "暴击时30%几率使敌人流血"
+              }
+            }
           ],
           "priority": 3
         }
@@ -60,45 +168,153 @@
       "quality_rank": 2,
       "min_realm": "炼精化炁·养气期",
       "pieces": [
-        { "equip_slot": "weapon", "item_def_id": "set-xuantie-weapon", "piece_key": "weapon" },
-        { "equip_slot": "head", "item_def_id": "set-xuantie-head", "piece_key": "head" },
-        { "equip_slot": "clothes", "item_def_id": "set-xuantie-clothes", "piece_key": "clothes" },
-        { "equip_slot": "gloves", "item_def_id": "set-xuantie-gloves", "piece_key": "gloves" },
-        { "equip_slot": "pants", "item_def_id": "set-xuantie-pants", "piece_key": "pants" },
-        { "equip_slot": "necklace", "item_def_id": "set-xuantie-necklace", "piece_key": "necklace" },
-        { "equip_slot": "accessory", "item_def_id": "set-xuantie-accessory", "piece_key": "accessory" },
-        { "equip_slot": "artifact", "item_def_id": "set-xuantie-artifact", "piece_key": "artifact" }
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-xuantie-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-xuantie-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-xuantie-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-xuantie-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-xuantie-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-xuantie-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-xuantie-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-xuantie-artifact",
+          "piece_key": "artifact"
+        }
       ],
       "bonuses": [
         {
           "piece_count": 2,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "wugong", "value": 10, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "wufang", "value": 8, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wugong",
+                "value": 10,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wufang",
+                "value": 8,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 0
         },
         {
           "piece_count": 4,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "max_qixue", "value": 80, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "zhaojia", "value": 200, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 80,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zhaojia",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 1
         },
         {
           "piece_count": 6,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "kangbao", "value": 300, "apply_type": "flat" }},
-            { "trigger": "on_be_hit", "target": "self", "effect_type": "buff", "duration_round": 2, "params": { "attr_key": "wugong", "value": 5, "apply_type": "flat", "chance": 3000, "description": "受击时30%几率提升物攻" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "kangbao",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_be_hit",
+              "target": "self",
+              "effect_type": "buff",
+              "duration_round": 2,
+              "params": {
+                "attr_key": "wugong",
+                "value": 5,
+                "apply_type": "flat",
+                "chance": 3000,
+                "description": "受击时30%几率提升物攻"
+              }
+            }
           ],
           "priority": 2
         },
         {
           "piece_count": 8,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "zengshang", "value": 300, "apply_type": "flat" }},
-            { "trigger": "on_be_hit", "target": "enemy", "effect_type": "damage", "params": { "damage_type": "reflect", "value": 500, "chance": 2500, "description": "受击时25%几率反弹5%伤害" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_be_hit",
+              "target": "enemy",
+              "effect_type": "damage",
+              "params": {
+                "damage_type": "reflect",
+                "value": 500,
+                "chance": 2500,
+                "description": "受击时25%几率反弹5%伤害"
+              }
+            }
           ],
           "priority": 3
         }
@@ -111,45 +327,154 @@
       "quality_rank": 2,
       "min_realm": "炼精化炁·养气期",
       "pieces": [
-        { "equip_slot": "weapon", "item_def_id": "set-zixiao-weapon", "piece_key": "weapon" },
-        { "equip_slot": "head", "item_def_id": "set-zixiao-head", "piece_key": "head" },
-        { "equip_slot": "clothes", "item_def_id": "set-zixiao-clothes", "piece_key": "clothes" },
-        { "equip_slot": "gloves", "item_def_id": "set-zixiao-gloves", "piece_key": "gloves" },
-        { "equip_slot": "pants", "item_def_id": "set-zixiao-pants", "piece_key": "pants" },
-        { "equip_slot": "necklace", "item_def_id": "set-zixiao-necklace", "piece_key": "necklace" },
-        { "equip_slot": "accessory", "item_def_id": "set-zixiao-accessory", "piece_key": "accessory" },
-        { "equip_slot": "artifact", "item_def_id": "set-zixiao-artifact", "piece_key": "artifact" }
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-zixiao-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-zixiao-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-zixiao-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-zixiao-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-zixiao-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-zixiao-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-zixiao-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-zixiao-artifact",
+          "piece_key": "artifact"
+        }
       ],
       "bonuses": [
         {
           "piece_count": 2,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "fagong", "value": 10, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "max_lingqi", "value": 30, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 10,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_lingqi",
+                "value": 30,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 0
         },
         {
           "piece_count": 4,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "baoji", "value": 200, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "lengque", "value": 200, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "lengque",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 1
         },
         {
           "piece_count": 6,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "baoshang", "value": 400, "apply_type": "flat" }},
-            { "trigger": "on_hit", "target": "enemy", "effect_type": "damage", "element": "jin", "params": { "damage_type": "thunder", "value": 30, "scale_key": "fagong", "scale_rate": 0.15, "chance": 2500, "description": "攻击时25%几率触发雷击" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoshang",
+                "value": 400,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_hit",
+              "target": "enemy",
+              "effect_type": "damage",
+              "element": "jin",
+              "params": {
+                "damage_type": "thunder",
+                "value": 30,
+                "scale_key": "fagong",
+                "scale_rate": 0.15,
+                "chance": 2500,
+                "description": "攻击时25%几率触发雷击"
+              }
+            }
           ],
           "priority": 2
         },
         {
           "piece_count": 8,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "zengshang", "value": 400, "apply_type": "flat" }},
-            { "trigger": "on_skill", "target": "self", "effect_type": "resource", "params": { "resource_type": "lingqi", "value": 10, "chance": 3000, "description": "施法时30%几率恢复灵气" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 400,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_skill",
+              "target": "self",
+              "effect_type": "resource",
+              "params": {
+                "resource_type": "lingqi",
+                "value": 10,
+                "chance": 3000,
+                "description": "施法时30%几率恢复灵气"
+              }
+            }
           ],
           "priority": 3
         }
@@ -162,45 +487,774 @@
       "quality_rank": 2,
       "min_realm": "炼精化炁·养气期",
       "pieces": [
-        { "equip_slot": "weapon", "item_def_id": "set-biluo-weapon", "piece_key": "weapon" },
-        { "equip_slot": "head", "item_def_id": "set-biluo-head", "piece_key": "head" },
-        { "equip_slot": "clothes", "item_def_id": "set-biluo-clothes", "piece_key": "clothes" },
-        { "equip_slot": "gloves", "item_def_id": "set-biluo-gloves", "piece_key": "gloves" },
-        { "equip_slot": "pants", "item_def_id": "set-biluo-pants", "piece_key": "pants" },
-        { "equip_slot": "necklace", "item_def_id": "set-biluo-necklace", "piece_key": "necklace" },
-        { "equip_slot": "accessory", "item_def_id": "set-biluo-accessory", "piece_key": "accessory" },
-        { "equip_slot": "artifact", "item_def_id": "set-biluo-artifact", "piece_key": "artifact" }
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-biluo-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-biluo-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-biluo-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-biluo-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-biluo-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-biluo-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-biluo-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-biluo-artifact",
+          "piece_key": "artifact"
+        }
       ],
       "bonuses": [
         {
           "piece_count": 2,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "fagong", "value": 8, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "zhiliao", "value": 150, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 8,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zhiliao",
+                "value": 150,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 0
         },
         {
           "piece_count": 4,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "max_lingqi", "value": 50, "apply_type": "flat" }},
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "lingqi_huifu", "value": 3, "apply_type": "flat" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_lingqi",
+                "value": 50,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "lingqi_huifu",
+                "value": 3,
+                "apply_type": "flat"
+              }
+            }
           ],
           "priority": 1
         },
         {
           "piece_count": 6,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "qixue_huifu", "value": 5, "apply_type": "flat" }},
-            { "trigger": "on_heal", "target": "self", "effect_type": "buff", "duration_round": 2, "params": { "attr_key": "fafang", "value": 10, "apply_type": "flat", "chance": 4000, "description": "治疗时40%几率提升法防" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "qixue_huifu",
+                "value": 5,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_heal",
+              "target": "self",
+              "effect_type": "buff",
+              "duration_round": 2,
+              "params": {
+                "attr_key": "fafang",
+                "value": 10,
+                "apply_type": "flat",
+                "chance": 4000,
+                "description": "治疗时40%几率提升法防"
+              }
+            }
           ],
           "priority": 2
         },
         {
           "piece_count": 8,
           "effect_defs": [
-            { "trigger": "equip", "target": "self", "effect_type": "buff", "params": { "attr_key": "xixue", "value": 200, "apply_type": "flat" }},
-            { "trigger": "on_turn_start", "target": "self", "effect_type": "heal", "params": { "heal_type": "regen", "value": 20, "scale_key": "max_qixue", "scale_rate": 0.02, "description": "每回合恢复2%最大气血" }}
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "xixue",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_turn_start",
+              "target": "self",
+              "effect_type": "heal",
+              "params": {
+                "heal_type": "regen",
+                "value": 20,
+                "scale_key": "max_qixue",
+                "scale_rate": 0.02,
+                "description": "每回合恢复2%最大气血"
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "id": "set-chiyan",
+      "name": "赤焰套装",
+      "description": "赤焰焚身，以攻代守，擅长爆发追击。",
+      "quality_rank": 3,
+      "min_realm": "炼炁化神·炼己期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-chiyan-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-chiyan-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-chiyan-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-chiyan-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-chiyan-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-chiyan-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-chiyan-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-chiyan-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wugong",
+                "value": 20,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji",
+                "value": 100,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 150,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoshang",
+                "value": 500,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "huo_kangxing",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_hit",
+              "target": "enemy",
+              "effect_type": "damage",
+              "element": "huo",
+              "params": {
+                "value": 60,
+                "damage_type": "physical",
+                "scale_key": "wugong",
+                "scale_rate": 4500,
+                "chance": 500
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "id": "set-xuanwu",
+      "name": "玄武套装",
+      "description": "玄武护体，守势沉稳，兼具抗压与续航。",
+      "quality_rank": 3,
+      "min_realm": "炼炁化神·炼己期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-xuanwu-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-xuanwu-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-xuanwu-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-xuanwu-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-xuanwu-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-xuanwu-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-xuanwu-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-xuanwu-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wufang",
+                "value": 15,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fafang",
+                "value": 15,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zhaojia",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "kongzhi_kangxing",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "kangbao",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_turn_start",
+              "target": "self",
+              "effect_type": "heal",
+              "params": {
+                "value": 0,
+                "scale_key": "max_qixue",
+                "scale_rate": 300
+              }
+            },
+            {
+              "trigger": "on_be_hit",
+              "target": "self",
+              "effect_type": "buff",
+              "duration_round": 1,
+              "params": {
+                "attr_key": "wufang",
+                "value": 2000,
+                "apply_type": "percent",
+                "chance": 800
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "id": "set-tianxuan",
+      "name": "天璇套装",
+      "description": "天璇星辉流转，擅长法术连携与爆发打击。",
+      "quality_rank": 3,
+      "min_realm": "炼炁化神·炼己期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-tianxuan-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-tianxuan-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-tianxuan-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-tianxuan-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-tianxuan-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-tianxuan-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-tianxuan-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-tianxuan-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 20,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_lingqi",
+                "value": 50,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "lengque",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 400,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "lingqi_huifu",
+                "value": 300,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_skill",
+              "target": "enemy",
+              "effect_type": "damage",
+              "element": "shui",
+              "params": {
+                "value": 90,
+                "damage_type": "magic",
+                "scale_key": "fagong",
+                "scale_rate": 3500,
+                "chance": 1000
+              }
+            },
+            {
+              "trigger": "on_skill",
+              "target": "self",
+              "effect_type": "resource",
+              "params": {
+                "resource_type": "lingqi",
+                "value": 18,
+                "chance": 1000
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "id": "set-qinglian",
+      "name": "青莲套装",
+      "description": "青莲净世，兼具治疗、续航与团队庇护能力。",
+      "quality_rank": 3,
+      "min_realm": "炼炁化神·炼己期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-qinglian-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-qinglian-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-qinglian-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-qinglian-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-qinglian-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-qinglian-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-qinglian-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-qinglian-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zhiliao",
+                "value": 10,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_lingqi",
+                "value": 40,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "xixue",
+                "value": 100,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fafang",
+                "value": 20,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "kongzhi_kangxing",
+                "value": 200,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_turn_start",
+              "target": "self",
+              "effect_type": "heal",
+              "params": {
+                "value": 0,
+                "scale_key": "max_qixue",
+                "scale_rate": 200
+              }
+            },
+            {
+              "trigger": "on_heal",
+              "target": "self",
+              "effect_type": "buff",
+              "duration_round": 2,
+              "params": {
+                "attr_key": "fafang",
+                "value": 1200,
+                "apply_type": "percent",
+                "chance": 1500
+              }
+            }
           ],
           "priority": 3
         }

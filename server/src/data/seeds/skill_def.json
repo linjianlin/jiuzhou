@@ -1572,6 +1572,333 @@
       ],
       "trigger_type": "active",
       "ai_priority": 90
+    },
+    {
+      "id": "skill-xuanming-zhang",
+      "code": "xuanming_zhang",
+      "name": "玄冥掌",
+      "description": "玄冥寒劲灌掌而出，造成水属性物理伤害并减速目标。",
+      "icon": "/assets/skills/icon_skill_31.png",
+      "source_type": "technique",
+      "source_id": "tech-xuanming-zhang",
+      "cost_lingqi": 20,
+      "cooldown": 2,
+      "target_type": "single_enemy",
+      "damage_type": "physical",
+      "element": "shui",
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 16500
+        },
+        {
+          "type": "debuff",
+          "buffId": "debuff-sudu-down",
+          "duration": 2,
+          "value": 260
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 66,
+      "upgrades": [
+        {
+          "layer": 3,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 19000,
+                "value": 19000
+              },
+              {
+                "type": "debuff",
+                "buffId": "debuff-sudu-down",
+                "duration": 2,
+                "value": 320
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 320,
+      "enabled": true
+    },
+    {
+      "id": "skill-xuanming-zhen",
+      "code": "xuanming_zhen",
+      "name": "玄冥震",
+      "description": "掌劲扩散，震击全体敌人并削弱其物防。",
+      "icon": "/assets/skills/icon_skill_32.png",
+      "source_type": "technique",
+      "source_id": "tech-xuanming-zhang",
+      "cost_lingqi": 30,
+      "cooldown": 4,
+      "target_type": "all_enemy",
+      "damage_type": "physical",
+      "element": "shui",
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 11800
+        },
+        {
+          "type": "debuff",
+          "buffId": "debuff-wufang-down",
+          "duration": 2,
+          "value": 1800
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 72,
+      "upgrades": [
+        {
+          "layer": 5,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 14200,
+                "value": 14200
+              },
+              {
+                "type": "debuff",
+                "buffId": "debuff-wufang-down",
+                "duration": 2,
+                "value": 2300
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 321,
+      "enabled": true
+    },
+    {
+      "id": "skill-xuanming-fengmai",
+      "code": "xuanming_fengmai",
+      "name": "封脉寒禁",
+      "description": "极寒掌意封锁经脉，有概率冻结目标。",
+      "icon": "/assets/skills/icon_skill_33.png",
+      "source_type": "technique",
+      "source_id": "tech-xuanming-zhang",
+      "cost_lingqi": 36,
+      "cooldown": 5,
+      "target_type": "single_enemy",
+      "damage_type": "physical",
+      "element": "shui",
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wugong",
+          "scaleRate": 18200
+        },
+        {
+          "type": "control",
+          "controlType": "freeze",
+          "duration": 1,
+          "chance": 6800
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 76,
+      "upgrades": [
+        {
+          "layer": 6,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wugong",
+                "scaleRate": 21500,
+                "value": 21500
+              },
+              {
+                "type": "control",
+                "controlType": "freeze",
+                "duration": 2,
+                "chance": 7600
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 322,
+      "enabled": true
+    },
+    {
+      "id": "skill-houtu-jingshou",
+      "code": "houtu_jingshou",
+      "name": "厚土静守",
+      "description": "凝聚厚土之力，为自身施加高额护盾。",
+      "icon": "/assets/skills/icon_skill_34.png",
+      "source_type": "technique",
+      "source_id": "tech-houtu-xinjing",
+      "cost_lingqi": 16,
+      "cooldown": 3,
+      "target_type": "self",
+      "damage_type": "none",
+      "element": "tu",
+      "effects": [
+        {
+          "type": "shield",
+          "valueType": "scale",
+          "scaleAttr": "max_qixue",
+          "scaleRate": 17000,
+          "duration": 3
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 62,
+      "upgrades": [
+        {
+          "layer": 3,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "shield",
+                "valueType": "scale",
+                "scaleAttr": "max_qixue",
+                "scaleRate": 21000,
+                "value": 21000,
+                "duration": 3
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 330,
+      "enabled": true
+    },
+    {
+      "id": "skill-houtu-zhenyu",
+      "code": "houtu_zhenyu",
+      "name": "厚土镇御",
+      "description": "以土元护体，提升物防与法防并强化控抗。",
+      "icon": "/assets/skills/icon_skill_35.png",
+      "source_type": "technique",
+      "source_id": "tech-houtu-xinjing",
+      "cost_lingqi": 22,
+      "cooldown": 4,
+      "target_type": "self",
+      "damage_type": "none",
+      "element": "tu",
+      "effects": [
+        {
+          "type": "buff",
+          "buffId": "buff-wufang-up",
+          "duration": 3,
+          "value": 2800
+        },
+        {
+          "type": "buff",
+          "buffId": "buff-fafang-up",
+          "duration": 3,
+          "value": 2800
+        },
+        {
+          "type": "buff",
+          "buffId": "buff-kongzhi-kangxing-up",
+          "duration": 3,
+          "value": 2200
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 68,
+      "upgrades": [
+        {
+          "layer": 5,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "buff",
+                "buffId": "buff-wufang-up",
+                "duration": 3,
+                "value": 3600
+              },
+              {
+                "type": "buff",
+                "buffId": "buff-fafang-up",
+                "duration": 3,
+                "value": 3600
+              },
+              {
+                "type": "buff",
+                "buffId": "buff-kongzhi-kangxing-up",
+                "duration": 3,
+                "value": 3200
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 331,
+      "enabled": true
+    },
+    {
+      "id": "skill-houtu-fanling",
+      "code": "houtu_fanling",
+      "name": "厚土返灵",
+      "description": "引土灵回流，恢复气血并回补灵气。",
+      "icon": "/assets/skills/icon_skill_36.png",
+      "source_type": "technique",
+      "source_id": "tech-houtu-xinjing",
+      "cost_lingqi": 28,
+      "cooldown": 5,
+      "target_type": "self",
+      "damage_type": "none",
+      "element": "tu",
+      "effects": [
+        {
+          "type": "heal",
+          "valueType": "scale",
+          "scaleAttr": "max_qixue",
+          "scaleRate": 12000
+        },
+        {
+          "type": "restore_lingqi",
+          "value": 32
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 70,
+      "upgrades": [
+        {
+          "layer": 6,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "heal",
+                "valueType": "scale",
+                "scaleAttr": "max_qixue",
+                "scaleRate": 15000,
+                "value": 15000
+              },
+              {
+                "type": "restore_lingqi",
+                "value": 40
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 332,
+      "enabled": true
     }
   ]
 }

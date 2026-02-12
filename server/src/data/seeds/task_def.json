@@ -468,6 +468,331 @@
       "prereq_task_ids": [],
       "enabled": true,
       "sort_weight": 460
+    },
+    {
+      "id": "task-lianji-daily-001",
+      "category": "daily",
+      "title": "药谷除害",
+      "realm": "炼炁化神·炼己期",
+      "description": "清理药王谷异化灵物，恢复药圃秩序。",
+      "giver_npc_id": "npc-yaowang-elder",
+      "map_id": "map-yaowang-valley",
+      "room_id": "room-yaowang-alchemy-terrace",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "击败心魔幻影 8 个",
+          "target": 8,
+          "params": {
+            "monster_id": "monster-xinmo-huanying"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 420
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-gongfa-canye",
+          "qty": 10
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 520
+    },
+    {
+      "id": "task-lianji-daily-002",
+      "category": "daily",
+      "title": "幽冥巡逻",
+      "realm": "炼炁化神·炼己期",
+      "description": "协助守墓人巡查幽冥谷，清剿鬼卒。",
+      "giver_npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-palace-front",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "击败幽冥鬼卒 8 个",
+          "target": 8,
+          "params": {
+            "monster_id": "monster-youming-guizu"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 430
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-lingmo",
+          "qty": 8
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 521
+    },
+    {
+      "id": "task-lianji-daily-003",
+      "category": "daily",
+      "title": "南海采珠",
+      "realm": "炼炁化神·炼己期",
+      "description": "前往南海岸采集灵珠，补充工坊材料。",
+      "giver_npc_id": "npc-nanhai-merchant",
+      "map_id": "map-nanhai-coast",
+      "room_id": "room-nanhai-port",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "gather_resource",
+          "text": "采集南海灵珠 5 个",
+          "target": 5,
+          "params": {
+            "resource_id": "mat-nanhai-lingzhu"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 440
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-nanhai-lingzhu",
+          "qty": 3
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 522
+    },
+    {
+      "id": "task-lianji-daily-004",
+      "category": "daily",
+      "title": "心魔日修",
+      "realm": "炼炁化神·炼己期",
+      "description": "完成一次炼己期秘境修行。",
+      "giver_npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-palace-front",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "dungeon_clear",
+          "text": "通关任意炼己期秘境 1 次",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianqi-xinmo-huanjing"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 48
+        },
+        {
+          "type": "silver",
+          "amount": 380
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 523
+    },
+    {
+      "id": "task-lianji-weekly-001",
+      "category": "event",
+      "title": "周常：秘境深入",
+      "realm": "炼炁化神·炼己期",
+      "description": "本周累计通关炼己期秘境 5 次。",
+      "giver_npc_id": "npc-kuangmai-explorer",
+      "map_id": "map-nanhai-coast",
+      "room_id": "room-nanhai-mine-entrance",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "dungeon_clear",
+          "text": "通关灵脉矿渊 3 次",
+          "target": 3,
+          "params": {
+            "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "dungeon_clear",
+          "text": "通关心魔幻境 2 次",
+          "target": 2,
+          "params": {
+            "dungeon_id": "dungeon-lianqi-xinmo-huanjing"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 180
+        },
+        {
+          "type": "item",
+          "item_def_id": "box-003",
+          "qty": 1
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 560
+    },
+    {
+      "id": "task-lianji-weekly-002",
+      "category": "event",
+      "title": "周常：三谷巡历",
+      "realm": "炼炁化神·炼己期",
+      "description": "在三处新区域完成清剿任务。",
+      "giver_npc_id": "npc-yaowang-elder",
+      "map_id": "map-yaowang-valley",
+      "room_id": "room-yaowang-alchemy-terrace",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "药王谷击败毒瘴蛊虫 5 个",
+          "target": 5,
+          "params": {
+            "monster_id": "monster-duzhang-guchong"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "kill_monster",
+          "text": "幽冥谷击败幽冥鬼卒 5 个",
+          "target": 5,
+          "params": {
+            "monster_id": "monster-youming-guizu"
+          }
+        },
+        {
+          "id": "obj-003",
+          "type": "kill_monster",
+          "text": "南海岸击败南海海妖 5 个",
+          "target": 5,
+          "params": {
+            "monster_id": "monster-nanhai-haijiao"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 200
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-xinmo-jinghua",
+          "qty": 4
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 561
+    },
+    {
+      "id": "task-lianji-weekly-003",
+      "category": "event",
+      "title": "周常：精英猎手",
+      "realm": "炼炁化神·炼己期",
+      "description": "击杀炼己期精英怪并上交战利品。",
+      "giver_npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-palace-front",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "击败幽冥将军 2 次",
+          "target": 2,
+          "params": {
+            "monster_id": "monster-elite-youming-jiangjun"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "kill_monster",
+          "text": "击败灵脉晶兽 1 次",
+          "target": 1,
+          "params": {
+            "monster_id": "monster-elite-lingmai-jingshou"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "item",
+          "item_def_id": "mat-xinmo-jinghua",
+          "qty": 5
+        },
+        {
+          "type": "item",
+          "item_def_id": "enhance-002",
+          "qty": 4
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 562
+    },
+    {
+      "id": "task-lianji-weekly-004",
+      "category": "event",
+      "title": "周常：材料积累",
+      "realm": "炼炁化神·炼己期",
+      "description": "收集矿渊与海岸关键材料，支援前线工坊。",
+      "giver_npc_id": "npc-kuangmai-explorer",
+      "map_id": "map-nanhai-coast",
+      "room_id": "room-nanhai-mine-entrance",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "gather_resource",
+          "text": "采集灵脉精石 10 个",
+          "target": 10,
+          "params": {
+            "resource_id": "mat-lingmai-jingshi"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "gather_resource",
+          "text": "采集南海灵珠 10 个",
+          "target": 10,
+          "params": {
+            "resource_id": "mat-nanhai-lingzhu"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 220
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-lianji-dan",
+          "qty": 2
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 563
     }
   ]
 }

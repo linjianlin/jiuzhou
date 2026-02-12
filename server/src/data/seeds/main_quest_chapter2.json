@@ -1,0 +1,456 @@
+{
+  "chapters": [
+    {
+      "id": "mq-chapter-2",
+      "chapter_num": 2,
+      "name": "第二章：炼己成道",
+      "description": "玩家在炼己期探索三谷，经历心魔试炼与矿渊磨砺，最终心境圆满。",
+      "background": "药王谷、幽冥谷、南海岸三地灵潮同起，心魔异动与地脉震荡并发。唯有兼修心性与实力，方可继续向采药期迈进。",
+      "min_realm": "炼炁化神·炼己期",
+      "chapter_rewards": {
+        "exp": 6800,
+        "silver": 8600,
+        "spirit_stones": 820,
+        "items": [
+          {
+            "item_def_id": "mat-lianji-dan",
+            "quantity": 3
+          },
+          {
+            "item_def_id": "mat-xinmo-jinghua",
+            "quantity": 6
+          },
+          {
+            "item_def_id": "box-003",
+            "quantity": 2
+          }
+        ]
+      },
+      "unlock_features": [
+        "dungeon-lianqi-xinmo-huanjing",
+        "dungeon-lianqi-lingmai-kuangyuan"
+      ],
+      "sort_weight": 900,
+      "enabled": true
+    }
+  ],
+  "sections": [
+    {
+      "id": "main-2-001",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 1,
+      "name": "灵力波动",
+      "description": "你感知到东洲三处灵力异动，先前往药王谷查探。",
+      "brief": "前往药王谷谷口。",
+      "npc_id": "npc-yaowang-elder",
+      "map_id": "map-yaowang-valley",
+      "room_id": "room-yaowang-valley-entrance",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-001",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "reach",
+          "text": "前往药王谷谷口",
+          "target": 1,
+          "params": {
+            "room_id": "room-yaowang-valley-entrance"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 320,
+        "silver": 420,
+        "spirit_stones": 35
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 900,
+      "enabled": true
+    },
+    {
+      "id": "main-2-002",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 2,
+      "name": "药王谷探秘",
+      "description": "与药王谷长老会面，并深入药圃调查异常。",
+      "brief": "与药王谷长老交谈，抵达药圃深处。",
+      "npc_id": "npc-yaowang-elder",
+      "map_id": "map-yaowang-valley",
+      "room_id": "room-yaowang-alchemy-terrace",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-002",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "talk_npc",
+          "text": "与药王谷长老交谈",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-yaowang-elder"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "reach",
+          "text": "前往药圃深处",
+          "target": 1,
+          "params": {
+            "room_id": "room-yaowang-deep-garden"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 360,
+        "silver": 460,
+        "spirit_stones": 40
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 890,
+      "enabled": true
+    },
+    {
+      "id": "main-2-003",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 3,
+      "name": "灵药采集",
+      "description": "帮助药王谷采集稳定心神的灵药，以便炼制镇心丹。",
+      "brief": "采集灵草与南海灵珠素材。",
+      "npc_id": "npc-lingyao-merchant",
+      "map_id": "map-yaowang-valley",
+      "room_id": "room-yaowang-herb-field",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-003",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "gather_resource",
+          "text": "采集灵药 4 份",
+          "target": 4,
+          "params": {
+            "resource_id": "res-spirit-herb"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "collect",
+          "text": "收集炼己丹材 2 份",
+          "target": 2,
+          "params": {
+            "item_id": "mat-lianji-dan"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 420,
+        "silver": 520,
+        "spirit_stones": 48,
+        "items": [
+          {
+            "item_def_id": "mat-lianji-dan",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 880,
+      "enabled": true
+    },
+    {
+      "id": "main-2-004",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 4,
+      "name": "幽冥谷调查",
+      "description": "你前往幽冥谷，击退鬼卒，寻找心魔异动源头。",
+      "brief": "前往幽冥谷并击退幽冥鬼卒。",
+      "npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-stone-steps",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-004",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "reach",
+          "text": "抵达幽冥谷入口",
+          "target": 1,
+          "params": {
+            "room_id": "room-youming-stone-steps"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "kill_monster",
+          "text": "击退幽冥鬼卒 6 名",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-youming-guizu"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 460,
+        "silver": 580,
+        "spirit_stones": 52
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 870,
+      "enabled": true
+    },
+    {
+      "id": "main-2-005",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 5,
+      "name": "守墓人的警告",
+      "description": "守墓人告知心魔之源已在幻境深处凝形。",
+      "brief": "与幽冥守墓人交谈。",
+      "npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-palace-front",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-005",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "talk_npc",
+          "text": "与幽冥守墓人交谈",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-youming-guardian"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 500,
+        "silver": 620,
+        "spirit_stones": 56
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 860,
+      "enabled": true
+    },
+    {
+      "id": "main-2-006",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 6,
+      "name": "心魔初试",
+      "description": "按照守墓人指引，完成心魔幻境首次试炼。",
+      "brief": "通关心魔幻境（普通）1 次。",
+      "npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-palace-front",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-006",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关心魔幻境（普通）",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianqi-xinmo-huanjing",
+            "difficulty_id": "dd-lianqi-xinmo-n"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 700,
+        "silver": 760,
+        "spirit_stones": 75,
+        "items": [
+          {
+            "item_def_id": "mat-xinmo-jinghua",
+            "quantity": 2
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 850,
+      "enabled": true
+    },
+    {
+      "id": "main-2-007",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 7,
+      "name": "南海寻踪",
+      "description": "心魔试炼后，你循线前往南海岸寻找矿渊源头。",
+      "brief": "抵达矿洞入口并与矿脉探索者交谈。",
+      "npc_id": "npc-kuangmai-explorer",
+      "map_id": "map-nanhai-coast",
+      "room_id": "room-nanhai-mine-entrance",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-007",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "reach",
+          "text": "前往灵脉矿洞入口",
+          "target": 1,
+          "params": {
+            "room_id": "room-nanhai-mine-entrance"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "与矿脉探索者交谈",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-kuangmai-explorer"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 560,
+        "silver": 700,
+        "spirit_stones": 62
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 840,
+      "enabled": true
+    },
+    {
+      "id": "main-2-008",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 8,
+      "name": "矿渊探索",
+      "description": "深入灵脉矿渊，获取稳固心境与突破所需矿材。",
+      "brief": "通关灵脉矿渊（普通）1 次。",
+      "npc_id": "npc-kuangmai-explorer",
+      "map_id": "map-nanhai-coast",
+      "room_id": "room-nanhai-mine-entrance",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-008",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关灵脉矿渊（普通）",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan",
+            "difficulty_id": "dd-lianqi-lingmai-n"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 760,
+        "silver": 840,
+        "spirit_stones": 82,
+        "items": [
+          {
+            "item_def_id": "mat-lingmai-jingshi",
+            "quantity": 4
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 830,
+      "enabled": true
+    },
+    {
+      "id": "main-2-009",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 9,
+      "name": "心魔再临",
+      "description": "携矿渊所得重返幽冥谷，在更高强度幻境中斩断执念。",
+      "brief": "通关心魔幻境（困难）1 次。",
+      "npc_id": "npc-youming-guardian",
+      "map_id": "map-youming-valley",
+      "room_id": "room-youming-palace-front",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-009",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关心魔幻境（困难）",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianqi-xinmo-huanjing",
+            "difficulty_id": "dd-lianqi-xinmo-h"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 980,
+        "silver": 1080,
+        "spirit_stones": 120,
+        "items": [
+          {
+            "item_def_id": "mat-xinmo-jinghua",
+            "quantity": 3
+          },
+          {
+            "item_def_id": "mat-lianji-dan",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 820,
+      "enabled": true
+    },
+    {
+      "id": "main-2-010",
+      "chapter_id": "mq-chapter-2",
+      "section_num": 10,
+      "name": "炼己成道",
+      "description": "回到药王谷复命，完成心境圆融，第二章完结。",
+      "brief": "与药王谷长老对话，完成炼己之路。",
+      "npc_id": "npc-yaowang-elder",
+      "map_id": "map-yaowang-valley",
+      "room_id": "room-yaowang-alchemy-terrace",
+      "min_realm": "炼炁化神·炼己期",
+      "dialogue_id": "dlg-main-2-010",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "talk_npc",
+          "text": "与药王谷长老复命",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-yaowang-elder"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 1680,
+        "silver": 1800,
+        "spirit_stones": 180,
+        "items": [
+          {
+            "item_def_id": "mat-lianji-dan",
+            "quantity": 2
+          },
+          {
+            "item_def_id": "box-003",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": true,
+      "sort_weight": 810,
+      "enabled": true
+    }
+  ]
+}

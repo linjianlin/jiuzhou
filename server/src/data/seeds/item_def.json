@@ -2547,6 +2547,156 @@
         "矿石",
         "灵石"
       ]
+    },
+    {
+      "id": "mat-lingmai-jingshi",
+      "code": "lingmai_jingshi",
+      "name": "灵脉精石",
+      "category": "material",
+      "sub_category": "forge",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 26,
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 80,
+      "sell_price_spirit_stones": 1,
+      "icon": "/assets/items/kuangshi_jinghua.png",
+      "description": "灵脉矿渊深层孕育的高纯灵石精华，是炼己期装备锻造与强化核心材料。",
+      "long_desc": "矿脉在高压灵潮中结晶形成的精石，蕴含稳定而浓郁的土属性灵能，可显著提升装备承载强度。",
+      "tags": [
+        "材料",
+        "锻造",
+        "炼己期"
+      ],
+      "source_hint": [
+        "灵脉矿渊",
+        "南海岸矿洞",
+        "精英怪掉落"
+      ]
+    },
+    {
+      "id": "mat-youming-gupi",
+      "code": "youming_gupi",
+      "name": "幽冥骨片",
+      "category": "material",
+      "sub_category": "armor",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 26,
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 75,
+      "sell_price_spirit_stones": 1,
+      "icon": "/assets/items/youming_gu.png",
+      "description": "幽冥生灵遗留的骨质碎片，可用于打造高阶防具与护具。",
+      "long_desc": "经阴煞浸染的骨片坚韧异常，炼化后可形成稳定防护层，是炼己期坦系装备常用底材。",
+      "tags": [
+        "材料",
+        "防具",
+        "炼己期"
+      ],
+      "source_hint": [
+        "幽冥谷",
+        "心魔幻境",
+        "幽冥精英掉落"
+      ]
+    },
+    {
+      "id": "mat-nanhai-lingzhu",
+      "code": "nanhai_lingzhu",
+      "name": "南海灵珠",
+      "category": "material",
+      "sub_category": "accessory",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 27,
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 88,
+      "sell_price_spirit_stones": 1,
+      "icon": "/assets/items/nanhai_lingzhu.png",
+      "description": "南海深礁孕化的灵珠，常用于饰品与法宝炼制。",
+      "long_desc": "灵珠温润而不散，能持续释放柔和灵力，适合用于法系与治疗系装备的灵性核心。",
+      "tags": [
+        "材料",
+        "饰品",
+        "炼己期"
+      ],
+      "source_hint": [
+        "南海岸",
+        "深海暗礁采集",
+        "海妖掉落"
+      ]
+    },
+    {
+      "id": "mat-xinmo-jinghua",
+      "code": "xinmo_jinghua",
+      "name": "心魔精华",
+      "category": "material",
+      "sub_category": "technique",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 28,
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 120,
+      "sell_price_spirit_stones": 2,
+      "icon": "/assets/items/xinmo_jinghua.png",
+      "description": "斩灭心魔后凝结的纯净道念精华，用于高阶功法突破。",
+      "long_desc": "原为杂乱心念，被道心熔炼后化为可控精华，蕴含罕见的心神稳定效应。",
+      "tags": [
+        "材料",
+        "功法",
+        "心魔"
+      ],
+      "source_hint": [
+        "心魔幻境 Boss",
+        "幽冥谷周常",
+        "炼己期战令"
+      ]
+    },
+    {
+      "id": "mat-lianji-dan",
+      "code": "lianji_dan",
+      "name": "炼己丹",
+      "category": "material",
+      "sub_category": "breakthrough",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "epic",
+      "level": 28,
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 150,
+      "sell_price_spirit_stones": 3,
+      "icon": "/assets/items/lianji_dan.png",
+      "description": "用于炼己期后段心境稳固与采药期突破准备的关键丹药。",
+      "long_desc": "药王谷以古方炼制的心境类丹药，可在突破前平衡心神与灵压，降低走火风险。",
+      "tags": [
+        "材料",
+        "突破",
+        "丹药"
+      ],
+      "source_hint": [
+        "药王谷任务",
+        "心魔幻境首通",
+        "炼己期周常"
+      ]
     }
   ]
 }
