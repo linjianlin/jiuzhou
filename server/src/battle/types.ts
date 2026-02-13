@@ -392,8 +392,8 @@ export interface DamageResult {
 // 战斗常量
 // ============================================
 export const BATTLE_CONSTANTS = {
-  MAX_ROUNDS_PVE: 50,
-  MAX_ROUNDS_PVP: 30,
+  MAX_ROUNDS_PVE: 100,
+  MAX_ROUNDS_PVP: 100,
   
   MIN_HIT_RATE: 2000,
   MAX_HIT_RATE: 10000,
