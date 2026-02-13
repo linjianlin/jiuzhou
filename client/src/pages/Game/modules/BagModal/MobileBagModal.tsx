@@ -32,6 +32,7 @@ import {
   buildAffixRerollCostPlan,
   buildBagItem,
   buildEnhanceCostPlan,
+  buildBatchDisassemblePayloadItems,
   buildEquipmentLines,
   buildGrowthPreviewAttrs,
   buildRefineCostPlan,
@@ -701,17 +702,17 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
               submitting || item.locked ||
               (mode === 'enhance' && enhanceState
                 ? enhanceState.curLv >= 15 || enhanceState.owned < 1 ||
-                  playerSilver < enhanceState.silverCost || playerSpiritStones < enhanceState.spiritStoneCost
+                playerSilver < enhanceState.silverCost || playerSpiritStones < enhanceState.spiritStoneCost
                 : false) ||
               (mode === 'refine' && refineState
                 ? refineState.curLv >= 10 || refineState.owned < refineState.materialQty ||
-                  playerSilver < refineState.silverCost || playerSpiritStones < refineState.spiritStoneCost
+                playerSilver < refineState.silverCost || playerSpiritStones < refineState.spiritStoneCost
                 : false) ||
               (mode === 'reroll' && rerollState
                 ? rerollState.affixes.length <= 0 ||
-                  rerollState.rerollScrollOwned < rerollState.rerollScrollQty ||
-                  playerSpiritStones < rerollState.spiritStoneCost ||
-                  playerSilver < rerollState.silverCost
+                rerollState.rerollScrollOwned < rerollState.rerollScrollQty ||
+                playerSpiritStones < rerollState.spiritStoneCost ||
+                playerSilver < rerollState.silverCost
                 : mode === 'reroll')
             }
             onClick={() => void (
@@ -964,11 +965,16 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
       ...(query.trim().length > 0 ? { keyword: query.trim().toLowerCase() } : {}),
     });
     if (candidates.length === 0) { message.info('没有可分解的物品'); return; }
+
+    const payloadItems = buildBatchDisassemblePayloadItems(candidates);
+    if (payloadItems.length === 0) {
+      message.info('没有可分解的物品');
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await disassembleInventoryEquipmentBatch(
-        candidates.map((x) => ({ itemId: x.id, qty: Math.max(1, Math.floor(x.qty || 1)) }))
-      );
+      const res = await disassembleInventoryEquipmentBatch(payloadItems);
       if (!res.success) throw new Error(res.message || '分解失败');
       message.success(res.message || `分解了${candidates.length}个物品`);
       await refresh();

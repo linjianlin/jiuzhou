@@ -987,6 +987,35 @@ export const collectBatchDisassembleCandidates = (
   return out;
 };
 
+/**
+ * 构建批量分解请求体条目
+ *
+ * 输入：候选 BagItem 列表
+ * 输出：满足后端接口约束的 { itemId, qty } 数组
+ * 约束：
+ * - itemId 必须为正整数
+ * - qty 必须为正整数
+ * - 同一个 itemId 会在前端先合并，减少后端重复校验与报错概率
+ */
+export const buildBatchDisassemblePayloadItems = (
+  items: BagItem[],
+): Array<{ itemId: number; qty: number }> => {
+  const qtyById = new Map<number, number>();
+
+  for (const item of items) {
+    const itemId = Number(item.id);
+    const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
+
+    if (!Number.isInteger(itemId) || itemId <= 0) continue;
+    if (!Number.isInteger(qty) || qty <= 0) continue;
+
+    const prevQty = qtyById.get(itemId) ?? 0;
+    qtyById.set(itemId, prevQty + qty);
+  }
+
+  return [...qtyById.entries()].map(([itemId, qty]) => ({ itemId, qty }));
+};
+
 const mapCategory = (
   value: unknown,
   subCategoryValue?: unknown,

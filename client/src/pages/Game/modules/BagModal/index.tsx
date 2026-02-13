@@ -23,6 +23,7 @@ import {
   attrOrder,
   buildAffixRerollCostPlan,
   buildBagItem,
+  buildBatchDisassemblePayloadItems,
   buildEnhanceCostPlan,
   buildEquipmentLines,
   buildGrowthPreviewAttrs,
@@ -1015,11 +1016,11 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
               <div className="bag-actions">
                 {hasAction('use') ||
-                hasAction('compose') ||
-                hasAction('equip') ||
-                hasAction('disassemble') ||
-                hasAction('enhance') ||
-                hasAction('show') ? (
+                  hasAction('compose') ||
+                  hasAction('equip') ||
+                  hasAction('disassemble') ||
+                  hasAction('enhance') ||
+                  hasAction('show') ? (
                   <>
                     {canBatchUseConsumable ? (
                       <div className="bag-use-qty">
@@ -1207,15 +1208,15 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
         item={
           activeItem
             ? {
-                id: activeItem.id,
-                name: activeItem.name,
-                quality: activeItem.quality,
-                qty: activeItem.qty,
-                location: activeItem.location,
-                locked: activeItem.locked,
-                category: activeItem.category,
-                subCategory: activeItem.subCategory,
-              }
+              id: activeItem.id,
+              name: activeItem.name,
+              quality: activeItem.quality,
+              qty: activeItem.qty,
+              location: activeItem.location,
+              locked: activeItem.locked,
+              category: activeItem.category,
+              subCategory: activeItem.subCategory,
+            }
             : null
         }
         onClose={() => setDisassembleOpen(false)}
@@ -1671,12 +1672,13 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 setBatchSubmitting(true);
                 try {
                   if (batchMode === 'disassemble') {
-                    const res = await disassembleInventoryEquipmentBatch(
-                      batchCandidates.map((x) => ({
-                        itemId: x.id,
-                        qty: Math.max(1, Math.floor(x.qty || 1)),
-                      }))
-                    );
+                    const payloadItems = buildBatchDisassemblePayloadItems(batchCandidates);
+                    if (payloadItems.length === 0) {
+                      message.info('没有可分解的物品');
+                      return;
+                    }
+
+                    const res = await disassembleInventoryEquipmentBatch(payloadItems);
                     if (!res.success) throw new Error(res.message || '分解失败');
                     message.success(res.message || '分解成功');
                   } else {
