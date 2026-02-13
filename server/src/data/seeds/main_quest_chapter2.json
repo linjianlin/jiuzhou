@@ -44,7 +44,7 @@
       "brief": "前往药王谷谷口。",
       "npc_id": "npc-yaowang-elder",
       "map_id": "map-yaowang-valley",
-      "room_id": "room-yaowang-valley-entrance",
+      "room_id": "room-yaowang-alchemy-terrace",
       "min_realm": "炼炁化神·炼己期",
       "dialogue_id": "dlg-main-2-001",
       "objectives": [
@@ -121,7 +121,7 @@
       "brief": "采集灵草与南海灵珠素材。",
       "npc_id": "npc-lingyao-merchant",
       "map_id": "map-yaowang-valley",
-      "room_id": "room-yaowang-herb-field",
+      "room_id": "room-yaowang-alchemy-terrace",
       "min_realm": "炼炁化神·炼己期",
       "dialogue_id": "dlg-main-2-003",
       "objectives": [
@@ -170,7 +170,7 @@
       "brief": "前往幽冥谷并击退幽冥鬼卒。",
       "npc_id": "npc-youming-guardian",
       "map_id": "map-youming-valley",
-      "room_id": "room-youming-stone-steps",
+      "room_id": "room-youming-palace-front",
       "min_realm": "炼炁化神·炼己期",
       "dialogue_id": "dlg-main-2-004",
       "objectives": [

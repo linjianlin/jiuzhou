@@ -11,6 +11,7 @@ import {
   type DialogueState,
 } from './dialogueService.js';
 import { createItem } from './itemService.js';
+import { getRoomsInMap } from './mapService.js';
 
 type ChapterDto = {
   id: string;
@@ -69,6 +70,52 @@ const asArray = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
 const asObject = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+const resolveNpcRoomId = async (mapId: string | null, npcId: string | null): Promise<string | null> => {
+  const mid = asString(mapId).trim();
+  const nid = asString(npcId).trim();
+  if (!mid || !nid) return null;
+
+  const rooms = await getRoomsInMap(mid);
+  for (const room of rooms) {
+    if (!Array.isArray(room.npcs) || room.npcs.length === 0) continue;
+    if (room.npcs.includes(nid)) return room.id;
+  }
+
+  return null;
+};
+
+const resolveCurrentSectionRoomId = async (params: {
+  status: SectionStatus;
+  mapId: string | null;
+  npcId: string | null;
+  roomId: string | null;
+  objectives: SectionObjectiveDto[];
+}): Promise<string | null> => {
+  const { status, mapId, npcId, roomId, objectives } = params;
+  let effectiveRoomId = roomId;
+
+  if (status === 'objectives') {
+    const reachObj = objectives.find((objective) => {
+      if (objective.type !== 'reach') return false;
+      if (objective.done >= objective.target) return false;
+      const rid = typeof objective.params?.room_id === 'string' ? objective.params.room_id.trim() : '';
+      return rid.length > 0;
+    });
+    if (reachObj) {
+      const rid = typeof reachObj.params?.room_id === 'string' ? reachObj.params.room_id.trim() : '';
+      if (rid) effectiveRoomId = rid;
+    }
+    return effectiveRoomId;
+  }
+
+  if (status === 'not_started' || status === 'dialogue' || status === 'turnin') {
+    const npcRoomId = await resolveNpcRoomId(mapId, npcId);
+    if (npcRoomId) return npcRoomId;
+  }
+
+  return effectiveRoomId;
+};
 
 const REALM_ORDER = [
   '凡人',
@@ -443,20 +490,16 @@ export const getMainQuestProgress = async (characterId: number): Promise<MainQue
       });
 
       const status = (asString(progress.section_status) as SectionStatus) || 'not_started';
+      const mapId = asString(s.map_id) || null;
+      const npcId = asString(s.npc_id) || null;
       const baseRoomId = asString(s.room_id) || null;
-      let effectiveRoomId: string | null = baseRoomId;
-      if (status === 'objectives') {
-        const reachObj = objectives.find((o) => {
-          if (o.type !== 'reach') return false;
-          if (o.done >= o.target) return false;
-          const rid = typeof o.params?.room_id === 'string' ? o.params.room_id.trim() : '';
-          return Boolean(rid);
-        });
-        if (reachObj) {
-          const rid = typeof reachObj.params?.room_id === 'string' ? reachObj.params.room_id.trim() : '';
-          if (rid) effectiveRoomId = rid;
-        }
-      }
+      const effectiveRoomId = await resolveCurrentSectionRoomId({
+        status,
+        mapId,
+        npcId,
+        roomId: baseRoomId,
+        objectives,
+      });
 
       currentSection = {
         id: asString(s.id),
@@ -465,8 +508,8 @@ export const getMainQuestProgress = async (characterId: number): Promise<MainQue
         name: asString(s.name),
         description: asString(s.description),
         brief: asString(s.brief),
-        npcId: asString(s.npc_id) || null,
-        mapId: asString(s.map_id) || null,
+        npcId,
+        mapId,
         roomId: effectiveRoomId,
         status,
         objectives,
