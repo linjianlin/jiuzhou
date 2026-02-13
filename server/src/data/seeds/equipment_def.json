@@ -97,11 +97,11 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
-        "wugong": 35,
-        "baoji": 140
+        "wugong": 20,
+        "baoji": 100
       },
       "implicit_attrs": {
-        "wugong": 25,
+        "wugong": 10,
         "mingzhong": 100
       },
       "affix_pool_id": "ap-weapon-rare",
