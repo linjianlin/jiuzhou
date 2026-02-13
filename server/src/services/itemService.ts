@@ -430,7 +430,14 @@ export const useItem = async (
           const currency = params ? String(params.currency || '') : '';
           const min = Math.max(0, Math.floor(params ? Number(params.min) || 0 : 0));
           const max = Math.max(min, Math.floor(params ? Number(params.max) || 0 : 0));
-          const amount = (min === max ? min : Math.floor(Math.random() * (max - min + 1)) + min) * qty;
+          let amount = 0;
+          if (min === max) {
+            amount = min * qty;
+          } else {
+            for (let i = 0; i < qty; i += 1) {
+              amount += Math.floor(Math.random() * (max - min + 1)) + min;
+            }
+          }
           if (amount > 0) {
             if (currency === 'spirit_stones') {
               deltaSpiritStones += amount;
