@@ -22,6 +22,10 @@ export type TaskDefinition = {
 
 type QueryRunner = Pick<PoolClient, 'query'>;
 
+const DYNAMIC_TASK_ID_PREFIX = 'task-bounty-';
+
+const isDynamicTaskId = (taskId: string): boolean => taskId.startsWith(DYNAMIC_TASK_ID_PREFIX);
+
 const toStaticTaskDefinition = (task: TaskDefConfig): TaskDefinition => {
   return {
     id: String(task.id),
@@ -66,18 +70,21 @@ const toDynamicTaskDefinition = (row: Record<string, unknown>): TaskDefinition =
   };
 };
 
-const getStaticTaskDefinitionMap = (): Map<string, TaskDefinition> => {
-  const map = new Map<string, TaskDefinition>();
+const getStaticTaskDefinitionSnapshot = (): { enabledMap: Map<string, TaskDefinition>; allIds: Set<string> } => {
+  const enabledMap = new Map<string, TaskDefinition>();
+  const allIds = new Set<string>();
   for (const task of getTaskDefinitions()) {
     const normalized = toStaticTaskDefinition(task);
-    if (!normalized.id || !normalized.enabled) continue;
-    map.set(normalized.id, normalized);
+    if (!normalized.id) continue;
+    allIds.add(normalized.id);
+    if (!normalized.enabled) continue;
+    enabledMap.set(normalized.id, normalized);
   }
-  return map;
+  return { enabledMap, allIds };
 };
 
 export const getStaticTaskDefinitions = (): TaskDefinition[] => {
-  return Array.from(getStaticTaskDefinitionMap().values()).sort(
+  return Array.from(getStaticTaskDefinitionSnapshot().enabledMap.values()).sort(
     (left, right) => right.sort_weight - left.sort_weight || left.id.localeCompare(right.id),
   );
 };
@@ -89,9 +96,11 @@ export const getTaskDefinitionById = async (
   const id = String(taskId || '').trim();
   if (!id) return null;
 
-  const staticMap = getStaticTaskDefinitionMap();
-  const staticDef = staticMap.get(id);
+  const staticSnapshot = getStaticTaskDefinitionSnapshot();
+  const staticDef = staticSnapshot.enabledMap.get(id);
   if (staticDef) return staticDef;
+  if (staticSnapshot.allIds.has(id)) return null;
+  if (!isDynamicTaskId(id)) return null;
 
   const db = runner ?? { query };
   const res = await db.query(
@@ -117,13 +126,15 @@ export const getTaskDefinitionsByIds = async (
   const out = new Map<string, TaskDefinition>();
   if (ids.length === 0) return out;
 
-  const staticMap = getStaticTaskDefinitionMap();
+  const staticSnapshot = getStaticTaskDefinitionSnapshot();
   const missing: string[] = [];
   for (const id of ids) {
-    const staticDef = staticMap.get(id);
+    const staticDef = staticSnapshot.enabledMap.get(id);
     if (staticDef) {
       out.set(id, staticDef);
     } else {
+      if (staticSnapshot.allIds.has(id)) continue;
+      if (!isDynamicTaskId(id)) continue;
       missing.push(id);
     }
   }
@@ -154,32 +165,15 @@ export const getTaskDefinitionsByNpcIds = async (
   npcIds: string[],
   runner?: QueryRunner,
 ): Promise<TaskDefinition[]> => {
+  void runner;
   const ids = Array.from(new Set(npcIds.map((entry) => String(entry || '').trim()).filter((entry) => entry.length > 0)));
   if (ids.length === 0) return [];
 
   const out = new Map<string, TaskDefinition>();
-  for (const task of getStaticTaskDefinitionMap().values()) {
+  for (const task of getStaticTaskDefinitionSnapshot().enabledMap.values()) {
     if (!task.giver_npc_id) continue;
     if (!ids.includes(task.giver_npc_id)) continue;
     out.set(task.id, task);
-  }
-
-  const db = runner ?? { query };
-  const res = await db.query(
-    `
-      SELECT id, category, title, realm, description, giver_npc_id, map_id, room_id,
-             objectives, rewards, prereq_task_ids, enabled, sort_weight, version
-      FROM task_def
-      WHERE enabled = true AND giver_npc_id = ANY($1::varchar[])
-      ORDER BY sort_weight DESC, id ASC
-    `,
-    [ids],
-  );
-
-  for (const row of res.rows as Array<Record<string, unknown>>) {
-    const normalized = toDynamicTaskDefinition(row);
-    if (!normalized.id || !normalized.enabled) continue;
-    out.set(normalized.id, normalized);
   }
 
   return Array.from(out.values()).sort((left, right) => right.sort_weight - left.sort_weight || left.id.localeCompare(right.id));

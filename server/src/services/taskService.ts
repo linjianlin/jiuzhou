@@ -146,7 +146,7 @@ const resetRecurringTaskProgressIfNeeded = async (
   const runner = dbClient ?? { query };
   const progressRes = await runner.query(
     `
-      SELECT task_id, accepted_at
+      SELECT task_id
       FROM character_task_progress
       WHERE character_id = $1
     `,
@@ -159,28 +159,21 @@ const resetRecurringTaskProgressIfNeeded = async (
   if (taskIds.length === 0) return;
 
   const taskDefMap = await getTaskDefinitionsByIds(taskIds, dbClient);
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const dayOfWeek = (now.getDay() + 6) % 7;
-  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
-  const needResetTaskIds: string[] = [];
+  const dailyTaskIds = new Set<string>();
+  const eventTaskIds = new Set<string>();
 
   for (const row of progressRes.rows as Array<Record<string, unknown>>) {
     const taskId = asNonEmptyString(row.task_id);
     if (!taskId) continue;
     const taskDef = taskDefMap.get(taskId);
     if (!taskDef || !taskDef.enabled) continue;
-    if (taskDef.category !== 'daily' && taskDef.category !== 'event') continue;
-
-    const acceptedAtRaw = row.accepted_at;
-    const acceptedAt = acceptedAtRaw instanceof Date ? acceptedAtRaw.getTime() : Date.parse(String(acceptedAtRaw ?? ''));
-    if (!Number.isFinite(acceptedAt)) continue;
-
-    if (taskDef.category === 'daily' && acceptedAt < todayStart) needResetTaskIds.push(taskId);
-    if (taskDef.category === 'event' && acceptedAt < weekStart) needResetTaskIds.push(taskId);
+    if (taskDef.category === 'daily') dailyTaskIds.add(taskId);
+    if (taskDef.category === 'event') eventTaskIds.add(taskId);
   }
 
-  if (needResetTaskIds.length === 0) return;
+  const dailyIds = Array.from(dailyTaskIds);
+  const eventIds = Array.from(eventTaskIds);
+  if (dailyIds.length === 0 && eventIds.length === 0) return;
 
   await runner.query(
     `
@@ -192,9 +185,13 @@ const resetRecurringTaskProgressIfNeeded = async (
           claimed_at = NULL,
           updated_at = NOW()
       WHERE character_id = $1
-        AND task_id = ANY($2::varchar[])
+        AND (
+          (task_id = ANY($2::varchar[]) AND accepted_at < date_trunc('day', NOW()))
+          OR
+          (task_id = ANY($3::varchar[]) AND accepted_at < date_trunc('week', NOW()))
+        )
     `,
-    [cid, needResetTaskIds],
+    [cid, dailyIds, eventIds],
   );
 };
 

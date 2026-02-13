@@ -317,10 +317,11 @@ export const getDungeonWeeklyTargets = async (
     let firstClear = 0;
 
     for (const row of countRes.rows as Array<Record<string, unknown>>) {
-      total += 1;
-      if (row.is_first_clear === true) firstClear += 1;
       const dungeonId = typeof row.dungeon_id === 'string' ? row.dungeon_id : '';
       const type = dungeonTypeById.get(dungeonId);
+      if (!type) continue;
+      total += 1;
+      if (row.is_first_clear === true) firstClear += 1;
       if (type === 'trial') trial += 1;
       if (type === 'material') material += 1;
       if (type === 'equipment') equipment += 1;
