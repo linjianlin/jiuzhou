@@ -399,14 +399,14 @@ const ensurePercentAttrsAsActualValue = async () => {
   const updateParts = percentAttrColumns.map((col) => {
     if (col === 'baoshang') {
       return `${col} = CASE
-        WHEN ${col} > 1000 THEN ROUND(${col} / 10000.0, 6)
-        WHEN ${col} > 10 THEN ROUND(${col} / 100.0, 6)
+        WHEN ${col} > 1000 THEN ROUND((${col} / 10000.0)::numeric, 6)::DOUBLE PRECISION
+        WHEN ${col} > 10 THEN ROUND((${col} / 100.0)::numeric, 6)::DOUBLE PRECISION
         ELSE ${col}
       END`;
     }
     return `${col} = CASE
-      WHEN ${col} > 1000 THEN ROUND(${col} / 10000.0, 6)
-      WHEN ${col} > 1 THEN ROUND(${col} / 100.0, 6)
+      WHEN ${col} > 1000 THEN ROUND((${col} / 10000.0)::numeric, 6)::DOUBLE PRECISION
+      WHEN ${col} > 1 THEN ROUND((${col} / 100.0)::numeric, 6)::DOUBLE PRECISION
       ELSE ${col}
     END`;
   });
