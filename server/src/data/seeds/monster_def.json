@@ -1641,6 +1641,586 @@
       "silver_reward_min": 520,
       "silver_reward_max": 820,
       "enabled": true
+    },
+    {
+      "id": "monster-yanbing-rongchao-yao",
+      "code": "yanbing_rongchao_yao",
+      "name": "炎潮妖",
+      "title": "灼浪掠食者",
+      "realm": "炼炁化神·炼己期",
+      "level": 28,
+      "avatar": "/assets/monster/gale_falcon.png",
+      "kind": "normal",
+      "element": "火",
+      "base_attrs": {
+        "qixue": 3380,
+        "max_qixue": 3380,
+        "lingqi": 320,
+        "max_lingqi": 320,
+        "wugong": 138,
+        "fagong": 122,
+        "wufang": 88,
+        "fafang": 84,
+        "mingzhong": 1.18,
+        "shanbi": 0.096,
+        "baoji": 0.15,
+        "baoshang": 2.08,
+        "sudu": 8,
+        "kongzhi_kangxing": 0.75
+      },
+      "attr_variance": 0.07,
+      "attr_multiplier_min": 1.08,
+      "attr_multiplier_max": 1.28,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 28
+        },
+        {
+          "label": "气血",
+          "value": 3380
+        },
+        {
+          "label": "物攻",
+          "value": 138
+        },
+        {
+          "label": "法攻",
+          "value": 122
+        },
+        {
+          "label": "速度",
+          "value": 8
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-tide-spike",
+          "sk-cold-surge"
+        ],
+        "skill_weights": {
+          "sk-tide-spike": 60,
+          "sk-cold-surge": 40
+        }
+      },
+      "drop_pool_id": "dp-lianji-nanhai-haijiao",
+      "exp_reward": 248,
+      "silver_reward_min": 108,
+      "silver_reward_max": 162,
+      "enabled": true
+    },
+    {
+      "id": "monster-yanbing-hanwu-guzu",
+      "code": "yanbing_hanwu_guzu",
+      "name": "寒雾骨卒",
+      "title": "霜蚀巡夜",
+      "realm": "炼炁化神·炼己期",
+      "level": 28,
+      "avatar": "/assets/monster/shadow_viper.png",
+      "kind": "normal",
+      "element": "冰",
+      "base_attrs": {
+        "qixue": 3200,
+        "max_qixue": 3200,
+        "lingqi": 360,
+        "max_lingqi": 360,
+        "wugong": 118,
+        "fagong": 142,
+        "wufang": 84,
+        "fafang": 96,
+        "mingzhong": 1.2,
+        "shanbi": 0.102,
+        "baoji": 0.155,
+        "baoshang": 2.12,
+        "sudu": 8,
+        "kongzhi_kangxing": 0.74
+      },
+      "attr_variance": 0.08,
+      "attr_multiplier_min": 1.08,
+      "attr_multiplier_max": 1.26,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 28
+        },
+        {
+          "label": "气血",
+          "value": 3200
+        },
+        {
+          "label": "法攻",
+          "value": 142
+        },
+        {
+          "label": "物防",
+          "value": 84
+        },
+        {
+          "label": "法防",
+          "value": 96
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-shadow-claw",
+          "sk-ghost-curse"
+        ],
+        "skill_weights": {
+          "sk-shadow-claw": 62,
+          "sk-ghost-curse": 38
+        }
+      },
+      "drop_pool_id": "dp-lianji-youming-guizu",
+      "exp_reward": 252,
+      "silver_reward_min": 110,
+      "silver_reward_max": 165,
+      "enabled": true
+    },
+    {
+      "id": "monster-yanbing-jingjia-shou",
+      "code": "yanbing_jingjia_shou",
+      "name": "晶甲兽",
+      "title": "裂谷重甲",
+      "realm": "炼炁化神·炼己期",
+      "level": 28,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "normal",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 3820,
+        "max_qixue": 3820,
+        "lingqi": 260,
+        "max_lingqi": 260,
+        "wugong": 148,
+        "fagong": 92,
+        "wufang": 104,
+        "fafang": 88,
+        "mingzhong": 1.16,
+        "shanbi": 0.082,
+        "baoji": 0.136,
+        "baoshang": 1.98,
+        "sudu": 6,
+        "kongzhi_kangxing": 0.82
+      },
+      "attr_variance": 0.06,
+      "attr_multiplier_min": 1.1,
+      "attr_multiplier_max": 1.3,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 28
+        },
+        {
+          "label": "气血",
+          "value": 3820
+        },
+        {
+          "label": "物攻",
+          "value": 148
+        },
+        {
+          "label": "物防",
+          "value": 104
+        },
+        {
+          "label": "法防",
+          "value": 88
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-crystal-bash",
+          "sk-earth-shock"
+        ],
+        "skill_weights": {
+          "sk-crystal-bash": 66,
+          "sk-earth-shock": 34
+        }
+      },
+      "drop_pool_id": "dp-lianji-jingkuangshou",
+      "exp_reward": 258,
+      "silver_reward_min": 114,
+      "silver_reward_max": 170,
+      "enabled": true
+    },
+    {
+      "id": "monster-yanbing-mojing-huanying",
+      "code": "yanbing_mojing_huanying",
+      "name": "魔镜幻影",
+      "title": "裂渊映像",
+      "realm": "炼炁化神·炼己期",
+      "level": 28,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "normal",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 3560,
+        "max_qixue": 3560,
+        "lingqi": 380,
+        "max_lingqi": 380,
+        "wugong": 144,
+        "fagong": 146,
+        "wufang": 90,
+        "fafang": 92,
+        "mingzhong": 1.22,
+        "shanbi": 0.1,
+        "baoji": 0.168,
+        "baoshang": 2.2,
+        "sudu": 7,
+        "kongzhi_kangxing": 0.78
+      },
+      "attr_variance": 0.08,
+      "attr_multiplier_min": 1.08,
+      "attr_multiplier_max": 1.28,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 28
+        },
+        {
+          "label": "气血",
+          "value": 3560
+        },
+        {
+          "label": "双攻",
+          "value": 146
+        },
+        {
+          "label": "物防",
+          "value": 90
+        },
+        {
+          "label": "法防",
+          "value": 92
+        }
+      ],
+      "ai_profile": {
+        "behavior": "normal",
+        "skills": [
+          "sk-xinmo-thorn",
+          "sk-xinmo-whisper"
+        ],
+        "skill_weights": {
+          "sk-xinmo-thorn": 58,
+          "sk-xinmo-whisper": 42
+        }
+      },
+      "drop_pool_id": "dp-lianji-xinmo-huanying",
+      "exp_reward": 262,
+      "silver_reward_min": 116,
+      "silver_reward_max": 172,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-yanbing-shuangsha-jiang",
+      "code": "elite_yanbing_shuangsha_jiang",
+      "name": "双煞将",
+      "title": "精英",
+      "realm": "炼炁化神·炼己期",
+      "level": 29,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "elite",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 10200,
+        "max_qixue": 10200,
+        "lingqi": 560,
+        "max_lingqi": 560,
+        "wugong": 212,
+        "fagong": 198,
+        "wufang": 138,
+        "fafang": 142,
+        "mingzhong": 1.34,
+        "shanbi": 0.096,
+        "baoji": 0.182,
+        "baoshang": 2.38,
+        "sudu": 7,
+        "kongzhi_kangxing": 0.9
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.24,
+      "attr_multiplier_max": 1.46,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 29
+        },
+        {
+          "label": "气血",
+          "value": 10200
+        },
+        {
+          "label": "双攻",
+          "value": 212
+        },
+        {
+          "label": "物防",
+          "value": 138
+        },
+        {
+          "label": "法防",
+          "value": 142
+        }
+      ],
+      "ai_profile": {
+        "behavior": "elite",
+        "skills": [
+          "sk-youming-slash",
+          "sk-soul-chain",
+          "sk-ghost-curse"
+        ],
+        "skill_weights": {
+          "sk-youming-slash": 46,
+          "sk-soul-chain": 32,
+          "sk-ghost-curse": 22
+        }
+      },
+      "drop_pool_id": "dp-lianji-elite-youming-jiangjun",
+      "exp_reward": 690,
+      "silver_reward_min": 245,
+      "silver_reward_max": 368,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-yanbing-rongjing-jushou",
+      "code": "elite_yanbing_rongjing_jushou",
+      "name": "熔晶巨兽",
+      "title": "精英",
+      "realm": "炼炁化神·炼己期",
+      "level": 29,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "elite",
+      "element": "火",
+      "base_attrs": {
+        "qixue": 10900,
+        "max_qixue": 10900,
+        "lingqi": 460,
+        "max_lingqi": 460,
+        "wugong": 226,
+        "fagong": 162,
+        "wufang": 152,
+        "fafang": 132,
+        "mingzhong": 1.3,
+        "shanbi": 0.088,
+        "baoji": 0.17,
+        "baoshang": 2.3,
+        "sudu": 6,
+        "kongzhi_kangxing": 0.94
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.22,
+      "attr_multiplier_max": 1.46,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 29
+        },
+        {
+          "label": "气血",
+          "value": 10900
+        },
+        {
+          "label": "物攻",
+          "value": 226
+        },
+        {
+          "label": "物防",
+          "value": 152
+        },
+        {
+          "label": "法防",
+          "value": 132
+        }
+      ],
+      "ai_profile": {
+        "behavior": "elite",
+        "skills": [
+          "sk-crystal-bash",
+          "sk-earth-shock",
+          "sk-stone-wall"
+        ],
+        "skill_weights": {
+          "sk-crystal-bash": 50,
+          "sk-earth-shock": 32,
+          "sk-stone-wall": 18
+        }
+      },
+      "drop_pool_id": "dp-lianji-elite-lingmai-jingshou",
+      "exp_reward": 720,
+      "silver_reward_min": 258,
+      "silver_reward_max": 382,
+      "enabled": true
+    },
+    {
+      "id": "monster-boss-yanbing-liehe-juling",
+      "code": "boss_yanbing_liehe_juling",
+      "name": "裂核巨灵",
+      "title": "首领",
+      "realm": "炼炁化神·炼己期",
+      "level": 31,
+      "avatar": "/assets/monster/ancient_tree.png",
+      "kind": "boss",
+      "element": "火",
+      "base_attrs": {
+        "qixue": 26200,
+        "max_qixue": 26200,
+        "lingqi": 980,
+        "max_lingqi": 980,
+        "wugong": 346,
+        "fagong": 258,
+        "wufang": 236,
+        "fafang": 196,
+        "mingzhong": 1.52,
+        "shanbi": 0.078,
+        "baoji": 0.188,
+        "baoshang": 2.52,
+        "sudu": 5,
+        "kongzhi_kangxing": 1.06
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.32,
+      "attr_multiplier_max": 1.6,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 31
+        },
+        {
+          "label": "气血",
+          "value": 26200
+        },
+        {
+          "label": "物攻",
+          "value": 346
+        },
+        {
+          "label": "物防",
+          "value": 236
+        },
+        {
+          "label": "法防",
+          "value": 196
+        }
+      ],
+      "ai_profile": {
+        "behavior": "boss",
+        "skills": [
+          "sk-earth-crush",
+          "sk-crystal-rain",
+          "sk-stone-wall",
+          "sk-core-pulse"
+        ],
+        "skill_weights": {
+          "sk-earth-crush": 38,
+          "sk-crystal-rain": 24,
+          "sk-stone-wall": 18,
+          "sk-core-pulse": 20
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 0.65,
+            "action": "enrage",
+            "buff": "def_up_20"
+          },
+          {
+            "hp_percent": 0.3,
+            "action": "summon",
+            "summon_id": "monster-yanbing-jingjia-shou"
+          }
+        ]
+      },
+      "drop_pool_id": "dp-lianji-boss-kuangyuan-juling",
+      "exp_reward": 1680,
+      "silver_reward_min": 560,
+      "silver_reward_max": 860,
+      "enabled": true
+    },
+    {
+      "id": "monster-boss-yanbing-xinyan-mozhu",
+      "code": "boss_yanbing_xinyan_mozhu",
+      "name": "心焰魔主",
+      "title": "首领",
+      "realm": "炼炁化神·炼己期",
+      "level": 31,
+      "avatar": "/assets/monster/withered_ent.png",
+      "kind": "boss",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 24400,
+        "max_qixue": 24400,
+        "lingqi": 1320,
+        "max_lingqi": 1320,
+        "wugong": 308,
+        "fagong": 336,
+        "wufang": 206,
+        "fafang": 214,
+        "mingzhong": 1.56,
+        "shanbi": 0.104,
+        "baoji": 0.218,
+        "baoshang": 2.68,
+        "sudu": 6,
+        "kongzhi_kangxing": 1
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.3,
+      "attr_multiplier_max": 1.58,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 31
+        },
+        {
+          "label": "气血",
+          "value": 24400
+        },
+        {
+          "label": "双攻",
+          "value": 336
+        },
+        {
+          "label": "物防",
+          "value": 206
+        },
+        {
+          "label": "法防",
+          "value": 214
+        }
+      ],
+      "ai_profile": {
+        "behavior": "boss",
+        "skills": [
+          "sk-xinmo-pierce",
+          "sk-xinmo-fear",
+          "sk-soul-chain",
+          "sk-dark-heal"
+        ],
+        "skill_weights": {
+          "sk-xinmo-pierce": 34,
+          "sk-xinmo-fear": 28,
+          "sk-soul-chain": 22,
+          "sk-dark-heal": 16
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 0.6,
+            "action": "enrage",
+            "buff": "damage_up_25"
+          },
+          {
+            "hp_percent": 0.35,
+            "action": "summon",
+            "summon_id": "monster-yanbing-mojing-huanying"
+          }
+        ]
+      },
+      "drop_pool_id": "dp-lianji-boss-xinmo-huashen",
+      "exp_reward": 1620,
+      "silver_reward_min": 540,
+      "silver_reward_max": 840,
+      "enabled": true
     }
   ]
 }

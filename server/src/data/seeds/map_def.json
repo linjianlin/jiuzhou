@@ -2251,12 +2251,12 @@
           "npcs": [],
           "monsters": [
             {
-              "monster_def_id": "monster-nanhai-haijiao",
+              "monster_def_id": "monster-yanbing-rongchao-yao",
               "count": 3,
               "respawn_sec": 55
             },
             {
-              "monster_def_id": "monster-lingmai-shimo",
+              "monster_def_id": "monster-yanbing-jingjia-shou",
               "count": 2,
               "respawn_sec": 70
             }
@@ -2299,12 +2299,12 @@
           "npcs": [],
           "monsters": [
             {
-              "monster_def_id": "monster-youming-guizu",
+              "monster_def_id": "monster-yanbing-hanwu-guzu",
               "count": 3,
               "respawn_sec": 55
             },
             {
-              "monster_def_id": "monster-xinmo-huanying",
+              "monster_def_id": "monster-yanbing-mojing-huanying",
               "count": 2,
               "respawn_sec": 65
             }
@@ -2347,19 +2347,19 @@
           "npcs": [],
           "monsters": [
             {
-              "monster_def_id": "monster-lingmai-jingkuangshou",
+              "monster_def_id": "monster-yanbing-jingjia-shou",
               "count": 2,
               "respawn_sec": 65
             },
             {
-              "monster_def_id": "monster-nanhai-haijiao",
+              "monster_def_id": "monster-yanbing-rongchao-yao",
               "count": 2,
               "respawn_sec": 55
             },
             {
-              "monster_def_id": "monster-youming-guizu",
-              "count": 2,
-              "respawn_sec": 55
+              "monster_def_id": "monster-elite-yanbing-shuangsha-jiang",
+              "count": 1,
+              "respawn_sec": 180
             }
           ],
           "resources": [],
@@ -2389,14 +2389,14 @@
           "npcs": [],
           "monsters": [
             {
-              "monster_def_id": "monster-lingmai-jingkuangshou",
+              "monster_def_id": "monster-yanbing-jingjia-shou",
               "count": 2,
               "respawn_sec": 65
             },
             {
-              "monster_def_id": "monster-xinmo-huanying",
+              "monster_def_id": "monster-elite-yanbing-rongjing-jushou",
               "count": 1,
-              "respawn_sec": 70
+              "respawn_sec": 180
             }
           ],
           "resources": [

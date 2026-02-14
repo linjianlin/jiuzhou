@@ -108,11 +108,11 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-nanhai-haijiao",
+                      "monster_def_id": "monster-yanbing-rongchao-yao",
                       "count": 3
                     },
                     {
-                      "monster_def_id": "monster-lingmai-shimo",
+                      "monster_def_id": "monster-yanbing-jingjia-shou",
                       "count": 2
                     }
                   ],
@@ -123,11 +123,11 @@
                   "spawn_delay_sec": 2,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "monster_def_id": "monster-yanbing-jingjia-shou",
                       "count": 2
                     },
                     {
-                      "monster_def_id": "monster-nanhai-haijiao",
+                      "monster_def_id": "monster-yanbing-rongchao-yao",
                       "count": 1
                     }
                   ],
@@ -181,11 +181,11 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-youming-guizu",
+                      "monster_def_id": "monster-yanbing-hanwu-guzu",
                       "count": 3
                     },
                     {
-                      "monster_def_id": "monster-xinmo-huanying",
+                      "monster_def_id": "monster-yanbing-mojing-huanying",
                       "count": 2
                     }
                   ],
@@ -196,11 +196,11 @@
                   "spawn_delay_sec": 3,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "monster_def_id": "monster-elite-yanbing-rongjing-jushou",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-youming-guizu",
+                      "monster_def_id": "monster-yanbing-hanwu-guzu",
                       "count": 2
                     }
                   ],
@@ -272,11 +272,11 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "monster_def_id": "monster-elite-yanbing-rongjing-jushou",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-elite-youming-jiangjun",
+                      "monster_def_id": "monster-elite-yanbing-shuangsha-jiang",
                       "count": 1
                     }
                   ],
@@ -287,7 +287,7 @@
                   "spawn_delay_sec": 4,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-boss-kuangyuan-juling",
+                      "monster_def_id": "monster-boss-yanbing-liehe-juling",
                       "count": 1
                     }
                   ],
@@ -378,11 +378,11 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-lingmai-shimo",
+                      "monster_def_id": "monster-yanbing-jingjia-shou",
                       "count": 3
                     },
                     {
-                      "monster_def_id": "monster-nanhai-haijiao",
+                      "monster_def_id": "monster-yanbing-rongchao-yao",
                       "count": 2
                     }
                   ],
@@ -393,11 +393,11 @@
                   "spawn_delay_sec": 3,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "monster_def_id": "monster-elite-yanbing-rongjing-jushou",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "monster_def_id": "monster-yanbing-jingjia-shou",
                       "count": 2
                     }
                   ],
@@ -457,11 +457,11 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-youming-guizu",
+                      "monster_def_id": "monster-yanbing-hanwu-guzu",
                       "count": 3
                     },
                     {
-                      "monster_def_id": "monster-xinmo-huanying",
+                      "monster_def_id": "monster-yanbing-mojing-huanying",
                       "count": 3
                     }
                   ],
@@ -472,11 +472,11 @@
                   "spawn_delay_sec": 3,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-youming-jiangjun",
+                      "monster_def_id": "monster-elite-yanbing-shuangsha-jiang",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-xinmo-huanying",
+                      "monster_def_id": "monster-yanbing-mojing-huanying",
                       "count": 2
                     }
                   ],
@@ -548,15 +548,15 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-lingmai-jingshou",
+                      "monster_def_id": "monster-elite-yanbing-rongjing-jushou",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-elite-youming-jiangjun",
+                      "monster_def_id": "monster-elite-yanbing-shuangsha-jiang",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-lingmai-jingkuangshou",
+                      "monster_def_id": "monster-yanbing-jingjia-shou",
                       "count": 2
                     }
                   ],
@@ -567,11 +567,11 @@
                   "spawn_delay_sec": 4,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-boss-kuangyuan-juling",
+                      "monster_def_id": "monster-boss-yanbing-liehe-juling",
                       "count": 1
                     },
                     {
-                      "monster_def_id": "monster-boss-xinmo-huashen",
+                      "monster_def_id": "monster-boss-yanbing-xinyan-mozhu",
                       "count": 1
                     }
                   ],

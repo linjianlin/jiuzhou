@@ -123,7 +123,7 @@
       "section_num": 3,
       "name": "交汇清剿",
       "description": "双核交汇处妖潮成群，先清场再推进裂渊防线。",
-      "brief": "击退海蛟与幽冥鬼卒。",
+      "brief": "击退炎潮妖与寒雾骨卒。",
       "npc_id": "npc-yanbing-watcher",
       "map_id": "map-yanbing-rift",
       "room_id": "room-yanbing-outpost",
@@ -133,19 +133,19 @@
         {
           "id": "obj-1",
           "type": "kill_monster",
-          "text": "击退南海海蛟 8 只",
+          "text": "击退炎潮妖 8 只",
           "target": 8,
           "params": {
-            "monster_id": "monster-nanhai-haijiao"
+            "monster_id": "monster-yanbing-rongchao-yao"
           }
         },
         {
           "id": "obj-2",
           "type": "kill_monster",
-          "text": "击退幽冥鬼卒 6 只",
+          "text": "击退寒雾骨卒 6 只",
           "target": 6,
           "params": {
-            "monster_id": "monster-youming-guizu"
+            "monster_id": "monster-yanbing-hanwu-guzu"
           }
         }
       ],
