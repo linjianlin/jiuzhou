@@ -69,7 +69,7 @@
         },
         {
           "item_def_id": "book-tiebu-quan",
-          "chance": 0.015,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -111,7 +111,7 @@
         },
         {
           "item_def_id": "book-houtu-gong",
-          "chance": 0.01,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -129,7 +129,7 @@
       "entries": [
         {
           "item_def_id": "book-qingfeng-jian",
-          "chance": 0.012,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -183,7 +183,7 @@
         },
         {
           "item_def_id": "book-qingmu-jue",
-          "chance": 0.012,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -230,7 +230,7 @@
         },
         {
           "item_def_id": "book-jingang-quan",
-          "chance": 0.01,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -276,7 +276,7 @@
         },
         {
           "item_def_id": "book-shuiyun-zhang",
-          "chance": 0.01,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -386,7 +386,7 @@
         },
         {
           "item_def_id": "book-lingbo-weibu",
-          "chance": 0.008,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
