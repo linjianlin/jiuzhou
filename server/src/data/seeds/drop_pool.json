@@ -37,7 +37,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
       ]
     },
     {
@@ -75,7 +76,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
       ]
     },
     {
@@ -113,7 +115,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
       ]
     },
     {
@@ -165,7 +168,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
       ]
     },
     {
@@ -203,7 +207,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
       ]
     },
     {
@@ -248,7 +253,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
       ]
     },
     {
@@ -328,7 +334,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-yangqi"
       ]
     },
     {
@@ -500,7 +507,8 @@
       ],
       "common_pool_ids": [
         "dp-common-monster-global",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-monster-tongmai"
       ]
     },
     {
@@ -573,7 +581,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-yangqi"
       ]
     },
     {
@@ -639,7 +648,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-tongmai"
       ]
     },
     {
@@ -684,7 +694,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-tongmai"
       ]
     },
     {
@@ -743,7 +754,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ningqi"
       ]
     },
     {
@@ -830,7 +842,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-ningqi"
       ]
     },
     {
@@ -932,7 +945,8 @@
       ],
       "common_pool_ids": [
         "dp-common-monster-global",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-monster-ningqi"
       ]
     },
     {
@@ -949,7 +963,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -966,7 +981,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -990,7 +1006,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1014,7 +1031,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1031,7 +1049,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1055,7 +1074,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1107,7 +1127,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1159,7 +1180,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1212,7 +1234,8 @@
       ],
       "common_pool_ids": [
         "dp-common-monster-global",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1272,7 +1295,8 @@
       ],
       "common_pool_ids": [
         "dp-common-monster-global",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1317,7 +1341,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1355,7 +1380,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1400,7 +1426,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1438,7 +1465,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1504,7 +1532,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1570,7 +1599,8 @@
         }
       ],
       "common_pool_ids": [
-        "dp-common-monster-global"
+        "dp-common-monster-global",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1644,7 +1674,8 @@
       ],
       "common_pool_ids": [
         "dp-common-monster-global",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-monster-lianji"
       ]
     },
     {
@@ -1732,7 +1763,8 @@
       ],
       "common_pool_ids": [
         "dp-common-monster-global",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-monster-lianji"
       ]
     }
   ]

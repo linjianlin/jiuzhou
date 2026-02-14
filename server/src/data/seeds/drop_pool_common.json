@@ -53,6 +53,102 @@
       "enabled": true
     },
     {
+      "id": "dp-common-monster-ordinary",
+      "name": "凡人境界公共掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "box-006",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "cons-001",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-002",
+          "chance": 0.03,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-005",
+          "chance": 0.03,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dp-common-monster-yangqi",
+      "name": "炼精化炁·养气期公共掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "box-003",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dp-common-monster-ningqi",
+      "name": "炼精化炁·凝炁期公共掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "box-007",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dp-common-monster-tongmai",
+      "name": "炼精化炁·通脉期公共掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "box-008",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dp-common-monster-lianji",
+      "name": "炼炁化神·炼己期公共掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "box-008",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
+    },
+    {
       "id": "dp-common-monster-boss",
       "name": "怪物BOSS通用掉落池",
       "mode": "prob",
