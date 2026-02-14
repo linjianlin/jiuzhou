@@ -163,26 +163,6 @@ const checkAndAddColumns = async () => {
   }
 };
 
-const normalizeLastOfflineAtColumn = async () => {
-  await query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'characters' AND column_name = 'last_online_at'
-      ) AND NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'characters' AND column_name = 'last_offline_at'
-      ) THEN
-        ALTER TABLE characters RENAME COLUMN last_online_at TO last_offline_at;
-      END IF;
-    END
-    $$;
-  `);
-  await query(`ALTER TABLE characters ALTER COLUMN last_offline_at DROP DEFAULT`);
-};
 
 const dropDeprecatedAttrColumns = async (): Promise<void> => {
   // 删除旧触发器与函数，避免依赖已下线字段。
@@ -220,9 +200,6 @@ export const initCharacterTable = async (): Promise<void> => {
 
     // 创建角色表
     await query(characterTableSQL);
-
-    // 历史字段名对齐：last_online_at -> last_offline_at
-    await normalizeLastOfflineAtColumn();
 
     // 检查并补齐缺失字段
     await checkAndAddColumns();
