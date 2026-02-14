@@ -5,7 +5,7 @@
     {
       "id": "gem-atk-wg-1",
       "name": "赤焰石·物攻·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "黄",
       "gem_level": 1,
@@ -42,7 +42,7 @@
     {
       "id": "gem-atk-wg-2",
       "name": "赤焰石·物攻·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "黄",
       "gem_level": 2,
@@ -79,7 +79,7 @@
     {
       "id": "gem-atk-wg-3",
       "name": "赤焰石·物攻·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "黄",
       "gem_level": 3,
@@ -116,7 +116,7 @@
     {
       "id": "gem-atk-wg-4",
       "name": "赤焰石·物攻·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "玄",
       "gem_level": 4,
@@ -150,7 +150,7 @@
     {
       "id": "gem-atk-wg-5",
       "name": "赤焰石·物攻·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "玄",
       "gem_level": 5,
@@ -184,7 +184,7 @@
     {
       "id": "gem-atk-wg-6",
       "name": "赤焰石·物攻·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "玄",
       "gem_level": 6,
@@ -218,7 +218,7 @@
     {
       "id": "gem-atk-wg-7",
       "name": "赤焰石·物攻·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "地",
       "gem_level": 7,
@@ -252,7 +252,7 @@
     {
       "id": "gem-atk-wg-8",
       "name": "赤焰石·物攻·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "地",
       "gem_level": 8,
@@ -286,7 +286,7 @@
     {
       "id": "gem-atk-wg-9",
       "name": "赤焰石·物攻·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "地",
       "gem_level": 9,
@@ -320,7 +320,7 @@
     {
       "id": "gem-atk-wg-10",
       "name": "赤焰石·物攻·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "天",
       "gem_level": 10,
@@ -354,7 +354,7 @@
     {
       "id": "gem-atk-fg-1",
       "name": "灵焰石·法攻·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "黄",
       "gem_level": 1,
@@ -391,7 +391,7 @@
     {
       "id": "gem-atk-fg-2",
       "name": "灵焰石·法攻·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "黄",
       "gem_level": 2,
@@ -428,7 +428,7 @@
     {
       "id": "gem-atk-fg-3",
       "name": "灵焰石·法攻·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "黄",
       "gem_level": 3,
@@ -465,7 +465,7 @@
     {
       "id": "gem-atk-fg-4",
       "name": "灵焰石·法攻·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "玄",
       "gem_level": 4,
@@ -499,7 +499,7 @@
     {
       "id": "gem-atk-fg-5",
       "name": "灵焰石·法攻·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "玄",
       "gem_level": 5,
@@ -533,7 +533,7 @@
     {
       "id": "gem-atk-fg-6",
       "name": "灵焰石·法攻·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "玄",
       "gem_level": 6,
@@ -567,7 +567,7 @@
     {
       "id": "gem-atk-fg-7",
       "name": "灵焰石·法攻·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "地",
       "gem_level": 7,
@@ -601,7 +601,7 @@
     {
       "id": "gem-atk-fg-8",
       "name": "灵焰石·法攻·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "地",
       "gem_level": 8,
@@ -635,7 +635,7 @@
     {
       "id": "gem-atk-fg-9",
       "name": "灵焰石·法攻·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "地",
       "gem_level": 9,
@@ -669,7 +669,7 @@
     {
       "id": "gem-atk-fg-10",
       "name": "灵焰石·法攻·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_attack",
       "quality": "天",
       "gem_level": 10,
@@ -703,7 +703,7 @@
     {
       "id": "gem-def-wf-1",
       "name": "玄甲石·物防·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "黄",
       "gem_level": 1,
@@ -740,7 +740,7 @@
     {
       "id": "gem-def-wf-2",
       "name": "玄甲石·物防·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "黄",
       "gem_level": 2,
@@ -777,7 +777,7 @@
     {
       "id": "gem-def-wf-3",
       "name": "玄甲石·物防·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "黄",
       "gem_level": 3,
@@ -814,7 +814,7 @@
     {
       "id": "gem-def-wf-4",
       "name": "玄甲石·物防·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "玄",
       "gem_level": 4,
@@ -848,7 +848,7 @@
     {
       "id": "gem-def-wf-5",
       "name": "玄甲石·物防·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "玄",
       "gem_level": 5,
@@ -882,7 +882,7 @@
     {
       "id": "gem-def-wf-6",
       "name": "玄甲石·物防·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "玄",
       "gem_level": 6,
@@ -916,7 +916,7 @@
     {
       "id": "gem-def-wf-7",
       "name": "玄甲石·物防·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "地",
       "gem_level": 7,
@@ -950,7 +950,7 @@
     {
       "id": "gem-def-wf-8",
       "name": "玄甲石·物防·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "地",
       "gem_level": 8,
@@ -984,7 +984,7 @@
     {
       "id": "gem-def-wf-9",
       "name": "玄甲石·物防·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "地",
       "gem_level": 9,
@@ -1018,7 +1018,7 @@
     {
       "id": "gem-def-wf-10",
       "name": "玄甲石·物防·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "天",
       "gem_level": 10,
@@ -1052,7 +1052,7 @@
     {
       "id": "gem-def-ff-1",
       "name": "玄罡石·法防·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "黄",
       "gem_level": 1,
@@ -1089,7 +1089,7 @@
     {
       "id": "gem-def-ff-2",
       "name": "玄罡石·法防·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "黄",
       "gem_level": 2,
@@ -1126,7 +1126,7 @@
     {
       "id": "gem-def-ff-3",
       "name": "玄罡石·法防·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "黄",
       "gem_level": 3,
@@ -1163,7 +1163,7 @@
     {
       "id": "gem-def-ff-4",
       "name": "玄罡石·法防·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "玄",
       "gem_level": 4,
@@ -1197,7 +1197,7 @@
     {
       "id": "gem-def-ff-5",
       "name": "玄罡石·法防·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "玄",
       "gem_level": 5,
@@ -1231,7 +1231,7 @@
     {
       "id": "gem-def-ff-6",
       "name": "玄罡石·法防·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "玄",
       "gem_level": 6,
@@ -1265,7 +1265,7 @@
     {
       "id": "gem-def-ff-7",
       "name": "玄罡石·法防·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "地",
       "gem_level": 7,
@@ -1299,7 +1299,7 @@
     {
       "id": "gem-def-ff-8",
       "name": "玄罡石·法防·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "地",
       "gem_level": 8,
@@ -1333,7 +1333,7 @@
     {
       "id": "gem-def-ff-9",
       "name": "玄罡石·法防·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "地",
       "gem_level": 9,
@@ -1367,7 +1367,7 @@
     {
       "id": "gem-def-ff-10",
       "name": "玄罡石·法防·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_defense",
       "quality": "天",
       "gem_level": 10,
@@ -1401,7 +1401,7 @@
     {
       "id": "gem-sur-hp-1",
       "name": "长生石·气血·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "黄",
       "gem_level": 1,
@@ -1438,7 +1438,7 @@
     {
       "id": "gem-sur-hp-2",
       "name": "长生石·气血·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "黄",
       "gem_level": 2,
@@ -1475,7 +1475,7 @@
     {
       "id": "gem-sur-hp-3",
       "name": "长生石·气血·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "黄",
       "gem_level": 3,
@@ -1512,7 +1512,7 @@
     {
       "id": "gem-sur-hp-4",
       "name": "长生石·气血·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "玄",
       "gem_level": 4,
@@ -1546,7 +1546,7 @@
     {
       "id": "gem-sur-hp-5",
       "name": "长生石·气血·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "玄",
       "gem_level": 5,
@@ -1580,7 +1580,7 @@
     {
       "id": "gem-sur-hp-6",
       "name": "长生石·气血·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "玄",
       "gem_level": 6,
@@ -1614,7 +1614,7 @@
     {
       "id": "gem-sur-hp-7",
       "name": "长生石·气血·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "地",
       "gem_level": 7,
@@ -1648,7 +1648,7 @@
     {
       "id": "gem-sur-hp-8",
       "name": "长生石·气血·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "地",
       "gem_level": 8,
@@ -1682,7 +1682,7 @@
     {
       "id": "gem-sur-hp-9",
       "name": "长生石·气血·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "地",
       "gem_level": 9,
@@ -1716,7 +1716,7 @@
     {
       "id": "gem-sur-hp-10",
       "name": "长生石·气血·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "天",
       "gem_level": 10,
@@ -1750,7 +1750,7 @@
     {
       "id": "gem-sur-lq-1",
       "name": "聚灵石·灵气·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "黄",
       "gem_level": 1,
@@ -1787,7 +1787,7 @@
     {
       "id": "gem-sur-lq-2",
       "name": "聚灵石·灵气·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "黄",
       "gem_level": 2,
@@ -1824,7 +1824,7 @@
     {
       "id": "gem-sur-lq-3",
       "name": "聚灵石·灵气·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "黄",
       "gem_level": 3,
@@ -1861,7 +1861,7 @@
     {
       "id": "gem-sur-lq-4",
       "name": "聚灵石·灵气·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "玄",
       "gem_level": 4,
@@ -1895,7 +1895,7 @@
     {
       "id": "gem-sur-lq-5",
       "name": "聚灵石·灵气·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "玄",
       "gem_level": 5,
@@ -1929,7 +1929,7 @@
     {
       "id": "gem-sur-lq-6",
       "name": "聚灵石·灵气·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "玄",
       "gem_level": 6,
@@ -1963,7 +1963,7 @@
     {
       "id": "gem-sur-lq-7",
       "name": "聚灵石·灵气·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "地",
       "gem_level": 7,
@@ -1997,7 +1997,7 @@
     {
       "id": "gem-sur-lq-8",
       "name": "聚灵石·灵气·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "地",
       "gem_level": 8,
@@ -2031,7 +2031,7 @@
     {
       "id": "gem-sur-lq-9",
       "name": "聚灵石·灵气·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "地",
       "gem_level": 9,
@@ -2065,7 +2065,7 @@
     {
       "id": "gem-sur-lq-10",
       "name": "聚灵石·灵气·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_survival",
       "quality": "天",
       "gem_level": 10,
@@ -2099,7 +2099,7 @@
     {
       "id": "gem-all-mz-1",
       "name": "万象石·命中·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 1,
@@ -2137,7 +2137,7 @@
     {
       "id": "gem-all-mz-2",
       "name": "万象石·命中·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 2,
@@ -2175,7 +2175,7 @@
     {
       "id": "gem-all-mz-3",
       "name": "万象石·命中·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 3,
@@ -2213,7 +2213,7 @@
     {
       "id": "gem-all-mz-4",
       "name": "万象石·命中·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 4,
@@ -2248,7 +2248,7 @@
     {
       "id": "gem-all-mz-5",
       "name": "万象石·命中·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 5,
@@ -2283,7 +2283,7 @@
     {
       "id": "gem-all-mz-6",
       "name": "万象石·命中·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 6,
@@ -2318,7 +2318,7 @@
     {
       "id": "gem-all-mz-7",
       "name": "万象石·命中·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 7,
@@ -2353,7 +2353,7 @@
     {
       "id": "gem-all-mz-8",
       "name": "万象石·命中·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 8,
@@ -2388,7 +2388,7 @@
     {
       "id": "gem-all-mz-9",
       "name": "万象石·命中·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 9,
@@ -2423,7 +2423,7 @@
     {
       "id": "gem-all-mz-10",
       "name": "万象石·命中·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "天",
       "gem_level": 10,
@@ -2458,7 +2458,7 @@
     {
       "id": "gem-all-sb-1",
       "name": "万象石·闪避·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 1,
@@ -2496,7 +2496,7 @@
     {
       "id": "gem-all-sb-2",
       "name": "万象石·闪避·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 2,
@@ -2534,7 +2534,7 @@
     {
       "id": "gem-all-sb-3",
       "name": "万象石·闪避·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 3,
@@ -2572,7 +2572,7 @@
     {
       "id": "gem-all-sb-4",
       "name": "万象石·闪避·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 4,
@@ -2607,7 +2607,7 @@
     {
       "id": "gem-all-sb-5",
       "name": "万象石·闪避·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 5,
@@ -2642,7 +2642,7 @@
     {
       "id": "gem-all-sb-6",
       "name": "万象石·闪避·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 6,
@@ -2677,7 +2677,7 @@
     {
       "id": "gem-all-sb-7",
       "name": "万象石·闪避·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 7,
@@ -2712,7 +2712,7 @@
     {
       "id": "gem-all-sb-8",
       "name": "万象石·闪避·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 8,
@@ -2747,7 +2747,7 @@
     {
       "id": "gem-all-sb-9",
       "name": "万象石·闪避·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 9,
@@ -2782,7 +2782,7 @@
     {
       "id": "gem-all-sb-10",
       "name": "万象石·闪避·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "天",
       "gem_level": 10,
@@ -2817,7 +2817,7 @@
     {
       "id": "gem-all-bj-1",
       "name": "万象石·暴击·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 1,
@@ -2855,7 +2855,7 @@
     {
       "id": "gem-all-bj-2",
       "name": "万象石·暴击·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 2,
@@ -2893,7 +2893,7 @@
     {
       "id": "gem-all-bj-3",
       "name": "万象石·暴击·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 3,
@@ -2931,7 +2931,7 @@
     {
       "id": "gem-all-bj-4",
       "name": "万象石·暴击·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 4,
@@ -2966,7 +2966,7 @@
     {
       "id": "gem-all-bj-5",
       "name": "万象石·暴击·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 5,
@@ -3001,7 +3001,7 @@
     {
       "id": "gem-all-bj-6",
       "name": "万象石·暴击·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 6,
@@ -3036,7 +3036,7 @@
     {
       "id": "gem-all-bj-7",
       "name": "万象石·暴击·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 7,
@@ -3071,7 +3071,7 @@
     {
       "id": "gem-all-bj-8",
       "name": "万象石·暴击·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 8,
@@ -3106,7 +3106,7 @@
     {
       "id": "gem-all-bj-9",
       "name": "万象石·暴击·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 9,
@@ -3141,7 +3141,7 @@
     {
       "id": "gem-all-bj-10",
       "name": "万象石·暴击·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "天",
       "gem_level": 10,
@@ -3176,7 +3176,7 @@
     {
       "id": "gem-all-zj-1",
       "name": "万象石·招架·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 1,
@@ -3214,7 +3214,7 @@
     {
       "id": "gem-all-zj-2",
       "name": "万象石·招架·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 2,
@@ -3252,7 +3252,7 @@
     {
       "id": "gem-all-zj-3",
       "name": "万象石·招架·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 3,
@@ -3290,7 +3290,7 @@
     {
       "id": "gem-all-zj-4",
       "name": "万象石·招架·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 4,
@@ -3325,7 +3325,7 @@
     {
       "id": "gem-all-zj-5",
       "name": "万象石·招架·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 5,
@@ -3360,7 +3360,7 @@
     {
       "id": "gem-all-zj-6",
       "name": "万象石·招架·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 6,
@@ -3395,7 +3395,7 @@
     {
       "id": "gem-all-zj-7",
       "name": "万象石·招架·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 7,
@@ -3430,7 +3430,7 @@
     {
       "id": "gem-all-zj-8",
       "name": "万象石·招架·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 8,
@@ -3465,7 +3465,7 @@
     {
       "id": "gem-all-zj-9",
       "name": "万象石·招架·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 9,
@@ -3500,7 +3500,7 @@
     {
       "id": "gem-all-zj-10",
       "name": "万象石·招架·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "天",
       "gem_level": 10,
@@ -3535,7 +3535,7 @@
     {
       "id": "gem-all-kb-1",
       "name": "万象石·抗暴·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 1,
@@ -3573,7 +3573,7 @@
     {
       "id": "gem-all-kb-2",
       "name": "万象石·抗暴·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 2,
@@ -3611,7 +3611,7 @@
     {
       "id": "gem-all-kb-3",
       "name": "万象石·抗暴·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 3,
@@ -3649,7 +3649,7 @@
     {
       "id": "gem-all-kb-4",
       "name": "万象石·抗暴·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 4,
@@ -3684,7 +3684,7 @@
     {
       "id": "gem-all-kb-5",
       "name": "万象石·抗暴·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 5,
@@ -3719,7 +3719,7 @@
     {
       "id": "gem-all-kb-6",
       "name": "万象石·抗暴·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 6,
@@ -3754,7 +3754,7 @@
     {
       "id": "gem-all-kb-7",
       "name": "万象石·抗暴·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 7,
@@ -3789,7 +3789,7 @@
     {
       "id": "gem-all-kb-8",
       "name": "万象石·抗暴·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 8,
@@ -3824,7 +3824,7 @@
     {
       "id": "gem-all-kb-9",
       "name": "万象石·抗暴·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 9,
@@ -3859,7 +3859,7 @@
     {
       "id": "gem-all-kb-10",
       "name": "万象石·抗暴·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "天",
       "gem_level": 10,
@@ -3894,7 +3894,7 @@
     {
       "id": "gem-all-zs-1",
       "name": "万象石·增伤·1级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 1,
@@ -3932,7 +3932,7 @@
     {
       "id": "gem-all-zs-2",
       "name": "万象石·增伤·2级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 2,
@@ -3970,7 +3970,7 @@
     {
       "id": "gem-all-zs-3",
       "name": "万象石·增伤·3级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "黄",
       "gem_level": 3,
@@ -4008,7 +4008,7 @@
     {
       "id": "gem-all-zs-4",
       "name": "万象石·增伤·4级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 4,
@@ -4043,7 +4043,7 @@
     {
       "id": "gem-all-zs-5",
       "name": "万象石·增伤·5级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 5,
@@ -4078,7 +4078,7 @@
     {
       "id": "gem-all-zs-6",
       "name": "万象石·增伤·6级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "玄",
       "gem_level": 6,
@@ -4113,7 +4113,7 @@
     {
       "id": "gem-all-zs-7",
       "name": "万象石·增伤·7级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 7,
@@ -4148,7 +4148,7 @@
     {
       "id": "gem-all-zs-8",
       "name": "万象石·增伤·8级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 8,
@@ -4183,7 +4183,7 @@
     {
       "id": "gem-all-zs-9",
       "name": "万象石·增伤·9级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "地",
       "gem_level": 9,
@@ -4218,7 +4218,7 @@
     {
       "id": "gem-all-zs-10",
       "name": "万象石·增伤·10级",
-      "category": "material",
+      "category": "gem",
       "sub_category": "gem_all",
       "quality": "天",
       "gem_level": 10,

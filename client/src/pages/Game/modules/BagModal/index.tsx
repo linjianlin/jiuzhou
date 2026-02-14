@@ -1620,6 +1620,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 { value: 'all', label: '全部类型' },
                 { value: 'consumable', label: categoryLabels.consumable },
                 { value: 'material', label: categoryLabels.material },
+                { value: 'gem', label: categoryLabels.gem },
                 { value: 'equipment', label: categoryLabels.equipment },
                 { value: 'skill', label: categoryLabels.skill },
                 { value: 'quest', label: categoryLabels.quest },

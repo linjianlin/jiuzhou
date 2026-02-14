@@ -16,7 +16,7 @@
  *
  * 关键约束：
  * - 不依赖命名/前缀判断（如 gem_、gem-）
- * - 宝石身份由行为特征决定：material + socket 效果
+ * - 宝石身份由分类字段决定：category = gem
  */
 import {
   inferGemTypeFromEffects,
@@ -46,9 +46,7 @@ const normalizeSubCategory = (value: unknown): string => {
 
 export const isGemItemDefinition = (itemDef: ItemDefGemLike | null | undefined): boolean => {
   if (!itemDef) return false;
-  if (String(itemDef.category || '').trim() !== 'material') return false;
-  const effects = parseSocketEffectsFromItemEffectDefs(itemDef.effect_defs);
-  return effects.length > 0;
+  return String(itemDef.category || '').trim().toLowerCase() === 'gem';
 };
 
 export const getGemLevel = (itemDef: ItemDefGemLike | null | undefined): number | null => {

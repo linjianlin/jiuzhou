@@ -300,7 +300,7 @@ export const useItem = async (
     const effectDefs = Array.isArray(itemDef.effect_defs) ? itemDef.effect_defs : [];
 
     // 检查是否可使用
-    if (category === 'equipment' || category === 'material') {
+    if (category === 'equipment' || category === 'material' || category === 'gem') {
       await client.query('ROLLBACK');
       return { success: false, message: '该物品不可使用' };
     }

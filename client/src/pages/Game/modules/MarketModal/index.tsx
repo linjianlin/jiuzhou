@@ -23,7 +23,7 @@ type MarketPanel = 'market' | 'my' | 'list' | 'records';
 
 type ItemQuality = '黄' | '玄' | '地' | '天';
 
-type MarketCategory = 'all' | 'consumable' | 'material' | 'equipment' | 'skill' | 'other';
+type MarketCategory = 'all' | 'consumable' | 'material' | 'gem' | 'equipment' | 'skillbook' | 'other';
 
 type MarketSort = 'timeDesc' | 'priceAsc' | 'priceDesc' | 'qtyDesc';
 
@@ -85,8 +85,9 @@ const categoryText: Record<MarketCategory, string> = {
   all: '全部',
   consumable: '丹药',
   material: '材料',
+  gem: '宝石',
   equipment: '装备',
-  skill: '功法',
+  skillbook: '功法',
   other: '其他',
 };
 
@@ -521,15 +522,6 @@ const normalizeQuality = (value: unknown): ItemQuality => {
   return '黄';
 };
 
-const mapCategory = (value: unknown): Exclude<MarketCategory, 'all'> => {
-  if (value === 'consumable') return 'consumable';
-  if (value === 'material') return 'material';
-  if (value === 'equipment') return 'equipment';
-  if (value === 'skillbook') return 'skill';
-  if (value === 'skill') return 'skill';
-  return 'other';
-};
-
 const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   const def: ItemDefLite | undefined = it.def;
   if (!def) return null;
@@ -543,7 +535,14 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
       ? it.quality.trim()
       : def.quality;
   const quality = normalizeQuality(rawQuality);
-  const category = mapCategory(def.category);
+  const category: Exclude<MarketCategory, 'all'> =
+    def.category === 'consumable' ||
+      def.category === 'material' ||
+      def.category === 'gem' ||
+      def.category === 'equipment' ||
+      def.category === 'skillbook'
+      ? def.category
+      : 'other';
   const desc = String(def.description ?? def.long_desc ?? '').trim();
   const qty = Number(it.qty) || 0;
   const stackMax = Number(def.stack_max) || 1;
@@ -563,7 +562,14 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
 
 const buildListingItem = (dto: MarketListingDto): ListingItem => {
   const quality = normalizeQuality(dto.quality);
-  const category = mapCategory(dto.category);
+  const category: Exclude<MarketCategory, 'all'> =
+    dto.category === 'consumable' ||
+      dto.category === 'material' ||
+      dto.category === 'gem' ||
+      dto.category === 'equipment' ||
+      dto.category === 'skillbook'
+      ? dto.category
+      : 'other';
   return {
     id: Number(dto.id),
     itemInstanceId: Number(dto.itemInstanceId) || 0,
@@ -706,9 +712,8 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
         const max = parseMaybeNumber(maxPrice);
         const minParam = min === null ? undefined : Math.max(0, Math.floor(min));
         const maxParam = max === null ? undefined : Math.max(0, Math.floor(max));
-        const categoryParam = category === 'skill' ? 'skillbook' : category;
         const res = await getMarketListings({
-          category: categoryParam,
+          category,
           quality,
           query: query.trim(),
           sort,
@@ -808,8 +813,9 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
       { value: 'all', label: '全部分类' },
       { value: 'consumable', label: '丹药' },
       { value: 'material', label: '材料' },
+      { value: 'gem', label: '宝石' },
       { value: 'equipment', label: '装备' },
-      { value: 'skill', label: '功法' },
+      { value: 'skillbook', label: '功法书' },
       { value: 'other', label: '其他' },
     ],
     [],
@@ -1359,9 +1365,8 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                 {bagItems.map((b) => (
                   <div
                     key={b.id}
-                    className={`market-bag-cell q-${b.quality} ${selectedBagId === b.id ? 'is-active' : ''} ${
-                      b.qty <= 0 ? 'is-empty' : ''
-                    }`}
+                    className={`market-bag-cell q-${b.quality} ${selectedBagId === b.id ? 'is-active' : ''} ${b.qty <= 0 ? 'is-empty' : ''
+                      }`}
                     onClick={() => setSelectedBagId(b.id)}
                   >
                     <img className="market-bag-icon" src={b.icon} alt={b.name} />

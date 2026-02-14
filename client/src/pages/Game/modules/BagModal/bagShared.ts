@@ -19,6 +19,7 @@ export type BagCategory =
   | "all"
   | "consumable"
   | "material"
+  | "gem"
   | "equipment"
   | "skill"
   | "quest";
@@ -124,6 +125,7 @@ export const categoryLabels: Record<BagCategory, string> = {
   all: "全部",
   consumable: "丹药",
   material: "材料",
+  gem: "宝石",
   equipment: "装备",
   skill: "功法",
   quest: "任务",
@@ -803,7 +805,7 @@ export const collectGemCandidates = (items: BagItem[]): BagItem[] => {
   for (const it of items) {
     if (it.location !== "bag") continue;
     if (it.locked) continue;
-    if (it.category !== "material") continue;
+    if (it.category !== "gem") continue;
     if (!it.hasSocketEffect) continue;
     out.push(it);
   }
@@ -1014,6 +1016,7 @@ const mapCategory = (
   }
   if (value === "consumable") return "consumable";
   if (value === "material") return "material";
+  if (value === "gem") return "gem";
   if (value === "equipment") return "equipment";
   if (value === "quest") return "quest";
   return "material";
@@ -1030,7 +1033,8 @@ const mapActions = (
   }
   if (category === "equipment")
     return ["equip", "enhance", "disassemble", "show"];
-  if (category === "material") return ["compose", "disassemble", "show"];
+  if (category === "material" || category === "gem")
+    return ["compose", "disassemble", "show"];
   if (category === "quest") return ["disassemble", "show"];
   return ["disassemble", "show"];
 };
