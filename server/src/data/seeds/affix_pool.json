@@ -7,24 +7,6 @@
       "name": "普通武器词条池",
       "description": "黄品武器可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "黄": {
-            "min": 1,
-            "max": 2
-          },
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "mutex_groups": [
           [
@@ -244,20 +226,6 @@
       "name": "中品武器词条池",
       "description": "玄品武器可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "mutex_groups": [
           [
@@ -741,16 +709,6 @@
       "name": "高品武器词条池",
       "description": "地品及以上武器可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "legendary_chance": 0.1,
         "mutex_groups": [
@@ -1289,24 +1247,6 @@
       "name": "普通防具词条池",
       "description": "黄品防具可用的词条池（头部、衣服、鞋子等）",
       "rules": {
-        "count_by_quality": {
-          "黄": {
-            "min": 1,
-            "max": 2
-          },
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "mutex_groups": [
           [
@@ -1744,20 +1684,6 @@
       "name": "中品防具词条池",
       "description": "玄品防具可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "mutex_groups": [
           [
@@ -2594,16 +2520,6 @@
       "name": "高品防具词条池",
       "description": "地品及以上防具可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "legendary_chance": 0.1,
         "mutex_groups": [
@@ -3453,24 +3369,6 @@
       "name": "普通饰品词条池",
       "description": "黄品饰品可用的词条池（项链、戒指、腰带等）",
       "rules": {
-        "count_by_quality": {
-          "黄": {
-            "min": 1,
-            "max": 2
-          },
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "max_per_group": {
           "output": 2,
@@ -3826,20 +3724,6 @@
       "name": "中品饰品词条池",
       "description": "玄品及以上饰品可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "legendary_chance": 0.05,
         "max_per_group": {
@@ -4752,24 +4636,6 @@
       "name": "普通法宝词条池",
       "description": "黄品法宝可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "黄": {
-            "min": 1,
-            "max": 2
-          },
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "max_per_group": {
           "output": 2,
@@ -5097,20 +4963,6 @@
       "name": "中品法宝词条池",
       "description": "玄品及以上法宝可用的词条池",
       "rules": {
-        "count_by_quality": {
-          "玄": {
-            "min": 2,
-            "max": 4
-          },
-          "地": {
-            "min": 4,
-            "max": 5
-          },
-          "天": {
-            "min": 6,
-            "max": 6
-          }
-        },
         "allow_duplicate": false,
         "legendary_chance": 0.08,
         "max_per_group": {

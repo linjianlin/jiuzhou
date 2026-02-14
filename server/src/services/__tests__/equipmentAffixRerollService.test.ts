@@ -53,12 +53,6 @@ test('洗炼生成special词条时不应写入外层attr_key', () => {
 
   const pool: RerollAffixPool = {
     rules: {
-      count_by_quality: {
-        黄: { min: 1, max: 1 },
-        玄: { min: 1, max: 1 },
-        地: { min: 1, max: 1 },
-        天: { min: 1, max: 1 },
-      },
       allow_duplicate: false,
     },
     affixes: [
@@ -135,12 +129,6 @@ test('洗炼生成flat词条时应支持复合modifiers', () => {
 
   const pool: RerollAffixPool = {
     rules: {
-      count_by_quality: {
-        黄: { min: 1, max: 1 },
-        玄: { min: 1, max: 1 },
-        地: { min: 1, max: 1 },
-        天: { min: 1, max: 1 },
-      },
       allow_duplicate: false,
     },
     affixes: [

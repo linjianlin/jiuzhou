@@ -152,7 +152,6 @@ export interface AffixTier {
 
 // 词条池规则
 export interface AffixPoolRules {
-  count_by_quality: Record<Quality, { min: number; max: number }>;
   allow_duplicate: boolean;
   mutex_groups?: string[][];
   max_per_group?: Record<string, number>;
@@ -192,8 +191,6 @@ export interface EquipmentDef {
   equip_req_realm: string;
   base_attrs: Record<string, number>;
   affix_pool_id: string;
-  affix_count_min: number;
-  affix_count_max: number;
   set_id: string | null;
   bind_type: string;
 }
@@ -314,8 +311,6 @@ export const getEquipmentDef = async (itemDefId: string): Promise<EquipmentDef |
     equip_req_realm: String(row.equip_req_realm || ''),
     base_attrs: baseAttrs,
     affix_pool_id: String(row.affix_pool_id || ''),
-    affix_count_min: Number(row.affix_count_min) || 0,
-    affix_count_max: Number(row.affix_count_max) || 0,
     set_id: typeof row.set_id === 'string' ? row.set_id : null,
     bind_type: String(row.bind_type || 'none'),
   };
@@ -425,11 +420,9 @@ export const rollAffixes = (
 ): GeneratedAffix[] => {
   const { rules, affixes } = pool;
   const result: GeneratedAffix[] = [];
-  
-  // 获取该品质的词条数量范围
-  const countRange = rules.count_by_quality?.[quality] || DEFAULT_AFFIX_COUNT_BY_QUALITY[quality];
-  if (!countRange) return result;
-  
+
+  // 词条数量统一按默认品阶规则随机，不再从词条池配置读取。
+  const countRange = DEFAULT_AFFIX_COUNT_BY_QUALITY[quality];
   const affixCount = rng.nextInt(countRange.min, countRange.max);
   
   // 过滤可用词条（排除传奇词条，除非触发传奇概率）

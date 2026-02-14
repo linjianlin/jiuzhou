@@ -467,8 +467,6 @@ export type ItemDefConfig = {
   base_attrs?: Record<string, number>;
   growth_attrs?: Record<string, unknown>;
   affix_pool_id?: string;
-  affix_count_min?: number;
-  affix_count_max?: number;
   socket_max?: number;
   gem_slot_types?: string[];
   set_id?: string;
@@ -631,7 +629,6 @@ export type AffixDefConfig = {
 };
 
 export type AffixPoolRulesConfig = {
-  count_by_quality?: Record<string, { min: number; max: number }>;
   allow_duplicate?: boolean;
   mutex_groups?: string[][];
   max_per_group?: Record<string, number>;

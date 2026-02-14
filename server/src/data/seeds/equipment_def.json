@@ -26,8 +26,6 @@
         "wugong": 3
       },
       "affix_pool_id": "ap-weapon-common",
-      "affix_count_min": 1,
-      "affix_count_max": 2,
       "tags": [
         "武器",
         "剑",
@@ -61,8 +59,6 @@
         "wugong": 8
       },
       "affix_pool_id": "ap-weapon-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "武器",
         "剑",
@@ -97,8 +93,6 @@
         "mingzhong": 0.01
       },
       "affix_pool_id": "ap-weapon-rare",
-      "affix_count_min": 4,
-      "affix_count_max": 5,
       "tags": [
         "武器",
         "剑",
@@ -131,8 +125,6 @@
         "max_qixue": 10
       },
       "affix_pool_id": "ap-armor-common",
-      "affix_count_min": 1,
-      "affix_count_max": 2,
       "tags": [
         "防具",
         "头部",
@@ -166,8 +158,6 @@
         "max_qixue": 20
       },
       "affix_pool_id": "ap-armor-common",
-      "affix_count_min": 1,
-      "affix_count_max": 2,
       "tags": [
         "防具",
         "衣服",
@@ -202,8 +192,6 @@
         "max_lingqi": 20
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "防具",
         "衣服",
@@ -236,8 +224,6 @@
         "lingqi_huifu": 1
       },
       "affix_pool_id": "ap-accessory-common",
-      "affix_count_min": 1,
-      "affix_count_max": 2,
       "tags": [
         "饰品",
         "项链"
@@ -269,8 +255,6 @@
         "shanbi": 0.01
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "法宝",
         "飞行"
@@ -307,8 +291,6 @@
         "mingzhong": 0.005
       },
       "affix_pool_id": "ap-weapon-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "武器",
@@ -345,8 +327,6 @@
         "baoji": 0.003
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "防具",
@@ -383,8 +363,6 @@
         "shanbi": 0.005
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "防具",
@@ -421,8 +399,6 @@
         "mingzhong": 0.003
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "防具",
@@ -459,8 +435,6 @@
         "sudu": 1
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "防具",
@@ -497,8 +471,6 @@
         "lingqi_huifu": 1
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "饰品",
@@ -535,8 +507,6 @@
         "mingzhong": 0.004
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "饰品",
@@ -573,8 +543,6 @@
         "shanbi": 0.006
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qingfeng",
       "tags": [
         "法宝",
@@ -614,8 +582,6 @@
         "wufang": 3
       },
       "affix_pool_id": "ap-weapon-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "武器",
@@ -652,8 +618,6 @@
         "kangbao": 0.008
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "防具",
@@ -690,8 +654,6 @@
         "zhaojia": 0.008
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "防具",
@@ -728,8 +690,6 @@
         "zhaojia": 0.005
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "防具",
@@ -766,8 +726,6 @@
         "kangbao": 0.006
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "防具",
@@ -804,8 +762,6 @@
         "qixue_huifu": 2
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "饰品",
@@ -842,8 +798,6 @@
         "zengshang": 0.008
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "饰品",
@@ -880,8 +834,6 @@
         "kangbao": 0.008
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuantie",
       "tags": [
         "法宝",
@@ -921,8 +873,6 @@
         "max_lingqi": 15
       },
       "affix_pool_id": "ap-weapon-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "武器",
@@ -959,8 +909,6 @@
         "lengque": 0.008
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "防具",
@@ -997,8 +945,6 @@
         "lingqi_huifu": 2
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "防具",
@@ -1035,8 +981,6 @@
         "lengque": 0.006
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "防具",
@@ -1073,8 +1017,6 @@
         "shanbi": 0.006
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "防具",
@@ -1111,8 +1053,6 @@
         "lingqi_huifu": 2
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "饰品",
@@ -1149,8 +1089,6 @@
         "zengshang": 0.008
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "饰品",
@@ -1187,8 +1125,6 @@
         "lengque": 0.01
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-zixiao",
       "tags": [
         "法宝",
@@ -1228,8 +1164,6 @@
         "max_lingqi": 20
       },
       "affix_pool_id": "ap-weapon-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "武器",
@@ -1266,8 +1200,6 @@
         "zhiliao": 0.006
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "防具",
@@ -1304,8 +1236,6 @@
         "qixue_huifu": 3
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "防具",
@@ -1342,8 +1272,6 @@
         "lingqi_huifu": 1
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "防具",
@@ -1380,8 +1308,6 @@
         "lingqi_huifu": 2
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "防具",
@@ -1418,8 +1344,6 @@
         "qixue_huifu": 2
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "饰品",
@@ -1456,8 +1380,6 @@
         "xixue": 0.005
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "饰品",
@@ -1494,8 +1416,6 @@
         "qixue_huifu": 4
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-biluo",
       "tags": [
         "法宝",
@@ -1535,8 +1455,6 @@
         "baoji": 0.006
       },
       "affix_pool_id": "ap-weapon-uncommon",
-      "affix_count_min": 3,
-      "affix_count_max": 4,
       "tags": [
         "武器",
         "剑",
@@ -1572,8 +1490,6 @@
         "shanbi": 0.008
       },
       "affix_pool_id": "ap-armor-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "防具",
         "头部",
@@ -1609,8 +1525,6 @@
         "kongzhi_kangxing": 0.016
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "防具",
         "衣服",
@@ -1646,8 +1560,6 @@
         "baoji": 0.0045
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "饰品",
         "项链",
@@ -1683,8 +1595,6 @@
         "baoshang": 0.012
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "饰品",
         "戒指",
@@ -1720,8 +1630,6 @@
         "shanbi": 0.011
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "法宝",
         "灵灯",
@@ -1757,8 +1665,6 @@
         "baoji": 0.0062
       },
       "affix_pool_id": "ap-weapon-rare",
-      "affix_count_min": 3,
-      "affix_count_max": 4,
       "tags": [
         "武器",
         "剑",
@@ -1794,8 +1700,6 @@
         "shanbi": 0.009
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "防具",
         "头部",
@@ -1831,8 +1735,6 @@
         "mingzhong": 0.005
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "防具",
         "手部",
@@ -1868,8 +1770,6 @@
         "sudu": 1
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "防具",
         "腿部",
@@ -1905,8 +1805,6 @@
         "baoshang": 0.009
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "饰品",
         "项链",
@@ -1942,8 +1840,6 @@
         "baoji": 0.0052
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "tags": [
         "饰品",
         "戒指",
@@ -1982,8 +1878,6 @@
         "mingzhong": 0.009
       },
       "affix_pool_id": "ap-weapon-rare",
-      "affix_count_min": 3,
-      "affix_count_max": 4,
       "set_id": "set-chiyan",
       "tags": [
         "武器",
@@ -2020,8 +1914,6 @@
         "max_qixue": 90
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-chiyan",
       "tags": [
         "头部",
@@ -2058,8 +1950,6 @@
         "wufang": 12
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-chiyan",
       "tags": [
         "衣服",
@@ -2095,8 +1985,6 @@
         "baoji": 0.007
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-chiyan",
       "tags": [
         "手部",
@@ -2133,8 +2021,6 @@
         "max_qixue": 100
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-chiyan",
       "tags": [
         "腿部",
@@ -2170,8 +2056,6 @@
         "baoshang": 0.008
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-chiyan",
       "tags": [
         "项链",
@@ -2207,8 +2091,6 @@
         "baoji": 0.006
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-chiyan",
       "tags": [
         "戒指",
@@ -2244,8 +2126,6 @@
         "zengshang": 0.009
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-chiyan",
       "tags": [
         "法宝",
@@ -2285,8 +2165,6 @@
         "wufang": 8
       },
       "affix_pool_id": "ap-weapon-rare",
-      "affix_count_min": 3,
-      "affix_count_max": 4,
       "set_id": "set-xuanwu",
       "tags": [
         "武器",
@@ -2323,8 +2201,6 @@
         "max_qixue": 120
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-xuanwu",
       "tags": [
         "头部",
@@ -2361,8 +2237,6 @@
         "max_qixue": 160
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-xuanwu",
       "tags": [
         "衣服",
@@ -2398,8 +2272,6 @@
         "zhaojia": 0.008
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-xuanwu",
       "tags": [
         "手部",
@@ -2435,8 +2307,6 @@
         "fafang": 10
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-xuanwu",
       "tags": [
         "腿部",
@@ -2472,8 +2342,6 @@
         "kangbao": 0.008
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuanwu",
       "tags": [
         "项链",
@@ -2509,8 +2377,6 @@
         "wufang": 8
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuanwu",
       "tags": [
         "戒指",
@@ -2546,8 +2412,6 @@
         "kongzhi_kangxing": 0.012
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-xuanwu",
       "tags": [
         "法宝",
@@ -2587,8 +2451,6 @@
         "mingzhong": 0.009
       },
       "affix_pool_id": "ap-weapon-rare",
-      "affix_count_min": 3,
-      "affix_count_max": 4,
       "set_id": "set-tianxuan",
       "tags": [
         "武器",
@@ -2625,8 +2487,6 @@
         "max_lingqi": 80
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-tianxuan",
       "tags": [
         "头部",
@@ -2663,8 +2523,6 @@
         "fafang": 10
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-tianxuan",
       "tags": [
         "衣服",
@@ -2700,8 +2558,6 @@
         "baoji": 0.007
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-tianxuan",
       "tags": [
         "手部",
@@ -2738,8 +2594,6 @@
         "max_lingqi": 60
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-tianxuan",
       "tags": [
         "腿部",
@@ -2775,8 +2629,6 @@
         "fagong": 6
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-tianxuan",
       "tags": [
         "项链",
@@ -2812,8 +2664,6 @@
         "lengque": 0.008
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-tianxuan",
       "tags": [
         "戒指",
@@ -2849,8 +2699,6 @@
         "lingqi_huifu": 9
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-tianxuan",
       "tags": [
         "法宝",
@@ -2889,8 +2737,6 @@
         "zhiliao": 0.012
       },
       "affix_pool_id": "ap-weapon-rare",
-      "affix_count_min": 3,
-      "affix_count_max": 4,
       "set_id": "set-qinglian",
       "tags": [
         "武器",
@@ -2926,8 +2772,6 @@
         "max_qixue": 100
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-qinglian",
       "tags": [
         "头部",
@@ -2964,8 +2808,6 @@
         "fafang": 12
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-qinglian",
       "tags": [
         "衣服",
@@ -3001,8 +2843,6 @@
         "qixue_huifu": 8
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-qinglian",
       "tags": [
         "手部",
@@ -3038,8 +2878,6 @@
         "max_qixue": 100
       },
       "affix_pool_id": "ap-armor-rare",
-      "affix_count_min": 2,
-      "affix_count_max": 4,
       "set_id": "set-qinglian",
       "tags": [
         "腿部",
@@ -3075,8 +2913,6 @@
         "zhiliao": 0.009
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qinglian",
       "tags": [
         "项链",
@@ -3112,8 +2948,6 @@
         "xixue": 0.006
       },
       "affix_pool_id": "ap-accessory-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qinglian",
       "tags": [
         "戒指",
@@ -3149,8 +2983,6 @@
         "kongzhi_kangxing": 0.009
       },
       "affix_pool_id": "ap-artifact-uncommon",
-      "affix_count_min": 2,
-      "affix_count_max": 3,
       "set_id": "set-qinglian",
       "tags": [
         "法宝",
