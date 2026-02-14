@@ -1,6 +1,10 @@
 import {
   getDropPoolDefinitions,
+  getDungeonDifficultiesByDungeonId,
+  getDungeonDifficultyById,
   getDungeonDefinitions,
+  getDungeonStagesByDifficultyId,
+  getDungeonWavesByStageId,
   getItemDefinitionById,
   getItemDefinitionsByIds,
   getMonsterDefinitions,
@@ -93,7 +97,7 @@ type DungeonStageRow = {
 };
 
 type DungeonWaveRow = {
-  id: number;
+  id: string;
   stage_id: string;
   wave_index: number;
   spawn_delay_sec: number;
@@ -161,6 +165,62 @@ const getEnabledDungeonDefs = (): DungeonDefDto[] => {
 
 const getDungeonDefById = (dungeonId: string): DungeonDefDto | null => {
   return getEnabledDungeonDefs().find((entry) => entry.id === dungeonId) ?? null;
+};
+
+const getEnabledDungeonDifficultiesByDungeonId = (dungeonId: string): DungeonDifficultyRow[] => {
+  return getDungeonDifficultiesByDungeonId(dungeonId)
+    .filter((entry) => entry.enabled !== false)
+    .map((entry) => ({
+      id: String(entry.id),
+      dungeon_id: String(entry.dungeon_id),
+      name: String(entry.name || entry.id),
+      difficulty_rank: asNumber(entry.difficulty_rank, 1),
+      monster_level_add: asNumber(entry.monster_level_add, 0),
+      monster_attr_mult: asNumber(entry.monster_attr_mult, 1),
+      reward_mult: asNumber(entry.reward_mult, 1),
+      min_realm: typeof entry.min_realm === 'string' ? entry.min_realm : null,
+      unlock_prev_difficulty: entry.unlock_prev_difficulty === true,
+      first_clear_rewards: entry.first_clear_rewards ?? {},
+      drop_pool_id: typeof entry.drop_pool_id === 'string' ? entry.drop_pool_id : null,
+      enabled: true,
+    }))
+    .sort(
+      (left, right) =>
+        left.difficulty_rank - right.difficulty_rank || left.id.localeCompare(right.id),
+    );
+};
+
+const getEnabledDungeonStagesByDifficultyId = (difficultyId: string): DungeonStageRow[] => {
+  return getDungeonStagesByDifficultyId(difficultyId)
+    .filter((entry) => entry.enabled !== false)
+    .map((entry) => ({
+      id: String(entry.id),
+      difficulty_id: String(entry.difficulty_id),
+      stage_index: asNumber(entry.stage_index, 1),
+      name: typeof entry.name === 'string' ? entry.name : null,
+      type: typeof entry.type === 'string' ? entry.type : 'battle',
+      description: typeof entry.description === 'string' ? entry.description : null,
+      time_limit_sec: asNumber(entry.time_limit_sec, 0),
+      clear_condition: entry.clear_condition ?? {},
+      fail_condition: entry.fail_condition ?? {},
+      stage_rewards: entry.stage_rewards ?? {},
+      events: entry.events ?? [],
+    }))
+    .sort((left, right) => left.stage_index - right.stage_index || left.id.localeCompare(right.id));
+};
+
+const getEnabledDungeonWavesByStageId = (stageId: string): DungeonWaveRow[] => {
+  return getDungeonWavesByStageId(stageId)
+    .filter((entry) => entry.enabled !== false)
+    .map((entry) => ({
+      id: String(entry.id || `${stageId}#${asNumber(entry.wave_index, 1)}`),
+      stage_id: String(entry.stage_id || stageId),
+      wave_index: asNumber(entry.wave_index, 1),
+      spawn_delay_sec: asNumber(entry.spawn_delay_sec, 0),
+      monsters: Array.isArray(entry.monsters) ? entry.monsters : [],
+      wave_rewards: entry.wave_rewards ?? {},
+    }))
+    .sort((left, right) => left.wave_index - right.wave_index || left.id.localeCompare(right.id));
 };
 
 const toDungeonType = (v: unknown): DungeonType | null => {
@@ -499,46 +559,17 @@ export const getDungeonPreview = async (
         })()
       : null;
 
-  const diffRes = await query(
-    `
-      SELECT id, dungeon_id, name, difficulty_rank, monster_level_add, monster_attr_mult, reward_mult,
-             min_realm, unlock_prev_difficulty, first_clear_rewards, drop_pool_id, enabled
-      FROM dungeon_difficulty
-      WHERE dungeon_id = $1 AND enabled = true AND difficulty_rank = $2
-      LIMIT 1
-    `,
-    [dungeonId, difficultyRank]
-  );
-  const diffRow = (diffRes.rows[0] ?? null) as DungeonDifficultyRow | null;
+  const diffRow =
+    getEnabledDungeonDifficultiesByDungeonId(dungeonId).find((entry) => entry.difficulty_rank === difficultyRank) ??
+    null;
   if (!diffRow) {
     return { dungeon, difficulty: null, entry, stages: [], monsters: [], drops: [] };
   }
 
-  const stageRes = await query(
-    `
-      SELECT id, difficulty_id, stage_index, name, type, description, time_limit_sec, clear_condition, fail_condition, stage_rewards, events
-      FROM dungeon_stage
-      WHERE difficulty_id = $1
-      ORDER BY stage_index ASC
-    `,
-    [diffRow.id]
-  );
-  const stages = stageRes.rows as DungeonStageRow[];
+  const stages = getEnabledDungeonStagesByDifficultyId(diffRow.id);
 
   const stageIds = stages.map((s) => s.id);
-  const waveRes =
-    stageIds.length === 0
-      ? { rows: [] as DungeonWaveRow[] }
-      : await query(
-          `
-            SELECT id, stage_id, wave_index, spawn_delay_sec, monsters, wave_rewards
-            FROM dungeon_wave
-            WHERE stage_id = ANY($1)
-            ORDER BY stage_id ASC, wave_index ASC
-          `,
-          [stageIds]
-        );
-  const waves = waveRes.rows as DungeonWaveRow[];
+  const waves: DungeonWaveRow[] = stageIds.flatMap((stageId) => getEnabledDungeonWavesByStageId(stageId));
 
   const monsterIdSet = new Set<string>();
   for (const w of waves) {
@@ -956,28 +987,15 @@ const getStageAndWave = async (
     }
   | { ok: false; message: string; stageCount: number }
 > => {
-  const stageCountRes = await query(`SELECT COUNT(1)::int AS cnt FROM dungeon_stage WHERE difficulty_id = $1`, [difficultyId]);
-  const stageCount = asNumber(stageCountRes.rows?.[0]?.cnt, 0);
+  const stages = getEnabledDungeonStagesByDifficultyId(difficultyId);
+  const stageCount = stages.length;
+  const stage = stages.find((entry) => entry.stage_index === stageIndex) ?? null;
+  if (!stage) return { ok: false, message: '关卡不存在', stageCount };
 
-  const stageRes = await query(
-    `SELECT id, difficulty_id, stage_index, name, type FROM dungeon_stage WHERE difficulty_id = $1 AND stage_index = $2 LIMIT 1`,
-    [difficultyId, stageIndex]
-  );
-  if (stageRes.rows.length === 0) return { ok: false, message: '关卡不存在', stageCount };
-  const stage = stageRes.rows[0] as DungeonStageRow;
-
-  const maxWaveRes = await query(
-    `SELECT COALESCE(MAX(wave_index), 0)::int AS mx FROM dungeon_wave WHERE stage_id = $1`,
-    [stage.id]
-  );
-  const maxWaveIndexInStage = asNumber(maxWaveRes.rows?.[0]?.mx, 0);
-
-  const waveRes = await query(
-    `SELECT id, stage_id, wave_index, spawn_delay_sec, monsters, wave_rewards FROM dungeon_wave WHERE stage_id = $1 AND wave_index = $2 LIMIT 1`,
-    [stage.id, waveIndex]
-  );
-  if (waveRes.rows.length === 0) return { ok: false, message: '波次不存在', stageCount };
-  const wave = waveRes.rows[0] as DungeonWaveRow;
+  const waves = getEnabledDungeonWavesByStageId(stage.id);
+  const maxWaveIndexInStage = waves.reduce((max, entry) => Math.max(max, entry.wave_index), 0);
+  const wave = waves.find((entry) => entry.wave_index === waveIndex) ?? null;
+  if (!wave) return { ok: false, message: '波次不存在', stageCount };
 
   return {
     ok: true,
@@ -998,18 +1016,14 @@ const getDungeonAndDifficulty = async (
   const def = await getDungeonPreview(dungeonId, difficultyRank);
   if (!def?.dungeon) return { ok: false, message: '秘境不存在' };
   if (!def.difficulty) return { ok: false, message: '难度不存在' };
-  const diffRes = await query(
-    `SELECT id, name, difficulty_rank, min_realm FROM dungeon_difficulty WHERE id = $1 LIMIT 1`,
-    [def.difficulty.id]
-  );
-  if (diffRes.rows.length === 0) return { ok: false, message: '难度不存在' };
-  const diffRow = diffRes.rows[0] as Record<string, unknown>;
+  const diffRow = getDungeonDifficultyById(def.difficulty.id);
+  if (!diffRow || diffRow.enabled === false) return { ok: false, message: '难度不存在' };
   return {
     ok: true,
     dungeon: def.dungeon,
     difficulty: {
-      id: String(diffRow.id),
-      name: String(diffRow.name),
+      id: String(diffRow.id || def.difficulty.id),
+      name: String(diffRow.name || def.difficulty.name),
       difficulty_rank: asNumber(diffRow.difficulty_rank, difficultyRank),
       min_realm: typeof diffRow.min_realm === 'string' ? diffRow.min_realm : null,
     },
@@ -1553,16 +1567,10 @@ export const nextDungeonInstance = async (
           [instanceId, timeSpentSec, totalDamage, deathCount]
         );
 
-        const difficultyRes = await client.query(
-          `SELECT first_clear_rewards, reward_mult FROM dungeon_difficulty WHERE id = $1 LIMIT 1`,
-          [inst.difficulty_id]
-        );
-        const firstClearRewardConfig = difficultyRes.rows[0]?.first_clear_rewards ?? {};
-        const stageRewardMult = Math.max(0, asNumber(difficultyRes.rows[0]?.reward_mult, 1));
-        const stageRes = await client.query(
-          `SELECT stage_index, stage_rewards FROM dungeon_stage WHERE difficulty_id = $1 ORDER BY stage_index ASC`,
-          [inst.difficulty_id]
-        );
+        const difficultyDef = getDungeonDifficultyById(inst.difficulty_id);
+        const firstClearRewardConfig = difficultyDef?.first_clear_rewards ?? {};
+        const stageRewardMult = Math.max(0, asNumber(difficultyDef?.reward_mult, 1));
+        const stageDefs = getEnabledDungeonStagesByDifficultyId(inst.difficulty_id);
         const participantCharacterIds = participants.map((p) => Number(p.characterId)).filter((id) => Number.isFinite(id) && id > 0);
         const clearCountMap = new Map<number, number>();
         const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
@@ -1697,7 +1705,7 @@ export const nextDungeonInstance = async (
           const characterId = Number(p.characterId);
           if (!Number.isFinite(characterId) || characterId <= 0) continue;
           let rewardBundle: DungeonRewardBundle = { exp: 0, silver: 0, items: [] };
-          for (const row of stageRes.rows as Array<{ stage_rewards: unknown }>) {
+          for (const row of stageDefs) {
             rewardBundle = mergeDungeonRewardBundle(
               rewardBundle,
               rollDungeonRewardBundle(row.stage_rewards, stageRewardMult)

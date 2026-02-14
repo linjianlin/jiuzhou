@@ -278,6 +278,48 @@ export type DungeonDefConfig = {
   version?: number;
 };
 
+export type DungeonWaveConfig = {
+  id?: string;
+  stage_id?: string;
+  wave_index: number;
+  spawn_delay_sec?: number;
+  monsters?: unknown[];
+  wave_rewards?: unknown;
+  enabled?: boolean;
+};
+
+export type DungeonStageConfig = {
+  id: string;
+  difficulty_id: string;
+  stage_index: number;
+  name?: string | null;
+  type: string;
+  description?: string | null;
+  time_limit_sec?: number;
+  clear_condition?: unknown;
+  fail_condition?: unknown;
+  stage_rewards?: unknown;
+  events?: unknown;
+  waves?: DungeonWaveConfig[];
+  enabled?: boolean;
+};
+
+export type DungeonDifficultyConfig = {
+  id: string;
+  dungeon_id: string;
+  name: string;
+  difficulty_rank: number;
+  monster_level_add?: number;
+  monster_attr_mult?: number;
+  reward_mult?: number;
+  min_realm?: string | null;
+  unlock_prev_difficulty?: boolean;
+  first_clear_rewards?: unknown;
+  drop_pool_id?: string | null;
+  enabled?: boolean;
+  stages?: DungeonStageConfig[];
+};
+
 export type DialogueDefConfig = {
   id: string;
   name: string;
@@ -289,6 +331,7 @@ type BountyDefFile = { bounties: BountyDefConfig[] };
 type DungeonSeedFile = {
   dungeons?: Array<{
     def?: DungeonDefConfig;
+    difficulties?: DungeonDifficultyConfig[];
   }>;
 };
 type DialogueFile = { dialogues: DialogueDefConfig[] };
@@ -659,6 +702,13 @@ let monsterDefCache: MonsterDefConfig[] | null | undefined;
 let spawnRuleCache: SpawnRuleConfig[] | null | undefined;
 let bountyDefCache: BountyDefConfig[] | null | undefined;
 let dungeonDefCache: DungeonDefConfig[] | null | undefined;
+let dungeonDifficultyCache: DungeonDifficultyConfig[] | null | undefined;
+let dungeonDifficultyByIdCache: Map<string, DungeonDifficultyConfig> | null | undefined;
+let dungeonDifficultiesByDungeonIdCache: Map<string, DungeonDifficultyConfig[]> | null | undefined;
+let dungeonStageCache: DungeonStageConfig[] | null | undefined;
+let dungeonStagesByDifficultyIdCache: Map<string, DungeonStageConfig[]> | null | undefined;
+let dungeonWaveCache: DungeonWaveConfig[] | null | undefined;
+let dungeonWavesByStageIdCache: Map<string, DungeonWaveConfig[]> | null | undefined;
 let dialogueDefCache: DialogueDefConfig[] | null | undefined;
 let techniqueDefCache: TechniqueDefConfig[] | null | undefined;
 let skillDefCache: SkillDefConfig[] | null | undefined;
@@ -833,6 +883,205 @@ const ensureMainQuestSnapshot = (): {
     sections: mainQuestSectionCache,
     chapterById: mainQuestChapterByIdCache,
     sectionById: mainQuestSectionByIdCache,
+  };
+};
+
+const ensureDungeonSnapshot = (): {
+  defs: DungeonDefConfig[];
+  difficulties: DungeonDifficultyConfig[];
+  difficultyById: Map<string, DungeonDifficultyConfig>;
+  difficultiesByDungeonId: Map<string, DungeonDifficultyConfig[]>;
+  stages: DungeonStageConfig[];
+  stagesByDifficultyId: Map<string, DungeonStageConfig[]>;
+  waves: DungeonWaveConfig[];
+  wavesByStageId: Map<string, DungeonWaveConfig[]>;
+} => {
+  if (
+    dungeonDefCache !== undefined &&
+    dungeonDifficultyCache !== undefined &&
+    dungeonDifficultyByIdCache !== undefined &&
+    dungeonDifficultiesByDungeonIdCache !== undefined &&
+    dungeonStageCache !== undefined &&
+    dungeonStagesByDifficultyIdCache !== undefined &&
+    dungeonWaveCache !== undefined &&
+    dungeonWavesByStageIdCache !== undefined
+  ) {
+    return {
+      defs: dungeonDefCache ?? [],
+      difficulties: dungeonDifficultyCache ?? [],
+      difficultyById: dungeonDifficultyByIdCache ?? new Map<string, DungeonDifficultyConfig>(),
+      difficultiesByDungeonId: dungeonDifficultiesByDungeonIdCache ?? new Map<string, DungeonDifficultyConfig[]>(),
+      stages: dungeonStageCache ?? [],
+      stagesByDifficultyId: dungeonStagesByDifficultyIdCache ?? new Map<string, DungeonStageConfig[]>(),
+      waves: dungeonWaveCache ?? [],
+      wavesByStageId: dungeonWavesByStageIdCache ?? new Map<string, DungeonWaveConfig[]>(),
+    };
+  }
+
+  const toSafeInt = (value: unknown, fallback: number): number => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.floor(n);
+  };
+
+  const files = fs.existsSync(SEEDS_DIR)
+    ? fs
+        .readdirSync(SEEDS_DIR)
+        .filter((filename) => /^dungeon_.*\.json$/i.test(filename))
+        .sort((left, right) => left.localeCompare(right))
+    : [];
+
+  const defById = new Map<string, DungeonDefConfig>();
+  const difficultyById = new Map<string, DungeonDifficultyConfig>();
+  const stageById = new Map<string, DungeonStageConfig>();
+  const waveByKey = new Map<string, DungeonWaveConfig>();
+
+  for (const filename of files) {
+    const file = readJsonFile<DungeonSeedFile>(filename);
+    const list = Array.isArray(file?.dungeons) ? file.dungeons : [];
+    for (const entry of list) {
+      const defId = String(entry?.def?.id ?? '').trim();
+      if (!defId) continue;
+
+      const def = entry.def;
+      if (def) {
+        defById.set(defId, {
+          ...def,
+          id: defId,
+          enabled: def.enabled !== false,
+        });
+      }
+
+      const difficulties = Array.isArray(entry.difficulties) ? entry.difficulties : [];
+      for (const difficultyRaw of difficulties) {
+        const difficultyId = String(difficultyRaw?.id ?? '').trim();
+        const dungeonId = String(difficultyRaw?.dungeon_id ?? defId).trim();
+        if (!difficultyId || !dungeonId) continue;
+
+        const difficulty: DungeonDifficultyConfig = {
+          ...difficultyRaw,
+          id: difficultyId,
+          dungeon_id: dungeonId,
+          name: String(difficultyRaw?.name ?? difficultyId),
+          difficulty_rank: Math.max(1, toSafeInt(difficultyRaw?.difficulty_rank, 1)),
+          monster_level_add: toSafeInt(difficultyRaw?.monster_level_add, 0),
+          monster_attr_mult: Number(difficultyRaw?.monster_attr_mult ?? 1) || 1,
+          reward_mult: Number(difficultyRaw?.reward_mult ?? 1) || 1,
+          min_realm: typeof difficultyRaw?.min_realm === 'string' ? difficultyRaw.min_realm : null,
+          unlock_prev_difficulty: difficultyRaw?.unlock_prev_difficulty === true,
+          first_clear_rewards: difficultyRaw?.first_clear_rewards ?? {},
+          drop_pool_id: typeof difficultyRaw?.drop_pool_id === 'string' ? difficultyRaw.drop_pool_id : null,
+          enabled: difficultyRaw?.enabled !== false,
+        };
+        difficultyById.set(difficultyId, difficulty);
+
+        const stages = Array.isArray(difficultyRaw?.stages) ? difficultyRaw.stages : [];
+        for (const stageRaw of stages) {
+          const stageId = String(stageRaw?.id ?? '').trim();
+          const stageDifficultyId = String(stageRaw?.difficulty_id ?? difficultyId).trim();
+          if (!stageId || !stageDifficultyId) continue;
+
+          const stage: DungeonStageConfig = {
+            ...stageRaw,
+            id: stageId,
+            difficulty_id: stageDifficultyId,
+            stage_index: Math.max(1, toSafeInt(stageRaw?.stage_index, 1)),
+            name: typeof stageRaw?.name === 'string' ? stageRaw.name : null,
+            type: typeof stageRaw?.type === 'string' && stageRaw.type.trim() ? stageRaw.type : 'battle',
+            description: typeof stageRaw?.description === 'string' ? stageRaw.description : null,
+            time_limit_sec: Math.max(0, toSafeInt(stageRaw?.time_limit_sec, 0)),
+            clear_condition: stageRaw?.clear_condition ?? {},
+            fail_condition: stageRaw?.fail_condition ?? {},
+            stage_rewards: stageRaw?.stage_rewards ?? {},
+            events: Array.isArray(stageRaw?.events) ? stageRaw.events : [],
+            enabled: stageRaw?.enabled !== false,
+          };
+          stageById.set(stageId, stage);
+
+          const waves = Array.isArray(stageRaw?.waves) ? stageRaw.waves : [];
+          for (let index = 0; index < waves.length; index += 1) {
+            const waveRaw = waves[index];
+            const waveIndex = Math.max(1, toSafeInt(waveRaw?.wave_index, index + 1));
+            const waveIdRaw = typeof waveRaw?.id === 'string' ? waveRaw.id : '';
+            const waveId = waveIdRaw.trim() || `${stageId}#${waveIndex}`;
+            const waveKey = `${stageId}::${waveIndex}`;
+            waveByKey.set(waveKey, {
+              ...waveRaw,
+              id: waveId,
+              stage_id: stageId,
+              wave_index: waveIndex,
+              spawn_delay_sec: Math.max(0, toSafeInt(waveRaw?.spawn_delay_sec, 0)),
+              monsters: Array.isArray(waveRaw?.monsters) ? waveRaw.monsters : [],
+              wave_rewards: waveRaw?.wave_rewards ?? {},
+              enabled: waveRaw?.enabled !== false,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const defs = Array.from(defById.values());
+  const difficulties = Array.from(difficultyById.values()).sort(
+    (left, right) =>
+      left.dungeon_id.localeCompare(right.dungeon_id) ||
+      Number(left.difficulty_rank ?? 0) - Number(right.difficulty_rank ?? 0) ||
+      left.id.localeCompare(right.id),
+  );
+  const stages = Array.from(stageById.values()).sort(
+    (left, right) =>
+      left.difficulty_id.localeCompare(right.difficulty_id) ||
+      Number(left.stage_index ?? 0) - Number(right.stage_index ?? 0) ||
+      left.id.localeCompare(right.id),
+  );
+  const waves = Array.from(waveByKey.values()).sort(
+    (left, right) =>
+      String(left.stage_id ?? '').localeCompare(String(right.stage_id ?? '')) ||
+      Number(left.wave_index ?? 0) - Number(right.wave_index ?? 0) ||
+      String(left.id ?? '').localeCompare(String(right.id ?? '')),
+  );
+
+  const difficultiesByDungeonId = new Map<string, DungeonDifficultyConfig[]>();
+  for (const difficulty of difficulties) {
+    const list = difficultiesByDungeonId.get(difficulty.dungeon_id) ?? [];
+    list.push(difficulty);
+    difficultiesByDungeonId.set(difficulty.dungeon_id, list);
+  }
+
+  const stagesByDifficultyId = new Map<string, DungeonStageConfig[]>();
+  for (const stage of stages) {
+    const list = stagesByDifficultyId.get(stage.difficulty_id) ?? [];
+    list.push(stage);
+    stagesByDifficultyId.set(stage.difficulty_id, list);
+  }
+
+  const wavesByStageId = new Map<string, DungeonWaveConfig[]>();
+  for (const wave of waves) {
+    const stageId = String(wave.stage_id ?? '').trim();
+    if (!stageId) continue;
+    const list = wavesByStageId.get(stageId) ?? [];
+    list.push(wave);
+    wavesByStageId.set(stageId, list);
+  }
+
+  dungeonDefCache = defs;
+  dungeonDifficultyCache = difficulties;
+  dungeonDifficultyByIdCache = new Map(difficulties.map((entry) => [entry.id, entry]));
+  dungeonDifficultiesByDungeonIdCache = difficultiesByDungeonId;
+  dungeonStageCache = stages;
+  dungeonStagesByDifficultyIdCache = stagesByDifficultyId;
+  dungeonWaveCache = waves;
+  dungeonWavesByStageIdCache = wavesByStageId;
+
+  return {
+    defs,
+    difficulties,
+    difficultyById: new Map(difficulties.map((entry) => [entry.id, entry])),
+    difficultiesByDungeonId,
+    stages,
+    stagesByDifficultyId,
+    waves,
+    wavesByStageId,
   };
 };
 
@@ -1016,27 +1265,43 @@ export const getBountyDefinitions = (): BountyDefConfig[] => {
 };
 
 export const getDungeonDefinitions = (): DungeonDefConfig[] => {
-  if (dungeonDefCache !== undefined) return dungeonDefCache ?? [];
+  return ensureDungeonSnapshot().defs;
+};
 
-  const files = fs.existsSync(SEEDS_DIR)
-    ? fs
-        .readdirSync(SEEDS_DIR)
-        .filter((filename) => /^dungeon_.*\.json$/i.test(filename))
-        .sort((left, right) => left.localeCompare(right))
-    : [];
+export const getDungeonDifficultyDefinitions = (): DungeonDifficultyConfig[] => {
+  return ensureDungeonSnapshot().difficulties;
+};
 
-  const dungeons: DungeonDefConfig[] = [];
-  for (const filename of files) {
-    const file = readJsonFile<DungeonSeedFile>(filename);
-    const list = Array.isArray(file?.dungeons) ? file.dungeons : [];
-    for (const entry of list) {
-      if (!entry?.def?.id) continue;
-      dungeons.push(entry.def);
-    }
-  }
+export const getDungeonDifficultyById = (difficultyId: string): DungeonDifficultyConfig | null => {
+  const id = String(difficultyId || '').trim();
+  if (!id) return null;
+  return ensureDungeonSnapshot().difficultyById.get(id) ?? null;
+};
 
-  dungeonDefCache = dungeons;
-  return dungeonDefCache;
+export const getDungeonDifficultiesByDungeonId = (dungeonId: string): DungeonDifficultyConfig[] => {
+  const id = String(dungeonId || '').trim();
+  if (!id) return [];
+  return ensureDungeonSnapshot().difficultiesByDungeonId.get(id) ?? [];
+};
+
+export const getDungeonStageDefinitions = (): DungeonStageConfig[] => {
+  return ensureDungeonSnapshot().stages;
+};
+
+export const getDungeonStagesByDifficultyId = (difficultyId: string): DungeonStageConfig[] => {
+  const id = String(difficultyId || '').trim();
+  if (!id) return [];
+  return ensureDungeonSnapshot().stagesByDifficultyId.get(id) ?? [];
+};
+
+export const getDungeonWaveDefinitions = (): DungeonWaveConfig[] => {
+  return ensureDungeonSnapshot().waves;
+};
+
+export const getDungeonWavesByStageId = (stageId: string): DungeonWaveConfig[] => {
+  const id = String(stageId || '').trim();
+  if (!id) return [];
+  return ensureDungeonSnapshot().wavesByStageId.get(id) ?? [];
 };
 
 export const getDialogueDefinitions = (): DialogueDefConfig[] => {

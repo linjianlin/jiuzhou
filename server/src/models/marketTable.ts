@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS market_listing (
   seller_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   seller_character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
   item_instance_id BIGINT REFERENCES item_instance(id) ON DELETE SET NULL,
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id),
+  item_def_id VARCHAR(64) NOT NULL,
   qty INTEGER NOT NULL,
   unit_price_spirit_stones BIGINT NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'active',
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS market_trade_record (
   buyer_character_id BIGINT NOT NULL REFERENCES characters(id),
   seller_user_id BIGINT NOT NULL REFERENCES users(id),
   seller_character_id BIGINT NOT NULL REFERENCES characters(id),
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id),
+  item_def_id VARCHAR(64) NOT NULL,
   qty INTEGER NOT NULL,
   unit_price_spirit_stones BIGINT NOT NULL,
   total_price_spirit_stones BIGINT NOT NULL,
@@ -83,6 +83,9 @@ export const initMarketTable = async (): Promise<void> => {
   await query(marketListingTableSQL);
   await query(marketTradeRecordTableSQL);
 
+  await query(`ALTER TABLE market_listing DROP CONSTRAINT IF EXISTS market_listing_item_def_id_fkey`);
+  await query(`ALTER TABLE market_trade_record DROP CONSTRAINT IF EXISTS market_trade_record_item_def_id_fkey`);
+
   // 迁移：将 item_instance_id 外键从 ON DELETE RESTRICT 改为 ON DELETE SET NULL
   try {
     const fkCheck = await query(`
@@ -107,4 +110,3 @@ export const initMarketTable = async (): Promise<void> => {
 
   console.log('✓ 坊市系统表检测完成');
 };
-

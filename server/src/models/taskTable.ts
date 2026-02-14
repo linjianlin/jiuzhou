@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS task_def (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE task_def IS '任务定义表（主线/支线/日常/活动，静态配置）';
+COMMENT ON TABLE task_def IS '动态任务扩展表（用于悬赏等运行时生成任务）';
 COMMENT ON COLUMN task_def.id IS '任务ID';
 COMMENT ON COLUMN task_def.category IS '任务类别（main主线/side支线/daily日常/event活动）';
 COMMENT ON COLUMN task_def.title IS '任务标题';
@@ -48,7 +48,7 @@ const characterTaskProgressTableSQL = `
 CREATE TABLE IF NOT EXISTS character_task_progress (
   id BIGSERIAL PRIMARY KEY,
   character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  task_id VARCHAR(64) NOT NULL REFERENCES task_def(id) ON DELETE CASCADE,
+  task_id VARCHAR(64) NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'ongoing',
   progress JSONB NOT NULL DEFAULT '{}'::jsonb,
   tracked BOOLEAN NOT NULL DEFAULT false,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS character_task_progress (
 COMMENT ON TABLE character_task_progress IS '角色任务进度表';
 COMMENT ON COLUMN character_task_progress.id IS '进度记录ID';
 COMMENT ON COLUMN character_task_progress.character_id IS '角色ID';
-COMMENT ON COLUMN character_task_progress.task_id IS '任务ID';
+COMMENT ON COLUMN character_task_progress.task_id IS '任务ID（静态或动态）';
 COMMENT ON COLUMN character_task_progress.status IS '任务状态（ongoing进行中/claimable可领取/completed已完成/claimed已领取）';
 COMMENT ON COLUMN character_task_progress.progress IS '进度数据（JSON）';
 COMMENT ON COLUMN character_task_progress.tracked IS '是否追踪';
@@ -78,6 +78,6 @@ CREATE INDEX IF NOT EXISTS idx_character_task_progress_tracked ON character_task
 export const initTaskTables = async (): Promise<void> => {
   await query(taskDefTableSQL);
   await query(characterTaskProgressTableSQL);
+  await query('ALTER TABLE character_task_progress DROP CONSTRAINT IF EXISTS character_task_progress_task_id_fkey');
   console.log('✓ 任务系统表检测完成');
 };
-

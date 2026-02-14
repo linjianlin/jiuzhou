@@ -1,176 +1,64 @@
 /**
- * 九州修仙录 - 物品系统数据表
- * 包含：物品定义表、物品实例表、词条池表、套装表等
+ * 九州修仙录 - 物品系统动态数据表
+ *
+ * 说明：
+ * 1. 物品定义/词条池/套装/配方已改为静态 JSON 直读，不再建表。
+ * 2. 仅保留运行时动态数据表（实例、冷却、使用计数）。
  */
 import { query } from '../config/database.js';
-import { runItemAffixPercentMigrations } from './itemAffixPercentMigration.js';
 
 // ============================================
-// 1. 物品定义表 (item_def) - 静态配置
-// ============================================
-const itemDefTableSQL = `
-CREATE TABLE IF NOT EXISTS item_def (
-  id VARCHAR(64) PRIMARY KEY,                         -- 物品唯一ID（策划配置ID）
-  code VARCHAR(64),                                   -- 物品英文码（检索/埋点/脚本用）
-  name VARCHAR(64) NOT NULL,                          -- 物品名称
-  category VARCHAR(32) NOT NULL,                      -- 物品大类（consumable/equipment/material/skillbook/quest/other）
-  sub_category VARCHAR(32),                           -- 物品子类（pill/talisman/ore/weapon/armor...）
-  quality CHAR(1) NOT NULL DEFAULT '黄',              -- 品质（黄/玄/地/天）
-  quality_rank INTEGER NOT NULL DEFAULT 1,            -- 品质排序值（1-4）
-  quality_min CHAR(1),                                -- 品质下限（为空则按 quality）
-  quality_max CHAR(1),                                -- 品质上限（为空则按 quality）
-  rarity VARCHAR(16),                                 -- 稀有度（common/uncommon/rare/epic/legendary）
-  level INTEGER NOT NULL DEFAULT 0,                   -- 物品等级/档位
-  stack_max INTEGER NOT NULL DEFAULT 1,               -- 最大堆叠数量
-  bind_type VARCHAR(16) NOT NULL DEFAULT 'none',      -- 绑定类型（none/pickup/equip/use）
-  tradeable BOOLEAN NOT NULL DEFAULT true,            -- 是否可交易
-  icon VARCHAR(256),                                  -- 图标资源路径
-  model VARCHAR(256),                                 -- 模型/外观ID
-  description TEXT,                                   -- 简短描述
-  long_desc TEXT,                                     -- 详细描述
-  tags JSONB,                                         -- 标签（筛选、套装、流派、活动）
-  
-  -- 使用相关
-  use_type VARCHAR(32),                               -- 使用方式（instant/target/consume_on_use）
-  use_cd_round INTEGER DEFAULT 0,                     -- 使用冷却（回合数）
-  use_cd_sec INTEGER DEFAULT 0,                       -- 使用冷却（秒数）
-  use_limit_daily INTEGER DEFAULT 0,                  -- 每日使用次数限制
-  use_limit_total INTEGER DEFAULT 0,                  -- 总使用次数限制
-  use_req_realm VARCHAR(64),                          -- 使用所需最低境界
-  use_req_level INTEGER DEFAULT 0,                    -- 使用所需等级
-  use_req_attrs JSONB,                                -- 使用属性门槛
-  
-  -- 装备相关
-  equip_slot VARCHAR(32),                             -- 装备槽位（weapon/head/clothes/gloves/pants/necklace/accessory/artifact）
-  equip_req_realm VARCHAR(64),                        -- 装备所需最低境界
-  equip_req_attrs JSONB,                              -- 装备属性门槛
-  
-  -- 效果与属性
-  battle_skill_ids JSONB,                             -- 装备/使用提供的技能ID列表
-  effect_defs JSONB,                                  -- 效果定义
-  base_attrs JSONB,                                   -- 基础属性
-  growth_attrs JSONB,                                 -- 成长属性/强化曲线
-  
-  -- 词条与镶嵌
-  affix_pool_id VARCHAR(64),                          -- 随机词条池ID
-  affix_count_min INTEGER DEFAULT 0,                  -- 词条数量下限（覆盖品质规则）
-  affix_count_max INTEGER DEFAULT 0,                  -- 词条数量上限
-  socket_max INTEGER DEFAULT 0,                       -- 镶嵌孔数量上限
-  gem_slot_types JSONB,                               -- 宝石孔类型限制
-  
-  -- 套装与合成
-  set_id VARCHAR(64),                                 -- 套装ID
-  composed_from JSONB,                                -- 合成来源提示
-  source_hint JSONB,                                  -- 获取途径提示
-  
-  -- 交易相关
-  market_min_price INTEGER DEFAULT 0,                 -- 交易参考最低价
-  market_max_price INTEGER DEFAULT 0,                 -- 交易参考最高价
-  tax_rate NUMERIC(5,2) DEFAULT 0.00,                 -- 交易税率
-  
-  -- 过期与唯一
-  expire_seconds INTEGER DEFAULT 0,                   -- 过期秒数（0为不过期）
-  expire_at TIMESTAMPTZ,                              -- 固定过期时间
-  unique_type VARCHAR(32) DEFAULT 'none',             -- 唯一规则（none/global/per_character/per_account）
-  unique_limit INTEGER DEFAULT 0,                     -- 唯一数量上限
-  
-  -- 操作限制
-  quest_only BOOLEAN NOT NULL DEFAULT false,          -- 是否任务道具
-  droppable BOOLEAN NOT NULL DEFAULT true,            -- 是否可丢弃
-  destroyable BOOLEAN NOT NULL DEFAULT true,          -- 是否可销毁
-  mailable BOOLEAN NOT NULL DEFAULT true,             -- 是否可邮寄
-  storageable BOOLEAN NOT NULL DEFAULT true,          -- 是否可仓库存放
-  
-  -- 运营控制
-  sort_weight INTEGER NOT NULL DEFAULT 0,             -- 排序权重
-  version INTEGER NOT NULL DEFAULT 1,                 -- 配置版本
-  enabled BOOLEAN NOT NULL DEFAULT true,              -- 是否启用
-  publish_start_at TIMESTAMPTZ,                       -- 上架开始时间
-  publish_end_at TIMESTAMPTZ,                         -- 下架结束时间
-  
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 添加表注释
-COMMENT ON TABLE item_def IS '物品定义表（静态配置）';
-COMMENT ON COLUMN item_def.id IS '物品唯一ID（策划配置ID）';
-COMMENT ON COLUMN item_def.code IS '物品英文码（检索/埋点/脚本用）';
-COMMENT ON COLUMN item_def.name IS '物品名称';
-COMMENT ON COLUMN item_def.category IS '物品大类（consumable/equipment/material/skillbook/quest/other）';
-COMMENT ON COLUMN item_def.sub_category IS '物品子类';
-COMMENT ON COLUMN item_def.quality IS '品质（黄/玄/地/天）';
-COMMENT ON COLUMN item_def.quality_rank IS '品质排序值（1黄/2玄/3地/4天）';
-COMMENT ON COLUMN item_def.level IS '物品等级/档位';
-COMMENT ON COLUMN item_def.stack_max IS '最大堆叠数量（不可堆叠为1）';
-COMMENT ON COLUMN item_def.bind_type IS '绑定类型（none/pickup/equip/use）';
-COMMENT ON COLUMN item_def.equip_slot IS '装备槽位（weapon/head/clothes/gloves/pants/necklace/accessory/artifact）';
-COMMENT ON COLUMN item_def.affix_pool_id IS '随机词条池ID';
-COMMENT ON COLUMN item_def.set_id IS '套装ID';
-COMMENT ON COLUMN item_def.enabled IS '是否启用（下架为false）';
-
--- 创建索引
-CREATE INDEX IF NOT EXISTS idx_item_def_category ON item_def(category);
-CREATE INDEX IF NOT EXISTS idx_item_def_quality ON item_def(quality);
-CREATE INDEX IF NOT EXISTS idx_item_def_equip_slot ON item_def(equip_slot);
-CREATE INDEX IF NOT EXISTS idx_item_def_set_id ON item_def(set_id);
-CREATE INDEX IF NOT EXISTS idx_item_def_enabled ON item_def(enabled);
-`;
-
-
-// ============================================
-// 2. 物品实例表 (item_instance) - 动态数据
+// 1. 物品实例表（动态）
 // ============================================
 const itemInstanceTableSQL = `
 CREATE TABLE IF NOT EXISTS item_instance (
   id BIGSERIAL PRIMARY KEY,                           -- 物品实例ID
   owner_user_id BIGINT NOT NULL,                      -- 拥有者用户ID
   owner_character_id BIGINT,                          -- 拥有者角色ID（账号共享仓库可为空）
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 对应物品定义ID
+  item_def_id VARCHAR(64) NOT NULL,                   -- 物品定义ID（静态配置ID）
   qty INTEGER NOT NULL DEFAULT 1,                     -- 数量（堆叠）
-  quality CHAR(1),                                    -- 实例品质（装备生成结果；为空则按定义表）
-  quality_rank INTEGER,                               -- 实例品质排序值（为空则按定义表）
-  
+  quality CHAR(1),                                    -- 实例品质（装备生成结果；为空则按定义）
+  quality_rank INTEGER,                               -- 实例品质排序值
+
   -- 绑定状态
   bind_type VARCHAR(16) NOT NULL DEFAULT 'none',      -- 实例绑定状态
   bind_owner_user_id BIGINT,                          -- 绑定到的用户ID
   bind_owner_character_id BIGINT,                     -- 绑定到的角色ID
-  
+
   -- 位置信息
   location VARCHAR(16) NOT NULL DEFAULT 'bag',        -- 位置（bag/warehouse/equipped/mail/auction）
   location_slot INTEGER,                              -- 位置格子
   equipped_slot VARCHAR(32),                          -- 装备槽位（若已装备）
-  
+
   -- 强化与精炼
   strengthen_level INTEGER DEFAULT 0,                 -- 强化等级
   refine_level INTEGER DEFAULT 0,                     -- 精炼等级
-  
+
   -- 镶嵌与词条
   socketed_gems JSONB,                                -- 已镶嵌宝石信息
   random_seed BIGINT,                                 -- 随机种子
   affixes JSONB,                                      -- 随机词条结果
   identified BOOLEAN NOT NULL DEFAULT true,           -- 是否已鉴定
-  
+
   -- 其他
   custom_name VARCHAR(64),                            -- 自定义名称
   locked BOOLEAN NOT NULL DEFAULT false,              -- 是否锁定
   expire_at TIMESTAMPTZ,                              -- 实例过期时间
-  
+
   -- 来源追溯
   obtained_from VARCHAR(32),                          -- 获取来源（drop/quest/shop/craft/mail/admin）
   obtained_ref_id VARCHAR(64),                        -- 来源引用ID
   metadata JSONB,                                     -- 扩展字段
-  
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 添加表注释
 COMMENT ON TABLE item_instance IS '物品实例表（动态数据）';
 COMMENT ON COLUMN item_instance.id IS '物品实例ID';
 COMMENT ON COLUMN item_instance.owner_user_id IS '拥有者用户ID';
 COMMENT ON COLUMN item_instance.owner_character_id IS '拥有者角色ID';
-COMMENT ON COLUMN item_instance.item_def_id IS '物品定义ID';
+COMMENT ON COLUMN item_instance.item_def_id IS '物品定义ID（静态配置ID）';
 COMMENT ON COLUMN item_instance.qty IS '数量（堆叠数量）';
 COMMENT ON COLUMN item_instance.location IS '位置（bag/warehouse/equipped/mail/auction）';
 COMMENT ON COLUMN item_instance.location_slot IS '位置格子（从0开始）';
@@ -180,7 +68,6 @@ COMMENT ON COLUMN item_instance.affixes IS '随机词条结果（JSONB）';
 COMMENT ON COLUMN item_instance.locked IS '是否锁定（防误操作）';
 COMMENT ON COLUMN item_instance.obtained_from IS '获取来源类型';
 
--- 创建索引
 CREATE INDEX IF NOT EXISTS idx_item_instance_owner ON item_instance(owner_user_id, owner_character_id);
 CREATE INDEX IF NOT EXISTS idx_item_instance_item_def ON item_instance(item_def_id);
 CREATE INDEX IF NOT EXISTS idx_item_instance_location ON item_instance(location);
@@ -188,164 +75,13 @@ CREATE INDEX IF NOT EXISTS idx_item_instance_equipped ON item_instance(equipped_
 `;
 
 // ============================================
-// 3. 词条池表 (affix_pool) - 随机词条配置
-// ============================================
-const affixPoolTableSQL = `
-CREATE TABLE IF NOT EXISTS affix_pool (
-  id VARCHAR(64) PRIMARY KEY,                         -- 词条池ID
-  name VARCHAR(64) NOT NULL,                          -- 词条池名称
-  description TEXT,                                   -- 词条池说明
-  
-  -- 抽取规则
-  rules JSONB NOT NULL,                               -- 抽取规则（条数范围、重复规则、权重等）
-  
-  -- 词条列表
-  affixes JSONB NOT NULL,                             -- 词条定义列表
-  
-  -- 运营控制
-  version INTEGER NOT NULL DEFAULT 1,
-  enabled BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE affix_pool IS '词条池表（随机词条配置）';
-COMMENT ON COLUMN affix_pool.id IS '词条池ID';
-COMMENT ON COLUMN affix_pool.name IS '词条池名称';
-COMMENT ON COLUMN affix_pool.rules IS '抽取规则（条数范围、重复规则、权重等）';
-COMMENT ON COLUMN affix_pool.affixes IS '词条定义列表';
-`;
-
-// ============================================
-// 4. 套装定义表 (item_set)
-// ============================================
-const itemSetTableSQL = `
-CREATE TABLE IF NOT EXISTS item_set (
-  id VARCHAR(64) PRIMARY KEY,                         -- 套装ID
-  name VARCHAR(64) NOT NULL,                          -- 套装名称
-  description TEXT,                                   -- 套装说明
-  quality_rank INTEGER NOT NULL DEFAULT 1,            -- 套装档位（1-4）
-  min_realm VARCHAR(64),                              -- 最低境界门槛
-  
-  -- 运营控制
-  version INTEGER NOT NULL DEFAULT 1,
-  enabled BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE item_set IS '套装定义表';
-COMMENT ON COLUMN item_set.id IS '套装ID';
-COMMENT ON COLUMN item_set.name IS '套装名称';
-COMMENT ON COLUMN item_set.quality_rank IS '套装强度档位';
-COMMENT ON COLUMN item_set.min_realm IS '套装最低适用境界';
-`;
-
-// ============================================
-// 5. 套装件映射表 (item_set_piece)
-// ============================================
-const itemSetPieceTableSQL = `
-CREATE TABLE IF NOT EXISTS item_set_piece (
-  id BIGSERIAL PRIMARY KEY,
-  set_id VARCHAR(64) NOT NULL REFERENCES item_set(id),-- 套装ID
-  equip_slot VARCHAR(32) NOT NULL,                    -- 装备槽位
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 套装件物品ID
-  piece_key VARCHAR(32) NOT NULL,                     -- 套装件唯一键
-  
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(set_id, equip_slot)
-);
-
-COMMENT ON TABLE item_set_piece IS '套装件映射表';
-COMMENT ON COLUMN item_set_piece.set_id IS '套装ID';
-COMMENT ON COLUMN item_set_piece.equip_slot IS '装备槽位';
-COMMENT ON COLUMN item_set_piece.item_def_id IS '套装件物品ID';
-COMMENT ON COLUMN item_set_piece.piece_key IS '套装件唯一键';
-
-CREATE INDEX IF NOT EXISTS idx_item_set_piece_set ON item_set_piece(set_id);
-`;
-
-// ============================================
-// 6. 套装加成表 (item_set_bonus)
-// ============================================
-const itemSetBonusTableSQL = `
-CREATE TABLE IF NOT EXISTS item_set_bonus (
-  id BIGSERIAL PRIMARY KEY,
-  set_id VARCHAR(64) NOT NULL REFERENCES item_set(id),-- 套装ID
-  piece_count INTEGER NOT NULL,                       -- 触发件数阈值
-  effect_defs JSONB NOT NULL,                         -- 套装加成效果定义
-  priority INTEGER NOT NULL DEFAULT 0,                -- 优先级
-  
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(set_id, piece_count)
-);
-
-COMMENT ON TABLE item_set_bonus IS '套装加成表';
-COMMENT ON COLUMN item_set_bonus.set_id IS '套装ID';
-COMMENT ON COLUMN item_set_bonus.piece_count IS '触发件数阈值';
-COMMENT ON COLUMN item_set_bonus.effect_defs IS '套装加成效果定义';
-COMMENT ON COLUMN item_set_bonus.priority IS '与其他效果叠加顺序';
-
-CREATE INDEX IF NOT EXISTS idx_item_set_bonus_set ON item_set_bonus(set_id);
-`;
-
-
-// ============================================
-// 7. 合成配方表 (item_recipe)
-// ============================================
-const itemRecipeTableSQL = `
-CREATE TABLE IF NOT EXISTS item_recipe (
-  id VARCHAR(64) PRIMARY KEY,                         -- 配方ID
-  name VARCHAR(64) NOT NULL,                          -- 配方名称
-  recipe_type VARCHAR(32) NOT NULL,                   -- 配方类型（craft/refine/decompose/upgrade）
-  
-  -- 产出
-  product_item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 产出物品ID
-  product_qty INTEGER NOT NULL DEFAULT 1,             -- 产出数量
-  product_quality_min CHAR(1),                        -- 产出品质下限
-  product_quality_max CHAR(1),                        -- 产出品质上限
-  
-  -- 消耗
-  cost_silver INTEGER NOT NULL DEFAULT 0,             -- 消耗银两
-  cost_spirit_stones INTEGER NOT NULL DEFAULT 0,      -- 消耗灵石
-  cost_exp INTEGER NOT NULL DEFAULT 0,                -- 消耗经验
-  cost_items JSONB,                                   -- 消耗材料列表
-  
-  -- 要求
-  req_realm VARCHAR(64),                              -- 境界要求
-  req_level INTEGER DEFAULT 0,                        -- 等级要求
-  req_building VARCHAR(64),                           -- 建筑/功能要求
-  
-  -- 成功率
-  success_rate NUMERIC(5,2) NOT NULL DEFAULT 100.00,  -- 成功率（百分比）
-  fail_return_rate NUMERIC(5,2) DEFAULT 0.00,         -- 失败返还率
-  
-  -- 运营控制
-  version INTEGER NOT NULL DEFAULT 1,
-  enabled BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE item_recipe IS '合成配方表';
-COMMENT ON COLUMN item_recipe.id IS '配方ID';
-COMMENT ON COLUMN item_recipe.recipe_type IS '配方类型（craft合成/refine精炼/decompose分解/upgrade升级）';
-COMMENT ON COLUMN item_recipe.product_item_def_id IS '产出物品ID';
-COMMENT ON COLUMN item_recipe.cost_items IS '消耗材料列表';
-COMMENT ON COLUMN item_recipe.success_rate IS '成功率（百分比）';
-
-CREATE INDEX IF NOT EXISTS idx_item_recipe_product ON item_recipe(product_item_def_id);
-CREATE INDEX IF NOT EXISTS idx_item_recipe_type ON item_recipe(recipe_type);
-`;
-
-// ============================================
-// 8. 物品使用冷却表 (item_use_cooldown)
+// 2. 物品使用冷却表（动态）
 // ============================================
 const itemUseCooldownTableSQL = `
 CREATE TABLE IF NOT EXISTS item_use_cooldown (
   id BIGSERIAL PRIMARY KEY,
   character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id) ON DELETE CASCADE,
+  item_def_id VARCHAR(64) NOT NULL,                   -- 物品定义ID（静态配置ID）
   cooldown_until TIMESTAMPTZ NOT NULL,
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -356,7 +92,7 @@ CREATE TABLE IF NOT EXISTS item_use_cooldown (
 
 COMMENT ON TABLE item_use_cooldown IS '物品使用冷却表';
 COMMENT ON COLUMN item_use_cooldown.character_id IS '角色ID';
-COMMENT ON COLUMN item_use_cooldown.item_def_id IS '物品定义ID';
+COMMENT ON COLUMN item_use_cooldown.item_def_id IS '物品定义ID（静态配置ID）';
 COMMENT ON COLUMN item_use_cooldown.cooldown_until IS '冷却结束时间';
 
 CREATE INDEX IF NOT EXISTS idx_item_use_cooldown_char ON item_use_cooldown(character_id);
@@ -364,13 +100,13 @@ CREATE INDEX IF NOT EXISTS idx_item_use_cooldown_item ON item_use_cooldown(item_
 `;
 
 // ============================================
-// 9. 物品使用次数表 (item_use_count)
+// 3. 物品使用次数表（动态）
 // ============================================
 const itemUseCountTableSQL = `
 CREATE TABLE IF NOT EXISTS item_use_count (
   id BIGSERIAL PRIMARY KEY,
   character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id) ON DELETE CASCADE,
+  item_def_id VARCHAR(64) NOT NULL,                   -- 物品定义ID（静态配置ID）
 
   daily_count INTEGER NOT NULL DEFAULT 0,
   total_count INTEGER NOT NULL DEFAULT 0,
@@ -384,7 +120,7 @@ CREATE TABLE IF NOT EXISTS item_use_count (
 
 COMMENT ON TABLE item_use_count IS '物品使用次数表';
 COMMENT ON COLUMN item_use_count.character_id IS '角色ID';
-COMMENT ON COLUMN item_use_count.item_def_id IS '物品定义ID';
+COMMENT ON COLUMN item_use_count.item_def_id IS '物品定义ID（静态配置ID）';
 COMMENT ON COLUMN item_use_count.daily_count IS '当日使用次数';
 COMMENT ON COLUMN item_use_count.total_count IS '累计使用次数';
 COMMENT ON COLUMN item_use_count.last_daily_reset IS '最后一次日重置日期';
@@ -393,70 +129,28 @@ CREATE INDEX IF NOT EXISTS idx_item_use_count_char ON item_use_count(character_i
 CREATE INDEX IF NOT EXISTS idx_item_use_count_item ON item_use_count(item_def_id);
 `;
 
-// ============================================
-// 需要检查的字段列表（用于表结构升级）
-// ============================================
-const itemDefColumnsToCheck = [
-  { name: 'affix_count_min', type: 'INTEGER DEFAULT 0', comment: '词条数量下限' },
-  { name: 'affix_count_max', type: 'INTEGER DEFAULT 0', comment: '词条数量上限' },
-  { name: 'quality_min', type: 'CHAR(1)', comment: '品质下限（为空则按 quality）' },
-  { name: 'quality_max', type: 'CHAR(1)', comment: '品质上限（为空则按 quality）' },
-];
-
 const itemInstanceColumnsToCheck = [
   { name: 'identified', type: 'BOOLEAN NOT NULL DEFAULT true', comment: '是否已鉴定' },
   { name: 'quality', type: 'CHAR(1)', comment: '实例品质（为空则按定义表）' },
   { name: 'quality_rank', type: 'INTEGER', comment: '实例品质排序值（为空则按定义表）' },
 ];
 
-const dropLegacyItemDefColumns = async () => {
-  const legacyColumns = ['sellable', 'sell_price_silver', 'sell_price_spirit_stones'];
-  for (const col of legacyColumns) {
-    await query(`ALTER TABLE item_def DROP COLUMN IF EXISTS ${col}`);
-  }
-};
-
-// 检查并添加缺失字段
-const checkAndAddItemDefColumns = async () => {
-  for (const col of itemDefColumnsToCheck) {
-    try {
-      const checkSQL = `
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name = 'item_def' AND column_name = $1
-      `;
-      const result = await query(checkSQL, [col.name]);
-      
-      if (result.rows.length === 0) {
-        const addSQL = `ALTER TABLE item_def ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
-        await query(addSQL);
-        
-        const commentSQL = `COMMENT ON COLUMN item_def.${col.name} IS '${col.comment}'`;
-        await query(commentSQL);
-        
-        console.log(`物品定义表已添加缺失字段: ${col.name}`);
-      }
-    } catch (error) {
-      console.error(`检查字段 ${col.name} 时出错:`, error);
-    }
-  }
-};
-
 const checkAndAddItemInstanceColumns = async () => {
   for (const col of itemInstanceColumnsToCheck) {
     try {
       const checkSQL = `
-        SELECT column_name FROM information_schema.columns 
+        SELECT column_name FROM information_schema.columns
         WHERE table_name = 'item_instance' AND column_name = $1
       `;
       const result = await query(checkSQL, [col.name]);
-      
+
       if (result.rows.length === 0) {
         const addSQL = `ALTER TABLE item_instance ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
         await query(addSQL);
-        
+
         const commentSQL = `COMMENT ON COLUMN item_instance.${col.name} IS '${col.comment}'`;
         await query(commentSQL);
-        
+
         console.log(`物品实例表已添加缺失字段: ${col.name}`);
       }
     } catch (error) {
@@ -465,52 +159,34 @@ const checkAndAddItemInstanceColumns = async () => {
   }
 };
 
+/**
+ * 历史版本里动态表对静态定义表有外键依赖。
+ * 现在定义改为 JSON 直读，初始化时统一解除这些依赖。
+ */
+const dropLegacyStaticDefForeignKeys = async () => {
+  await query('ALTER TABLE item_instance DROP CONSTRAINT IF EXISTS item_instance_item_def_id_fkey');
+  await query('ALTER TABLE item_use_cooldown DROP CONSTRAINT IF EXISTS item_use_cooldown_item_def_id_fkey');
+  await query('ALTER TABLE item_use_count DROP CONSTRAINT IF EXISTS item_use_count_item_def_id_fkey');
+};
+
 // ============================================
 // 初始化物品系统表
 // ============================================
 export const initItemTables = async (): Promise<void> => {
   try {
-    // 1. 创建物品定义表
-    await query(itemDefTableSQL);
-    await dropLegacyItemDefColumns();
-    
-    // 2. 创建物品实例表
+    console.log('  → 物品定义/词条池/套装/配方改为静态JSON加载，跳过建表');
+
     await query(itemInstanceTableSQL);
-    
-    // 3. 创建词条池表
-    await query(affixPoolTableSQL);
-    
-    // 4. 创建套装定义表
-    await query(itemSetTableSQL);
-    
-    // 5. 创建套装件映射表
-    await query(itemSetPieceTableSQL);
-    
-    // 6. 创建套装加成表
-    await query(itemSetBonusTableSQL);
-    
-    // 7. 创建合成配方表
-    await query(itemRecipeTableSQL);
-
-    // 8. 创建物品使用冷却表
     await query(itemUseCooldownTableSQL);
-
-    // 9. 创建物品使用次数表
     await query(itemUseCountTableSQL);
-    
-    // 检查并补齐缺失字段
-    await checkAndAddItemDefColumns();
+
+    await dropLegacyStaticDefForeignKeys();
     await checkAndAddItemInstanceColumns();
 
-    // 将历史词条池/装备词条中的旧百分比单位迁移为比例值（1=100%）
-    await runItemAffixPercentMigrations();
-
-    await query("COMMENT ON COLUMN item_def.quality_min IS '品质下限（为空则按 quality）';");
-    await query("COMMENT ON COLUMN item_def.quality_max IS '品质上限（为空则按 quality）';");
     await query("COMMENT ON COLUMN item_instance.identified IS '是否已鉴定';");
     await query("COMMENT ON COLUMN item_instance.quality IS '实例品质（为空则按定义表）';");
     await query("COMMENT ON COLUMN item_instance.quality_rank IS '实例品质排序值（为空则按定义表）';");
-    
+
     console.log('✓ 物品系统表检测完成');
   } catch (error) {
     console.error('✗ 物品系统表初始化失败:', error);

@@ -1,7 +1,6 @@
 /**
  * 九州修仙录 - NPC 数据表
  */
-import { query } from '../config/database.js';
 
 export const initNpcTable = async (): Promise<void> => {
   try {

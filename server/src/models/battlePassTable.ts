@@ -28,7 +28,7 @@ const battlePassClaimRecordTableSQL = `
 CREATE TABLE IF NOT EXISTS battle_pass_claim_record (
   id BIGSERIAL PRIMARY KEY,
   character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  season_id VARCHAR(64) NOT NULL REFERENCES battle_pass_season_def(id) ON DELETE RESTRICT,
+  season_id VARCHAR(64) NOT NULL,
   level INTEGER NOT NULL,
   track VARCHAR(16) NOT NULL,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -80,10 +80,6 @@ export const initBattlePassTables = async (): Promise<void> => {
   await query(battlePassProgressTableSQL);
   await query(battlePassClaimRecordTableSQL);
   await query(battlePassTaskProgressTableSQL);
-  await query('ALTER TABLE battle_pass_progress DROP CONSTRAINT IF EXISTS battle_pass_progress_season_id_fkey');
   await query('ALTER TABLE battle_pass_claim_record DROP CONSTRAINT IF EXISTS battle_pass_claim_record_season_id_fkey');
-  await query('ALTER TABLE battle_pass_task_progress DROP CONSTRAINT IF EXISTS battle_pass_task_progress_season_id_fkey');
-  await query('ALTER TABLE battle_pass_task_progress DROP CONSTRAINT IF EXISTS battle_pass_task_progress_task_id_fkey');
   console.log('✓ 战令系统表检测完成');
 };
-

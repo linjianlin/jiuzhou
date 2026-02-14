@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS bounty_instance (
   id BIGSERIAL PRIMARY KEY,
   source_type VARCHAR(16) NOT NULL DEFAULT 'daily',
   bounty_def_id VARCHAR(64),
-  task_id VARCHAR(64) NOT NULL REFERENCES task_def(id) ON DELETE CASCADE,
+  task_id VARCHAR(64) NOT NULL,
   title VARCHAR(128) NOT NULL,
   description TEXT,
   claim_policy VARCHAR(16) NOT NULL DEFAULT 'limited',
@@ -27,7 +27,7 @@ COMMENT ON TABLE bounty_instance IS '悬赏实例表（每日刷新/玩家发布
 COMMENT ON COLUMN bounty_instance.id IS '悬赏实例ID';
 COMMENT ON COLUMN bounty_instance.source_type IS '来源类型（daily每日/ player玩家）';
 COMMENT ON COLUMN bounty_instance.bounty_def_id IS '关联悬赏定义ID（每日刷新来源）';
-COMMENT ON COLUMN bounty_instance.task_id IS '关联任务ID（task_def.id）';
+COMMENT ON COLUMN bounty_instance.task_id IS '关联任务ID（静态或动态）';
 COMMENT ON COLUMN bounty_instance.title IS '悬赏标题';
 COMMENT ON COLUMN bounty_instance.description IS '悬赏描述';
 COMMENT ON COLUMN bounty_instance.claim_policy IS '接取规则（unique唯一/limited限次/unlimited不限）';
@@ -83,6 +83,6 @@ export const initBountyTables = async (): Promise<void> => {
   await query(bountyInstanceTableSQL);
   await query(bountyClaimTableSQL);
   await query('ALTER TABLE bounty_instance DROP CONSTRAINT IF EXISTS bounty_instance_bounty_def_id_fkey');
+  await query('ALTER TABLE bounty_instance DROP CONSTRAINT IF EXISTS bounty_instance_task_id_fkey');
   console.log('✓ 悬赏系统表检测完成');
 };
-

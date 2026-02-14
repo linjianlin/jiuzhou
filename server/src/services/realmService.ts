@@ -5,7 +5,12 @@ import path from 'path';
 import { updateSectionProgress } from './mainQuestService.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
-import { getDungeonDefinitions, getItemDefinitionsByIds, getTechniqueDefinitions } from './staticConfigLoader.js';
+import {
+  getDungeonDefinitions,
+  getDungeonDifficultyById,
+  getItemDefinitionsByIds,
+  getTechniqueDefinitions,
+} from './staticConfigLoader.js';
 
 export type RealmRequirementStatus = 'done' | 'todo' | 'unknown';
 
@@ -267,13 +272,14 @@ const getDungeonDifficultyMap = async (
   client: PoolClient,
   difficultyIds: string[]
 ): Promise<Record<string, { name: string }>> => {
+  void client;
   const ids = Array.from(new Set(difficultyIds.map((s) => String(s || '').trim()).filter((s) => !!s)));
   if (ids.length === 0) return {};
-  const res = await client.query(`SELECT id, name FROM dungeon_difficulty WHERE id = ANY($1::text[])`, [ids]);
   const out: Record<string, { name: string }> = {};
-  for (const r of res.rows as any[]) {
-    if (!r?.id) continue;
-    out[String(r.id)] = { name: String(r.name || r.id) };
+  for (const id of ids) {
+    const def = getDungeonDifficultyById(id);
+    if (!def || def.enabled === false) continue;
+    out[id] = { name: String(def.name || id) };
   }
   return out;
 };

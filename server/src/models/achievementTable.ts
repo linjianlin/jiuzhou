@@ -66,8 +66,5 @@ export const initAchievementTables = async (): Promise<void> => {
   await query(characterAchievementTableSQL);
   await query(characterAchievementPointsTableSQL);
   await query(characterTitleTableSQL);
-  await query('ALTER TABLE character_achievement DROP CONSTRAINT IF EXISTS character_achievement_achievement_id_fkey');
-  await query('ALTER TABLE character_title DROP CONSTRAINT IF EXISTS character_title_title_id_fkey');
   console.log('✓ 成就与称号系统表检测完成');
 };
-

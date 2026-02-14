@@ -52,8 +52,5 @@ CREATE INDEX IF NOT EXISTS idx_month_card_claim_record_character_date ON month_c
 export const initMonthCardTables = async (): Promise<void> => {
   await query(monthCardOwnershipTableSQL);
   await query(monthCardClaimRecordTableSQL);
-  await query('ALTER TABLE month_card_ownership DROP CONSTRAINT IF EXISTS month_card_ownership_month_card_id_fkey');
-  await query('ALTER TABLE month_card_claim_record DROP CONSTRAINT IF EXISTS month_card_claim_record_month_card_id_fkey');
   console.log('✓ 月卡系统表检测完成');
 };
-

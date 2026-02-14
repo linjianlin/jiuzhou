@@ -1,99 +1,10 @@
 import { query } from '../config/database.js';
 
-const dungeonDifficultyTableSQL = `
-CREATE TABLE IF NOT EXISTS dungeon_difficulty (
-  id VARCHAR(64) PRIMARY KEY,
-  dungeon_id VARCHAR(64) NOT NULL,
-  name VARCHAR(32) NOT NULL,
-  difficulty_rank INTEGER NOT NULL,
-  monster_level_add INTEGER NOT NULL DEFAULT 0,
-  monster_attr_mult NUMERIC(8,4) NOT NULL DEFAULT 1.0,
-  reward_mult NUMERIC(8,4) NOT NULL DEFAULT 1.0,
-  min_realm VARCHAR(64),
-  unlock_prev_difficulty BOOLEAN NOT NULL DEFAULT FALSE,
-  first_clear_rewards JSONB NOT NULL DEFAULT '{}'::jsonb,
-  drop_pool_id VARCHAR(64),
-  enabled BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-COMMENT ON TABLE dungeon_difficulty IS '副本秘境难度配置表';
-COMMENT ON COLUMN dungeon_difficulty.id IS '难度ID';
-COMMENT ON COLUMN dungeon_difficulty.dungeon_id IS '秘境ID';
-COMMENT ON COLUMN dungeon_difficulty.name IS '难度名称（普通/困难/地狱/炼狱）';
-COMMENT ON COLUMN dungeon_difficulty.difficulty_rank IS '难度等级（1-5）';
-COMMENT ON COLUMN dungeon_difficulty.monster_level_add IS '怪物等级加成';
-COMMENT ON COLUMN dungeon_difficulty.monster_attr_mult IS '怪物属性倍率';
-COMMENT ON COLUMN dungeon_difficulty.reward_mult IS '奖励倍率';
-COMMENT ON COLUMN dungeon_difficulty.min_realm IS '最低境界要求';
-COMMENT ON COLUMN dungeon_difficulty.unlock_prev_difficulty IS '是否需要通关前一难度';
-COMMENT ON COLUMN dungeon_difficulty.first_clear_rewards IS '首通奖励';
-COMMENT ON COLUMN dungeon_difficulty.drop_pool_id IS '掉落池ID';
-COMMENT ON COLUMN dungeon_difficulty.enabled IS '是否启用';
-
-CREATE INDEX IF NOT EXISTS idx_dungeon_difficulty_dungeon ON dungeon_difficulty(dungeon_id, difficulty_rank);
-CREATE INDEX IF NOT EXISTS idx_dungeon_difficulty_enabled ON dungeon_difficulty(enabled);
-`;
-
-const dungeonStageTableSQL = `
-CREATE TABLE IF NOT EXISTS dungeon_stage (
-  id VARCHAR(64) PRIMARY KEY,
-  difficulty_id VARCHAR(64) NOT NULL REFERENCES dungeon_difficulty(id) ON DELETE CASCADE,
-  stage_index INTEGER NOT NULL,
-  name VARCHAR(64),
-  type VARCHAR(32) NOT NULL,
-  description TEXT,
-  time_limit_sec INTEGER NOT NULL DEFAULT 0,
-  clear_condition JSONB NOT NULL DEFAULT '{}'::jsonb,
-  fail_condition JSONB NOT NULL DEFAULT '{}'::jsonb,
-  stage_rewards JSONB NOT NULL DEFAULT '{}'::jsonb,
-  events JSONB NOT NULL DEFAULT '[]'::jsonb,
-  UNIQUE(difficulty_id, stage_index)
-);
-
-COMMENT ON TABLE dungeon_stage IS '副本秘境关卡配置表';
-COMMENT ON COLUMN dungeon_stage.id IS '关卡ID';
-COMMENT ON COLUMN dungeon_stage.difficulty_id IS '难度ID';
-COMMENT ON COLUMN dungeon_stage.stage_index IS '关卡序号';
-COMMENT ON COLUMN dungeon_stage.name IS '关卡名称';
-COMMENT ON COLUMN dungeon_stage.type IS '关卡类型（battle/boss/event/rest）';
-COMMENT ON COLUMN dungeon_stage.description IS '关卡描述';
-COMMENT ON COLUMN dungeon_stage.time_limit_sec IS '本关时间限制（秒，0=不限）';
-COMMENT ON COLUMN dungeon_stage.clear_condition IS '通关条件';
-COMMENT ON COLUMN dungeon_stage.fail_condition IS '失败条件';
-COMMENT ON COLUMN dungeon_stage.stage_rewards IS '关卡奖励';
-COMMENT ON COLUMN dungeon_stage.events IS '事件配置';
-
-CREATE INDEX IF NOT EXISTS idx_dungeon_stage_difficulty ON dungeon_stage(difficulty_id, stage_index);
-CREATE INDEX IF NOT EXISTS idx_dungeon_stage_type ON dungeon_stage(type);
-`;
-
-const dungeonWaveTableSQL = `
-CREATE TABLE IF NOT EXISTS dungeon_wave (
-  id BIGSERIAL PRIMARY KEY,
-  stage_id VARCHAR(64) NOT NULL REFERENCES dungeon_stage(id) ON DELETE CASCADE,
-  wave_index INTEGER NOT NULL,
-  spawn_delay_sec INTEGER NOT NULL DEFAULT 0,
-  monsters JSONB NOT NULL DEFAULT '[]'::jsonb,
-  wave_rewards JSONB NOT NULL DEFAULT '{}'::jsonb,
-  UNIQUE(stage_id, wave_index)
-);
-
-COMMENT ON TABLE dungeon_wave IS '副本秘境波次配置表';
-COMMENT ON COLUMN dungeon_wave.id IS '主键';
-COMMENT ON COLUMN dungeon_wave.stage_id IS '关卡ID';
-COMMENT ON COLUMN dungeon_wave.wave_index IS '波次序号';
-COMMENT ON COLUMN dungeon_wave.spawn_delay_sec IS '出怪延迟（秒）';
-COMMENT ON COLUMN dungeon_wave.monsters IS '怪物配置列表';
-COMMENT ON COLUMN dungeon_wave.wave_rewards IS '波次奖励';
-
-CREATE INDEX IF NOT EXISTS idx_dungeon_wave_stage ON dungeon_wave(stage_id, wave_index);
-`;
-
 const dungeonInstanceTableSQL = `
 CREATE TABLE IF NOT EXISTS dungeon_instance (
   id VARCHAR(64) PRIMARY KEY,
-  dungeon_id VARCHAR(64) NOT NULL,
-  difficulty_id VARCHAR(64) NOT NULL REFERENCES dungeon_difficulty(id) ON DELETE RESTRICT,
+  dungeon_id VARCHAR(64) NOT NULL,                    -- 秘境ID（静态配置ID）
+  difficulty_id VARCHAR(64) NOT NULL,                 -- 难度ID（静态配置ID）
   creator_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
   team_id VARCHAR(64) REFERENCES teams(id) ON DELETE SET NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'preparing',
@@ -112,8 +23,8 @@ CREATE TABLE IF NOT EXISTS dungeon_instance (
 
 COMMENT ON TABLE dungeon_instance IS '副本秘境实例表';
 COMMENT ON COLUMN dungeon_instance.id IS '实例ID';
-COMMENT ON COLUMN dungeon_instance.dungeon_id IS '秘境ID';
-COMMENT ON COLUMN dungeon_instance.difficulty_id IS '难度ID';
+COMMENT ON COLUMN dungeon_instance.dungeon_id IS '秘境ID（静态配置ID）';
+COMMENT ON COLUMN dungeon_instance.difficulty_id IS '难度ID（静态配置ID）';
 COMMENT ON COLUMN dungeon_instance.creator_id IS '创建者角色ID';
 COMMENT ON COLUMN dungeon_instance.team_id IS '队伍ID';
 COMMENT ON COLUMN dungeon_instance.status IS '状态（preparing/running/cleared/failed/abandoned）';
@@ -138,8 +49,8 @@ const dungeonRecordTableSQL = `
 CREATE TABLE IF NOT EXISTS dungeon_record (
   id BIGSERIAL PRIMARY KEY,
   character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  dungeon_id VARCHAR(64) NOT NULL,
-  difficulty_id VARCHAR(64) NOT NULL REFERENCES dungeon_difficulty(id) ON DELETE RESTRICT,
+  dungeon_id VARCHAR(64) NOT NULL,                    -- 秘境ID（静态配置ID）
+  difficulty_id VARCHAR(64) NOT NULL,                 -- 难度ID（静态配置ID）
   instance_id VARCHAR(64) REFERENCES dungeon_instance(id) ON DELETE SET NULL,
   result VARCHAR(32) NOT NULL,
   time_spent_sec INTEGER NOT NULL DEFAULT 0,
@@ -156,8 +67,8 @@ CREATE TABLE IF NOT EXISTS dungeon_record (
 COMMENT ON TABLE dungeon_record IS '副本秘境通关记录表';
 COMMENT ON COLUMN dungeon_record.id IS '记录ID';
 COMMENT ON COLUMN dungeon_record.character_id IS '角色ID';
-COMMENT ON COLUMN dungeon_record.dungeon_id IS '秘境ID';
-COMMENT ON COLUMN dungeon_record.difficulty_id IS '难度ID';
+COMMENT ON COLUMN dungeon_record.dungeon_id IS '秘境ID（静态配置ID）';
+COMMENT ON COLUMN dungeon_record.difficulty_id IS '难度ID（静态配置ID）';
 COMMENT ON COLUMN dungeon_record.instance_id IS '实例ID';
 COMMENT ON COLUMN dungeon_record.result IS '结果（cleared/failed/abandoned）';
 COMMENT ON COLUMN dungeon_record.time_spent_sec IS '耗时（秒）';
@@ -178,7 +89,7 @@ const dungeonEntryCountTableSQL = `
 CREATE TABLE IF NOT EXISTS dungeon_entry_count (
   id BIGSERIAL PRIMARY KEY,
   character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  dungeon_id VARCHAR(64) NOT NULL,
+  dungeon_id VARCHAR(64) NOT NULL,                    -- 秘境ID（静态配置ID）
   daily_count INTEGER NOT NULL DEFAULT 0,
   weekly_count INTEGER NOT NULL DEFAULT 0,
   total_count INTEGER NOT NULL DEFAULT 0,
@@ -190,7 +101,7 @@ CREATE TABLE IF NOT EXISTS dungeon_entry_count (
 COMMENT ON TABLE dungeon_entry_count IS '副本秘境次数统计表';
 COMMENT ON COLUMN dungeon_entry_count.id IS '主键';
 COMMENT ON COLUMN dungeon_entry_count.character_id IS '角色ID';
-COMMENT ON COLUMN dungeon_entry_count.dungeon_id IS '秘境ID';
+COMMENT ON COLUMN dungeon_entry_count.dungeon_id IS '秘境ID（静态配置ID）';
 COMMENT ON COLUMN dungeon_entry_count.daily_count IS '今日次数';
 COMMENT ON COLUMN dungeon_entry_count.weekly_count IS '本周次数';
 COMMENT ON COLUMN dungeon_entry_count.total_count IS '总次数';
@@ -203,16 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_dungeon_entry_count_dungeon ON dungeon_entry_coun
 
 export const initDungeonTables = async (): Promise<void> => {
   try {
-    console.log('  → 副本秘境定义改为静态JSON加载，跳过建表');
-
-    await query(dungeonDifficultyTableSQL);
-    console.log('  → 副本秘境难度表检测完成');
-
-    await query(dungeonStageTableSQL);
-    console.log('  → 副本秘境关卡表检测完成');
-
-    await query(dungeonWaveTableSQL);
-    console.log('  → 副本秘境波次表检测完成');
+    console.log('  → 副本秘境定义/难度/关卡/波次改为静态JSON加载，跳过建表');
 
     await query(dungeonInstanceTableSQL);
     console.log('  → 副本秘境实例表检测完成');
@@ -223,7 +125,8 @@ export const initDungeonTables = async (): Promise<void> => {
     await query(dungeonEntryCountTableSQL);
     console.log('  → 副本秘境次数表检测完成');
 
-    await query('ALTER TABLE dungeon_difficulty DROP CONSTRAINT IF EXISTS dungeon_difficulty_dungeon_id_fkey');
+    await query('ALTER TABLE dungeon_instance DROP CONSTRAINT IF EXISTS dungeon_instance_difficulty_id_fkey');
+    await query('ALTER TABLE dungeon_record DROP CONSTRAINT IF EXISTS dungeon_record_difficulty_id_fkey');
     await query('ALTER TABLE dungeon_instance DROP CONSTRAINT IF EXISTS dungeon_instance_dungeon_id_fkey');
     await query('ALTER TABLE dungeon_record DROP CONSTRAINT IF EXISTS dungeon_record_dungeon_id_fkey');
     await query('ALTER TABLE dungeon_entry_count DROP CONSTRAINT IF EXISTS dungeon_entry_count_dungeon_id_fkey');
@@ -234,5 +137,3 @@ export const initDungeonTables = async (): Promise<void> => {
     throw error;
   }
 };
-
-
