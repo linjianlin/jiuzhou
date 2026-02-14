@@ -78,39 +78,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 28,
-                  "max": 45
-                },
-                "exp": 85,
-                "items": [
-                  {
-                    "item_def_id": "mat-010",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 0.9
-                  },
-                  {
-                    "item_def_id": "equip-weapon-004",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.03
-                  },
-                  {
-                    "item_def_id": "equip-necklace-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.04
-                  },
-                  {
-                    "item_def_id": "cons-009",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.35
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -157,39 +124,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 40,
-                  "max": 65
-                },
-                "exp": 115,
-                "items": [
-                  {
-                    "item_def_id": "mat-011",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 0.9
-                  },
-                  {
-                    "item_def_id": "equip-accessory-001",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.18
-                  },
-                  {
-                    "item_def_id": "cons-010",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.3
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -236,69 +170,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 90,
-                  "max": 140
-                },
-                "exp": 260,
-                "items": [
-                  {
-                    "item_def_id": "mat-012",
-                    "qty_min": 3,
-                    "qty_max": 6,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "equip-head-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.14
-                  },
-                  {
-                    "item_def_id": "equip-clothes-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "equip-artifact-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "set-zixiao-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.04
-                  },
-                  {
-                    "item_def_id": "set-biluo-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.03
-                  },
-                  {
-                    "item_def_id": "set-biluo-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.03
-                  },
-                  {
-                    "item_def_id": "box-001",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.55
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -382,39 +253,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 50,
-                  "max": 80
-                },
-                "exp": 130,
-                "items": [
-                  {
-                    "item_def_id": "mat-010",
-                    "qty_min": 3,
-                    "qty_max": 6,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-011",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.65
-                  },
-                  {
-                    "item_def_id": "equip-head-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "cons-010",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.45
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -461,45 +299,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 65,
-                  "max": 105
-                },
-                "exp": 170,
-                "items": [
-                  {
-                    "item_def_id": "mat-011",
-                    "qty_min": 3,
-                    "qty_max": 6,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-012",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.55
-                  },
-                  {
-                    "item_def_id": "equip-necklace-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.09
-                  },
-                  {
-                    "item_def_id": "equip-accessory-001",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.28
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -546,87 +345,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 130,
-                  "max": 220
-                },
-                "exp": 420,
-                "items": [
-                  {
-                    "item_def_id": "mat-012",
-                    "qty_min": 5,
-                    "qty_max": 9,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "equip-clothes-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.16
-                  },
-                  {
-                    "item_def_id": "equip-artifact-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.12
-                  },
-                  {
-                    "item_def_id": "set-zixiao-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.09
-                  },
-                  {
-                    "item_def_id": "set-biluo-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.09
-                  },
-                  {
-                    "item_def_id": "set-zixiao-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.07
-                  },
-                  {
-                    "item_def_id": "set-biluo-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.07
-                  },
-                  {
-                    "item_def_id": "set-zixiao-clothes",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "set-biluo-clothes",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "box-001",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 0.8
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 3,
-                    "chance": 0.55
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {

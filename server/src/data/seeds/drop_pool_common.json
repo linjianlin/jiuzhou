@@ -150,6 +150,13 @@
           "show_in_ui": true
         },
         {
+          "item_def_id": "box-007",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
           "item_def_id": "equip-clothes-002",
           "chance": 0.02,
           "qty_min": 1,
@@ -319,15 +326,15 @@
       "mode": "prob",
       "entries": [
         {
-          "item_def_id": "box-007",
-          "chance": 0.02,
+          "item_def_id": "equip-artifact-002",
+          "chance": 0.03,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
-          "item_def_id": "equip-artifact-002",
-          "chance": 0.03,
+          "item_def_id": "box-008",
+          "chance": 0.02,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -413,6 +420,13 @@
       "entries": [
         {
           "item_def_id": "box-008",
+          "chance": 0.02,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "box-005",
           "chance": 0.02,
           "qty_min": 1,
           "qty_max": 1,

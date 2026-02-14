@@ -313,7 +313,6 @@ export type DungeonStageConfig = {
   time_limit_sec?: number;
   clear_condition?: unknown;
   fail_condition?: unknown;
-  stage_rewards?: unknown;
   events?: unknown;
   waves?: DungeonWaveConfig[];
   enabled?: boolean;
@@ -1018,7 +1017,6 @@ const ensureDungeonSnapshot = (): {
             time_limit_sec: Math.max(0, toSafeInt(stageRaw?.time_limit_sec, 0)),
             clear_condition: stageRaw?.clear_condition ?? {},
             fail_condition: stageRaw?.fail_condition ?? {},
-            stage_rewards: stageRaw?.stage_rewards ?? {},
             events: Array.isArray(stageRaw?.events) ? stageRaw.events : [],
             enabled: stageRaw?.enabled !== false,
           };

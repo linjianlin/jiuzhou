@@ -74,27 +74,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 100,
-                  "max": 150
-                },
-                "exp": 260,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-nanhai-lingzhu",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.65
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -141,27 +120,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 120,
-                  "max": 180
-                },
-                "exp": 300,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-nanhai-lingzhu",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.7
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -208,45 +166,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 200,
-                  "max": 300
-                },
-                "exp": 460,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "box-005",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.5
-                  },
-                  {
-                    "item_def_id": "book-lieyang-jian",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.02
-                  },
-                  {
-                    "item_def_id": "book-hanbing-jue",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.02
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -322,27 +241,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 140,
-                  "max": 210
-                },
-                "exp": 360,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-nanhai-lingzhu",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.8
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -389,33 +287,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 170,
-                  "max": 250
-                },
-                "exp": 420,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-nanhai-lingzhu",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.85
-                  },
-                  {
-                    "item_def_id": "box-005",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -462,45 +333,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 260,
-                  "max": 360
-                },
-                "exp": 620,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 5,
-                    "qty_max": 8,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 5,
-                    "qty_max": 8,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "box-005",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.65
-                  },
-                  {
-                    "item_def_id": "book-lieyang-jian",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.06
-                  },
-                  {
-                    "item_def_id": "book-hanbing-jue",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.06
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {

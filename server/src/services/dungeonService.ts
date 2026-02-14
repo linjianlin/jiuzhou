@@ -92,7 +92,6 @@ type DungeonStageRow = {
   time_limit_sec: number;
   clear_condition: unknown;
   fail_condition: unknown;
-  stage_rewards: unknown;
   events: unknown;
 };
 
@@ -203,7 +202,6 @@ const getEnabledDungeonStagesByDifficultyId = (difficultyId: string): DungeonSta
       time_limit_sec: asNumber(entry.time_limit_sec, 0),
       clear_condition: entry.clear_condition ?? {},
       fail_condition: entry.fail_condition ?? {},
-      stage_rewards: entry.stage_rewards ?? {},
       events: entry.events ?? [],
     }))
     .sort((left, right) => left.stage_index - right.stage_index || left.id.localeCompare(right.id));
@@ -793,17 +791,6 @@ export const getDungeonPreview = async (
     const itemDefId = obj?.item_def_id;
     if (typeof itemDefId === 'string' && itemDefId) {
       dropItems.push({ item_def_id: itemDefId, from: `${diffRow.name}·首通` });
-    }
-  }
-
-  for (const s of stages) {
-    const sr = asObject(s.stage_rewards);
-    for (const it of asArray(sr?.items)) {
-      const obj = asObject(it);
-      const itemDefId = obj?.item_def_id;
-      if (typeof itemDefId === 'string' && itemDefId) {
-        dropItems.push({ item_def_id: itemDefId, from: stageNameById.get(s.id) ?? '关卡奖励' });
-      }
     }
   }
 
@@ -1558,8 +1545,6 @@ export const nextDungeonInstance = async (
 
         const difficultyDef = getDungeonDifficultyById(inst.difficulty_id);
         const firstClearRewardConfig = difficultyDef?.first_clear_rewards ?? {};
-        const stageRewardMult = Math.max(0, asNumber(difficultyDef?.reward_mult, 1));
-        const stageDefs = getEnabledDungeonStagesByDifficultyId(inst.difficulty_id);
         const participantCharacterIds = participants.map((p) => Number(p.characterId)).filter((id) => Number.isFinite(id) && id > 0);
         const clearCountMap = new Map<number, number>();
         const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
@@ -1692,14 +1677,8 @@ export const nextDungeonInstance = async (
 
         for (const p of participants) {
           const characterId = Number(p.characterId);
-          if (!Number.isFinite(characterId) || characterId <= 0) continue;
+      if (!Number.isFinite(characterId) || characterId <= 0) continue;
           let rewardBundle: DungeonRewardBundle = { exp: 0, silver: 0, items: [] };
-          for (const row of stageDefs) {
-            rewardBundle = mergeDungeonRewardBundle(
-              rewardBundle,
-              rollDungeonRewardBundle(row.stage_rewards, stageRewardMult)
-            );
-          }
 
           const isFirstClear = asNumber(clearCountMap.get(characterId), 0) <= 0;
           if (isFirstClear) {

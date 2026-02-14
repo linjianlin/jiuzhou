@@ -74,27 +74,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 80,
-                  "max": 120
-                },
-                "exp": 220,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmo",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 0.9
-                  },
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.25
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -152,33 +131,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 100,
-                  "max": 150
-                },
-                "exp": 260,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.75
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.45
-                  },
-                  {
-                    "item_def_id": "set-qinglian-gloves",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -225,45 +177,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 180,
-                  "max": 260
-                },
-                "exp": 420,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-lianji-dan",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.45
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.06
-                  },
-                  {
-                    "item_def_id": "set-qinglian-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -339,27 +252,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 130,
-                  "max": 190
-                },
-                "exp": 320,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.8
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.5
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -406,33 +298,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 150,
-                  "max": 220
-                },
-                "exp": 360,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.9
-                  },
-                  {
-                    "item_def_id": "set-chiyan-gloves",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.06
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-gloves",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.06
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -464,45 +329,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 260,
-                  "max": 360
-                },
-                "exp": 560,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-lianji-dan",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.8
-                  },
-                  {
-                    "item_def_id": "set-chiyan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -578,27 +404,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 190,
-                  "max": 270
-                },
-                "exp": 420,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.6
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -645,33 +450,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 220,
-                  "max": 310
-                },
-                "exp": 470,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-gloves",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "set-qinglian-gloves",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -703,57 +481,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 340,
-                  "max": 460
-                },
-                "exp": 760,
-                "items": [
-                  {
-                    "item_def_id": "mat-xinmo-jinghua",
-                    "qty_min": 4,
-                    "qty_max": 6,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-lianji-dan",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.95
-                  },
-                  {
-                    "item_def_id": "set-chiyan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  },
-                  {
-                    "item_def_id": "set-qinglian-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {

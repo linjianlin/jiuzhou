@@ -6,15 +6,7 @@
       "id": "dp-wild-rabbit",
       "name": "野兔掉落池",
       "mode": "prob",
-      "entries": [
-        {
-          "item_def_id": "box-006",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        }
-      ],
+      "entries": [],
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-ordinary"
@@ -30,13 +22,6 @@
           "chance": 1,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-006",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -55,13 +40,6 @@
           "chance": 0.08,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-006",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -95,13 +73,6 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-006",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -113,15 +84,7 @@
       "id": "dp-venomous-snake",
       "name": "毒蛇掉落池",
       "mode": "prob",
-      "entries": [
-        {
-          "item_def_id": "box-006",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        }
-      ],
+      "entries": [],
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-ordinary"
@@ -152,13 +115,6 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-006",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -174,13 +130,6 @@
         {
           "item_def_id": "book-qingfeng-jian",
           "chance": 0.012,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-007",
-          "chance": 0.16,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -238,13 +187,6 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-008",
-          "chance": 0.16,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -289,13 +231,6 @@
         {
           "item_def_id": "book-jingang-quan",
           "chance": 0.01,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-007",
-          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -455,13 +390,6 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-008",
-          "chance": 0.111,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -515,13 +443,6 @@
           "chance": 0.35,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-008",
-          "chance": 0.16,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -678,13 +599,6 @@
           "qty_min": 2,
           "qty_max": 4,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-008",
-          "chance": 0.111,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -710,13 +624,6 @@
           "chance": 0.95,
           "qty_min": 2,
           "qty_max": 4,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-008",
-          "chance": 0.111,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -784,13 +691,6 @@
           "qty_min": 1,
           "qty_max": 2,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-008",
-          "chance": 0.16,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -817,13 +717,6 @@
           "qty_min": 1,
           "qty_max": 2,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -841,13 +734,6 @@
           "chance": 0.95,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -874,13 +760,6 @@
           "qty_min": 1,
           "qty_max": 2,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -898,13 +777,6 @@
           "chance": 0.75,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -931,13 +803,6 @@
           "qty_min": 2,
           "qty_max": 4,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.111,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -963,13 +828,6 @@
           "chance": 0.95,
           "qty_min": 2,
           "qty_max": 4,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.111,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],
@@ -1003,13 +861,6 @@
           "chance": 0.65,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.96,
-          "qty_min": 1,
-          "qty_max": 3,
           "show_in_ui": true
         }
       ],
@@ -1057,13 +908,6 @@
           "chance": 1,
           "qty_min": 4,
           "qty_max": 7,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "box-005",
-          "chance": 0.94,
-          "qty_min": 1,
-          "qty_max": 3,
           "show_in_ui": true
         }
       ],

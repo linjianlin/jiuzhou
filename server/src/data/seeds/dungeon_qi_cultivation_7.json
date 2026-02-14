@@ -74,33 +74,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 90,
-                  "max": 140
-                },
-                "exp": 220,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "enhance-001",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.8
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-gloves",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -147,33 +120,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 110,
-                  "max": 165
-                },
-                "exp": 260,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-youming-gupi",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.7
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.45
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -220,45 +166,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 190,
-                  "max": 280
-                },
-                "exp": 420,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 4,
-                    "qty_max": 7,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-youming-gupi",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.8
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.07
-                  },
-                  {
-                    "item_def_id": "set-chiyan-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -334,27 +241,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 140,
-                  "max": 205
-                },
-                "exp": 320,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.55
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -386,33 +272,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 165,
-                  "max": 240
-                },
-                "exp": 360,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 4,
-                    "qty_max": 6,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-youming-gupi",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.85
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-clothes",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.07
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -444,45 +303,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 260,
-                  "max": 360
-                },
-                "exp": 560,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 6,
-                    "qty_max": 9,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-youming-gupi",
-                    "qty_min": 3,
-                    "qty_max": 4,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.09
-                  },
-                  {
-                    "item_def_id": "set-chiyan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -514,33 +334,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 120,
-                  "max": 180
-                },
-                "exp": 260,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 5,
-                    "qty_max": 8,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.85
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-necklace",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -605,27 +398,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 210,
-                  "max": 300
-                },
-                "exp": 430,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 5,
-                    "qty_max": 8,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 2,
-                    "qty_max": 3,
-                    "chance": 0.8
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -657,33 +429,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 240,
-                  "max": 340
-                },
-                "exp": 480,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 6,
-                    "qty_max": 9,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-youming-gupi",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-clothes",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -715,57 +460,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 360,
-                  "max": 500
-                },
-                "exp": 780,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 8,
-                    "qty_max": 12,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-youming-gupi",
-                    "qty_min": 4,
-                    "qty_max": 6,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "set-chiyan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.12
-                  },
-                  {
-                    "item_def_id": "set-xuanwu-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.12
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.12
-                  },
-                  {
-                    "item_def_id": "set-qinglian-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.12
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -797,39 +491,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 180,
-                  "max": 260
-                },
-                "exp": 350,
-                "items": [
-                  {
-                    "item_def_id": "mat-lingmai-jingshi",
-                    "qty_min": 7,
-                    "qty_max": 10,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 3,
-                    "qty_max": 4,
-                    "chance": 0.9
-                  },
-                  {
-                    "item_def_id": "set-tianxuan-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  },
-                  {
-                    "item_def_id": "set-qinglian-artifact",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.1
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {

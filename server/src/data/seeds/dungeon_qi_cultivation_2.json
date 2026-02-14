@@ -74,33 +74,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 18,
-                  "max": 32
-                },
-                "exp": 50,
-                "items": [
-                  {
-                    "item_def_id": "mat-002",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-007",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.45
-                  },
-                  {
-                    "item_def_id": "cons-006",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.3
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -143,33 +116,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 25,
-                  "max": 40
-                },
-                "exp": 65,
-                "items": [
-                  {
-                    "item_def_id": "mat-002",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-007",
-                    "qty_min": 1,
-                    "qty_max": 3,
-                    "chance": 0.6
-                  },
-                  {
-                    "item_def_id": "enhance-001",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.25
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -212,51 +158,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 40,
-                  "max": 70
-                },
-                "exp": 120,
-                "items": [
-                  {
-                    "item_def_id": "mat-002",
-                    "qty_min": 4,
-                    "qty_max": 7,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-007",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 0.75
-                  },
-                  {
-                    "item_def_id": "enhance-001",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.45
-                  },
-                  {
-                    "item_def_id": "mat-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.08
-                  },
-                  {
-                    "item_def_id": "set-xuantie-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.025
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -332,33 +233,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 30,
-                  "max": 50
-                },
-                "exp": 80,
-                "items": [
-                  {
-                    "item_def_id": "mat-002",
-                    "qty_min": 4,
-                    "qty_max": 7,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-007",
-                    "qty_min": 2,
-                    "qty_max": 4,
-                    "chance": 0.75
-                  },
-                  {
-                    "item_def_id": "enhance-001",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.45
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -397,39 +271,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 42,
-                  "max": 68
-                },
-                "exp": 110,
-                "items": [
-                  {
-                    "item_def_id": "mat-002",
-                    "qty_min": 5,
-                    "qty_max": 8,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-007",
-                    "qty_min": 3,
-                    "qty_max": 5,
-                    "chance": 0.8
-                  },
-                  {
-                    "item_def_id": "mat-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.12
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
@@ -472,69 +313,6 @@
                 "type": "kill_all"
               },
               "fail_condition": {},
-              "stage_rewards": {
-                "silver": {
-                  "min": 80,
-                  "max": 130
-                },
-                "exp": 220,
-                "items": [
-                  {
-                    "item_def_id": "mat-002",
-                    "qty_min": 7,
-                    "qty_max": 12,
-                    "chance": 1
-                  },
-                  {
-                    "item_def_id": "mat-007",
-                    "qty_min": 4,
-                    "qty_max": 7,
-                    "chance": 0.9
-                  },
-                  {
-                    "item_def_id": "mat-003",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.22
-                  },
-                  {
-                    "item_def_id": "enhance-002",
-                    "qty_min": 1,
-                    "qty_max": 2,
-                    "chance": 0.4
-                  },
-                  {
-                    "item_def_id": "box-001",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.35
-                  },
-                  {
-                    "item_def_id": "set-xuantie-weapon",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.07
-                  },
-                  {
-                    "item_def_id": "set-xuantie-head",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.06
-                  },
-                  {
-                    "item_def_id": "set-xuantie-clothes",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.05
-                  },
-                  {
-                    "item_def_id": "scroll-003",
-                    "qty_min": 1,
-                    "qty_max": 1,
-                    "chance": 0.2
-                  }
-                ]
-              },
               "events": [],
               "waves": [
                 {
