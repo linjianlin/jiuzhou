@@ -27,6 +27,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  box-sizing: border-box;
+  /* 与右侧 .bp-pane-top 统一桌面端基线高度，避免顶部横线错位。 */
+  min-height: 98px;
 }
 
 .bp-left-icon {
@@ -91,12 +94,15 @@
 
 .bp-pane-top {
   flex: 0 0 auto;
-  padding: 12px 14px;
+  /* 桌面端预留右上角关闭按钮点击区，避免右侧 tags 与关闭按钮重叠。 */
+  padding: 12px 56px 12px 14px;
   border-bottom: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-sizing: border-box;
+  min-height: 98px;
 }
 
 .bp-top-row {
@@ -331,6 +337,7 @@
     padding: 10px 12px 8px;
     border-bottom: none;
     gap: 8px;
+    min-height: 0;
   }
 
   .bp-left-name {
@@ -356,6 +363,7 @@
   .bp-pane-top {
     padding: 10px 12px;
     gap: 8px;
+    min-height: 0;
   }
 
   .bp-top-row {

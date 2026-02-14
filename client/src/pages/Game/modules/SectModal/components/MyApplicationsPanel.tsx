@@ -36,7 +36,6 @@ const MyApplicationsPanel: React.FC<MyApplicationsPanelProps> = ({ loading, appl
       <div className="sect-pane-top">
         <div className="sect-pane-title-wrap">
           <div className="sect-title">我的申请</div>
-          <div className="sect-subtitle">查看你当前未处理的宗门申请，可随时撤回。</div>
         </div>
         <div className="sect-pane-actions">
           <Button onClick={onRefresh} loading={loading}>

@@ -6,7 +6,6 @@
  */
 import { Button, Input, Table, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
-import { useMemo } from 'react';
 import { JOIN_TYPE_LABEL_MAP } from '../constants';
 import type { SectJoinState, SectListItemVm } from '../types';
 import { useIsMobile } from '../../../shared/responsive';
@@ -38,11 +37,6 @@ const NoSectHallPanel: React.FC<NoSectHallPanelProps> = ({
 }) => {
   const isMobile = useIsMobile();
 
-  const description = useMemo(() => {
-    if (joinState === 'pending') return '你已提交入门申请，可在“我的申请”中撤回。';
-    return '检索宗门、提交申请，或直接创建属于你的宗门。';
-  }, [joinState]);
-
   const renderActionButton = (sectId: string) => {
     const isCurrent = activeSectId === sectId;
     const isPending = joinState === 'pending' && isCurrent;
@@ -67,7 +61,6 @@ const NoSectHallPanel: React.FC<NoSectHallPanelProps> = ({
       <div className="sect-pane-top">
         <div className="sect-pane-title-wrap">
           <div className="sect-title">宗门大厅</div>
-          <div className="sect-subtitle">{description}</div>
         </div>
         <div className="sect-pane-actions">
           <Button type="primary" onClick={onOpenCreate}>

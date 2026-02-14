@@ -81,7 +81,6 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
     <div className="rank-pane-top">
       <div className="rank-top-row">
         <div className="rank-title">{title}</div>
-        <Tag color="blue">{loading ? '加载中...' : '实时排行'}</Tag>
       </div>
       <div className="rank-subtitle">{subtitle}</div>
     </div>

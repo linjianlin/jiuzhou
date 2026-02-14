@@ -27,6 +27,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  box-sizing: border-box;
+  /* 与右侧 rank-pane-top 统一桌面端头部高度，避免分割线错位。 */
+  min-height: 76px;
 }
 
 .rank-left-icon {
@@ -97,6 +100,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-sizing: border-box;
+  min-height: 76px;
 }
 
 .rank-top-row {
@@ -245,6 +250,7 @@
     padding: 10px 12px 8px;
     border-bottom: none;
     gap: 8px;
+    min-height: 0;
   }
 
   .rank-left-name {
@@ -270,6 +276,7 @@
   .rank-pane-top {
     padding: 10px 12px;
     gap: 8px;
+    min-height: 0;
   }
 
   .rank-pane-body {

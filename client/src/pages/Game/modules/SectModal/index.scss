@@ -27,6 +27,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  box-sizing: border-box;
+  /* 与右侧 .sect-pane-top 统一桌面端基线高度，避免分割线出现错位。 */
+  min-height: 57px;
 }
 
 .sect-left-name {
@@ -245,16 +248,19 @@
 
 .sect-pane-top {
   flex: 0 0 auto;
-  padding: 12px 14px;
+  /* 桌面端预留右上角关闭按钮点击区，避免顶部操作按钮（如“刷新”）发生重叠。 */
+  padding: 12px 56px 12px 14px;
   border-bottom: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: 10px;
+  box-sizing: border-box;
+  min-height: 57px;
 }
 
 .sect-pane-title-wrap {
+  flex: 1;
   min-width: 0;
 }
 
@@ -274,6 +280,9 @@
 .sect-pane-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  margin-left: auto;
   gap: 8px;
 }
 
@@ -310,28 +319,28 @@
   font-size: 12px;
 }
 
-.sect-table .ant-table-thead > tr > th,
-.sect-table .ant-table-tbody > tr > td {
+.sect-table .ant-table-thead>tr>th,
+.sect-table .ant-table-tbody>tr>td {
   padding: 8px 8px;
 }
 
-.sect-table .ant-table-tbody > tr.sect-member-row-offline > td {
+.sect-table .ant-table-tbody>tr.sect-member-row-offline>td {
   color: color-mix(in srgb, var(--text-tertiary) 92%, #8c8c8c);
   background: color-mix(in srgb, var(--panel-bg) 72%, #7f7f7f);
   opacity: 0.58;
 }
 
-.sect-table .ant-table-tbody > tr.sect-member-row-offline .ant-tag {
+.sect-table .ant-table-tbody>tr.sect-member-row-offline .ant-tag {
   opacity: 0.46;
   filter: grayscale(1);
 }
 
-.sect-table .ant-table-tbody > tr.sect-member-row-offline .ant-btn {
+.sect-table .ant-table-tbody>tr.sect-member-row-offline .ant-btn {
   opacity: 0.46;
   filter: grayscale(1);
 }
 
-.sect-table .ant-table-tbody > tr.sect-member-row-offline:hover > td {
+.sect-table .ant-table-tbody>tr.sect-member-row-offline:hover>td {
   background: color-mix(in srgb, var(--panel-bg) 72%, #7f7f7f);
 }
 
@@ -679,6 +688,7 @@
 
   &.is-lack {
     color: var(--danger-color);
+
     .cost-label {
       color: var(--danger-color);
       opacity: 0.8;
@@ -1272,6 +1282,7 @@
   .sect-left-title {
     padding: 10px 12px 8px;
     border-bottom: none;
+    min-height: 0;
   }
 
   .sect-left-list {
@@ -1317,8 +1328,10 @@
   }
 
   .sect-pane-top {
+    /* 移动端内容区位于分段栏下方，不会与顶部关闭按钮重叠，保持正常右侧内边距。 */
     padding: 10px 12px;
     gap: 8px;
+    min-height: 0;
   }
 
   .sect-pane-body {
@@ -1341,7 +1354,9 @@
   }
 
   .sect-search-bar {
-    grid-template-columns: 1fr;
+    /* 移动端保持输入框 + 搜索按钮同一行，避免纵向占用过高。 */
+    grid-template-columns: minmax(0, 1fr) 88px;
+    gap: 8px;
   }
 
   .sect-shop-grid,
