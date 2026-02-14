@@ -826,33 +826,24 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.sect-shop-batch-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-
-  .ant-btn {
-    height: 28px;
-    border-radius: 8px;
-    padding-inline: 10px;
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  .ant-input-number {
-    width: 72px;
-    border-radius: 8px;
-  }
+  gap: 0;
 }
 
 .sect-shop-batch-input {
+  border-radius: 8px;
+
   .ant-input-number-input {
     text-align: center;
+    font-weight: 700;
   }
+}
+
+/**
+ * antd 的 spinner 模式会写入 `.ant-input-number-mode-spinner { width: auto }`。
+ * 这里提高选择器优先级，确保商店批量输入能固定为三位数宽度。
+ */
+.sect-shop-batch-input.ant-input-number-mode-spinner {
+  width: 108px;
 }
 
 .sect-shop-card-footer {
@@ -1376,21 +1367,11 @@
     margin-left: auto;
     width: auto;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 0;
   }
 
-  .sect-shop-batch-controls .ant-btn {
-    min-width: 28px;
-    height: 26px;
-    padding-inline: 6px;
-  }
-
-  .sect-shop-batch-controls .ant-input-number {
-    width: 52px;
-  }
-
-  .sect-shop-batch-btn-max {
-    display: none;
+  .sect-shop-batch-input.ant-input-number-mode-spinner {
+    width: 96px;
   }
 
   .sect-mobile-card {

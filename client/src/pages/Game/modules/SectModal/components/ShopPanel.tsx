@@ -115,13 +115,6 @@ const ShopPanel: React.FC<ShopPanelProps> = ({ loading, myContribution, shopItem
     });
   }, []);
 
-  const stepBuyCount = useCallback(
-    (itemId: string, delta: number, currentValue: number, maxCount: number) => {
-      updateBuyCount(itemId, currentValue + delta, maxCount);
-    },
-    [updateBuyCount]
-  );
-
   return (
     <div className="sect-pane">
       <div className="sect-pane-top">
@@ -184,51 +177,19 @@ const ShopPanel: React.FC<ShopPanelProps> = ({ loading, myContribution, shopItem
                   </div>
                   {canBatchBuy ? (
                     <div className="sect-shop-batch" aria-label="兑换次数">
-                      <div className="sect-shop-batch-controls">
-                        <Button
-                          className="sect-shop-batch-btn-dec"
-                          size="small"
-                          disabled={!affordable || isLoading || buyCount <= 1}
-                          onClick={() => {
-                            stepBuyCount(item.id, -1, buyCount, maxBuyCount);
-                          }}
-                        >
-                          -
-                        </Button>
-                        <InputNumber
-                          size="small"
-                          min={1}
-                          max={maxBuyCount}
-                          controls={false}
-                          value={buyCount}
-                          className="sect-shop-batch-input"
-                          disabled={!affordable || isLoading}
-                          onChange={(value) => {
-                            if (typeof value !== 'number') return;
-                            updateBuyCount(item.id, value, maxBuyCount);
-                          }}
-                        />
-                        <Button
-                          className="sect-shop-batch-btn-inc"
-                          size="small"
-                          disabled={!affordable || isLoading || buyCount >= maxBuyCount}
-                          onClick={() => {
-                            stepBuyCount(item.id, 1, buyCount, maxBuyCount);
-                          }}
-                        >
-                          +
-                        </Button>
-                        <Button
-                          className="sect-shop-batch-btn-max"
-                          size="small"
-                          disabled={!affordable || isLoading || buyCount >= maxBuyCount}
-                          onClick={() => {
-                            updateBuyCount(item.id, maxBuyCount, maxBuyCount);
-                          }}
-                        >
-                          最大
-                        </Button>
-                      </div>
+                      <InputNumber
+                        size="small"
+                        mode="spinner"
+                        min={1}
+                        max={maxBuyCount}
+                        value={buyCount}
+                        className="sect-shop-batch-input"
+                        disabled={!affordable || isLoading}
+                        onChange={(value) => {
+                          if (typeof value !== 'number') return;
+                          updateBuyCount(item.id, value, maxBuyCount);
+                        }}
+                      />
                     </div>
                   ) : null}
                 </div>
