@@ -891,14 +891,14 @@
         },
         {
           "item_def_id": "book-lieyang-jian",
-          "chance": 0.06,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "book-hanbing-jue",
-          "chance": 0.06,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
