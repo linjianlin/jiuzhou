@@ -613,14 +613,16 @@
           "chance": 0.25,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
+          "show_in_ui": true,
+          "qty_multiply_by_monster_realm": 1.5
         },
         {
           "item_def_id": "scroll-003",
           "chance": 0.05,
           "qty_min": 1,
           "qty_max": 1,
-          "show_in_ui": true
+          "show_in_ui": true,
+          "qty_multiply_by_monster_realm": 1.5
         }
       ],
       "enabled": true
@@ -632,17 +634,19 @@
       "entries": [
         {
           "item_def_id": "box-001",
-          "chance": 0.5,
+          "chance": 0.8,
           "qty_min": 1,
           "qty_max": 3,
-          "show_in_ui": true
+          "show_in_ui": true,
+          "qty_multiply_by_monster_realm": 2
         },
         {
           "item_def_id": "scroll-003",
-          "chance": 0.25,
+          "chance": 0.5,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
+          "show_in_ui": true,
+          "qty_multiply_by_monster_realm": 2
         }
       ],
       "enabled": true

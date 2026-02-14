@@ -21,6 +21,7 @@ import { getItemDefinitionById, getMonsterDefinitions } from './staticConfigLoad
 import { resolveDropPoolById } from './dropPoolResolver.js';
 import {
   getAdjustedChance,
+  getAdjustedQuantity,
   getAdjustedWeight,
   normalizeMonsterKind,
   type MonsterKind,
@@ -41,6 +42,7 @@ interface DropPoolEntry {
   weight: number;        // 权重模式下的权重
   qty_min: number;
   qty_max: number;
+  qty_multiply_by_monster_realm: number;
   quality_weights: Record<string, number> | null;  // 装备品质权重
   bind_type: string;
   sourceType: 'common' | 'exclusive';
@@ -130,12 +132,54 @@ export const getDropPool = async (poolId: string): Promise<DropPool | null> => {
       weight: entry.weight,
       qty_min: entry.qty_min,
       qty_max: entry.qty_max,
+      qty_multiply_by_monster_realm: entry.qty_multiply_by_monster_realm,
       quality_weights: entry.quality_weights,
       bind_type: entry.bind_type,
       sourceType: entry.sourceType,
       sourcePoolId: entry.sourcePoolId,
     })),
   };
+};
+
+const dropQtyMultiplierEligibilityCache = new Map<string, boolean>();
+
+const hasLearnTechniqueEffect = (effectDefs: unknown): boolean => {
+  if (!Array.isArray(effectDefs)) return false;
+  return effectDefs.some((raw) => {
+    if (!raw || typeof raw !== 'object') return false;
+    const effectType = (raw as { effect_type?: unknown }).effect_type;
+    return String(effectType || '').trim().toLowerCase() === 'learn_technique';
+  });
+};
+
+/**
+ * 掉落数量倍率仅作用于“非装备、非功法类”物品：
+ * 1. 排除装备（category=equipment）
+ * 2. 排除功法材料/功法书（sub_category=technique / technique_book）
+ * 3. 排除带有 learn_technique 效果的道具（防止漏掉特殊功法书）
+ */
+const shouldApplyDropQuantityMultiplier = (itemDefId: string): boolean => {
+  const cached = dropQtyMultiplierEligibilityCache.get(itemDefId);
+  if (typeof cached === 'boolean') return cached;
+
+  const def = getItemDefinitionById(itemDefId);
+  const category = String(def?.category || '').trim().toLowerCase();
+  const subCategory = String(def?.sub_category || '').trim().toLowerCase();
+  const isTechniqueLike =
+    subCategory === 'technique' ||
+    subCategory === 'technique_book' ||
+    hasLearnTechniqueEffect(def?.effect_defs);
+  const shouldApply = category !== 'equipment' && !isTechniqueLike;
+
+  dropQtyMultiplierEligibilityCache.set(itemDefId, shouldApply);
+  return shouldApply;
+};
+
+const applyMonsterRealmDropQtyMultiplier = (baseQuantity: number, multiplierRaw: number): number => {
+  const multiplier = Number(multiplierRaw);
+  if (!Number.isFinite(multiplier) || multiplier <= 0) return baseQuantity;
+  if (multiplier === 1) return baseQuantity;
+  return Math.max(1, Math.floor(baseQuantity * multiplier));
 };
 
 // ============================================
@@ -164,7 +208,17 @@ export const rollDrops = (
         monsterKind,
       });
       if (Math.random() < effectiveChance) {
-        const quantity = randomInt(entry.qty_min, entry.qty_max);
+        const adjustedQuantity = getAdjustedQuantity(
+          randomInt(entry.qty_min, entry.qty_max),
+          entry.sourceType,
+          entry.sourcePoolId,
+          { isDungeonBattle, monsterKind },
+          shouldApplyDropQuantityMultiplier(entry.item_def_id),
+        );
+        const quantity = applyMonsterRealmDropQtyMultiplier(
+          adjustedQuantity,
+          entry.qty_multiply_by_monster_realm,
+        );
         results.push({
           itemDefId: entry.item_def_id,
           quantity,
@@ -189,7 +243,17 @@ export const rollDrops = (
           monsterKind,
         });
         if (roll <= 0) {
-          const quantity = randomInt(entry.qty_min, entry.qty_max);
+          const adjustedQuantity = getAdjustedQuantity(
+            randomInt(entry.qty_min, entry.qty_max),
+            entry.sourceType,
+            entry.sourcePoolId,
+            { isDungeonBattle, monsterKind },
+            shouldApplyDropQuantityMultiplier(entry.item_def_id),
+          );
+          const quantity = applyMonsterRealmDropQtyMultiplier(
+            adjustedQuantity,
+            entry.qty_multiply_by_monster_realm,
+          );
           results.push({
             itemDefId: entry.item_def_id,
             quantity,

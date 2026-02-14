@@ -574,6 +574,7 @@ export type DropPoolEntryConfig = {
   weight?: number;
   qty_min?: number;
   qty_max?: number;
+  qty_multiply_by_monster_realm?: number;
   quality_weights?: Record<string, unknown> | null;
   bind_type?: string;
   show_in_ui?: boolean;

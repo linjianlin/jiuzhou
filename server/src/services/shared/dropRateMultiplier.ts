@@ -4,6 +4,7 @@
  * 作用：
  * 1. 统一通用掉落池倍率规则（副本/世界、普通/精英/BOSS）
  * 2. 给展示层提供“翻倍后”的概率/权重值计算入口
+ * 3. 给结算层提供“翻倍后”的数量计算入口（按业务条件开启）
  */
 
 export type MonsterKind = 'normal' | 'elite' | 'boss';
@@ -90,4 +91,25 @@ export const getAdjustedWeight = (
 ): number => {
   if (!Number.isFinite(weight) || weight <= 0) return 0;
   return weight * getCommonPoolMultiplier(sourceType, sourcePoolId, options);
+};
+
+/**
+ * 数量模式：
+ * - shouldApplyMultiplier=false 时直接返回原数量
+ * - shouldApplyMultiplier=true 时按通用掉落池倍率放大
+ */
+export const getAdjustedQuantity = (
+  quantity: number,
+  sourceType: DropEntrySourceType,
+  sourcePoolId: string,
+  options: DropMultiplierContext = {},
+  shouldApplyMultiplier: boolean = true,
+): number => {
+  const baseQty = Math.max(0, Math.floor(Number(quantity) || 0));
+  if (baseQty <= 0) return 0;
+  if (!shouldApplyMultiplier) return baseQty;
+
+  const multiplier = getCommonPoolMultiplier(sourceType, sourcePoolId, options);
+  if (!Number.isFinite(multiplier) || multiplier <= 1) return baseQty;
+  return Math.max(1, Math.floor(baseQty * multiplier));
 };

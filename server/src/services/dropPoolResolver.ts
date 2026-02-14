@@ -32,6 +32,7 @@ export type ResolvedDropPoolEntry = {
   weight: number;
   qty_min: number;
   qty_max: number;
+  qty_multiply_by_monster_realm: number;
   quality_weights: Record<string, number> | null;
   bind_type: string;
   show_in_ui: boolean;
@@ -78,12 +79,15 @@ const normalizeEntry = (entry: DropPoolEntryConfig): Omit<ResolvedDropPoolEntry,
   if (!itemDefId) return null;
 
   const { qtyMin, qtyMax } = normalizeQtyRange(entry);
+  const qtyMultiplyByMonsterRealmRaw = toFiniteNumber(entry.qty_multiply_by_monster_realm, 1);
+  const qtyMultiplyByMonsterRealm = qtyMultiplyByMonsterRealmRaw > 0 ? qtyMultiplyByMonsterRealmRaw : 1;
   return {
     item_def_id: itemDefId,
     chance: Math.max(0, toFiniteNumber(entry.chance, 0)),
     weight: Math.max(0, Math.floor(toFiniteNumber(entry.weight, 0))),
     qty_min: qtyMin,
     qty_max: qtyMax,
+    qty_multiply_by_monster_realm: qtyMultiplyByMonsterRealm,
     quality_weights: normalizeQualityWeights(entry.quality_weights),
     bind_type: typeof entry.bind_type === 'string' && entry.bind_type.trim().length > 0 ? entry.bind_type.trim() : 'none',
     show_in_ui: entry.show_in_ui !== false,
