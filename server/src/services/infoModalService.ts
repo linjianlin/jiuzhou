@@ -8,6 +8,13 @@ import {
   getTechniqueDefinitions,
 } from './staticConfigLoader.js';
 import { resolveDropPoolById } from './dropPoolResolver.js';
+import {
+  getAdjustedChance,
+  getAdjustedWeight,
+  normalizeMonsterKind,
+  type DropEntrySourceType,
+  type MonsterKind,
+} from './shared/dropRateMultiplier.js';
 
 type InfoTargetType = 'npc' | 'monster' | 'item' | 'player';
 
@@ -20,6 +27,8 @@ type DropEntryRow = {
   qty_max: number;
   sort_order: number;
   bind_type: string | null;
+  sourceType: DropEntrySourceType;
+  sourcePoolId: string;
 };
 
 type NpcRow = {
@@ -39,6 +48,7 @@ type MonsterRow = {
   title: string | null;
   realm: string | null;
   avatar: string | null;
+  kind: string | null;
   base_attrs: unknown;
   attr_variance: unknown;
   attr_multiplier_min: unknown;
@@ -282,7 +292,13 @@ const EQUIPPED_SLOT_TO_UI_LABEL: Record<string, string> = {
   artifact: '法宝',
 };
 
-const getDropsByPoolId = async (dropPoolId: string): Promise<Array<{ name: string; quality: string; chance: string }>> => {
+const getDropsByPoolId = async (
+  dropPoolId: string,
+  options: {
+    isDungeonBattle?: boolean;
+    monsterKind?: MonsterKind;
+  } = {},
+): Promise<Array<{ name: string; quality: string; chance: string }>> => {
   const pool = resolveDropPoolById(dropPoolId);
   if (!pool) return [];
 
@@ -302,6 +318,8 @@ const getDropsByPoolId = async (dropPoolId: string): Promise<Array<{ name: strin
         qty_max: qtyMax,
         sort_order: Math.max(0, Math.floor(Number(entry.sort_order) || 0)),
         bind_type: entry.bind_type,
+        sourceType: entry.sourceType,
+        sourcePoolId: entry.sourcePoolId,
       } satisfies DropEntryRow;
     })
     .filter((entry) => entry.item_def_id.length > 0)
@@ -323,7 +341,16 @@ const getDropsByPoolId = async (dropPoolId: string): Promise<Array<{ name: strin
     });
   }
 
-  const totalWeight = mode === 'weight' ? rows.reduce((sum, r) => sum + Number(r.weight ?? 0), 0) : 0;
+  const totalWeight = mode === 'weight'
+    ? rows.reduce(
+      (sum, r) =>
+        sum + getAdjustedWeight(r.weight, r.sourceType, r.sourcePoolId, {
+          isDungeonBattle: options.isDungeonBattle === true,
+          monsterKind: normalizeMonsterKind(options.monsterKind),
+        }),
+      0,
+    )
+    : 0;
 
   return rows.map((r) => {
     const itemDef = itemDefMap.get(r.item_def_id);
@@ -337,7 +364,18 @@ const getDropsByPoolId = async (dropPoolId: string): Promise<Array<{ name: strin
     const quality = (itemDef?.quality ?? '-').trim() || '-';
     const chanceVal = Number(r.chance ?? 0);
     const weightVal = Number(r.weight ?? 0);
-    const chance = formatChance(mode, chanceVal, weightVal, totalWeight);
+    const chance = formatChance(
+      mode,
+      getAdjustedChance(chanceVal, r.sourceType, r.sourcePoolId, {
+        isDungeonBattle: options.isDungeonBattle === true,
+        monsterKind: normalizeMonsterKind(options.monsterKind),
+      }),
+      getAdjustedWeight(weightVal, r.sourceType, r.sourcePoolId, {
+        isDungeonBattle: options.isDungeonBattle === true,
+        monsterKind: normalizeMonsterKind(options.monsterKind),
+      }),
+      totalWeight,
+    );
 
     return { name, quality, chance };
   });
@@ -364,7 +402,10 @@ export const getInfoTargetDetail = async (type: InfoTargetType, id: string): Pro
   if (type === 'monster') {
     const monster = (getMonsterDefinitions().find((entry) => entry.enabled !== false && entry.id === id) ?? null) as MonsterRow | null;
     if (!monster) return null;
-    const drops = monster.drop_pool_id ? await getDropsByPoolId(monster.drop_pool_id) : [];
+    const monsterKind = normalizeMonsterKind(monster.kind);
+    const drops = monster.drop_pool_id
+      ? await getDropsByPoolId(monster.drop_pool_id, { isDungeonBattle: false, monsterKind })
+      : [];
     const baseAttrs = asNumberRecord(monster.base_attrs);
     const stats = buildMonsterStats(baseAttrs, asStatList(monster.display_stats)) ?? [];
     const variance = asNumber(monster.attr_variance);

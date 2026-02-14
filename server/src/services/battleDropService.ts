@@ -19,6 +19,12 @@ import { normalizeAutoDisassembleSetting } from './autoDisassembleRules.js';
 import type { MonsterData } from '../battle/BattleFactory.js';
 import { getItemDefinitionById, getMonsterDefinitions } from './staticConfigLoader.js';
 import { resolveDropPoolById } from './dropPoolResolver.js';
+import {
+  getAdjustedChance,
+  getAdjustedWeight,
+  normalizeMonsterKind,
+  type MonsterKind,
+} from './shared/dropRateMultiplier.js';
 
 // ============================================
 // 类型定义
@@ -49,32 +55,10 @@ interface DropPool {
   entries: DropPoolEntry[];
 }
 
-type MonsterKind = 'normal' | 'elite' | 'boss';
-
 type RollDropsOptions = {
   isDungeonBattle?: boolean;
   monsterKind?: MonsterKind;
 };
-
-const COMMON_POOL_MULTIPLIER = {
-  normal: {
-    normalBattle: 1,
-    dungeonBattle: 2,
-  },
-  elite: {
-    normalBattle: 2,
-    dungeonBattle: 4,
-  },
-  boss: {
-    normalBattle: 4,
-    dungeonBattle: 6,
-  },
-} as const;
-
-const EXCLUDED_COMMON_POOLS_FOR_MULTIPLIER = new Set<string>([
-  'dp-common-monster-elite',
-  'dp-common-monster-boss',
-]);
 
 type DistributeBattleRewardsOptions = {
   isDungeonBattle?: boolean;
@@ -161,24 +145,6 @@ export const getDropPool = async (poolId: string): Promise<DropPool | null> => {
 /**
  * 从掉落池计算掉落物品
  */
-const normalizeMonsterKind = (kind: unknown): MonsterKind => {
-  const normalizedKind = String(kind || '').trim().toLowerCase();
-  if (normalizedKind === 'boss') return 'boss';
-  if (normalizedKind === 'elite') return 'elite';
-  return 'normal';
-};
-
-const getCommonPoolMultiplier = (
-  entry: DropPoolEntry,
-  isDungeonBattle: boolean,
-  monsterKind: MonsterKind = 'normal'
-): number => {
-  if (entry.sourceType !== 'common') return 1;
-  if (EXCLUDED_COMMON_POOLS_FOR_MULTIPLIER.has(entry.sourcePoolId)) return 1;
-  const multiplierConfig = COMMON_POOL_MULTIPLIER[monsterKind];
-  return isDungeonBattle ? multiplierConfig.dungeonBattle : multiplierConfig.normalBattle;
-};
-
 export const rollDrops = (
   dropPool: DropPool,
   fuyuan: number = 0,
@@ -193,8 +159,10 @@ export const rollDrops = (
   if (dropPool.mode === 'prob') {
     // 概率模式：每个条目独立判定
     for (const entry of dropPool.entries) {
-      const poolMultiplier = getCommonPoolMultiplier(entry, isDungeonBattle, monsterKind);
-      const effectiveChance = Math.max(0, Math.min(1, entry.chance * chanceMultiplier * poolMultiplier));
+      const effectiveChance = getAdjustedChance(entry.chance * chanceMultiplier, entry.sourceType, entry.sourcePoolId, {
+        isDungeonBattle,
+        monsterKind,
+      });
       if (Math.random() < effectiveChance) {
         const quantity = randomInt(entry.qty_min, entry.qty_max);
         results.push({
@@ -208,12 +176,18 @@ export const rollDrops = (
   } else if (dropPool.mode === 'weight') {
     // 权重模式：按权重随机选择一个
     const totalWeight = dropPool.entries.reduce((sum, entry) => {
-      return sum + entry.weight * getCommonPoolMultiplier(entry, isDungeonBattle, monsterKind);
+      return sum + getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
+        isDungeonBattle,
+        monsterKind,
+      });
     }, 0);
     if (totalWeight > 0) {
       let roll = Math.random() * totalWeight;
       for (const entry of dropPool.entries) {
-        roll -= entry.weight * getCommonPoolMultiplier(entry, isDungeonBattle, monsterKind);
+        roll -= getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
+          isDungeonBattle,
+          monsterKind,
+        });
         if (roll <= 0) {
           const quantity = randomInt(entry.qty_min, entry.qty_max);
           results.push({

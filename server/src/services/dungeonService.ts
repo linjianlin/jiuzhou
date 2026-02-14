@@ -24,6 +24,12 @@ import {
   type PendingMailItem,
 } from './autoDisassembleRewardService.js';
 import type { PoolClient } from 'pg';
+import {
+  getAdjustedChance,
+  getAdjustedWeight,
+  normalizeMonsterKind,
+  type DropEntrySourceType,
+} from './shared/dropRateMultiplier.js';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
 
@@ -622,6 +628,8 @@ export const getDungeonPreview = async (
     qty_max: number;
     quality_weights: Record<string, unknown> | null;
     bind_type: string | null;
+    sourceType: DropEntrySourceType;
+    sourcePoolId: string;
     sort_order: number;
   };
 
@@ -646,6 +654,8 @@ export const getDungeonPreview = async (
         qty_max: qtyMax,
         quality_weights: entry.quality_weights,
         bind_type: entry.bind_type,
+        sourceType: entry.sourceType,
+        sourcePoolId: entry.sourcePoolId,
         sort_order: Math.max(0, Math.floor(asNumber(entry.sort_order, 0))),
       });
     }
@@ -675,14 +685,17 @@ export const getDungeonPreview = async (
   const dropPreviewByPoolId = new Map<
     string,
     Array<{
-      item: { id: string; name: string; quality: string | null; icon: string | null };
       mode: 'prob' | 'weight';
-      chance: number | null;
-      weight: number | null;
+      item_def_id: string;
+      chance: number;
+      weight: number;
       qty_min: number;
       qty_max: number;
       quality_weights: Record<string, unknown> | null;
       bind_type: string | null;
+      sourceType: DropEntrySourceType;
+      sourcePoolId: string;
+      sort_order: number;
     }>
   >();
 
@@ -690,29 +703,70 @@ export const getDungeonPreview = async (
     const poolId = String(r.drop_pool_id || '');
     if (!poolId) continue;
     const mode = r.mode;
-    const chanceNum = mode === 'prob' ? r.chance : null;
-    const weightNum = mode === 'weight' ? r.weight : null;
-    const qtyMin = r.qty_min;
-    const qtyMax = r.qty_max;
-    const itemMeta = dropPreviewItemMap.get(r.item_def_id);
     const list = dropPreviewByPoolId.get(poolId) ?? [];
     list.push({
-      item: {
-        id: r.item_def_id,
-        name: itemMeta?.name ?? r.item_def_id,
-        quality: itemMeta?.quality ?? null,
-        icon: itemMeta?.icon ?? null,
-      },
       mode,
-      chance: chanceNum,
-      weight: weightNum,
-      qty_min: qtyMin,
-      qty_max: qtyMax,
+      item_def_id: r.item_def_id,
+      chance: mode === 'prob' ? r.chance : 0,
+      weight: mode === 'weight' ? r.weight : 0,
+      qty_min: r.qty_min,
+      qty_max: r.qty_max,
       quality_weights: r.quality_weights,
       bind_type: r.bind_type,
+      sourceType: r.sourceType,
+      sourcePoolId: r.sourcePoolId,
+      sort_order: r.sort_order,
     });
     dropPreviewByPoolId.set(poolId, list);
   }
+
+  const buildMonsterDropPreview = (
+    rows: Array<{
+      mode: 'prob' | 'weight';
+      item_def_id: string;
+      chance: number;
+      weight: number;
+      qty_min: number;
+      qty_max: number;
+      quality_weights: Record<string, unknown> | null;
+      bind_type: string | null;
+      sourceType: DropEntrySourceType;
+      sourcePoolId: string;
+      sort_order: number;
+    }>,
+    monsterKind: string | null,
+  ): Array<{
+    item: { id: string; name: string; quality: string | null; icon: string | null };
+    mode: 'prob' | 'weight';
+    chance: number | null;
+    weight: number | null;
+    qty_min: number;
+    qty_max: number;
+    quality_weights: Record<string, unknown> | null;
+    bind_type: string | null;
+  }> => {
+    const kind = normalizeMonsterKind(monsterKind);
+    const options = { isDungeonBattle: true, monsterKind: kind };
+    return rows
+      .map((r) => {
+        const itemMeta = dropPreviewItemMap.get(r.item_def_id);
+        return {
+          item: {
+            id: r.item_def_id,
+            name: itemMeta?.name ?? r.item_def_id,
+            quality: itemMeta?.quality ?? null,
+            icon: itemMeta?.icon ?? null,
+          },
+          mode: r.mode,
+          chance: r.mode === 'prob' ? getAdjustedChance(r.chance, r.sourceType, r.sourcePoolId, options) : null,
+          weight: r.mode === 'weight' ? getAdjustedWeight(r.weight, r.sourceType, r.sourcePoolId, options) : null,
+          qty_min: r.qty_min,
+          qty_max: r.qty_max,
+          quality_weights: r.quality_weights,
+          bind_type: r.bind_type,
+        };
+      });
+  };
 
   const wavesByStageId = new Map<string, DungeonWaveRow[]>();
   for (const w of waves) {
@@ -762,6 +816,9 @@ export const getDungeonPreview = async (
           const count = Math.max(1, Math.floor(asNumber(obj.count, 1)));
           const monster = monsterById.get(monsterId) ?? null;
           const poolId = monster && typeof monster.drop_pool_id === 'string' ? monster.drop_pool_id : null;
+          const monsterKind = monster?.kind ?? null;
+          const previewRows = poolId ? dropPreviewByPoolId.get(poolId) ?? [] : [];
+          const dropPreview = previewRows.length > 0 ? buildMonsterDropPreview(previewRows, monsterKind) : [];
           waveMonsters.push({
             id: monsterId,
             name: monster?.name ?? monsterId,
@@ -771,7 +828,7 @@ export const getDungeonPreview = async (
             kind: monster?.kind ?? null,
             count,
             drop_pool_id: poolId,
-            drop_preview: poolId ? dropPreviewByPoolId.get(poolId) ?? [] : [],
+            drop_preview: dropPreview,
           });
         }
 
