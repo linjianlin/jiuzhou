@@ -89,7 +89,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
-        "wugong": 20,
+        "wugong": 16,
         "baoji": 0.01
       },
       "implicit_attrs": {
