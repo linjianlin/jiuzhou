@@ -30,6 +30,7 @@ import {
   applyMonsterRealmDropQtyMultiplier,
   shouldApplyDropQuantityMultiplier,
 } from './shared/dropQuantityMultiplier.js';
+import { lockCharacterInventoryMutexesTx } from './inventoryMutex.js';
 
 // ============================================
 // 类型定义
@@ -321,7 +322,11 @@ export const distributeBattleRewards = async (
         .filter((id) => Number.isInteger(id) && id > 0)
     )].sort((a, b) => a - b);
     if (participantCharacterIds.length > 0) {
-      // 统一角色行锁顺序，避免与其他事务在 characters/item_instance 间出现锁顺序反转。
+      // 锁顺序必须统一为“先背包互斥锁，再角色行锁”，否则会与 use/disassemble
+      // 这类“先背包锁再 FOR UPDATE characters”的事务形成环路死锁。
+      await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
+
+      // 角色行锁也按升序获取，避免多角色场景下的行锁顺序反转。
       await client.query(
         `
           SELECT id

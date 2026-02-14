@@ -31,6 +31,7 @@ import {
   type DropEntrySourceType,
 } from './shared/dropRateMultiplier.js';
 import { getAdjustedDropQuantityRange } from './shared/dropQuantityMultiplier.js';
+import { lockCharacterInventoryMutexesTx } from './inventoryMutex.js';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
 
@@ -1617,7 +1618,11 @@ export const nextDungeonInstance = async (
 
         const difficultyDef = getDungeonDifficultyById(inst.difficulty_id);
         const firstClearRewardConfig = difficultyDef?.first_clear_rewards ?? {};
-        const participantCharacterIds = participants.map((p) => Number(p.characterId)).filter((id) => Number.isFinite(id) && id > 0);
+        const participantCharacterIds = [...new Set(
+          participants
+            .map((p) => Number(p.characterId))
+            .filter((id) => Number.isFinite(id) && id > 0)
+        )].sort((a, b) => a - b);
         const clearCountMap = new Map<number, number>();
         const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
         const itemMetaCache = new Map<
@@ -1631,6 +1636,12 @@ export const nextDungeonInstance = async (
             qualityRank: number;
           }
         >();
+
+        if (participantCharacterIds.length > 0) {
+          // 发奖流程会同时更新 characters 并写入背包，先统一获取背包互斥锁，
+          // 避免与“先背包锁再锁角色行”的事务出现锁顺序反转。
+          await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
+        }
 
         const appendGrantedItem = (
           list: Array<{ item_def_id: string; qty: number; item_ids: number[] }>,
