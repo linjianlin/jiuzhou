@@ -88,6 +88,7 @@ export interface SectInfo {
     contribution: number;
     weeklyContribution: number;
     joinedAt: string;
+    lastOfflineAt: string | null;
   }>;
   buildings: SectBuildingView[];
 }

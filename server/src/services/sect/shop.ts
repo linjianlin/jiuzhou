@@ -12,14 +12,33 @@ const REROLL_SCROLL_SHOP_ITEM_ID = 'sect-shop-008';
 const REROLL_SCROLL_DAILY_LIMIT = 50;
 type BaseShopItem = Omit<ShopItem, 'itemIcon'>;
 
-const buildShopLogMarker = (shopItemId: string): string => `[shop_item:${shopItemId}]`;
-const extractShopBuyQtyFromLogContent = (content: string, marker: string): number => {
-  const markerIndex = content.indexOf(marker);
-  if (markerIndex < 0) return 0;
-  const prefix = content.slice(0, markerIndex);
-  const matched = /×\s*(\d+)\s*$/.exec(prefix);
-  const qty = matched ? Number.parseInt(matched[1] ?? '1', 10) : 1;
-  if (!Number.isFinite(qty) || qty <= 0) return 1;
+/**
+ * 统一商店日志展示名：
+ * 若商品名末尾已带“×N”（且 N 等于单次发放数量），入库时移除该后缀，
+ * 避免后续再拼接总数量时出现“×1×1”。
+ */
+const normalizeShopItemLogName = (name: string, unitQty: number): string => {
+  const trimmed = String(name).trim();
+  const qtyText = String(Math.max(1, Math.floor(unitQty)));
+  const suffixPattern = new RegExp(`\\s*[xX×]\\s*${qtyText}$`);
+  const cleaned = trimmed.replace(suffixPattern, '').trim();
+  return cleaned || trimmed;
+};
+
+const escapeRegexLiteral = (value: string): string => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+const buildShopBuyLogContent = (itemName: string, totalQty: number): string => {
+  return `购买：${itemName}×${totalQty}`;
+};
+
+const extractShopBuyItemQtyFromLogContent = (content: string, itemName: string): number => {
+  const pattern = new RegExp(`^购买：\\s*${escapeRegexLiteral(itemName)}\\s*[xX×]\\s*(\\d+)\\s*$`);
+  const matched = pattern.exec(String(content).trim());
+  if (!matched) return 0;
+  const qty = Number.parseInt(matched[1] ?? '0', 10);
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
   return qty;
 };
 
@@ -91,6 +110,8 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
   const q = Number.isFinite(quantity) && quantity > 0 ? Math.min(99, Math.floor(quantity)) : 1;
   const shopItem = SHOP.find((x) => x.id === itemId);
   if (!shopItem) return { success: false, message: '商品不存在' };
+  const shopItemUnitQty = Math.max(1, Math.floor(shopItem.qty));
+  const shopItemLogName = normalizeShopItemLogName(shopItem.name, shopItemUnitQty);
   const isBagExpandItem = shopItem.id === BAG_EXPAND_SHOP_ITEM_ID;
   const dailyLimitRaw = shopItem.limitDaily;
   const dailyLimit =
@@ -120,7 +141,6 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
     }
 
     if (dailyLimit > 0) {
-      const marker = buildShopLogMarker(shopItem.id);
       const limitResult = await client.query(
         `
           SELECT content
@@ -128,14 +148,15 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
           WHERE sect_id = $1
             AND log_type = 'shop_buy'
             AND operator_id = $2
-            AND content LIKE $3
             AND created_at::date = CURRENT_DATE
         `,
-        [member.sectId, characterId, `%${marker}%`]
+        [member.sectId, characterId]
       );
       const usedToday = (limitResult.rows as Array<{ content: string | null }>).reduce((sum, row) => {
         const content = typeof row.content === 'string' ? row.content : '';
-        return sum + extractShopBuyQtyFromLogContent(content, marker);
+        const totalQty = extractShopBuyItemQtyFromLogContent(content, shopItemLogName);
+        if (totalQty <= 0) return sum;
+        return sum + Math.ceil(totalQty / shopItemUnitQty);
       }, 0);
       if (usedToday + q > dailyLimit) {
         await client.query('ROLLBACK');
@@ -156,7 +177,7 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
 
     await client.query(`UPDATE sect_member SET contribution = contribution - $2 WHERE character_id = $1`, [characterId, cost]);
 
-    const giveQty = shopItem.qty * q;
+    const giveQty = shopItemUnitQty * q;
     const createRes = await createItem(userId, characterId, shopItem.itemDefId, giveQty, {
       location: 'bag',
       obtainedFrom: 'sect_shop',
@@ -169,8 +190,8 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
 
     await recordSectShopBuyEventTx(client, characterId, q);
 
-    const logMarker = buildShopLogMarker(shopItem.id);
-    await addLogTx(client, member.sectId, 'shop_buy', characterId, null, `购买：${shopItem.name}×${q} ${logMarker}`);
+    const content = buildShopBuyLogContent(shopItemLogName, giveQty);
+    await addLogTx(client, member.sectId, 'shop_buy', characterId, null, content);
     await client.query('COMMIT');
     return { success: true, message: '购买成功', itemDefId: shopItem.itemDefId, qty: giveQty, itemIds: createRes.itemIds };
   } catch (error) {

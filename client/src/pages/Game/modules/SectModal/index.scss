@@ -287,10 +287,12 @@
 
 .sect-pane-footer {
   flex: 0 0 auto;
-  padding: 0 14px 14px;
+  padding: 12px 14px 14px;
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  border-top: 1px dashed var(--border-color-soft);
+  background: var(--panel-bg);
 }
 
 .sect-panel-scroll {
@@ -313,8 +315,55 @@
   padding: 8px 8px;
 }
 
+.sect-table .ant-table-tbody > tr.sect-member-row-offline > td {
+  color: color-mix(in srgb, var(--text-tertiary) 92%, #8c8c8c);
+  background: color-mix(in srgb, var(--panel-bg) 72%, #7f7f7f);
+  opacity: 0.58;
+}
+
+.sect-table .ant-table-tbody > tr.sect-member-row-offline .ant-tag {
+  opacity: 0.46;
+  filter: grayscale(1);
+}
+
+.sect-table .ant-table-tbody > tr.sect-member-row-offline .ant-btn {
+  opacity: 0.46;
+  filter: grayscale(1);
+}
+
+.sect-table .ant-table-tbody > tr.sect-member-row-offline:hover > td {
+  background: color-mix(in srgb, var(--panel-bg) 72%, #7f7f7f);
+}
+
 .sect-realm-cell {
   white-space: nowrap;
+}
+
+.sect-member-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sect-member-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sect-member-online-text {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sect-member-online-text.is-online {
+  color: var(--success-color);
+  font-weight: 700;
 }
 
 .sect-mobile-list {
@@ -333,6 +382,30 @@
   gap: 8px;
 }
 
+.sect-mobile-card.is-offline {
+  color: color-mix(in srgb, var(--text-tertiary) 90%, #8c8c8c);
+  background: color-mix(in srgb, var(--panel-bg-soft) 70%, #7f7f7f);
+  border-color: color-mix(in srgb, var(--border-color) 60%, #7f7f7f);
+  filter: grayscale(1);
+  opacity: 0.58;
+}
+
+.sect-mobile-card.is-offline .ant-tag {
+  opacity: 0.46;
+  filter: grayscale(1);
+}
+
+.sect-mobile-card.is-offline .ant-btn {
+  opacity: 0.46;
+  filter: grayscale(1);
+}
+
+.sect-mobile-card.is-offline .sect-mobile-card-title,
+.sect-mobile-card.is-offline .sect-mobile-meta-v,
+.sect-mobile-card.is-offline .sect-member-online-text {
+  color: color-mix(in srgb, var(--text-tertiary) 90%, #8c8c8c);
+}
+
 .sect-mobile-card-head {
   display: flex;
   align-items: center;
@@ -340,9 +413,16 @@
   gap: 8px;
 }
 
-.sect-mobile-card-title {
+.sect-mobile-card-title-wrap {
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sect-mobile-card-title {
+  min-width: 0;
   font-size: 14px;
   font-weight: 900;
   color: var(--text-color);
@@ -964,6 +1044,15 @@
 .sect-form-helper {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.sect-form-count {
+  margin-top: -2px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  line-height: 1;
 }
 
 .sect-create {

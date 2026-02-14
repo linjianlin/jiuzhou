@@ -12,9 +12,15 @@ interface JoinedOverviewHeaderProps {
   summary: SectJoinedSummary | null;
   onDonate: () => void;
   onOpenAnnouncement: () => void;
+  canEditAnnouncement: boolean;
 }
 
-const JoinedOverviewHeader: React.FC<JoinedOverviewHeaderProps> = ({ summary, onDonate, onOpenAnnouncement }) => {
+const JoinedOverviewHeader: React.FC<JoinedOverviewHeaderProps> = ({
+  summary,
+  onDonate,
+  onOpenAnnouncement,
+  canEditAnnouncement,
+}) => {
   if (!summary) return null;
 
   return (
@@ -30,15 +36,17 @@ const JoinedOverviewHeader: React.FC<JoinedOverviewHeaderProps> = ({ summary, on
             </Tag>
           </div>
           <div className="sect-card-notice">
-            <button
-              type="button"
-              className="sect-card-notice-edit"
-              onClick={onOpenAnnouncement}
-              aria-label="编辑公告"
-              title="编辑公告"
-            >
-              <EditOutlined className="sect-card-notice-icon" />
-            </button>
+            {canEditAnnouncement ? (
+              <button
+                type="button"
+                className="sect-card-notice-edit"
+                onClick={onOpenAnnouncement}
+                aria-label="编辑公告"
+                title="编辑公告"
+              >
+                <EditOutlined className="sect-card-notice-icon" />
+              </button>
+            ) : null}
             <span className="sect-card-notice-text">{summary.notice || '暂无公告'}</span>
           </div>
         </div>

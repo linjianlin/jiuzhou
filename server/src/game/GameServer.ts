@@ -284,6 +284,7 @@ class GameServer {
       socket.on('disconnect', () => {
         const session = this.sessions.get(socket.id);
         if (session) {
+          void this.touchCharacterLastOfflineAt(session.userId);
           this.cancelQueuedCharacterPush(session.userId);
           this.userSocketMap.delete(session.userId);
           this.sessions.delete(socket.id);
@@ -335,6 +336,18 @@ class GameServer {
     if (!prev && !next) return false;
     if (!prev || !next) return true;
     return prev.nickname !== next.nickname || prev.title !== next.title || prev.realm !== next.realm;
+  }
+
+  /**
+   * 更新角色最后离线时间，用于宗门成员离线时长等展示。
+   * 说明：仅在连接断开时更新，字段语义始终是“离线发生时刻”。
+   */
+  private async touchCharacterLastOfflineAt(userId: number): Promise<void> {
+    try {
+      await query(`UPDATE characters SET last_offline_at = NOW(), updated_at = NOW() WHERE user_id = $1`, [userId]);
+    } catch (error) {
+      console.error('更新角色最后离线时间失败:', error);
+    }
   }
 
   // 加载角色数据
@@ -494,6 +507,7 @@ class GameServer {
   public kickUser(userId: number, reason: string = '账号已在其他设备登录'): void {
     const socketId = this.userSocketMap.get(userId);
     if (!socketId) return;
+    void this.touchCharacterLastOfflineAt(userId);
     this.cancelQueuedCharacterPush(userId);
 
     const socket = this.io.sockets.sockets.get(socketId);

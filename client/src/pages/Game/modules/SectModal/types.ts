@@ -60,6 +60,7 @@ export interface SectMemberVm {
   contribution: number;
   weeklyContribution: number;
   joinedAt: string;
+  lastOfflineAt: string | null;
 }
 
 export interface SectBuildingVm {

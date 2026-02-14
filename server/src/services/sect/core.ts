@@ -123,7 +123,7 @@ export const getSectInfo = async (sectId: string): Promise<{ success: boolean; m
 
     const membersRes = await pool.query(
       `
-        SELECT sm.character_id, sm.position, sm.contribution, sm.weekly_contribution, sm.joined_at, c.nickname, c.realm
+        SELECT sm.character_id, sm.position, sm.contribution, sm.weekly_contribution, sm.joined_at, c.nickname, c.realm, c.last_offline_at
         FROM sect_member sm
         JOIN characters c ON c.id = sm.character_id
         WHERE sm.sect_id = $1
@@ -152,6 +152,7 @@ export const getSectInfo = async (sectId: string): Promise<{ success: boolean; m
       contribution: toNumber(r.contribution),
       weeklyContribution: toNumber(r.weekly_contribution),
       joinedAt: String(r.joined_at),
+      lastOfflineAt: r.last_offline_at ? String(r.last_offline_at) : null,
     }));
 
     const buildings = buildingsRes.rows.map((row) => withBuildingRequirement(row as SectBuildingRow));

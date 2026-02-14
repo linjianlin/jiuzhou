@@ -109,7 +109,9 @@ const ManagePanel: React.FC<ManagePanelProps> = ({
             </div>
           </div>
         ) : (
-          <div className="sect-empty">当前职位无审批权限。</div>
+          <div className="sect-manage-section">
+            <div className="sect-empty">当前职位无审批权限。</div>
+          </div>
         )}
 
         <div className="sect-manage-grid">

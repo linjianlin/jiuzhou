@@ -83,6 +83,7 @@ export type SectMemberDto = {
   contribution: number;
   weeklyContribution: number;
   joinedAt: string;
+  lastOfflineAt: string | null;
 };
 
 export type SectBuildingDto = {

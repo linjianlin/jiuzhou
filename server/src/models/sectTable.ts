@@ -1,4 +1,5 @@
 import { query } from '../config/database.js';
+import { runDbMigrationOnce } from './migrationHistoryTable.js';
 
 const sectDefTableSQL = `
 CREATE TABLE IF NOT EXISTS sect_def (
@@ -169,6 +170,56 @@ COMMENT ON COLUMN sect_log.created_at IS '创建时间';
 CREATE INDEX IF NOT EXISTS idx_sect_log_sect_time ON sect_log(sect_id, created_at DESC);
 `;
 
+const SHOP_LOG_MARKER_PATTERN = /\s*\[shop_item:[^\]]+\]\s*$/i;
+
+/**
+ * 将历史 shop_buy 日志改写为统一格式：`购买：物品名×总数量`。
+ * 旧格式示例：`购买：洗炼符×1×1 [shop_item:sect-shop-008]`。
+ */
+const normalizeLegacyShopBuyLogContent = (rawContent: string): string => {
+  const cleaned = rawContent.replace(SHOP_LOG_MARKER_PATTERN, '').trim();
+  const prefix = '购买：';
+  if (!cleaned.startsWith(prefix)) return cleaned;
+
+  const body = cleaned.slice(prefix.length).trim();
+  const matched = /^(.*?)[xX×]\s*(\d+)\s*[xX×]\s*(\d+)\s*$/.exec(body);
+  if (!matched) return cleaned;
+
+  const itemName = String(matched[1] ?? '').trim();
+  const unitQty = Number.parseInt(matched[2] ?? '', 10);
+  const buyTimes = Number.parseInt(matched[3] ?? '', 10);
+  if (!Number.isFinite(unitQty) || unitQty <= 0) return cleaned;
+  if (!Number.isFinite(buyTimes) || buyTimes <= 0) return cleaned;
+
+  return `${prefix}${itemName}×${unitQty * buyTimes}`;
+};
+
+const migrateSectShopBuyLogContentV1 = async (): Promise<void> => {
+  const result = await query(
+    `
+      SELECT id, content
+      FROM sect_log
+      WHERE log_type = 'shop_buy'
+    `
+  );
+
+  let scannedCount = 0;
+  let updatedCount = 0;
+
+  for (const row of result.rows as Array<{ id: number; content: string | null }>) {
+    if (typeof row.content !== 'string') continue;
+    scannedCount += 1;
+
+    const normalized = normalizeLegacyShopBuyLogContent(row.content);
+    if (normalized === row.content) continue;
+
+    updatedCount += 1;
+    await query('UPDATE sect_log SET content = $1 WHERE id = $2', [normalized, row.id]);
+  }
+
+  console.log(`  → 宗门商店日志格式迁移完成：扫描=${scannedCount}，更新=${updatedCount}`);
+};
+
 export const initSectTables = async (): Promise<void> => {
   await query(sectDefTableSQL);
   await query(sectMemberTableSQL);
@@ -176,6 +227,13 @@ export const initSectTables = async (): Promise<void> => {
   await query(sectBuildingTableSQL);
   await query(sectQuestProgressTableSQL);
   await query(sectLogTableSQL);
+
+  await runDbMigrationOnce({
+    migrationKey: 'sect_shop_buy_log_content_normalize_v1',
+    description: '将宗门商店购买日志改写为“购买：物品名×总数量”并去除内部标记',
+    execute: migrateSectShopBuyLogContentV1,
+  });
+
   console.log('✓ 宗门系统表检测完成');
 };
 

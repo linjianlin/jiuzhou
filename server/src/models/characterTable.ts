@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS characters (
   -- 位置（用于下次登录/刷新回到上次位置）
   current_map_id VARCHAR(64) DEFAULT 'map-qingyun-village',  -- 当前所在地图ID
   current_room_id VARCHAR(64) DEFAULT 'room-village-center', -- 当前所在房间ID
+  last_offline_at TIMESTAMPTZ DEFAULT NULL,           -- 最后离线时间
 
   -- 战斗设置
   auto_cast_skills BOOLEAN DEFAULT true,               -- 自动释放技能开关
@@ -71,6 +72,7 @@ COMMENT ON COLUMN characters.attribute_type IS '属性类型：physical物理/ma
 COMMENT ON COLUMN characters.attribute_element IS '五行属性：none/jin/mu/shui/huo/tu';
 COMMENT ON COLUMN characters.current_map_id IS '当前所在地图ID';
 COMMENT ON COLUMN characters.current_room_id IS '当前所在房间ID';
+COMMENT ON COLUMN characters.last_offline_at IS '最后离线时间';
 COMMENT ON COLUMN characters.auto_cast_skills IS '自动释放技能开关';
 COMMENT ON COLUMN characters.auto_disassemble_enabled IS '自动分解物品开关';
 COMMENT ON COLUMN characters.auto_disassemble_max_quality_rank IS '自动分解最高品质（1黄/2玄/3地/4天）';
@@ -93,6 +95,7 @@ const columnsToCheck = [
   { name: 'attribute_element', type: "VARCHAR(10) DEFAULT 'none'", comment: '五行属性' },
   { name: 'current_map_id', type: "VARCHAR(64) DEFAULT 'map-qingyun-village'", comment: '当前所在地图ID' },
   { name: 'current_room_id', type: "VARCHAR(64) DEFAULT 'room-village-center'", comment: '当前所在房间ID' },
+  { name: 'last_offline_at', type: 'TIMESTAMPTZ DEFAULT NULL', comment: '最后离线时间' },
   { name: 'auto_cast_skills', type: 'BOOLEAN DEFAULT true', comment: '自动释放技能开关' },
   { name: 'auto_disassemble_enabled', type: 'BOOLEAN DEFAULT false', comment: '自动分解物品开关' },
   { name: 'auto_disassemble_max_quality_rank', type: 'INTEGER DEFAULT 1', comment: '自动分解最高品质（1黄/2玄/3地/4天）' },
@@ -160,6 +163,27 @@ const checkAndAddColumns = async () => {
   }
 };
 
+const normalizeLastOfflineAtColumn = async () => {
+  await query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'characters' AND column_name = 'last_online_at'
+      ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'characters' AND column_name = 'last_offline_at'
+      ) THEN
+        ALTER TABLE characters RENAME COLUMN last_online_at TO last_offline_at;
+      END IF;
+    END
+    $$;
+  `);
+  await query(`ALTER TABLE characters ALTER COLUMN last_offline_at DROP DEFAULT`);
+};
+
 const dropDeprecatedAttrColumns = async (): Promise<void> => {
   // 删除旧触发器与函数，避免依赖已下线字段。
   await query('DROP TRIGGER IF EXISTS trigger_calculate_attributes ON characters');
@@ -196,6 +220,9 @@ export const initCharacterTable = async (): Promise<void> => {
 
     // 创建角色表
     await query(characterTableSQL);
+
+    // 历史字段名对齐：last_online_at -> last_offline_at
+    await normalizeLastOfflineAtColumn();
 
     // 检查并补齐缺失字段
     await checkAndAddColumns();

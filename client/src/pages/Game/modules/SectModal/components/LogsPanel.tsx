@@ -18,6 +18,68 @@ interface LogsPanelProps {
   embedded?: boolean;
 }
 
+/**
+ * 后端 logType 为英文键名，这里统一翻译成中文标签。
+ * 约束：未知类型直接回退原值，避免新日志类型上线后前端出现空白。
+ */
+const LOG_TYPE_LABEL_MAP: Record<string, string> = {
+  create: '创建宗门',
+  update_announcement: '更新公告',
+  transfer_leader: '转让宗主',
+  disband: '解散宗门',
+  leave: '退出宗门',
+  kick: '踢出成员',
+  appoint: '任命职位',
+  apply: '提交申请',
+  approve: '通过申请',
+  donate: '捐献',
+  upgrade_building: '升级建筑',
+  shop_buy: '商店购买',
+  quest_submit: '任务提交',
+  quest_claim: '任务领奖',
+};
+
+const formatLogType = (logType: string): string => {
+  const raw = String(logType).trim();
+  if (!raw) return '未知事件';
+  return LOG_TYPE_LABEL_MAP[raw] ?? raw;
+};
+
+/**
+ * 商店购买日志会附带内部标记（用于后端限购统计），前端展示时需要去掉。
+ */
+const SHOP_LOG_MARKER_PATTERN = /\s*\[shop_item:[^\]]+\]\s*$/i;
+
+/**
+ * 规范化商店购买日志内容：
+ * 1) 去掉内部 marker；
+ * 2) 将“名称×单次数量×购买次数”合并为“名称×总数量”，避免出现“×1×1”。
+ */
+const formatShopBuyContent = (content: string): string => {
+  const cleaned = content.replace(SHOP_LOG_MARKER_PATTERN, '').trim();
+  const prefix = '购买：';
+  if (!cleaned.startsWith(prefix)) return cleaned;
+
+  const body = cleaned.slice(prefix.length).trim();
+  const matched = /^(.*?)[xX×]\s*(\d+)\s*[xX×]\s*(\d+)\s*$/.exec(body);
+  if (!matched) return cleaned;
+
+  const itemName = String(matched[1] ?? '').trim();
+  const unitQty = Number.parseInt(matched[2] ?? '', 10);
+  const buyTimes = Number.parseInt(matched[3] ?? '', 10);
+  if (!Number.isFinite(unitQty) || unitQty <= 0) return cleaned;
+  if (!Number.isFinite(buyTimes) || buyTimes <= 0) return cleaned;
+
+  return `${prefix}${itemName}×${unitQty * buyTimes}`;
+};
+
+const formatLogContent = (logType: string, content: string): string => {
+  const raw = String(content).trim();
+  if (!raw) return '';
+  if (logType === 'shop_buy') return formatShopBuyContent(raw);
+  return raw;
+};
+
 const formatTime = (dateString: string): string => {
   const date = new Date(dateString);
   if (!Number.isFinite(date.getTime())) return dateString;
@@ -39,10 +101,10 @@ const LogsList: React.FC<{ loading: boolean; logs: SectLogDto[] }> = ({ loading,
         {logs.map((row: SectLogDto) => (
           <div key={row.id} className="sect-log-card">
             <div className="sect-log-head">
-              <Tag color="default">{row.logType}</Tag>
+              <Tag color="default">{formatLogType(row.logType)}</Tag>
               <span className="sect-log-time">{formatTime(row.createdAt)}</span>
             </div>
-            <div className="sect-log-content">{row.content || '（无内容）'}</div>
+            <div className="sect-log-content">{formatLogContent(row.logType, row.content) || '（无内容）'}</div>
             <div className="sect-log-meta">
               {row.operatorName ? <span>操作人：{row.operatorName}</span> : null}
               {row.targetName ? <span>目标：{row.targetName}</span> : null}

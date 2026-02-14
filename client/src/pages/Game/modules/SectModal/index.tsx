@@ -101,13 +101,14 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
           <div className="sect-pane-top">
             <div className="sect-pane-title-wrap">
               <div className="sect-title">基础信息</div>
-              <div className="sect-subtitle">查看宗门概览、资源统计、公告与最近日志，并提供快捷入口。</div>
+              <div className="sect-subtitle">查看宗门概览、资源统计、公告与最近日志。</div>
             </div>
           </div>
           <div className="sect-pane-body">
             <div className="sect-overview-main">
               <JoinedOverviewHeader
                 summary={data.joinedSect}
+                canEditAnnouncement={data.permissions.canEditAnnouncement}
                 onDonate={() => {
                   data.setDonateSpiritStonesInput('');
                   data.setDonateOpen(true);
@@ -140,7 +141,16 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
           actionLoadingKey={data.actionLoadingKey}
           onOpenMemberAction={data.openMemberAction}
           onLeaveSect={() => {
-            void data.leaveSectAction();
+            modal.confirm({
+              title: '确认退出宗门？',
+              content: '退出后将失去宗门贡献，重新加入需重新申请。',
+              okText: '确认退出',
+              cancelText: '取消',
+              okButtonProps: { danger: true },
+              onOk: async () => {
+                await data.leaveSectAction();
+              },
+            });
           }}
         />
       );

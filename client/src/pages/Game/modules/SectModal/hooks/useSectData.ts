@@ -97,6 +97,7 @@ const toMemberVm = (member: SectMemberDto): SectMemberVm => {
     contribution: Number(member.contribution) || 0,
     weeklyContribution: Number(member.weeklyContribution) || 0,
     joinedAt: member.joinedAt,
+    lastOfflineAt: typeof member.lastOfflineAt === 'string' ? member.lastOfflineAt : null,
   };
 };
 

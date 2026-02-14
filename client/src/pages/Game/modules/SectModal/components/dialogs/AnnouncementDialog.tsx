@@ -15,7 +15,12 @@ interface AnnouncementDialogProps {
   onConfirm: () => void;
 }
 
+const ANNOUNCEMENT_MAX_LENGTH = 120;
+
 const AnnouncementDialog: React.FC<AnnouncementDialogProps> = ({ open, value, actionLoadingKey, onClose, onChange, onConfirm }) => {
+  // 与 TextArea 的 maxLength 保持同一套统计口径，避免计数显示与实际可输入长度不一致。
+  const announcementLength = value.length;
+
   return (
     <Modal
       open={open}
@@ -37,9 +42,11 @@ const AnnouncementDialog: React.FC<AnnouncementDialogProps> = ({ open, value, ac
           onChange={(event) => onChange(event.target.value)}
           placeholder="请输入公告内容，留空后保存表示清空公告"
           autoSize={{ minRows: 4, maxRows: 8 }}
-          maxLength={120}
-          showCount
+          maxLength={ANNOUNCEMENT_MAX_LENGTH}
         />
+        <div className="sect-form-count">
+          {announcementLength}/{ANNOUNCEMENT_MAX_LENGTH}
+        </div>
       </div>
     </Modal>
   );
