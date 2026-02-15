@@ -156,7 +156,6 @@ export interface InventoryEnhanceResponse {
     roll?: number;
     usedMaterial?: { itemDefId: string; qty: number };
     costs?: { silver: number; spiritStones: number };
-    usedEnhanceToolItemDefId?: string;
     character: unknown | null;
   };
 }
@@ -165,7 +164,6 @@ export interface InventoryEnhanceRequest {
   itemId?: number;
   itemInstanceId?: number;
   instanceId?: number;
-  enhanceToolItemId?: number;
 }
 
 export const enhanceInventoryItem = (

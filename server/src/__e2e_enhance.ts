@@ -162,8 +162,6 @@ const main = async () => {
   if (!mats.success) throw new Error(`create material failed: ${mats.message}`);
   const refineMats = await createItem(userId, characterId, 'enhance-002', 80, { location: 'bag' });
   if (!refineMats.success) throw new Error(`create refine material failed: ${refineMats.message}`);
-  const enhTool = await createItem(userId, characterId, 'enhance-003', 1, { location: 'bag' });
-  if (!enhTool.success) throw new Error(`create enhance tool failed: ${enhTool.message}`);
   const gemAtkDefId = 'gem-atk-wg-1';
   const gemDefDefId = 'gem-def-wf-1';
   const gemHpDefId = 'gem-sur-hp-1';
@@ -174,7 +172,6 @@ const main = async () => {
   const gemHp = await createItem(userId, characterId, gemHpDefId, 1, { location: 'bag' });
   if (!gemHp.success || !gemHp.itemIds?.[0]) throw new Error(`create ${gemHpDefId} failed: ${gemHp.message}`);
 
-  const enhanceToolItemId = Number(enhTool.itemIds?.[0]);
   const gemAtkItemId = Number(gemAtk.itemIds?.[0]);
   const gemDefItemId = Number(gemDef.itemIds?.[0]);
   const gemHpItemId = Number(gemHp.itemIds?.[0]);
@@ -216,17 +213,6 @@ const main = async () => {
            updated_at = NOW()
      WHERE id = $1 AND owner_character_id = $2`,
     [equipId, characterId],
-  );
-
-  const toolEnhance = await postJson(
-    `${base}/api/inventory/enhance`,
-    { itemId: equipId, enhanceToolItemId },
-    token,
-  );
-  must(Boolean(toolEnhance?.success), `enhance with tool failed: ${String(toolEnhance?.message ?? '')}`);
-  must(
-    String(toolEnhance?.data?.usedEnhanceToolItemDefId || '') === 'enhance-003',
-    'usedEnhanceToolItemDefId mismatch',
   );
 
   await query(
@@ -366,7 +352,6 @@ const main = async () => {
   const equipAfter = await findInBag(token, (x) => Number(x?.id) === equipId);
   const matAfter = await findInBag(token, (x) => String(x?.item_def_id) === 'enhance-001');
   const refineMatAfter = await findInBag(token, (x) => String(x?.item_def_id) === 'enhance-002');
-  const enhanceToolAfter = await findInBag(token, (x) => Number(x?.id) === enhanceToolItemId);
   const gemDefAfter = await findInBag(token, (x) => String(x?.item_def_id) === gemDefDefId);
   const gemHpAfter = await findInBag(token, (x) => String(x?.item_def_id) === gemHpDefId);
   const after = {
@@ -376,7 +361,6 @@ const main = async () => {
     matQty: Number(matAfter?.qty ?? 0),
     refineMatQty: Number(refineMatAfter?.qty ?? 0),
     socketed: normalizeSocketedGems(equipAfter?.socketed_gems),
-    enhanceToolLeft: Number(enhanceToolAfter?.qty ?? 0),
     gemDefenseQty: Number(gemDefAfter?.qty ?? 0),
     gemSurvivalQty: Number(gemHpAfter?.qty ?? 0),
   };
@@ -508,11 +492,6 @@ const main = async () => {
     equipId,
     before,
     logs,
-    toolEnhance: {
-      success: Boolean(toolEnhance?.success),
-      msg: String(toolEnhance?.message ?? ''),
-      usedEnhanceToolItemDefId: toolEnhance?.data?.usedEnhanceToolItemDefId ?? null,
-    },
     refineLogs,
     refineDowngradeLogs,
     socket: {

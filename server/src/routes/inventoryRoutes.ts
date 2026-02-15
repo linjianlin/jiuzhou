@@ -576,7 +576,7 @@ router.post('/unequip', async (req: Request, res: Response) => {
 // ============================================
 // 强化装备
 // POST /api/inventory/enhance
-// Body: { itemId: number, enhanceToolItemId?: number }
+// Body: { itemId: number }
 // ============================================
 router.post('/enhance', async (req: Request, res: Response) => {
   try {
@@ -591,12 +591,10 @@ router.post('/enhance', async (req: Request, res: Response) => {
       itemId,
       itemInstanceId,
       instanceId,
-      enhanceToolItemId,
     } = req.body as {
       itemId?: unknown;
       itemInstanceId?: unknown;
       instanceId?: unknown;
-      enhanceToolItemId?: unknown;
     };
 
     const rawItemInstanceId = itemInstanceId ?? instanceId ?? itemId;
@@ -609,14 +607,7 @@ router.post('/enhance', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'itemId参数错误' });
     }
 
-    const parsedEnhanceToolItemId = parseOptionalPositiveInt(enhanceToolItemId);
-    if (Number.isNaN(parsedEnhanceToolItemId)) {
-      return res.status(400).json({ success: false, message: 'enhanceToolItemId参数错误' });
-    }
-
-    const result = await inventoryService.enhanceEquipment(characterId, userId, parsedItemId, {
-      enhanceToolItemId: parsedEnhanceToolItemId,
-    });
+    const result = await inventoryService.enhanceEquipment(characterId, userId, parsedItemId);
 
     if (result.success) {
       try {

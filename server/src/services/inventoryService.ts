@@ -689,83 +689,6 @@ const getRerollItemStateTx = async (
   };
 };
 
-const getEnhanceToolBonusPercent = async (
-  client: PoolClient,
-  characterId: number,
-  toolItemInstanceId?: number
-): Promise<{ success: boolean; message: string; bonusPercent: number; consumedToolItemDefId?: string }> => {
-  if (!toolItemInstanceId) {
-    return { success: true, message: '未使用强化符', bonusPercent: 0 };
-  }
-
-  const itemResult = await client.query(
-    `
-      SELECT id, item_def_id, qty, locked, location
-      FROM item_instance
-      WHERE id = $1 AND owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [toolItemInstanceId, characterId]
-  );
-  if (itemResult.rows.length === 0) {
-    return { success: false, message: '强化符不存在', bonusPercent: 0 };
-  }
-
-  const item = itemResult.rows[0] as {
-    id: number;
-    item_def_id: string;
-    qty: number;
-    locked: boolean;
-    location: string;
-  };
-  if (item.locked) return { success: false, message: '强化符已锁定', bonusPercent: 0 };
-  if (!['bag', 'warehouse'].includes(String(item.location))) {
-    return { success: false, message: '强化符当前位置不可消耗', bonusPercent: 0 };
-  }
-  if ((Number(item.qty) || 0) < 1) {
-    return { success: false, message: '强化符数量不足', bonusPercent: 0 };
-  }
-
-  const toolDefId = String(item.item_def_id || '');
-  if (!toolDefId) return { success: false, message: '强化符数据异常', bonusPercent: 0 };
-
-  const toolDef = getEnabledStaticItemDef(toolDefId);
-  if (!toolDef) return { success: false, message: '强化符不存在', bonusPercent: 0 };
-  const defs: unknown[] = Array.isArray(toolDef.effect_defs) ? toolDef.effect_defs : [];
-  let bonus = 0;
-  for (const raw of defs) {
-    if (!raw || typeof raw !== 'object') continue;
-    const effect = raw as {
-      trigger?: unknown;
-      effect_type?: unknown;
-      params?: unknown;
-    };
-    if (String(effect.trigger || '') !== 'enhance') continue;
-    if (String(effect.effect_type || '') !== 'buff') continue;
-    const params = effect.params && typeof effect.params === 'object' ? (effect.params as Record<string, unknown>) : {};
-    const v = Number(params.success_rate_bonus);
-    if (Number.isFinite(v)) bonus += v;
-  }
-
-  if (bonus <= 0) {
-    return { success: false, message: '该道具不是强化符', bonusPercent: 0 };
-  }
-
-  if ((Number(item.qty) || 0) === 1) {
-    await client.query('DELETE FROM item_instance WHERE id = $1', [item.id]);
-  } else {
-    await client.query('UPDATE item_instance SET qty = qty - 1, updated_at = NOW() WHERE id = $1', [item.id]);
-  }
-
-  return {
-    success: true,
-    message: 'ok',
-    bonusPercent: Math.max(0, Math.min(1, bonus)),
-    consumedToolItemDefId: toolDefId,
-  };
-};
-
 const loadGemItemForSocketTx = async (
   client: PoolClient,
   characterId: number,
@@ -1984,8 +1907,7 @@ export const unequipItem = async (
 export const enhanceEquipment = async (
   characterId: number,
   userId: number,
-  itemInstanceId: number,
-  options: { enhanceToolItemId?: number } = {}
+  itemInstanceId: number
 ): Promise<{
   success: boolean;
   message: string;
@@ -1996,7 +1918,6 @@ export const enhanceEquipment = async (
     roll?: number;
     usedMaterial?: { itemDefId: string; qty: number };
     costs?: { silver: number; spiritStones: number };
-    usedEnhanceToolItemDefId?: string;
     character?: unknown;
   };
 }> => {
@@ -2052,18 +1973,8 @@ export const enhanceEquipment = async (
       return { success: false, message: currencyRes.message };
     }
 
-    const enhanceToolRes = await getEnhanceToolBonusPercent(
-      client,
-      characterId,
-      options.enhanceToolItemId
-    );
-    if (!enhanceToolRes.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: enhanceToolRes.message };
-    }
-
     const baseRate = getEnhanceSuccessRatePercent(targetLv);
-    const finalRate = Math.max(0, Math.min(1, baseRate + enhanceToolRes.bonusPercent));
+    const finalRate = Math.max(0, Math.min(1, baseRate));
     const roll = randomInt(0, 10_000) / 10_000;
     const success = roll < finalRate;
 
@@ -2104,7 +2015,6 @@ export const enhanceEquipment = async (
           silver: costPlan.silverCost,
           spiritStones: costPlan.spiritStoneCost,
         },
-        usedEnhanceToolItemDefId: enhanceToolRes.consumedToolItemDefId,
         character: character ?? null,
       },
     };

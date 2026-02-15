@@ -51,7 +51,6 @@ const resolveShopItemIcon = (itemDefId: string): string | null => {
 
 const SHOP_BASE: BaseShopItem[] = [
   { id: 'sect-shop-001', name: '淬灵石×10', costContribution: 100, itemDefId: 'enhance-001', qty: 10 },
-  { id: 'sect-shop-002', name: '强化符·黄×1', costContribution: 120, itemDefId: 'enhance-003', qty: 1 },
   { id: 'sect-shop-004', name: '《纯阳功》×1', costContribution: 2200, itemDefId: 'book-chunyang-gong', qty: 1 },
   { id: 'sect-shop-005', name: '功法残页×12', costContribution: 480, itemDefId: 'mat-gongfa-canye', qty: 12 },
   { id: 'sect-shop-006', name: '灵墨×5', costContribution: 1800, itemDefId: 'mat-lingmo', qty: 5 },
