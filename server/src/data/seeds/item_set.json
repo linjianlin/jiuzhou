@@ -1755,6 +1755,147 @@
           "priority": 3
         }
       ]
+    },
+    {
+      "id": "set-xuanguang",
+      "name": "玄光套装",
+      "description": "玄光凝神法攻套装，强化法术伤害与玄光护壁，循环重整。",
+      "quality_rank": 4,
+      "min_realm": "炼炁化神·结胎期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-xuanguang-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-xuanguang-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-xuanguang-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-xuanguang-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-xuanguang-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-xuanguang-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-xuanguang-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-xuanguang-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 18,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "kongzhi_kangxing",
+                "value": 0.022,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_skill",
+              "target": "enemy",
+              "effect_type": "debuff",
+              "duration_round": 1,
+              "params": {
+                "attr_key": "kongzhi_kangxing",
+                "value": 0.018,
+                "apply_type": "flat",
+                "chance": 0.22
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fafang",
+                "value": 18,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_be_hit",
+              "target": "enemy",
+              "effect_type": "debuff",
+              "duration_round": 1,
+              "params": {
+                "attr_key": "sudu",
+                "value": 20,
+                "apply_type": "flat",
+                "chance": 0.25
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_turn_start",
+              "target": "self",
+              "effect_type": "shield",
+              "duration_round": 2,
+              "params": {
+                "value": 120,
+                "scale_key": "fagong",
+                "scale_rate": 0.2,
+                "absorb_type": "magic"
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
     }
   ]
 }

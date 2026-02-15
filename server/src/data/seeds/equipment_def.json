@@ -2964,6 +2964,232 @@
         "归元套装",
         "结胎期"
       ]
+    },
+    {
+      "_comment": "========== 炼炁化神·结胎期套装2：玄光套装（法攻） =========="
+    },
+    {
+      "id": "set-xuanguang-weapon",
+      "name": "玄光法杖",
+      "category": "equipment",
+      "sub_category": "sword",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/shu_tian_xian_zhang.png",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "fagong": 24,
+        "lengque": 0.004
+      },
+      "implicit_attrs": {
+        "fagong": 12,
+        "baoji": 0.004
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "武器",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-head",
+      "name": "玄光灵冠",
+      "category": "equipment",
+      "sub_category": "hat",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_Hat_1_16.png",
+      "equip_slot": "head",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "max_lingqi": 360,
+        "fagong": 16,
+        "kongzhi_kangxing": 0.012
+      },
+      "implicit_attrs": {
+        "max_lingqi": 120,
+        "zhaojia": 0.006
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "头部",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-clothes",
+      "name": "玄光法袍",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_clothes_1_16.png",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "max_lingqi": 520,
+        "fagong": 20,
+        "fafang": 18
+      },
+      "implicit_attrs": {
+        "max_lingqi": 150
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "衣服",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-gloves",
+      "name": "玄光护腕",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_shoulder armour_1_16.png",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "fagong": 16,
+        "lengque": 0.018
+      },
+      "implicit_attrs": {
+        "fagong": 8
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "手部",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-pants",
+      "name": "玄光法履",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_pants_1_16.png",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "max_qixue": 260,
+        "fafang": 20,
+        "fagong": 10
+      },
+      "implicit_attrs": {
+        "fafang": 10
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "腿部",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-necklace",
+      "name": "玄光宝链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_Jade pendants_1_16.png",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "fagong": 14,
+        "kongzhi_kangxing": 0.012
+      },
+      "implicit_attrs": {
+        "fagong": 9,
+        "baoji": 0.004
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "项链",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-accessory",
+      "name": "玄光法环",
+      "category": "equipment",
+      "sub_category": "ring",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_jiezhi_10010.png",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "fagong": 18,
+        "zengshang": 0.018
+      },
+      "implicit_attrs": {
+        "fagong": 10,
+        "lengque": 0.01
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "饰品",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
+    },
+    {
+      "id": "set-xuanguang-artifact",
+      "name": "玄光法印",
+      "category": "equipment",
+      "sub_category": "token",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/guan_tian_jing.png",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼炁化神·结胎期",
+      "base_attrs": {
+        "kongzhi_kangxing": 0.04,
+        "lengque": 0.02
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing": 0.012
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "set_id": "set-xuanguang",
+      "tags": [
+        "法宝",
+        "玄光套装",
+        "法攻",
+        "结胎期"
+      ]
     }
   ]
 }

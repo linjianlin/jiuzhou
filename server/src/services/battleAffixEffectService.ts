@@ -20,6 +20,7 @@ const BATTLE_AFFIX_EFFECT_TYPE_SET: ReadonlySet<BattleAffixEffectType> = new Set
   'damage',
   'heal',
   'resource',
+  'shield',
 ]);
 
 type RawGeneratedAffix = {

@@ -86,6 +86,7 @@ const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
   'damage',
   'heal',
   'resource',
+  'shield',
 ]);
 
 // Redis 战斗持久化常量

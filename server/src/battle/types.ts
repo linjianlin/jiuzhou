@@ -273,7 +273,7 @@ export interface BattleSetBonusEffect {
   pieceCount: number;
   trigger: BattleSetBonusTrigger;
   target: 'self' | 'enemy';
-  effectType: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource';
+  effectType: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield';
   durationRound?: number;
   element?: string;
   params: Record<string, unknown>;

@@ -13,7 +13,7 @@ import type {
   BattleUnit,
 } from '../types.js';
 import { rollChance } from '../utils/random.js';
-import { addBuff } from './buff.js';
+import { addBuff, addShield } from './buff.js';
 import { applyDamage } from './damage.js';
 import { applyHealing } from './healing.js';
 
@@ -38,33 +38,36 @@ export function triggerSetBonusEffects(
   if (effects.length === 0) return [];
 
   const logs: BattleLogEntry[] = [];
-  for (const effect of effects) {
-    if (effect.trigger !== trigger) continue;
+    for (const effect of effects) {
+      if (effect.trigger !== trigger) continue;
 
-    const params = toObject(effect.params);
-    if (!passChance(state, params)) continue;
+      const params = toObject(effect.params);
+      if (!passChance(state, params)) continue;
 
     const target = effect.target === 'enemy' ? context.target : owner;
     if (!target || !target.isAlive) continue;
 
     let applyResult: SetBonusApplyResult | null = null;
-    switch (effect.effectType) {
-      case 'buff':
-      case 'debuff':
-        applyResult = applySetBuffOrDebuff(effect, owner, target, params);
-        break;
-      case 'damage':
-        applyResult = applySetDamage(state, owner, target, params, context.damage);
-        break;
-      case 'heal':
-        applyResult = applySetHeal(owner, target, params);
-        break;
-      case 'resource':
-        applyResult = applySetResource(owner, target, params);
-        break;
-      default:
-        break;
-    }
+      switch (effect.effectType) {
+        case 'buff':
+        case 'debuff':
+          applyResult = applySetBuffOrDebuff(effect, owner, target, params);
+          break;
+        case 'damage':
+          applyResult = applySetDamage(state, owner, target, params, context.damage);
+          break;
+        case 'heal':
+          applyResult = applySetHeal(owner, target, params);
+          break;
+        case 'resource':
+          applyResult = applySetResource(owner, target, params);
+          break;
+        case 'shield':
+          applyResult = applySetShield(effect, owner, target, params);
+          break;
+        default:
+          break;
+      }
 
     if (!applyResult) continue;
     logs.push(buildSetBonusActionLog(state, owner, effect, applyResult.targetResult));
@@ -294,6 +297,49 @@ function applySetResource(
   }
 
   return null;
+}
+
+function applySetShield(
+  effect: BattleSetBonusEffect,
+  owner: BattleUnit,
+  target: BattleUnit,
+  params: Record<string, unknown>
+): SetBonusApplyResult | null {
+  const baseValue = asFiniteNumber(params.value) ?? 0;
+  const scaleKey = asNonEmptyString(params.scale_key);
+  const scaleRate = asFiniteNumber(params.scale_rate);
+
+  let shieldValue = Math.floor(baseValue);
+  if (scaleKey && scaleRate !== null) {
+    const scaleAttr = asFiniteNumber(readAttrValue(owner, scaleKey)) ?? 0;
+    shieldValue += Math.floor(scaleAttr * normalizeRate(scaleRate));
+  }
+
+  if (shieldValue <= 0) return null;
+
+  const absorbTypeRaw = asNonEmptyString(params.absorb_type);
+  const absorbType = absorbTypeRaw === 'physical' || absorbTypeRaw === 'magic' ? absorbTypeRaw : 'all';
+  const duration = normalizeDuration(effect.durationRound);
+
+  addShield(
+    target,
+    {
+      value: shieldValue,
+      maxValue: shieldValue,
+      duration,
+      absorbType,
+      priority: 1,
+      sourceSkillId: effect.setId,
+    },
+    owner.id,
+  );
+
+  return {
+    targetResult: {
+      ...buildTargetResultBase(target),
+      buffsApplied: [`${effect.setName}·护盾`],
+    },
+  };
 }
 
 function passChance(state: BattleState, params: Record<string, unknown>): boolean {
