@@ -306,9 +306,9 @@
       "id": "main-3-007",
       "chapter_id": "mq-chapter-3",
       "section_num": 7,
-      "name": "采药门槛",
-      "description": "炎霜试炼已毕，你需将积累化为突破，冲击采药期门槛。",
-      "brief": "突破至炼炁化神·采药期。",
+      "name": "天阶悟法",
+      "description": "炎霜试炼已毕，巡守建议你参悟一门天阶功法，为突破采药期奠定根基。",
+      "brief": "学习一门天阶品质的功法。",
       "npc_id": "npc-yanbing-watcher",
       "map_id": "map-yanbing-rift",
       "room_id": "room-yanbing-outpost",
@@ -317,11 +317,12 @@
       "objectives": [
         {
           "id": "obj-1",
-          "type": "upgrade_realm",
-          "text": "突破至炼炁化神·采药期",
+          "type": "upgrade_technique",
+          "text": "学习一门天阶功法",
           "target": 1,
           "params": {
-            "realm": "炼炁化神·采药期"
+            "quality": "天",
+            "layer": 1
           }
         }
       ],
@@ -348,7 +349,7 @@
       "npc_id": "npc-yanbing-watcher",
       "map_id": "map-yanbing-rift",
       "room_id": "room-yanbing-outpost",
-      "min_realm": "炼炁化神·采药期",
+      "min_realm": "炼炁化神·炼己期",
       "dialogue_id": "dlg-main-3-008",
       "objectives": [
         {

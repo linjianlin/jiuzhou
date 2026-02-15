@@ -260,12 +260,30 @@ const syncCurrentSectionStaticProgress = async (characterId: number): Promise<vo
 
       if (objType === 'upgrade_technique') {
         const techniqueId = asString(params.technique_id).trim();
+        const requiredQuality = asString(params.quality).trim();
         const requiredLayer = Math.max(1, Math.floor(asNumber(params.layer, 1)));
-        const currentLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
-        if (!techniqueId) continue;
-        if (currentLayer >= requiredLayer) {
-          progressData[objId] = target;
-          updated = true;
+
+        if (techniqueId) {
+          // 按具体功法 ID 匹配
+          const currentLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
+          if (currentLayer >= requiredLayer) {
+            progressData[objId] = target;
+            updated = true;
+          }
+        } else if (requiredQuality) {
+          // 按品质匹配：玩家拥有任意一门该品质功法且 layer >= 要求即可
+          const qualityTechIds = new Set(
+            getTechniqueDefinitions()
+              .filter((t) => t.enabled !== false && asString(t.quality).trim() === requiredQuality)
+              .map((t) => t.id),
+          );
+          for (const [tid, layer] of currentTechniqueLayerMap) {
+            if (qualityTechIds.has(tid) && layer >= requiredLayer) {
+              progressData[objId] = target;
+              updated = true;
+              break;
+            }
+          }
         }
       }
     }
@@ -1066,13 +1084,26 @@ export const updateSectionProgress = async (
       }
 
       if (event.type === 'upgrade_technique') {
-        if (
-          objType === 'upgrade_technique' &&
-          asString(params.technique_id) === event.techniqueId &&
-          event.layer >= asNumber(params.layer, 1)
-        ) {
-          matched = true;
-          delta = 1;
+        if (objType === 'upgrade_technique' && event.layer >= asNumber(params.layer, 1)) {
+          const techniqueId = asString(params.technique_id).trim();
+          const requiredQuality = asString(params.quality).trim();
+
+          if (techniqueId) {
+            // 按具体功法 ID 匹配
+            if (techniqueId === event.techniqueId) {
+              matched = true;
+              delta = 1;
+            }
+          } else if (requiredQuality) {
+            // 按品质匹配：查询触发事件的功法品质
+            const techDef = getTechniqueDefinitions().find(
+              (t) => t.id === event.techniqueId && t.enabled !== false,
+            );
+            if (techDef && asString(techDef.quality).trim() === requiredQuality) {
+              matched = true;
+              delta = 1;
+            }
+          }
         }
       }
 
