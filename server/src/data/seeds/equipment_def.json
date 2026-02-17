@@ -20,6 +20,7 @@
         "wugong": 3
       },
       "affix_pool_id": "ap-weapon-common",
+      "set_id": "set-fanren",
       "tags": [
         "武器",
         "剑",
@@ -95,6 +96,7 @@
         "max_qixue": 10
       },
       "affix_pool_id": "ap-armor-common",
+      "set_id": "set-fanren",
       "tags": [
         "防具",
         "头部",
@@ -120,6 +122,7 @@
         "max_qixue": 20
       },
       "affix_pool_id": "ap-armor-common",
+      "set_id": "set-fanren",
       "tags": [
         "防具",
         "衣服",
@@ -170,6 +173,7 @@
         "lingqi_huifu": 1
       },
       "affix_pool_id": "ap-accessory-common",
+      "set_id": "set-fanren",
       "tags": [
         "饰品",
         "项链"
@@ -193,6 +197,7 @@
         "max_qixue": 8
       },
       "affix_pool_id": "ap-armor-common",
+      "set_id": "set-fanren",
       "tags": [
         "防具",
         "手部",
@@ -218,6 +223,7 @@
         "max_qixue": 15
       },
       "affix_pool_id": "ap-armor-common",
+      "set_id": "set-fanren",
       "tags": [
         "防具",
         "腿部",
@@ -242,6 +248,7 @@
         "lingqi_huifu": 1
       },
       "affix_pool_id": "ap-accessory-common",
+      "set_id": "set-fanren",
       "tags": [
         "饰品",
         "戒指",
@@ -266,6 +273,7 @@
         "shanbi": 0.005
       },
       "affix_pool_id": "ap-artifact-common",
+      "set_id": "set-fanren",
       "tags": [
         "法宝",
         "符箓",
