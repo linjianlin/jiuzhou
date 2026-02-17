@@ -43,7 +43,8 @@ export interface AutoDisassembleRuleDto {
   excludedSubCategories?: string[];
   includeNameKeywords?: string[];
   excludeNameKeywords?: string[];
-  maxQualityRank?: number;
+  /** 规则级最高品质（1黄/2玄/3地/4天），不是全局配置 */
+  maxQualityRank: number;
 }
 
 export type AutoDisassembleRulesDto = AutoDisassembleRuleDto[];

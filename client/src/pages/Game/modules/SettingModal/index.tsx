@@ -238,7 +238,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
     const sourceRules = overrides?.rules ?? autoDisassembleRules;
     const payload = sourceRules.map((rule) => buildAutoDisassembleRulePayload(rule));
     if (payload.length > 0) return payload;
-    return [{ categories: ['equipment'] }];
+    return [{ categories: ['equipment'], maxQualityRank: 1 }];
   };
 
   const saveAutoDisassemble = async (
@@ -374,7 +374,8 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
               </div>
 
               <Typography.Text type="secondary" className="setting-rule-tip">
-                可新增多条规则。自动分解采用"或（OR）"判断：命中任意一条规则即会分解。
+                可新增多条规则。自动分解采用"或（OR）"判断：命中任意一条规则即会分解。最高品质为规则级配置，
+                每条规则独立生效。
               </Typography.Text>
 
               {autoDisassembleRules.map((rule, index) => (
@@ -393,7 +394,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
                   </div>
 
                   <div className="setting-row setting-row-column">
-                    <Typography.Text>最高品质</Typography.Text>
+                    <Typography.Text>本规则最高品质</Typography.Text>
                     <Select
                       value={rule.maxQualityRank}
                       disabled={autoDisassembleLoading || autoDisassembleSaving}

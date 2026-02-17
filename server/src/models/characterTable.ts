@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS characters (
   -- 战斗设置
   auto_cast_skills BOOLEAN DEFAULT true,               -- 自动释放技能开关
   auto_disassemble_enabled BOOLEAN DEFAULT false,      -- 自动分解物品开关
-  auto_disassemble_max_quality_rank INTEGER DEFAULT 1, -- 自动分解最高品质（1黄/2玄/3地/4天）
   auto_disassemble_rules JSONB DEFAULT '[]'::jsonb,    -- 自动分解高级规则（数组）
 
   -- 时间戳
@@ -81,7 +80,6 @@ COMMENT ON COLUMN characters.current_room_id IS '当前所在房间ID';
 COMMENT ON COLUMN characters.last_offline_at IS '最后离线时间';
 COMMENT ON COLUMN characters.auto_cast_skills IS '自动释放技能开关';
 COMMENT ON COLUMN characters.auto_disassemble_enabled IS '自动分解物品开关';
-COMMENT ON COLUMN characters.auto_disassemble_max_quality_rank IS '自动分解最高品质（1黄/2玄/3地/4天）';
 COMMENT ON COLUMN characters.auto_disassemble_rules IS '自动分解高级规则JSON数组（规则间 OR）';
 `;
 
@@ -104,7 +102,6 @@ const columnsToCheck = [
   { name: 'last_offline_at', type: 'TIMESTAMPTZ DEFAULT NULL', comment: '最后离线时间' },
   { name: 'auto_cast_skills', type: 'BOOLEAN DEFAULT true', comment: '自动释放技能开关' },
   { name: 'auto_disassemble_enabled', type: 'BOOLEAN DEFAULT false', comment: '自动分解物品开关' },
-  { name: 'auto_disassemble_max_quality_rank', type: 'INTEGER DEFAULT 1', comment: '自动分解最高品质（1黄/2玄/3地/4天）' },
   { name: 'auto_disassemble_rules', type: "JSONB DEFAULT '[]'::jsonb", comment: '自动分解高级规则JSON数组（规则间 OR）' },
 ] as const;
 
@@ -180,6 +177,11 @@ const dropDeprecatedAttrColumns = async (): Promise<void> => {
   }
 };
 
+const dropDeprecatedAutoDisassembleGlobalQualityColumn = async (): Promise<void> => {
+  // 自动分解“最高品质”已迁移到 rules 内；清理旧全局列，避免产生错误心智。
+  await query('ALTER TABLE characters DROP COLUMN IF EXISTS auto_disassemble_max_quality_rank');
+};
+
 // 初始化角色表
 export const initCharacterTable = async (): Promise<void> => {
   try {
@@ -218,6 +220,12 @@ export const initCharacterTable = async (): Promise<void> => {
       migrationKey: 'characters_runtime_attr_columns_drop_v1',
       description: '角色可计算属性改为运行时计算并删除旧字段',
       execute: dropDeprecatedAttrColumns,
+    });
+
+    await runDbMigrationOnce({
+      migrationKey: 'characters_auto_disassemble_global_quality_drop_v1',
+      description: '自动分解最高品质迁移到规则并删除旧全局字段',
+      execute: dropDeprecatedAutoDisassembleGlobalQualityColumn,
     });
 
     console.log('✓ 角色表检测完成');

@@ -107,21 +107,11 @@ const normalizeAutoDisassembleRuleSetList = (raw: unknown, maxSize: number = 20)
 
 export const normalizeAutoDisassembleSetting = (raw: {
   enabled?: unknown;
-  maxQualityRank?: unknown;
   rules?: unknown;
 }): AutoDisassembleSetting => {
-  const rules = normalizeAutoDisassembleRuleSetList(raw.rules);
-  // 兼容旧数据：如果 rules 中的规则没有自带 maxQualityRank（旧格式），
-  // 则用外层传入的全局 maxQualityRank 回填，保证升级平滑。
-  const globalMaxQualityRank = clampQualityRank(raw.maxQualityRank, 1);
-  for (const rule of rules) {
-    if (rule.maxQualityRank <= 0) {
-      rule.maxQualityRank = globalMaxQualityRank;
-    }
-  }
   return {
     enabled: Boolean(raw.enabled),
-    rules,
+    rules: normalizeAutoDisassembleRuleSetList(raw.rules),
   };
 };
 
