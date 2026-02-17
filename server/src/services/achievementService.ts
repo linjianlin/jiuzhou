@@ -30,7 +30,7 @@ import type {
 } from './achievement/types.js';
 import { updateAchievementProgress } from './achievement/progress.js';
 import { equipTitle, getTitleList } from './achievement/title.js';
-import { getRealmOrderIndex } from './shared/realmOrder.js';
+import { getRealmOrderIndex } from './shared/realmRules.js';
 import { getAchievementDefinitions, getItemDefinitionsByIds } from './staticConfigLoader.js';
 
 const getRealmRank = (realmRaw: unknown, subRealmRaw?: unknown): number => {

@@ -15,7 +15,7 @@ import {
 } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
-import { getRealmRankZeroBased } from './shared/realmOrder.js';
+import { getRealmRankZeroBased } from './shared/realmRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import {
   applyCharacterResourceDeltaByCharacterId,

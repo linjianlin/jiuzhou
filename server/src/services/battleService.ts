@@ -53,7 +53,7 @@ import {
   type MonsterPhaseTriggerConfig,
   type SkillDefConfig,
 } from './staticConfigLoader.js';
-import { normalizeRealmKeepingUnknown } from './shared/realmOrder.js';
+import { normalizeRealmKeepingUnknown } from './shared/realmRules.js';
 
 // 活跃战斗缓存
 const activeBattles = new Map<string, BattleEngine>();

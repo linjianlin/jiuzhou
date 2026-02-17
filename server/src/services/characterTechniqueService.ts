@@ -6,7 +6,7 @@ import { query, pool } from '../config/database.js';
 import { updateSectionProgress } from './mainQuestService.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { isCharacterInBattle } from './battleService.js';
-import { getRealmRankZeroBased } from './shared/realmOrder.js';
+import { getRealmRankZeroBased } from './shared/realmRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
 import { getItemDefinitionById, getItemDefinitionsByIds, getSkillDefinitions, getTechniqueDefinitions, getTechniqueLayerDefinitions } from './staticConfigLoader.js';

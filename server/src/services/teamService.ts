@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { getGameServer } from '../game/gameServer.js';
 import { onUserJoinTeam, onUserLeaveTeam } from './battleService.js';
 import { updateAchievementProgress } from './achievementService.js';
-import { REALM_ORDER } from './shared/realmOrder.js';
+import { REALM_ORDER } from './shared/realmRules.js';
 
 /**
  * 九州修仙录 - 组队系统服务

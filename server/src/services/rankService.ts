@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { REALM_ORDER } from './shared/realmOrder.js';
+import { REALM_ORDER } from './shared/realmRules.js';
 import { getCharacterComputedBatchByCharacterIds } from './characterComputedService.js';
 
 const clampLimit = (limit?: number, fallback: number = 50): number => {

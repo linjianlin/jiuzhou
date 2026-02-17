@@ -4,7 +4,7 @@ import { QUALITY_BY_RANK, QUALITY_MULTIPLIER_BY_RANK, isQualityName } from './sh
 import { getAffixPoolDefinitions } from './staticConfigLoader.js';
 import {
   getRealmRankOneBasedForEquipment,
-} from './shared/realmOrder.js';
+} from './shared/realmRules.js';
 import {
   buildAffixValueAndModifiers,
   normalizeAffixValueByContext,

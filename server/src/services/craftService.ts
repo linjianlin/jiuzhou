@@ -3,7 +3,7 @@ import { pool, query } from '../config/database.js';
 import { addItemToInventoryTx } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordCraftItemEvent } from './taskService.js';
-import { REALM_ORDER } from './shared/realmOrder.js';
+import { REALM_ORDER } from './shared/realmRules.js';
 import { getItemDefinitionById, getItemDefinitionsByIds, getItemRecipeById, getItemRecipeDefinitionsByType } from './staticConfigLoader.js';
 
 type CraftRecipeType = 'craft' | 'refine' | 'decompose' | 'upgrade' | string;

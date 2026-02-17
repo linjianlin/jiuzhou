@@ -32,7 +32,7 @@ import {
 } from './shared/dropQuantityMultiplier.js';
 import { lockCharacterInventoryMutexesTx } from './inventoryMutex.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
-import { getRealmOrderIndex } from './shared/realmOrder.js';
+import { getRealmOrderIndex } from './shared/realmRules.js';
 
 // ============================================
 // 类型定义

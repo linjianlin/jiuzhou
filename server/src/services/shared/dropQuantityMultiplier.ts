@@ -22,7 +22,7 @@ import {
   type DropEntrySourceType,
   type DropMultiplierContext,
 } from './dropRateMultiplier.js';
-import { getRealmRankOneBasedStrict } from './realmOrder.js';
+import { getRealmRankOneBasedStrict } from './realmRules.js';
 
 const dropQtyMultiplierEligibilityCache = new Map<string, boolean>();
 

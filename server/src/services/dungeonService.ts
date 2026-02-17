@@ -17,7 +17,7 @@ import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordDungeonClearEvent } from './taskService.js';
 import { applyStaminaRecoveryTx, STAMINA_MAX } from './staminaService.js';
 import { normalizeAutoDisassembleSetting } from './autoDisassembleRules.js';
-import { REALM_ORDER } from './shared/realmOrder.js';
+import { REALM_ORDER } from './shared/realmRules.js';
 import {
   grantRewardItemWithAutoDisassemble,
   type AutoDisassembleSetting,

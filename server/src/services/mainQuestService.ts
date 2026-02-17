@@ -12,7 +12,7 @@ import {
 } from './dialogueService.js';
 import { createItem } from './itemService.js';
 import { getRoomsInMap } from './mapService.js';
-import { getRealmOrderIndex } from './shared/realmOrder.js';
+import { getRealmOrderIndex } from './shared/realmRules.js';
 import {
   getItemDefinitionById,
   getItemDefinitionsByIds,

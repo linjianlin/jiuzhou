@@ -21,7 +21,7 @@ import {
 } from './shared/itemQuality.js';
 import {
   getRealmRankOneBasedForEquipment,
-} from './shared/realmOrder.js';
+} from './shared/realmRules.js';
 import { getAffixPoolDefinitions, getItemDefinitionById } from './staticConfigLoader.js';
 import {
   buildAffixValueAndModifiers,
