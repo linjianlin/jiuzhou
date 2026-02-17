@@ -8,7 +8,7 @@ import { testConnection, pool } from './config/database.js';
 import { testRedisConnection, closeRedis } from './config/redis.js';
 import { initSocket } from './config/socket.js';
 import { initTables } from './models/initTables.js';
-import { initGameServer } from './game/GameServer.js';
+import { initGameServer } from './game/gameServer.js';
 import authRoutes from './routes/authRoutes.js';
 import characterRoutes from './routes/characterRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';

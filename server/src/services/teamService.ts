@@ -1,6 +1,6 @@
 import { query } from '../config/database.js';
 import crypto from 'crypto';
-import { getGameServer } from '../game/GameServer.js';
+import { getGameServer } from '../game/gameServer.js';
 import { onUserJoinTeam, onUserLeaveTeam } from './battleService.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { REALM_ORDER } from './shared/realmOrder.js';

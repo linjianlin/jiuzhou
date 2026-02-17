@@ -3,7 +3,7 @@
  * 调用 GameServer.pushCharacterUpdate 通知客户端刷新角色数据。
  * 推送失败时静默忽略（不影响主流程）。
  */
-import { getGameServer } from '../game/GameServer.js';
+import { getGameServer } from '../game/gameServer.js';
 
 export const safePushCharacterUpdate = async (userId: number): Promise<void> => {
   try {

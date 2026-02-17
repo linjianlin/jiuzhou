@@ -16,7 +16,7 @@ import {
   type AutoDisassembleSetting,
 } from './autoDisassembleRewardService.js';
 import { normalizeAutoDisassembleSetting } from './autoDisassembleRules.js';
-import type { MonsterData } from '../battle/BattleFactory.js';
+import type { MonsterData } from '../battle/battleFactory.js';
 import { getItemDefinitionById, getMonsterDefinitions } from './staticConfigLoader.js';
 import { resolveDropPoolById } from './dropPoolResolver.js';
 import {

@@ -4,8 +4,8 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketServer, Socket } from 'socket.io';
 import { randomUUID } from 'crypto';
-import type { CharacterAttributes } from './GameState.js';
-import { dbToCharacterAttributes } from './GameState.js';
+import type { CharacterAttributes } from './gameState.js';
+import { dbToCharacterAttributes } from './gameState.js';
 import { query } from '../config/database.js';
 import { verifyToken, verifySession } from '../services/authService.js';
 import { applyStaminaRecoveryByUserId } from '../services/staminaService.js';

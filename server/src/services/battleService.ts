@@ -10,8 +10,8 @@ import {
   type CharacterData,
   type MonsterData,
   type SkillData
-} from '../battle/BattleFactory.js';
-import { BattleEngine } from '../battle/BattleEngine.js';
+} from '../battle/battleFactory.js';
+import { BattleEngine } from '../battle/battleEngine.js';
 import type {
   BattleAttrs,
   BattleSkill,
@@ -31,7 +31,7 @@ import {
   type BattleAffixEffectSource,
 } from './battleAffixEffectService.js';
 import { getRoomInMap } from './mapService.js';
-import { getGameServer } from '../game/GameServer.js';
+import { getGameServer } from '../game/gameServer.js';
 import { recordKillMonsterEvent } from './taskService.js';
 import { getBattleSkills } from './characterTechniqueService.js';
 import { getArenaStatus } from './arenaService.js';
