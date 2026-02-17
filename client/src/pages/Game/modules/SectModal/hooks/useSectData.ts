@@ -7,7 +7,7 @@
  * 2) 严格按权限决定可操作性，避免前端越权操作按钮可点。
  */
 import { App } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   acceptSectQuest,
   appointSectPosition,
@@ -105,6 +105,11 @@ const getAppointDefault = (member: SectMemberVm): MemberActionDraft['appointPosi
   if (member.position === 'leader') return 'disciple';
   const matched = APPOINTABLE_POSITION_OPTIONS.find((item) => item.value === member.position);
   return matched ? matched.value : 'disciple';
+};
+
+type SectListApiResponse<Row> = {
+  success: boolean;
+  data?: Row[] | null;
 };
 
 export const useSectData = ({ open, spiritStones, playerName, onChanged }: UseSectDataArgs): UseSectDataState => {
@@ -327,73 +332,92 @@ export const useSectData = ({ open, spiritStones, playerName, onChanged }: UseSe
     [loadMyApplications, loadMySectInfo, syncJoinState]
   );
 
+  /**
+   * 统一“已加入宗门后拉取列表数据”的模板逻辑。
+   * 输入：
+   * - enabled: 当前场景是否允许拉取（如已加入、具备管理权限）。
+   * - request: 具体接口请求函数，返回 { success, data? } 结构。
+   * - setLoading / setRows: 对应模块的 loading 与数据状态写入器。
+   * - errorFallback: 失败时展示给玩家的兜底文案。
+   *
+   * 输出：
+   * - 成功：写入最新列表（失败或空数据均写入 []，保证渲染层状态稳定）。
+   * - 失败：统一错误提示并清空目标列表。
+   *
+   * 关键约束：
+   * - 该函数只收敛通用流程，不改业务触发时机与权限规则。
+   */
+  const loadJoinedList = useCallback(
+    async <Row,>({
+      enabled,
+      request,
+      setLoading,
+      setRows,
+      errorFallback,
+    }: {
+      enabled: boolean;
+      request: () => Promise<SectListApiResponse<Row>>;
+      setLoading: Dispatch<SetStateAction<boolean>>;
+      setRows: Dispatch<SetStateAction<Row[]>>;
+      errorFallback: string;
+    }): Promise<void> => {
+      if (!enabled) {
+        setRows([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await request();
+        setRows(res.success && res.data ? res.data : []);
+      } catch (error) {
+        message.error(resolveErrorMessage(error, errorFallback));
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [message]
+  );
+
   const fetchApplications = useCallback(async () => {
-    if (joinState !== 'joined' || !permissions.canManageApplications) {
-      setApplications([]);
-      return;
-    }
-    setApplicationsLoading(true);
-    try {
-      const res = await getSectApplications();
-      setApplications(res.success && res.data ? res.data : []);
-    } catch (error) {
-      message.error(resolveErrorMessage(error, '获取入门申请失败'));
-      setApplications([]);
-    } finally {
-      setApplicationsLoading(false);
-    }
-  }, [joinState, message, permissions.canManageApplications]);
+    await loadJoinedList({
+      enabled: joinState === 'joined' && permissions.canManageApplications,
+      request: getSectApplications,
+      setLoading: setApplicationsLoading,
+      setRows: setApplications,
+      errorFallback: '获取入门申请失败',
+    });
+  }, [joinState, loadJoinedList, permissions.canManageApplications]);
 
   const fetchShop = useCallback(async () => {
-    if (joinState !== 'joined') {
-      setShopItems([]);
-      return;
-    }
-    setShopLoading(true);
-    try {
-      const res = await getSectShop();
-      setShopItems(res.success && res.data ? res.data : []);
-    } catch (error) {
-      message.error(resolveErrorMessage(error, '获取宗门商店失败'));
-      setShopItems([]);
-    } finally {
-      setShopLoading(false);
-    }
-  }, [joinState, message]);
+    await loadJoinedList({
+      enabled: joinState === 'joined',
+      request: getSectShop,
+      setLoading: setShopLoading,
+      setRows: setShopItems,
+      errorFallback: '获取宗门商店失败',
+    });
+  }, [joinState, loadJoinedList]);
 
   const fetchQuests = useCallback(async () => {
-    if (joinState !== 'joined') {
-      setQuests([]);
-      return;
-    }
-    setQuestsLoading(true);
-    try {
-      const res = await getSectQuests();
-      setQuests(res.success && res.data ? res.data : []);
-    } catch (error) {
-      message.error(resolveErrorMessage(error, '获取宗门任务失败'));
-      setQuests([]);
-    } finally {
-      setQuestsLoading(false);
-    }
-  }, [joinState, message]);
+    await loadJoinedList({
+      enabled: joinState === 'joined',
+      request: getSectQuests,
+      setLoading: setQuestsLoading,
+      setRows: setQuests,
+      errorFallback: '获取宗门任务失败',
+    });
+  }, [joinState, loadJoinedList]);
 
   const fetchLogs = useCallback(async () => {
-    if (joinState !== 'joined') {
-      setLogs([]);
-      return;
-    }
-    setLogsLoading(true);
-    try {
-      const res = await getSectLogs(50);
-      setLogs(res.success && res.data ? res.data : []);
-    } catch (error) {
-      message.error(resolveErrorMessage(error, '获取宗门日志失败'));
-      setLogs([]);
-    } finally {
-      setLogsLoading(false);
-    }
-  }, [joinState, message]);
+    await loadJoinedList({
+      enabled: joinState === 'joined',
+      request: () => getSectLogs(50),
+      setLoading: setLogsLoading,
+      setRows: setLogs,
+      errorFallback: '获取宗门日志失败',
+    });
+  }, [joinState, loadJoinedList]);
 
   const applyJoin = useCallback(
     async (sectId: string) => {
