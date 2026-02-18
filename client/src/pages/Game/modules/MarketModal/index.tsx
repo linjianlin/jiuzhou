@@ -570,9 +570,9 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   const menuItems = useMemo(
     () => [
       { key: 'market' as const, label: '坊市', shortLabel: '坊市' },
-      { key: 'my' as const, label: '我的上架', shortLabel: '上架' },
-      { key: 'list' as const, label: '物品上架', shortLabel: '上架物品' },
-      { key: 'records' as const, label: '售卖记录', shortLabel: '记录' },
+      { key: 'my' as const, label: '我的上架', shortLabel: '我的上架' },
+      { key: 'list' as const, label: '物品上架', shortLabel: '物品上架' },
+      { key: 'records' as const, label: '售卖记录', shortLabel: '售卖记录' },
     ],
     [],
   );
