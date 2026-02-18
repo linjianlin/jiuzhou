@@ -1,4 +1,5 @@
 @use './rerollRollShared' as rerollRoll;
+@use './qualityTagShared' as qualityTag;
 
 /* ═══════════════════════════════════════════════════
    MobileBagModal - 移动端背包界面样式
@@ -200,124 +201,53 @@
 
 /* ── 物品格子 ── */
 .mbag-cell {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  border-radius: 12px;
-  border: 1.5px solid var(--border-color-soft);
-  background: var(--panel-bg-soft);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  --inventory-cell-size: auto;
+  --inventory-icon-size: 36px;
+  --inventory-name-size: 10px;
+  --inventory-name-gap: 3px;
+  --inventory-qty-top: 3px;
+  --inventory-qty-left: 3px;
+  border-width: 1.5px;
   padding: 4px 3px;
-  cursor: pointer;
-  user-select: none;
-  overflow: hidden;
-  transition: border-color 0.12s, transform 0.12s;
-
-  /* 品质底色 */
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: var(--mbag-q, transparent);
-    opacity: 0.1;
-    pointer-events: none;
-    transition: opacity 0.12s;
-  }
-
-  &.q-huang { --mbag-q: var(--rarity-huang); border-color: var(--rarity-huang-border-soft); }
-  &.q-xuan { --mbag-q: var(--rarity-xuan); border-color: var(--rarity-xuan-border-soft); }
-  &.q-di { --mbag-q: var(--rarity-di); border-color: var(--rarity-di-border-soft); }
-  &.q-tian { --mbag-q: var(--rarity-tian); border-color: var(--rarity-tian-border-soft); }
-
-  &.is-active {
-    border-color: var(--text-color);
-    transform: scale(0.95);
-
-    &::before {
-      opacity: 0.18;
-    }
-  }
-
-  &:active {
-    transform: scale(0.94);
-  }
 }
 
-.mbag-cell-count {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  z-index: 2;
-  height: 14px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
+.mbag-cell.item-quality--huang {
+  border-color: var(--rarity-huang-border-soft);
 }
 
-.mbag-cell-badge {
-  position: absolute;
+.mbag-cell.item-quality--xuan {
+  border-color: var(--rarity-xuan-border-soft);
+}
+
+.mbag-cell.item-quality--di {
+  border-color: var(--rarity-di-border-soft);
+}
+
+.mbag-cell.item-quality--tian {
+  border-color: var(--rarity-tian-border-soft);
+}
+
+.mbag-cell.is-active {
+  border-color: var(--text-color);
+  transform: scale(0.95);
+}
+
+.mbag-cell:active {
+  transform: scale(0.94);
+}
+
+.mbag-cell .inventory-item-cell__badge {
   top: 3px;
   right: 3px;
-  z-index: 2;
-  height: 14px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--primary-color);
-  color: #fff;
   font-size: 8px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
 }
 
-.mbag-cell-lock-badge {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 2;
-  height: 14px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: rgba(255, 77, 79, 0.92);
-  color: #fff;
-  font-size: 8px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-
-  &.is-with-equipped {
-    top: 20px;
-  }
+.mbag-cell .inventory-item-cell__badge--locked.is-with-equipped {
+  top: 20px;
 }
 
-.mbag-cell-icon {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  position: relative;
-  z-index: 1;
-}
-
-.mbag-cell-name {
-  margin-top: 3px;
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--text-color);
-  text-align: center;
-  line-height: 1.15;
-  position: relative;
-  z-index: 1;
-  display: -webkit-box;
+.mbag-cell .inventory-item-cell__name {
   -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   word-break: break-all;
   max-width: 100%;
 }
@@ -498,10 +428,7 @@
 }
 
 .mbag-sheet-tag--quality {
-  &.q-huang { background: color-mix(in srgb, var(--rarity-huang) 10%, transparent); color: var(--rarity-huang); }
-  &.q-xuan { background: color-mix(in srgb, var(--rarity-xuan) 10%, transparent); color: var(--rarity-xuan); }
-  &.q-di { background: color-mix(in srgb, var(--rarity-di) 10%, transparent); color: var(--rarity-di); }
-  &.q-tian { background: color-mix(in srgb, var(--rarity-tian) 10%, transparent); color: var(--rarity-tian); }
+  @include qualityTag.quality-chip-solid();
 }
 
 .mbag-sheet-tag--tag {
@@ -592,33 +519,31 @@
   padding: 0 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mbag-sheet-section {
   border: 1px solid var(--border-color-soft);
   border-radius: 12px;
   background: var(--panel-bg-soft);
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .mbag-sheet-section-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   color: var(--text-color);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .mbag-sheet-section-text {
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 11px;
+  line-height: 1.55;
   color: var(--text-tertiary);
 }
 
 .mbag-sheet-attr-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  margin-top: 2px;
 }
 
 .mbag-sheet-attr-row {
@@ -635,26 +560,19 @@
   color: var(--text-color);
 }
 
-.mbag-sheet-attr-row--affix {
-  display: block;
-}
-
-.mbag-sheet-attr-row--affix .affix-tooltip-row {
-  font-size: 12px;
-}
-
 .mbag-sheet-effect-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .mbag-sheet-effect-chip {
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
   border: 1px solid var(--border-color);
   background: var(--panel-bg);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--text-tertiary);
 }
 

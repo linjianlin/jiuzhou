@@ -70,16 +70,15 @@ body.theme-dark {
 }
 
 .affix-tooltip-roll-tag.is-colored {
-  background: linear-gradient(
-    135deg,
-    rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-alpha-strong)),
-    rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-alpha-soft))
-  );
+  background: linear-gradient(135deg,
+      rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-alpha-strong)),
+      rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-alpha-soft)));
   box-shadow: inset 0 0 0 1px rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-ring-alpha));
 }
 
 .affix-tooltip-text {
   min-width: 0;
+  padding-left: 4px;
   color: inherit;
   opacity: 0.92;
   word-break: break-word;

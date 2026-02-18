@@ -1,0 +1,147 @@
+.inventory-item-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  height: var(--inventory-cell-size, 56px);
+  min-height: var(--inventory-cell-size, 56px);
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg-soft);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: inset 0 0 0 1px var(--inventory-q, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.inventory-item-cell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--inventory-q, transparent);
+  opacity: 0.14;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.inventory-item-cell.item-quality--huang {
+  --inventory-q: var(--rarity-huang);
+}
+
+.inventory-item-cell.item-quality--xuan {
+  --inventory-q: var(--rarity-xuan);
+}
+
+.inventory-item-cell.item-quality--di {
+  --inventory-q: var(--rarity-di);
+}
+
+.inventory-item-cell.item-quality--tian {
+  --inventory-q: var(--rarity-tian);
+}
+
+.inventory-item-cell:hover {
+  border-color: var(--border-color);
+  background: var(--panel-bg-soft);
+  transform: translateY(-1px);
+}
+
+.inventory-item-cell:hover::before {
+  opacity: 0.2;
+}
+
+.inventory-item-cell:active {
+  transform: translateY(0);
+}
+
+.inventory-item-cell.is-active {
+  border-color: var(--primary-color);
+}
+
+.inventory-item-cell.is-active::before {
+  opacity: 0.24;
+}
+
+.inventory-item-cell.is-empty {
+  opacity: 0.6;
+}
+
+.inventory-item-cell__qty {
+  position: absolute;
+  top: var(--inventory-qty-top, 5px);
+  left: var(--inventory-qty-left, 5px);
+  z-index: 2;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--hero-overlay-text);
+  font-size: 9px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-item-cell__badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-item-cell__badge--equipped {
+  background: var(--primary-color);
+}
+
+.inventory-item-cell__badge--locked {
+  background: rgba(255, 77, 79, 0.92);
+}
+
+.inventory-item-cell__badge--locked.is-with-equipped {
+  top: 24px;
+}
+
+.inventory-item-cell__icon {
+  width: var(--inventory-icon-size, 34px);
+  height: var(--inventory-icon-size, 34px);
+  object-fit: contain;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.inventory-item-cell__name {
+  margin-top: var(--inventory-name-gap, 6px);
+  width: 100%;
+  font-size: var(--inventory-name-size, 10px);
+  font-weight: 800;
+  color: var(--inventory-name-color, var(--text-color));
+  text-align: center;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  position: relative;
+  z-index: 1;
+}
+
+.inventory-item-cell__empty {
+  position: absolute;
+  inset: 0;
+}

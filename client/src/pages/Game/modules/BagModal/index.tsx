@@ -59,7 +59,10 @@ import GemSynthesisModal from './GemSynthesisModal';
 import { formatPercent, formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
 import { buildAutoDisassembleSubCategoryOptionsByCategory } from '../../shared/autoDisassembleFilters';
 import { useIsMobile } from '../../shared/responsive';
-import { EquipmentAffixTagRow } from '../../shared/EquipmentAffixTooltipList';
+import { getItemQualityMeta } from '../../shared/itemQuality';
+import InventoryItemCell from '../../shared/InventoryItemCell';
+import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
+import { SetBonusDisplay } from './SetBonusDisplay';
 import './index.scss';
 
 interface BagModalProps {
@@ -885,26 +888,24 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
           <div className="bag-modal-grid">
             {filtered.map((it) => (
-              <div
+              <InventoryItemCell
                 key={it.id}
-                className={`bag-cell ${qualityClass[it.quality]} ${it.id === safeActiveId ? 'is-active' : ''}`}
+                className="bag-cell"
+                qualityClassName={getItemQualityMeta(it.quality)?.className}
+                active={it.id === safeActiveId}
+                quantity={it.qty}
+                showQuantity={it.stackMax > 1}
+                equippedLabel={it.location === 'equipped' ? '已穿戴' : undefined}
+                lockedLabel={it.locked ? '已锁' : undefined}
+                icon={it.icon}
+                name={it.name}
                 role="button"
                 tabIndex={0}
                 onClick={() => setActiveId(it.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') setActiveId(it.id);
                 }}
-              >
-                {it.stackMax > 1 ? <div className="bag-cell-count">{it.qty}</div> : null}
-                {it.location === 'equipped' ? <div className="bag-cell-equipped-badge">已穿戴</div> : null}
-                {it.locked ? (
-                  <div className={`bag-cell-locked-badge${it.location === 'equipped' ? ' is-with-equipped' : ''}`}>
-                    已锁
-                  </div>
-                ) : null}
-                <img className="bag-cell-icon" src={it.icon} alt={it.name} />
-                <div className="bag-cell-name">{it.name}</div>
-              </div>
+              />
             ))}
             {filtered.length === 0 ? (
               <div className="bag-modal-empty">{loading ? '加载中...' : '暂无物品'}</div>
@@ -989,7 +990,9 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                     <div className="bag-detail-name">{activeItem.name}</div>
                     <div className="bag-detail-tags">
                       <Tag color="blue">{categoryLabels[activeItem.category]}</Tag>
-                      <Tag color={qualityColor[activeItem.quality]}>{qualityLabelText[activeItem.quality]}</Tag>
+                      <Tag className={`bag-detail-quality-tag ${qualityClass[activeItem.quality]}`}>
+                        {qualityLabelText[activeItem.quality]}
+                      </Tag>
                       {activeItem.locked ? <Tag color="red">已锁定</Tag> : null}
                       {activeItem.tags.map((t) => (
                         <Tag key={t} color="default">
@@ -1017,44 +1020,14 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                     {hasEquipAttrs ? (
                       <div className="bag-detail-section">
                         <div className="bag-detail-title">装备属性</div>
-                        <div className="bag-detail-attr-grid">
-                          {equipLines.map((line, idx) => {
-                            if (!line.affix) {
-                              return (
-                                <div key={`${idx}-${line.text}`} className="bag-detail-attr-item">
-                                  {line.text}
-                                </div>
-                              );
-                            }
-                            return (
-                              <div key={`${idx}-${line.text}`} className="bag-detail-attr-item">
-                                <EquipmentAffixTagRow
-                                  tierText={line.affix.tierText}
-                                  bodyText={line.affix.bodyText}
-                                  rollPercent={line.affix.rollPercent}
-                                  className="affix-tooltip-row bag-detail-affix-row"
-                                  textClassName="affix-tooltip-text bag-detail-affix-text"
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <EquipmentDetailAttrList lines={equipLines} variant="desktop" className="bag-detail-attr-grid" />
                       </div>
                     ) : null}
 
                     {hasSetInfo ? (
                       <div className="bag-detail-section">
                         <div className="bag-detail-title">套装效果</div>
-                        <div className="bag-detail-lines">
-                          <div className="bag-detail-line">
-                            套装：{activeItem?.setInfo?.setName}（已穿戴 {activeItem?.setInfo?.equippedCount ?? 0} 件）
-                          </div>
-                          {activeItem?.setInfo?.bonuses.map((bonus) => (
-                            <div key={`${bonus.pieceCount}-${bonus.lines.join('|')}`} className="bag-detail-line">
-                              {bonus.active ? '已激活' : '未激活'} {bonus.pieceCount} 件：{bonus.lines.join('；')}
-                            </div>
-                          ))}
-                        </div>
+                        {activeItem?.setInfo ? <SetBonusDisplay setInfo={activeItem.setInfo} variant="desktop" /> : null}
                       </div>
                     ) : null}
 

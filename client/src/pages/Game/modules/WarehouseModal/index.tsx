@@ -6,6 +6,8 @@ import { useIsMobile } from '../../shared/responsive';
 import EquipmentAffixTooltipList from '../../shared/EquipmentAffixTooltipList';
 import { formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
 import { PERCENT_ATTR_KEYS, coerceAffixes, formatScalar, limitLines, normalizeText } from '../../shared/itemMetaFormat';
+import { getItemQualityMeta } from '../../shared/itemQuality';
+import InventoryItemCell from '../../shared/InventoryItemCell';
 import './index.scss';
 
 type SlotSide = 'bag' | 'warehouse';
@@ -288,25 +290,6 @@ const formatLines = (value: unknown, depth: number = 0): string[] => {
   return [];
 };
 
-const translateQuality = (value?: string | null): string => {
-  const raw = (value ?? '').trim();
-  if (!raw) return '';
-  const m: Record<string, string> = {
-    huang: '黄',
-    xuan: '玄',
-    di: '地',
-    tian: '天',
-    common: '凡',
-    uncommon: '良',
-    rare: '稀有',
-    epic: '史诗',
-    legendary: '传说',
-  };
-  if (m[raw]) return m[raw];
-  if (hasLatin(raw)) return '';
-  return raw;
-};
-
 const translateCategory = (value?: string | null): string => {
   const raw = (value ?? '').trim();
   if (!raw) return '';
@@ -380,21 +363,26 @@ const WarehouseItemTooltip: React.FC<{ it: InventoryItemDto }> = ({ it }) => {
   }, [desc, isEquip, longDesc]);
 
   const infoTags = useMemo(() => {
-    const tags: string[] = [];
-    const quality = translateQuality(def?.quality);
+    const tags: Array<{ text: string; qualityClassName?: string }> = [];
+    const qualityMeta = getItemQualityMeta(def?.quality ?? it.quality ?? null);
     const category = translateCategory(def?.category);
     const subCategory = translateCategory(def?.sub_category);
     const equipSlot = translateEquipSlot(def?.equip_slot);
     const useType = translateUseType(def?.use_type);
     const stackMax = def?.stack_max;
 
-    if (quality) tags.push(quality);
-    if (category) tags.push(subCategory ? `${category}/${subCategory}` : category);
-    if (equipSlot) tags.push(`部位：${equipSlot}`);
-    if (useType) tags.push(`类型：${useType}`);
-    if (typeof stackMax === 'number' && Number.isFinite(stackMax) && stackMax > 1) tags.push(`堆叠：${stackMax}`);
+    if (qualityMeta) {
+      tags.push({
+        text: qualityMeta.label,
+        qualityClassName: qualityMeta.className,
+      });
+    }
+    if (category) tags.push({ text: subCategory ? `${category}/${subCategory}` : category });
+    if (equipSlot) tags.push({ text: `部位：${equipSlot}` });
+    if (useType) tags.push({ text: `类型：${useType}` });
+    if (typeof stackMax === 'number' && Number.isFinite(stackMax) && stackMax > 1) tags.push({ text: `堆叠：${stackMax}` });
     return tags;
-  }, [def?.category, def?.equip_slot, def?.quality, def?.stack_max, def?.sub_category, def?.use_type]);
+  }, [def?.category, def?.equip_slot, def?.quality, def?.stack_max, def?.sub_category, def?.use_type, it.quality]);
 
   const baseAttrLines = useMemo(() => limitLines(formatLines(def?.base_attrs), 10), [def?.base_attrs]);
   const effectLines = useMemo(() => limitLines(formatLines(def?.effect_defs), 10), [def?.effect_defs]);
@@ -417,9 +405,12 @@ const WarehouseItemTooltip: React.FC<{ it: InventoryItemDto }> = ({ it }) => {
 
       {infoTags.length > 0 ? (
         <div className="warehouse-tooltip-tags">
-          {infoTags.map((t) => (
-            <span key={t} className="warehouse-tooltip-tag">
-              {t}
+          {infoTags.map((tag, idx) => (
+            <span
+              key={`${idx}-${tag.text}`}
+              className={`warehouse-tooltip-tag${tag.qualityClassName ? ` warehouse-tooltip-tag--quality ${tag.qualityClassName}` : ''}`}
+            >
+              {tag.text}
             </span>
           ))}
         </div>
@@ -535,7 +526,7 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
     const pageSize = 500;
     const out: InventoryItemDto[] = [];
     let page = 1;
-    for (;;) {
+    for (; ;) {
       const res = await getInventoryItems(location, page, pageSize);
       if (!res?.success || !res.data) return out;
       const items = res.data.items ?? [];
@@ -667,11 +658,20 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
     const icon = resolveIcon(it?.def ?? null);
     const displayName = name || '未知物品';
     const displayQty = qty > 0 ? qty : 1;
+    const qualityClassName = it ? getItemQualityMeta(it.quality ?? it.def?.quality ?? null)?.className ?? '' : '';
 
     const node = (
-      <div
+      <InventoryItemCell
         key={`${side}-${index}`}
-        className={`warehouse-slot ${it ? 'has-item' : ''}`}
+        className={`warehouse-slot${it ? ' has-item' : ''}`}
+        qualityClassName={qualityClassName || undefined}
+        icon={it ? icon : undefined}
+        name={displayName}
+        quantity={qty}
+        showQuantity={qty > 1}
+        quantityPrefix="x"
+        showName={true}
+        empty={!it}
         role="button"
         tabIndex={0}
         onContextMenu={(e) => {
@@ -719,16 +719,7 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
             ? `${displayName} x${displayQty}`
             : `${side === 'warehouse' ? index - warehouseSubRange.start + 1 : index + 1}`
         }
-      >
-        {it ? (
-          <>
-            <img className="warehouse-slot-icon" src={icon} alt={displayName} />
-            {qty > 1 ? <div className="warehouse-slot-qty">x{qty}</div> : null}
-          </>
-        ) : (
-          <div className="warehouse-slot-empty" />
-        )}
-      </div>
+      />
     );
 
     if (!it || isMobile) return node;

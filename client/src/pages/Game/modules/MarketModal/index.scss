@@ -1,4 +1,5 @@
 @use '../../shared/tooltipSurfaceShared';
+@use '../../shared/itemQualityTag' as qualityTag;
 
 .market-modal {
   .ant-modal-content {
@@ -236,6 +237,10 @@
   padding: 4px;
 }
 
+.market-item-icon {
+  @include qualityTag.quality-surface-state(var(--panel-bg), 10%);
+}
+
 .market-item-meta {
   min-width: 0;
   display: flex;
@@ -268,6 +273,10 @@
   background: var(--panel-bg);
   color: var(--text-color);
   font-weight: 900;
+}
+
+.market-tag-quality.ant-tag {
+  @include qualityTag.quality-tag-chip(var(--panel-bg));
 }
 
 .market-tag-mine.ant-tag {
@@ -371,6 +380,10 @@
   align-items: center;
 }
 
+.market-tooltip-tag--quality {
+  @include qualityTag.quality-tag-chip(var(--market-tooltip-chip-bg));
+}
+
 .market-tooltip-desc {
   color: var(--market-tooltip-text);
   font-weight: 700;
@@ -438,6 +451,8 @@
   .market-tag.ant-tag {
     font-weight: 700;
   }
+
+  @include qualityTag.quality-surface-state(var(--panel-bg-soft), 10%);
 }
 
 .market-mobile-card-head {
@@ -569,25 +584,18 @@
 }
 
 .market-bag-cell {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  background: var(--panel-bg-soft);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  cursor: pointer;
-  user-select: none;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
-  padding: 5px 5px;
+  --inventory-cell-size: 58px;
+  --inventory-icon-size: 28px;
+  --inventory-name-size: 10px;
+  --inventory-name-gap: 4px;
+  --inventory-name-color: var(--text-tertiary);
+  --inventory-qty-top: 5px;
+  --inventory-qty-left: 5px;
 }
 
 .market-bag-cell:hover {
-  border-color: var(--border-color);
   background: var(--hover-bg);
+  transform: none;
 }
 
 .market-bag-cell:active {
@@ -596,70 +604,10 @@
 
 .market-bag-cell.is-active {
   border-color: var(--text-color);
-  background: var(--panel-bg);
 }
 
 .market-bag-cell.is-empty {
   opacity: 0.35;
-}
-
-.market-bag-cell.q-天 {
-  border-color: var(--rarity-tian-border-soft);
-}
-
-.market-bag-cell.q-地 {
-  border-color: var(--rarity-di-border-soft);
-}
-
-.market-bag-cell.q-玄 {
-  border-color: var(--rarity-xuan-border-soft);
-}
-
-.market-bag-cell.q-黄 {
-  border-color: var(--rarity-huang-border-soft);
-}
-
-.market-bag-icon {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  display: block;
-}
-
-.market-bag-count {
-  position: absolute;
-  top: 5px;
-  right: 6px;
-  font-size: 11px;
-  font-weight: 900;
-  color: var(--text-tertiary);
-}
-
-.market-bag-lock {
-  position: absolute;
-  top: 5px;
-  left: 6px;
-  height: 14px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: rgba(255, 77, 79, 0.92);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.market-bag-name {
-  width: 100%;
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--text-tertiary);
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .market-list-detail {
@@ -695,6 +643,10 @@
   border: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
   padding: 6px;
+}
+
+.market-list-detail-icon {
+  @include qualityTag.quality-surface-state(var(--panel-bg), 10%);
 }
 
 .market-list-detail-meta {

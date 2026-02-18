@@ -812,13 +812,47 @@ export const collectGemCandidates = (items: BagItem[]): BagItem[] => {
 
 /* ───────── 构建装备详情行 ───────── */
 
-export type EquipmentDetailLine = {
+export type EquipmentDetailLineKind =
+  | "progress"
+  | "base"
+  | "socket"
+  | "gem"
+  | "gem_effect"
+  | "status"
+  | "text"
+  | "affix";
+
+type EquipmentDetailAffixLine = {
+  kind: "affix";
   text: string;
-  affix?: {
+  affix: {
     tierText: string;
     tagText: string;
     bodyText: string;
     rollPercent: number | null;
+  };
+};
+
+type EquipmentDetailTextLine = {
+  kind: Exclude<EquipmentDetailLineKind, "affix">;
+  text: string;
+  label?: string;
+  value?: string;
+};
+
+export type EquipmentDetailLine = EquipmentDetailAffixLine | EquipmentDetailTextLine;
+
+const buildDetailLine = (
+  kind: Exclude<EquipmentDetailLineKind, "affix">,
+  label: string,
+  value: string,
+  text?: string,
+): EquipmentDetailTextLine => {
+  return {
+    kind,
+    label,
+    value,
+    text: text ?? `${label}：${value}`,
   };
 };
 
@@ -835,10 +869,10 @@ export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetail
   } = item.equip;
 
   const lines: EquipmentDetailLine[] = [];
-  lines.push({
-    text: `强化：${strengthenLevel > 0 ? `+${strengthenLevel}` : strengthenLevel}`,
-  });
-  lines.push({ text: `精炼：${refineLevel > 0 ? `+${refineLevel}` : refineLevel}` });
+  const strengthenText = strengthenLevel > 0 ? `+${strengthenLevel}` : String(strengthenLevel);
+  const refineText = refineLevel > 0 ? `+${refineLevel}` : String(refineLevel);
+  lines.push(buildDetailLine("progress", "强化", strengthenText));
+  lines.push(buildDetailLine("progress", "精炼", refineText));
 
   const toSortedEntries = (rec: Record<string, number>) =>
     Object.entries(rec).sort(
@@ -851,26 +885,27 @@ export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetail
     const valText = percentAttrKeys.has(k)
       ? formatSignedPercent(v)
       : formatSignedNumber(v);
-    lines.push({ text: `基础：${label} ${valText}` });
+    lines.push(buildDetailLine("base", label, valText, `基础：${label} ${valText}`));
   }
 
-  lines.push({ text: `孔位：${socketedGems.length}/${socketMax}` });
+  lines.push(buildDetailLine("socket", "孔位", `${socketedGems.length}/${socketMax}`));
   for (const gem of socketedGems) {
     const gemName = gem.name || gem.itemDefId;
     const displaySlot = gem.slot + 1;
-    lines.push({ text: `宝石[${displaySlot}]：${gemName}` });
+    const gemLabel = `宝石[${displaySlot}]`;
+    lines.push(buildDetailLine("gem", gemLabel, gemName));
     for (const effect of gem.effects) {
       const label = attrLabel[effect.attrKey] ?? effect.attrKey;
       const valText =
         effect.applyType === "percent"
           ? formatSignedPercent(effect.value)
           : formatSignedNumber(effect.value);
-      lines.push({ text: `  - ${label} ${valText}` });
+      lines.push(buildDetailLine("gem_effect", label, valText, `  - ${label} ${valText}`));
     }
   }
 
   if (!identified) {
-    lines.push({ text: "词条：未鉴定" });
+    lines.push(buildDetailLine("status", "词条", "未鉴定"));
     return lines;
   }
 
@@ -888,13 +923,14 @@ export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetail
       formatSignedPercent,
     });
     if (!displayText) {
-      lines.push({ text: "词条 T-：未知" });
+      lines.push(buildDetailLine("status", "词条", "T- 未知", "词条 T-：未知"));
       continue;
     }
     const rollPercent = getAffixRollPercent(affix);
     const bodyText = `${displayText.label}${displayText.valueText ? ` ${displayText.valueText}` : ""}`;
 
     lines.push({
+      kind: "affix",
       text: `${displayText.tierText}(${displayText.prefixText}) ${formatAffixRollPercent(rollPercent)}（ROLL）：${bodyText}`,
       affix: {
         tierText: displayText.tierText,

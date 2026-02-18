@@ -1,4 +1,5 @@
 @use '../../shared/tooltipSurfaceShared';
+@use '../../shared/itemQualityTag' as qualityTag;
 
 .warehouse-modal {
   .ant-modal-content {
@@ -10,7 +11,7 @@
 }
 
 .warehouse-modal-shell {
-  --warehouse-slot-size: 56px;
+  --warehouse-slot-size: 64px;
   display: flex;
   height: 74vh;
   min-height: 560px;
@@ -178,55 +179,25 @@
 }
 
 .warehouse-slot {
-  position: relative;
-  height: 100%;
-  border-radius: 12px;
-  background: var(--panel-bg-soft);
-  border: 1px solid var(--border-color-soft);
+  --inventory-cell-size: var(--warehouse-slot-size);
+  --inventory-icon-size: 30px;
+  --inventory-name-size: 10px;
+  --inventory-name-gap: 3px;
+  --inventory-name-color: var(--text-color);
+  --inventory-qty-top: 4px;
+  --inventory-qty-left: 4px;
+}
+
+.warehouse-slot.is-empty {
+  opacity: 1;
+}
+
+.warehouse-slot .inventory-item-cell__name {
+  display: block;
+  width: calc(100% - 4px);
+  white-space: nowrap;
   overflow: hidden;
-  user-select: none;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-}
-
-.warehouse-slot.has-item {
-  background: var(--panel-bg);
-  border-color: var(--border-color);
-}
-
-.warehouse-slot:hover {
-  background: var(--hover-bg);
-  border-color: var(--border-color);
-  transform: translateY(-1px);
-}
-
-.warehouse-slot:active {
-  transform: translateY(0);
-}
-
-.warehouse-slot-icon {
-  position: absolute;
-  inset: 6px;
-  width: calc(100% - 12px);
-  height: calc(100% - 12px);
-  object-fit: contain;
-  pointer-events: none;
-}
-
-.warehouse-slot-qty {
-  position: absolute;
-  right: 6px;
-  bottom: 5px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-color);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
-}
-
-.warehouse-slot-empty {
-  position: absolute;
-  inset: 0;
+  text-overflow: ellipsis;
 }
 
 .warehouse-pane-footer {
@@ -327,6 +298,10 @@
   align-items: center;
   background: var(--game-tooltip-chip-bg);
   border: 1px solid var(--game-tooltip-chip-border);
+}
+
+.warehouse-tooltip-tag--quality {
+  @include qualityTag.quality-tag-chip(var(--game-tooltip-chip-bg));
 }
 
 .warehouse-tooltip-grid {
@@ -433,7 +408,7 @@
   }
 
   .warehouse-modal-shell {
-    --warehouse-slot-size: clamp(52px, 14vw, 60px);
+    --warehouse-slot-size: clamp(56px, 15vw, 64px);
     height: min(88dvh, 760px);
     min-height: 0;
     max-height: calc(100dvh - 16px);
@@ -573,16 +548,12 @@
     transform: none;
   }
 
-  .warehouse-slot-icon {
-    inset: 5px;
-    width: calc(100% - 10px);
-    height: calc(100% - 10px);
-  }
-
-  .warehouse-slot-qty {
-    right: 4px;
-    bottom: 4px;
-    font-size: 11px;
+  .warehouse-slot {
+    --inventory-icon-size: 30px;
+    --inventory-name-size: 9px;
+    --inventory-name-gap: 2px;
+    --inventory-qty-top: 4px;
+    --inventory-qty-left: 4px;
   }
 
   .warehouse-pane-footer {

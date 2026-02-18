@@ -1,0 +1,32 @@
+/**
+ * 作用：统一 BagModal 内品质标签（黄/玄/地/天）配色，避免 PC 与移动端重复定义。
+ * 使用：在需要品质标签样式的选择器内 `@include qualityTag.quality-chip-solid();`
+ */
+
+@mixin quality-chip-solid() {
+  border: 1px solid var(--border-color-soft);
+
+  &.q-huang {
+    background: color-mix(in srgb, var(--rarity-huang) 15%, var(--panel-bg-soft));
+    border-color: var(--rarity-huang-border-soft);
+    color: var(--rarity-huang);
+  }
+
+  &.q-xuan {
+    background: color-mix(in srgb, var(--rarity-xuan) 15%, var(--panel-bg-soft));
+    border-color: var(--rarity-xuan-border-soft);
+    color: var(--rarity-xuan);
+  }
+
+  &.q-di {
+    background: color-mix(in srgb, var(--rarity-di) 20%, var(--panel-bg-soft));
+    border-color: var(--rarity-di-border-soft);
+    color: var(--rarity-di);
+  }
+
+  &.q-tian {
+    background: color-mix(in srgb, var(--rarity-tian) 15%, var(--panel-bg-soft));
+    border-color: var(--rarity-tian-border-soft);
+    color: var(--rarity-tian);
+  }
+}

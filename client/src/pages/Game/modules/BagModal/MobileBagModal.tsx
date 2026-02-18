@@ -63,7 +63,10 @@ import {
 import type { BagAction, BagCategory, BagItem, BagQuality, BagSort, BatchMode } from './bagShared';
 import { buildAutoDisassembleSubCategoryOptionsByCategory } from '../../shared/autoDisassembleFilters';
 import { formatPercent, formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
-import { EquipmentAffixTagRow } from '../../shared/EquipmentAffixTooltipList';
+import { getItemQualityMeta } from '../../shared/itemQuality';
+import InventoryItemCell from '../../shared/InventoryItemCell';
+import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
+import { SetBonusDisplay } from './SetBonusDisplay';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
@@ -381,53 +384,14 @@ const ItemSheet: React.FC<SheetProps> = ({
           {hasEquipAttrs && (
             <div className="mbag-sheet-section">
               <div className="mbag-sheet-section-title">装备属性</div>
-              <div className="mbag-sheet-attr-list">
-                {equipLines.map((line, idx) => {
-                  if (line.affix) {
-                    return (
-                      <div key={`${idx}-${line.text}`} className="mbag-sheet-attr-row mbag-sheet-attr-row--affix">
-                        <EquipmentAffixTagRow
-                          tierText={line.affix.tierText}
-                          bodyText={line.affix.bodyText}
-                          rollPercent={line.affix.rollPercent}
-                        />
-                      </div>
-                    );
-                  }
-                  const colonIdx = line.text.indexOf('：');
-                  if (colonIdx > 0) {
-                    const label = line.text.slice(0, colonIdx);
-                    const value = line.text.slice(colonIdx + 1).trim();
-                    return (
-                      <div key={`${idx}-${line.text}`} className="mbag-sheet-attr-row">
-                        <span>{label}</span>
-                        <span>{value}</span>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div key={`${idx}-${line.text}`} className="mbag-sheet-attr-row">
-                      <span>{line.text}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              <EquipmentDetailAttrList lines={equipLines} variant="mobile" className="mbag-sheet-attr-list" />
             </div>
           )}
 
           {hasSetInfo && (
             <div className="mbag-sheet-section">
               <div className="mbag-sheet-section-title">套装效果</div>
-              <div className="mbag-sheet-section-text">
-                套装：{item.setInfo?.setName}（已穿戴 {item.setInfo?.equippedCount ?? 0} 件）
-              </div>
-              <div className="mbag-sheet-effect-list">
-                {item.setInfo?.bonuses.map((bonus) => (
-                  <div key={`${bonus.pieceCount}-${bonus.lines.join('|')}`} className="mbag-sheet-effect-chip">
-                    {bonus.active ? '已激活' : '未激活'} {bonus.pieceCount} 件：{bonus.lines.join('；')}
-                  </div>
-                ))}
-              </div>
+              {item.setInfo ? <SetBonusDisplay setInfo={item.setInfo} variant="mobile" /> : null}
             </div>
           )}
 
@@ -1600,21 +1564,19 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
             <div className="mbag-empty">{loading ? '加载中...' : '暂无物品'}</div>
           )}
           {filtered.map((it) => (
-            <div
+            <InventoryItemCell
               key={it.id}
-              className={`mbag-cell ${qualityClass[it.quality]}${it.id === activeId ? ' is-active' : ''}`}
+              className="mbag-cell"
+              qualityClassName={getItemQualityMeta(it.quality)?.className}
+              active={it.id === activeId}
+              quantity={it.qty}
+              showQuantity={it.stackMax > 1}
+              equippedLabel={it.location === 'equipped' ? '穿戴' : undefined}
+              lockedLabel={it.locked ? '锁' : undefined}
+              icon={it.icon}
+              name={it.name}
               onClick={() => { setActiveId(it.id); setSheetOpen(true); }}
-            >
-              {it.stackMax > 1 && <div className="mbag-cell-count">{it.qty}</div>}
-              {it.location === 'equipped' && <div className="mbag-cell-badge">穿戴</div>}
-              {it.locked && (
-                <div className={`mbag-cell-lock-badge${it.location === 'equipped' ? ' is-with-equipped' : ''}`}>
-                  锁
-                </div>
-              )}
-              <img className="mbag-cell-icon" src={it.icon} alt={it.name} />
-              <div className="mbag-cell-name">{it.name}</div>
-            </div>
+            />
           ))}
         </div>
       </div>

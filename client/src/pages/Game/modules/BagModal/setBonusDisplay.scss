@@ -1,0 +1,120 @@
+.set-bonus-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.set-bonus-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--border-color-soft) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+  padding: 6px 8px;
+}
+
+.set-bonus-board-name {
+  min-width: 0;
+  color: var(--text-color);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-bonus-board-count {
+  flex-shrink: 0;
+  color: var(--text-color);
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 30%, var(--border-color-soft));
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+
+.set-bonus-stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.set-bonus-stage {
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel-bg) 90%, transparent);
+  padding: 5px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.set-bonus-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.set-bonus-stage-piece {
+  color: var(--text-color);
+  font-weight: 700;
+}
+
+.set-bonus-stage-state {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.set-bonus-stage.is-active {
+  border-color: color-mix(in srgb, var(--success-color, #52c41a) 36%, var(--border-color));
+  background: color-mix(in srgb, var(--success-color, #52c41a) 8%, var(--panel-bg));
+}
+
+.set-bonus-stage.is-active .set-bonus-stage-state {
+  color: var(--success-color, #52c41a);
+  border: 1px solid color-mix(in srgb, var(--success-color, #52c41a) 44%, transparent);
+  background: color-mix(in srgb, var(--success-color, #52c41a) 14%, transparent);
+}
+
+.set-bonus-stage.is-inactive {
+  border-style: dashed;
+  opacity: 0.9;
+}
+
+.set-bonus-stage.is-inactive .set-bonus-stage-state {
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color-soft);
+  background: color-mix(in srgb, var(--panel-bg-soft) 80%, transparent);
+}
+
+.set-bonus-stage-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-bonus-stage-line {
+  color: var(--text-tertiary);
+  line-height: 1.38;
+  word-break: break-word;
+}
+
+.set-bonus-board--desktop .set-bonus-board-name,
+.set-bonus-board--desktop .set-bonus-board-count,
+.set-bonus-board--desktop .set-bonus-stage-piece,
+.set-bonus-board--desktop .set-bonus-stage-state,
+.set-bonus-board--desktop .set-bonus-stage-line {
+  font-size: 10px;
+}
+
+.set-bonus-board--mobile .set-bonus-board-name,
+.set-bonus-board--mobile .set-bonus-board-count,
+.set-bonus-board--mobile .set-bonus-stage-piece,
+.set-bonus-board--mobile .set-bonus-stage-state,
+.set-bonus-board--mobile .set-bonus-stage-line {
+  font-size: 11px;
+}
