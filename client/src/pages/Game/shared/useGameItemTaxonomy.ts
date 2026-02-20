@@ -47,6 +47,10 @@ const ensureGameItemTaxonomyLoaded = async (): Promise<void> => {
   return inflight;
 };
 
+export const loadGameItemTaxonomy = async (): Promise<void> => {
+  await ensureGameItemTaxonomyLoaded();
+};
+
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener);
   return () => {
@@ -73,7 +77,7 @@ export const useGameItemTaxonomy = (enabled: boolean = true): {
     taxonomyReady,
     reloadTaxonomy: async () => {
       taxonomyReady = false;
-      await ensureGameItemTaxonomyLoaded();
+      await loadGameItemTaxonomy();
       rerender();
     },
   };

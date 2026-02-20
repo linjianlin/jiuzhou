@@ -13,7 +13,7 @@ import {
   normalizeAutoDisassembleCategoryList,
   normalizeAutoDisassembleSubCategoryList,
 } from '../../shared/autoDisassembleFilters';
-import { useGameItemTaxonomy } from '../../shared/useGameItemTaxonomy';
+import { loadGameItemTaxonomy, useGameItemTaxonomy } from '../../shared/useGameItemTaxonomy';
 import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
@@ -211,6 +211,8 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
     setAutoDisassembleLoading(true);
     void (async () => {
       try {
+        await loadGameItemTaxonomy();
+        if (cancelled) return;
         const res = await getCharacterInfo();
         if (!res.success || !res.data?.character || cancelled) return;
         const character = res.data.character;

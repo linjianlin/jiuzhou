@@ -39,7 +39,7 @@ export interface GameItemTaxonomyDto {
 }
 
 const CATEGORY_LABEL_FALLBACK: Record<string, string> = {
-  consumable: '丹药',
+  consumable: '消耗品',
   material: '材料',
   gem: '宝石',
   equipment: '装备',

@@ -39,14 +39,13 @@ const ITEM_CATEGORY_OPTIONS_BASE: LabeledOption[] = [
   { value: 'other', label: '其他' },
 ];
 
+const buildLabelMapFromOptions = (options: LabeledOption[]): Record<string, string> => {
+  return Object.fromEntries(options.map((option) => [option.value, option.label]));
+};
+
 const ITEM_CATEGORY_LABELS_BASE: Record<string, string> = {
   all: ITEM_CATEGORY_ALL_OPTION_BASE.label,
-  consumable: '消耗品',
-  material: '材料',
-  gem: '宝石',
-  equipment: '装备',
-  quest: '任务',
-  other: '其他',
+  ...buildLabelMapFromOptions(ITEM_CATEGORY_OPTIONS_BASE),
 };
 
 const SUB_CATEGORY_OPTIONS_BASE: LabeledOption[] = [
@@ -97,51 +96,11 @@ const SUB_CATEGORY_OPTIONS_BASE: LabeledOption[] = [
   { label: '木材', value: 'wood' },
 ];
 
-const SUB_CATEGORY_LABELS_BASE: Record<string, string> = Object.fromEntries(
-  SUB_CATEGORY_OPTIONS_BASE.map((option) => [option.value, option.label]),
-);
+const SUB_CATEGORY_LABELS_BASE: Record<string, string> = buildLabelMapFromOptions(SUB_CATEGORY_OPTIONS_BASE);
 
 const SUB_CATEGORY_VALUES_BY_CATEGORY_BASE: Record<string, string[]> = {
-  all: SUB_CATEGORY_OPTIONS_BASE.map((option) => option.value),
-  consumable: ['pill', 'box', 'function', 'enhance', 'scroll', 'month_card', 'battle_pass', 'token'],
-  material: [
-    'herb',
-    'ore',
-    'wood',
-    'leather',
-    'essence',
-    'bone',
-    'relic',
-    'forge',
-    'breakthrough',
-    'egg',
-    'accessory',
-    'armor',
-    'object',
-  ],
-  gem: ['gem', 'gem_attack', 'gem_defense', 'gem_survival', 'gem_all'],
-  equipment: [
-    'sword',
-    'blade',
-    'staff',
-    'shield',
-    'helmet',
-    'hat',
-    'robe',
-    'gloves',
-    'gauntlets',
-    'pants',
-    'legguards',
-    'ring',
-    'necklace',
-    'talisman',
-    'mirror',
-    'accessory',
-    'armor',
-    'token',
-  ],
-  quest: ['key', 'collect'],
-  other: [],
+  all: [],
+  ...Object.fromEntries(ITEM_CATEGORY_OPTIONS_BASE.map((option) => [option.value, [] as string[]])),
 };
 
 export const ITEM_CATEGORY_ALL_OPTION: LabeledOption = { ...ITEM_CATEGORY_ALL_OPTION_BASE };
@@ -252,7 +211,6 @@ export const applyGameItemTaxonomy = (taxonomy: GameItemTaxonomyDto): void => {
   }
 
   const nextCategoryLabels: Record<string, string> = {
-    ...ITEM_CATEGORY_LABELS_BASE,
     ...categoryLabels,
     all: categoryLabels.all ?? ITEM_CATEGORY_ALL_OPTION.label,
   };
@@ -268,7 +226,6 @@ export const applyGameItemTaxonomy = (taxonomy: GameItemTaxonomyDto): void => {
   }
 
   const nextSubCategoryLabels: Record<string, string> = {
-    ...SUB_CATEGORY_LABELS_BASE,
     ...subCategoryLabels,
   };
   for (const option of ITEM_SUB_CATEGORY_OPTIONS) {
@@ -278,10 +235,10 @@ export const applyGameItemTaxonomy = (taxonomy: GameItemTaxonomyDto): void => {
   }
   replaceRecordInPlace(ITEM_SUB_CATEGORY_LABELS, nextSubCategoryLabels);
 
-  const nextByCategory: Record<string, string[]> = {
-    ...SUB_CATEGORY_VALUES_BY_CATEGORY_BASE,
-    ...byCategory,
-  };
+  const nextByCategory: Record<string, string[]> = {};
+  for (const [key, values] of Object.entries(byCategory)) {
+    nextByCategory[key] = [...values];
+  }
   if (!nextByCategory.all || nextByCategory.all.length === 0) {
     nextByCategory.all = ITEM_SUB_CATEGORY_OPTIONS.map((option) => option.value);
   }

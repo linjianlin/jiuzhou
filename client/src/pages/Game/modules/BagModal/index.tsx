@@ -58,6 +58,7 @@ import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
 import { formatPercent, formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
 import { buildAutoDisassembleSubCategoryOptionsByCategory } from '../../shared/autoDisassembleFilters';
+import { ITEM_CATEGORY_ALL_OPTION, ITEM_CATEGORY_OPTIONS } from '../../shared/itemTaxonomy';
 import { useGameItemTaxonomy } from '../../shared/useGameItemTaxonomy';
 import { useIsMobile } from '../../shared/responsive';
 import { getItemQualityMeta } from '../../shared/itemQuality';
@@ -1683,13 +1684,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               }}
               placeholder="类型"
               options={[
-                { value: 'all', label: '全部类型' },
-                { value: 'consumable', label: categoryLabels.consumable },
-                { value: 'material', label: categoryLabels.material },
-                { value: 'gem', label: categoryLabels.gem },
-                { value: 'equipment', label: categoryLabels.equipment },
-                { value: 'skill', label: categoryLabels.skill },
-                { value: 'quest', label: categoryLabels.quest },
+                { value: ITEM_CATEGORY_ALL_OPTION.value, label: ITEM_CATEGORY_ALL_OPTION.label },
+                ...ITEM_CATEGORY_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
               ]}
             />
             <Select

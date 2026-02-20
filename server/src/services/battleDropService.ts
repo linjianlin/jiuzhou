@@ -580,7 +580,7 @@ export const distributeBattleRewards = async (
       const def = getItemDefinitionById(itemDefId);
       const meta = {
         name: def?.name || itemDefId,
-        category: def?.category || 'misc',
+        category: typeof def?.category === 'string' ? def.category : '',
         subCategory: def?.sub_category ?? null,
         effectDefs: def?.effect_defs ?? null,
         qualityRank: resolveQualityRankFromName(def?.quality, 1),

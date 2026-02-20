@@ -962,14 +962,6 @@ export const isTechniqueBookSubCategory = (subCategoryValue: unknown): boolean =
   return normalizeCategoryToken(subCategoryValue) === "technique_book";
 };
 
-const isTechniqueBookLike = (
-  subCategoryValue: unknown,
-  effectDefs: unknown,
-): boolean => {
-  if (isTechniqueBookSubCategory(subCategoryValue)) return true;
-  return hasLearnTechniqueEffect(effectDefs);
-};
-
 export const isDisassemblableBagItem = (item: {
   category: Exclude<BagCategory, "all">;
   subCategory: string | null;
@@ -1073,40 +1065,18 @@ export const buildBatchDisassemblePayloadItems = (
 
 const mapCategory = (
   value: unknown,
-  subCategoryValue?: unknown,
-  effectDefs?: unknown,
 ): Exclude<BagCategory, "all"> => {
   const category = normalizeCategoryToken(value);
-  const subCategory = normalizeCategoryToken(subCategoryValue);
-  if (
-    category === "skillbook" ||
-    category === "skill" ||
-    category === "technique" ||
-    category === "technique_book"
-  ) {
-    return "skill";
-  }
-  if (
-    isTechniqueBookLike(subCategory, effectDefs) ||
-    subCategory === "technique"
-  ) {
-    return "skill";
-  }
-  if (category === "consumable") return "consumable";
-  if (category === "material") return "material";
-  if (category === "gem") return "gem";
-  if (category === "equipment") return "equipment";
-  if (category === "quest") return "quest";
-  return "material";
+  if (!category || category === "all") return "other";
+  return category;
 };
 
 const mapActions = (
   category: Exclude<BagCategory, "all">,
-  subCategoryValue: unknown,
+  _subCategoryValue: unknown,
   _effectDefs: unknown,
 ): BagAction[] => {
-  if (category === "consumable" || category === "skill") {
-    void subCategoryValue;
+  if (category === "consumable") {
     return ["use", "disassemble", "show"];
   }
   if (category === "equipment")
@@ -1355,7 +1325,7 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   const quality = qualityLabels.includes(rawQuality as BagQuality)
     ? (rawQuality as BagQuality)
     : "黄";
-  const category = mapCategory(def.category, def.sub_category, def.effect_defs);
+  const category = mapCategory(def.category);
   const tags = normalizeDisplayTags(coerceStringArray(def.tags), category, quality);
   const isEquip = category === "equipment";
   const hasSocketEffect = hasSocketBuffEffect(def.effect_defs);

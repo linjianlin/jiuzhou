@@ -211,17 +211,6 @@ const translateCategory = (value?: string | null): string => {
   if (!raw) return '';
   const taxonomyLabel = getItemTaxonomyLabel(raw);
   if (taxonomyLabel && taxonomyLabel !== raw) return taxonomyLabel;
-  const m: Record<string, string> = {
-    consumable: '丹药',
-    material: '材料',
-    gem: '宝石',
-    equipment: '装备',
-    other: '其他',
-    quest: '任务',
-    misc: '杂物',
-    currency: '货币',
-  };
-  if (m[raw]) return m[raw];
   if (hasLatin(raw)) return '';
   return raw;
 };

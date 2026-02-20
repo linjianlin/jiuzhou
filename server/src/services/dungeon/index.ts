@@ -1699,7 +1699,7 @@ export const nextDungeonInstance = async (
           const row = getItemDefinitionById(itemDefId);
           const meta = {
             name: typeof row?.name === 'string' && row.name.length > 0 ? row.name : itemDefId,
-            category: typeof row?.category === 'string' && row.category.length > 0 ? row.category : 'misc',
+            category: typeof row?.category === 'string' ? row.category : '',
             subCategory: typeof row?.sub_category === 'string' && row.sub_category.length > 0 ? row.sub_category : null,
             effectDefs: row?.effect_defs ?? null,
             qualityRank: resolveQualityRankFromName(row?.quality, 1),

@@ -64,6 +64,7 @@ import type { BagAction, BagCategory, BagItem, BagQuality, BagSort, BatchMode } 
 import { buildAutoDisassembleSubCategoryOptionsByCategory } from '../../shared/autoDisassembleFilters';
 import { formatPercent, formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
 import { getItemQualityMeta } from '../../shared/itemQuality';
+import { ITEM_CATEGORY_ALL_OPTION, ITEM_CATEGORY_OPTIONS } from '../../shared/itemTaxonomy';
 import { useGameItemTaxonomy } from '../../shared/useGameItemTaxonomy';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
@@ -194,13 +195,12 @@ const BatchPanel: React.FC<BatchPanelProps> = ({
             disabled={submitting}
             onChange={(event) => onCategoryChange(event.target.value as BagCategory)}
           >
-            <option value="all">全部类型</option>
-            <option value="consumable">{categoryLabels.consumable}</option>
-            <option value="material">{categoryLabels.material}</option>
-            <option value="gem">{categoryLabels.gem}</option>
-            <option value="equipment">{categoryLabels.equipment}</option>
-            <option value="skill">{categoryLabels.skill}</option>
-            <option value="quest">{categoryLabels.quest}</option>
+            <option value={ITEM_CATEGORY_ALL_OPTION.value}>{ITEM_CATEGORY_ALL_OPTION.label}</option>
+            {ITEM_CATEGORY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
 
