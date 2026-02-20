@@ -322,6 +322,7 @@ export const grantRewardItemWithAutoDisassemble = async (
       itemName,
       category,
       subCategory,
+      effectDefs,
       qualityRank: generatedQualityRank,
     };
 

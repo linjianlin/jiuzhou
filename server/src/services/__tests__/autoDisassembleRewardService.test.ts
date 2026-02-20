@@ -278,3 +278,47 @@ test('非装备命中规则时应按默认公式转化银两', async () => {
   assert.equal(result.gainedSilver, 3);
   assert.deepEqual(silverCalls, [3]);
 });
+
+test('功法书规则应命中consumable+technique_book物品并转化为功法残页', async () => {
+  const { calls, fn } = createCreateItemMock([
+    {
+      success: true,
+      message: 'ok',
+      itemIds: [801],
+    },
+  ]);
+
+  const result = await grantRewardItemWithAutoDisassemble({
+    characterId: 128,
+    itemDefId: 'book-jichu-quanfa',
+    qty: 1,
+    itemMeta: {
+      itemName: '《基础拳法》',
+      category: 'consumable',
+      subCategory: 'technique_book',
+      qualityRank: 1,
+    },
+    autoDisassembleSetting: {
+      enabled: true,
+      rules: [
+        {
+          categories: ['skillbook'],
+          subCategories: [],
+          excludedSubCategories: [],
+          includeNameKeywords: [],
+          excludeNameKeywords: [],
+          maxQualityRank: 4,
+        },
+      ],
+    },
+    sourceObtainedFrom: 'battle_drop',
+    createItem: fn,
+  });
+
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.pendingMailItems, []);
+  assert.deepEqual(result.grantedItems, [{ itemDefId: 'mat-gongfa-canye', qty: 2, itemIds: [801] }]);
+  assert.equal(result.gainedSilver, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.itemDefId, 'mat-gongfa-canye');
+});

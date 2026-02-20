@@ -6,6 +6,7 @@
  * - 提供统一匹配函数，供战斗掉落、秘境结算等自动分解入口复用
  */
 import { clampQualityRank } from './equipmentDisassembleRules.js';
+import { normalizeMarketCategoryFilter, resolveMarketItemCategory } from './shared/marketItemCategory.js';
 
 export interface AutoDisassembleRuleSet {
   categories: string[];
@@ -26,8 +27,42 @@ export interface AutoDisassembleCandidateMeta {
   itemName: string;
   category: string;
   subCategory: string | null;
+  effectDefs?: unknown;
   qualityRank: number;
 }
+
+const normalizeCategoryToken = (raw: unknown): string => {
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (!value) return '';
+  if (value === 'skillbook' || value === 'technique' || value === 'technique_book') return 'skill';
+  const normalizedByMarket = normalizeMarketCategoryFilter(value);
+  if (normalizedByMarket && normalizedByMarket !== 'all') {
+    if (normalizedByMarket === 'skillbook') return 'skill';
+    return normalizedByMarket;
+  }
+  return value;
+};
+
+const normalizeCategoryList = (raw: unknown, maxSize: number = 100): string[] => {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const row of raw) {
+    const normalized = normalizeCategoryToken(row);
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= maxSize) break;
+  }
+  return out;
+};
+
+const toEffectDefsArray = (raw: unknown): unknown[] | undefined => {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object') return [raw];
+  return undefined;
+};
 
 const normalizeStringList = (raw: unknown, maxSize: number = 100): string[] => {
   if (!Array.isArray(raw)) return [];
@@ -76,7 +111,7 @@ const createDefaultAutoDisassembleRuleSet = (): AutoDisassembleRuleSet => {
  */
 export const normalizeAutoDisassembleRuleSet = (raw: unknown): AutoDisassembleRuleSet => {
   const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const categories = normalizeStringList(record.categories);
+  const categories = normalizeCategoryList(record.categories);
   const subCategories = normalizeStringList(record.subCategories);
   const excludedSubCategories = normalizeStringList(record.excludedSubCategories);
   const includeNameKeywords = normalizeKeywordList(record.includeNameKeywords);
@@ -116,9 +151,26 @@ export const normalizeAutoDisassembleSetting = (raw: {
 };
 
 const matchesRuleSet = (ruleSet: AutoDisassembleRuleSet, meta: AutoDisassembleCandidateMeta): boolean => {
-  const category = String(meta.category || '').trim().toLowerCase();
+  const rawCategory = String(meta.category || '').trim().toLowerCase();
+  const normalizedCategory = normalizeCategoryToken(rawCategory);
   const subCategory = String(meta.subCategory || '').trim().toLowerCase();
   const itemName = String(meta.itemName || '').trim().toLowerCase();
+  const candidateCategorySet = new Set<string>();
+  if (normalizedCategory) candidateCategorySet.add(normalizedCategory);
+  if (rawCategory) candidateCategorySet.add(rawCategory);
+
+  const resolvedMarketCategory = resolveMarketItemCategory({
+    category: rawCategory,
+    sub_category: subCategory || undefined,
+    effect_defs: toEffectDefsArray(meta.effectDefs),
+  });
+  // 历史功法书常见为 category=consumable + sub_category=technique_book，
+  // 规则层统一按 skill 匹配，兼容老数据中的 skillbook 值。
+  if (resolvedMarketCategory === 'skillbook') {
+    candidateCategorySet.add('skill');
+  }
+
+  const ruleCategories = ruleSet.categories.map((value) => normalizeCategoryToken(value)).filter((value) => value.length > 0);
 
   // 品质判断：物品品质超过该规则的最高品质阈值则不命中
   const qualityRank = Number(meta.qualityRank);
@@ -126,7 +178,7 @@ const matchesRuleSet = (ruleSet: AutoDisassembleRuleSet, meta: AutoDisassembleCa
     return false;
   }
 
-  if (ruleSet.categories.length > 0 && !ruleSet.categories.includes(category)) {
+  if (ruleCategories.length > 0 && !ruleCategories.some((category) => candidateCategorySet.has(category))) {
     return false;
   }
 
