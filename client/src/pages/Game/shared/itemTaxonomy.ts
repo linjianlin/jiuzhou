@@ -90,7 +90,7 @@ const SUB_CATEGORY_OPTIONS_BASE: LabeledOption[] = [
   { label: '丹药', value: 'pill' },
   { label: '遗物', value: 'relic' },
   { label: '卷轴', value: 'scroll' },
-  { label: '功法', value: 'technique' },
+  { label: '功法材料', value: 'technique' },
   { label: '功法书', value: 'technique_book' },
   { label: '代币', value: 'token' },
   { label: '木材', value: 'wood' },
