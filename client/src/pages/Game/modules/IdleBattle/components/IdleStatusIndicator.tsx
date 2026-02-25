@@ -123,9 +123,19 @@ const IdleStatusIndicator: React.FC<IdleStatusIndicatorProps> = ({
         <span>房间</span>
         <span>{roomName}</span>
       </div>
+      {activeSession.targetMonsterName && (
+        <div className="idle-status-tooltip-row">
+          <span>目标怪物</span>
+          <span>{activeSession.targetMonsterName}</span>
+        </div>
+      )}
       <div className="idle-status-tooltip-row">
         <span>战斗场数</span>
         <span>{activeSession.totalBattles}（胜 {activeSession.winCount} / 败 {activeSession.loseCount}）</span>
+      </div>
+      <div className="idle-status-tooltip-row">
+        <span>消耗体力</span>
+        <span>{activeSession.totalBattles}</span>
       </div>
       <div className="idle-status-tooltip-row">
         <span>累计修为</span>

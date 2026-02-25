@@ -87,6 +87,10 @@ export interface IdleSessionDto {
   startedAt: string;   // ISO 8601 字符串，UI 层按需转换为 Date
   endedAt: string | null;
   viewedAt: string | null;
+  /** 目标怪物定义 ID（由服务端从 sessionSnapshot 提取） */
+  targetMonsterDefId: string | null;
+  /** 目标怪物中文名（由服务端从 monster_def 解析） */
+  targetMonsterName: string | null;
 }
 
 // ============================================
