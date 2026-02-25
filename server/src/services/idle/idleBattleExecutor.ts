@@ -430,7 +430,8 @@ async function flushBuffer(
       b.silverGained,
       JSON.stringify(b.itemsGained),
       JSON.stringify(b.battleLog),
-      JSON.stringify(b.monsterIds),
+      // monster_ids 列是 TEXT[]，需要 PostgreSQL 数组字面量格式 {"a","b"}，而非 JSON 数组 ["a","b"]
+      `{${b.monsterIds.map((id) => `"${id}"`).join(',')}}`,
     );
     return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},NOW())`;
   });
