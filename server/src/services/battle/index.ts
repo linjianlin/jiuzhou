@@ -1449,8 +1449,10 @@ export async function startPVEBattle(
     activeBattles.set(battleId, engine);
     // 记录战斗参与者
     battleParticipants.set(battleId, participantUserIds);
-    startBattleTicker(battleId);
+    // 先 emit battle_started 再启动 ticker，确保 battle_started 始终先于
+    // tickBattle 产生的 battle_state 到达客户端，避免日志重复推送。
     emitBattleUpdate(battleId, { kind: 'battle_started', battleId, state: engine.getState() });
+    startBattleTicker(battleId);
 
     return {
       success: true,
@@ -1656,9 +1658,10 @@ export async function startDungeonPVEBattle(
     engine.startBattle();
     activeBattles.set(battleId, engine);
     battleParticipants.set(battleId, participantUserIds);
-    startBattleTicker(battleId);
 
+    // 先 emit battle_started 再启动 ticker，避免日志重复推送
     emitBattleUpdate(battleId, { kind: 'battle_started', battleId, state: engine.getState() });
+    startBattleTicker(battleId);
 
     return {
       success: true,
@@ -1776,9 +1779,10 @@ export async function startPVPBattle(
     engine.startBattle();
     activeBattles.set(finalBattleId, engine);
     battleParticipants.set(finalBattleId, isArenaBattle ? [userId] : [userId, opponentUserId]);
-    startBattleTicker(finalBattleId);
 
+    // 先 emit battle_started 再启动 ticker，避免日志重复推送
     emitBattleUpdate(finalBattleId, { kind: 'battle_started', battleId: finalBattleId, state: engine.getState() });
+    startBattleTicker(finalBattleId);
 
     return {
       success: true,

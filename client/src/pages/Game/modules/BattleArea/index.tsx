@@ -767,7 +767,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         const nextState = data?.state as BattleStateDto | undefined;
         if (nextState) {
           setStartupStatus('none');
-          lastChatLogIndexRef.current = 0;
+          // 不重置 lastChatLogIndexRef：startBattle 已在 await 前将其置 0，
+          // 若 battle_state 先于 battle_started 到达并推进了索引，回退会导致日志重复。
           announcedBattleIdRef.current = null;
           announcedBattleEndIdRef.current = null;
           announcedBattleDropsIdRef.current = null;
