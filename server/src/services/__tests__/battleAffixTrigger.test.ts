@@ -20,9 +20,6 @@ type SeedAffix = {
 
 type SeedPool = {
   id: string;
-  rules: {
-    max_per_group?: Record<string, number>;
-  };
   affixes: SeedAffix[];
 };
 
@@ -154,7 +151,7 @@ test('on_hit/on_be_hit/on_crit/on_turn_start四类触发词条可被识别', () 
   assert.deepEqual(triggers, ['on_be_hit', 'on_crit', 'on_hit', 'on_turn_start']);
 });
 
-test('六个高品池应配置trigger上限且词条仅包含T5/T6', () => {
+test('六个高品池触发词条应与方案一致且词条仅包含T5/T6', () => {
   const candidatePaths = [
     resolve(process.cwd(), 'server/src/data/seeds/affix_pool.json'),
     resolve(process.cwd(), 'src/data/seeds/affix_pool.json'),
@@ -175,7 +172,6 @@ test('六个高品池应配置trigger上限且词条仅包含T5/T6', () => {
   for (const plan of poolPlan) {
     const pool = seedFile.pools.find((row) => row.id === plan.id);
     assert.ok(pool, `缺少词条池: ${plan.id}`);
-    assert.equal(pool.rules?.max_per_group?.trigger, 1, `${plan.id} 未设置 trigger 上限=1`);
 
     const specialAffixes = pool.affixes.filter((affix) => affix.apply_type === 'special');
     const specialKeys = specialAffixes.map((affix) => affix.key).sort();

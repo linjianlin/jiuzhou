@@ -528,16 +528,7 @@ export const rerollEquipmentAffixesWithLocks = (params: {
 
   const rules = params.pool.rules;
   const mutexGroups = buildMutexGroups(rules);
-  const affixDefByKey = new Map<string, AffixDef>();
-  for (const def of params.pool.affixes) {
-    if (!def || typeof def !== 'object') continue;
-    const key = typeof def.key === 'string' ? def.key.trim() : '';
-    if (!key) continue;
-    affixDefByKey.set(key, def);
-  }
-
   const selectedKeys = new Set<string>();
-  const groupCounts: Record<string, number> = {};
   let currentLegendaryCount = 0;
 
   for (const idx of lockIndexSet) {
@@ -545,8 +536,6 @@ export const rerollEquipmentAffixesWithLocks = (params: {
     if (!lockedAffix) continue;
     selectedKeys.add(lockedAffix.key);
     if (lockedAffix.is_legendary) currentLegendaryCount += 1;
-    const def = affixDefByKey.get(lockedAffix.key);
-    if (def?.group) groupCounts[def.group] = (groupCounts[def.group] || 0) + 1;
   }
 
   const legendaryChance = Number.isFinite(Number(rules.legendary_chance))
@@ -571,12 +560,6 @@ export const rerollEquipmentAffixesWithLocks = (params: {
       const mutexGroup = getMutexGroupByKey(affix.key);
       if (mutexGroup && mutexGroup.some((key) => selectedKeys.has(key))) return false;
 
-      const groupLimit = rules.max_per_group?.[affix.group];
-      if (typeof groupLimit === 'number' && groupLimit > 0) {
-        const currentGroupCount = groupCounts[affix.group] || 0;
-        if (currentGroupCount >= groupLimit) return false;
-      }
-
       if (affix.is_legendary && currentLegendaryCount >= maxLegendaryCount) return false;
 
       const hasValidTier = affix.tiers.some((tier) => toNumber(tier.realm_rank_min, 0) <= params.realmRank);
@@ -599,7 +582,6 @@ export const rerollEquipmentAffixesWithLocks = (params: {
 
     generatedAffixes.push(generated);
     selectedKeys.add(generated.key);
-    groupCounts[selectedAffix.group] = (groupCounts[selectedAffix.group] || 0) + 1;
     if (generated.is_legendary) currentLegendaryCount += 1;
   }
 

@@ -144,7 +144,6 @@ export interface AffixTier {
 export interface AffixPoolRules {
   allow_duplicate: boolean;
   mutex_groups?: string[][];
-  max_per_group?: Record<string, number>;
   legendary_chance?: number;
 }
 
@@ -427,9 +426,6 @@ export const rollAffixes = (
   // 已选词条key（用于去重）
   const selectedKeys = new Set(result.map(a => a.key));
   
-  // 已选词条分组计数
-  const groupCounts: Record<string, number> = {};
-  
   // 互斥组检查
   const getMutexGroup = (key: string): string[] | undefined => {
     return rules.mutex_groups?.find(group => group.includes(key));
@@ -448,14 +444,6 @@ export const rollAffixes = (
       const mutexGroup = getMutexGroup(affix.key);
       if (mutexGroup && mutexGroup.some(k => selectedKeys.has(k))) {
         return false;
-      }
-      
-      // 检查分组上限
-      if (rules.max_per_group && rules.max_per_group[affix.group]) {
-        const currentCount = groupCounts[affix.group] || 0;
-        if (currentCount >= rules.max_per_group[affix.group]) {
-          return false;
-        }
       }
       
       // 检查是否有可用tier
@@ -478,7 +466,6 @@ export const rollAffixes = (
     if (generated) {
       result.push(generated);
       selectedKeys.add(selected.key);
-      groupCounts[selected.group] = (groupCounts[selected.group] || 0) + 1;
     }
     
     // 从可用列表移除（如果不允许重复）

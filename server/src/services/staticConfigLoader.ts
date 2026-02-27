@@ -623,7 +623,6 @@ export type AffixDefConfig = {
 export type AffixPoolRulesConfig = {
   allow_duplicate?: boolean;
   mutex_groups?: string[][];
-  max_per_group?: Record<string, number>;
   legendary_chance?: number;
 };
 

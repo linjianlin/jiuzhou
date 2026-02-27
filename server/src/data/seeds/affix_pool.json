@@ -17,12 +17,7 @@
             "fagong_flat",
             "fagong_percent"
           ]
-        ],
-        "max_per_group": {
-          "output": 3,
-          "survival": 2,
-          "resource": 1
-        }
+        ]
       },
       "affixes": [
         {
@@ -236,10 +231,7 @@
             "fagong_flat",
             "fagong_percent"
           ]
-        ],
-        "max_per_group": {
-          "trigger": 1
-        }
+        ]
       },
       "affixes": [
         {
@@ -788,10 +780,7 @@
             "fagong_flat",
             "fagong_percent"
           ]
-        ],
-        "max_per_group": {
-          "trigger": 1
-        }
+        ]
       },
       "affixes": [
         {
@@ -1416,12 +1405,7 @@
             "fafang_flat",
             "fafang_percent"
           ]
-        ],
-        "max_per_group": {
-          "survival": 4,
-          "resistance": 2,
-          "utility": 1
-        }
+        ]
       },
       "affixes": [
         {
@@ -1853,10 +1837,7 @@
             "fafang_flat",
             "fafang_percent"
           ]
-        ],
-        "max_per_group": {
-          "trigger": 1
-        }
+        ]
       },
       "affixes": [
         {
@@ -2806,10 +2787,7 @@
             "fafang_flat",
             "fafang_percent"
           ]
-        ],
-        "max_per_group": {
-          "trigger": 1
-        }
+        ]
       },
       "affixes": [
         {
@@ -3774,12 +3752,7 @@
       "name": "普通饰品词条池",
       "description": "黄品饰品可用的词条池（项链、戒指、腰带等）",
       "rules": {
-        "allow_duplicate": false,
-        "max_per_group": {
-          "output": 2,
-          "survival": 2,
-          "utility": 2
-        }
+        "allow_duplicate": false
       },
       "affixes": [
         {
@@ -4130,10 +4103,7 @@
       "description": "玄品及以上饰品可用的词条池",
       "rules": {
         "allow_duplicate": false,
-        "legendary_chance": 0.05,
-        "max_per_group": {
-          "trigger": 1
-        }
+        "legendary_chance": 0.05
       },
       "affixes": [
         {
@@ -5169,12 +5139,7 @@
       "name": "普通法宝词条池",
       "description": "黄品法宝可用的词条池",
       "rules": {
-        "allow_duplicate": false,
-        "max_per_group": {
-          "output": 2,
-          "survival": 2,
-          "utility": 2
-        }
+        "allow_duplicate": false
       },
       "affixes": [
         {
@@ -5497,10 +5462,7 @@
       "description": "玄品及以上法宝可用的词条池",
       "rules": {
         "allow_duplicate": false,
-        "legendary_chance": 0.08,
-        "max_per_group": {
-          "trigger": 1
-        }
+        "legendary_chance": 0.08
       },
       "affixes": [
         {
