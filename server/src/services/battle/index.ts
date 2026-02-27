@@ -333,6 +333,90 @@ function validateBattleStartCooldown(characterId: number, now: number = Date.now
   };
 }
 
+type ActiveBattleByCharacter = {
+  battleId: string;
+  state: BattleState;
+};
+
+/**
+ * 按角色ID查找其当前所在的活跃战斗。
+ *
+ * 输入：
+ * - characterId：角色ID（必须是正整数）
+ *
+ * 输出：
+ * - 命中时返回 { battleId, state }
+ * - 未命中时返回 null
+ *
+ * 数据流：
+ * - activeBattles(Map) -> BattleEngine.getState() -> attacker/defender 双方单位扫描 -> 匹配 player.sourceId
+ *
+ * 关键边界条件与坑点：
+ * - characterId 非法（非数字/<=0）时直接返回 null，避免误判。
+ * - sourceId 存在字符串数字场景，统一使用 Number(...) 比较，避免类型不一致导致漏命中。
+ */
+function findActiveBattleByCharacterId(characterId: number): ActiveBattleByCharacter | null {
+  const normalizedCharacterId = Math.floor(Number(characterId));
+  if (!Number.isFinite(normalizedCharacterId) || normalizedCharacterId <= 0) return null;
+
+  for (const [battleId, engine] of activeBattles.entries()) {
+    const state = engine.getState();
+    const units = [...state.teams.attacker.units, ...state.teams.defender.units];
+    for (const unit of units) {
+      if (unit.type !== 'player') continue;
+      if (Number(unit.sourceId) !== normalizedCharacterId) continue;
+      return { battleId, state };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 构建“角色已在战斗中”的标准返回体。
+ *
+ * 输入：
+ * - characterId：要查询的角色ID
+ * - reason：前端状态机识别用原因码
+ * - message：用户可读提示
+ *
+ * 输出：
+ * - 命中战斗时返回 BattleResult（success=false，附带 battleId/state）
+ * - 未命中返回 null（由调用方继续执行后续开战逻辑）
+ *
+ * 数据流：
+ * - findActiveBattleByCharacterId -> 提取当前战斗state -> 计算组队信息 -> 组装 BattleResult.data
+ *
+ * 关键边界条件与坑点：
+ * - reason 仅允许当前协议定义值，避免前后端分支漂移。
+ * - teamMemberCount 最少为1，保证前端展示逻辑不出现0人队伍。
+ */
+function buildCharacterInBattleResult(
+  characterId: number,
+  reason: 'character_in_battle' | 'opponent_in_battle',
+  message: string,
+): BattleResult | null {
+  const activeBattle = findActiveBattleByCharacterId(characterId);
+  if (!activeBattle) return null;
+
+  const teamMemberCount = Math.max(
+    1,
+    (activeBattle.state.teams.attacker.units ?? []).filter((unit) => unit.type === 'player').length,
+  );
+
+  return {
+    success: false,
+    message,
+    data: {
+      reason,
+      battleId: activeBattle.battleId,
+      state: activeBattle.state,
+      isTeamBattle: teamMemberCount > 1,
+      teamMemberCount,
+    },
+  };
+}
+
 function collectPlayerCharacterIdsFromBattleState(state: BattleState): number[] {
   const ids = new Set<number>();
   const units = [...state.teams.attacker.units, ...state.teams.defender.units];
@@ -1316,9 +1400,8 @@ export async function startPVEBattle(
     if (characterWithSetBonus.qixue <= 0) {
       return { success: false, message: '气血不足，无法战斗' };
     }
-    if (isCharacterInBattle(characterId)) {
-      return { success: false, message: '角色正在战斗中' };
-    }
+    const selfInBattleResult = buildCharacterInBattleResult(characterId, 'character_in_battle', '角色正在战斗中');
+    if (selfInBattleResult) return selfInBattleResult;
     const selfCooldown = validateBattleStartCooldown(characterId);
     if (selfCooldown) {
       return {
@@ -1571,9 +1654,8 @@ export async function startDungeonPVEBattle(
     if (characterWithSetBonus.qixue <= 0) {
       return { success: false, message: '气血不足，无法战斗' };
     }
-    if (isCharacterInBattle(characterId)) {
-      return { success: false, message: '角色正在战斗中' };
-    }
+    const selfInBattleResult = buildCharacterInBattleResult(characterId, 'character_in_battle', '角色正在战斗中');
+    if (selfInBattleResult) return selfInBattleResult;
     // 秘境推进时跳过冷却检查：秘境战斗由系统驱动，不应受手动发起战斗的冷却限制。
     // 若不跳过，auto-next 3秒定时器与服务端 3秒冷却卡在边界，可能导致
     // nextDungeonInstance 中 stage/wave 已推进但战斗创建失败，造成波次跳过。
@@ -1718,8 +1800,11 @@ export async function startPVPBattle(
     const requestedBattleId = typeof battleId === 'string' ? battleId.trim() : '';
     const isArenaBattle = requestedBattleId.startsWith('arena-battle-');
 
-    if (isCharacterInBattle(challengerCharacterId) || (!isArenaBattle && isCharacterInBattle(oppId))) {
-      return { success: false, message: '角色正在战斗中' };
+    const challengerInBattleResult = buildCharacterInBattleResult(challengerCharacterId, 'character_in_battle', '角色正在战斗中');
+    if (challengerInBattleResult) return challengerInBattleResult;
+    if (!isArenaBattle) {
+      const opponentInBattleResult = buildCharacterInBattleResult(oppId, 'opponent_in_battle', '对手正在战斗中');
+      if (opponentInBattleResult) return opponentInBattleResult;
     }
     const challengerCooldown = validateBattleStartCooldown(challengerCharacterId);
     if (challengerCooldown) {
@@ -2200,16 +2285,7 @@ setInterval(cleanupExpiredBattles, 5 * 60 * 1000);
  * 检查角色是否在战斗中
  */
 export function isCharacterInBattle(characterId: number): boolean {
-  for (const [, engine] of activeBattles.entries()) {
-    const state = engine.getState();
-    for (const unit of state.teams.attacker.units) {
-      if (unit.type === 'player' && Number(unit.sourceId) === characterId) return true;
-    }
-    for (const unit of state.teams.defender.units) {
-      if (unit.type === 'player' && Number(unit.sourceId) === characterId) return true;
-    }
-  }
-  return false;
+  return findActiveBattleByCharacterId(characterId) !== null;
 }
 
 function listActiveBattleIdsByUserId(userId: number): string[] {

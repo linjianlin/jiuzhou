@@ -432,6 +432,65 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     [addFloat],
   );
 
+  /**
+   * 统一应用“已拿到可用 battleId + state”的开战结果。
+   *
+   * 输入：
+   * - nextBattleId：当前应挂接的战斗ID
+   * - nextState：战斗状态快照
+   * - teamMeta：可选组队元信息（由服务端返回）
+   *
+   * 输出：
+   * - 无返回值，直接写入 BattleArea 本地状态与日志游标
+   *
+   * 数据流：
+   * - API/socket 返回 state -> 本函数统一写入 setBattleId/setBattleState
+   * - 同步日志索引与战斗文案 -> 驱动 UI 状态条与战况输出
+   *
+   * 关键边界条件与坑点：
+   * - teamMemberCount 可能缺失或非法，需退回由 state 反推，避免 UI 显示 0 人组队。
+   * - 需要先重置 startupStatus，再更新 battleState，避免“接敌中”文案残留。
+   */
+  const applyStartedBattleState = useCallback(
+    (
+      nextBattleId: string,
+      nextState: BattleStateDto,
+      teamMeta?: {
+        isTeamBattle?: boolean;
+        teamMemberCount?: number;
+      },
+    ): void => {
+      const normalizedTeamMemberCount = toPositiveInt(teamMeta?.teamMemberCount);
+      const fallbackTeamInfo = calcTeamInfoFromState(nextState);
+      const teamMemberCount = normalizedTeamMemberCount ?? fallbackTeamInfo.teamMemberCount;
+      const isTeamBattle = typeof teamMeta?.isTeamBattle === 'boolean'
+        ? teamMeta.isTeamBattle
+        : teamMemberCount > 1;
+
+      setBattleId(nextBattleId);
+      setBattleState(nextState);
+      setStartupStatus('none');
+      setIsTeamBattle(isTeamBattle);
+      setTeamMemberCount(teamMemberCount);
+      lastLogIndexRef.current = nextState.logs?.length ?? 0;
+      ensureBattleStartAnnounced(nextState);
+      const nextLines = formatNewLogs(lastChatLogIndexRef.current, nextState.logs ?? []);
+      lastChatLogIndexRef.current = nextState.logs?.length ?? lastChatLogIndexRef.current;
+      pushBattleLines(nextLines);
+      ensureBattleEndAnnounced(nextState);
+      const nextResult: BattleResult =
+        nextState.phase === 'finished'
+          ? nextState.result === 'attacker_win'
+            ? 'win'
+            : nextState.result === 'defender_win'
+              ? 'lose'
+              : 'draw'
+          : 'running';
+      setResult(nextResult);
+    },
+    [ensureBattleEndAnnounced, ensureBattleStartAnnounced, formatNewLogs, pushBattleLines],
+  );
+
   const startBattle = useCallback(
     async (monsterIds: string[], options?: StartBattleOptions): Promise<void> => {
       if (startingBattleRef.current) return;
@@ -474,6 +533,17 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         syncBattleCooldownMeta(res?.data);
         const reason = String(res?.data?.reason ?? '').trim();
         const retryAfterMs = toPositiveInt(res?.data?.retryAfterMs);
+        const inBattleBattleId = typeof res?.data?.battleId === 'string' ? res.data.battleId : '';
+        const inBattleState = res?.data?.state;
+        if (reason === 'character_in_battle' && !res?.success && inBattleBattleId && inBattleState) {
+          applyStartedBattleState(inBattleBattleId, inBattleState, {
+            isTeamBattle: res.data?.isTeamBattle,
+            teamMemberCount: res.data?.teamMemberCount,
+          });
+          startingBattleRef.current = false;
+          return;
+        }
+
         const isStartCooldown = reason === 'battle_start_cooldown';
         if (!res?.success && shouldRetryOnCooldown && isStartCooldown && retryAfterMs != null) {
           // 极小 retryAfterMs（< 200ms）视为无意义冷却，强制静默重试
@@ -494,20 +564,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           return;
         }
         if (!res?.success || !res.data?.battleId || !res.data?.state) {
-          // auto-next 触发时服务端可能还没清理完上一场战斗，静默短暂重试
-          const resMessage = String(res?.message ?? '').trim();
-          if (shouldRetryOnCooldown && resMessage === '角色正在战斗中') {
-            const retryMs = retryAfterMs ?? 500;
-            autoNextTimerRef.current = window.setTimeout(() => {
-              void startBattle(monsterIds, { retryOnCooldown: true, silentCooldown: true });
-            }, retryMs);
-            setStartupStatus('cooldown');
-            setBattleId(null);
-            setBattleState(null);
-            setResult('idle');
-            startingBattleRef.current = false;
-            return;
-          }
           message.error(res?.message || '战斗发起失败');
           setBattleId(null);
           setBattleState(null);
@@ -517,26 +573,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           startingBattleRef.current = false;
           return;
         }
-        setBattleId(res.data.battleId);
-        setBattleState(res.data.state);
-        setStartupStatus('none');
-        setIsTeamBattle(res.data.isTeamBattle ?? false);
-        setTeamMemberCount(res.data.teamMemberCount ?? 1);
-        lastLogIndexRef.current = res.data.state.logs?.length ?? 0;
-        ensureBattleStartAnnounced(res.data.state);
-        const nextLines = formatNewLogs(lastChatLogIndexRef.current, res.data.state.logs ?? []);
-        lastChatLogIndexRef.current = res.data.state.logs?.length ?? lastChatLogIndexRef.current;
-        pushBattleLines(nextLines);
-        ensureBattleEndAnnounced(res.data.state);
-        const nextResult: BattleResult =
-          res.data.state.phase === 'finished'
-            ? res.data.state.result === 'attacker_win'
-              ? 'win'
-              : res.data.state.result === 'defender_win'
-                ? 'lose'
-                : 'draw'
-            : 'running';
-        setResult(nextResult);
+        applyStartedBattleState(res.data.battleId, res.data.state, {
+          isTeamBattle: res.data.isTeamBattle,
+          teamMemberCount: res.data.teamMemberCount,
+        });
       } catch (e) {
         message.error((e as { message?: string })?.message || '战斗发起失败');
         setBattleId(null);
@@ -552,9 +592,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     [
       clearAutoNextTimer,
       clearFloatTimers,
+      applyStartedBattleState,
       ensureBattleEndAnnounced,
-      ensureBattleStartAnnounced,
-      formatNewLogs,
       message,
       onEscape,
       pushBattleLines,
