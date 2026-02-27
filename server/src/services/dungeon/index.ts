@@ -9,7 +9,7 @@ import {
   getMonsterDefinitions,
 } from '../staticConfigLoader.js';
 import { resolveDropPoolById } from '../dropPoolResolver.js';
-import { pool, query } from '../../config/database.js';
+import { query, withTransaction } from '../../config/database.js';
 import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from '../battle/index.js';
 import { createItem } from '../itemService.js';
@@ -34,7 +34,6 @@ import { getAdjustedDropQuantityRange } from '../shared/dropQuantityMultiplier.j
 import { lockCharacterInventoryMutexesTx } from '../inventoryMutex.js';
 import { resolveQualityRankFromName } from '../shared/itemQuality.js';
 import { getCharacterIdByUserId } from '../shared/characterId.js';
-import { safeRollback } from '../shared/transaction.js';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
 
@@ -1399,127 +1398,121 @@ export const startDungeonInstance = async (
   const user = await getUserAndCharacter(userId);
   if (!user.ok) return { success: false, message: user.message };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const instRes = await client.query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
-    if (instRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '秘境实例不存在' };
-    }
-    const inst = instRes.rows[0] as DungeonInstanceRow;
-
-    if (inst.status !== 'preparing') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '秘境已开始或已结束' };
-    }
-    if (inst.creator_id !== user.characterId) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '只有创建者可以开始秘境' };
-    }
-
-    const dungeonDef = getDungeonDefById(inst.dungeon_id);
-    if (!dungeonDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '秘境不存在' };
-    }
-    const dailyLimit = dungeonDef.daily_limit;
-    const weeklyLimit = dungeonDef.weekly_limit;
-    const minPlayers = dungeonDef.min_players;
-    const maxPlayers = dungeonDef.max_players;
-    const staminaCost = dungeonDef.stamina_cost;
-
-    const participants = parseParticipants(inst.participants);
-    if (participants.length < minPlayers) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `人数不足，需要至少${minPlayers}人` };
-    }
-    if (participants.length > maxPlayers) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `人数超限，最多${maxPlayers}人` };
-    }
-
-    for (const p of participants) {
-      const touch = await touchEntryCount(client, p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
-      if (!touch.ok) {
+    return await withTransaction(async (client) => {
+  const instRes = await client.query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
+      if (instRes.rows.length === 0) {
         await client.query('ROLLBACK');
-        return { success: false, message: touch.message };
+        return { success: false, message: '秘境实例不存在' };
       }
-    }
-
-    if (staminaCost > 0) {
+      const inst = instRes.rows[0] as DungeonInstanceRow;
+  
+      if (inst.status !== 'preparing') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '秘境已开始或已结束' };
+      }
+      if (inst.creator_id !== user.characterId) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '只有创建者可以开始秘境' };
+      }
+  
+      const dungeonDef = getDungeonDefById(inst.dungeon_id);
+      if (!dungeonDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '秘境不存在' };
+      }
+      const dailyLimit = dungeonDef.daily_limit;
+      const weeklyLimit = dungeonDef.weekly_limit;
+      const minPlayers = dungeonDef.min_players;
+      const maxPlayers = dungeonDef.max_players;
+      const staminaCost = dungeonDef.stamina_cost;
+  
+      const participants = parseParticipants(inst.participants);
+      if (participants.length < minPlayers) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `人数不足，需要至少${minPlayers}人` };
+      }
+      if (participants.length > maxPlayers) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `人数超限，最多${maxPlayers}人` };
+      }
+  
       for (const p of participants) {
-        const staminaState = await applyStaminaRecoveryTx(client, p.characterId);
-        if (!staminaState) {
+        const touch = await touchEntryCount(client, p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
+        if (!touch.ok) {
           await client.query('ROLLBACK');
-          return { success: false, message: '角色不存在' };
-        }
-        const stamina = asNumber(staminaState.stamina, 0);
-        if (stamina < staminaCost) {
-          await client.query('ROLLBACK');
-          return { success: false, message: `体力不足，需要${staminaCost}，当前${stamina}` };
+          return { success: false, message: touch.message };
         }
       }
-    }
-
-    for (const p of participants) {
-      await incEntryCount(client, p.characterId, inst.dungeon_id);
-    }
-
-    if (staminaCost > 0) {
+  
+      if (staminaCost > 0) {
+        for (const p of participants) {
+          const staminaState = await applyStaminaRecoveryTx(client, p.characterId);
+          if (!staminaState) {
+            await client.query('ROLLBACK');
+            return { success: false, message: '角色不存在' };
+          }
+          const stamina = asNumber(staminaState.stamina, 0);
+          if (stamina < staminaCost) {
+            await client.query('ROLLBACK');
+            return { success: false, message: `体力不足，需要${staminaCost}，当前${stamina}` };
+          }
+        }
+      }
+  
       for (const p of participants) {
-        const updRes = await client.query(
-          `UPDATE characters
-              SET stamina = stamina - $1,
-                  stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
-                  updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND stamina >= $1`,
-          [staminaCost, p.characterId, STAMINA_MAX]
-        );
-        if ((updRes.rowCount ?? 0) === 0) {
-          await client.query('ROLLBACK');
-          return { success: false, message: '体力扣除失败' };
+        await incEntryCount(client, p.characterId, inst.dungeon_id);
+      }
+  
+      if (staminaCost > 0) {
+        for (const p of participants) {
+          const updRes = await client.query(
+            `UPDATE characters
+                SET stamina = stamina - $1,
+                    stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2 AND stamina >= $1`,
+            [staminaCost, p.characterId, STAMINA_MAX]
+          );
+          if ((updRes.rowCount ?? 0) === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, message: '体力扣除失败' };
+          }
         }
       }
-    }
-
-    const stageWave = await getStageAndWave(inst.difficulty_id, 1, 1);
-    if (!stageWave.ok) {
-      await client.query('ROLLBACK');
-      return { success: false, message: stageWave.message };
-    }
-
-    const monsterDefIds = buildMonsterDefIdsFromWave(stageWave.wave.monsters, 5);
-    if (monsterDefIds.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '该波次未配置怪物' };
-    }
-
-    await client.query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
-      instanceId,
-    ]);
-
-    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { resourceSyncClient: client, skipCooldown: true });
-    if (!battleRes.success || !battleRes.data?.battleId) {
-      await client.query('ROLLBACK');
-      return { success: false, message: battleRes.message || '开启战斗失败' };
-    }
-
-    const battleId = String(battleRes.data.battleId);
-    await client.query(
-      `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
-      [battleId, instanceId]
-    );
-
-    await client.query('COMMIT');
-    return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
+  
+      const stageWave = await getStageAndWave(inst.difficulty_id, 1, 1);
+      if (!stageWave.ok) {
+        await client.query('ROLLBACK');
+        return { success: false, message: stageWave.message };
+      }
+  
+      const monsterDefIds = buildMonsterDefIdsFromWave(stageWave.wave.monsters, 5);
+      if (monsterDefIds.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '该波次未配置怪物' };
+      }
+  
+      await client.query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
+        instanceId,
+      ]);
+  
+      const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { resourceSyncClient: client, skipCooldown: true });
+      if (!battleRes.success || !battleRes.data?.battleId) {
+        await client.query('ROLLBACK');
+        return { success: false, message: battleRes.message || '开启战斗失败' };
+      }
+  
+      const battleId = String(battleRes.data.battleId);
+      await client.query(
+        `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
+        [battleId, instanceId]
+      );
+  return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
+    });
   } catch (error) {
-    await safeRollback(client);
     console.error('开始秘境失败:', error);
     return { success: false, message: '开始秘境失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -1589,10 +1582,9 @@ export const nextDungeonInstance = async (
       const attackerStats = asObject(stats.attacker) ?? {};
       const totalDamage = Math.floor(asNumber(attackerStats.damageDealt, 0));
       const timeSpentSec = Math.max(0, Math.floor((Date.now() - new Date(inst.start_time || inst.created_at).getTime()) / 1000));
-      const client = await pool.connect();
       const pendingMailByCharacter = new Map<number, { userId: number; items: MailAttachItem[] }>();
       try {
-        await client.query('BEGIN');
+        return await withTransaction(async (client) => {
 
         const instLockRes = await client.query(`SELECT status FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
         if (instLockRes.rows.length === 0) {
@@ -1855,8 +1847,6 @@ export const nextDungeonInstance = async (
           );
         }
 
-        await client.query('COMMIT');
-
         for (const [receiverCharacterId, entry] of pendingMailByCharacter.entries()) {
           const chunkSize = 10;
           for (let i = 0; i < entry.items.length; i += chunkSize) {
@@ -1883,13 +1873,11 @@ export const nextDungeonInstance = async (
           }
         } catch { }
 
-        return { success: true, data: { instanceId, status: 'cleared', finished: true } };
+          return { success: true, data: { instanceId, status: 'cleared', finished: true } };
+        });
       } catch (error) {
-        await safeRollback(client);
         console.error('秘境结算失败:', error);
         return { success: false, message: '秘境结算失败' };
-      } finally {
-        client.release();
       }
     }
 

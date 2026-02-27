@@ -39,7 +39,7 @@ const ENABLE_QUERY_LOG = process.env.DB_LOG === 'true';
 
 /**
  * 严格写入事务模式：
- * - true：事务外写语句自动封装为事务执行；若调用方使用原始 client 且未开启事务，则仍会被拦截。
+ * - true：事务外写语句自动封装为事务执行（统一 `query` + 原始 `client.query` 都生效）。
  * - false：关闭自动写事务与拦截。
  */
 const STRICT_WRITE_TRANSACTION = true;
@@ -173,6 +173,15 @@ const executeRawQueryAsPromise = (
   return result as Promise<QueryResult<QueryResultRow>>;
 };
 
+const resetClientTransactionState = (client: PoolClient, state: ClientTransactionState): void => {
+  state.depth = 0;
+  state.savepointStack = [];
+  const active = getActiveTransactionContext();
+  if (active?.client === client) {
+    transactionContextStorage.enterWith(null);
+  }
+};
+
 const createNoopQueryResult = <T extends QueryResultRow>(
   command: string,
 ): QueryResult<T> => {
@@ -254,12 +263,7 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
 
       if (state.depth === 1) {
         return executeRawQueryAsPromise(rawQuery, 'COMMIT').then((result) => {
-          state.depth = 0;
-          state.savepointStack = [];
-          const active = getActiveTransactionContext();
-          if (active?.client === client) {
-            transactionContextStorage.enterWith(null);
-          }
+          resetClientTransactionState(client, state);
           return result;
         });
       }
@@ -284,12 +288,7 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
 
       if (state.depth === 1) {
         return executeRawQueryAsPromise(rawQuery, 'ROLLBACK').then((result) => {
-          state.depth = 0;
-          state.savepointStack = [];
-          const active = getActiveTransactionContext();
-          if (active?.client === client) {
-            transactionContextStorage.enterWith(null);
-          }
+          resetClientTransactionState(client, state);
           return result;
         });
       }
@@ -310,11 +309,30 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
     }
 
     if (STRICT_WRITE_TRANSACTION && isWriteSql(sql) && state.depth <= 0) {
-      return Promise.reject(
-        new Error(
-          `严格事务模式拦截：检测到事务外写操作，必须通过 withTransaction 或显式事务执行。SQL: ${stripLeadingSqlComments(sql).slice(0, 120)}`,
-        ),
-      );
+      return executeRawQueryAsPromise(rawQuery, 'BEGIN')
+        .then(() => {
+          state.depth = 1;
+          transactionContextStorage.enterWith({ client });
+          const writeResult = rawQuery(...queryArgs);
+          if (!isPromiseLike(writeResult)) {
+            throw new Error('自动写事务仅支持 Promise 风格调用');
+          }
+          return writeResult as Promise<QueryResult<QueryResultRow>>;
+        })
+        .then((result) =>
+          executeRawQueryAsPromise(rawQuery, 'COMMIT').then(() => {
+            resetClientTransactionState(client, state);
+            return result;
+          }),
+        )
+        .catch((error) =>
+          executeRawQueryAsPromise(rawQuery, 'ROLLBACK')
+            .catch(() => undefined)
+            .then(() => {
+              resetClientTransactionState(client, state);
+              throw error;
+            }),
+        );
     }
 
     return rawQuery(...queryArgs);
@@ -326,12 +344,7 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
     if (state.depth > 0) {
       // 释放前强制回滚未结束事务，避免连接污染回池。
       void executeRawQueryAsPromise(rawQuery, 'ROLLBACK').catch(() => undefined);
-      state.depth = 0;
-      state.savepointStack = [];
-      const active = getActiveTransactionContext();
-      if (active?.client === client) {
-        transactionContextStorage.enterWith(null);
-      }
+      resetClientTransactionState(client, state);
     }
 
     state.released = true;

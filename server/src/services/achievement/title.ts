@@ -1,4 +1,4 @@
-import { pool, query } from '../../config/database.js';
+import { pool, query, withTransaction } from '../../config/database.js';
 import {
   asFiniteNonNegativeInt,
   asNonEmptyString,
@@ -89,96 +89,89 @@ export const equipTitle = async (characterId: number, titleId: string): Promise<
   if (!cid) return { success: false, message: '角色不存在' };
   if (!tid) return { success: false, message: '称号ID不能为空' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const targetDef = getTitleDefinitions().find((row) => row.id === tid && row.enabled !== false);
-    if (!targetDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未拥有该称号' };
-    }
-
-    const targetRes = await client.query(
-      `
-        SELECT title_id
-        FROM character_title
-        WHERE character_id = $1
-          AND title_id = $2
-          AND (expires_at IS NULL OR expires_at > NOW())
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [cid, tid],
-    );
-
-    if ((targetRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未拥有该称号' };
-    }
-
-    const targetName = asNonEmptyString(targetDef.name) ?? tid;
-    const nextEffects = normalizeTitleEffects(targetDef.effects);
-
-    const currentRes = await client.query(
-      `
-        SELECT title_id
-        FROM character_title
-        WHERE character_id = $1
-          AND is_equipped = true
-          AND (expires_at IS NULL OR expires_at > NOW())
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [cid],
-    );
-
-    const currentRow = (currentRes.rows?.[0] ?? null) as Record<string, unknown> | null;
-    const currentTitleId = currentRow ? asNonEmptyString(currentRow.title_id) : null;
-    const currentDef = currentTitleId
-      ? getTitleDefinitions().find((row) => row.id === currentTitleId && row.enabled !== false)
-      : null;
-    const currentEffects = currentDef ? normalizeTitleEffects(currentDef.effects) : {};
-
-    if (currentTitleId === tid) {
-      await client.query('COMMIT');
+    return await withTransaction(async (client) => {
+  const targetDef = getTitleDefinitions().find((row) => row.id === tid && row.enabled !== false);
+      if (!targetDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '未拥有该称号' };
+      }
+  
+      const targetRes = await client.query(
+        `
+          SELECT title_id
+          FROM character_title
+          WHERE character_id = $1
+            AND title_id = $2
+            AND (expires_at IS NULL OR expires_at > NOW())
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [cid, tid],
+      );
+  
+      if ((targetRes.rows ?? []).length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '未拥有该称号' };
+      }
+  
+      const targetName = asNonEmptyString(targetDef.name) ?? tid;
+      const nextEffects = normalizeTitleEffects(targetDef.effects);
+  
+      const currentRes = await client.query(
+        `
+          SELECT title_id
+          FROM character_title
+          WHERE character_id = $1
+            AND is_equipped = true
+            AND (expires_at IS NULL OR expires_at > NOW())
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [cid],
+      );
+  
+      const currentRow = (currentRes.rows?.[0] ?? null) as Record<string, unknown> | null;
+      const currentTitleId = currentRow ? asNonEmptyString(currentRow.title_id) : null;
+      const currentDef = currentTitleId
+        ? getTitleDefinitions().find((row) => row.id === currentTitleId && row.enabled !== false)
+        : null;
+      const currentEffects = currentDef ? normalizeTitleEffects(currentDef.effects) : {};
+  
+      if (currentTitleId === tid) {
+  return { success: true, message: 'ok' };
+      }
+  
+      const delta = computeEffectDelta(currentEffects, nextEffects);
+  
+      await client.query(
+        `
+          UPDATE character_title
+          SET is_equipped = false,
+              updated_at = NOW()
+          WHERE character_id = $1
+            AND is_equipped = true
+        `,
+        [cid],
+      );
+  
+      await client.query(
+        `
+          UPDATE character_title
+          SET is_equipped = true,
+              updated_at = NOW()
+          WHERE character_id = $1
+            AND title_id = $2
+        `,
+        [cid, tid],
+      );
+  
+      await updateCharacterAttrsWithDeltaTx(cid, targetName, delta, client);
+  await invalidateCharacterComputedCache(cid);
       return { success: true, message: 'ok' };
-    }
-
-    const delta = computeEffectDelta(currentEffects, nextEffects);
-
-    await client.query(
-      `
-        UPDATE character_title
-        SET is_equipped = false,
-            updated_at = NOW()
-        WHERE character_id = $1
-          AND is_equipped = true
-      `,
-      [cid],
-    );
-
-    await client.query(
-      `
-        UPDATE character_title
-        SET is_equipped = true,
-            updated_at = NOW()
-        WHERE character_id = $1
-          AND title_id = $2
-      `,
-      [cid, tid],
-    );
-
-    await updateCharacterAttrsWithDeltaTx(cid, targetName, delta, client);
-
-    await client.query('COMMIT');
-    await invalidateCharacterComputedCache(cid);
-    return { success: true, message: 'ok' };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('装备称号失败:', error);
+console.error('装备称号失败:', error);
     return { success: false, message: '装备称号失败' };
-  } finally {
-    client.release();
   }
 };

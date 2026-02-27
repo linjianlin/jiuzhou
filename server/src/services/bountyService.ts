@@ -1,4 +1,4 @@
-import { pool } from '../config/database.js';
+import { pool, withTransaction } from '../config/database.js';
 import crypto from 'crypto';
 import { getBountyDefinitions, getItemDefinitions, getItemDefinitionsByIds } from './staticConfigLoader.js';
 import { getTaskDefinitionById } from './taskDefinitionService.js';
@@ -114,80 +114,74 @@ export const ensureDailyBountyInstances = async (desiredCount: number = 6): Prom
   const today = getLocalDateKey();
   const take = Math.max(1, Math.min(30, Math.trunc(desiredCount)));
   const expiresAt = getLocalNextMidnight();
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    await client.query(
-      `
-        DELETE FROM bounty_instance
-        WHERE source_type = 'daily'
-          AND (
-            (expires_at IS NOT NULL AND expires_at <= NOW())
-            OR (refresh_date IS NOT NULL AND refresh_date < CURRENT_DATE)
-          )
-      `,
-    );
-
-    const existingRes = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM bounty_instance WHERE source_type = 'daily' AND refresh_date = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
-      [today],
-    );
-    const existing = asFiniteInt(existingRes.rows?.[0]?.cnt, 0);
-    if (existing >= take) {
-      await client.query('COMMIT');
-      return;
-    }
-
-    const defs = getBountyDefinitions()
-      .filter((entry) => entry.enabled !== false)
-      .filter((entry) => (entry.pool ?? 'daily') === 'daily')
-      .map((entry) => ({
-        id: entry.id,
-        pool: entry.pool ?? 'daily',
-        task_id: entry.task_id,
-        title: entry.title,
-        description: typeof entry.description === 'string' ? entry.description : null,
-        claim_policy: entry.claim_policy ?? 'limited',
-        max_claims: Number.isFinite(Number(entry.max_claims)) ? Number(entry.max_claims) : 0,
-        weight: Number.isFinite(Number(entry.weight)) ? Number(entry.weight) : 1,
-      }))
-      .sort((left, right) => right.weight - left.weight || left.id.localeCompare(right.id));
-    const picked = pickWeightedUnique(defs, take);
-
-    for (const d of picked) {
-      await client.query(
+    return await withTransaction(async (client) => {
+  await client.query(
         `
-          INSERT INTO bounty_instance (
-            source_type, bounty_def_id, task_id, title, description,
-            claim_policy, max_claims, claimed_count, refresh_date, expires_at,
-            published_by_character_id, created_at, updated_at
-          ) VALUES (
-            'daily', $1, $2, $3, $4,
-            $5, $6, 0, $7, $8,
-            NULL, NOW(), NOW()
-          )
-          ON CONFLICT (source_type, refresh_date, bounty_def_id) DO NOTHING
+          DELETE FROM bounty_instance
+          WHERE source_type = 'daily'
+            AND (
+              (expires_at IS NOT NULL AND expires_at <= NOW())
+              OR (refresh_date IS NOT NULL AND refresh_date < CURRENT_DATE)
+            )
         `,
-        [
-          d.id,
-          d.task_id,
-          d.title,
-          d.description || null,
-          d.claim_policy,
-          asFiniteInt(d.max_claims, 0),
-          today,
-          expiresAt,
-        ],
       );
-    }
-
-    await client.query('COMMIT');
+  
+      const existingRes = await client.query(
+        `SELECT COUNT(*)::int AS cnt FROM bounty_instance WHERE source_type = 'daily' AND refresh_date = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+        [today],
+      );
+      const existing = asFiniteInt(existingRes.rows?.[0]?.cnt, 0);
+      if (existing >= take) {
+  return;
+      }
+  
+      const defs = getBountyDefinitions()
+        .filter((entry) => entry.enabled !== false)
+        .filter((entry) => (entry.pool ?? 'daily') === 'daily')
+        .map((entry) => ({
+          id: entry.id,
+          pool: entry.pool ?? 'daily',
+          task_id: entry.task_id,
+          title: entry.title,
+          description: typeof entry.description === 'string' ? entry.description : null,
+          claim_policy: entry.claim_policy ?? 'limited',
+          max_claims: Number.isFinite(Number(entry.max_claims)) ? Number(entry.max_claims) : 0,
+          weight: Number.isFinite(Number(entry.weight)) ? Number(entry.weight) : 1,
+        }))
+        .sort((left, right) => right.weight - left.weight || left.id.localeCompare(right.id));
+      const picked = pickWeightedUnique(defs, take);
+  
+      for (const d of picked) {
+        await client.query(
+          `
+            INSERT INTO bounty_instance (
+              source_type, bounty_def_id, task_id, title, description,
+              claim_policy, max_claims, claimed_count, refresh_date, expires_at,
+              published_by_character_id, created_at, updated_at
+            ) VALUES (
+              'daily', $1, $2, $3, $4,
+              $5, $6, 0, $7, $8,
+              NULL, NOW(), NOW()
+            )
+            ON CONFLICT (source_type, refresh_date, bounty_def_id) DO NOTHING
+          `,
+          [
+            d.id,
+            d.task_id,
+            d.title,
+            d.description || null,
+            d.claim_policy,
+            asFiniteInt(d.max_claims, 0),
+            today,
+            expiresAt,
+          ],
+        );
+      }
+  
+    });
   } catch (error) {
-    await safeRollback(client);
     throw error;
-  } finally {
-    client.release();
   }
 };
 
@@ -293,113 +287,107 @@ export const claimBounty = async (
   if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
   if (!Number.isFinite(bid) || bid <= 0) return { success: false, message: '悬赏不存在' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const instRes = await client.query(
-      `
-        SELECT id, task_id, claim_policy, max_claims, claimed_count, expires_at
-        FROM bounty_instance
-        WHERE id = $1
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [bid],
-    );
-    if ((instRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '悬赏不存在' };
-    }
-    const inst = instRes.rows[0] as any;
-    const taskId = asNonEmptyString(inst?.task_id) ?? '';
-    if (!taskId) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '悬赏数据异常' };
-    }
-    const expiresAtMs = inst?.expires_at ? new Date(inst.expires_at).getTime() : 0;
-    if (expiresAtMs && Number.isFinite(expiresAtMs) && Date.now() > expiresAtMs) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '悬赏已过期' };
-    }
-
-    const claimPolicy = (asNonEmptyString(inst?.claim_policy) ?? 'limited') as BountyClaimPolicy;
-    const maxClaims = asFiniteInt(inst?.max_claims, 0);
-    const claimedCount = asFiniteInt(inst?.claimed_count, 0);
-
-    if (claimPolicy === 'unique' && claimedCount >= 1) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '该悬赏已被接取' };
-    }
-    if (claimPolicy === 'limited' && maxClaims > 0 && claimedCount >= maxClaims) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '该悬赏接取次数已满' };
-    }
-
-    const taskProgRes = await client.query(
-      `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 LIMIT 1 FOR UPDATE`,
-      [cid, taskId],
-    );
-    if ((taskProgRes.rows ?? []).length > 0) {
-      const st = asNonEmptyString(taskProgRes.rows[0]?.status);
-      if (st && st !== 'claimed') {
+    return await withTransaction(async (client) => {
+  const instRes = await client.query(
+        `
+          SELECT id, task_id, claim_policy, max_claims, claimed_count, expires_at
+          FROM bounty_instance
+          WHERE id = $1
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [bid],
+      );
+      if ((instRes.rows ?? []).length === 0) {
         await client.query('ROLLBACK');
-        return { success: false, message: '该任务已接取' };
+        return { success: false, message: '悬赏不存在' };
       }
-    }
-
-    const insertClaimRes = await client.query(
-      `
-        INSERT INTO bounty_claim (bounty_instance_id, character_id, status, claimed_at, updated_at)
-        VALUES ($1, $2, 'claimed', NOW(), NOW())
-        ON CONFLICT (bounty_instance_id, character_id) DO NOTHING
-        RETURNING id
-      `,
-      [bid, cid],
-    );
-    if ((insertClaimRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '已接取该悬赏' };
-    }
-
-    await client.query(
-      `UPDATE bounty_instance SET claimed_count = claimed_count + 1, updated_at = NOW() WHERE id = $1`,
-      [bid],
-    );
-
-    const taskDef = await getTaskDefinitionById(taskId, client);
-    if (!taskDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务不存在' };
-    }
-    const objectives = Array.isArray(taskDef.objectives) ? (taskDef.objectives as any[]) : [];
-    const hasSubmitObjective = objectives.some((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
-    const initialStatus = hasSubmitObjective ? 'turnin' : 'ongoing';
-
-    await client.query(
-      `
-        INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
-        VALUES ($1, $2, $3, '{}'::jsonb, true, NOW(), NULL, NULL, NOW())
-        ON CONFLICT (character_id, task_id) DO UPDATE SET
-          status = EXCLUDED.status,
-          progress = EXCLUDED.progress,
-          tracked = EXCLUDED.tracked,
-          accepted_at = NOW(),
-          completed_at = NULL,
-          claimed_at = NULL,
-          updated_at = NOW()
-      `,
-      [cid, taskId, initialStatus],
-    );
-
-    await client.query('COMMIT');
-    return { success: true, message: '接取成功', data: { bountyInstanceId: bid, taskId } };
+      const inst = instRes.rows[0] as any;
+      const taskId = asNonEmptyString(inst?.task_id) ?? '';
+      if (!taskId) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '悬赏数据异常' };
+      }
+      const expiresAtMs = inst?.expires_at ? new Date(inst.expires_at).getTime() : 0;
+      if (expiresAtMs && Number.isFinite(expiresAtMs) && Date.now() > expiresAtMs) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '悬赏已过期' };
+      }
+  
+      const claimPolicy = (asNonEmptyString(inst?.claim_policy) ?? 'limited') as BountyClaimPolicy;
+      const maxClaims = asFiniteInt(inst?.max_claims, 0);
+      const claimedCount = asFiniteInt(inst?.claimed_count, 0);
+  
+      if (claimPolicy === 'unique' && claimedCount >= 1) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '该悬赏已被接取' };
+      }
+      if (claimPolicy === 'limited' && maxClaims > 0 && claimedCount >= maxClaims) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '该悬赏接取次数已满' };
+      }
+  
+      const taskProgRes = await client.query(
+        `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 LIMIT 1 FOR UPDATE`,
+        [cid, taskId],
+      );
+      if ((taskProgRes.rows ?? []).length > 0) {
+        const st = asNonEmptyString(taskProgRes.rows[0]?.status);
+        if (st && st !== 'claimed') {
+          await client.query('ROLLBACK');
+          return { success: false, message: '该任务已接取' };
+        }
+      }
+  
+      const insertClaimRes = await client.query(
+        `
+          INSERT INTO bounty_claim (bounty_instance_id, character_id, status, claimed_at, updated_at)
+          VALUES ($1, $2, 'claimed', NOW(), NOW())
+          ON CONFLICT (bounty_instance_id, character_id) DO NOTHING
+          RETURNING id
+        `,
+        [bid, cid],
+      );
+      if ((insertClaimRes.rows ?? []).length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '已接取该悬赏' };
+      }
+  
+      await client.query(
+        `UPDATE bounty_instance SET claimed_count = claimed_count + 1, updated_at = NOW() WHERE id = $1`,
+        [bid],
+      );
+  
+      const taskDef = await getTaskDefinitionById(taskId, client);
+      if (!taskDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务不存在' };
+      }
+      const objectives = Array.isArray(taskDef.objectives) ? (taskDef.objectives as any[]) : [];
+      const hasSubmitObjective = objectives.some((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
+      const initialStatus = hasSubmitObjective ? 'turnin' : 'ongoing';
+  
+      await client.query(
+        `
+          INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
+          VALUES ($1, $2, $3, '{}'::jsonb, true, NOW(), NULL, NULL, NOW())
+          ON CONFLICT (character_id, task_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            progress = EXCLUDED.progress,
+            tracked = EXCLUDED.tracked,
+            accepted_at = NOW(),
+            completed_at = NULL,
+            claimed_at = NULL,
+            updated_at = NOW()
+        `,
+        [cid, taskId, initialStatus],
+      );
+  return { success: true, message: '接取成功', data: { bountyInstanceId: bid, taskId } };
+    });
   } catch (error) {
-    await safeRollback(client);
     console.error('接取悬赏失败:', error);
     return { success: false, message: '接取悬赏失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -460,146 +448,140 @@ export const publishBounty = async (
   const spiritCost = spiritBudget + spiritStonesFee;
   const silverCost = silverBudget + silverFee;
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const itemIds = Array.from(new Set(requiredItems.map((x) => x.itemDefId)));
-    const nameById = new Map<string, string>();
-    const defs = getItemDefinitionsByIds(itemIds);
-    for (const id of itemIds) {
-      const def = defs.get(id);
-      if (!def || def.enabled === false) continue;
-      const name = asNonEmptyString(def.name) ?? id;
-      nameById.set(id, name);
-    }
-    if (nameById.size !== itemIds.length) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '包含不存在的材料' };
-    }
-
-    const providedTaskId = asNonEmptyString(payload.taskId);
-    const taskId = providedTaskId ? providedTaskId : `task-bounty-${crypto.randomUUID()}`;
-    if (taskId.length > 64) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务ID过长' };
-    }
-
-    const objectiveText = requiredItems
-      .map((x) => `${nameById.get(x.itemDefId) ?? x.itemDefId}×${x.qty}`)
-      .join('、');
-    const taskObjectives = [
-      {
-        id: 'obj-submit',
-        type: 'submit_items',
-        text: `提交材料：${objectiveText}`,
-        target: 1,
-        params: { items: requiredItems.map((x) => ({ item_def_id: x.itemDefId, qty: x.qty })) },
-      },
-    ];
-
-    const normalizedRequiredItems = requiredItems.map((x) => ({
-      item_def_id: x.itemDefId,
-      name: nameById.get(x.itemDefId) ?? x.itemDefId,
-      qty: x.qty,
-    }));
-
-    if (!providedTaskId) {
-      await client.query(
-        `
-          INSERT INTO task_def (
-            id, category, title, realm, description,
-            giver_npc_id, map_id, room_id,
-            objectives, rewards, prereq_task_ids,
-            enabled, sort_weight, version, updated_at
-          ) VALUES (
-            $1, 'event', $2, '凡人', $3,
-            NULL, NULL, NULL,
-            $4::jsonb, '[]'::jsonb, '[]'::jsonb,
-            true, 0, 1, NOW()
-          )
-        `,
-        [taskId, title, desc || null, JSON.stringify(taskObjectives)],
-      );
-    } else {
-      const existsTaskDef = await getTaskDefinitionById(taskId, client);
-      if (!existsTaskDef) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务不存在' };
+    return await withTransaction(async (client) => {
+  const itemIds = Array.from(new Set(requiredItems.map((x) => x.itemDefId)));
+      const nameById = new Map<string, string>();
+      const defs = getItemDefinitionsByIds(itemIds);
+      for (const id of itemIds) {
+        const def = defs.get(id);
+        if (!def || def.enabled === false) continue;
+        const name = asNonEmptyString(def.name) ?? id;
+        nameById.set(id, name);
       }
-    }
-
-    const charRes = await client.query(
-      `SELECT spirit_stones, silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE`,
-      [cid],
-    );
-    if ((charRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-    const curSpirit = asFiniteNonNegativeInt(charRes.rows[0]?.spirit_stones, 0);
-    const curSilver = asFiniteNonNegativeInt(charRes.rows[0]?.silver, 0);
-    if (curSpirit < spiritCost) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '灵石不足' };
-    }
-    if (curSilver < silverCost) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '银两不足' };
-    }
-
-    await client.query(
-      `UPDATE characters SET spirit_stones = spirit_stones - $1, silver = silver - $2, updated_at = NOW() WHERE id = $3`,
-      [spiritCost, silverCost, cid],
-    );
-
-    const res = await client.query(
-      `
-        INSERT INTO bounty_instance (
-          source_type, bounty_def_id, task_id, title, description,
-          claim_policy, max_claims, claimed_count, refresh_date, expires_at,
-          published_by_character_id,
-          spirit_stones_reward, silver_reward, spirit_stones_fee, silver_fee,
-          required_items,
-          created_at, updated_at
-        ) VALUES (
-          'player', NULL, $1, $2, $3,
-          $4, $5, 0, NULL, $6,
-          $7,
-          $8, $9, $10, $11,
-          $12::jsonb,
-          NOW(), NOW()
-        )
-        RETURNING id
-      `,
-      [
-        taskId,
-        title,
-        desc || null,
-        claimPolicy,
-        maxClaims,
-        expiresAt,
-        cid,
-        spiritStonesReward,
-        silverReward,
-        spiritStonesFee,
-        silverFee,
-        JSON.stringify(normalizedRequiredItems),
-      ],
-    );
-    const id = asFiniteInt(res.rows?.[0]?.id, 0);
-    if (!id) {
-      return rollbackAndReturn(client, { success: false, message: '发布失败' });
-    }
-
-    await client.query('COMMIT');
-    return { success: true, message: '发布成功', data: { bountyInstanceId: id } };
+      if (nameById.size !== itemIds.length) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '包含不存在的材料' };
+      }
+  
+      const providedTaskId = asNonEmptyString(payload.taskId);
+      const taskId = providedTaskId ? providedTaskId : `task-bounty-${crypto.randomUUID()}`;
+      if (taskId.length > 64) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务ID过长' };
+      }
+  
+      const objectiveText = requiredItems
+        .map((x) => `${nameById.get(x.itemDefId) ?? x.itemDefId}×${x.qty}`)
+        .join('、');
+      const taskObjectives = [
+        {
+          id: 'obj-submit',
+          type: 'submit_items',
+          text: `提交材料：${objectiveText}`,
+          target: 1,
+          params: { items: requiredItems.map((x) => ({ item_def_id: x.itemDefId, qty: x.qty })) },
+        },
+      ];
+  
+      const normalizedRequiredItems = requiredItems.map((x) => ({
+        item_def_id: x.itemDefId,
+        name: nameById.get(x.itemDefId) ?? x.itemDefId,
+        qty: x.qty,
+      }));
+  
+      if (!providedTaskId) {
+        await client.query(
+          `
+            INSERT INTO task_def (
+              id, category, title, realm, description,
+              giver_npc_id, map_id, room_id,
+              objectives, rewards, prereq_task_ids,
+              enabled, sort_weight, version, updated_at
+            ) VALUES (
+              $1, 'event', $2, '凡人', $3,
+              NULL, NULL, NULL,
+              $4::jsonb, '[]'::jsonb, '[]'::jsonb,
+              true, 0, 1, NOW()
+            )
+          `,
+          [taskId, title, desc || null, JSON.stringify(taskObjectives)],
+        );
+      } else {
+        const existsTaskDef = await getTaskDefinitionById(taskId, client);
+        if (!existsTaskDef) {
+          await client.query('ROLLBACK');
+          return { success: false, message: '任务不存在' };
+        }
+      }
+  
+      const charRes = await client.query(
+        `SELECT spirit_stones, silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE`,
+        [cid],
+      );
+      if ((charRes.rows ?? []).length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '角色不存在' };
+      }
+      const curSpirit = asFiniteNonNegativeInt(charRes.rows[0]?.spirit_stones, 0);
+      const curSilver = asFiniteNonNegativeInt(charRes.rows[0]?.silver, 0);
+      if (curSpirit < spiritCost) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '灵石不足' };
+      }
+      if (curSilver < silverCost) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '银两不足' };
+      }
+  
+      await client.query(
+        `UPDATE characters SET spirit_stones = spirit_stones - $1, silver = silver - $2, updated_at = NOW() WHERE id = $3`,
+        [spiritCost, silverCost, cid],
+      );
+  
+      const res = await client.query(
+        `
+          INSERT INTO bounty_instance (
+            source_type, bounty_def_id, task_id, title, description,
+            claim_policy, max_claims, claimed_count, refresh_date, expires_at,
+            published_by_character_id,
+            spirit_stones_reward, silver_reward, spirit_stones_fee, silver_fee,
+            required_items,
+            created_at, updated_at
+          ) VALUES (
+            'player', NULL, $1, $2, $3,
+            $4, $5, 0, NULL, $6,
+            $7,
+            $8, $9, $10, $11,
+            $12::jsonb,
+            NOW(), NOW()
+          )
+          RETURNING id
+        `,
+        [
+          taskId,
+          title,
+          desc || null,
+          claimPolicy,
+          maxClaims,
+          expiresAt,
+          cid,
+          spiritStonesReward,
+          silverReward,
+          spiritStonesFee,
+          silverFee,
+          JSON.stringify(normalizedRequiredItems),
+        ],
+      );
+      const id = asFiniteInt(res.rows?.[0]?.id, 0);
+      if (!id) {
+        return rollbackAndReturn(client, { success: false, message: '发布失败' });
+      }
+  return { success: true, message: '发布成功', data: { bountyInstanceId: id } };
+    });
   } catch (error) {
-    await safeRollback(client);
     console.error('发布悬赏失败:', error);
     return { success: false, message: '服务器错误' };
-  } finally {
-    client.release();
   }
 };
 
@@ -643,137 +625,131 @@ export const submitBountyMaterials = async (
   const tid = asNonEmptyString(taskId) ?? '';
   if (!tid) return { success: false, message: '任务ID不能为空' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const claimRes = await client.query(
-      `
-        SELECT
-          c.id AS claim_id,
-          c.status AS claim_status,
-          i.id AS bounty_instance_id,
-          i.required_items
-        FROM bounty_claim c
-        JOIN bounty_instance i ON i.id = c.bounty_instance_id
-        WHERE c.character_id = $1
-          AND i.task_id = $2
-          AND c.status IN ('claimed','completed')
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [cid, tid],
-    );
-    if ((claimRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未接取该悬赏' };
-    }
-
-    const claimRow = claimRes.rows[0] as any;
-    const claimId = Number(claimRow?.claim_id);
-    const claimStatus = asNonEmptyString(claimRow?.claim_status) ?? 'claimed';
-    if (claimStatus === 'completed') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '已提交材料' };
-    }
-
-    const requiredItems = asRequiredItems(claimRow?.required_items);
-    if (requiredItems.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '该悬赏无需提交材料' };
-    }
-
-    const progRes = await client.query(
-      `SELECT progress, status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
-      [cid, tid],
-    );
-    if ((progRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务未接取' };
-    }
-    const currentStatus = asNonEmptyString(progRes.rows[0]?.status) ?? 'ongoing';
-    if (currentStatus === 'claimable') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务已可领取' };
-    }
-    if (currentStatus === 'claimed') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务已完成' };
-    }
-
-    const taskDef = await getTaskDefinitionById(tid, client);
-    const objectives = Array.isArray(taskDef?.objectives) ? (taskDef.objectives as any[]) : [];
-    const submitObj = objectives.find((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
-    const submitObjId = submitObj && typeof submitObj === 'object' ? asNonEmptyString((submitObj as any).id) : null;
-    const submitTarget = submitObj && typeof submitObj === 'object' ? Math.max(1, asFiniteNonNegativeInt((submitObj as any).target, 1)) : 1;
-
-    for (const reqItem of requiredItems) {
-      let remaining = Math.max(1, Math.floor(reqItem.qty));
-      const rowsRes = await client.query(
+    return await withTransaction(async (client) => {
+  const claimRes = await client.query(
         `
-          SELECT id, qty, locked, location
-          FROM item_instance
-          WHERE owner_character_id = $1
-            AND item_def_id = $2
-            AND location IN ('bag','warehouse')
-          ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, created_at ASC
+          SELECT
+            c.id AS claim_id,
+            c.status AS claim_status,
+            i.id AS bounty_instance_id,
+            i.required_items
+          FROM bounty_claim c
+          JOIN bounty_instance i ON i.id = c.bounty_instance_id
+          WHERE c.character_id = $1
+            AND i.task_id = $2
+            AND c.status IN ('claimed','completed')
+          LIMIT 1
           FOR UPDATE
         `,
-        [cid, reqItem.itemDefId],
+        [cid, tid],
       );
-      const rows = (rowsRes.rows ?? []) as Array<{ id: number; qty: number; locked: boolean }>;
-      const available = rows.filter((r) => !r.locked).reduce((sum, r) => sum + Math.max(0, Number(r.qty) || 0), 0);
-      if (available < remaining) {
+      if ((claimRes.rows ?? []).length === 0) {
         await client.query('ROLLBACK');
-        return { success: false, message: `${reqItem.name}数量不足` };
+        return { success: false, message: '未接取该悬赏' };
       }
-
-      for (const row of rows) {
-        if (remaining <= 0) break;
-        if (row.locked) continue;
-        const rowQty = Math.max(0, Number(row.qty) || 0);
-        if (rowQty <= 0) continue;
-        const takeQty = Math.min(remaining, rowQty);
-        if (takeQty === rowQty) {
-          await client.query('DELETE FROM item_instance WHERE id = $1', [row.id]);
-        } else {
-          await client.query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [takeQty, row.id]);
+  
+      const claimRow = claimRes.rows[0] as any;
+      const claimId = Number(claimRow?.claim_id);
+      const claimStatus = asNonEmptyString(claimRow?.claim_status) ?? 'claimed';
+      if (claimStatus === 'completed') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '已提交材料' };
+      }
+  
+      const requiredItems = asRequiredItems(claimRow?.required_items);
+      if (requiredItems.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '该悬赏无需提交材料' };
+      }
+  
+      const progRes = await client.query(
+        `SELECT progress, status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
+        [cid, tid],
+      );
+      if ((progRes.rows ?? []).length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务未接取' };
+      }
+      const currentStatus = asNonEmptyString(progRes.rows[0]?.status) ?? 'ongoing';
+      if (currentStatus === 'claimable') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务已可领取' };
+      }
+      if (currentStatus === 'claimed') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务已完成' };
+      }
+  
+      const taskDef = await getTaskDefinitionById(tid, client);
+      const objectives = Array.isArray(taskDef?.objectives) ? (taskDef.objectives as any[]) : [];
+      const submitObj = objectives.find((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
+      const submitObjId = submitObj && typeof submitObj === 'object' ? asNonEmptyString((submitObj as any).id) : null;
+      const submitTarget = submitObj && typeof submitObj === 'object' ? Math.max(1, asFiniteNonNegativeInt((submitObj as any).target, 1)) : 1;
+  
+      for (const reqItem of requiredItems) {
+        let remaining = Math.max(1, Math.floor(reqItem.qty));
+        const rowsRes = await client.query(
+          `
+            SELECT id, qty, locked, location
+            FROM item_instance
+            WHERE owner_character_id = $1
+              AND item_def_id = $2
+              AND location IN ('bag','warehouse')
+            ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, created_at ASC
+            FOR UPDATE
+          `,
+          [cid, reqItem.itemDefId],
+        );
+        const rows = (rowsRes.rows ?? []) as Array<{ id: number; qty: number; locked: boolean }>;
+        const available = rows.filter((r) => !r.locked).reduce((sum, r) => sum + Math.max(0, Number(r.qty) || 0), 0);
+        if (available < remaining) {
+          await client.query('ROLLBACK');
+          return { success: false, message: `${reqItem.name}数量不足` };
         }
-        remaining -= takeQty;
+  
+        for (const row of rows) {
+          if (remaining <= 0) break;
+          if (row.locked) continue;
+          const rowQty = Math.max(0, Number(row.qty) || 0);
+          if (rowQty <= 0) continue;
+          const takeQty = Math.min(remaining, rowQty);
+          if (takeQty === rowQty) {
+            await client.query('DELETE FROM item_instance WHERE id = $1', [row.id]);
+          } else {
+            await client.query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [takeQty, row.id]);
+          }
+          remaining -= takeQty;
+        }
       }
-    }
-
-    const progressRecord = progRes.rows[0]?.progress && typeof progRes.rows[0].progress === 'object' ? (progRes.rows[0].progress as Record<string, unknown>) : {};
-    const nextProgress: Record<string, number> = {};
-    for (const [k, v] of Object.entries(progressRecord)) {
-      const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
-      if (Number.isFinite(n)) nextProgress[k] = Math.max(0, Math.floor(n));
-    }
-    if (submitObjId) nextProgress[submitObjId] = submitTarget;
-
-    await client.query(
-      `
-        UPDATE character_task_progress
-        SET progress = $3::jsonb,
-            status = 'claimable',
-            completed_at = COALESCE(completed_at, NOW()),
-            updated_at = NOW()
-        WHERE character_id = $1 AND task_id = $2
-      `,
-      [cid, tid, JSON.stringify(nextProgress)],
-    );
-
-    if (Number.isFinite(claimId) && claimId > 0) {
-      await client.query(`UPDATE bounty_claim SET status = 'completed', updated_at = NOW() WHERE id = $1`, [claimId]);
-    }
-
-    await client.query('COMMIT');
-    return { success: true, message: '提交成功', data: { taskId: tid } };
+  
+      const progressRecord = progRes.rows[0]?.progress && typeof progRes.rows[0].progress === 'object' ? (progRes.rows[0].progress as Record<string, unknown>) : {};
+      const nextProgress: Record<string, number> = {};
+      for (const [k, v] of Object.entries(progressRecord)) {
+        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+        if (Number.isFinite(n)) nextProgress[k] = Math.max(0, Math.floor(n));
+      }
+      if (submitObjId) nextProgress[submitObjId] = submitTarget;
+  
+      await client.query(
+        `
+          UPDATE character_task_progress
+          SET progress = $3::jsonb,
+              status = 'claimable',
+              completed_at = COALESCE(completed_at, NOW()),
+              updated_at = NOW()
+          WHERE character_id = $1 AND task_id = $2
+        `,
+        [cid, tid, JSON.stringify(nextProgress)],
+      );
+  
+      if (Number.isFinite(claimId) && claimId > 0) {
+        await client.query(`UPDATE bounty_claim SET status = 'completed', updated_at = NOW() WHERE id = $1`, [claimId]);
+      }
+  return { success: true, message: '提交成功', data: { taskId: tid } };
+    });
   } catch (error) {
-    await safeRollback(client);
     console.error('提交悬赏材料失败:', error);
     return { success: false, message: '服务器错误' };
-  } finally {
-    client.release();
   }
 };

@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool, query } from '../config/database.js';
+import { query, withTransaction } from '../config/database.js';
 import { randomInt } from 'crypto';
 import { addItemToInventoryTx } from './inventory/index.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
@@ -472,100 +472,99 @@ const updateCharacterWalletTx = async (client: PoolClient, characterId: number, 
 };
 
 export const getGemSynthesisRecipeList = async (characterId: number): Promise<GemSynthesisRecipeListResult> => {
-  const client = await pool.connect();
-
   try {
-    const wallet = await getCharacterWalletTx(client, characterId, false);
-    if (!wallet) return { success: false, message: '角色不存在' };
+    return await withTransaction(async (client) => {
+      const wallet = await getCharacterWalletTx(client, characterId, false);
+      if (!wallet) return { success: false, message: '角色不存在' };
 
-    const recipeRows = await getGemRecipeRows(client);
-    const recipes = recipeRows
-      .map((row) => parseRecipeModel(row))
-      .filter((row): row is GemRecipeModel => !!row)
-      .sort((a, b) => {
-        const typeDiff = GEM_TYPE_SORT_WEIGHT[a.gemType] - GEM_TYPE_SORT_WEIGHT[b.gemType];
-        if (typeDiff !== 0) return typeDiff;
-        const seriesDiff = a.seriesKey.localeCompare(b.seriesKey);
-        if (seriesDiff !== 0) return seriesDiff;
-        return a.fromLevel - b.fromLevel;
+      const recipeRows = await getGemRecipeRows(client);
+      const recipes = recipeRows
+        .map((row) => parseRecipeModel(row))
+        .filter((row): row is GemRecipeModel => !!row)
+        .sort((a, b) => {
+          const typeDiff = GEM_TYPE_SORT_WEIGHT[a.gemType] - GEM_TYPE_SORT_WEIGHT[b.gemType];
+          if (typeDiff !== 0) return typeDiff;
+          const seriesDiff = a.seriesKey.localeCompare(b.seriesKey);
+          if (seriesDiff !== 0) return seriesDiff;
+          return a.fromLevel - b.fromLevel;
+        });
+
+      if (recipes.length === 0) {
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            character: wallet,
+            recipes: [],
+          },
+        };
+      }
+
+      const itemDefIds = recipes.flatMap((recipe) => [recipe.inputItemDefId, recipe.outputItemDefId]);
+      const [itemDefMap, ownedMap] = await Promise.all([
+        getItemDefMap(client, itemDefIds),
+        getItemOwnedQtyMapTx(
+          client,
+          characterId,
+          recipes.map((recipe) => recipe.inputItemDefId),
+        ),
+      ]);
+
+      const views: GemSynthesisRecipeView[] = recipes.map((recipe) => {
+        const owned = ownedMap.get(recipe.inputItemDefId) ?? 0;
+        const maxTimes = calcMaxSynthesizeTimes({
+          ownedInputQty: owned,
+          needInputQty: recipe.inputQty,
+          wallet,
+          silverCost: recipe.costSilver,
+          spiritStoneCost: recipe.costSpiritStones,
+        });
+        const inputDef = itemDefMap.get(recipe.inputItemDefId);
+        const outputDef = itemDefMap.get(recipe.outputItemDefId);
+
+        return {
+          recipeId: recipe.id,
+          name: recipe.name,
+          gemType: recipe.gemType,
+          seriesKey: recipe.seriesKey,
+          fromLevel: recipe.fromLevel,
+          toLevel: recipe.toLevel,
+          input: {
+            itemDefId: recipe.inputItemDefId,
+            name: inputDef?.name || recipe.inputItemDefId,
+            icon: inputDef?.icon || null,
+            qty: recipe.inputQty,
+            owned,
+          },
+          output: {
+            itemDefId: recipe.outputItemDefId,
+            name: outputDef?.name || recipe.outputItemDefId,
+            icon: outputDef?.icon || null,
+            qty: recipe.outputQty,
+          },
+          costs: {
+            silver: recipe.costSilver,
+            spiritStones: recipe.costSpiritStones,
+          },
+          successRate: recipe.successRate,
+          maxSynthesizeTimes: maxTimes,
+          canSynthesize: maxTimes > 0,
+        };
       });
 
-    if (recipes.length === 0) {
       return {
         success: true,
         message: 'ok',
         data: {
           character: wallet,
-          recipes: [],
+          recipes: views,
         },
-      };
-    }
-
-    const itemDefIds = recipes.flatMap((recipe) => [recipe.inputItemDefId, recipe.outputItemDefId]);
-    const [itemDefMap, ownedMap] = await Promise.all([
-      getItemDefMap(client, itemDefIds),
-      getItemOwnedQtyMapTx(
-        client,
-        characterId,
-        recipes.map((recipe) => recipe.inputItemDefId),
-      ),
-    ]);
-
-    const views: GemSynthesisRecipeView[] = recipes.map((recipe) => {
-      const owned = ownedMap.get(recipe.inputItemDefId) ?? 0;
-      const maxTimes = calcMaxSynthesizeTimes({
-        ownedInputQty: owned,
-        needInputQty: recipe.inputQty,
-        wallet,
-        silverCost: recipe.costSilver,
-        spiritStoneCost: recipe.costSpiritStones,
-      });
-      const inputDef = itemDefMap.get(recipe.inputItemDefId);
-      const outputDef = itemDefMap.get(recipe.outputItemDefId);
-
-      return {
-        recipeId: recipe.id,
-        name: recipe.name,
-        gemType: recipe.gemType,
-        seriesKey: recipe.seriesKey,
-        fromLevel: recipe.fromLevel,
-        toLevel: recipe.toLevel,
-        input: {
-          itemDefId: recipe.inputItemDefId,
-          name: inputDef?.name || recipe.inputItemDefId,
-          icon: inputDef?.icon || null,
-          qty: recipe.inputQty,
-          owned,
-        },
-        output: {
-          itemDefId: recipe.outputItemDefId,
-          name: outputDef?.name || recipe.outputItemDefId,
-          icon: outputDef?.icon || null,
-          qty: recipe.outputQty,
-        },
-        costs: {
-          silver: recipe.costSilver,
-          spiritStones: recipe.costSpiritStones,
-        },
-        successRate: recipe.successRate,
-        maxSynthesizeTimes: maxTimes,
-        canSynthesize: maxTimes > 0,
       };
     });
-
-    return {
-      success: true,
-      message: 'ok',
-      data: {
-        character: wallet,
-        recipes: views,
-      },
-    };
+    
   } catch (error) {
     console.error('获取宝石合成配方失败:', error);
     return { success: false, message: '获取宝石合成配方失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -578,11 +577,9 @@ export const synthesizeGem = async (
   const times = clampInt(params.times ?? 1, 1, 999999);
   if (!recipeId) return { success: false, message: 'recipeId参数错误' };
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
-    await lockCharacterInventoryMutexTx(client, characterId);
+    return await withTransaction(async (client) => {
+      await lockCharacterInventoryMutexTx(client, characterId);
 
     const wallet = await getCharacterWalletTx(client, characterId, true);
     if (!wallet) {
@@ -662,7 +659,6 @@ export const synthesizeGem = async (
       };
     }
 
-    await client.query('COMMIT');
     const character = await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true });
     const message =
       successCount <= 0
@@ -670,7 +666,7 @@ export const synthesizeGem = async (
         : failCount <= 0
         ? '宝石合成成功'
         : `宝石合成完成（成功${successCount}次，失败${failCount}次）`;
-    return {
+      return {
       success: true,
       message,
       data: {
@@ -694,13 +690,11 @@ export const synthesizeGem = async (
         produced,
         character,
       },
-    };
+      };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('宝石合成失败:', error);
     return { success: false, message: '宝石合成失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -717,11 +711,9 @@ export const synthesizeGemBatch = async (
   if (!gemType) return { success: false, message: 'gemType参数错误' };
   if (sourceLevel >= targetLevel) return { success: false, message: 'targetLevel必须大于sourceLevel' };
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
-    await lockCharacterInventoryMutexTx(client, characterId);
+    return await withTransaction(async (client) => {
+      await lockCharacterInventoryMutexTx(client, characterId);
 
     const wallet = await getCharacterWalletTx(client, characterId, true);
     if (!wallet) {
@@ -877,7 +869,6 @@ export const synthesizeGemBatch = async (
 
     await updateCharacterWalletTx(client, characterId, wallet);
 
-    await client.query('COMMIT');
     const character = await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true });
     const totalSuccess = steps.reduce((sum, step) => sum + step.successCount, 0);
     const totalFail = steps.reduce((sum, step) => sum + step.failCount, 0);
@@ -887,7 +878,7 @@ export const synthesizeGemBatch = async (
         : totalFail <= 0
         ? '批量合成成功'
         : `批量合成完成（成功${totalSuccess}次，失败${totalFail}次）`;
-    return {
+      return {
       success: true,
       message,
       data: {
@@ -902,13 +893,11 @@ export const synthesizeGemBatch = async (
         steps,
         character,
       },
-    };
+      };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('批量宝石合成失败:', error);
     return { success: false, message: '批量宝石合成失败' };
-  } finally {
-    client.release();
   }
 };
 

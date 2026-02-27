@@ -28,7 +28,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { query, pool } from '../../config/database.js';
+import { query, pool, withTransaction } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import { buildCharacterBattleSnapshot } from '../battle/index.js';
 import type {
@@ -159,74 +159,68 @@ export async function startIdleSession(params: StartIdleSessionParams): Promise<
     return { success: false, error: '已有活跃挂机会话', existingSessionId };
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    // 2. 角色行锁（防止并发修改）
-    const charRes = await client.query(
-      `SELECT id FROM characters WHERE id = $1 FOR UPDATE`,
-      [characterId]
-    );
-    if (charRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      await redis.del(lockKey);
-      return { success: false, error: '角色不存在' };
-    }
-
-    // 3. 构建角色快照（在事务外调用，避免长事务；快照基于当前计算属性）
-    await client.query('COMMIT');
-    client.release();
-
-    const snapshotData = await buildCharacterBattleSnapshot(characterId);
-    if (!snapshotData) {
-      await redis.del(lockKey);
-      return { success: false, error: '角色数据加载失败' };
-    }
-
-    const snapshot: SessionSnapshot = {
-      characterId,
-      nickname: snapshotData.nickname,
-      realm: snapshotData.realm,
-      baseAttrs: snapshotData.baseAttrs,
-      skills: snapshotData.skills,
-      setBonusEffects: snapshotData.setBonusEffects,
-      autoSkillPolicy: config.autoSkillPolicy,
-      targetMonsterDefId: config.targetMonsterDefId,
-    };
-
-    // 5. 写入 idle_sessions
-    const sessionId = randomUUID();
-    await query(
-      `INSERT INTO idle_sessions (
-        id, character_id, status, map_id, room_id, max_duration_ms,
-        session_snapshot, total_battles, win_count, lose_count,
-        total_exp, total_silver, reward_items, bag_full_flag,
-        started_at, ended_at, viewed_at
-      ) VALUES (
-        $1, $2, 'active', $3, $4, $5,
-        $6, 0, 0, 0,
-        0, 0, '[]', false,
-        NOW(), NULL, NULL
-      )`,
-      [
-        sessionId,
+    return await withTransaction(async (client) => {
+  // 2. 角色行锁（防止并发修改）
+      const charRes = await client.query(
+        `SELECT id FROM characters WHERE id = $1 FOR UPDATE`,
+        [characterId]
+      );
+      if (charRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        await redis.del(lockKey);
+        return { success: false, error: '角色不存在' };
+      }
+  
+      // 3. 构建角色快照（在事务外调用，避免长事务；快照基于当前计算属性）
+  client.release();
+  
+      const snapshotData = await buildCharacterBattleSnapshot(characterId);
+      if (!snapshotData) {
+        await redis.del(lockKey);
+        return { success: false, error: '角色数据加载失败' };
+      }
+  
+      const snapshot: SessionSnapshot = {
         characterId,
-        config.mapId,
-        config.roomId,
-        config.maxDurationMs,
-        JSON.stringify(snapshot),
-      ]
-    );
-
-    return { success: true, sessionId };
+        nickname: snapshotData.nickname,
+        realm: snapshotData.realm,
+        baseAttrs: snapshotData.baseAttrs,
+        skills: snapshotData.skills,
+        setBonusEffects: snapshotData.setBonusEffects,
+        autoSkillPolicy: config.autoSkillPolicy,
+        targetMonsterDefId: config.targetMonsterDefId,
+      };
+  
+      // 5. 写入 idle_sessions
+      const sessionId = randomUUID();
+      await query(
+        `INSERT INTO idle_sessions (
+          id, character_id, status, map_id, room_id, max_duration_ms,
+          session_snapshot, total_battles, win_count, lose_count,
+          total_exp, total_silver, reward_items, bag_full_flag,
+          started_at, ended_at, viewed_at
+        ) VALUES (
+          $1, $2, 'active', $3, $4, $5,
+          $6, 0, 0, 0,
+          0, 0, '[]', false,
+          NOW(), NULL, NULL
+        )`,
+        [
+          sessionId,
+          characterId,
+          config.mapId,
+          config.roomId,
+          config.maxDurationMs,
+          JSON.stringify(snapshot),
+        ]
+      );
+  
+      return { success: true, sessionId };
+    });
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     await redis.del(lockKey);
     throw err;
-  } finally {
-    // client 可能已在步骤 4 前 release，这里做安全释放
-    try { client.release(); } catch { /* already released */ }
   }
 }
 
@@ -274,49 +268,43 @@ export async function getActiveIdleSession(characterId: number): Promise<IdleSes
  * 超过 30 条时自动删除最旧记录（在同一事务内完成，保证原子性）。
  */
 export async function getIdleHistory(characterId: number): Promise<IdleSessionRow[]> {
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    // 查询总数
-    const countRes = await client.query(
-      `SELECT COUNT(*) AS cnt FROM idle_sessions
-       WHERE character_id = $1 AND status IN ('completed', 'interrupted')`,
-      [characterId]
-    );
-    const total = Number(countRes.rows[0]?.cnt ?? 0);
-
-    // 超出上限时删除最旧记录
-    if (total > MAX_HISTORY_COUNT) {
-      const deleteCount = total - MAX_HISTORY_COUNT;
-      await client.query(
-        `DELETE FROM idle_sessions
-         WHERE id IN (
-           SELECT id FROM idle_sessions
-           WHERE character_id = $1 AND status IN ('completed', 'interrupted')
-           ORDER BY started_at ASC
-           LIMIT $2
-         )`,
-        [characterId, deleteCount]
+    return await withTransaction(async (client) => {
+  // 查询总数
+      const countRes = await client.query(
+        `SELECT COUNT(*) AS cnt FROM idle_sessions
+         WHERE character_id = $1 AND status IN ('completed', 'interrupted')`,
+        [characterId]
       );
-    }
-
-    // 查询最近 30 条（倒序）
-    const res = await client.query(
-      `SELECT * FROM idle_sessions
-       WHERE character_id = $1 AND status IN ('completed', 'interrupted')
-       ORDER BY started_at DESC
-       LIMIT $2`,
-      [characterId, MAX_HISTORY_COUNT]
-    );
-
-    await client.query('COMMIT');
-    return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
+      const total = Number(countRes.rows[0]?.cnt ?? 0);
+  
+      // 超出上限时删除最旧记录
+      if (total > MAX_HISTORY_COUNT) {
+        const deleteCount = total - MAX_HISTORY_COUNT;
+        await client.query(
+          `DELETE FROM idle_sessions
+           WHERE id IN (
+             SELECT id FROM idle_sessions
+             WHERE character_id = $1 AND status IN ('completed', 'interrupted')
+             ORDER BY started_at ASC
+             LIMIT $2
+           )`,
+          [characterId, deleteCount]
+        );
+      }
+  
+      // 查询最近 30 条（倒序）
+      const res = await client.query(
+        `SELECT * FROM idle_sessions
+         WHERE character_id = $1 AND status IN ('completed', 'interrupted')
+         ORDER BY started_at DESC
+         LIMIT $2`,
+        [characterId, MAX_HISTORY_COUNT]
+      );
+  return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
+    });
   } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
+throw err;
   }
 }
 

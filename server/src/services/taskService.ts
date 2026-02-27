@@ -1,4 +1,4 @@
-import { pool, query } from '../config/database.js';
+import { pool, query, withTransaction } from '../config/database.js';
 import { createItem } from './itemService.js';
 import type { PoolClient } from 'pg';
 import { ensureMainQuestProgressForNewChapters, updateSectionProgress } from './mainQuest/index.js';
@@ -710,62 +710,57 @@ export const claimTaskReward = async (
   const tid = asNonEmptyString(taskId);
   if (!tid) return { success: false, message: '任务ID不能为空' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    await resetRecurringTaskProgressIfNeeded(cid, client);
-
-    const progressRes = await client.query(
-      `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
-      [cid, tid]
-    );
-    if ((progressRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务未接取' };
-    }
-    const status = asNonEmptyString(progressRes.rows[0]?.status) ?? 'ongoing';
-    if (status !== 'claimable') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务不可领取' };
-    }
-
-    const taskDef = await getTaskDefinitionById(tid, client);
-    if (!taskDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务不存在' };
-    }
-
-    const rewards = parseRewards(taskDef.rewards);
-    const applyResult = await applyTaskRewardsTx(client, uid, cid, rewards);
-    if (!applyResult.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: applyResult.message };
-    }
-
-    const bountyRewards = await applyBountyRewardOnTaskClaimTx(client, cid, tid);
-    if (bountyRewards.length > 0) applyResult.rewards.push(...bountyRewards);
-
-    await client.query(
-      `
-        UPDATE character_task_progress
-        SET status = 'claimed',
-            completed_at = COALESCE(completed_at, NOW()),
-            claimed_at = NOW(),
-            tracked = false,
-            updated_at = NOW()
-        WHERE character_id = $1 AND task_id = $2
-      `,
-      [cid, tid]
-    );
-
-    await client.query('COMMIT');
-    return { success: true, message: 'ok', data: { taskId: tid, rewards: applyResult.rewards } };
+    return await withTransaction(async (client) => {
+  await resetRecurringTaskProgressIfNeeded(cid, client);
+  
+      const progressRes = await client.query(
+        `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
+        [cid, tid]
+      );
+      if ((progressRes.rows ?? []).length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务未接取' };
+      }
+      const status = asNonEmptyString(progressRes.rows[0]?.status) ?? 'ongoing';
+      if (status !== 'claimable') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务不可领取' };
+      }
+  
+      const taskDef = await getTaskDefinitionById(tid, client);
+      if (!taskDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '任务不存在' };
+      }
+  
+      const rewards = parseRewards(taskDef.rewards);
+      const applyResult = await applyTaskRewardsTx(client, uid, cid, rewards);
+      if (!applyResult.success) {
+        await client.query('ROLLBACK');
+        return { success: false, message: applyResult.message };
+      }
+  
+      const bountyRewards = await applyBountyRewardOnTaskClaimTx(client, cid, tid);
+      if (bountyRewards.length > 0) applyResult.rewards.push(...bountyRewards);
+  
+      await client.query(
+        `
+          UPDATE character_task_progress
+          SET status = 'claimed',
+              completed_at = COALESCE(completed_at, NOW()),
+              claimed_at = NOW(),
+              tracked = false,
+              updated_at = NOW()
+          WHERE character_id = $1 AND task_id = $2
+        `,
+        [cid, tid]
+      );
+  return { success: true, message: 'ok', data: { taskId: tid, rewards: applyResult.rewards } };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('领取任务奖励失败:', error);
+console.error('领取任务奖励失败:', error);
     return { success: false, message: '服务器错误' };
-  } finally {
-    client.release();
   }
 };
 

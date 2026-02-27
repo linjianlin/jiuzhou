@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool, query } from '../../config/database.js';
+import { pool, query, withTransaction } from '../../config/database.js';
 import { createItem } from '../itemService.js';
 import {
   asFiniteNonNegativeInt,
@@ -167,79 +167,73 @@ export const claimAchievement = async (
   if (!cid) return { success: false, message: '角色不存在' };
   if (!aid) return { success: false, message: '成就ID不能为空' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const lockedRes = await client.query(
-      `
-        SELECT status
-        FROM character_achievement
-        WHERE character_id = $1
-          AND achievement_id = $2
-        FOR UPDATE
-      `,
-      [cid, aid],
-    );
-
-    if ((lockedRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '成就不存在或未解锁' };
-    }
-
-    const achievementDef = getAchievementDefinitions().find((entry) => entry.id === aid && entry.enabled !== false);
-    if (!achievementDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '成就不存在或未解锁' };
-    }
-
-    const row = lockedRes.rows[0] as Record<string, unknown>;
-    const status = asNonEmptyString(row.status) ?? 'in_progress';
-    if (status === 'claimed') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '奖励已领取' };
-    }
-    if (status !== 'completed') {
-      await client.query('ROLLBACK');
-      return { success: false, message: '成就尚未完成' };
-    }
-
-    const rewards = normalizeRewards(achievementDef.rewards);
-    const rewardViews = await applyRewardsTx(client, uid, cid, rewards, 'achievement_reward');
-    const title = await grantTitleTx(client, cid, asNonEmptyString(achievementDef.title_id));
-
-    await client.query(
-      `
-        UPDATE character_achievement
-        SET status = 'claimed',
-            claimed_at = NOW(),
-            updated_at = NOW()
-        WHERE character_id = $1
-          AND achievement_id = $2
-      `,
-      [cid, aid],
-    );
-
-    await client.query('COMMIT');
-    return {
-      success: true,
-      message: 'ok',
-      data: {
-        achievementId: aid,
-        rewards: rewardViews,
-        ...(title ? { title } : {}),
-      },
-    };
+    return await withTransaction(async (client) => {
+  const lockedRes = await client.query(
+        `
+          SELECT status
+          FROM character_achievement
+          WHERE character_id = $1
+            AND achievement_id = $2
+          FOR UPDATE
+        `,
+        [cid, aid],
+      );
+  
+      if ((lockedRes.rows ?? []).length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '成就不存在或未解锁' };
+      }
+  
+      const achievementDef = getAchievementDefinitions().find((entry) => entry.id === aid && entry.enabled !== false);
+      if (!achievementDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '成就不存在或未解锁' };
+      }
+  
+      const row = lockedRes.rows[0] as Record<string, unknown>;
+      const status = asNonEmptyString(row.status) ?? 'in_progress';
+      if (status === 'claimed') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '奖励已领取' };
+      }
+      if (status !== 'completed') {
+        await client.query('ROLLBACK');
+        return { success: false, message: '成就尚未完成' };
+      }
+  
+      const rewards = normalizeRewards(achievementDef.rewards);
+      const rewardViews = await applyRewardsTx(client, uid, cid, rewards, 'achievement_reward');
+      const title = await grantTitleTx(client, cid, asNonEmptyString(achievementDef.title_id));
+  
+      await client.query(
+        `
+          UPDATE character_achievement
+          SET status = 'claimed',
+              claimed_at = NOW(),
+              updated_at = NOW()
+          WHERE character_id = $1
+            AND achievement_id = $2
+        `,
+        [cid, aid],
+      );
+  return {
+        success: true,
+        message: 'ok',
+        data: {
+          achievementId: aid,
+          rewards: rewardViews,
+          ...(title ? { title } : {}),
+        },
+      };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    const businessMessage = extractClaimBusinessErrorMessage(error);
+const businessMessage = extractClaimBusinessErrorMessage(error);
     if (businessMessage) {
       return { success: false, message: businessMessage };
     }
     console.error('领取成就奖励失败:', error);
     return { success: false, message: '领取成就奖励失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -354,80 +348,74 @@ export const claimAchievementPointsReward = async (
   if (!cid) return { success: false, message: '角色不存在' };
   if (th < 0) return { success: false, message: '阈值无效' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    await ensureCharacterAchievementPoints(cid, client);
-
-    const pointsRes = await client.query(
-      `
-        SELECT total_points, claimed_thresholds
-        FROM character_achievement_points
-        WHERE character_id = $1
-        FOR UPDATE
-      `,
-      [cid],
-    );
-
-    const pointRow = (pointsRes.rows?.[0] ?? {}) as Record<string, unknown>;
-    const totalPoints = asFiniteNonNegativeInt(pointRow.total_points, 0);
-    const claimedThresholds = parseClaimedThresholds(pointRow.claimed_thresholds);
-
-    if (claimedThresholds.includes(th)) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '该点数奖励已领取' };
-    }
-
-    if (totalPoints < th) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '成就点数不足' };
-    }
-
-    const defRow = getAchievementPointsRewardDefinitions().find(
-      (entry) => entry.enabled !== false && asFiniteNonNegativeInt(entry.points_threshold, -1) === th,
-    );
-
-    if (!defRow) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '点数奖励不存在' };
-    }
-
-    const rewards = normalizeRewards(defRow.rewards);
-    const rewardViews = await applyRewardsTx(client, uid, cid, rewards, 'achievement_points_reward');
-    const title = await grantTitleTx(client, cid, asNonEmptyString(defRow.title_id));
-
-    const nextThresholds = Array.from(new Set([...claimedThresholds, th])).sort((a, b) => a - b);
-
-    await client.query(
-      `
-        UPDATE character_achievement_points
-        SET claimed_thresholds = $2::jsonb,
-            updated_at = NOW()
-        WHERE character_id = $1
-      `,
-      [cid, JSON.stringify(nextThresholds)],
-    );
-
-    await client.query('COMMIT');
-    return {
-      success: true,
-      message: 'ok',
-      data: {
-        threshold: th,
-        rewards: rewardViews,
-        ...(title ? { title } : {}),
-      },
-    };
+    return await withTransaction(async (client) => {
+  await ensureCharacterAchievementPoints(cid, client);
+  
+      const pointsRes = await client.query(
+        `
+          SELECT total_points, claimed_thresholds
+          FROM character_achievement_points
+          WHERE character_id = $1
+          FOR UPDATE
+        `,
+        [cid],
+      );
+  
+      const pointRow = (pointsRes.rows?.[0] ?? {}) as Record<string, unknown>;
+      const totalPoints = asFiniteNonNegativeInt(pointRow.total_points, 0);
+      const claimedThresholds = parseClaimedThresholds(pointRow.claimed_thresholds);
+  
+      if (claimedThresholds.includes(th)) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '该点数奖励已领取' };
+      }
+  
+      if (totalPoints < th) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '成就点数不足' };
+      }
+  
+      const defRow = getAchievementPointsRewardDefinitions().find(
+        (entry) => entry.enabled !== false && asFiniteNonNegativeInt(entry.points_threshold, -1) === th,
+      );
+  
+      if (!defRow) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '点数奖励不存在' };
+      }
+  
+      const rewards = normalizeRewards(defRow.rewards);
+      const rewardViews = await applyRewardsTx(client, uid, cid, rewards, 'achievement_points_reward');
+      const title = await grantTitleTx(client, cid, asNonEmptyString(defRow.title_id));
+  
+      const nextThresholds = Array.from(new Set([...claimedThresholds, th])).sort((a, b) => a - b);
+  
+      await client.query(
+        `
+          UPDATE character_achievement_points
+          SET claimed_thresholds = $2::jsonb,
+              updated_at = NOW()
+          WHERE character_id = $1
+        `,
+        [cid, JSON.stringify(nextThresholds)],
+      );
+  return {
+        success: true,
+        message: 'ok',
+        data: {
+          threshold: th,
+          rewards: rewardViews,
+          ...(title ? { title } : {}),
+        },
+      };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    const businessMessage = extractClaimBusinessErrorMessage(error);
+const businessMessage = extractClaimBusinessErrorMessage(error);
     if (businessMessage) {
       return { success: false, message: businessMessage };
     }
     console.error('领取成就点奖励失败:', error);
     return { success: false, message: '领取成就点奖励失败' };
-  } finally {
-    client.release();
   }
 };

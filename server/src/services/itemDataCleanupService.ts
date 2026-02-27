@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool } from '../config/database.js';
+import { pool, withTransaction } from '../config/database.js';
 import { getItemDefinitions } from './staticConfigLoader.js';
 
 /**
@@ -80,39 +80,32 @@ export const cleanupUndefinedItemDataOnStartup = async (): Promise<ItemDataClean
     throw new Error('静态物品定义为空，已阻止启动清理，避免误删数据库物品数据');
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const removedItemInstanceCount = await deleteUndefinedItemDefRows(client, 'item_instance', validItemDefIds);
-    const removedItemUseCooldownCount = await deleteUndefinedItemDefRows(client, 'item_use_cooldown', validItemDefIds);
-    const removedItemUseCountCount = await deleteUndefinedItemDefRows(client, 'item_use_count', validItemDefIds);
-
-    await client.query('COMMIT');
-
-    const totalRemoved = removedItemInstanceCount + removedItemUseCooldownCount + removedItemUseCountCount;
-    if (totalRemoved > 0) {
-      console.log(
-        `✓ 启动物品脏数据清理完成：共删除 ${totalRemoved} 条（实例 ${removedItemInstanceCount}，冷却 ${removedItemUseCooldownCount}，计数 ${removedItemUseCountCount}）`
-      );
-    } else {
-      console.log('✓ 启动物品脏数据清理完成：未发现无定义物品数据');
-    }
-
-    return {
-      validItemDefCount: validItemDefIds.length,
-      removedItemInstanceCount,
-      removedItemUseCooldownCount,
-      removedItemUseCountCount,
-    };
+    return await withTransaction(async (client) => {
+  const removedItemInstanceCount = await deleteUndefinedItemDefRows(client, 'item_instance', validItemDefIds);
+      const removedItemUseCooldownCount = await deleteUndefinedItemDefRows(client, 'item_use_cooldown', validItemDefIds);
+      const removedItemUseCountCount = await deleteUndefinedItemDefRows(client, 'item_use_count', validItemDefIds);
+  const totalRemoved = removedItemInstanceCount + removedItemUseCooldownCount + removedItemUseCountCount;
+      if (totalRemoved > 0) {
+        console.log(
+          `✓ 启动物品脏数据清理完成：共删除 ${totalRemoved} 条（实例 ${removedItemInstanceCount}，冷却 ${removedItemUseCooldownCount}，计数 ${removedItemUseCountCount}）`
+        );
+      } else {
+        console.log('✓ 启动物品脏数据清理完成：未发现无定义物品数据');
+      }
+  
+      return {
+        validItemDefCount: validItemDefIds.length,
+        removedItemInstanceCount,
+        removedItemUseCooldownCount,
+        removedItemUseCountCount,
+      };
+    });
   } catch (error) {
     try {
-      await client.query('ROLLBACK');
-    } catch (rollbackError) {
+} catch (rollbackError) {
       console.error('启动清理回滚失败:', rollbackError);
     }
     throw error;
-  } finally {
-    client.release();
   }
 };

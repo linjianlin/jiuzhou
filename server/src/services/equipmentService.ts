@@ -8,7 +8,7 @@
  * 4. 设置数值（根据词条tier随机）
  * 5. 创建实例（写入item_instance）
  */
-import { query, pool } from '../config/database.js';
+import { query, pool, withTransaction } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { findEmptySlotsWithClient } from './inventory/index.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
@@ -708,30 +708,22 @@ export const createEquipmentInstance = async (
     obtainedFrom?: string;
   } = {}
 ): Promise<{ success: boolean; instanceId?: number; message: string }> => {
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-
-    const txResult = await createEquipmentInstanceTx(client, userId, characterId, generated, options);
-    if (!txResult.success) {
-      await client.query('ROLLBACK');
-      return txResult;
-    }
-
-    await client.query('COMMIT');
-    
-    return {
-      success: true,
-      instanceId: txResult.instanceId,
-      message: txResult.message
-    };
+    return await withTransaction(async (client) => {
+  const txResult = await createEquipmentInstanceTx(client, userId, characterId, generated, options);
+      if (!txResult.success) {
+        await client.query('ROLLBACK');
+        return txResult;
+      }
+  return {
+        success: true,
+        instanceId: txResult.instanceId,
+        message: txResult.message
+      };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('创建装备实例失败:', error);
+console.error('创建装备实例失败:', error);
     return { success: false, message: '创建装备实例失败' };
-  } finally {
-    client.release();
   }
 };
 

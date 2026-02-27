@@ -1,5 +1,5 @@
 import { HolidayUtil } from 'lunar-typescript';
-import { pool, query } from '../config/database.js';
+import { pool, query, withTransaction } from '../config/database.js';
 import { rollbackAndReturn, safeRollback } from './shared/transaction.js';
 
 export interface SignInRecordDto {
@@ -164,54 +164,47 @@ export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
   const holidayInfo = getHolidayInfo(new Date());
   const reward = holidayInfo.isHoliday ? 50 : 10;
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    const characterCheck = await client.query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
-    if (characterCheck.rows.length === 0) {
-      return rollbackAndReturn(client, { success: false, message: '角色不存在，无法签到' });
-    }
-
-    const exist = await client.query(
-      'SELECT id FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
-      [userId, todayKey]
-    );
-    if (exist.rows.length > 0) {
-      return rollbackAndReturn(client, { success: false, message: '今日已签到' });
-    }
-
-    await client.query(
-      `
-        INSERT INTO sign_in_records (user_id, sign_date, reward, is_holiday, holiday_name)
-        VALUES ($1, $2::date, $3, $4, $5)
-      `,
-      [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
-    );
-
-    const updated = await client.query(
-      'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
-      [reward, userId]
-    );
-
-    await client.query('COMMIT');
-
-    return {
-      success: true,
-      message: '签到成功',
-      data: {
-        date: todayKey,
-        reward,
-        isHoliday: holidayInfo.isHoliday,
-        holidayName: holidayInfo.holidayName,
-        spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
-      },
-    };
+    return await withTransaction(async (client) => {
+  const characterCheck = await client.query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
+      if (characterCheck.rows.length === 0) {
+        return rollbackAndReturn(client, { success: false, message: '角色不存在，无法签到' });
+      }
+  
+      const exist = await client.query(
+        'SELECT id FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
+        [userId, todayKey]
+      );
+      if (exist.rows.length > 0) {
+        return rollbackAndReturn(client, { success: false, message: '今日已签到' });
+      }
+  
+      await client.query(
+        `
+          INSERT INTO sign_in_records (user_id, sign_date, reward, is_holiday, holiday_name)
+          VALUES ($1, $2::date, $3, $4, $5)
+        `,
+        [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
+      );
+  
+      const updated = await client.query(
+        'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
+        [reward, userId]
+      );
+  return {
+        success: true,
+        message: '签到成功',
+        data: {
+          date: todayKey,
+          reward,
+          isHoliday: holidayInfo.isHoliday,
+          holidayName: holidayInfo.holidayName,
+          spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
+        },
+      };
+    });
   } catch (error) {
-    await safeRollback(client);
     console.error('签到失败:', error);
     return { success: false, message: '签到失败' };
-  } finally {
-    client.release();
   }
 };

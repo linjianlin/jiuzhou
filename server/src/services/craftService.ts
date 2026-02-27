@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool, query } from '../config/database.js';
+import { pool, query, withTransaction } from '../config/database.js';
 import { addItemToInventoryTx } from './inventory/index.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordCraftItemEvent } from './taskService.js';
@@ -470,225 +470,219 @@ export const executeCraftRecipe = async (
 
   const times = clampInt(payload.times, 1, 99);
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const characterSnapshot = await getCharacterByUserId(user, client, false);
-    if (!characterSnapshot) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-    await lockCharacterInventoryMutexTx(client, characterSnapshot.id);
-
-    const character = await getCharacterByUserId(user, client, true);
-    if (!character) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-
-    const recipeDef = getItemRecipeById(recipeId);
-    if (!recipeDef || recipeDef.enabled === false) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '配方不存在' };
-    }
-
-    const recipeProductDef = getItemDefinitionById(String(recipeDef.product_item_def_id || '').trim());
-    const recipe = {
-      id: String(recipeDef.id || '').trim(),
-      name: String(recipeDef.name || '').trim(),
-      recipe_type: String(recipeDef.recipe_type || 'craft').trim(),
-      product_item_def_id: String(recipeDef.product_item_def_id || '').trim(),
-      product_qty: recipeDef.product_qty ?? 1,
-      cost_silver: recipeDef.cost_silver ?? 0,
-      cost_spirit_stones: recipeDef.cost_spirit_stones ?? 0,
-      cost_exp: recipeDef.cost_exp ?? 0,
-      cost_items: Array.isArray(recipeDef.cost_items) ? recipeDef.cost_items : [],
-      req_realm: recipeDef.req_realm ?? null,
-      req_level: recipeDef.req_level ?? 0,
-      req_building: recipeDef.req_building ?? null,
-      success_rate: recipeDef.success_rate ?? 100,
-      fail_return_rate: recipeDef.fail_return_rate ?? 0,
-      product_name: recipeProductDef?.name ?? null,
-      product_icon: recipeProductDef?.icon ?? null,
-      product_category: recipeProductDef?.category ?? null,
-      product_sub_category: recipeProductDef?.sub_category ?? null,
-    } satisfies RecipeRow;
-    const reqRealm = asString(recipe.req_realm) || null;
-    if (!isRealmSufficient(character.realm, reqRealm)) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `境界不足，需要${reqRealm}` };
-    }
-
-    const recipeType = asString(recipe.recipe_type, 'craft') || 'craft';
-    const productQty = Math.max(1, clampInt(recipe.product_qty, 1, 9999));
-    const costSilverPerCraft = clampInt(recipe.cost_silver, 0, Number.MAX_SAFE_INTEGER);
-    const costSpiritPerCraft = clampInt(recipe.cost_spirit_stones, 0, Number.MAX_SAFE_INTEGER);
-    const costExpPerCraft = clampInt(recipe.cost_exp, 0, Number.MAX_SAFE_INTEGER);
-    const costItems = parseCostItems(recipe.cost_items);
-
-    const totalSilverCost = costSilverPerCraft * times;
-    const totalSpiritCost = costSpiritPerCraft * times;
-    const totalExpCost = costExpPerCraft * times;
-
-    if (character.silver < totalSilverCost) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '银两不足' };
-    }
-    if (character.spiritStones < totalSpiritCost) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '灵石不足' };
-    }
-    if (character.exp < totalExpCost) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '经验不足' };
-    }
-
-    for (const itemCost of costItems) {
-      const totalQty = itemCost.qty * times;
-      const consume = await consumeMaterialByDefIdTx(client, character.id, itemCost.itemDefId, totalQty);
-      if (!consume.success) {
+    return await withTransaction(async (client) => {
+  const characterSnapshot = await getCharacterByUserId(user, client, false);
+      if (!characterSnapshot) {
         await client.query('ROLLBACK');
-        return { success: false, message: consume.message };
+        return { success: false, message: '角色不存在' };
       }
-    }
-
-    if (totalSilverCost > 0 || totalSpiritCost > 0 || totalExpCost > 0) {
-      await client.query(
-        `
-          UPDATE characters
-          SET
-            silver = silver - $2,
-            spirit_stones = spirit_stones - $3,
-            exp = exp - $4,
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [character.id, totalSilverCost, totalSpiritCost, totalExpCost],
-      );
-    }
-
-    const successRate = Math.max(0, Math.min(100, asNumber(recipe.success_rate, 100)));
-    const failReturnRate = Math.max(0, Math.min(100, asNumber(recipe.fail_return_rate, 0)));
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let i = 0; i < times; i += 1) {
-      const roll = Math.random() * 100;
-      if (roll < successRate) successCount += 1;
-      else failCount += 1;
-    }
-
-    let produced: {
-      itemDefId: string;
-      itemName: string;
-      itemIcon: string | null;
-      qty: number;
-      itemIds: number[];
-    } | null = null;
-
-    if (successCount > 0) {
-      const totalProductQty = productQty * successCount;
-      const addResult = await addItemToInventoryTx(
-        client,
-        character.id,
-        user,
-        asString(recipe.product_item_def_id),
-        totalProductQty,
-        { location: 'bag', obtainedFrom: `craft:${recipe.id}` },
-      );
-      if (!addResult.success) {
+      await lockCharacterInventoryMutexTx(client, characterSnapshot.id);
+  
+      const character = await getCharacterByUserId(user, client, true);
+      if (!character) {
         await client.query('ROLLBACK');
-        return { success: false, message: addResult.message || '背包空间不足' };
+        return { success: false, message: '角色不存在' };
       }
-
-      produced = {
-        itemDefId: asString(recipe.product_item_def_id),
-        itemName: asString(recipe.product_name) || asString(recipe.product_item_def_id),
-        itemIcon: asString(recipe.product_icon) || null,
-        qty: totalProductQty,
-        itemIds: addResult.itemIds ?? [],
-      };
-    }
-
-    const returnedItems: Array<{ itemDefId: string; qty: number }> = [];
-    if (failCount > 0 && failReturnRate > 0 && costItems.length > 0) {
+  
+      const recipeDef = getItemRecipeById(recipeId);
+      if (!recipeDef || recipeDef.enabled === false) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '配方不存在' };
+      }
+  
+      const recipeProductDef = getItemDefinitionById(String(recipeDef.product_item_def_id || '').trim());
+      const recipe = {
+        id: String(recipeDef.id || '').trim(),
+        name: String(recipeDef.name || '').trim(),
+        recipe_type: String(recipeDef.recipe_type || 'craft').trim(),
+        product_item_def_id: String(recipeDef.product_item_def_id || '').trim(),
+        product_qty: recipeDef.product_qty ?? 1,
+        cost_silver: recipeDef.cost_silver ?? 0,
+        cost_spirit_stones: recipeDef.cost_spirit_stones ?? 0,
+        cost_exp: recipeDef.cost_exp ?? 0,
+        cost_items: Array.isArray(recipeDef.cost_items) ? recipeDef.cost_items : [],
+        req_realm: recipeDef.req_realm ?? null,
+        req_level: recipeDef.req_level ?? 0,
+        req_building: recipeDef.req_building ?? null,
+        success_rate: recipeDef.success_rate ?? 100,
+        fail_return_rate: recipeDef.fail_return_rate ?? 0,
+        product_name: recipeProductDef?.name ?? null,
+        product_icon: recipeProductDef?.icon ?? null,
+        product_category: recipeProductDef?.category ?? null,
+        product_sub_category: recipeProductDef?.sub_category ?? null,
+      } satisfies RecipeRow;
+      const reqRealm = asString(recipe.req_realm) || null;
+      if (!isRealmSufficient(character.realm, reqRealm)) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `境界不足，需要${reqRealm}` };
+      }
+  
+      const recipeType = asString(recipe.recipe_type, 'craft') || 'craft';
+      const productQty = Math.max(1, clampInt(recipe.product_qty, 1, 9999));
+      const costSilverPerCraft = clampInt(recipe.cost_silver, 0, Number.MAX_SAFE_INTEGER);
+      const costSpiritPerCraft = clampInt(recipe.cost_spirit_stones, 0, Number.MAX_SAFE_INTEGER);
+      const costExpPerCraft = clampInt(recipe.cost_exp, 0, Number.MAX_SAFE_INTEGER);
+      const costItems = parseCostItems(recipe.cost_items);
+  
+      const totalSilverCost = costSilverPerCraft * times;
+      const totalSpiritCost = costSpiritPerCraft * times;
+      const totalExpCost = costExpPerCraft * times;
+  
+      if (character.silver < totalSilverCost) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '银两不足' };
+      }
+      if (character.spiritStones < totalSpiritCost) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '灵石不足' };
+      }
+      if (character.exp < totalExpCost) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '经验不足' };
+      }
+  
       for (const itemCost of costItems) {
-        const rollbackQty = Math.floor(itemCost.qty * failCount * (failReturnRate / 100));
-        if (rollbackQty <= 0) continue;
+        const totalQty = itemCost.qty * times;
+        const consume = await consumeMaterialByDefIdTx(client, character.id, itemCost.itemDefId, totalQty);
+        if (!consume.success) {
+          await client.query('ROLLBACK');
+          return { success: false, message: consume.message };
+        }
+      }
+  
+      if (totalSilverCost > 0 || totalSpiritCost > 0 || totalExpCost > 0) {
+        await client.query(
+          `
+            UPDATE characters
+            SET
+              silver = silver - $2,
+              spirit_stones = spirit_stones - $3,
+              exp = exp - $4,
+              updated_at = NOW()
+            WHERE id = $1
+          `,
+          [character.id, totalSilverCost, totalSpiritCost, totalExpCost],
+        );
+      }
+  
+      const successRate = Math.max(0, Math.min(100, asNumber(recipe.success_rate, 100)));
+      const failReturnRate = Math.max(0, Math.min(100, asNumber(recipe.fail_return_rate, 0)));
+      let successCount = 0;
+      let failCount = 0;
+  
+      for (let i = 0; i < times; i += 1) {
+        const roll = Math.random() * 100;
+        if (roll < successRate) successCount += 1;
+        else failCount += 1;
+      }
+  
+      let produced: {
+        itemDefId: string;
+        itemName: string;
+        itemIcon: string | null;
+        qty: number;
+        itemIds: number[];
+      } | null = null;
+  
+      if (successCount > 0) {
+        const totalProductQty = productQty * successCount;
         const addResult = await addItemToInventoryTx(
           client,
           character.id,
           user,
-          itemCost.itemDefId,
-          rollbackQty,
-          { location: 'bag', obtainedFrom: `craft-refund:${recipe.id}` },
+          asString(recipe.product_item_def_id),
+          totalProductQty,
+          { location: 'bag', obtainedFrom: `craft:${recipe.id}` },
         );
         if (!addResult.success) {
           await client.query('ROLLBACK');
-          return { success: false, message: addResult.message || '返还材料失败' };
+          return { success: false, message: addResult.message || '背包空间不足' };
         }
-        returnedItems.push({ itemDefId: itemCost.itemDefId, qty: rollbackQty });
+  
+        produced = {
+          itemDefId: asString(recipe.product_item_def_id),
+          itemName: asString(recipe.product_name) || asString(recipe.product_item_def_id),
+          itemIcon: asString(recipe.product_icon) || null,
+          qty: totalProductQty,
+          itemIds: addResult.itemIds ?? [],
+        };
       }
-    }
-
-    const characterRes = await client.query(
-      `SELECT exp, silver, spirit_stones FROM characters WHERE id = $1 LIMIT 1`,
-      [character.id],
-    );
-    const charRow = (characterRes.rows?.[0] ?? {}) as Record<string, unknown>;
-
-    await client.query('COMMIT');
-
-    const productCategory = asString(recipe.product_category);
-    const productSubCategory = asString(recipe.product_sub_category);
-    const craftKind = inferCraftKind(recipeType, productCategory, productSubCategory);
-
-    if (successCount > 0) {
-      try {
-        await recordCraftItemEvent(
-          character.id,
-          asString(recipe.id),
-          craftKind,
-          asString(recipe.product_item_def_id),
-          successCount,
+  
+      const returnedItems: Array<{ itemDefId: string; qty: number }> = [];
+      if (failCount > 0 && failReturnRate > 0 && costItems.length > 0) {
+        for (const itemCost of costItems) {
+          const rollbackQty = Math.floor(itemCost.qty * failCount * (failReturnRate / 100));
+          if (rollbackQty <= 0) continue;
+          const addResult = await addItemToInventoryTx(
+            client,
+            character.id,
+            user,
+            itemCost.itemDefId,
+            rollbackQty,
+            { location: 'bag', obtainedFrom: `craft-refund:${recipe.id}` },
+          );
+          if (!addResult.success) {
+            await client.query('ROLLBACK');
+            return { success: false, message: addResult.message || '返还材料失败' };
+          }
+          returnedItems.push({ itemDefId: itemCost.itemDefId, qty: rollbackQty });
+        }
+      }
+  
+      const characterRes = await client.query(
+        `SELECT exp, silver, spirit_stones FROM characters WHERE id = $1 LIMIT 1`,
+        [character.id],
+      );
+      const charRow = (characterRes.rows?.[0] ?? {}) as Record<string, unknown>;
+  const productCategory = asString(recipe.product_category);
+      const productSubCategory = asString(recipe.product_sub_category);
+      const craftKind = inferCraftKind(recipeType, productCategory, productSubCategory);
+  
+      if (successCount > 0) {
+        try {
+          await recordCraftItemEvent(
+            character.id,
+            asString(recipe.id),
+            craftKind,
+            asString(recipe.product_item_def_id),
+            successCount,
+            recipeType,
+          );
+        } catch (error) {
+          console.error('记录炼制事件失败:', error);
+        }
+      }
+  
+      return {
+        success: true,
+        message: successCount > 0 ? '炼制完成' : '炼制失败',
+        data: {
+          recipeId: asString(recipe.id),
           recipeType,
-        );
-      } catch (error) {
-        console.error('记录炼制事件失败:', error);
-      }
-    }
-
-    return {
-      success: true,
-      message: successCount > 0 ? '炼制完成' : '炼制失败',
-      data: {
-        recipeId: asString(recipe.id),
-        recipeType,
-        craftKind,
-        times,
-        successCount,
-        failCount,
-        spent: {
-          silver: totalSilverCost,
-          spiritStones: totalSpiritCost,
-          exp: totalExpCost,
-          items: costItems.map((x) => ({ itemDefId: x.itemDefId, qty: x.qty * times })),
+          craftKind,
+          times,
+          successCount,
+          failCount,
+          spent: {
+            silver: totalSilverCost,
+            spiritStones: totalSpiritCost,
+            exp: totalExpCost,
+            items: costItems.map((x) => ({ itemDefId: x.itemDefId, qty: x.qty * times })),
+          },
+          returnedItems,
+          produced,
+          character: {
+            exp: clampInt(charRow.exp, 0, Number.MAX_SAFE_INTEGER),
+            silver: clampInt(charRow.silver, 0, Number.MAX_SAFE_INTEGER),
+            spiritStones: clampInt(charRow.spirit_stones, 0, Number.MAX_SAFE_INTEGER),
+          },
         },
-        returnedItems,
-        produced,
-        character: {
-          exp: clampInt(charRow.exp, 0, Number.MAX_SAFE_INTEGER),
-          silver: clampInt(charRow.silver, 0, Number.MAX_SAFE_INTEGER),
-          spiritStones: clampInt(charRow.spirit_stones, 0, Number.MAX_SAFE_INTEGER),
-        },
-      },
-    };
+      };
+    });
   } catch (error) {
-    await safeRollback(client);
     console.error('执行炼制失败:', error);
     return { success: false, message: '执行炼制失败' };
-  } finally {
-    safeRelease(client);
   }
 };
 

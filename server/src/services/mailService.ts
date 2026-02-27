@@ -9,7 +9,7 @@
  * 5. 删除邮件
  * 6. 批量操作
  */
-import { query, pool } from '../config/database.js';
+import { query, withTransaction } from '../config/database.js';
 import { createItem } from './itemService.js';
 import { getInventoryInfoWithClient } from './inventory/index.js';
 import { recordCollectItemEvent } from './taskService.js';
@@ -354,11 +354,10 @@ export const claimAttachments = async (
   characterId: number,
   mailId: number
 ): Promise<{ success: boolean; message: string; rewards?: { silver?: number; spiritStones?: number; itemIds?: number[] } }> => {
-  const client = await pool.connect();
   const collectCounts = new Map<string, number>();
 
   try {
-    await client.query('BEGIN');
+    return await withTransaction(async (client) => {
 
     // 1. 获取邮件并锁定
     const mailResult = await client.query(`
@@ -464,8 +463,6 @@ export const claimAttachments = async (
       WHERE id = $2
     `, [JSON.stringify(itemIds), mailId]);
 
-    await client.query('COMMIT');
-
     for (const [itemDefId, qty] of collectCounts.entries()) {
       try {
         await recordCollectItemEvent(characterId, itemDefId, qty);
@@ -473,13 +470,11 @@ export const claimAttachments = async (
     }
 
     return { success: true, message: '领取成功', rewards };
+    });
 
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('领取附件失败:', error);
     return { success: false, message: '领取失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -491,11 +486,10 @@ export const claimAllAttachments = async (
   userId: number,
   characterId: number
 ): Promise<{ success: boolean; message: string; claimedCount: number; rewards?: { silver: number; spiritStones: number; itemCount: number } }> => {
-  const client = await pool.connect();
   const collectCounts = new Map<string, number>();
 
   try {
-    await client.query('BEGIN');
+    return await withTransaction(async (client) => {
 
     // 1. 获取所有未领取的邮件
     const mailsResult = await client.query(`
@@ -598,8 +592,6 @@ export const claimAllAttachments = async (
       WHERE id = ANY($1)
     `, [mailIds]);
 
-    await client.query('COMMIT');
-
     for (const [itemDefId, qty] of collectCounts.entries()) {
       try {
         await recordCollectItemEvent(characterId, itemDefId, qty);
@@ -612,13 +604,11 @@ export const claimAllAttachments = async (
       claimedCount: mailIds.length,
       rewards: { silver: totalSilver, spiritStones: totalSpiritStones, itemCount: totalItemCount }
     };
+    });
 
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('一键领取失败:', error);
     return { success: false, message: '领取失败', claimedCount: 0 };
-  } finally {
-    client.release();
   }
 };
 

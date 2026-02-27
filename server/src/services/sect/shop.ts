@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool } from '../../config/database.js';
+import { pool, withTransaction } from '../../config/database.js';
 import { createItem } from '../itemService.js';
 import { getItemDefinitionById } from '../staticConfigLoader.js';
 import { assertMember, getCharacterUserId, toNumber } from './db.js';
@@ -118,85 +118,81 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
       : 0;
   if (isBagExpandItem && q !== 1) return { success: false, message: '该商品每次仅可兑换1个' };
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const member = await assertMember(characterId, client);
-
-    const userId = await getCharacterUserId(characterId, client);
-    if (!userId) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-
-    const memberRes = await client.query(
-      `SELECT contribution FROM sect_member WHERE character_id = $1 FOR UPDATE`,
-      [characterId]
-    );
-    if (memberRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未加入宗门' };
-    }
-
-    if (dailyLimit > 0) {
-      const limitResult = await client.query(
-        `
-          SELECT content
-          FROM sect_log
-          WHERE sect_id = $1
-            AND log_type = 'shop_buy'
-            AND operator_id = $2
-            AND created_at::date = CURRENT_DATE
-        `,
-        [member.sectId, characterId]
-      );
-      const usedToday = (limitResult.rows as Array<{ content: string | null }>).reduce((sum, row) => {
-        const content = typeof row.content === 'string' ? row.content : '';
-        const totalQty = extractShopBuyItemQtyFromLogContent(content, shopItemLogName);
-        if (totalQty <= 0) return sum;
-        return sum + Math.ceil(totalQty / shopItemUnitQty);
-      }, 0);
-      if (usedToday + q > dailyLimit) {
+    return await withTransaction(async (client) => {
+  const member = await assertMember(characterId, client);
+  
+      const userId = await getCharacterUserId(characterId, client);
+      if (!userId) {
         await client.query('ROLLBACK');
-        if (dailyLimit <= 1) {
-          return { success: false, message: '该商品今日已兑换' };
-        }
-        const remain = Math.max(0, dailyLimit - usedToday);
-        return { success: false, message: `该商品今日最多兑换${dailyLimit}个（剩余${remain}个）` };
+        return { success: false, message: '角色不存在' };
       }
-    }
-
-    const contribution = toNumber(memberRes.rows[0].contribution);
-    const cost = shopItem.costContribution * q;
-    if (contribution < cost) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '贡献不足' };
-    }
-
-    await client.query(`UPDATE sect_member SET contribution = contribution - $2 WHERE character_id = $1`, [characterId, cost]);
-
-    const giveQty = shopItemUnitQty * q;
-    const createRes = await createItem(userId, characterId, shopItem.itemDefId, giveQty, {
-      location: 'bag',
-      obtainedFrom: 'sect_shop',
-      dbClient: client,
+  
+      const memberRes = await client.query(
+        `SELECT contribution FROM sect_member WHERE character_id = $1 FOR UPDATE`,
+        [characterId]
+      );
+      if (memberRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '未加入宗门' };
+      }
+  
+      if (dailyLimit > 0) {
+        const limitResult = await client.query(
+          `
+            SELECT content
+            FROM sect_log
+            WHERE sect_id = $1
+              AND log_type = 'shop_buy'
+              AND operator_id = $2
+              AND created_at::date = CURRENT_DATE
+          `,
+          [member.sectId, characterId]
+        );
+        const usedToday = (limitResult.rows as Array<{ content: string | null }>).reduce((sum, row) => {
+          const content = typeof row.content === 'string' ? row.content : '';
+          const totalQty = extractShopBuyItemQtyFromLogContent(content, shopItemLogName);
+          if (totalQty <= 0) return sum;
+          return sum + Math.ceil(totalQty / shopItemUnitQty);
+        }, 0);
+        if (usedToday + q > dailyLimit) {
+          await client.query('ROLLBACK');
+          if (dailyLimit <= 1) {
+            return { success: false, message: '该商品今日已兑换' };
+          }
+          const remain = Math.max(0, dailyLimit - usedToday);
+          return { success: false, message: `该商品今日最多兑换${dailyLimit}个（剩余${remain}个）` };
+        }
+      }
+  
+      const contribution = toNumber(memberRes.rows[0].contribution);
+      const cost = shopItem.costContribution * q;
+      if (contribution < cost) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '贡献不足' };
+      }
+  
+      await client.query(`UPDATE sect_member SET contribution = contribution - $2 WHERE character_id = $1`, [characterId, cost]);
+  
+      const giveQty = shopItemUnitQty * q;
+      const createRes = await createItem(userId, characterId, shopItem.itemDefId, giveQty, {
+        location: 'bag',
+        obtainedFrom: 'sect_shop',
+        dbClient: client,
+      });
+      if (!createRes.success) {
+        await client.query('ROLLBACK');
+        return { success: false, message: createRes.message };
+      }
+  
+      await recordSectShopBuyEventTx(client, characterId, q);
+  
+      const content = buildShopBuyLogContent(shopItemLogName, giveQty);
+      await addLogTx(client, member.sectId, 'shop_buy', characterId, null, content);
+  return { success: true, message: '购买成功', itemDefId: shopItem.itemDefId, qty: giveQty, itemIds: createRes.itemIds };
     });
-    if (!createRes.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: createRes.message };
-    }
-
-    await recordSectShopBuyEventTx(client, characterId, q);
-
-    const content = buildShopBuyLogContent(shopItemLogName, giveQty);
-    await addLogTx(client, member.sectId, 'shop_buy', characterId, null, content);
-    await client.query('COMMIT');
-    return { success: true, message: '购买成功', itemDefId: shopItem.itemDefId, qty: giveQty, itemIds: createRes.itemIds };
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('宗门商店购买失败:', error);
+console.error('宗门商店购买失败:', error);
     return { success: false, message: '宗门商店购买失败' };
-  } finally {
-    client.release();
   }
 };

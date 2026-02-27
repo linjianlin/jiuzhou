@@ -7,7 +7,7 @@
  * 3. 分发物品、装备给玩家（组队随机分配）
  * 4. 装备通过装备生成模块生成
  */
-import { query, pool } from '../config/database.js';
+import { query, withTransaction } from '../config/database.js';
 import { createItem, CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordCollectItemEvent } from './taskService.js';
@@ -33,7 +33,6 @@ import {
 import { lockCharacterInventoryMutexesTx } from './inventoryMutex.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { getRealmOrderIndex } from './shared/realmRules.js';
-import { safeRelease, safeRollback } from './shared/transaction.js';
 
 // ============================================
 // 类型定义
@@ -351,12 +350,11 @@ export const distributeBattleRewards = async (
     };
   }
   
-  const client = await pool.connect();
   const pendingMailByReceiver = new Map<number, { userId: number; items: MailAttachItem[] }>();
   const collectCounts = new Map<string, { characterId: number; itemDefId: string; qty: number }>();
   
   try {
-    await client.query('BEGIN');
+    return await withTransaction(async (client) => {
 
     const participantCharacterIds = [...new Set(
       participants
@@ -682,8 +680,6 @@ export const distributeBattleRewards = async (
       }
     }
     
-    await client.query('COMMIT');
-
     for (const entry of collectCounts.values()) {
       try {
         await recordCollectItemEvent(entry.characterId, entry.itemDefId, entry.qty);
@@ -723,17 +719,15 @@ export const distributeBattleRewards = async (
       },
       perPlayerRewards,
     };
+    });
     
   } catch (error) {
-    await safeRollback(client);
     console.error('分发战斗奖励失败:', error);
     return {
       success: false,
       message: '奖励分发失败',
       rewards: { exp: 0, silver: 0, items: [] },
     };
-  } finally {
-    safeRelease(client);
   }
 };
 

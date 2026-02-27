@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { pool } from '../../config/database.js';
+import { pool, withTransaction } from '../../config/database.js';
 import { assertMember, hasPermission, toNumber } from './db.js';
 import type { Result, SectBuildingRequirement, SectBuildingRow, SectBuildingView } from './types.js';
 
@@ -108,67 +108,62 @@ export const upgradeBuilding = async (characterId: number, buildingType: string)
     return { success: false, message: ONLY_HALL_UPGRADE_MESSAGE };
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const member = await assertMember(characterId, client);
-    if (!hasPermission(member.position, 'building')) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '无权限升级建筑' };
-    }
-
-    const buildingRes = await client.query(
-      `SELECT * FROM sect_building WHERE sect_id = $1 AND building_type = $2 FOR UPDATE`,
-      [member.sectId, HALL_BUILDING_TYPE]
-    );
-    if (buildingRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '建筑不存在' };
-    }
-
-    const building = buildingRes.rows[0] as SectBuildingRow;
-    const currentLevel = toNumber(building.level);
-    if (currentLevel >= BUILDING_MAX_LEVEL) {
-      await client.query('ROLLBACK');
-      return { success: false, message: FULLY_UPGRADED_MESSAGE };
-    }
-
-    const cost = calcHallUpgradeCost(currentLevel);
-    const sectRes = await client.query(`SELECT funds, build_points FROM sect_def WHERE id = $1 FOR UPDATE`, [member.sectId]);
-    if (sectRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '宗门不存在' };
-    }
-    const funds = toNumber(sectRes.rows[0].funds);
-    const buildPoints = toNumber(sectRes.rows[0].build_points);
-    if (funds < cost.funds) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '宗门资金不足' };
-    }
-    if (buildPoints < cost.buildPoints) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '建设点不足' };
-    }
-
-    await client.query(
-      `UPDATE sect_def SET funds = funds - $2, build_points = build_points - $3, updated_at = NOW() WHERE id = $1`,
-      [member.sectId, cost.funds, cost.buildPoints]
-    );
-    await client.query(
-      `UPDATE sect_building SET level = level + 1, updated_at = NOW() WHERE id = $1`,
-      [building.id]
-    );
-
-    await applyHallMemberCapTx(client, member.sectId);
-    await addLogTx(client, member.sectId, 'upgrade_building', characterId, null, `升级建筑：${HALL_BUILDING_NAME}`);
-
-    await client.query('COMMIT');
-    return { success: true, message: '升级成功' };
+    return await withTransaction(async (client) => {
+  const member = await assertMember(characterId, client);
+      if (!hasPermission(member.position, 'building')) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '无权限升级建筑' };
+      }
+  
+      const buildingRes = await client.query(
+        `SELECT * FROM sect_building WHERE sect_id = $1 AND building_type = $2 FOR UPDATE`,
+        [member.sectId, HALL_BUILDING_TYPE]
+      );
+      if (buildingRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '建筑不存在' };
+      }
+  
+      const building = buildingRes.rows[0] as SectBuildingRow;
+      const currentLevel = toNumber(building.level);
+      if (currentLevel >= BUILDING_MAX_LEVEL) {
+        await client.query('ROLLBACK');
+        return { success: false, message: FULLY_UPGRADED_MESSAGE };
+      }
+  
+      const cost = calcHallUpgradeCost(currentLevel);
+      const sectRes = await client.query(`SELECT funds, build_points FROM sect_def WHERE id = $1 FOR UPDATE`, [member.sectId]);
+      if (sectRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '宗门不存在' };
+      }
+      const funds = toNumber(sectRes.rows[0].funds);
+      const buildPoints = toNumber(sectRes.rows[0].build_points);
+      if (funds < cost.funds) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '宗门资金不足' };
+      }
+      if (buildPoints < cost.buildPoints) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '建设点不足' };
+      }
+  
+      await client.query(
+        `UPDATE sect_def SET funds = funds - $2, build_points = build_points - $3, updated_at = NOW() WHERE id = $1`,
+        [member.sectId, cost.funds, cost.buildPoints]
+      );
+      await client.query(
+        `UPDATE sect_building SET level = level + 1, updated_at = NOW() WHERE id = $1`,
+        [building.id]
+      );
+  
+      await applyHallMemberCapTx(client, member.sectId);
+      await addLogTx(client, member.sectId, 'upgrade_building', characterId, null, `升级建筑：${HALL_BUILDING_NAME}`);
+  return { success: true, message: '升级成功' };
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('升级建筑失败:', error);
+console.error('升级建筑失败:', error);
     return { success: false, message: '升级建筑失败' };
-  } finally {
-    client.release();
   }
 };

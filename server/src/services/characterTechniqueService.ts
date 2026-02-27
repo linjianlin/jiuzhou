@@ -2,7 +2,7 @@
  * 九州修仙录 - 角色功法服务
  * 功能：学习功法、修炼升级、装备功法、技能配置、属性计算
  */
-import { query, pool } from '../config/database.js';
+import { query, pool, withTransaction } from '../config/database.js';
 import { updateSectionProgress } from './mainQuest/index.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { isCharacterInBattle } from './battle/index.js';
@@ -420,68 +420,61 @@ export const learnTechnique = async (
   obtainedFrom: string = 'item',
   obtainedRefId?: string
 ): Promise<ServiceResult<CharacterTechnique>> => {
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
-    // 检查是否已学习
-    const existCheck = await client.query(
-      'SELECT id FROM character_technique WHERE character_id = $1 AND technique_id = $2',
-      [characterId, techniqueId]
-    );
-    if (existCheck.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '已学习该功法' };
-    }
-    
-    // 检查功法是否存在
-    const techniqueDef = getTechniqueDefMap().get(techniqueId) ?? null;
-    if (!techniqueDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '功法不存在' };
-    }
-
-    const charResult = await client.query(
-      'SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1',
-      [characterId],
-    );
-    if (charResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-
-    const requiredRealm = typeof techniqueDef.required_realm === 'string' ? techniqueDef.required_realm.trim() : '';
-    const currentRealm = charResult.rows[0].realm;
-    const currentSubRealm = charResult.rows[0].sub_realm;
-    if (!isRealmSufficient(currentRealm, requiredRealm, currentSubRealm)) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `境界不足，需要达到${requiredRealm}` };
-    }
-    
-    // 插入角色功法记录（初始层数为1）
-    const insertResult = await client.query(`
-      INSERT INTO character_technique (
-        character_id, technique_id, current_layer, 
-        obtained_from, obtained_ref_id
-      ) VALUES ($1, $2, 1, $3, $4)
-      RETURNING *
-    `, [characterId, techniqueId, obtainedFrom, obtainedRefId || null]);
-    
-    await client.query('COMMIT');
-    await invalidateCharacterComputedCache(characterId);
-    return { 
-      success: true, 
-      message: `成功学习${techniqueDef.name}`, 
-      data: insertResult.rows[0] 
-    };
-    
+    return await withTransaction(async (client) => {
+  // 检查是否已学习
+      const existCheck = await client.query(
+        'SELECT id FROM character_technique WHERE character_id = $1 AND technique_id = $2',
+        [characterId, techniqueId]
+      );
+      if (existCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '已学习该功法' };
+      }
+      
+      // 检查功法是否存在
+      const techniqueDef = getTechniqueDefMap().get(techniqueId) ?? null;
+      if (!techniqueDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '功法不存在' };
+      }
+  
+      const charResult = await client.query(
+        'SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1',
+        [characterId],
+      );
+      if (charResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '角色不存在' };
+      }
+  
+      const requiredRealm = typeof techniqueDef.required_realm === 'string' ? techniqueDef.required_realm.trim() : '';
+      const currentRealm = charResult.rows[0].realm;
+      const currentSubRealm = charResult.rows[0].sub_realm;
+      if (!isRealmSufficient(currentRealm, requiredRealm, currentSubRealm)) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `境界不足，需要达到${requiredRealm}` };
+      }
+      
+      // 插入角色功法记录（初始层数为1）
+      const insertResult = await client.query(`
+        INSERT INTO character_technique (
+          character_id, technique_id, current_layer, 
+          obtained_from, obtained_ref_id
+        ) VALUES ($1, $2, 1, $3, $4)
+        RETURNING *
+      `, [characterId, techniqueId, obtainedFrom, obtainedRefId || null]);
+  await invalidateCharacterComputedCache(characterId);
+      return { 
+        success: true, 
+        message: `成功学习${techniqueDef.name}`, 
+        data: insertResult.rows[0] 
+      };
+      
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('学习功法失败:', error);
+console.error('学习功法失败:', error);
     return { success: false, message: '学习功法失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -553,155 +546,148 @@ export const upgradeTechnique = async (
   characterId: number,
   techniqueId: string
 ): Promise<ServiceResult<{ newLayer: number; unlockedSkills: string[]; upgradedSkills: string[] }>> => {
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
-    // 获取角色当前功法层数
-    const ctResult = await client.query(
-      'SELECT id, current_layer FROM character_technique WHERE character_id = $1 AND technique_id = $2 FOR UPDATE',
-      [characterId, techniqueId]
-    );
-    if (ctResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未学习该功法' };
-    }
-    const currentLayer = ctResult.rows[0].current_layer;
-    const ctId = ctResult.rows[0].id;
-    
-    // 获取功法最大层数
-    const techniqueDef = getTechniqueDefMap().get(techniqueId) ?? null;
-    if (!techniqueDef) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '功法不存在' };
-    }
-    const maxLayer = Number(techniqueDef.max_layer ?? 1);
-    const techName = techniqueDef.name;
-    const qualityMultiplier = resolveTechniqueCostMultiplierByQuality(techniqueDef.quality);
-    
-    if (currentLayer >= maxLayer) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '已达最高层数' };
-    }
-    
-    // 获取下一层消耗和奖励
-    const nextLayer = currentLayer + 1;
-    const layer = getTechniqueLayerByTechniqueAndLayerStatic(techniqueId, nextLayer);
-    if (!layer) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '层级配置不存在' };
-    }
-
-    const costStones = scaleTechniqueBaseCostByQuality(layer.costSpiritStones, qualityMultiplier);
-    const costExp = scaleTechniqueBaseCostByQuality(layer.costExp, qualityMultiplier);
-    const costMaterials = layer.costMaterials;
-    
-    // 检查并扣除灵石和经验
-    const charResult = await client.query(
-      'SELECT spirit_stones, exp FROM characters WHERE id = $1 FOR UPDATE',
-      [characterId]
-    );
-    if (charResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
-    }
-    
-    const char = charResult.rows[0];
-    if (char.spirit_stones < costStones) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `灵石不足，需要${costStones}，当前${char.spirit_stones}` };
-    }
-    if (char.exp < costExp) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `经验不足，需要${costExp}，当前${char.exp}` };
-    }
-    
-    // 检查并扣除材料
-    for (const mat of costMaterials) {
-      const matResult = await client.query(
-        `SELECT COALESCE(SUM(qty), 0) as total 
-         FROM item_instance 
-         WHERE owner_character_id = $1 AND item_def_id = $2 AND location IN ('bag', 'warehouse')`,
-        [characterId, mat.itemId]
+    return await withTransaction(async (client) => {
+  // 获取角色当前功法层数
+      const ctResult = await client.query(
+        'SELECT id, current_layer FROM character_technique WHERE character_id = $1 AND technique_id = $2 FOR UPDATE',
+        [characterId, techniqueId]
       );
-      const totalQty = parseInt(matResult.rows[0].total);
-      if (totalQty < mat.qty) {
-        // 获取材料名称
-        const matName = getItemDefinitionById(mat.itemId)?.name || mat.itemId;
+      if (ctResult.rows.length === 0) {
         await client.query('ROLLBACK');
-        return { success: false, message: `材料不足：${matName}，需要${mat.qty}，当前${totalQty}` };
+        return { success: false, message: '未学习该功法' };
       }
-    }
-    
-    // 扣除灵石和经验
-    await client.query(
-      'UPDATE characters SET spirit_stones = spirit_stones - $1, exp = exp - $2, updated_at = NOW() WHERE id = $3',
-      [costStones, costExp, characterId]
-    );
-    
-    // 扣除材料
-    for (const mat of costMaterials) {
-      let remainingQty = mat.qty;
-      const itemsResult = await client.query(
-        `SELECT id, qty FROM item_instance 
-         WHERE owner_character_id = $1 AND item_def_id = $2 AND location IN ('bag', 'warehouse')
-         ORDER BY qty ASC FOR UPDATE`,
-        [characterId, mat.itemId]
-      );
+      const currentLayer = ctResult.rows[0].current_layer;
+      const ctId = ctResult.rows[0].id;
       
-      for (const item of itemsResult.rows) {
-        if (remainingQty <= 0) break;
-        
-        if (item.qty <= remainingQty) {
-          await client.query('DELETE FROM item_instance WHERE id = $1', [item.id]);
-          remainingQty -= item.qty;
-        } else {
-          await client.query(
-            'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
-            [remainingQty, item.id]
-          );
-          remainingQty = 0;
+      // 获取功法最大层数
+      const techniqueDef = getTechniqueDefMap().get(techniqueId) ?? null;
+      if (!techniqueDef) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '功法不存在' };
+      }
+      const maxLayer = Number(techniqueDef.max_layer ?? 1);
+      const techName = techniqueDef.name;
+      const qualityMultiplier = resolveTechniqueCostMultiplierByQuality(techniqueDef.quality);
+      
+      if (currentLayer >= maxLayer) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '已达最高层数' };
+      }
+      
+      // 获取下一层消耗和奖励
+      const nextLayer = currentLayer + 1;
+      const layer = getTechniqueLayerByTechniqueAndLayerStatic(techniqueId, nextLayer);
+      if (!layer) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '层级配置不存在' };
+      }
+  
+      const costStones = scaleTechniqueBaseCostByQuality(layer.costSpiritStones, qualityMultiplier);
+      const costExp = scaleTechniqueBaseCostByQuality(layer.costExp, qualityMultiplier);
+      const costMaterials = layer.costMaterials;
+      
+      // 检查并扣除灵石和经验
+      const charResult = await client.query(
+        'SELECT spirit_stones, exp FROM characters WHERE id = $1 FOR UPDATE',
+        [characterId]
+      );
+      if (charResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '角色不存在' };
+      }
+      
+      const char = charResult.rows[0];
+      if (char.spirit_stones < costStones) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `灵石不足，需要${costStones}，当前${char.spirit_stones}` };
+      }
+      if (char.exp < costExp) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `经验不足，需要${costExp}，当前${char.exp}` };
+      }
+      
+      // 检查并扣除材料
+      for (const mat of costMaterials) {
+        const matResult = await client.query(
+          `SELECT COALESCE(SUM(qty), 0) as total 
+           FROM item_instance 
+           WHERE owner_character_id = $1 AND item_def_id = $2 AND location IN ('bag', 'warehouse')`,
+          [characterId, mat.itemId]
+        );
+        const totalQty = parseInt(matResult.rows[0].total);
+        if (totalQty < mat.qty) {
+          // 获取材料名称
+          const matName = getItemDefinitionById(mat.itemId)?.name || mat.itemId;
+          await client.query('ROLLBACK');
+          return { success: false, message: `材料不足：${matName}，需要${mat.qty}，当前${totalQty}` };
         }
       }
-    }
-    
-    // 升级功法层数
-    await client.query(
-      'UPDATE character_technique SET current_layer = $1, updated_at = NOW() WHERE id = $2',
-      [nextLayer, ctId]
-    );
-    
-    await client.query('COMMIT');
-    await invalidateCharacterComputedCache(characterId);
-
-    try {
-      await updateSectionProgress(characterId, { type: 'upgrade_technique', techniqueId, layer: nextLayer });
-    } catch (error) {
-      console.error('更新主线功法升级目标失败:', error);
-    }
-    try {
-      await updateAchievementProgress(characterId, 'skill:level:any', 1);
-      await updateAchievementProgress(characterId, `skill:level:layer:${nextLayer}`, 1);
-      await updateAchievementProgress(characterId, `skill:level:${techniqueId}`, 1);
-    } catch {}
-
-    return {
-      success: true,
-      message: `${techName}修炼至第${nextLayer}层`,
-      data: {
-        newLayer: nextLayer,
-        unlockedSkills: layer.unlockSkillIds || [],
-        upgradedSkills: layer.upgradeSkillIds || []
+      
+      // 扣除灵石和经验
+      await client.query(
+        'UPDATE characters SET spirit_stones = spirit_stones - $1, exp = exp - $2, updated_at = NOW() WHERE id = $3',
+        [costStones, costExp, characterId]
+      );
+      
+      // 扣除材料
+      for (const mat of costMaterials) {
+        let remainingQty = mat.qty;
+        const itemsResult = await client.query(
+          `SELECT id, qty FROM item_instance 
+           WHERE owner_character_id = $1 AND item_def_id = $2 AND location IN ('bag', 'warehouse')
+           ORDER BY qty ASC FOR UPDATE`,
+          [characterId, mat.itemId]
+        );
+        
+        for (const item of itemsResult.rows) {
+          if (remainingQty <= 0) break;
+          
+          if (item.qty <= remainingQty) {
+            await client.query('DELETE FROM item_instance WHERE id = $1', [item.id]);
+            remainingQty -= item.qty;
+          } else {
+            await client.query(
+              'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
+              [remainingQty, item.id]
+            );
+            remainingQty = 0;
+          }
+        }
       }
-    };
-    
+      
+      // 升级功法层数
+      await client.query(
+        'UPDATE character_technique SET current_layer = $1, updated_at = NOW() WHERE id = $2',
+        [nextLayer, ctId]
+      );
+  await invalidateCharacterComputedCache(characterId);
+  
+      try {
+        await updateSectionProgress(characterId, { type: 'upgrade_technique', techniqueId, layer: nextLayer });
+      } catch (error) {
+        console.error('更新主线功法升级目标失败:', error);
+      }
+      try {
+        await updateAchievementProgress(characterId, 'skill:level:any', 1);
+        await updateAchievementProgress(characterId, `skill:level:layer:${nextLayer}`, 1);
+        await updateAchievementProgress(characterId, `skill:level:${techniqueId}`, 1);
+      } catch {}
+  
+      return {
+        success: true,
+        message: `${techName}修炼至第${nextLayer}层`,
+        data: {
+          newLayer: nextLayer,
+          unlockedSkills: layer.unlockSkillIds || [],
+          upgradedSkills: layer.upgradeSkillIds || []
+        }
+      };
+      
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('修炼功法失败:', error);
+console.error('修炼功法失败:', error);
     return { success: false, message: '修炼功法失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -720,101 +706,94 @@ export const equipTechnique = async (
     return { success: false, message: '战斗中无法切换功法' };
   }
   
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
-    // 检查是否已学习该功法
-    const ctResult = await client.query(
-      'SELECT id, slot_type, slot_index FROM character_technique WHERE character_id = $1 AND technique_id = $2 FOR UPDATE',
-      [characterId, techniqueId]
-    );
-    if (ctResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未学习该功法' };
-    }
-    
-    const ct = ctResult.rows[0];
-    const wasMain = ct.slot_type === 'main';
-    
-    // 如果已装备在目标位置，无需操作
-    if (ct.slot_type === slotType && (slotType === 'main' || ct.slot_index === slotIndex)) {
-      await client.query('ROLLBACK');
-      return { success: true, message: '功法已在该位置' };
-    }
-    
-    if (slotType === 'main') {
-      // 卸下当前主功法
-      await client.query(
-        `UPDATE character_technique SET slot_type = NULL, slot_index = NULL, updated_at = NOW()
-         WHERE character_id = $1 AND slot_type = 'main'`,
-        [characterId]
+    return await withTransaction(async (client) => {
+  // 检查是否已学习该功法
+      const ctResult = await client.query(
+        'SELECT id, slot_type, slot_index FROM character_technique WHERE character_id = $1 AND technique_id = $2 FOR UPDATE',
+        [characterId, techniqueId]
       );
-    } else {
-      // 副功法槽位验证
-      if (!slotIndex || slotIndex < 1 || slotIndex > 3) {
+      if (ctResult.rows.length === 0) {
         await client.query('ROLLBACK');
-        return { success: false, message: '副功法槽位必须为1-3' };
+        return { success: false, message: '未学习该功法' };
       }
       
-      // 卸下当前槽位的功法
-      await client.query(
-        `UPDATE character_technique SET slot_type = NULL, slot_index = NULL, updated_at = NOW()
-         WHERE character_id = $1 AND slot_type = 'sub' AND slot_index = $2`,
-        [characterId, slotIndex]
-      );
-    }
-    
-    // 装备新功法
-    await client.query(
-      `UPDATE character_technique SET slot_type = $1, slot_index = $2, updated_at = NOW()
-       WHERE id = $3`,
-      [slotType, slotType === 'main' ? null : slotIndex, ct.id]
-    );
-    
-    // 如果装备了主功法，更新角色属性类型
-    if (slotType === 'main') {
-      const techniqueDef = getTechniqueDefMap().get(techniqueId) ?? null;
-      if (techniqueDef) {
-        await client.query(
-          'UPDATE characters SET attribute_type = $1, attribute_element = $2, updated_at = NOW() WHERE id = $3',
-          [techniqueDef.attribute_type ?? 'physical', techniqueDef.attribute_element ?? 'none', characterId]
-        );
+      const ct = ctResult.rows[0];
+      const wasMain = ct.slot_type === 'main';
+      
+      // 如果已装备在目标位置，无需操作
+      if (ct.slot_type === slotType && (slotType === 'main' || ct.slot_index === slotIndex)) {
+        await client.query('ROLLBACK');
+        return { success: true, message: '功法已在该位置' };
       }
-    } else if (wasMain) {
-      const mainResult = await client.query(
-        `SELECT technique_id
-         FROM character_technique
-         WHERE character_id = $1 AND slot_type = 'main'
-         LIMIT 1`,
-        [characterId]
-      );
-      if (mainResult.rows.length > 0) {
-        const mainTechniqueId = typeof mainResult.rows[0].technique_id === 'string' ? mainResult.rows[0].technique_id : '';
-        const mainDef = getTechniqueDefMap().get(mainTechniqueId) ?? null;
+      
+      if (slotType === 'main') {
+        // 卸下当前主功法
         await client.query(
-          'UPDATE characters SET attribute_type = $1, attribute_element = $2, updated_at = NOW() WHERE id = $3',
-          [mainDef?.attribute_type ?? 'physical', mainDef?.attribute_element ?? 'none', characterId]
-        );
-      } else {
-        await client.query(
-          `UPDATE characters SET attribute_type = 'physical', attribute_element = 'none', updated_at = NOW() WHERE id = $1`,
+          `UPDATE character_technique SET slot_type = NULL, slot_index = NULL, updated_at = NOW()
+           WHERE character_id = $1 AND slot_type = 'main'`,
           [characterId]
         );
+      } else {
+        // 副功法槽位验证
+        if (!slotIndex || slotIndex < 1 || slotIndex > 3) {
+          await client.query('ROLLBACK');
+          return { success: false, message: '副功法槽位必须为1-3' };
+        }
+        
+        // 卸下当前槽位的功法
+        await client.query(
+          `UPDATE character_technique SET slot_type = NULL, slot_index = NULL, updated_at = NOW()
+           WHERE character_id = $1 AND slot_type = 'sub' AND slot_index = $2`,
+          [characterId, slotIndex]
+        );
       }
-    }
-    
-    await client.query('COMMIT');
-    await invalidateCharacterComputedCache(characterId);
-    return { success: true, message: '装备成功' };
-    
+      
+      // 装备新功法
+      await client.query(
+        `UPDATE character_technique SET slot_type = $1, slot_index = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [slotType, slotType === 'main' ? null : slotIndex, ct.id]
+      );
+      
+      // 如果装备了主功法，更新角色属性类型
+      if (slotType === 'main') {
+        const techniqueDef = getTechniqueDefMap().get(techniqueId) ?? null;
+        if (techniqueDef) {
+          await client.query(
+            'UPDATE characters SET attribute_type = $1, attribute_element = $2, updated_at = NOW() WHERE id = $3',
+            [techniqueDef.attribute_type ?? 'physical', techniqueDef.attribute_element ?? 'none', characterId]
+          );
+        }
+      } else if (wasMain) {
+        const mainResult = await client.query(
+          `SELECT technique_id
+           FROM character_technique
+           WHERE character_id = $1 AND slot_type = 'main'
+           LIMIT 1`,
+          [characterId]
+        );
+        if (mainResult.rows.length > 0) {
+          const mainTechniqueId = typeof mainResult.rows[0].technique_id === 'string' ? mainResult.rows[0].technique_id : '';
+          const mainDef = getTechniqueDefMap().get(mainTechniqueId) ?? null;
+          await client.query(
+            'UPDATE characters SET attribute_type = $1, attribute_element = $2, updated_at = NOW() WHERE id = $3',
+            [mainDef?.attribute_type ?? 'physical', mainDef?.attribute_element ?? 'none', characterId]
+          );
+        } else {
+          await client.query(
+            `UPDATE characters SET attribute_type = 'physical', attribute_element = 'none', updated_at = NOW() WHERE id = $1`,
+            [characterId]
+          );
+        }
+      }
+  await invalidateCharacterComputedCache(characterId);
+      return { success: true, message: '装备成功' };
+      
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('装备功法失败:', error);
+console.error('装备功法失败:', error);
     return { success: false, message: '装备功法失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -830,41 +809,34 @@ export const unequipTechnique = async (
     return { success: false, message: '战斗中无法切换功法' };
   }
   
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
-    const result = await client.query(
-      `UPDATE character_technique SET slot_type = NULL, slot_index = NULL, updated_at = NOW()
-       WHERE character_id = $1 AND technique_id = $2 AND slot_type IS NOT NULL
-       RETURNING slot_type`,
-      [characterId, techniqueId]
-    );
-    
-    if (result.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '功法未装备' };
-    }
-    
-    // 如果卸下的是主功法，重置角色属性类型
-    if (result.rows[0].slot_type === 'main') {
-      await client.query(
-        `UPDATE characters SET attribute_type = 'physical', attribute_element = 'none', updated_at = NOW() WHERE id = $1`,
-        [characterId]
+    return await withTransaction(async (client) => {
+  const result = await client.query(
+        `UPDATE character_technique SET slot_type = NULL, slot_index = NULL, updated_at = NOW()
+         WHERE character_id = $1 AND technique_id = $2 AND slot_type IS NOT NULL
+         RETURNING slot_type`,
+        [characterId, techniqueId]
       );
-    }
-    
-    await client.query('COMMIT');
-    await invalidateCharacterComputedCache(characterId);
-    return { success: true, message: '卸下成功' };
-    
+      
+      if (result.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '功法未装备' };
+      }
+      
+      // 如果卸下的是主功法，重置角色属性类型
+      if (result.rows[0].slot_type === 'main') {
+        await client.query(
+          `UPDATE characters SET attribute_type = 'physical', attribute_element = 'none', updated_at = NOW() WHERE id = $1`,
+          [characterId]
+        );
+      }
+  await invalidateCharacterComputedCache(characterId);
+      return { success: true, message: '卸下成功' };
+      
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('卸下功法失败:', error);
+console.error('卸下功法失败:', error);
     return { success: false, message: '卸下功法失败' };
-  } finally {
-    client.release();
   }
 };
 
@@ -962,47 +934,40 @@ export const equipSkill = async (
     return { success: false, message: '技能槽位必须为1-10' };
   }
   
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
-    // 检查技能是否可用（来自已装备功法且已解锁）
-    const available = await loadAvailableSkillEntries(characterId);
-    if (!available.some((entry) => entry.skillId === skillId)) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '技能不可用（未解锁或功法未装备）' };
-    }
-    
-    // 检查技能是否已装备在其他槽位
-    const existResult = await client.query(
-      'SELECT slot_index FROM character_skill_slot WHERE character_id = $1 AND skill_id = $2',
-      [characterId, skillId]
-    );
-    if (existResult.rows.length > 0 && existResult.rows[0].slot_index !== slotIndex) {
-      // 从原槽位移除
-      await client.query(
-        'DELETE FROM character_skill_slot WHERE character_id = $1 AND skill_id = $2',
+    return await withTransaction(async (client) => {
+  // 检查技能是否可用（来自已装备功法且已解锁）
+      const available = await loadAvailableSkillEntries(characterId);
+      if (!available.some((entry) => entry.skillId === skillId)) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '技能不可用（未解锁或功法未装备）' };
+      }
+      
+      // 检查技能是否已装备在其他槽位
+      const existResult = await client.query(
+        'SELECT slot_index FROM character_skill_slot WHERE character_id = $1 AND skill_id = $2',
         [characterId, skillId]
       );
-    }
-    
-    // 装备到目标槽位（替换原有技能）
-    await client.query(`
-      INSERT INTO character_skill_slot (character_id, slot_index, skill_id)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (character_id, slot_index) DO UPDATE SET skill_id = $3, updated_at = NOW()
-    `, [characterId, slotIndex, skillId]);
-    
-    await client.query('COMMIT');
-    return { success: true, message: '装备成功' };
-    
+      if (existResult.rows.length > 0 && existResult.rows[0].slot_index !== slotIndex) {
+        // 从原槽位移除
+        await client.query(
+          'DELETE FROM character_skill_slot WHERE character_id = $1 AND skill_id = $2',
+          [characterId, skillId]
+        );
+      }
+      
+      // 装备到目标槽位（替换原有技能）
+      await client.query(`
+        INSERT INTO character_skill_slot (character_id, slot_index, skill_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (character_id, slot_index) DO UPDATE SET skill_id = $3, updated_at = NOW()
+      `, [characterId, slotIndex, skillId]);
+  return { success: true, message: '装备成功' };
+      
+    });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('装备技能失败:', error);
+console.error('装备技能失败:', error);
     return { success: false, message: '装备技能失败' };
-  } finally {
-    client.release();
   }
 };
 
