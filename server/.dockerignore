@@ -7,3 +7,17 @@ dist
 .env
 .env.*
 !.env.example
+
+# 脚本目录：仅用于离线资源生成，不参与服务端运行时构建
+src/scripts/
+generated/
+
+# 本地开发环境与缓存：避免把本机状态打进镜像
+.cache/
+.venv*/
+uploads/
+
+# Python 相关临时产物：仅用于脚本执行，不参与 Node 服务运行
+**/__pycache__/
+**/*.pyc
+**/*requirements*.txt

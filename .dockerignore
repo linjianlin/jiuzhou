@@ -39,6 +39,17 @@ coverage/
 **/*.test.*
 **/*.spec.*
 
+# 服务端构建上下文冗余文件（脚本 / 本地环境 / Python）
+# 说明：当前服务端镜像使用仓库根目录作为构建上下文，需要在根 .dockerignore 中忽略。
+server/src/scripts/
+server/generated/
+server/.cache/
+server/.venv*/
+server/uploads/
+server/**/__pycache__/
+server/**/*.pyc
+server/**/*requirements*.txt
+
 # Misc
 *.bak
 *.tmp
