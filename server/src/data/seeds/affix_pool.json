@@ -3864,37 +3864,37 @@
           "effect_type": "heal",
           "params": {
             "scale_key": "max_qixue",
-            "scale_rate": 0.09,
-            "chance": 0.26
+            "scale_rate": 0.05,
+            "chance": 0.22
           },
           "tiers": [
             {
               "tier": 5,
-              "min": 24,
-              "max": 36,
+              "min": 20,
+              "max": 30,
               "realm_rank_min": 5,
-              "description": "受击时26%概率触发护心诀，回复24~36点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复20~30点气血并附加5%生命加成"
             },
             {
               "tier": 6,
-              "min": 36,
-              "max": 54,
+              "min": 30,
+              "max": 40,
               "realm_rank_min": 6,
-              "description": "受击时26%概率触发护心诀，回复36~54点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复30~40点气血并附加5%生命加成"
             },
             {
               "tier": 7,
-              "min": 41.4,
-              "max": 62.1,
+              "min": 40,
+              "max": 50,
               "realm_rank_min": 7,
-              "description": "受击时26%概率触发护心诀，回复41.4~62.1点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复40~50点气血并附加5%生命加成"
             },
             {
               "tier": 8,
-              "min": 46.8,
-              "max": 70.2,
+              "min": 50,
+              "max": 60,
               "realm_rank_min": 8,
-              "description": "受击时26%概率触发护心诀，回复46.8~70.2点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复50~60点气血并附加5%生命加成"
             }
           ]
         },
@@ -5050,37 +5050,37 @@
           "effect_type": "heal",
           "params": {
             "scale_key": "max_qixue",
-            "scale_rate": 0.09,
-            "chance": 0.26
+            "scale_rate": 0.07,
+            "chance": 0.22
           },
           "tiers": [
             {
               "tier": 5,
-              "min": 24,
-              "max": 36,
+              "min": 20,
+              "max": 30,
               "realm_rank_min": 5,
-              "description": "受击时26%概率触发护心诀，回复24~36点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复20~30点气血并附加7%生命加成"
             },
             {
               "tier": 6,
-              "min": 36,
-              "max": 54,
+              "min": 30,
+              "max": 45,
               "realm_rank_min": 6,
-              "description": "受击时26%概率触发护心诀，回复36~54点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复30~45点气血并附加7%生命加成"
             },
             {
               "tier": 7,
-              "min": 41.4,
-              "max": 62.1,
+              "min": 34.5,
+              "max": 51.75,
               "realm_rank_min": 7,
-              "description": "受击时26%概率触发护心诀，回复41.4~62.1点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复34.5~51.75点气血并附加7%生命加成"
             },
             {
               "tier": 8,
-              "min": 46.8,
-              "max": 70.2,
+              "min": 39,
+              "max": 58.5,
               "realm_rank_min": 8,
-              "description": "受击时26%概率触发护心诀，回复46.8~70.2点气血并附加9%生命加成"
+              "description": "受击时22%概率触发护心诀，回复39~58.5点气血并附加7%生命加成"
             }
           ]
         },
