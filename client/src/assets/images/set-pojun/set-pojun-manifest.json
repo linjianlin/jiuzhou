@@ -1,0 +1,75 @@
+{
+  "setId": "set-pojun",
+  "model": "doubao-seedream-5-0-260128",
+  "generationMode": "single-sheet+rmbg-local",
+  "generatedAt": "2026-02-27T11:57:59.513Z",
+  "sourceSheet": "set-pojun-sheet.png",
+  "mattedSheet": "set-pojun-sheet-matted.png",
+  "prompt": "请生成一张国风仙侠游戏UI装备图标素材图，必须只包含8件装备。 套装ID：set-pojun。 8件装备固定排布为4列2行网格，每格仅1件，从左到右、从上到下的槽位顺序固定为：武器、头部、衣服、手套、下装、项链、戒指/配饰、法宝。 对应装备名称为：武器=破军斩，头部=破军盔，衣服=破军甲，手套=破军手甲，下装=破军战胫，项链=破军坠，戒指/配饰=破军戒，法宝=破军兵符。 构图安全区要求：每件装备主体（含发光外沿）必须完整位于所在格子内，四边至少预留10%安全留白；若空间不足必须缩小物体，不可贴边、不可截断。 长柄/长刃类武器必须完整入框，尖端与柄端都不可触碰格子边缘。 套装一致性要求：8件必须被识别为同一套装，不是8件散装道具；先定义统一“视觉圣经”，包含主色1个、辅色1个、点缀色1个，并在全部8件中严格复用。 配色要求：所有宝石/能量体/发光部位使用同一色相家族，不允许红绿紫蓝混搭跳色；金属与布料的明度关系保持一致。 纹样要求：统一使用中式仙侠语汇（云纹、回纹、玉雕纹、符纹其一或组合），同一纹样要在多件装备重复出现，强化套装感。 整体风格要求：经典游戏道具图标风，2D手绘厚涂，轮廓清晰，体积光影明确；保留适度夸张但不要Q版。 文化风格要求：明确中国仙侠/东方古风审美，服装结构偏中式交领、宽袖、系带；头饰是中式冠饰，不是西式王冠。 装备主体必须完整、居中、清晰，不可互相遮挡，不可超出格子可视范围；每格只表现单个装备图标，不要额外装饰物。 严格禁止：背景卡片、格子边框、分隔线、文字、logo、水印、人物、地台、展示底座、棋盘格透明底纹、多余阴影块。 严格禁止风格：欧美西幻元素（十字徽记、骑士板甲、西式礼服剪裁、西式皮手套主导造型）、电商白底产品渲染风、低对比灰白雾面风、过于素净写实静物风。 严格禁止任何数字或序号标注（包括但不限于 1~8、罗马数字、角标、编号标签）；这些顺序信息仅用于生成约束，不得出现在画面中。 背景要求：统一纯净浅色背景（接近纯白），背景尽量平整无纹理，便于整图抠图后再裁切。",
+  "sprites": [
+    {
+      "index": 1,
+      "equipSlot": "weapon",
+      "equipSlotLabel": "武器",
+      "itemId": "set-pojun-weapon",
+      "itemName": "破军斩",
+      "file": "01-weapon-set-pojun-weapon.png"
+    },
+    {
+      "index": 2,
+      "equipSlot": "head",
+      "equipSlotLabel": "头部",
+      "itemId": "set-pojun-head",
+      "itemName": "破军盔",
+      "file": "02-head-set-pojun-head.png"
+    },
+    {
+      "index": 3,
+      "equipSlot": "clothes",
+      "equipSlotLabel": "衣服",
+      "itemId": "set-pojun-clothes",
+      "itemName": "破军甲",
+      "file": "03-clothes-set-pojun-clothes.png"
+    },
+    {
+      "index": 4,
+      "equipSlot": "gloves",
+      "equipSlotLabel": "手套",
+      "itemId": "set-pojun-gloves",
+      "itemName": "破军手甲",
+      "file": "04-gloves-set-pojun-gloves.png"
+    },
+    {
+      "index": 5,
+      "equipSlot": "pants",
+      "equipSlotLabel": "下装",
+      "itemId": "set-pojun-pants",
+      "itemName": "破军战胫",
+      "file": "05-pants-set-pojun-pants.png"
+    },
+    {
+      "index": 6,
+      "equipSlot": "necklace",
+      "equipSlotLabel": "项链",
+      "itemId": "set-pojun-necklace",
+      "itemName": "破军坠",
+      "file": "06-necklace-set-pojun-necklace.png"
+    },
+    {
+      "index": 7,
+      "equipSlot": "accessory",
+      "equipSlotLabel": "戒指/配饰",
+      "itemId": "set-pojun-accessory",
+      "itemName": "破军戒",
+      "file": "07-accessory-set-pojun-accessory.png"
+    },
+    {
+      "index": 8,
+      "equipSlot": "artifact",
+      "equipSlotLabel": "法宝",
+      "itemId": "set-pojun-artifact",
+      "itemName": "破军兵符",
+      "file": "08-artifact-set-pojun-artifact.png"
+    }
+  ]
+}

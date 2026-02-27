@@ -2437,7 +2437,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/lin_ri_shen_dao.png",
+      "icon": "/assets/images/set-pojun/01-weapon-set-pojun-weapon.png",
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2464,7 +2464,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_Hat_1_16.png",
+      "icon": "/assets/images/set-pojun/02-head-set-pojun-head.png",
       "equip_slot": "head",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2491,7 +2491,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_clothes_1_16.png",
+      "icon": "/assets/images/set-pojun/03-clothes-set-pojun-clothes.png",
       "equip_slot": "clothes",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2518,7 +2518,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_shoulder armour_1_16.png",
+      "icon": "/assets/images/set-pojun/04-gloves-set-pojun-gloves.png",
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2544,7 +2544,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_pants_1_16.png",
+      "icon": "/assets/images/set-pojun/05-pants-set-pojun-pants.png",
       "equip_slot": "pants",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2571,7 +2571,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_Jade pendants_1_16.png",
+      "icon": "/assets/images/set-pojun/06-necklace-set-pojun-necklace.png",
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2597,7 +2597,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_jiezhi_10010.png",
+      "icon": "/assets/images/set-pojun/07-accessory-set-pojun-accessory.png",
       "equip_slot": "accessory",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
@@ -2623,7 +2623,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/guan_tian_jing.png",
+      "icon": "/assets/images/set-pojun/08-artifact-set-pojun-artifact.png",
       "equip_slot": "artifact",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
