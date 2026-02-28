@@ -181,6 +181,19 @@ const resetClientTransactionState = (state: ClientTransactionState): void => {
   // 在这里清除可能会影响其他异步上下文
 };
 
+const normalizeClientStateOnCheckout = (state: ClientTransactionState): void => {
+  if (state.depth > 0 || state.savepointStack.length > 0) {
+    console.error('错误：连接借出时检测到未完成事务状态，已强制重置', {
+      clientId: state.clientId,
+      depth: state.depth,
+      savepointStack: state.savepointStack,
+    });
+    resetClientTransactionState(state);
+  }
+
+  state.released = false;
+};
+
 const createNoopQueryResult = <T extends QueryResultRow>(
   command: string,
 ): QueryResult<T> => {
@@ -208,13 +221,9 @@ const safeReleaseClient = (client: PoolClient): void => {
 
 const decoratePoolClient = (client: PoolClient): PoolClient => {
   const decoratedClient = client as DecoratedPoolClient;
-  if (decoratedClient.__txState && decoratedClient.__txRawQuery && decoratedClient.__txRawRelease) {
-    return decoratedClient;
-  }
-
-  const rawQuery = client.query.bind(client) as QueryCallable;
+  const rawQuery = (decoratedClient.__txRawQuery ?? client.query.bind(client)) as QueryCallable;
   const rawRelease = client.release.bind(client) as (err?: Error | boolean) => void;
-  const state: ClientTransactionState = {
+  const state: ClientTransactionState = decoratedClient.__txState ?? {
     depth: 0,
     released: false,
     savepointCounter: 0,
@@ -225,6 +234,7 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
   decoratedClient.__txState = state;
   decoratedClient.__txRawQuery = rawQuery;
   decoratedClient.__txRawRelease = rawRelease;
+  normalizeClientStateOnCheckout(state);
 
   client.query = ((...queryArgs: unknown[]) => {
     const sql = extractSqlTextFromQueryArgs(queryArgs);
@@ -353,8 +363,10 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
         depth: state.depth,
         savepointStack: state.savepointStack
       });
-      // 重置状态并释放（不尝试 ROLLBACK，因为 release 必须是同步的）
+      // 重置状态并销毁连接，避免把潜在脏连接回收到连接池。
       resetClientTransactionState(state);
+      rawRelease(true);
+      return;
     }
 
     rawRelease(err);
