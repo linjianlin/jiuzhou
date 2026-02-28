@@ -181,7 +181,7 @@ const syncCurrentSectionStaticProgress = async (characterId: number): Promise<vo
   if (!Number.isFinite(cid) || cid <= 0) return;
 
   try {
-    return await withTransaction(async (client) => {
+    return await withTransactionAuto(async (client) => {
   const progressRes = await client.query(
         `SELECT current_section_id, section_status, objectives_progress
          FROM character_main_quest_progress
