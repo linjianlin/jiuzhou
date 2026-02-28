@@ -176,9 +176,9 @@ const executeRawQueryAsPromise = (
 const resetClientTransactionState = (state: ClientTransactionState): void => {
   state.depth = 0;
   state.savepointStack = [];
-  // 强制清除 AsyncLocalStorage，不管当前上下文是什么
-  // 这样可以避免僵尸上下文问题
-  transactionContextStorage.enterWith(null);
+  // 注意：不在这里清除 AsyncLocalStorage
+  // AsyncLocalStorage 应该由 transactionContextStorage.run() 自动管理
+  // 在这里清除可能会影响其他异步上下文
 };
 
 const createNoopQueryResult = <T extends QueryResultRow>(
@@ -489,14 +489,24 @@ export const withTransaction = async <T>(
   const parentContext = getActiveTransactionContext();
 
   if (parentContext) {
-    await parentContext.client.query('BEGIN');
-    try {
-      const result = await callback(parentContext.client);
-      await parentContext.client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await parentContext.client.query('ROLLBACK');
-      throw error;
+    const decoratedClient = parentContext.client as DecoratedPoolClient;
+    const state = decoratedClient.__txState;
+
+    // 检测僵尸上下文：如果客户端已释放或 depth <= 0，说明上下文已失效
+    if (!state || state.released || state.depth <= 0) {
+      // 忽略僵尸上下文，创建新的根事务
+      // 不记录日志，因为这是正常的异步边界情况
+    } else {
+      // 父上下文有效，执行嵌套事务
+      await parentContext.client.query('BEGIN');
+      try {
+        const result = await callback(parentContext.client);
+        await parentContext.client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await parentContext.client.query('ROLLBACK');
+        throw error;
+      }
     }
   }
 
