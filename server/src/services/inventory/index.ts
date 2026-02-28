@@ -1269,16 +1269,12 @@ export const findEmptySlotsWithClient = async (
  * 2) `pg_advisory_xact_lock` 必须处于事务中才有正确生命周期，因此锁操作必须放在该执行器内部。
  */
 const runInventoryMutationTx = async <T extends { success: boolean }>(
-  client: PoolClient,
+  _client: PoolClient,
   executor: () => Promise<T>,
 ): Promise<T> => {
-  await client.query("BEGIN");
-  const result = await executor();
-  if (!result.success) {
-    return result;
-  }
-  await client.query("COMMIT");
-  return result;
+  // 调用者已经在事务中，不需要再次 BEGIN/COMMIT
+  // 如果 result.success 为 false，调用者会处理 ROLLBACK
+  return await executor();
 };
 
 export const addItemToInventoryTx = async (
