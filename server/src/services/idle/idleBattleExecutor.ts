@@ -681,6 +681,22 @@ export async function flushAllBuffers(): Promise<void> {
   console.log(`[IdleBattleExecutor] 缓冲区刷写完成（成功 ${results.length - failed.length}/${results.length}）`);
 }
 
+/**
+ * 停止所有挂机会话的执行循环（优雅关闭）
+ */
+export function stopAllExecutionLoops(): void {
+  console.log(`[IdleBattleExecutor] 正在停止 ${activeLoops.size} 个执行循环...`);
+
+  for (const [sessionId, handle] of activeLoops.entries()) {
+    clearTimeout(handle);
+  }
+
+  activeLoops.clear();
+  activeBuffers.clear();
+
+  console.log('[IdleBattleExecutor] 所有执行循环已停止');
+}
+
 // ============================================
 // recoverActiveIdleSessions：服务启动恢复
 // ============================================

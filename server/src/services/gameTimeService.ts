@@ -303,6 +303,17 @@ export const initGameTimeService = async (): Promise<void> => {
   if (!timer) timer = setInterval(() => void tickAndPersist(), 1000);
 };
 
+export const stopGameTimeService = async (): Promise<void> => {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+  // 最后一次保存状态
+  if (runtimeState && !saving) {
+    await tickAndPersist();
+  }
+};
+
 export const getGameTimeSnapshot = (): GameTimeSnapshot | null => {
   const state = runtimeState;
   if (!state) return null;

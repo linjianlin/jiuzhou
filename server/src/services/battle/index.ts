@@ -2279,7 +2279,23 @@ export function cleanupExpiredBattles(): void {
 }
 
 // 定期清理过期战斗
-setInterval(cleanupExpiredBattles, 5 * 60 * 1000);
+const cleanupTimer = setInterval(cleanupExpiredBattles, 5 * 60 * 1000);
+
+/**
+ * 停止战斗服务（优雅关闭）
+ */
+export function stopBattleService(): void {
+  // 停止清理定时器
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+  }
+
+  // 停止所有战斗的 ticker
+  for (const timer of battleTickers.values()) {
+    clearInterval(timer);
+  }
+  battleTickers.clear();
+}
 
 /**
  * 检查角色是否在战斗中

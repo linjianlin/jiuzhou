@@ -421,3 +421,10 @@ export const initArenaWeeklySettlementService = async (): Promise<void> => {
     }, CHECK_INTERVAL_MS);
   }
 };
+
+export const stopArenaWeeklySettlementService = (): void => {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+};
