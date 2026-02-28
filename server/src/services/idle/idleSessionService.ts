@@ -38,7 +38,7 @@ import type {
   SessionSnapshot,
   RewardItemEntry,
 } from './types.js';
-import type { BattleLogEntry } from '../../battle/types.js';
+import { rowToIdleBattleRow, rowToIdleSessionRow } from './rowMappers.js';
 
 // ============================================
 // 常量
@@ -60,47 +60,6 @@ const MAX_HISTORY_COUNT = 30;
 /** 构造 Redis 互斥锁键 */
 function idleLockKey(characterId: number): string {
   return `${IDLE_LOCK_PREFIX}${characterId}`;
-}
-
-/** 将数据库行映射为 IdleSessionRow */
-function rowToIdleSessionRow(row: Record<string, unknown>): IdleSessionRow {
-  return {
-    id: String(row.id),
-    characterId: Number(row.character_id),
-    status: row.status as IdleSessionRow['status'],
-    mapId: String(row.map_id),
-    roomId: String(row.room_id),
-    maxDurationMs: Number(row.max_duration_ms),
-    sessionSnapshot: row.session_snapshot as SessionSnapshot,
-    totalBattles: Number(row.total_battles),
-    winCount: Number(row.win_count),
-    loseCount: Number(row.lose_count),
-    totalExp: Number(row.total_exp),
-    totalSilver: Number(row.total_silver),
-    rewardItems: (row.reward_items as RewardItemEntry[]) ?? [],
-    bagFullFlag: Boolean(row.bag_full_flag),
-    startedAt: new Date(row.started_at as string),
-    endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
-    viewedAt: row.viewed_at ? new Date(row.viewed_at as string) : null,
-  };
-}
-
-/** 将数据库行映射为 IdleBattleRow */
-function rowToIdleBattleRow(row: Record<string, unknown>): IdleBattleRow {
-  return {
-    id: String(row.id),
-    sessionId: String(row.session_id),
-    batchIndex: Number(row.batch_index),
-    result: row.result as IdleBattleRow['result'],
-    roundCount: Number(row.round_count),
-    randomSeed: Number(row.random_seed),
-    expGained: Number(row.exp_gained),
-    silverGained: Number(row.silver_gained),
-    itemsGained: (row.items_gained as RewardItemEntry[]) ?? [],
-    battleLog: (row.battle_log as BattleLogEntry[]) ?? [],
-    monsterIds: (row.monster_ids as string[]) ?? [],
-    executedAt: new Date(row.executed_at as string),
-  };
 }
 
 // ============================================
@@ -298,7 +257,7 @@ export async function getIdleHistory(characterId: number): Promise<IdleSessionRo
        LIMIT $2`,
       [characterId, MAX_HISTORY_COUNT]
     );
-return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
+    return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
   });
 }
 

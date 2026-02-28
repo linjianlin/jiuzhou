@@ -173,12 +173,14 @@ export class WorkerPool {
     state.busy = false;
 
     // 解析消息类型
-    const response = msg as { type: string; result?: unknown; error?: string };
+    const response = msg as { type: string; result?: unknown; error?: string; stack?: string };
 
     if (response.type === 'batchResult') {
       task.resolve(response.result as never);
     } else if (response.type === 'error') {
-      task.reject(new Error(response.error ?? '未知错误'));
+      const message = response.error ?? '未知错误';
+      const detail = response.stack ? `${message}\n${response.stack}` : message;
+      task.reject(new Error(detail));
     }
 
     // 处理队列中的下一个任务

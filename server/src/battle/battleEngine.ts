@@ -308,7 +308,12 @@ export class BattleEngine {
    */
   private processPhaseTriggersBeforeAction(unit: BattleUnit): void {
     const aiProfile = unit.aiProfile;
-    if (!aiProfile || aiProfile.phaseTriggers.length === 0) return;
+    // Worker 场景下怪物 aiProfile 可能来自原始配置（未携带 phaseTriggers），
+    // 这里统一做数组守卫，避免读取 undefined.length 导致整场战斗中断。
+    const phaseTriggers = Array.isArray((aiProfile as { phaseTriggers?: unknown } | undefined)?.phaseTriggers)
+      ? (aiProfile as { phaseTriggers: MonsterAIPhaseTrigger[] }).phaseTriggers
+      : [];
+    if (phaseTriggers.length === 0) return;
     const maxQixue = Math.max(1, unit.currentAttrs.max_qixue);
     const hpPercent = unit.qixue / maxQixue;
     if (!unit.triggeredPhaseIds) {
@@ -316,7 +321,7 @@ export class BattleEngine {
     }
     const triggeredSet = new Set(unit.triggeredPhaseIds);
 
-    for (const trigger of aiProfile.phaseTriggers) {
+    for (const trigger of phaseTriggers) {
       if (triggeredSet.has(trigger.id)) continue;
       if (hpPercent > trigger.hpPercent) continue;
 
@@ -363,7 +368,10 @@ export class BattleEngine {
 
   private applyPhaseTriggerEffects(unit: BattleUnit, trigger: MonsterAIPhaseTrigger): string[] {
     const appliedBuffs: string[] = [];
-    for (const effect of trigger.effects) {
+    const effects = Array.isArray((trigger as { effects?: unknown }).effects)
+      ? trigger.effects
+      : [];
+    for (const effect of effects) {
       if (effect.type !== 'buff' && effect.type !== 'debuff') continue;
       const buffId = typeof effect.buffId === 'string' ? effect.buffId.trim() : '';
       if (!buffId) continue;

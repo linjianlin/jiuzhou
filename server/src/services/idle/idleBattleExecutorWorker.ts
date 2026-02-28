@@ -30,6 +30,9 @@ import { getGameServer } from '../../game/gameServer.js';
 import { getRoomInMap } from '../mapService.js';
 import { getCharacterUserId } from '../sect/db.js';
 import type { IdleSessionRow, RewardItemEntry } from './types.js';
+import { resolveIdleBattleRewards } from './idleBattleRewardResolver.js';
+import { toPgTextArrayLiteral } from './pgTextArrayLiteral.js';
+import { rowToIdleSessionRow } from './rowMappers.js';
 import {
   completeIdleSession,
   getActiveIdleSession,
@@ -42,15 +45,18 @@ import { getWorkerPool } from '../../workers/workerPool.js';
 // 类型定义
 // ============================================
 
-type SingleBatchResult = {
+type WorkerBatchResult = {
   result: 'attacker_win' | 'defender_win' | 'draw';
-  expGained: number;
-  silverGained: number;
-  itemsGained: RewardItemEntry[];
   randomSeed: number;
   roundCount: number;
   battleLog: unknown[];
   monsterIds: string[];
+};
+
+type SingleBatchResult = WorkerBatchResult & {
+  expGained: number;
+  silverGained: number;
+  itemsGained: RewardItemEntry[];
   bagFullFlag: boolean;
 };
 
@@ -65,6 +71,7 @@ type BatchBuffer = {
     expGained: number;
     silverGained: number;
     itemsGained: RewardItemEntry[];
+    bagFullFlag: boolean;
     battleLog: unknown[];
     monsterIds: string[];
   }>;
@@ -113,7 +120,7 @@ function shouldFlush(buffer: BatchBuffer): boolean {
  * 将内存缓冲区批量写入 DB
  */
 async function flushBuffer(
-  characterId: number,
+  _characterId: number,
   sessionId: string,
   buffer: BatchBuffer,
 ): Promise<void> {
@@ -127,7 +134,7 @@ async function flushBuffer(
     const values = batches
       .map(
         (b, i) =>
-          `($${i * 9 + 1}, $${i * 9 + 2}, $${i * 9 + 3}, $${i * 9 + 4}, $${i * 9 + 5}, $${i * 9 + 6}, $${i * 9 + 7}, $${i * 9 + 8}, $${i * 9 + 9})`,
+          `($${i * 11 + 1}, $${i * 11 + 2}, $${i * 11 + 3}, $${i * 11 + 4}, $${i * 11 + 5}, $${i * 11 + 6}, $${i * 11 + 7}, $${i * 11 + 8}, $${i * 11 + 9}, $${i * 11 + 10}, $${i * 11 + 11}, NOW())`,
       )
       .join(', ');
     const params = batches.flatMap((b) => [
@@ -137,14 +144,18 @@ async function flushBuffer(
       b.result,
       b.roundCount,
       b.randomSeed,
+      b.expGained,
+      b.silverGained,
       JSON.stringify(b.battleLog),
       JSON.stringify(b.itemsGained),
-      JSON.stringify(b.monsterIds),
+      toPgTextArrayLiteral(b.monsterIds),
     ]);
 
     await query(
-      `INSERT INTO idle_battle_batches
-       (id, session_id, batch_index, result, round_count, random_seed, battle_log, items_gained, monster_ids)
+      `INSERT INTO idle_battle_batches (
+        id, session_id, batch_index, result, round_count, random_seed,
+        exp_gained, silver_gained, battle_log, items_gained, monster_ids, executed_at
+      )
        VALUES ${values}`,
       params,
     );
@@ -156,6 +167,7 @@ async function flushBuffer(
     const expDelta = batches.reduce((sum, b) => sum + b.expGained, 0);
     const silverDelta = batches.reduce((sum, b) => sum + b.silverGained, 0);
     const newItems = batches.flatMap((b) => b.itemsGained);
+    const bagFullFlag = batches.some((b) => b.bagFullFlag);
 
     await updateSessionSummary(sessionId, {
       totalBattlesDelta,
@@ -164,13 +176,8 @@ async function flushBuffer(
       expDelta,
       silverDelta,
       newItems,
+      bagFullFlag,
     });
-
-    // 3. 更新角色经验和银两
-    await query(
-      `UPDATE characters SET exp = exp + $1, silver = silver + $2 WHERE id = $3`,
-      [expDelta, silverDelta, characterId],
-    );
 
     console.log(
       `[IdleBattleExecutor] 会话 ${sessionId} flush 完成：${batches.length} 场战斗`,
@@ -239,7 +246,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
 
           // 2. 分发任务到 Worker
           const workerPool = getWorkerPool();
-          const batchResult = await workerPool.executeTask<SingleBatchResult>({
+          const workerResult = await workerPool.executeTask<WorkerBatchResult>({
             type: 'executeBatch',
             payload: {
               session,
@@ -249,7 +256,22 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
             },
           });
 
-          // 3. 追加结果到缓冲区
+          // 3. 奖励统一复用普通执行器逻辑（主线程结算，避免 Worker 与主流程分叉）
+          const rewardSnapshot = await resolveIdleBattleRewards(
+            workerResult.monsterIds,
+            session,
+            userId,
+            workerResult.result,
+          );
+          const batchResult: SingleBatchResult = {
+            ...workerResult,
+            expGained: rewardSnapshot.expGained,
+            silverGained: rewardSnapshot.silverGained,
+            itemsGained: rewardSnapshot.itemsGained,
+            bagFullFlag: rewardSnapshot.bagFullFlag,
+          };
+
+          // 4. 追加结果到缓冲区
           buffer.batches.push({
             id: randomUUID(),
             sessionId: session.id,
@@ -260,12 +282,13 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
             expGained: batchResult.expGained,
             silverGained: batchResult.silverGained,
             itemsGained: batchResult.itemsGained,
+            bagFullFlag: batchResult.bagFullFlag,
             battleLog: batchResult.battleLog,
             monsterIds: batchResult.monsterIds,
           });
           batchIndex++;
 
-          // 4. 实时推送本场摘要
+          // 5. 实时推送本场摘要
           try {
             getGameServer().emitToUser(userId, 'idle:update', {
               sessionId: session.id,
@@ -280,10 +303,10 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
             // 忽略推送错误
           }
 
-          // 5. 检查终止条件
+          // 6. 检查终止条件
           const shouldStop = await checkTerminationConditions(session, userId);
 
-          // 6. 满足 flush 条件或即将终止时批量写入
+          // 7. 满足 flush 条件或即将终止时批量写入
           if (shouldFlush(buffer) || shouldStop.terminate) {
             await flushBuffer(session.characterId, session.id, buffer);
           }
@@ -401,8 +424,8 @@ export async function recoverActiveIdleSessions(): Promise<void> {
 
   console.log(`正在恢复 ${res.rows.length} 个挂机会话...`);
 
-  for (const row of res.rows) {
-    const session = row as IdleSessionRow;
+  for (const row of res.rows as Record<string, unknown>[]) {
+    const session = rowToIdleSessionRow(row);
     const userIdRes = await getCharacterUserId(session.characterId);
     if (!userIdRes) {
       console.warn(`会话 ${session.id} 的角色 ${session.characterId} 不存在，跳过恢复`);

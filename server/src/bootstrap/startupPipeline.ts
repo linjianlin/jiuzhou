@@ -10,7 +10,6 @@ import { recoverActiveIdleSessions, flushAllBuffers, stopAllExecutionLoops } fro
 import { initArenaWeeklySettlementService, stopArenaWeeklySettlementService } from '../services/arenaWeeklySettlementService.js';
 import { stopBattleService } from '../services/battle/index.js';
 import { initializeWorkerPool, shutdownWorkerPool } from '../workers/workerPool.js';
-import { getMonsterDefinitions, getSkillDefinitions } from '../services/staticConfigLoader.js';
 
 export interface StartServerOptions {
   httpServer: HttpServer;
@@ -44,15 +43,11 @@ export const startServerWithPipeline = async (options: StartServerOptions): Prom
     ? parseInt(process.env.IDLE_WORKER_COUNT, 10)
     : Math.max(1, cpuCount - 1);
 
-  const monsterDefs = new Map(getMonsterDefinitions().map((m) => [m.id, m]));
-  const skillDefs = new Map(getSkillDefinitions().map((s) => [s.id, s]));
-
   console.log(`  - CPU 核心数: ${cpuCount}，启动 ${workerCount} 个 Worker`);
-  console.log(`  - 加载 ${monsterDefs.size} 个怪物定义，${skillDefs.size} 个技能定义`);
+  console.log('  - 挂机战斗怪物解析复用普通战斗服务配置');
 
   await initializeWorkerPool({
     workerCount,
-    workerData: { monsterDefs, skillDefs },
   });
   console.log(`✓ Worker 池已就绪（${workerCount} 个 Worker）\n`);
 

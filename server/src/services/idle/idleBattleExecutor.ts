@@ -33,17 +33,16 @@
 
 import { randomUUID } from 'crypto';
 import { query } from '../../config/database.js';
-import { createPVEBattle, type CharacterData, type SkillData } from '../../battle/battleFactory.js';
-import { BattleEngine, type PlayerSkillSelector } from '../../battle/battleEngine.js';
-import { quickDistributeRewards, type BattleParticipant } from '../battleDropService.js';
 import { BATTLE_TICK_MS, BATTLE_START_COOLDOWN_MS } from '../battle/index.js';
 import { getGameServer } from '../../game/gameServer.js';
 import { getRoomInMap } from '../mapService.js';
-import { resolveMonsterDataForBattle } from '../battle/index.js';
 import { getCharacterUserId } from '../sect/db.js';
 import type { IdleSessionRow, RewardItemEntry } from './types.js';
-import { selectSkillByPolicy } from './selectSkillByPolicy.js';
+import { toPgTextArrayLiteral } from './pgTextArrayLiteral.js';
+import { resolveIdleBattleRewards } from './idleBattleRewardResolver.js';
+import { simulateIdleBattle } from './idleBattleSimulationCore.js';
 import type { BattleLogEntry } from '../../battle/types.js';
+import { rowToIdleSessionRow } from './rowMappers.js';
 import {
   completeIdleSession,
   releaseIdleLock,
@@ -151,82 +150,6 @@ function createBuffer(): BatchBuffer {
 }
 
 // ============================================
-// 内部工具：从 SessionSnapshot 构建 CharacterData
-// ============================================
-
-/**
- * 将 SessionSnapshot 转换为 BattleFactory 所需的 CharacterData 格式
- *
- * 复用点：仅在 executeSingleBatch 中调用，快照字段与 CharacterData 字段一一对应。
- * 注意：user_id 在快照中不存储，由调用方传入（避免快照与用户绑定）。
- */
-function snapshotToCharacterData(
-  snapshot: IdleSessionRow['sessionSnapshot'],
-  userId: number,
-): CharacterData {
-  const a = snapshot.baseAttrs;
-  return {
-    user_id: userId,
-    id: snapshot.characterId,
-    nickname: snapshot.nickname || '无名修士',
-    realm: snapshot.realm,
-    attribute_element: (a as { element?: string }).element ?? 'none',
-    qixue: a.max_qixue ?? 0,
-    max_qixue: a.max_qixue ?? 0,
-    lingqi: a.max_lingqi != null && a.max_lingqi > 0
-      ? Math.floor(a.max_lingqi * 0.5)
-      : 0,
-    max_lingqi: a.max_lingqi ?? 0,
-    wugong: a.wugong ?? 0,
-    fagong: a.fagong ?? 0,
-    wufang: a.wufang ?? 0,
-    fafang: a.fafang ?? 0,
-    sudu: a.sudu ?? 1,
-    mingzhong: a.mingzhong ?? 0.9,
-    shanbi: a.shanbi ?? 0,
-    zhaojia: a.zhaojia ?? 0,
-    baoji: a.baoji ?? 0,
-    baoshang: a.baoshang ?? 0,
-    kangbao: a.kangbao ?? 0,
-    zengshang: a.zengshang ?? 0,
-    zhiliao: a.zhiliao ?? 0,
-    jianliao: a.jianliao ?? 0,
-    xixue: a.xixue ?? 0,
-    lengque: a.lengque ?? 0,
-    kongzhi_kangxing: a.kongzhi_kangxing ?? 0,
-    jin_kangxing: a.jin_kangxing ?? 0,
-    mu_kangxing: a.mu_kangxing ?? 0,
-    shui_kangxing: a.shui_kangxing ?? 0,
-    huo_kangxing: a.huo_kangxing ?? 0,
-    tu_kangxing: a.tu_kangxing ?? 0,
-    qixue_huifu: a.qixue_huifu ?? 0,
-    lingqi_huifu: a.lingqi_huifu ?? 0,
-    setBonusEffects: snapshot.setBonusEffects,
-  };
-}
-
-/**
- * 将 BattleSkill[] 转换为 SkillData[]（BattleFactory 所需格式）
- */
-function battleSkillsToSkillData(
-  skills: IdleSessionRow['sessionSnapshot']['skills'],
-): SkillData[] {
-  return skills.map((s) => ({
-    id: s.id,
-    name: s.name,
-    cost_lingqi: s.cost.lingqi ?? 0,
-    cost_qixue: s.cost.qixue ?? 0,
-    cooldown: s.cooldown,
-    target_type: s.targetType,
-    target_count: s.targetCount,
-    damage_type: s.damageType ?? 'none',
-    element: s.element,
-    effects: s.effects,
-    ai_priority: s.aiPriority,
-  }));
-}
-
-// ============================================
 // executeSingleBatch：执行单场战斗（纯计算，不写 DB）
 // ============================================
 
@@ -234,11 +157,9 @@ function battleSkillsToSkillData(
  * 执行单场挂机战斗，返回结果（不直接写 DB）
  *
  * 步骤：
- *   1. 从 session.sessionSnapshot 构建 CharacterData
- *   2. 从 mapService 获取房间怪物列表
- *   3. 解析怪物数据（resolveMonsterDataForBattle）
- *   4. createPVEBattle → BattleEngine.autoExecute()
- *   5. 胜利时调用 quickDistributeRewards 结算奖励（纯内存计算）
+ *   1. 从 mapService 获取房间怪物列表
+ *   2. 调用 simulateIdleBattle 执行统一战斗模拟
+ *   3. 调用 resolveIdleBattleRewards 统一奖励结算
  *
  * 不做的事：
  *   - 不写 idle_battle_batches（由 flushBuffer 批量写入）
@@ -252,118 +173,29 @@ function battleSkillsToSkillData(
  */
 export async function executeSingleBatch(
   session: IdleSessionRow,
-  batchIndex: number,
+  _batchIndex: number,
   userId: number,
 ): Promise<SingleBatchResult> {
   const room = await getRoomInMap(session.mapId, session.roomId);
 
-  // 按选中怪物构建 monsterIds：有 targetMonsterDefId 时只打该种怪，数量取房间配置的 count
-  const targetDefId = session.sessionSnapshot.targetMonsterDefId;
-  let monsterIds: string[];
-  if (targetDefId) {
-    const monsterEntry = (room?.monsters ?? []).find((m) => m.monster_def_id === targetDefId);
-    const count = monsterEntry?.count ?? 1;
-    monsterIds = Array(count).fill(targetDefId) as string[];
-  } else {
-    // 旧会话无此字段时走原有全怪物逻辑
-    monsterIds = (room?.monsters ?? []).map((m) => m.monster_def_id);
-  }
-
-  if (monsterIds.length === 0) {
-    return {
-      result: 'draw',
-      expGained: 0,
-      silverGained: 0,
-      itemsGained: [],
-      randomSeed: 0,
-      roundCount: 0,
-      battleLog: [],
-      monsterIds: [],
-      bagFullFlag: false,
-    };
-  }
-
-  const monsterResult = resolveMonsterDataForBattle(monsterIds);
-  if (!monsterResult.success) {
-    return {
-      result: 'draw',
-      expGained: 0,
-      silverGained: 0,
-      itemsGained: [],
-      randomSeed: 0,
-      roundCount: 0,
-      battleLog: [],
-      monsterIds,
-      bagFullFlag: false,
-    };
-  }
-
-  const characterData = snapshotToCharacterData(session.sessionSnapshot, userId);
-  const skillData = battleSkillsToSkillData(session.sessionSnapshot.skills);
-  const battleId = randomUUID();
-
-  const state = createPVEBattle(
-    battleId,
-    characterData,
-    skillData,
-    monsterResult.monsters,
-    monsterResult.monsterSkillsMap,
+  const simulationResult = simulateIdleBattle(session, userId, room?.monsters ?? []);
+  const rewardSnapshot = await resolveIdleBattleRewards(
+    simulationResult.monsterIds,
+    session,
+    userId,
+    simulationResult.result,
   );
 
-  const engine = new BattleEngine(state);
-
-  // 注入 AutoSkillPolicy：有策略时按策略选技能，否则走默认 AI
-  const policy = session.sessionSnapshot.autoSkillPolicy;
-  const playerSelector: PlayerSkillSelector | undefined =
-    policy && policy.slots.length > 0
-      ? (unit) => selectSkillByPolicy(unit, policy)
-      : undefined;
-  engine.autoExecute(playerSelector);
-
-  const finalState = engine.getState();
-  const battleResult = finalState.result ?? 'draw';
-  const randomSeed = finalState.randomSeed;
-  const roundCount = finalState.roundCount;
-  const battleLog = finalState.logs as BattleLogEntry[];
-
-  let expGained = 0;
-  let silverGained = 0;
-  let itemsGained: RewardItemEntry[] = [];
-  let bagFullFlag = false;
-
-  if (battleResult === 'attacker_win') {
-    const participant: BattleParticipant = {
-      userId,
-      characterId: session.characterId,
-      nickname: String(session.characterId),
-      realm: session.sessionSnapshot.realm,
-    };
-
-    const distributeResult = await quickDistributeRewards(monsterIds, [participant], true);
-
-    if (distributeResult.success) {
-      expGained = distributeResult.rewards.exp;
-      silverGained = distributeResult.rewards.silver;
-      itemsGained = distributeResult.rewards.items.map((item) => ({
-        itemDefId: item.itemDefId,
-        itemName: item.itemName,
-        quantity: item.quantity,
-      }));
-    } else {
-      bagFullFlag = true;
-    }
-  }
-
   return {
-    result: battleResult,
-    expGained,
-    silverGained,
-    itemsGained,
-    randomSeed,
-    roundCount,
-    battleLog,
-    monsterIds,
-    bagFullFlag,
+    result: simulationResult.result,
+    expGained: rewardSnapshot.expGained,
+    silverGained: rewardSnapshot.silverGained,
+    itemsGained: rewardSnapshot.itemsGained,
+    randomSeed: simulationResult.randomSeed,
+    roundCount: simulationResult.roundCount,
+    battleLog: simulationResult.battleLog,
+    monsterIds: simulationResult.monsterIds,
+    bagFullFlag: rewardSnapshot.bagFullFlag,
   };
 }
 
@@ -422,8 +254,7 @@ async function flushBuffer(
       b.silverGained,
       JSON.stringify(b.itemsGained),
       JSON.stringify(b.battleLog),
-      // monster_ids 列是 TEXT[]，需要 PostgreSQL 数组字面量格式 {"a","b"}，而非 JSON 数组 ["a","b"]
-      `{${b.monsterIds.map((id) => `"${id}"`).join(',')}}`,
+      toPgTextArrayLiteral(b.monsterIds),
     );
     return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},NOW())`;
   });
@@ -725,8 +556,9 @@ export async function recoverActiveIdleSessions(): Promise<void> {
   console.log(`正在恢复 ${res.rows.length} 个挂机会话...`);
 
   for (const row of res.rows as Record<string, unknown>[]) {
-    const sessionId = String(row.id);
-    const characterId = Number(row.character_id);
+    const session = rowToIdleSessionRow(row);
+    const sessionId = session.id;
+    const characterId = session.characterId;
 
     const userId = await getCharacterUserId(characterId);
     if (!userId) {
@@ -734,26 +566,6 @@ export async function recoverActiveIdleSessions(): Promise<void> {
       await completeIdleSession(sessionId, 'interrupted');
       continue;
     }
-
-    const session: IdleSessionRow = {
-      id: sessionId,
-      characterId,
-      status: row.status as IdleSessionRow['status'],
-      mapId: String(row.map_id),
-      roomId: String(row.room_id),
-      maxDurationMs: Number(row.max_duration_ms),
-      sessionSnapshot: row.session_snapshot as IdleSessionRow['sessionSnapshot'],
-      totalBattles: Number(row.total_battles),
-      winCount: Number(row.win_count),
-      loseCount: Number(row.lose_count),
-      totalExp: Number(row.total_exp),
-      totalSilver: Number(row.total_silver),
-      rewardItems: (row.reward_items as RewardItemEntry[]) ?? [],
-      bagFullFlag: Boolean(row.bag_full_flag),
-      startedAt: new Date(row.started_at as string),
-      endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
-      viewedAt: row.viewed_at ? new Date(row.viewed_at as string) : null,
-    };
 
     startExecutionLoop(session, userId);
     console.log(`  恢复会话: ${sessionId} (角色 ${characterId})`);
