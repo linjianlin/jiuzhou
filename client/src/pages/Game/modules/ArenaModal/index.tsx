@@ -236,21 +236,22 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
               </div>
 
               <div className="arena-self-actions">
-                <Button type="primary" size="large" block disabled={matching} onClick={startQuickMatch} className="arena-match-btn">
-                  {matching ? '匹配中...' : '一键匹配'}
-                </Button>
-                {matching ? (
-                  <Button danger block onClick={stopMatching} className="arena-cancel-btn">
-                    取消匹配
+                {!matching ? (
+                  <Button type="primary" size="large" block onClick={startQuickMatch} className="arena-match-btn">
+                    一键匹配
                   </Button>
-                ) : null}
+                ) : (
+                  <div className="arena-match-active-row">
+                    <div className="arena-match-progress-box">
+                      <div className="arena-match-progress-text">正在匹配对手...</div>
+                      <Progress percent={matchProgress} showInfo={false} strokeColor="var(--primary-color)" size="small" />
+                    </div>
+                    <Button danger size="large" onClick={stopMatching} className="arena-cancel-btn">
+                      取消
+                    </Button>
+                  </div>
+                )}
               </div>
-
-              {matching ? (
-                <div className="arena-self-matching">
-                  <Progress percent={matchProgress} showInfo={false} strokeColor="var(--primary-color)" />
-                </div>
-              ) : null}
             </div>
           </div>
         ),
