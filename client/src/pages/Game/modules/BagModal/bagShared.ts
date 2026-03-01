@@ -439,14 +439,14 @@ export const buildAffixRerollCostPlan = (
   const baseSilver = Math.floor(realmRank * realmRank * 500);
   const silverCost = Math.max(0, Math.floor(baseSilver * multiplier));
   const spiritStoneCost =
-    lockCount > 0 ? Math.max(0, Math.floor((lockMultiplier - 1) * realmRank * 2)) : 0;
+    lockCount > 0 ? Math.max(0, Math.floor((lockMultiplier - 1) * realmRank * 4)) : 0;
   return {
     baseSilver,
     silverCost,
     multiplier,
     lockCount,
     rerollScrollItemDefId: REROLL_SCROLL_ITEM_DEF_ID,
-    rerollScrollQty: lockCount + 1,
+    rerollScrollQty: lockMultiplier,
     spiritStoneCost,
   };
 };
