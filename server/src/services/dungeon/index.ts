@@ -9,14 +9,14 @@ import {
   getMonsterDefinitions,
 } from '../staticConfigLoader.js';
 import { resolveDropPoolById } from '../dropPoolResolver.js';
-import { query } from '../../config/database.js';
+import { getTransactionClient, query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from '../battle/index.js';
 import { itemService } from '../itemService.js';
 import { sendSystemMail, type MailAttachItem } from '../mailService.js';
 import { recordDungeonClearEvent } from '../taskService.js';
-import { applyStaminaRecoveryTx, applyStaminaRecoveryByCharacterId, STAMINA_MAX } from '../staminaService.js';
+import { applyStaminaRecoveryTx, STAMINA_MAX } from '../staminaService.js';
 import { normalizeAutoDisassembleSetting } from '../autoDisassembleRules.js';
 import { REALM_ORDER } from '../shared/realmRules.js';
 import {
@@ -957,6 +957,38 @@ const parseParticipants = (v: unknown): DungeonInstanceParticipant[] => {
   return Array.from(uniq.values());
 };
 
+const buildParticipantLabel = (
+  participant: DungeonInstanceParticipant,
+  nicknameMap: Map<number, string>
+): string => {
+  const roleLabel = participant.role === 'leader' ? '队长' : '队员';
+  const nickname = nicknameMap.get(participant.characterId);
+  if (nickname) return `${roleLabel}【${nickname}】(角色ID:${participant.characterId})`;
+  return `${roleLabel}(角色ID:${participant.characterId})`;
+};
+
+const getParticipantNicknameMap = async (participants: DungeonInstanceParticipant[]): Promise<Map<number, string>> => {
+  const characterIds = Array.from(
+    new Set(
+      participants
+        .map((participant) => participant.characterId)
+        .filter((characterId) => Number.isFinite(characterId) && characterId > 0),
+    ),
+  );
+  if (characterIds.length === 0) return new Map<number, string>();
+
+  const rows = await query('SELECT id, nickname FROM characters WHERE id = ANY($1::int[])', [characterIds]);
+  const nicknameMap = new Map<number, string>();
+  for (const row of rows.rows as Array<Record<string, unknown>>) {
+    const characterId = Number(row.id);
+    if (!Number.isFinite(characterId) || characterId <= 0) continue;
+    const nickname = asString(row.nickname, '').trim();
+    if (!nickname) continue;
+    nicknameMap.set(characterId, nickname);
+  }
+  return nicknameMap;
+};
+
 const getFullRealm = (realm: string, subRealm: string | null): string => {
   if (!subRealm || realm === '凡人') return realm;
   return `${realm}·${subRealm}`;
@@ -1396,104 +1428,109 @@ export const startDungeonInstance = async (
 > => {
   const user = await getUserAndCharacter(userId);
   if (!user.ok) return { success: false, message: user.message };
+  const client = getTransactionClient();
+  if (!client) return { success: false, message: '事务上下文缺失' };
 
   try {
-  const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
-      if (instRes.rows.length === 0) {
-        return { success: false, message: '秘境实例不存在' };
-      }
-      const inst = instRes.rows[0] as DungeonInstanceRow;
-  
-      if (inst.status !== 'preparing') {
-        return { success: false, message: '秘境已开始或已结束' };
-      }
-      if (inst.creator_id !== user.characterId) {
-        return { success: false, message: '只有创建者可以开始秘境' };
-      }
-  
-      const dungeonDef = getDungeonDefById(inst.dungeon_id);
-      if (!dungeonDef) {
-        return { success: false, message: '秘境不存在' };
-      }
-      const dailyLimit = dungeonDef.daily_limit;
-      const weeklyLimit = dungeonDef.weekly_limit;
-      const minPlayers = dungeonDef.min_players;
-      const maxPlayers = dungeonDef.max_players;
-      const staminaCost = dungeonDef.stamina_cost;
-  
-      const participants = parseParticipants(inst.participants);
-      if (participants.length < minPlayers) {
-        return { success: false, message: `人数不足，需要至少${minPlayers}人` };
-      }
-      if (participants.length > maxPlayers) {
-        return { success: false, message: `人数超限，最多${maxPlayers}人` };
-      }
-  
-      for (const p of participants) {
-        const touch = await touchEntryCount(p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
-        if (!touch.ok) {
-          return { success: false, message: touch.message };
-        }
-      }
-  
-      if (staminaCost > 0) {
-        for (const p of participants) {
-          const staminaState = await applyStaminaRecoveryByCharacterId(p.characterId);
-          if (!staminaState) {
-            return { success: false, message: '角色不存在' };
-          }
-          const stamina = asNumber(staminaState.stamina, 0);
-          if (stamina < staminaCost) {
-            return { success: false, message: `体力不足，需要${staminaCost}，当前${stamina}` };
-          }
-        }
-      }
-  
-      for (const p of participants) {
-        await incEntryCount(p.characterId, inst.dungeon_id);
-      }
-  
-      if (staminaCost > 0) {
-        for (const p of participants) {
-          const updRes = await query(
-            `UPDATE characters
-                SET stamina = stamina - $1,
-                    stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
-                    updated_at = CURRENT_TIMESTAMP
-              WHERE id = $2 AND stamina >= $1`,
-            [staminaCost, p.characterId, STAMINA_MAX]
-          );
-          if ((updRes.rowCount ?? 0) === 0) {
-            return { success: false, message: '体力扣除失败' };
-          }
-        }
-      }
-  
-      const stageWave = await getStageAndWave(inst.difficulty_id, 1, 1);
-      if (!stageWave.ok) {
-        return { success: false, message: stageWave.message };
-      }
-  
-      const monsterDefIds = buildMonsterDefIdsFromWave(stageWave.wave.monsters, 5);
-      if (monsterDefIds.length === 0) {
-        return { success: false, message: '该波次未配置怪物' };
-      }
-  
-      await query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
-        instanceId,
-      ]);
+    const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
+    if (instRes.rows.length === 0) {
+      return { success: false, message: '秘境实例不存在' };
+    }
+    const inst = instRes.rows[0] as DungeonInstanceRow;
 
-      const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true });
-      if (!battleRes.success || !battleRes.data?.battleId) {
-        return { success: false, message: battleRes.message || '开启战斗失败' };
+    if (inst.status !== 'preparing') {
+      return { success: false, message: '秘境已开始或已结束' };
+    }
+    if (inst.creator_id !== user.characterId) {
+      return { success: false, message: '只有创建者可以开始秘境' };
+    }
+
+    const dungeonDef = getDungeonDefById(inst.dungeon_id);
+    if (!dungeonDef) {
+      return { success: false, message: '秘境不存在' };
+    }
+    const dailyLimit = dungeonDef.daily_limit;
+    const weeklyLimit = dungeonDef.weekly_limit;
+    const minPlayers = dungeonDef.min_players;
+    const maxPlayers = dungeonDef.max_players;
+    const staminaCost = dungeonDef.stamina_cost;
+
+    const participants = parseParticipants(inst.participants);
+    const participantNicknameMap = await getParticipantNicknameMap(participants);
+    if (participants.length < minPlayers) {
+      return { success: false, message: `人数不足，需要至少${minPlayers}人` };
+    }
+    if (participants.length > maxPlayers) {
+      return { success: false, message: `人数超限，最多${maxPlayers}人` };
+    }
+
+    for (const p of participants) {
+      const touch = await touchEntryCount(p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
+      if (!touch.ok) {
+        return { success: false, message: touch.message };
       }
-  
-      const battleId = String(battleRes.data.battleId);
-      await query(
-        `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
-        [battleId, instanceId]
-      );
-  return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
+    }
+
+    if (staminaCost > 0) {
+      for (const p of participants) {
+        const participantLabel = buildParticipantLabel(p, participantNicknameMap);
+        const staminaState = await applyStaminaRecoveryTx(client, p.characterId);
+        if (!staminaState) {
+          return { success: false, message: `${participantLabel}不存在` };
+        }
+        const stamina = asNumber(staminaState.stamina, 0);
+        if (stamina < staminaCost) {
+          return { success: false, message: `${participantLabel}体力不足，需要${staminaCost}，当前${stamina}` };
+        }
+      }
+    }
+
+    for (const p of participants) {
+      await incEntryCount(p.characterId, inst.dungeon_id);
+    }
+
+    if (staminaCost > 0) {
+      for (const p of participants) {
+        const participantLabel = buildParticipantLabel(p, participantNicknameMap);
+        const updRes = await query(
+          `UPDATE characters
+              SET stamina = stamina - $1,
+                  stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND stamina >= $1`,
+          [staminaCost, p.characterId, STAMINA_MAX]
+        );
+        if ((updRes.rowCount ?? 0) === 0) {
+          return { success: false, message: `${participantLabel}体力扣除失败` };
+        }
+      }
+    }
+
+    const stageWave = await getStageAndWave(inst.difficulty_id, 1, 1);
+    if (!stageWave.ok) {
+      return { success: false, message: stageWave.message };
+    }
+
+    const monsterDefIds = buildMonsterDefIdsFromWave(stageWave.wave.monsters, 5);
+    if (monsterDefIds.length === 0) {
+      return { success: false, message: '该波次未配置怪物' };
+    }
+
+    await query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
+      instanceId,
+    ]);
+
+    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true });
+    if (!battleRes.success || !battleRes.data?.battleId) {
+      return { success: false, message: battleRes.message || '开启战斗失败' };
+    }
+
+    const battleId = String(battleRes.data.battleId);
+    await query(
+      `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
+      [battleId, instanceId]
+    );
+    return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
   } catch (error) {
     console.error('开始秘境失败:', error);
     return { success: false, message: '开始秘境失败' };

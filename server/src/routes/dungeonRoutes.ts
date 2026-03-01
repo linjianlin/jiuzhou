@@ -2,15 +2,7 @@ import { Router, Request, Response } from 'express';
 import { withRouteError } from '../middleware/routeError.js';
 import { requireAuth, getOptionalUserId } from '../middleware/auth.js';
 import {
-  createDungeonInstance,
-  getDungeonCategories,
-  getDungeonInstance,
-  getDungeonList,
-  getDungeonPreview,
-  getDungeonWeeklyTargets,
-  joinDungeonInstance,
-  nextDungeonInstance,
-  startDungeonInstance,
+  dungeonService,
   type DungeonType,
 } from '../domains/dungeon/index.js';
 import { getSingleParam, getSingleQueryValue } from '../services/shared/httpParam.js';
@@ -26,7 +18,7 @@ const toType = (v: unknown): DungeonType | undefined => {
 
 router.get('/categories', async (_req: Request, res: Response) => {
   try {
-    const categories = await getDungeonCategories();
+    const categories = await dungeonService.getDungeonCategories();
     res.json({ success: true, data: { categories } });
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -40,7 +32,7 @@ router.get('/list', async (req: Request, res: Response) => {
     const realmValue = getSingleQueryValue(req.query.realm).trim();
     const q = qValue || undefined;
     const realm = realmValue || undefined;
-    const dungeons = await getDungeonList({ type, q, realm });
+    const dungeons = await dungeonService.getDungeonList({ type, q, realm });
     res.json({ success: true, data: { dungeons } });
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -54,7 +46,7 @@ router.get('/preview/:id', async (req: Request, res: Response) => {
     const rankCandidate = rankRaw ? Number(rankRaw) : 1;
     const rank = Number.isFinite(rankCandidate) ? rankCandidate : 1;
     const userId = getOptionalUserId(req);
-    const preview = await getDungeonPreview(id, rank, userId);
+    const preview = await dungeonService.getDungeonPreview(id, rank, userId);
     if (!preview) {
       res.status(404).json({ success: false, message: '秘境不存在' });
       return;
@@ -68,7 +60,7 @@ router.get('/preview/:id', async (req: Request, res: Response) => {
 router.get('/weekly-targets', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
-    const result = await getDungeonWeeklyTargets(userId);
+    const result = await dungeonService.getDungeonWeeklyTargets(userId);
     res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -85,7 +77,11 @@ router.post('/instance/create', requireAuth, async (req: Request, res: Response)
       res.status(400).json({ success: false, message: '缺少秘境ID' });
       return;
     }
-    const result = await createDungeonInstance(userId, dungeonId, Number.isFinite(difficultyRank) ? difficultyRank : 1);
+    const result = await dungeonService.createDungeonInstance(
+      userId,
+      dungeonId,
+      Number.isFinite(difficultyRank) ? difficultyRank : 1
+    );
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -100,7 +96,7 @@ router.post('/instance/join', requireAuth, async (req: Request, res: Response) =
       res.status(400).json({ success: false, message: '缺少实例ID' });
       return;
     }
-    const result = await joinDungeonInstance(userId, instanceId);
+    const result = await dungeonService.joinDungeonInstance(userId, instanceId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -115,7 +111,7 @@ router.post('/instance/start', requireAuth, async (req: Request, res: Response) 
       res.status(400).json({ success: false, message: '缺少实例ID' });
       return;
     }
-    const result = await startDungeonInstance(userId, instanceId);
+    const result = await dungeonService.startDungeonInstance(userId, instanceId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -130,7 +126,7 @@ router.post('/instance/next', requireAuth, async (req: Request, res: Response) =
       res.status(400).json({ success: false, message: '缺少实例ID' });
       return;
     }
-    const result = await nextDungeonInstance(userId, instanceId);
+    const result = await dungeonService.nextDungeonInstance(userId, instanceId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
@@ -145,7 +141,7 @@ router.get('/instance/:id', requireAuth, async (req: Request, res: Response) => 
       res.status(400).json({ success: false, message: '缺少实例ID' });
       return;
     }
-    const result = await getDungeonInstance(userId, id);
+    const result = await dungeonService.getDungeonInstance(userId, id);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'dungeonRoutes 路由异常', error);
