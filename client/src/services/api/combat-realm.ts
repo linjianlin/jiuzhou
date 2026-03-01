@@ -140,8 +140,13 @@ export interface BattleActionResponse {
   };
 }
 
-export const battleAction = (battleId: string, skillId: string, targetIds: string[]): Promise<BattleActionResponse> => {
-  return api.post('/battle/action', { battleId, skillId, targetIds });
+export const battleAction = (
+  battleId: string,
+  skillId: string,
+  targetIds: string[],
+  config?: AxiosRequestConfig,
+): Promise<BattleActionResponse> => {
+  return api.post('/battle/action', { battleId, skillId, targetIds }, config);
 };
 
 export interface BattleStateResponse {

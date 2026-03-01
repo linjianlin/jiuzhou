@@ -4,6 +4,7 @@ import {
   abandonBattle,
   battleAction,
   getBattleState,
+  getUnifiedApiErrorMessage,
   startPVEBattle,
   type BattleLogEntryDto,
   type BattleRewardsDto,
@@ -227,9 +228,12 @@ const TRANSIENT_BATTLE_ACTION_ERRORS = new Set([
   '当前不是玩家行动回合',
   '不是玩家方的回合',
   '不是该单位的行动回合',
+  '被控制无法使用技能',
   '目标不是有效的敌方单位',
   '目标不是有效的友方单位',
 ]);
+
+const SILENT_BATTLE_ACTION_REQUEST_CONFIG = { meta: { autoErrorToast: false } } as const;
 
 const isTransientBattleActionError = (msg: unknown): boolean => {
   const text = String(msg ?? '').trim();
@@ -1074,7 +1078,17 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       }
 
       const actualSkillId = skillId === 'basic_attack' ? 'skill-normal-attack' : skillId;
-      const res = await battleAction(id, actualSkillId, targets);
+      const res = await battleAction(id, actualSkillId, targets, SILENT_BATTLE_ACTION_REQUEST_CONFIG).catch((error) => {
+        const errorText = getUnifiedApiErrorMessage(error, '行动失败');
+        if (isTransientBattleActionError(errorText)) {
+          void pollBattleState();
+        }
+        return null;
+      });
+      if (!res) {
+        return false;
+      }
+
       if (!res?.success || !res.data?.state) {
         if (isTransientBattleActionError(res?.message)) {
           // 自动战斗/组队并发时可能命中旧回合或旧目标，静默刷新状态即可。

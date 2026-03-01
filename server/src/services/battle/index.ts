@@ -12,6 +12,7 @@ import {
   type SkillData
 } from '../../battle/battleFactory.js';
 import { BattleEngine } from '../../battle/battleEngine.js';
+import { isFeared, isStunned } from '../../battle/modules/control.js';
 import type {
   BattleAttrs,
   BattleSkill,
@@ -1353,6 +1354,11 @@ async function tickBattle(battleId: string): Promise<void> {
     if (currentUnit.type === 'player') {
       if (state.currentTeam !== 'attacker') {
         // 防守方玩家单位当前仍由服务端推进，避免 PVP 在 defender 回合卡死。
+        engine.aiAction(true);
+        emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
+        return;
+      }
+      if (isStunned(currentUnit) || isFeared(currentUnit)) {
         engine.aiAction(true);
         emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
         return;

@@ -19,7 +19,7 @@ import { validateBattleState, validateSkillUse, validatePlayerAction } from './u
 import { addBuff, processRoundStartEffects, processRoundEndBuffs } from './modules/buff.js';
 import { executeSkill, getNormalAttack } from './modules/skill.js';
 import { makeAIDecision, selectTargets } from './modules/ai.js';
-import { isStunned } from './modules/control.js';
+import { isFeared, isStunned } from './modules/control.js';
 import { triggerSetBonusEffects } from './modules/setBonus.js';
 
 import type { BattleSkill } from './types.js';
@@ -270,7 +270,7 @@ export class BattleEngine {
     }
 
     // 检查是否被控制
-    if (isStunned(currentUnit)) {
+    if (isStunned(currentUnit) || isFeared(currentUnit)) {
       this.state.logs.push({
         type: 'action',
         round: this.state.roundCount,
