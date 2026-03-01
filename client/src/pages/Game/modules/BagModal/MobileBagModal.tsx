@@ -21,6 +21,7 @@ import {
   inventoryUseItem,
   refineInventoryItem,
   rerollInventoryAffixes,
+  getRerollCostPreview,
   removeInventoryItemsBatch,
   setInventoryItemLock,
   socketInventoryGem,
@@ -32,7 +33,6 @@ import type { InventoryInfoData } from '../../../../services/api';
 import {
   attrLabel,
   attrOrder,
-  buildAffixRerollCostPlan,
   buildBagItem,
   buildBatchDisassemblePayloadItems,
   buildEquipmentDetailLines,
@@ -539,6 +539,10 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   const [mode, setMode] = useState<GrowthMode>(initialMode);
   const [submitting, setSubmitting] = useState(false);
   const [rerollLockIndexes, setRerollLockIndexes] = useState<number[]>([]);
+  const [rerollCostTable, setRerollCostTable] = useState<{
+    rerollScrollItemDefId: string;
+    entries: Array<{ lockCount: number; rerollScrollQty: number; silverCost: number; spiritStoneCost: number }>;
+  } | null>(null);
   const [socketSlot, setSocketSlot] = useState<number | undefined>(undefined);
   const [selectedGemItemId, setSelectedGemItemId] = useState<number | undefined>(undefined);
 
@@ -565,6 +569,25 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
     const affixCount = item.equip?.affixes.length ?? 0;
     setRerollLockIndexes((prev) => normalizeAffixLockIndexes(prev, affixCount));
   }, [item.id, item.equip?.affixes.length]);
+  useEffect(() => {
+    if (!item.equip || item.category !== 'equipment') {
+      setRerollCostTable(null);
+      return;
+    }
+    let cancelled = false;
+    getRerollCostPreview(item.id).then((res) => {
+      if (cancelled) return;
+      if (res.success && res.data) {
+        setRerollCostTable({
+          rerollScrollItemDefId: res.data.rerollScrollItemDefId,
+          entries: res.data.costTable,
+        });
+      } else {
+        setRerollCostTable(null);
+      }
+    }).catch(() => { if (!cancelled) setRerollCostTable(null); });
+    return () => { cancelled = true; };
+  }, [item.id]);
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode, item.id]);
@@ -640,19 +663,19 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
     const normalizedLocks = normalizeAffixLockIndexes(rerollLockIndexes, affixes.length);
     const lockIndexes = normalizedLocks.slice(0, maxLockCount);
     const lockIndexSet = new Set(lockIndexes);
-    const costPlan = buildAffixRerollCostPlan(item.equip.equipReqRealm, lockIndexes.length);
+    const costEntry = rerollCostTable?.entries[lockIndexes.length];
 
     return {
       affixes,
       maxLockCount,
       lockIndexes,
       lockIndexSet,
-      rerollScrollQty: costPlan.rerollScrollQty,
-      rerollScrollOwned: bagItemCounts[costPlan.rerollScrollItemDefId] ?? 0,
-      spiritStoneCost: costPlan.spiritStoneCost,
-      silverCost: costPlan.silverCost,
+      rerollScrollQty: costEntry?.rerollScrollQty ?? 0,
+      rerollScrollOwned: bagItemCounts[rerollCostTable?.rerollScrollItemDefId ?? ''] ?? 0,
+      spiritStoneCost: costEntry?.spiritStoneCost ?? 0,
+      silverCost: costEntry?.silverCost ?? 0,
     };
-  }, [item, bagItemCounts, rerollLockIndexes]);
+  }, [item, bagItemCounts, rerollLockIndexes, rerollCostTable]);
 
   const socketState = useMemo(() => {
     if (!item.equip) return null;

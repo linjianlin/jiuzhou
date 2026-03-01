@@ -11,6 +11,7 @@ import {
   getInventoryItems,
   refineInventoryItem,
   rerollInventoryAffixes,
+  getRerollCostPreview,
   removeInventoryItemsBatch,
   setInventoryItemLock,
   socketInventoryGem,
@@ -23,7 +24,6 @@ import type { InventoryInfoData } from '../../../../services/api';
 import {
   attrLabel,
   attrOrder,
-  buildAffixRerollCostPlan,
   buildBagItem,
   buildBatchDisassemblePayloadItems,
   buildEquipmentDetailLines,
@@ -93,6 +93,10 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [socketSubmitting, setSocketSubmitting] = useState(false);
   const [rerollSubmitting, setRerollSubmitting] = useState(false);
   const [rerollLockIndexes, setRerollLockIndexes] = useState<number[]>([]);
+  const [rerollCostTable, setRerollCostTable] = useState<{
+    rerollScrollItemDefId: string;
+    entries: Array<{ lockCount: number; rerollScrollQty: number; silverCost: number; spiritStoneCost: number }>;
+  } | null>(null);
   const [socketSlot, setSocketSlot] = useState<number | undefined>(undefined);
   const [selectedGemItemId, setSelectedGemItemId] = useState<number | undefined>(undefined);
   const [batchOpen, setBatchOpen] = useState(false);
@@ -240,6 +244,26 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     const affixCount = activeItem?.equip?.affixes.length ?? 0;
     setRerollLockIndexes((prev) => normalizeAffixLockIndexes(prev, affixCount));
   }, [activeItem?.id, activeItem?.equip?.affixes.length, enhanceOpen]);
+
+  useEffect(() => {
+    if (!enhanceOpen || !activeItem?.equip || activeItem.category !== 'equipment') {
+      setRerollCostTable(null);
+      return;
+    }
+    let cancelled = false;
+    getRerollCostPreview(activeItem.id).then((res) => {
+      if (cancelled) return;
+      if (res.success && res.data) {
+        setRerollCostTable({
+          rerollScrollItemDefId: res.data.rerollScrollItemDefId,
+          entries: res.data.costTable,
+        });
+      } else {
+        setRerollCostTable(null);
+      }
+    }).catch(() => { if (!cancelled) setRerollCostTable(null); });
+    return () => { cancelled = true; };
+  }, [activeItem?.id, enhanceOpen]);
 
   const useQtyMax = useMemo(() => {
     if (!activeItem || activeItem.category !== 'consumable') return 1;
@@ -587,19 +611,19 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     const normalizedLocks = normalizeAffixLockIndexes(rerollLockIndexes, affixes.length);
     const lockIndexes = normalizedLocks.slice(0, maxLockCount);
     const lockIndexSet = new Set(lockIndexes);
-    const costPlan = buildAffixRerollCostPlan(activeItem.equip.equipReqRealm, lockIndexes.length);
+    const costEntry = rerollCostTable?.entries[lockIndexes.length];
 
     return {
       affixes,
       maxLockCount,
       lockIndexes,
       lockIndexSet,
-      rerollScrollQty: costPlan.rerollScrollQty,
-      rerollScrollOwned: bagItemCounts[costPlan.rerollScrollItemDefId] ?? 0,
-      spiritStoneCost: costPlan.spiritStoneCost,
-      silverCost: costPlan.silverCost,
+      rerollScrollQty: costEntry?.rerollScrollQty ?? 0,
+      rerollScrollOwned: bagItemCounts[rerollCostTable?.rerollScrollItemDefId ?? ''] ?? 0,
+      spiritStoneCost: costEntry?.spiritStoneCost ?? 0,
+      silverCost: costEntry?.silverCost ?? 0,
     };
-  }, [activeItem, bagItemCounts, rerollLockIndexes]);
+  }, [activeItem, bagItemCounts, rerollLockIndexes, rerollCostTable]);
 
   const handleEnhance = useCallback(async () => {
     if (!activeItem) return;

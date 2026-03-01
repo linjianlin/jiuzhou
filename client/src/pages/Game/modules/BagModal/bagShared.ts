@@ -9,7 +9,6 @@ import type {
   InventoryLocation,
   ItemDefLite,
 } from "../../../../services/api";
-import { getEquipRealmRankForReroll as getEquipRealmRankForRerollShared } from "../../shared/realm";
 import { buildEquipmentAffixDisplayText } from "../../shared/equipmentAffixText";
 import { formatAffixRollPercent, getAffixRollColor, getAffixRollPercent } from "../../shared/equipmentAffixRoll";
 import { formatSignedNumber, formatSignedPercent, formatPercent } from "../../shared/formatAttr";
@@ -393,23 +392,6 @@ export const coerceAffixes = (value: unknown): EquipmentAffix[] => {
 
 /* ───────── 词条洗炼 ───────── */
 
-export const REROLL_SCROLL_ITEM_DEF_ID = "scroll-003";
-const SILVER_GROWTH_BASE = 1.6;
-
-export interface AffixRerollCostPlan {
-  baseSilver: number;
-  silverCost: number;
-  multiplier: number;
-  lockCount: number;
-  rerollScrollItemDefId: string;
-  rerollScrollQty: number;
-  spiritStoneCost: number;
-}
-
-export const getEquipRealmRankForReroll = (realmRaw: unknown): number => {
-  return getEquipRealmRankForRerollShared(realmRaw);
-};
-
 export const normalizeAffixLockIndexes = (
   lockIndexes: number[] | null | undefined,
   affixCount?: number,
@@ -426,29 +408,6 @@ export const normalizeAffixLockIndexes = (
     out.push(idx);
   }
   return out.sort((a, b) => a - b);
-};
-
-export const buildAffixRerollCostPlan = (
-  realmRaw: unknown,
-  lockCountRaw: number,
-): AffixRerollCostPlan => {
-  const realmRank = Math.max(1, Math.min(99, getEquipRealmRankForReroll(realmRaw)));
-  const lockCount = Math.max(0, Math.min(30, Math.floor(Number(lockCountRaw) || 0)));
-  const lockMultiplier = Math.pow(2, lockCount);
-  const multiplier = Math.pow(SILVER_GROWTH_BASE, lockCount);
-  const baseSilver = Math.floor(realmRank * realmRank * 500);
-  const silverCost = Math.max(0, Math.floor(baseSilver * multiplier));
-  const spiritStoneCost =
-    lockCount > 0 ? Math.max(0, Math.floor((lockMultiplier - 1) * realmRank * 4)) : 0;
-  return {
-    baseSilver,
-    silverCost,
-    multiplier,
-    lockCount,
-    rerollScrollItemDefId: REROLL_SCROLL_ITEM_DEF_ID,
-    rerollScrollQty: lockMultiplier,
-    spiritStoneCost,
-  };
 };
 
 export const formatEquipmentAffixLine = (affix: EquipmentAffix): string => {

@@ -12,6 +12,7 @@ import {
   findEmptySlots,
   getInventoryInfo,
   getInventoryItems,
+  getRerollCostPreview,
   moveItem,
   refineEquipment,
   removeItemFromInventory,
@@ -29,6 +30,7 @@ export { gemSynthesisService } from '../../services/gemSynthesisService.js';
 export const inventoryService = {
   getInventoryInfo,
   getInventoryItems,
+  getRerollCostPreview,
   findEmptySlots,
   addItemToInventory,
   removeItemFromInventory,

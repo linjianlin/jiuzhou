@@ -41,6 +41,7 @@ import {
 import {
   buildAffixRerollCostPlan,
   normalizeAffixLockIndexes,
+  REROLL_SCROLL_ITEM_DEF_ID,
   validateAffixLockIndexes,
 } from "../equipmentAffixRerollRules.js";
 import {
@@ -2363,6 +2364,89 @@ await invalidateCharacterComputedCache(characterId);
       },
     };
   });
+};
+
+/**
+ * 洗炼消耗预览：返回指定装备所有锁定数（0..maxLockCount）对应的消耗表
+ * 不走事务/行锁，仅读取静态定义 + 词条数量
+ */
+export const getRerollCostPreview = async (
+  characterId: number,
+  itemInstanceId: number,
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: {
+    rerollScrollItemDefId: string;
+    maxLockCount: number;
+    costTable: Array<{
+      lockCount: number;
+      rerollScrollQty: number;
+      silverCost: number;
+      spiritStoneCost: number;
+    }>;
+  };
+}> => {
+  const row = await query(
+    `SELECT ii.item_def_id, ii.affixes, ii.locked, ii.location, ii.qty
+     FROM item_instance ii
+     WHERE ii.id = $1 AND ii.owner_character_id = $2
+     LIMIT 1`,
+    [itemInstanceId, characterId],
+  );
+  if (row.rows.length === 0) return { success: false, message: '物品不存在' };
+
+  const r = row.rows[0] as {
+    item_def_id: string;
+    affixes: unknown;
+    locked: boolean;
+    location: string;
+    qty: number;
+  };
+
+  const itemDef = getStaticItemDef(r.item_def_id);
+  if (!itemDef || itemDef.category !== 'equipment')
+    return { success: false, message: '该物品不可洗炼' };
+  if (r.locked) return { success: false, message: '物品已锁定' };
+  if (String(r.location) === 'auction')
+    return { success: false, message: '交易中的装备不可洗炼' };
+  if (!['bag', 'warehouse', 'equipped'].includes(String(r.location)))
+    return { success: false, message: '该物品当前位置不可洗炼' };
+
+  const affixes = parseGeneratedAffixesForReroll(r.affixes);
+  if (affixes.length <= 0)
+    return { success: false, message: '该装备没有可洗炼词条' };
+
+  const maxLockCount = Math.max(0, affixes.length - 1);
+  const equipReqRealm =
+    typeof itemDef.equip_req_realm === 'string' ? itemDef.equip_req_realm : null;
+
+  const costTable: Array<{
+    lockCount: number;
+    rerollScrollQty: number;
+    silverCost: number;
+    spiritStoneCost: number;
+  }> = [];
+
+  for (let n = 0; n <= maxLockCount; n++) {
+    const plan = buildAffixRerollCostPlan(equipReqRealm, n);
+    costTable.push({
+      lockCount: n,
+      rerollScrollQty: plan.rerollScrollQty,
+      silverCost: plan.silverCost,
+      spiritStoneCost: plan.spiritStoneCost,
+    });
+  }
+
+  return {
+    success: true,
+    message: 'ok',
+    data: {
+      rerollScrollItemDefId: REROLL_SCROLL_ITEM_DEF_ID,
+      maxLockCount,
+      costTable,
+    },
+  };
 };
 
 export const rerollEquipmentAffixes = async (

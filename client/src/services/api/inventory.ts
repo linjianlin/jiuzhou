@@ -247,6 +247,29 @@ export const rerollInventoryAffixes = (
   return api.post('/inventory/reroll-affixes', body);
 };
 
+export interface RerollCostPreviewEntry {
+  lockCount: number;
+  rerollScrollQty: number;
+  silverCost: number;
+  spiritStoneCost: number;
+}
+
+export interface RerollCostPreviewResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    rerollScrollItemDefId: string;
+    maxLockCount: number;
+    costTable: RerollCostPreviewEntry[];
+  };
+}
+
+export const getRerollCostPreview = (
+  itemId: number,
+): Promise<RerollCostPreviewResponse> => {
+  return api.post('/inventory/reroll-affixes/cost-preview', { itemId });
+};
+
 export interface SocketedGemEffectDto {
   attr: string;
   value: number;

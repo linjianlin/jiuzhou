@@ -642,6 +642,29 @@ router.post('/refine', async (req: Request, res: Response) => {
 });
 
 // ============================================
+// 洗炼消耗预览
+// POST /api/inventory/reroll-affixes/cost-preview
+// Body: { itemId: number }
+// ============================================
+router.post('/reroll-affixes/cost-preview', async (req: Request, res: Response) => {
+  try {
+    const characterId = req.characterId!;
+    const { itemId } = req.body as { itemId?: unknown };
+    if (itemId === undefined || itemId === null) {
+      return res.status(400).json({ success: false, message: '参数不完整' });
+    }
+    const parsedItemId = Number(itemId);
+    if (!Number.isInteger(parsedItemId) || parsedItemId <= 0) {
+      return res.status(400).json({ success: false, message: 'itemId参数错误' });
+    }
+    const result = await inventoryService.getRerollCostPreview(characterId, parsedItemId);
+    return res.json(result);
+  } catch (error) {
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
+  }
+});
+
+// ============================================
 // 装备词条洗炼
 // POST /api/inventory/reroll-affixes
 // Body: { itemId: number, lockIndexes?: number[] }
