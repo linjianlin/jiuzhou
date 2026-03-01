@@ -13,6 +13,7 @@ import { getTransactionClient, query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from '../battle/index.js';
+import { runDungeonStartFlow } from './shared/startFlow.js';
 import { itemService } from '../itemService.js';
 import { sendSystemMail, type MailAttachItem } from '../mailService.js';
 import { recordDungeonClearEvent } from '../taskService.js';
@@ -1485,27 +1486,6 @@ export const startDungeonInstance = async (
       }
     }
 
-    for (const p of participants) {
-      await incEntryCount(p.characterId, inst.dungeon_id);
-    }
-
-    if (staminaCost > 0) {
-      for (const p of participants) {
-        const participantLabel = buildParticipantLabel(p, participantNicknameMap);
-        const updRes = await query(
-          `UPDATE characters
-              SET stamina = stamina - $1,
-                  stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
-                  updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND stamina >= $1`,
-          [staminaCost, p.characterId, STAMINA_MAX]
-        );
-        if ((updRes.rowCount ?? 0) === 0) {
-          return { success: false, message: `${participantLabel}体力扣除失败` };
-        }
-      }
-    }
-
     const stageWave = await getStageAndWave(inst.difficulty_id, 1, 1);
     if (!stageWave.ok) {
       return { success: false, message: stageWave.message };
@@ -1516,21 +1496,42 @@ export const startDungeonInstance = async (
       return { success: false, message: '该波次未配置怪物' };
     }
 
-    await query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
-      instanceId,
-    ]);
+    return runDungeonStartFlow({
+      startBattle: () => startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true }),
+      commitOnBattleStarted: async ({ battleId, state }) => {
+        for (const p of participants) {
+          await incEntryCount(p.characterId, inst.dungeon_id);
+        }
 
-    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true });
-    if (!battleRes.success || !battleRes.data?.battleId) {
-      return { success: false, message: battleRes.message || '开启战斗失败' };
-    }
+        if (staminaCost > 0) {
+          for (const p of participants) {
+            const participantLabel = buildParticipantLabel(p, participantNicknameMap);
+            const updRes = await query(
+              `UPDATE characters
+                  SET stamina = stamina - $1,
+                      stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
+                      updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2 AND stamina >= $1`,
+              [staminaCost, p.characterId, STAMINA_MAX]
+            );
+            if ((updRes.rowCount ?? 0) === 0) {
+              return { success: false, message: `${participantLabel}体力扣除失败` };
+            }
+          }
+        }
 
-    const battleId = String(battleRes.data.battleId);
-    await query(
-      `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
-      [battleId, instanceId]
-    );
-    return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
+        await query(
+          `UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`,
+          [instanceId]
+        );
+
+        await query(
+          `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
+          [battleId, instanceId]
+        );
+        return { success: true, data: { instanceId, status: 'running', battleId, state } };
+      },
+    });
   } catch (error) {
     console.error('开始秘境失败:', error);
     return { success: false, message: '开始秘境失败' };
