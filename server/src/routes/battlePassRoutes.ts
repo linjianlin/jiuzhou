@@ -1,13 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { withRouteError } from '../middleware/routeError.js';
 import { requireAuth } from '../middleware/auth.js';
-import {
-  getBattlePassTasksOverview,
-  getBattlePassStatus,
-  getBattlePassRewards,
-  claimBattlePassReward,
-  completeBattlePassTask,
-} from '../services/battlePassService.js';
+import { battlePassService } from '../services/battlePassService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 
 const router = Router();
@@ -17,7 +11,7 @@ router.get('/tasks', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
     const seasonId = typeof req.query.seasonId === 'string' ? req.query.seasonId : undefined;
-    const data = await getBattlePassTasksOverview(userId, seasonId);
+    const data = await battlePassService.getBattlePassTasksOverview(userId, seasonId);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
     return withRouteError(res, 'battlePassRoutes 路由异常', error);
@@ -31,7 +25,7 @@ router.post('/tasks/:taskId/complete', requireAuth, async (req: Request, res: Re
     if (!taskId.trim()) {
       return res.status(400).json({ success: false, message: '任务ID无效' });
     }
-    const result = await completeBattlePassTask(userId, taskId);
+    const result = await battlePassService.completeBattlePassTask(userId, taskId);
     if (!result.success) {
       return res.status(400).json(result);
     }
@@ -44,7 +38,7 @@ router.post('/tasks/:taskId/complete', requireAuth, async (req: Request, res: Re
 router.get('/status', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
-    const data = await getBattlePassStatus(userId);
+    const data = await battlePassService.getBattlePassStatus(userId);
     if (!data) return res.status(404).json({ success: false, message: '战令数据不存在' });
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
@@ -55,7 +49,7 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
 router.get('/rewards', requireAuth, async (req: Request, res: Response) => {
   try {
     const seasonId = typeof req.query.seasonId === 'string' ? req.query.seasonId : undefined;
-    const data = await getBattlePassRewards(seasonId);
+    const data = await battlePassService.getBattlePassRewards(seasonId);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
     return withRouteError(res, 'battlePassRoutes 路由异常', error);
@@ -72,7 +66,7 @@ router.post('/claim', requireAuth, async (req: Request, res: Response) => {
     if (track !== 'free' && track !== 'premium') {
       return res.status(400).json({ success: false, message: '奖励轨道参数无效' });
     }
-    const result = await claimBattlePassReward(userId, level, track);
+    const result = await battlePassService.claimBattlePassReward(userId, level, track);
     if (!result.success) {
       return res.status(400).json(result);
     }

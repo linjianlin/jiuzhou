@@ -6,10 +6,11 @@
  * 3. 缓存背包容量信息
  * 4. 智能堆叠合并
  */
-import { query, withTransaction } from "../../config/database.js";
+import { query, withTransaction, getTransactionClient } from "../../config/database.js";
 import type { PoolClient } from "pg";
 import { randomInt } from "crypto";
 import { lockCharacterInventoryMutexTx } from "../inventoryMutex.js";
+import { Transactional } from "../../decorators/transactional.js";
 import {
   getCharacterComputedByCharacterId,
   invalidateCharacterComputedCache,
@@ -3416,3 +3417,221 @@ await lockCharacterInventoryMutexTx(client, characterId);
 return { success: true, message: "整理完成" };
   });
 };
+
+/**
+ * 背包服务类（使用 @Transactional 装饰器）
+ *
+ * 作用：将原有的函数式 API 包装为类方法，使用 @Transactional 装饰器管理事务
+ * 不做：不修改原有函数逻辑
+ *
+ * 数据流：
+ * - 所有写操作方法使用 @Transactional 保证原子性
+ * - 读操作方法直接调用原有函数
+ *
+ * 边界条件：
+ * 1) @Transactional 装饰器自动处理事务开启、提交与回滚
+ * 2) 保持向后兼容，原有命名导出仍然可用
+ */
+class InventoryService {
+  // 读操作（无需事务）
+  async getInventoryInfo(characterId: number): Promise<InventoryInfo> {
+    return getInventoryInfo(characterId);
+  }
+
+  async getInventoryItems(
+    characterId: number,
+    location: InventoryLocation = "bag",
+    page: number = 1,
+    pageSize: number = 100,
+  ): Promise<{ items: InventoryItem[]; total: number }> {
+    return getInventoryItems(characterId, location, page, pageSize);
+  }
+
+  // 写操作（使用 @Transactional）
+  @Transactional
+  async addItemToInventory(
+    characterId: number,
+    userId: number,
+    itemDefId: string,
+    qty: number,
+    options: {
+      location?: SlottedInventoryLocation;
+      bindType?: string;
+      affixes?: any;
+      obtainedFrom?: string;
+    } = {},
+  ): Promise<{ success: boolean; message: string; itemIds?: number[] }> {
+    const client = getTransactionClient()!;
+    return await addItemToInventoryTx(
+      client,
+      characterId,
+      userId,
+      itemDefId,
+      qty,
+      options,
+    );
+  }
+
+  @Transactional
+  async removeItemFromInventory(
+    characterId: number,
+    itemInstanceId: number,
+    qty: number = 1,
+  ): Promise<{ success: boolean; message: string }> {
+    return await removeItemFromInventory(characterId, itemInstanceId, qty);
+  }
+
+  @Transactional
+  async setItemLocked(
+    characterId: number,
+    itemInstanceId: number,
+    locked: boolean,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    data?: { itemId: number; locked: boolean };
+  }> {
+    return await setItemLocked(characterId, itemInstanceId, locked);
+  }
+
+  @Transactional
+  async moveItem(
+    characterId: number,
+    itemInstanceId: number,
+    targetLocation: SlottedInventoryLocation,
+    targetSlot?: number,
+  ): Promise<{ success: boolean; message: string }> {
+    return await moveItem(characterId, itemInstanceId, targetLocation, targetSlot);
+  }
+
+  @Transactional
+  async equipItem(
+    characterId: number,
+    userId: number,
+    itemInstanceId: number,
+  ): Promise<{ success: boolean; message: string }> {
+    return await equipItem(characterId, userId, itemInstanceId);
+  }
+
+  @Transactional
+  async unequipItem(
+    characterId: number,
+    itemInstanceId: number,
+    options: { targetLocation?: SlottedInventoryLocation } = {},
+  ): Promise<{ success: boolean; message: string }> {
+    return await unequipItem(characterId, itemInstanceId, options);
+  }
+
+  @Transactional
+  async enhanceEquipment(
+    characterId: number,
+    userId: number,
+    itemInstanceId: number,
+  ): Promise<{ success: boolean; message: string; newLevel?: number }> {
+    return await enhanceEquipment(characterId, userId, itemInstanceId);
+  }
+
+  @Transactional
+  async refineEquipment(
+    characterId: number,
+    userId: number,
+    itemInstanceId: number,
+  ): Promise<{ success: boolean; message: string; newLevel?: number }> {
+    return await refineEquipment(characterId, userId, itemInstanceId);
+  }
+
+  @Transactional
+  async rerollEquipmentAffixes(
+    characterId: number,
+    userId: number,
+    itemInstanceId: number,
+    lockIndexes: number[] = [],
+  ): Promise<{
+    success: boolean;
+    message: string;
+    newAffixes?: GeneratedAffix[];
+  }> {
+    return await rerollEquipmentAffixes(characterId, userId, itemInstanceId, lockIndexes);
+  }
+
+  @Transactional
+  async socketEquipment(
+    characterId: number,
+    equipmentInstanceId: number,
+    gemInstanceId: number,
+    socketSlot: number,
+  ): Promise<{ success: boolean; message: string }> {
+    return await socketEquipment(
+      characterId,
+      equipmentInstanceId,
+      gemInstanceId,
+      socketSlot,
+    );
+  }
+
+  @Transactional
+  async expandInventory(
+    characterId: number,
+    location: SlottedInventoryLocation,
+    expandSize: number = 10,
+  ): Promise<{ success: boolean; message: string; newCapacity?: number }> {
+    return await expandInventory(characterId, location, expandSize);
+  }
+
+  @Transactional
+  async disassembleEquipment(
+    characterId: number,
+    userId: number,
+    itemInstanceId: number,
+    qty: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    rewards?: any;
+  }> {
+    return await disassembleEquipment(characterId, userId, itemInstanceId, qty);
+  }
+
+  @Transactional
+  async disassembleEquipmentBatch(
+    characterId: number,
+    userId: number,
+    items: Array<{ itemId: number; qty: number }>,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    disassembledCount?: number;
+    disassembledQtyTotal?: number;
+    skippedLockedCount?: number;
+    skippedLockedQtyTotal?: number;
+    rewards?: any;
+  }> {
+    return await disassembleEquipmentBatch(characterId, userId, items);
+  }
+
+  @Transactional
+  async removeItemsBatch(
+    characterId: number,
+    itemInstanceIds: number[],
+  ): Promise<{
+    success: boolean;
+    message: string;
+    removedCount?: number;
+    removedQtyTotal?: number;
+    skippedLockedCount?: number;
+    skippedLockedQtyTotal?: number;
+  }> {
+    return await removeItemsBatch(characterId, itemInstanceIds);
+  }
+
+  @Transactional
+  async sortInventory(
+    characterId: number,
+    location: SlottedInventoryLocation = "bag",
+  ): Promise<{ success: boolean; message: string }> {
+    return await sortInventory(characterId, location);
+  }
+}
+
+// 单例导出
+export const inventoryService = new InventoryService();

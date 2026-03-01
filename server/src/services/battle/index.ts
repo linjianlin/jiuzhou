@@ -22,7 +22,7 @@ import type {
   SkillEffect,
 } from '../../battle/types.js';
 import {
-  distributeBattleRewards,
+  battleDropService,
   type BattleParticipant,
   type DistributeResult
 } from '../battleDropService.js';
@@ -33,7 +33,7 @@ import {
 import { getRoomInMap } from '../mapService.js';
 import { getGameServer } from '../../game/gameServer.js';
 import { recordKillMonsterEvent } from '../taskService.js';
-import { getBattleSkills } from '../characterTechniqueService.js';
+import { characterTechniqueService } from '../characterTechniqueService.js';
 import { getArenaStatus } from '../arenaService.js';
 import type { PoolClient } from 'pg';
 import {
@@ -58,7 +58,7 @@ import {
   type SkillDefConfig,
 } from '../staticConfigLoader.js';
 import { normalizeRealmKeepingUnknown } from '../shared/realmRules.js';
-import { getActiveIdleSession } from '../idle/idleSessionService.js';
+import { idleSessionService } from '../idle/idleSessionService.js';
 
 // 活跃战斗缓存
 const activeBattles = new Map<string, BattleEngine>();
@@ -105,7 +105,7 @@ const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
  * 返回：null 表示未挂机，可继续；非 null 为拒绝结果，直接 return 即可。
  */
 async function rejectIfIdling(characterId: number): Promise<BattleResult | null> {
-  const idleSession = await getActiveIdleSession(characterId);
+  const idleSession = await idleSessionService.getActiveIdleSession(characterId);
   if (idleSession) {
     return { success: false, message: '离线挂机中，无法发起战斗' };
   }
@@ -1116,7 +1116,7 @@ async function attachSetBonusEffectsToCharacterData<T extends CharacterData>(
 async function getCharacterBattleSkillData(characterId: number): Promise<SkillData[]> {
   if (!Number.isFinite(characterId) || characterId <= 0) return [];
 
-  const battleSkillsRes = await getBattleSkills(characterId);
+  const battleSkillsRes = await characterTechniqueService.getBattleSkills(characterId);
   if (!battleSkillsRes.success || !battleSkillsRes.data) return [];
 
   const orderedSkillSlots = battleSkillsRes.data
@@ -2020,7 +2020,7 @@ async function finishBattle(
 
   if (state.battleType === 'pve') {
     if (isVictory) {
-      dropResult = await distributeBattleRewards(monsters, participants, true, { isDungeonBattle });
+      dropResult = await battleDropService.distributeBattleRewards(monsters, participants, true, { isDungeonBattle });
 
       for (const participantUserId of participantUserIds) {
         const computed = await getCharacterComputedByUserId(participantUserId);

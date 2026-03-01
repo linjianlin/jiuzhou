@@ -27,7 +27,8 @@
  */
 
 import { randomUUID } from 'crypto';
-import { query, withTransaction } from '../../config/database.js';
+import { query } from '../../config/database.js';
+import { Transactional } from '../../decorators/transactional.js';
 import { redis } from '../../config/redis.js';
 import { buildCharacterBattleSnapshot } from '../battle/index.js';
 import type {
@@ -111,7 +112,7 @@ async function releaseStartLock(lockKey: string, lockToken: string): Promise<voi
 }
 
 // ============================================
-// 公开接口
+// 类型定义
 // ============================================
 
 export interface StartIdleSessionParams {
@@ -128,81 +129,100 @@ export interface StartIdleSessionResult {
   existingSessionId?: string;
 }
 
+export interface StopIdleSessionResult {
+  success: boolean;
+  error?: string;
+  /** 本次请求命中的会话 ID 列表（可能为 1 个；异常并发场景可能 > 1） */
+  sessionIds?: string[];
+}
+
+// ============================================
+// IdleSessionService Class
+// ============================================
+
 /**
- * 启动挂机会话
+ * IdleSessionService — 挂机会话生命周期管理 class
  *
- * 步骤：
- *   1. Redis SET NX EX 互斥锁检查（原子性，防并发）
- *   2. 事务外：构建角色快照（避免长事务）
- *   3. 事务内：角色行锁 + 会话写入
- *   4. 返回新会话 ID
- *
- * 失败场景：
- *   - 已有活跃会话 → success: false, error: '已有活跃挂机会话', existingSessionId
- *   - 角色不存在 → success: false, error: '角色不存在'
+ * 作用：
+ *   管理 Idle_Session 的完整生命周期：启动、终止、查询、历史记录、回放数据。
+ *   使用 @Transactional 装饰器自动管理事务。
  */
-export async function startIdleSession(params: StartIdleSessionParams): Promise<StartIdleSessionResult> {
-  const { characterId, config } = params;
+class IdleSessionService {
+  /**
+   * 启动挂机会话
+   *
+   * 步骤：
+   *   1. Redis SET NX EX 互斥锁检查（原子性，防并发）
+   *   2. 事务外：构建角色快照（避免长事务）
+   *   3. 事务内：角色行锁 + 会话写入
+   *   4. 返回新会话 ID
+   *
+   * 失败场景：
+   *   - 已有活跃会话 → success: false, error: '已有活跃挂机会话', existingSessionId
+   *   - 角色不存在 → success: false, error: '角色不存在'
+   */
+  @Transactional
+  async startIdleSession(params: StartIdleSessionParams): Promise<StartIdleSessionResult> {
+    const { characterId, config } = params;
 
-  // 0. 组队中禁止挂机：查询 team_members 表判断角色是否在队伍中
-  const teamCheck = await query(
-    `SELECT team_id FROM team_members WHERE character_id = $1 LIMIT 1`,
-    [characterId]
-  );
-  if (teamCheck.rows.length > 0) {
-    return { success: false, error: '组队中无法进行离线挂机，请先退出队伍' };
-  }
-
-  const lockKey = idleLockKey(characterId);
-  const lockToken = `idle-start:${randomUUID()}`;
-  const lockTtlSeconds = idleLockTtlSeconds(config.maxDurationMs);
-
-  // 1. 尝试获取 Redis 互斥锁（SET NX EX）
-  let lockAcquired = await tryAcquireStartLock(lockKey, lockToken, lockTtlSeconds);
-  if (!lockAcquired) {
-    const existingSessionId = await findActiveSessionId(characterId);
-    if (existingSessionId) {
-      return { success: false, error: '已有活跃挂机会话', existingSessionId };
+    // 0. 组队中禁止挂机：查询 team_members 表判断角色是否在队伍中
+    const teamCheck = await query(
+      `SELECT team_id FROM team_members WHERE character_id = $1 LIMIT 1`,
+      [characterId]
+    );
+    if (teamCheck.rows.length > 0) {
+      return { success: false, error: '组队中无法进行离线挂机，请先退出队伍' };
     }
 
-    // 无活跃会话但拿不到锁：判定为陈旧锁，先做 compare-and-del 再重试一次。
-    const currentLockValue = await redis.get(lockKey);
-    if (currentLockValue) {
-      await compareAndDeleteLock(lockKey, currentLockValue);
-    }
+    const lockKey = idleLockKey(characterId);
+    const lockToken = `idle-start:${randomUUID()}`;
+    const lockTtlSeconds = idleLockTtlSeconds(config.maxDurationMs);
 
-    lockAcquired = await tryAcquireStartLock(lockKey, lockToken, lockTtlSeconds);
+    // 1. 尝试获取 Redis 互斥锁（SET NX EX）
+    let lockAcquired = await tryAcquireStartLock(lockKey, lockToken, lockTtlSeconds);
     if (!lockAcquired) {
-      const raceSessionId = await findActiveSessionId(characterId);
-      if (raceSessionId) {
-        return { success: false, error: '已有活跃挂机会话', existingSessionId: raceSessionId };
+      const existingSessionId = await findActiveSessionId(characterId);
+      if (existingSessionId) {
+        return { success: false, error: '已有活跃挂机会话', existingSessionId };
       }
-      return { success: false, error: '挂机会话正在初始化，请稍后重试' };
+
+      // 无活跃会话但拿不到锁：判定为陈旧锁，先做 compare-and-del 再重试一次。
+      const currentLockValue = await redis.get(lockKey);
+      if (currentLockValue) {
+        await compareAndDeleteLock(lockKey, currentLockValue);
+      }
+
+      lockAcquired = await tryAcquireStartLock(lockKey, lockToken, lockTtlSeconds);
+      if (!lockAcquired) {
+        const raceSessionId = await findActiveSessionId(characterId);
+        if (raceSessionId) {
+          return { success: false, error: '已有活跃挂机会话', existingSessionId: raceSessionId };
+        }
+        return { success: false, error: '挂机会话正在初始化，请稍后重试' };
+      }
     }
-  }
 
-  // 2. 快照构建放在事务外，避免长事务占用连接与行锁。
-  const snapshotData = await buildCharacterBattleSnapshot(characterId);
-  if (!snapshotData) {
-    await releaseStartLock(lockKey, lockToken);
-    return { success: false, error: '角色数据加载失败' };
-  }
+    // 2. 快照构建放在事务外，避免长事务占用连接与行锁。
+    const snapshotData = await buildCharacterBattleSnapshot(characterId);
+    if (!snapshotData) {
+      await releaseStartLock(lockKey, lockToken);
+      return { success: false, error: '角色数据加载失败' };
+    }
 
-  const snapshot: SessionSnapshot = {
-    characterId,
-    nickname: snapshotData.nickname,
-    realm: snapshotData.realm,
-    baseAttrs: snapshotData.baseAttrs,
-    skills: snapshotData.skills,
-    setBonusEffects: snapshotData.setBonusEffects,
-    autoSkillPolicy: config.autoSkillPolicy,
-    targetMonsterDefId: config.targetMonsterDefId,
-  };
+    const snapshot: SessionSnapshot = {
+      characterId,
+      nickname: snapshotData.nickname,
+      realm: snapshotData.realm,
+      baseAttrs: snapshotData.baseAttrs,
+      skills: snapshotData.skills,
+      setBonusEffects: snapshotData.setBonusEffects,
+      autoSkillPolicy: config.autoSkillPolicy,
+      targetMonsterDefId: config.targetMonsterDefId,
+    };
 
-  try {
-    return await withTransaction(async (client) => {
+    try {
       // 3. 角色行锁（防止会话创建期间角色被并发变更）
-      const charRes = await client.query(
+      const charRes = await query(
         `SELECT id FROM characters WHERE id = $1 FOR UPDATE`,
         [characterId]
       );
@@ -213,7 +233,7 @@ export async function startIdleSession(params: StartIdleSessionParams): Promise<
 
       // 4. 写入 idle_sessions
       const sessionId = randomUUID();
-      await client.query(
+      await query(
         `INSERT INTO idle_sessions (
           id, character_id, status, map_id, room_id, max_duration_ms,
           session_snapshot, total_battles, win_count, lose_count,
@@ -234,94 +254,86 @@ export async function startIdleSession(params: StartIdleSessionParams): Promise<
           JSON.stringify(snapshot),
         ]
       );
-  
+
       return { success: true, sessionId };
-    });
-  } catch (err) {
-    await releaseStartLock(lockKey, lockToken);
-    throw err;
+    } catch (err) {
+      await releaseStartLock(lockKey, lockToken);
+      throw err;
+    }
   }
-}
 
-/**
- * 终止挂机会话（标记为 stopping）
- *
- * 只将 status 改为 stopping，执行循环在下一场战斗完成后检查此状态并自然退出。
- * 若会话不存在或不属于该角色，返回 success: false。
- */
-export interface StopIdleSessionResult {
-  success: boolean;
-  error?: string;
-  /** 本次请求命中的会话 ID 列表（可能为 1 个；异常并发场景可能 > 1） */
-  sessionIds?: string[];
-}
+  /**
+   * 终止挂机会话（标记为 stopping）
+   *
+   * 只将 status 改为 stopping，执行循环在下一场战斗完成后检查此状态并自然退出。
+   * 若会话不存在或不属于该角色，返回 success: false。
+   */
+  async stopIdleSession(characterId: number): Promise<StopIdleSessionResult> {
+    const res = await query(
+      `UPDATE idle_sessions
+       SET status = 'stopping', updated_at = NOW()
+       WHERE character_id = $1 AND status IN ('active', 'stopping')
+       RETURNING id`,
+      [characterId]
+    );
 
-export async function stopIdleSession(characterId: number): Promise<StopIdleSessionResult> {
-  const res = await query(
-    `UPDATE idle_sessions
-     SET status = 'stopping', updated_at = NOW()
-     WHERE character_id = $1 AND status IN ('active', 'stopping')
-     RETURNING id`,
-    [characterId]
-  );
-
-  if (res.rows.length === 0) {
-    return { success: false, error: '没有活跃的挂机会话' };
+    if (res.rows.length === 0) {
+      return { success: false, error: '没有活跃的挂机会话' };
+    }
+    return { success: true, sessionIds: res.rows.map((row) => String(row.id)) };
   }
-  return { success: true, sessionIds: res.rows.map((row) => String(row.id)) };
-}
 
-/**
- * 查询当前活跃会话（status IN ('active', 'stopping')）
- * 用于断线续战和状态同步。
- */
-export async function getActiveIdleSession(characterId: number): Promise<IdleSessionRow | null> {
-  const res = await query(
-    `SELECT * FROM idle_sessions
-     WHERE character_id = $1 AND status IN ('active', 'stopping')
-     ORDER BY started_at DESC
-     LIMIT 1`,
-    [characterId]
-  );
+  /**
+   * 查询当前活跃会话（status IN ('active', 'stopping')）
+   * 用于断线续战和状态同步。
+   */
+  async getActiveIdleSession(characterId: number): Promise<IdleSessionRow | null> {
+    const res = await query(
+      `SELECT * FROM idle_sessions
+       WHERE character_id = $1 AND status IN ('active', 'stopping')
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [characterId]
+    );
 
-  if (res.rows.length === 0) return null;
-  return rowToIdleSessionRow(res.rows[0] as Record<string, unknown>);
-}
+    if (res.rows.length === 0) return null;
+    return rowToIdleSessionRow(res.rows[0] as Record<string, unknown>);
+  }
 
-/**
- * 按会话 ID 查询会话（用于执行循环做精确终止判定）
- */
-export async function getIdleSessionById(sessionId: string): Promise<IdleSessionRow | null> {
-  const res = await query(
-    `SELECT * FROM idle_sessions
-     WHERE id = $1
-     LIMIT 1`,
-    [sessionId]
-  );
+  /**
+   * 按会话 ID 查询会话（用于执行循环做精确终止判定）
+   */
+  async getIdleSessionById(sessionId: string): Promise<IdleSessionRow | null> {
+    const res = await query(
+      `SELECT * FROM idle_sessions
+       WHERE id = $1
+       LIMIT 1`,
+      [sessionId]
+    );
 
-  if (res.rows.length === 0) return null;
-  return rowToIdleSessionRow(res.rows[0] as Record<string, unknown>);
-}
+    if (res.rows.length === 0) return null;
+    return rowToIdleSessionRow(res.rows[0] as Record<string, unknown>);
+  }
 
-/**
- * 查询历史记录（最近 30 条，按 started_at 倒序）
- *
- * 超过 30 条时自动删除最旧记录（在同一事务内完成，保证原子性）。
- */
-export async function getIdleHistory(characterId: number): Promise<IdleSessionRow[]> {
-  return await withTransaction(async (client) => {
-// 查询总数
-    const countRes = await client.query(
+  /**
+   * 查询历史记录（最近 30 条，按 started_at 倒序）
+   *
+   * 超过 30 条时自动删除最旧记录（在同一事务内完成，保证原子性）。
+   */
+  @Transactional
+  async getIdleHistory(characterId: number): Promise<IdleSessionRow[]> {
+    // 查询总数
+    const countRes = await query(
       `SELECT COUNT(*) AS cnt FROM idle_sessions
        WHERE character_id = $1 AND status IN ('completed', 'interrupted')`,
       [characterId]
     );
     const total = Number(countRes.rows[0]?.cnt ?? 0);
-  
+
     // 超出上限时删除最旧记录
     if (total > MAX_HISTORY_COUNT) {
       const deleteCount = total - MAX_HISTORY_COUNT;
-      await client.query(
+      await query(
         `DELETE FROM idle_sessions
          WHERE id IN (
            SELECT id FROM idle_sessions
@@ -332,9 +344,9 @@ export async function getIdleHistory(characterId: number): Promise<IdleSessionRo
         [characterId, deleteCount]
       );
     }
-  
+
     // 查询最近 30 条（倒序）
-    const res = await client.query(
+    const res = await query(
       `SELECT * FROM idle_sessions
        WHERE character_id = $1 AND status IN ('completed', 'interrupted')
        ORDER BY started_at DESC
@@ -342,86 +354,109 @@ export async function getIdleHistory(characterId: number): Promise<IdleSessionRo
       [characterId, MAX_HISTORY_COUNT]
     );
     return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
-  });
-}
-
-/**
- * 标记会话为已查看（幂等：已设置 viewed_at 时不重复更新）
- *
- * 权限检查：通过 character_id 过滤，防止越权访问。
- */
-export async function markSessionViewed(sessionId: string, characterId: number): Promise<void> {
-  await query(
-    `UPDATE idle_sessions
-     SET viewed_at = NOW(), updated_at = NOW()
-     WHERE id = $1 AND character_id = $2 AND viewed_at IS NULL`,
-    [sessionId, characterId]
-  );
-}
-
-/**
- * 查询会话内所有 Battle_Batch（用于回放，按 batch_index 升序）
- *
- * 权限检查：通过 session_id + character_id 联查，防止越权访问。
- */
-export async function getSessionBatches(sessionId: string, characterId: number): Promise<IdleBattleRow[]> {
-  const res = await query(
-    `SELECT b.* FROM idle_battle_batches b
-     JOIN idle_sessions s ON s.id = b.session_id
-     WHERE b.session_id = $1 AND s.character_id = $2
-     ORDER BY b.batch_index ASC`,
-    [sessionId, characterId]
-  );
-
-  return (res.rows as Record<string, unknown>[]).map(rowToIdleBattleRow);
-}
-
-/**
- * 释放 Redis 互斥锁（由 IdleBattleExecutor 在会话结束时调用）
- */
-export async function releaseIdleLock(characterId: number): Promise<void> {
-  await redis.del(idleLockKey(characterId));
-}
-
-/**
- * 将会话标记为已完成（由 IdleBattleExecutor 调用）
- *
- * 同时更新 ended_at，供历史记录展示。
- */
-export async function completeIdleSession(
-  sessionId: string,
-  status: 'completed' | 'interrupted'
-): Promise<void> {
-  await query(
-    `UPDATE idle_sessions
-     SET status = $2, ended_at = NOW(), updated_at = NOW()
-     WHERE id = $1`,
-    [sessionId, status]
-  );
-}
-
-/**
- * 累加更新会话汇总字段（由 IdleBattleExecutor 在每场战斗完成后调用）
- *
- * 使用 SQL 原子加法，避免并发覆盖。
- * rewardItems 合并逻辑：将新物品追加到现有 JSONB 数组（按 itemDefId 合并数量）。
- */
-export async function updateSessionSummary(
-  sessionId: string,
-  delta: {
-    totalBattlesDelta: number;
-    winDelta: number;
-    loseDelta: number;
-    expDelta: number;
-    silverDelta: number;
-    newItems: RewardItemEntry[];
-    bagFullFlag?: boolean;
   }
-): Promise<void> {
-  const { totalBattlesDelta, winDelta, loseDelta, expDelta, silverDelta, newItems, bagFullFlag } = delta;
 
-  if (newItems.length === 0 && bagFullFlag === undefined) {
-    // 无物品更新，直接用原子加法
+  /**
+   * 标记会话为已查看（幂等：已设置 viewed_at 时不重复更新）
+   *
+   * 权限检查：通过 character_id 过滤，防止越权访问。
+   */
+  async markSessionViewed(sessionId: string, characterId: number): Promise<void> {
+    await query(
+      `UPDATE idle_sessions
+       SET viewed_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND character_id = $2 AND viewed_at IS NULL`,
+      [sessionId, characterId]
+    );
+  }
+
+  /**
+   * 查询会话内所有 Battle_Batch（用于回放，按 batch_index 升序）
+   *
+   * 权限检查：通过 session_id + character_id 联查，防止越权访问。
+   */
+  async getSessionBatches(sessionId: string, characterId: number): Promise<IdleBattleRow[]> {
+    const res = await query(
+      `SELECT b.* FROM idle_battle_batches b
+       JOIN idle_sessions s ON s.id = b.session_id
+       WHERE b.session_id = $1 AND s.character_id = $2
+       ORDER BY b.batch_index ASC`,
+      [sessionId, characterId]
+    );
+
+    return (res.rows as Record<string, unknown>[]).map(rowToIdleBattleRow);
+  }
+
+  /**
+   * 释放 Redis 互斥锁（由 IdleBattleExecutor 在会话结束时调用）
+   */
+  async releaseIdleLock(characterId: number): Promise<void> {
+    await redis.del(idleLockKey(characterId));
+  }
+
+  /**
+   * 将会话标记为已完成（由 IdleBattleExecutor 调用）
+   *
+   * 同时更新 ended_at，供历史记录展示。
+   */
+  async completeIdleSession(
+    sessionId: string,
+    status: 'completed' | 'interrupted'
+  ): Promise<void> {
+    await query(
+      `UPDATE idle_sessions
+       SET status = $2, ended_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [sessionId, status]
+    );
+  }
+
+  /**
+   * 累加更新会话汇总字段（由 IdleBattleExecutor 在每场战斗完成后调用）
+   *
+   * 使用 SQL 原子加法，避免并发覆盖。
+   * rewardItems 合并逻辑：将新物品追加到现有 JSONB 数组（按 itemDefId 合并数量）。
+   */
+  async updateSessionSummary(
+    sessionId: string,
+    delta: {
+      totalBattlesDelta: number;
+      winDelta: number;
+      loseDelta: number;
+      expDelta: number;
+      silverDelta: number;
+      newItems: RewardItemEntry[];
+      bagFullFlag?: boolean;
+    }
+  ): Promise<void> {
+    const { totalBattlesDelta, winDelta, loseDelta, expDelta, silverDelta, newItems, bagFullFlag } = delta;
+
+    if (newItems.length === 0 && bagFullFlag === undefined) {
+      // 无物品更新，直接用原子加法
+      await query(
+        `UPDATE idle_sessions
+         SET total_battles = total_battles + $2,
+             win_count     = win_count + $3,
+             lose_count    = lose_count + $4,
+             total_exp     = total_exp + $5,
+             total_silver  = total_silver + $6,
+             updated_at    = NOW()
+         WHERE id = $1`,
+        [sessionId, totalBattlesDelta, winDelta, loseDelta, expDelta, silverDelta]
+      );
+      return;
+    }
+
+    // 有物品更新：先读取现有 reward_items，合并后写回
+    const res = await query(
+      `SELECT reward_items, bag_full_flag FROM idle_sessions WHERE id = $1`,
+      [sessionId]
+    );
+    if (res.rows.length === 0) return;
+
+    const existing = (res.rows[0].reward_items as RewardItemEntry[]) ?? [];
+    const merged = mergeRewardItems(existing, newItems);
+
     await query(
       `UPDATE idle_sessions
        SET total_battles = total_battles + $2,
@@ -429,45 +464,22 @@ export async function updateSessionSummary(
            lose_count    = lose_count + $4,
            total_exp     = total_exp + $5,
            total_silver  = total_silver + $6,
+           reward_items  = $7,
+           bag_full_flag = CASE WHEN $8 THEN true ELSE bag_full_flag END,
            updated_at    = NOW()
        WHERE id = $1`,
-      [sessionId, totalBattlesDelta, winDelta, loseDelta, expDelta, silverDelta]
+      [
+        sessionId,
+        totalBattlesDelta,
+        winDelta,
+        loseDelta,
+        expDelta,
+        silverDelta,
+        JSON.stringify(merged),
+        bagFullFlag ?? false,
+      ]
     );
-    return;
   }
-
-  // 有物品更新：先读取现有 reward_items，合并后写回
-  const res = await query(
-    `SELECT reward_items, bag_full_flag FROM idle_sessions WHERE id = $1`,
-    [sessionId]
-  );
-  if (res.rows.length === 0) return;
-
-  const existing = (res.rows[0].reward_items as RewardItemEntry[]) ?? [];
-  const merged = mergeRewardItems(existing, newItems);
-
-  await query(
-    `UPDATE idle_sessions
-     SET total_battles = total_battles + $2,
-         win_count     = win_count + $3,
-         lose_count    = lose_count + $4,
-         total_exp     = total_exp + $5,
-         total_silver  = total_silver + $6,
-         reward_items  = $7,
-         bag_full_flag = CASE WHEN $8 THEN true ELSE bag_full_flag END,
-         updated_at    = NOW()
-     WHERE id = $1`,
-    [
-      sessionId,
-      totalBattlesDelta,
-      winDelta,
-      loseDelta,
-      expDelta,
-      silverDelta,
-      JSON.stringify(merged),
-      bagFullFlag ?? false,
-    ]
-  );
 }
 
 /**
@@ -492,3 +504,9 @@ export function mergeRewardItems(
   }
   return Array.from(map.values());
 }
+
+// ============================================
+// 单例导出
+// ============================================
+
+export const idleSessionService = new IdleSessionService();

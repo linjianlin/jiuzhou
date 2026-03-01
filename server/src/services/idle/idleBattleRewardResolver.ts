@@ -21,7 +21,7 @@
  *   2. quickDistributeRewards 失败时仅置 bagFullFlag=true，不抛异常，保持挂机循环可持续。
  */
 
-import { quickDistributeRewards, type BattleParticipant } from '../battleDropService.js';
+import { battleDropService, type BattleParticipant } from '../battleDropService.js';
 import type { IdleSessionRow, RewardItemEntry } from './types.js';
 
 export interface IdleBattleRewardSnapshot {
@@ -58,7 +58,7 @@ export async function resolveIdleBattleRewards(
     realm: session.sessionSnapshot.realm,
   };
 
-  const distributeResult = await quickDistributeRewards(monsterIds, [participant], true);
+  const distributeResult = await battleDropService.quickDistributeRewards(monsterIds, [participant], true);
   if (!distributeResult.success) {
     return { ...EMPTY_REWARD, bagFullFlag: true };
   }

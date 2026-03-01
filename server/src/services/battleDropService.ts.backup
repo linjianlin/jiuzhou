@@ -1,14 +1,13 @@
 /**
  * 九州修仙录 - 战斗掉落服务
- *
+ * 
  * 功能：
  * 1. 从掉落池计算掉落物品
  * 2. 分发经验、银两给玩家（组队平分）
  * 3. 分发物品、装备给玩家（组队随机分配）
  * 4. 装备通过装备生成模块生成
  */
-import { query, getTransactionClient } from '../config/database.js';
-import { Transactional } from '../decorators/transactional.js';
+import { query, withTransaction, withTransactionAuto } from '../config/database.js';
 import { itemService, CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordCollectItemEvent } from './taskService.js';
@@ -122,149 +121,134 @@ export interface BattleParticipant {
   fuyuan?: number;
 }
 
+const clamp01 = (value: number): number => {
+  return Math.max(0, Math.min(1, value));
+};
+
 /**
- * BattleDropService
- *
- * 作用：
- *   战斗掉落与奖励分发的核心服务，负责掉落计算、经验银两分配、物品分发。
- *
- * 输入/输出：
- *   - getDropPool: 根据掉落池 ID 返回掉落池配置
- *   - rollDrops: 根据掉落池、福缘、战斗选项计算掉落结果
- *   - calculateAllDrops: 从多个怪物计算所有掉落并合并
- *   - distributeBattleRewards: 分发战斗奖励（经验、银两、物品），使用事务
- *   - quickDistributeRewards: 快速分发奖励（用于自动战斗等场景）
- *   - getItemDefInfo: 获取物品定义信息
- *
- * 数据流/状态流：
- *   怪物数据 → 掉落池解析 → 掉落计算（福缘、境界压制）→ 物品分发（背包/邮件）→ 任务事件记录
- *
- * 关键边界条件与坑点：
- *   1. distributeBattleRewards 使用 @Transactional 确保奖励分发的原子性
- *   2. 背包满时自动通过邮件补发，每封邮件最多 10 个附件
- *   3. 境界压制倍率影响掉落概率和经验银两，每超出 1 级倍率乘 0.5
- *   4. 装备掉落支持品质权重和自动分解规则
+ * 统一境界压制倍率：
+ * - 玩家境界 <= 怪物境界+1：不压制（1）
+ * - 每多超出 1 级：倍率乘 0.5
+ * - 任一方境界无法识别：不压制（1）
  */
-class BattleDropService {
-  private clamp01(value: number): number {
-    return Math.max(0, Math.min(1, value));
-  }
+const getRealmSuppressionMultiplier = (
+  playerRealmRaw: string | null | undefined,
+  monsterRealmRaw: string | null | undefined,
+): number => {
+  const playerRealm = typeof playerRealmRaw === 'string' ? playerRealmRaw.trim() : '';
+  const monsterRealm = typeof monsterRealmRaw === 'string' ? monsterRealmRaw.trim() : '';
+  if (!playerRealm || !monsterRealm) return 1;
 
-  /**
-   * 统一境界压制倍率：
-   * - 玩家境界 <= 怪物境界+1：不压制（1）
-   * - 每多超出 1 级：倍率乘 0.5
-   * - 任一方境界无法识别：不压制（1）
-   */
-  private getRealmSuppressionMultiplier(
-    playerRealmRaw: string | null | undefined,
-    monsterRealmRaw: string | null | undefined,
-  ): number {
-    const playerRealm = typeof playerRealmRaw === 'string' ? playerRealmRaw.trim() : '';
-    const monsterRealm = typeof monsterRealmRaw === 'string' ? monsterRealmRaw.trim() : '';
-    if (!playerRealm || !monsterRealm) return 1;
+  const playerRank = getRealmOrderIndex(playerRealm);
+  const monsterRank = getRealmOrderIndex(monsterRealm);
+  if (playerRank < 0 || monsterRank < 0) return 1;
 
-    const playerRank = getRealmOrderIndex(playerRealm);
-    const monsterRank = getRealmOrderIndex(monsterRealm);
-    if (playerRank < 0 || monsterRank < 0) return 1;
+  const extraLevels = playerRank - (monsterRank + 1);
+  if (extraLevels <= 0) return 1;
+  return 0.5 ** extraLevels;
+};
 
-    const extraLevels = playerRank - (monsterRank + 1);
-    if (extraLevels <= 0) return 1;
-    return 0.5 ** extraLevels;
-  }
+// ============================================
+// 掉落池查询
+// ============================================
 
-  /**
-   * 生成范围内的随机整数
-   */
-  private randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
+/**
+ * 获取掉落池及其条目
+ */
+export const getDropPool = async (poolId: string): Promise<DropPool | null> => {
+  const resolvedPool = resolveDropPoolById(poolId);
+  if (!resolvedPool) return null;
+  return {
+    id: resolvedPool.id,
+    name: resolvedPool.name,
+    mode: resolvedPool.mode,
+    entries: resolvedPool.entries.map((entry, idx) => ({
+      id: idx + 1,
+      item_def_id: entry.item_def_id,
+      chance: entry.chance,
+      weight: entry.weight,
+      qty_min: entry.qty_min,
+      qty_max: entry.qty_max,
+      qty_multiply_by_monster_realm: entry.qty_multiply_by_monster_realm,
+      quality_weights: entry.quality_weights,
+      bind_type: entry.bind_type,
+      sourceType: entry.sourceType,
+      sourcePoolId: entry.sourcePoolId,
+    })),
+  };
+};
 
-  /**
-   * 合并相同物品的掉落
-   */
-  private mergeDrops(drops: DropResult[]): DropResult[] {
-    const merged = new Map<string, DropResult>();
+// ============================================
+// 掉落计算
+// ============================================
 
-    for (const drop of drops) {
-      const qualityWeightsKey = drop.qualityWeights
-        ? JSON.stringify(
-            Object.keys(drop.qualityWeights)
-              .sort()
-              .reduce<Record<string, number>>((acc, k) => {
-                acc[k] = drop.qualityWeights![k]!;
-                return acc;
-              }, {})
-          )
-        : '';
-      const key = `${drop.itemDefId}-${drop.bindType}-${qualityWeightsKey}`;
-      const existing = merged.get(key);
-
-      if (existing) {
-        existing.quantity += drop.quantity;
-      } else {
-        merged.set(key, { ...drop });
+/**
+ * 从掉落池计算掉落物品
+ */
+export const rollDrops = (
+  dropPool: DropPool,
+  fuyuan: number = 0,
+  options: RollDropsOptions = {}
+): DropResult[] => {
+  const results: DropResult[] = [];
+  const cappedFuyuan = Math.min(200, Math.max(0, Number(fuyuan ?? 0)));
+  const chanceMultiplier = 1 + cappedFuyuan * 0.0025;
+  const isDungeonBattle = options.isDungeonBattle === true;
+  const monsterKind = normalizeMonsterKind(options.monsterKind);
+  const monsterRealm = typeof options.monsterRealm === 'string' ? options.monsterRealm : null;
+  const playerRealm = typeof options.playerRealm === 'string' ? options.playerRealm : null;
+  const realmSuppressionMultiplier = getRealmSuppressionMultiplier(playerRealm, monsterRealm);
+  
+  if (dropPool.mode === 'prob') {
+    // 概率模式：每个条目独立判定
+    for (const entry of dropPool.entries) {
+      const effectiveChance = clamp01(
+        getAdjustedChance(entry.chance * chanceMultiplier, entry.sourceType, entry.sourcePoolId, {
+          isDungeonBattle,
+          monsterKind,
+        }) * realmSuppressionMultiplier,
+      );
+      if (Math.random() < effectiveChance) {
+        const adjustedQuantity = getAdjustedQuantity(
+          randomInt(entry.qty_min, entry.qty_max),
+          entry.sourceType,
+          entry.sourcePoolId,
+          { isDungeonBattle, monsterKind },
+          shouldApplyDropQuantityMultiplier(entry.item_def_id),
+        );
+        const quantity = applyMonsterRealmDropQtyMultiplier(
+          adjustedQuantity,
+          entry.qty_multiply_by_monster_realm,
+          monsterRealm,
+        );
+        results.push({
+          itemDefId: entry.item_def_id,
+          quantity,
+          qualityWeights: entry.quality_weights || undefined,
+          bindType: entry.bind_type,
+        });
       }
     }
-
-    return Array.from(merged.values());
-  }
-
-  /**
-   * 获取掉落池及其条目
-   */
-  async getDropPool(poolId: string): Promise<DropPool | null> {
-    const resolvedPool = resolveDropPoolById(poolId);
-    if (!resolvedPool) return null;
-    return {
-      id: resolvedPool.id,
-      name: resolvedPool.name,
-      mode: resolvedPool.mode,
-      entries: resolvedPool.entries.map((entry, idx) => ({
-        id: idx + 1,
-        item_def_id: entry.item_def_id,
-        chance: entry.chance,
-        weight: entry.weight,
-        qty_min: entry.qty_min,
-        qty_max: entry.qty_max,
-        qty_multiply_by_monster_realm: entry.qty_multiply_by_monster_realm,
-        quality_weights: entry.quality_weights,
-        bind_type: entry.bind_type,
-        sourceType: entry.sourceType,
-        sourcePoolId: entry.sourcePoolId,
-      })),
-    };
-  }
-
-  /**
-   * 从掉落池计算掉落物品
-   */
-  rollDrops(
-    dropPool: DropPool,
-    fuyuan: number = 0,
-    options: RollDropsOptions = {}
-  ): DropResult[] {
-    const results: DropResult[] = [];
-    const cappedFuyuan = Math.min(200, Math.max(0, Number(fuyuan ?? 0)));
-    const chanceMultiplier = 1 + cappedFuyuan * 0.0025;
-    const isDungeonBattle = options.isDungeonBattle === true;
-    const monsterKind = normalizeMonsterKind(options.monsterKind);
-    const monsterRealm = typeof options.monsterRealm === 'string' ? options.monsterRealm : null;
-    const playerRealm = typeof options.playerRealm === 'string' ? options.playerRealm : null;
-    const realmSuppressionMultiplier = this.getRealmSuppressionMultiplier(playerRealm, monsterRealm);
-
-    if (dropPool.mode === 'prob') {
-      // 概率模式：每个条目独立判定
+  } else if (dropPool.mode === 'weight') {
+    // 权重模式：按权重随机选择一个
+    const totalWeight = dropPool.entries.reduce((sum, entry) => {
+      return sum + getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
+        isDungeonBattle,
+        monsterKind,
+      });
+    }, 0);
+    if (totalWeight > 0) {
+      // 权重池原逻辑是“必出其一”，这里先做一次整体触发判定，再进入选条目流程。
+      if (Math.random() >= realmSuppressionMultiplier) return results;
+      let roll = Math.random() * totalWeight;
       for (const entry of dropPool.entries) {
-        const effectiveChance = this.clamp01(
-          getAdjustedChance(entry.chance * chanceMultiplier, entry.sourceType, entry.sourcePoolId, {
-            isDungeonBattle,
-            monsterKind,
-          }) * realmSuppressionMultiplier,
-        );
-        if (Math.random() < effectiveChance) {
+        roll -= getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
+          isDungeonBattle,
+          monsterKind,
+        });
+        if (roll <= 0) {
           const adjustedQuantity = getAdjustedQuantity(
-            this.randomInt(entry.qty_min, entry.qty_max),
+            randomInt(entry.qty_min, entry.qty_max),
             entry.sourceType,
             entry.sourcePoolId,
             { isDungeonBattle, monsterKind },
@@ -281,127 +265,119 @@ class BattleDropService {
             qualityWeights: entry.quality_weights || undefined,
             bindType: entry.bind_type,
           });
-        }
-      }
-    } else if (dropPool.mode === 'weight') {
-      // 权重模式：按权重随机选择一个
-      const totalWeight = dropPool.entries.reduce((sum, entry) => {
-        return sum + getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
-          isDungeonBattle,
-          monsterKind,
-        });
-      }, 0);
-      if (totalWeight > 0) {
-        // 权重池原逻辑是”必出其一”，这里先做一次整体触发判定，再进入选条目流程。
-        if (Math.random() >= realmSuppressionMultiplier) return results;
-        let roll = Math.random() * totalWeight;
-        for (const entry of dropPool.entries) {
-          roll -= getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
-            isDungeonBattle,
-            monsterKind,
-          });
-          if (roll <= 0) {
-            const adjustedQuantity = getAdjustedQuantity(
-              this.randomInt(entry.qty_min, entry.qty_max),
-              entry.sourceType,
-              entry.sourcePoolId,
-              { isDungeonBattle, monsterKind },
-              shouldApplyDropQuantityMultiplier(entry.item_def_id),
-            );
-            const quantity = applyMonsterRealmDropQtyMultiplier(
-              adjustedQuantity,
-              entry.qty_multiply_by_monster_realm,
-              monsterRealm,
-            );
-            results.push({
-              itemDefId: entry.item_def_id,
-              quantity,
-              qualityWeights: entry.quality_weights || undefined,
-              bindType: entry.bind_type,
-            });
-            break;
-          }
+          break;
         }
       }
     }
-
-    return results;
   }
-
-  /**
-   * 从多个怪物计算所有掉落
-   */
-  async calculateAllDrops(monsters: MonsterData[]): Promise<DropResult[]> {
-    const allDrops: DropResult[] = [];
-
-    for (const monster of monsters) {
-      if (!monster.drop_pool_id) continue;
-
-      const dropPool = await this.getDropPool(monster.drop_pool_id);
-      if (!dropPool) continue;
-
-      const monsterKind = normalizeMonsterKind(monster.kind);
-      const drops = this.rollDrops(dropPool, 0, { monsterKind, monsterRealm: monster.realm });
-      allDrops.push(...drops);
-    }
-
-    // 合并相同物品
-    return this.mergeDrops(allDrops);
-  }
+  
+  return results;
+};
 
 /**
-   * 分发战斗奖励（经验、银两、物品）
-   *
-   * @param monsters 击杀的怪物列表
-   * @param participants 参与战斗的玩家列表
-   * @param isVictory 是否胜利
-   */
-  @Transactional
-  async distributeBattleRewards(
-    monsters: MonsterData[],
-    participants: BattleParticipant[],
-    isVictory: boolean,
-    options: DistributeBattleRewardsOptions = {}
-  ): Promise<DistributeResult> {
-    if (!isVictory || participants.length === 0) {
-      return {
-        success: true,
-        message: '战斗失败，无奖励',
-        rewards: { exp: 0, silver: 0, items: [] },
-      };
+ * 从多个怪物计算所有掉落
+ */
+export const calculateAllDrops = async (monsters: MonsterData[]): Promise<DropResult[]> => {
+  const allDrops: DropResult[] = [];
+  
+  for (const monster of monsters) {
+    if (!monster.drop_pool_id) continue;
+    
+    const dropPool = await getDropPool(monster.drop_pool_id);
+    if (!dropPool) continue;
+    
+    const monsterKind = normalizeMonsterKind(monster.kind);
+    const drops = rollDrops(dropPool, 0, { monsterKind, monsterRealm: monster.realm });
+    allDrops.push(...drops);
+  }
+  
+  // 合并相同物品
+  return mergeDrops(allDrops);
+};
+
+/**
+ * 合并相同物品的掉落
+ */
+const mergeDrops = (drops: DropResult[]): DropResult[] => {
+  const merged = new Map<string, DropResult>();
+  
+  for (const drop of drops) {
+    const qualityWeightsKey = drop.qualityWeights
+      ? JSON.stringify(
+          Object.keys(drop.qualityWeights)
+            .sort()
+            .reduce<Record<string, number>>((acc, k) => {
+              acc[k] = drop.qualityWeights![k]!;
+              return acc;
+            }, {})
+        )
+      : '';
+    const key = `${drop.itemDefId}-${drop.bindType}-${qualityWeightsKey}`;
+    const existing = merged.get(key);
+    
+    if (existing) {
+      existing.quantity += drop.quantity;
+    } else {
+      merged.set(key, { ...drop });
     }
+  }
+  
+  return Array.from(merged.values());
+};
 
-    const pendingMailByReceiver = new Map<number, { userId: number; items: MailAttachItem[] }>();
-    const collectCounts = new Map<string, { characterId: number; itemDefId: string; qty: number }>();
+// ============================================
+// 奖励分发
+// ============================================
 
-    try {
-      const client = getTransactionClient();
-      if (!client) {
-        throw new Error('Transaction client not available');
-      }
+/**
+ * 分发战斗奖励（经验、银两、物品）
+ * 
+ * @param monsters 击杀的怪物列表
+ * @param participants 参与战斗的玩家列表
+ * @param isVictory 是否胜利
+ */
+export const distributeBattleRewards = async (
+  monsters: MonsterData[],
+  participants: BattleParticipant[],
+  isVictory: boolean,
+  options: DistributeBattleRewardsOptions = {}
+): Promise<DistributeResult> => {
+  if (!isVictory || participants.length === 0) {
+    return {
+      success: true,
+      message: '战斗失败，无奖励',
+      rewards: { exp: 0, silver: 0, items: [] },
+    };
+  }
+  
+  const pendingMailByReceiver = new Map<number, { userId: number; items: MailAttachItem[] }>();
+  const collectCounts = new Map<string, { characterId: number; itemDefId: string; qty: number }>();
+  
+  try {
+    return await withTransactionAuto(async (client) => {
 
-      const participantCharacterIds = [...new Set(
-        participants
-          .map((p) => Number(p.characterId))
-          .filter((id) => Number.isInteger(id) && id > 0)
-      )].sort((a, b) => a - b);
-      if (participantCharacterIds.length > 0) {
-        // 锁顺序必须统一为”先背包互斥锁，再角色行锁”，否则会与 use/disassemble
-        // 这类”先背包锁再 FOR UPDATE characters”的事务形成环路死锁。
-        await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
+    const participantCharacterIds = [...new Set(
+      participants
+        .map((p) => Number(p.characterId))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )].sort((a, b) => a - b);
+    if (participantCharacterIds.length > 0) {
+      // 锁顺序必须统一为“先背包互斥锁，再角色行锁”，否则会与 use/disassemble
+      // 这类“先背包锁再 FOR UPDATE characters”的事务形成环路死锁。
+      await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
 
-        // 角色行锁也按升序获取，避免多角色场景下的行锁顺序反转。
-        await client.query(
-          `
+      // 角色行锁也按升序获取，避免多角色场景下的行锁顺序反转。
+      await client.query(
+        `
           SELECT id
           FROM characters
           WHERE id = ANY($1)
           ORDER BY id
           FOR UPDATE
         `,
-          [participantCharacterIds]
-        );
-      }
+        [participantCharacterIds]
+      );
+    }
     
     const stableQualityWeightsKey = (weights?: Record<string, number>): string => {
       if (!weights) return '';
@@ -429,12 +405,12 @@ class BattleDropService {
       const monsterExp = Math.max(0, Number(monster.exp_reward) || 0);
       const silverMin = Math.max(0, Number(monster.silver_reward_min) || 0);
       const silverMax = Math.max(silverMin, Number(monster.silver_reward_max) || silverMin);
-      const silverRoll = this.randomInt(silverMin, silverMax);
+      const silverRoll = randomInt(silverMin, silverMax);
       const expShare = monsterExp / participantCount;
       const silverShare = silverRoll / participantCount;
 
       for (const participant of participants) {
-        const penalty = this.getRealmSuppressionMultiplier(participant.realm, monster.realm);
+        const penalty = getRealmSuppressionMultiplier(participant.realm, monster.realm);
         baseExpAcc.set(participant.characterId, (baseExpAcc.get(participant.characterId) ?? 0) + expShare * penalty);
         baseSilverAcc.set(
           participant.characterId,
@@ -451,14 +427,14 @@ class BattleDropService {
     for (const monster of monsters) {
       if (!monster.drop_pool_id) continue;
 
-      const dropPool = await this.getDropPool(monster.drop_pool_id);
+      const dropPool = await getDropPool(monster.drop_pool_id);
       if (!dropPool) continue;
 
       const receiverIndex = participantCount > 1 ? Math.floor(Math.random() * participantCount) : 0;
       const receiver = participants[receiverIndex];
       const receiverFuyuan = Number(receiver.fuyuan ?? 1);
 
-      const drops = this.rollDrops(dropPool, receiverFuyuan, {
+      const drops = rollDrops(dropPool, receiverFuyuan, {
         isDungeonBattle,
         monsterKind: normalizeMonsterKind(monster.kind),
         monsterRealm: monster.realm,
@@ -486,8 +462,8 @@ class BattleDropService {
       const silverGain = Math.max(0, Math.floor(baseSilverAcc.get(participant.characterId) ?? 0));
 
       // 更新角色经验和银两
-      await query(`
-        UPDATE characters
+      await client.query(`
+        UPDATE characters 
         SET exp = exp + $1, silver = silver + $2, updated_at = NOW()
         WHERE id = $3
       `, [expGain, silverGain, participant.characterId]);
@@ -518,7 +494,7 @@ class BattleDropService {
     const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
 
     if (participantCharacterIds.length > 0) {
-      const settingResult = await query(
+      const settingResult = await client.query(
         `
           SELECT id, auto_disassemble_enabled, auto_disassemble_rules
           FROM characters
@@ -737,6 +713,8 @@ class BattleDropService {
       },
       perPlayerRewards,
     };
+    });
+    
   } catch (error) {
     console.error('分发战斗奖励失败:', error);
     return {
@@ -745,63 +723,71 @@ class BattleDropService {
       rewards: { exp: 0, silver: 0, items: [] },
     };
   }
-  }
+};
 
-  /**
-   * 快速分发奖励（用于自动战斗等场景）
-   */
-  async quickDistributeRewards(
-    monsterIds: string[],
-    participants: BattleParticipant[],
-    isVictory: boolean
-  ): Promise<DistributeResult> {
-    if (!isVictory || participants.length === 0 || monsterIds.length === 0) {
-      return {
-        success: true,
-        message: '无奖励',
-        rewards: { exp: 0, silver: 0, items: [] },
-      };
-    }
-
-    // 获取怪物数据
-    const idSet = new Set(monsterIds);
-    const monsters = getMonsterDefinitions()
-      .filter((entry) => entry.enabled !== false)
-      .filter((entry) => idSet.has(entry.id))
-      .map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        realm: entry.realm ?? '凡人',
-        element: entry.element ?? 'none',
-        base_attrs: entry.base_attrs ?? {},
-        exp_reward: Number(entry.exp_reward ?? 0),
-        silver_reward_min: Number(entry.silver_reward_min ?? 0),
-        silver_reward_max: Number(entry.silver_reward_max ?? 0),
-        kind: entry.kind,
-        drop_pool_id: entry.drop_pool_id ?? null,
-      })) as MonsterData[];
-
-    return this.distributeBattleRewards(monsters, participants, isVictory);
-  }
-
-  /**
-   * 获取物品定义信息
-   */
-  async getItemDefInfo(itemDefId: string): Promise<{
-    name: string;
-    category: string;
-    quality: string;
-    icon: string;
-  } | null> {
-    const def = getItemDefinitionById(itemDefId);
-    if (!def) return null;
+/**
+ * 快速分发奖励（用于自动战斗等场景）
+ */
+export const quickDistributeRewards = async (
+  monsterIds: string[],
+  participants: BattleParticipant[],
+  isVictory: boolean
+): Promise<DistributeResult> => {
+  if (!isVictory || participants.length === 0 || monsterIds.length === 0) {
     return {
-      name: String(def.name || itemDefId),
-      category: String(def.category || ''),
-      quality: String(def.quality || ''),
-      icon: String(def.icon || ''),
+      success: true,
+      message: '无奖励',
+      rewards: { exp: 0, silver: 0, items: [] },
     };
   }
-}
+  
+  // 获取怪物数据
+  const idSet = new Set(monsterIds);
+  const monsters = getMonsterDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => idSet.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      realm: entry.realm ?? '凡人',
+      element: entry.element ?? 'none',
+      base_attrs: entry.base_attrs ?? {},
+      exp_reward: Number(entry.exp_reward ?? 0),
+      silver_reward_min: Number(entry.silver_reward_min ?? 0),
+      silver_reward_max: Number(entry.silver_reward_max ?? 0),
+      kind: entry.kind,
+      drop_pool_id: entry.drop_pool_id ?? null,
+    })) as MonsterData[];
+  
+  return distributeBattleRewards(monsters, participants, isVictory);
+};
 
-export const battleDropService = new BattleDropService();
+// ============================================
+// 工具函数
+// ============================================
+
+/**
+ * 生成范围内的随机整数
+ */
+const randomInt = (min: number, max: number): number => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+/**
+ * 获取物品定义信息
+ */
+export const getItemDefInfo = async (itemDefId: string): Promise<{
+  name: string;
+  category: string;
+  quality: string;
+  icon: string;
+} | null> => {
+  const def = getItemDefinitionById(itemDefId);
+  if (!def) return null;
+  return {
+    name: String(def.name || itemDefId),
+    category: String(def.category || ''),
+    quality: String(def.quality || ''),
+    icon: String(def.icon || ''),
+  };
+};

@@ -5,7 +5,7 @@ import { closeRedis, testRedisConnection } from '../config/redis.js';
 import { initTables } from '../models/initTables.js';
 import { initGameTimeService, stopGameTimeService } from '../services/gameTimeService.js';
 import { recoverBattlesFromRedis } from '../domains/battle/index.js';
-import { cleanupUndefinedItemDataOnStartup } from '../services/itemDataCleanupService.js';
+import { itemDataCleanupService } from '../services/itemDataCleanupService.js';
 import { recoverActiveIdleSessions, flushAllBuffers, stopAllExecutionLoops } from '../services/idle/idleBattleExecutorWorker.js';
 import { initArenaWeeklySettlementService, stopArenaWeeklySettlementService } from '../services/arenaWeeklySettlementService.js';
 import { stopBattleService } from '../services/battle/index.js';
@@ -34,7 +34,7 @@ export const startServerWithPipeline = async (options: StartServerOptions): Prom
   }
 
   await initTables();
-  await cleanupUndefinedItemDataOnStartup();
+  await itemDataCleanupService.cleanupUndefinedItemDataOnStartup();
 
   // 初始化 Worker 池
   console.log('正在初始化 Worker 池...');

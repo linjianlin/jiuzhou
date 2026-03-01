@@ -1,12 +1,20 @@
 /**
  * 九州修仙录 - 统一物品服务
- * 根据物品类型自动选择处理方式：
+ *
+ * 作用：根据物品类型自动选择处理方式
  * - 装备类：生成词条后创建实例
  * - 普通物品：直接创建实例（支持堆叠）
+ *
+ * 数据流：调用方 → ItemService 方法 → inventory / equipmentService 底层
+ *
+ * 边界条件：
+ * 1) useItem 使用 @Transactional 保证物品使用与资源更新的原子性
+ * 2) createItem 支持在事务/非事务上下文中调用，通过 dbClient 参数判断
  */
-import { query, pool, withTransaction, withTransactionAuto } from '../config/database.js';
 import type { PoolClient } from 'pg';
-import { generateEquipment, createEquipmentInstance, createEquipmentInstanceTx, GenerateOptions, GeneratedEquipment } from './equipmentService.js';
+import { query, getTransactionClient } from '../config/database.js';
+import { Transactional } from '../decorators/transactional.js';
+import { equipmentService, generateEquipment, type GenerateOptions, type GeneratedEquipment } from './equipmentService.js';
 import {
   addItemToInventory,
   addItemToInventoryTx,
@@ -17,7 +25,6 @@ import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
 import { getRealmRankZeroBased } from './shared/realmRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
-import { safeRelease, safeRollback } from './shared/transaction.js';
 import {
   applyCharacterResourceDeltaByCharacterId,
   getCharacterComputedByCharacterId,
@@ -82,41 +89,9 @@ const toStringArray = (value: unknown): string[] => {
 };
 
 /**
- * 获取物品定义
+ * 从静态配置获取物品定义（纯同步读取，无需数据库连接）
  */
-export const getItemDef = async (itemDefId: string): Promise<ItemDef | null> => {
-  return getItemDefWithClient(itemDefId);
-};
-
-/**
- * 统一创建物品接口
- * 根据物品类型自动选择处理方式
- */
-export const createItem = async (
-  userId: number,
-  characterId: number,
-  itemDefId: string,
-  qty: number = 1,
-  options: CreateItemOptions = {}
-): Promise<CreateItemResult> => {
-  // 1. 获取物品定义
-  const itemDef = await getItemDefWithClient(itemDefId, options.dbClient);
-  if (!itemDef) {
-    return { success: false, message: `物品不存在: ${itemDefId}` };
-  }
-
-  // 2. 根据类型分发处理
-  if (itemDef.category === 'equipment') {
-    return createEquipmentItem(userId, characterId, itemDefId, qty, options);
-  } else {
-    return createNormalItem(userId, characterId, itemDefId, qty, options);
-  }
-};
-
-export const getItemDefWithClient = async (itemDefId: string, client?: PoolClient): Promise<ItemDef | null> => {
-  // 兼容旧签名，调用方可继续传入事务 client
-  void client;
-
+const getItemDefSync = (itemDefId: string): ItemDef | null => {
   const def = getItemDefinitionById(itemDefId);
   if (!def || def.enabled === false) return null;
 
@@ -154,12 +129,12 @@ const createEquipmentItem = async (
     }
 
     const result = options.dbClient
-      ? await createEquipmentInstanceTx(options.dbClient, userId, characterId, generated, {
+      ? await equipmentService.createEquipmentInstanceTx(userId, characterId, generated, {
           location: options.location || 'bag',
           bindType: options.bindType,
           obtainedFrom: options.obtainedFrom
         })
-      : await createEquipmentInstance(userId, characterId, generated, {
+      : await equipmentService.createEquipmentInstance(userId, characterId, generated, {
           location: options.location || 'bag',
           bindType: options.bindType,
           obtainedFrom: options.obtainedFrom
@@ -211,46 +186,96 @@ const createNormalItem = async (
 };
 
 /**
- * 批量创建物品
+ * 物品服务
+ *
+ * 作用：处理物品创建、使用、查询等核心逻辑
+ * 不做：不处理路由层参数校验、不做权限判断
+ *
+ * 数据流：
+ * - createItem：根据物品类型调用装备或普通物品创建逻辑
+ * - useItem：在事务中处理物品使用效果（资源、掉落、扩容、学习功法等）
+ * - getItemInstance：读取物品实例详情
+ *
+ * 边界条件：
+ * 1) useItem 使用 @Transactional 保证物品使用与资源更新的原子性
+ * 2) createItem 不加 @Transactional，由内部调用的函数处理事务
  */
-export const createItems = async (
-  userId: number,
-  characterId: number,
-  items: Array<{ itemDefId: string; qty: number; options?: CreateItemOptions }>
-): Promise<{ success: boolean; message: string; results: CreateItemResult[] }> => {
-  const results: CreateItemResult[] = [];
-  
-  for (const item of items) {
-    const result = await createItem(
-      userId, characterId, item.itemDefId, item.qty, item.options || {}
-    );
-    results.push(result);
-    
-    if (!result.success) {
-      return {
-        success: false,
-        message: `创建物品 ${item.itemDefId} 失败: ${result.message}`,
-        results
-      };
+class ItemService {
+  /**
+   * 获取物品定义
+   */
+  async getItemDef(itemDefId: string): Promise<ItemDef | null> {
+    return getItemDefSync(itemDefId);
+  }
+
+  /**
+   * 统一创建物品接口
+   * 根据物品类型自动选择处理方式
+   */
+  async createItem(
+    userId: number,
+    characterId: number,
+    itemDefId: string,
+    qty: number = 1,
+    options: CreateItemOptions = {}
+  ): Promise<CreateItemResult> {
+    const itemDef = await getItemDefSync(itemDefId);
+    if (!itemDef) {
+      return { success: false, message: `物品不存在: ${itemDefId}` };
+    }
+
+    if (itemDef.category === 'equipment') {
+      return createEquipmentItem(userId, characterId, itemDefId, qty, options);
+    } else {
+      return createNormalItem(userId, characterId, itemDefId, qty, options);
     }
   }
 
-  return { success: true, message: '批量创建成功', results };
-};
+  /**
+   * 批量创建物品
+   */
+  async createItems(
+    userId: number,
+    characterId: number,
+    items: Array<{ itemDefId: string; qty: number; options?: CreateItemOptions }>
+  ): Promise<{ success: boolean; message: string; results: CreateItemResult[] }> {
+    const results: CreateItemResult[] = [];
 
-/**
- * 使用物品
- */
-export const useItem = async (
-  userId: number,
-  characterId: number,
-  instanceId: number,
-  qty: number = 1
-): Promise<{ success: boolean; message: string; effects?: any[]; character?: any; lootResults?: { type: string; name?: string; amount: number }[] }> => {
-  return await withTransactionAuto(async (client) => {
-await lockCharacterInventoryMutexTx(client, characterId);
-  
-    const charResult = await client.query(
+    for (const item of items) {
+      const result = await this.createItem(
+        userId, characterId, item.itemDefId, item.qty, item.options || {}
+      );
+      results.push(result);
+
+      if (!result.success) {
+        return {
+          success: false,
+          message: `创建物品 ${item.itemDefId} 失败: ${result.message}`,
+          results
+        };
+      }
+    }
+
+    return { success: true, message: '批量创建成功', results };
+  }
+
+  /**
+   * 使用物品
+   */
+  @Transactional
+  async useItem(
+    userId: number,
+    characterId: number,
+    instanceId: number,
+    qty: number = 1
+  ): Promise<{ success: boolean; message: string; effects?: any[]; character?: any; lootResults?: { type: string; name?: string; amount: number }[] }> {
+    const client = getTransactionClient();
+    if (!client) {
+      throw new Error('事务上下文不存在');
+    }
+    await lockCharacterInventoryMutexTx(client, characterId);
+
+    const charResult = await query(
       'SELECT id, realm, sub_realm FROM characters WHERE id = $1 FOR UPDATE',
       [characterId]
     );
@@ -262,9 +287,9 @@ await lockCharacterInventoryMutexTx(client, characterId);
     if (!computedBefore) {
       return { success: false, message: '角色数据异常' };
     }
-  
+
     // 获取物品实例
-    const instanceResult = await client.query(
+    const instanceResult = await query(
       `
       SELECT *
       FROM item_instance
@@ -314,7 +339,7 @@ await lockCharacterInventoryMutexTx(client, characterId);
     const effectiveCdSec = Math.max(0, cdSec, cdRound);
   
     if (effectiveCdSec > 0) {
-      const cdResult = await client.query(
+      const cdResult = await query(
         `SELECT cooldown_until FROM item_use_cooldown WHERE character_id = $1 AND item_def_id = $2`,
         [characterId, itemDefId]
       );
@@ -327,12 +352,12 @@ await lockCharacterInventoryMutexTx(client, characterId);
         }
       }
     }
-  
+
     const dailyLimit = Number(itemDef.use_limit_daily) || 0;
     const totalLimit = Number(itemDef.use_limit_total) || 0;
-  
+
     if (dailyLimit > 0 || totalLimit > 0) {
-      const cntResult = await client.query(
+      const cntResult = await query(
         `SELECT daily_count, total_count, last_daily_reset
          FROM item_use_count
          WHERE character_id = $1 AND item_def_id = $2
@@ -513,7 +538,7 @@ await lockCharacterInventoryMutexTx(client, characterId);
           return { success: false, message: `境界不足，需要达到${requiredRealm}` };
         }
   
-        const existsRes = await client.query(
+        const existsRes = await query(
           'SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1',
           [characterId, techniqueId]
         );
@@ -521,7 +546,7 @@ await lockCharacterInventoryMutexTx(client, characterId);
           return { success: false, message: '已学习该功法' };
         }
   
-        await client.query(
+        await query(
           `INSERT INTO character_technique (
             character_id, technique_id, current_layer, obtained_from, obtained_ref_id, acquired_at
           ) VALUES ($1, $2, 1, $3, $4, NOW())`,
@@ -600,7 +625,7 @@ await lockCharacterInventoryMutexTx(client, characterId);
       paramIdx++;
     }
   
-    const updatedCharResult = await client.query(
+    const updatedCharResult = await query(
       `UPDATE characters SET ${setClauses.join(', ')} WHERE id = $1 RETURNING id`,
       setValues
     );
@@ -611,7 +636,6 @@ await lockCharacterInventoryMutexTx(client, characterId);
         obtainedFrom: `use_item:${itemDef.id}`
       });
       if (!addRes.success) {
-        await safeRollback(client);
         return { success: false, message: addRes.message || '道具掉落发放失败' };
       }
       const itemName = getItemDefinitionById(lootItem.itemDefId)?.name || lootItem.itemDefId;
@@ -619,7 +643,7 @@ await lockCharacterInventoryMutexTx(client, characterId);
     }
   
     if (effectiveCdSec > 0) {
-      await client.query(
+      await query(
         `
           INSERT INTO item_use_cooldown (character_id, item_def_id, cooldown_until)
           VALUES ($1, $2, NOW() + ($3::int * INTERVAL '1 second'))
@@ -631,7 +655,7 @@ await lockCharacterInventoryMutexTx(client, characterId);
     }
   
     if (dailyLimit > 0 || totalLimit > 0) {
-      await client.query(
+      await query(
         `
           INSERT INTO item_use_count (character_id, item_def_id, daily_count, total_count, last_daily_reset)
           VALUES ($1, $2, $3, $3, CURRENT_DATE)
@@ -651,20 +675,20 @@ await lockCharacterInventoryMutexTx(client, characterId);
   
     // 扣除物品
     if ((Number(item.qty) || 0) === qty) {
-      await client.query('DELETE FROM item_instance WHERE id = $1', [instanceId]);
+      await query('DELETE FROM item_instance WHERE id = $1', [instanceId]);
     } else {
-      await client.query(
+      await query(
         'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
         [qty, instanceId]
       );
     }
-if (deltaQixue !== 0 || deltaLingqi !== 0) {
+    if (deltaQixue !== 0 || deltaLingqi !== 0) {
       await applyCharacterResourceDeltaByCharacterId(characterId, {
         qixue: deltaQixue,
         lingqi: deltaLingqi,
       });
     }
-  
+
     const updatedChar = updatedCharResult.rows.length > 0
       ? await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true })
       : undefined;
@@ -675,78 +699,72 @@ if (deltaQixue !== 0 || deltaLingqi !== 0) {
       character: updatedChar,
       lootResults: lootResults.length > 0 ? lootResults : undefined
     };
-  
-  });
-};
+  }
 
-/**
- * 获取物品实例详情（通用）
- */
-export const getItemInstance = async (instanceId: number): Promise<any | null> => {
-  const result = await query(
-    `
-    SELECT *
-    FROM item_instance
-    WHERE id = $1
-  `,
-    [instanceId],
-  );
+  /**
+   * 获取物品实例详情（通用）
+   */
+  async getItemInstance(instanceId: number): Promise<any | null> {
+    const result = await query(
+      `
+      SELECT *
+      FROM item_instance
+      WHERE id = $1
+    `,
+      [instanceId],
+    );
 
-  if (result.rows.length === 0) return null;
+    if (result.rows.length === 0) return null;
 
-  const row = result.rows[0];
-  const itemDefId = String(row.item_def_id || '').trim();
-  if (!itemDefId) return null;
-  const itemDef = getItemDefinitionById(itemDefId);
-  if (!itemDef) return null;
+    const row = result.rows[0];
+    const itemDefId = String(row.item_def_id || '').trim();
+    if (!itemDefId) return null;
+    const itemDef = getItemDefinitionById(itemDefId);
+    if (!itemDef) return null;
 
-  const resolvedQuality = row.quality ?? itemDef.quality ?? null;
-  const defQualityRank = resolveQualityRankFromName(itemDef.quality, 1);
-  const resolvedQualityRank = row.quality_rank ?? resolveQualityRankFromName(resolvedQuality, defQualityRank);
-  const displayBaseAttrs = buildEquipmentDisplayBaseAttrs({
-    baseAttrsRaw: itemDef.base_attrs,
-    defQualityRankRaw: defQualityRank,
-    resolvedQualityRankRaw: resolvedQualityRank,
-    strengthenLevelRaw: row.strengthen_level,
-    refineLevelRaw: row.refine_level,
-    socketedGemsRaw: row.socketed_gems,
-  });
-  return {
-    id: row.id,
-    itemDefId: row.item_def_id,
-    name: itemDef.name,
-    icon: itemDef.icon,
-    category: itemDef.category,
-    subCategory: itemDef.sub_category,
-    quality: resolvedQuality,
-    qualityRank: resolvedQualityRank,
-    qty: row.qty,
-    stackMax: itemDef.stack_max,
-    description: itemDef.description,
-    // 装备专用
-    equipSlot: itemDef.equip_slot,
-    equipReqRealm: itemDef.equip_req_realm,
-    baseAttrs: itemDef.category === 'equipment' ? displayBaseAttrs : (itemDef.base_attrs ?? {}),
-    affixes: row.affixes || [],
-    setId: itemDef.set_id,
-    strengthenLevel: row.strengthen_level,
-    refineLevel: row.refine_level,
-    socketedGems: row.socketed_gems,
-    identified: row.identified,
-    // 通用
-    locked: row.locked,
-    bindType: row.bind_type,
-    location: row.location,
-    locationSlot: row.location_slot,
-    equippedSlot: row.equipped_slot,
-    createdAt: row.created_at
-  };
-};
+    const resolvedQuality = row.quality ?? itemDef.quality ?? null;
+    const defQualityRank = resolveQualityRankFromName(itemDef.quality, 1);
+    const resolvedQualityRank = row.quality_rank ?? resolveQualityRankFromName(resolvedQuality, defQualityRank);
+    const displayBaseAttrs = buildEquipmentDisplayBaseAttrs({
+      baseAttrsRaw: itemDef.base_attrs,
+      defQualityRankRaw: defQualityRank,
+      resolvedQualityRankRaw: resolvedQualityRank,
+      strengthenLevelRaw: row.strengthen_level,
+      refineLevelRaw: row.refine_level,
+      socketedGemsRaw: row.socketed_gems,
+    });
+    return {
+      id: row.id,
+      itemDefId: row.item_def_id,
+      name: itemDef.name,
+      icon: itemDef.icon,
+      category: itemDef.category,
+      subCategory: itemDef.sub_category,
+      quality: resolvedQuality,
+      qualityRank: resolvedQualityRank,
+      qty: row.qty,
+      stackMax: itemDef.stack_max,
+      description: itemDef.description,
+      // 装备专用
+      equipSlot: itemDef.equip_slot,
+      equipReqRealm: itemDef.equip_req_realm,
+      baseAttrs: itemDef.category === 'equipment' ? displayBaseAttrs : (itemDef.base_attrs ?? {}),
+      affixes: row.affixes || [],
+      setId: itemDef.set_id,
+      strengthenLevel: row.strengthen_level,
+      refineLevel: row.refine_level,
+      socketedGems: row.socketed_gems,
+      identified: row.identified,
+      // 通用
+      locked: row.locked,
+      bindType: row.bind_type,
+      location: row.location,
+      locationSlot: row.location_slot,
+      equippedSlot: row.equipped_slot,
+      createdAt: row.created_at
+    };
+  }
+}
 
-export default {
-  getItemDef,
-  createItem,
-  createItems,
-  useItem,
-  getItemInstance
-};
+export const itemService = new ItemService();
+export default itemService;

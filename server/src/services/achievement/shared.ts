@@ -191,9 +191,8 @@ export const normalizeTitleEffects = (effects: unknown): Record<string, number> 
   return out;
 };
 
-export const ensureCharacterAchievementPoints = async (characterId: number, client?: PoolClient): Promise<void> => {
-  const runner = client ?? { query };
-  await runner.query(
+export const ensureCharacterAchievementPoints = async (characterId: number): Promise<void> => {
+  await query(
     `
       INSERT INTO character_achievement_points (character_id)
       VALUES ($1)

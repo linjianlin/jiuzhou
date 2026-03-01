@@ -9,13 +9,14 @@ import {
   getMonsterDefinitions,
 } from '../staticConfigLoader.js';
 import { resolveDropPoolById } from '../dropPoolResolver.js';
-import { query, withTransaction } from '../../config/database.js';
+import { query } from '../../config/database.js';
+import { Transactional } from '../../decorators/transactional.js';
 import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from '../battle/index.js';
-import { createItem } from '../itemService.js';
+import { itemService } from '../itemService.js';
 import { sendSystemMail, type MailAttachItem } from '../mailService.js';
 import { recordDungeonClearEvent } from '../taskService.js';
-import { applyStaminaRecoveryTx, STAMINA_MAX } from '../staminaService.js';
+import { applyStaminaRecoveryTx, applyStaminaRecoveryByCharacterId, STAMINA_MAX } from '../staminaService.js';
 import { normalizeAutoDisassembleSetting } from '../autoDisassembleRules.js';
 import { REALM_ORDER } from '../shared/realmRules.js';
 import {
@@ -23,7 +24,6 @@ import {
   type AutoDisassembleSetting,
   type PendingMailItem,
 } from '../autoDisassembleRewardService.js';
-import type { PoolClient } from 'pg';
 import {
   getAdjustedChance,
   getAdjustedWeight,
@@ -1078,7 +1078,6 @@ const getDungeonAndDifficulty = async (
 };
 
 const touchEntryCount = async (
-  client: PoolClient,
   characterId: number,
   dungeonId: string,
   dailyLimit: number,
@@ -1086,7 +1085,7 @@ const touchEntryCount = async (
 ): Promise<{ ok: true } | { ok: false; message: string }> => {
   if (dailyLimit <= 0 && weeklyLimit <= 0) return { ok: true };
 
-  const res = await client.query(
+  const res = await query(
     `
       INSERT INTO dungeon_entry_count (character_id, dungeon_id, daily_count, weekly_count, total_count, last_daily_reset, last_weekly_reset)
       VALUES ($1, $2, 0, 0, 0, CURRENT_DATE, CURRENT_DATE)
@@ -1096,7 +1095,7 @@ const touchEntryCount = async (
   );
   void res;
 
-  await client.query(
+  await query(
     `
       UPDATE dungeon_entry_count
       SET
@@ -1109,7 +1108,7 @@ const touchEntryCount = async (
     [characterId, dungeonId]
   );
 
-  const cntRes = await client.query(
+  const cntRes = await query(
     `SELECT daily_count, weekly_count FROM dungeon_entry_count WHERE character_id = $1 AND dungeon_id = $2 LIMIT 1`,
     [characterId, dungeonId]
   );
@@ -1121,8 +1120,8 @@ const touchEntryCount = async (
   return { ok: true };
 };
 
-const incEntryCount = async (client: PoolClient, characterId: number, dungeonId: string): Promise<void> => {
-  await client.query(
+const incEntryCount = async (characterId: number, dungeonId: string): Promise<void> => {
+  await query(
     `
       UPDATE dungeon_entry_count
       SET
@@ -1399,8 +1398,7 @@ export const startDungeonInstance = async (
   if (!user.ok) return { success: false, message: user.message };
 
   try {
-    return await withTransaction(async (client) => {
-  const instRes = await client.query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
+  const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
       if (instRes.rows.length === 0) {
         return { success: false, message: '秘境实例不存在' };
       }
@@ -1432,7 +1430,7 @@ export const startDungeonInstance = async (
       }
   
       for (const p of participants) {
-        const touch = await touchEntryCount(client, p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
+        const touch = await touchEntryCount(p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
         if (!touch.ok) {
           return { success: false, message: touch.message };
         }
@@ -1440,7 +1438,7 @@ export const startDungeonInstance = async (
   
       if (staminaCost > 0) {
         for (const p of participants) {
-          const staminaState = await applyStaminaRecoveryTx(client, p.characterId);
+          const staminaState = await applyStaminaRecoveryByCharacterId(p.characterId);
           if (!staminaState) {
             return { success: false, message: '角色不存在' };
           }
@@ -1452,12 +1450,12 @@ export const startDungeonInstance = async (
       }
   
       for (const p of participants) {
-        await incEntryCount(client, p.characterId, inst.dungeon_id);
+        await incEntryCount(p.characterId, inst.dungeon_id);
       }
   
       if (staminaCost > 0) {
         for (const p of participants) {
-          const updRes = await client.query(
+          const updRes = await query(
             `UPDATE characters
                 SET stamina = stamina - $1,
                     stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
@@ -1481,22 +1479,21 @@ export const startDungeonInstance = async (
         return { success: false, message: '该波次未配置怪物' };
       }
   
-      await client.query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
+      await query(`UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`, [
         instanceId,
       ]);
-  
-      const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { resourceSyncClient: client, skipCooldown: true });
+
+      const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true });
       if (!battleRes.success || !battleRes.data?.battleId) {
         return { success: false, message: battleRes.message || '开启战斗失败' };
       }
   
       const battleId = String(battleRes.data.battleId);
-      await client.query(
+      await query(
         `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
         [battleId, instanceId]
       );
   return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
-    });
   } catch (error) {
     console.error('开始秘境失败:', error);
     return { success: false, message: '开始秘境失败' };
@@ -1571,9 +1568,8 @@ export const nextDungeonInstance = async (
       const timeSpentSec = Math.max(0, Math.floor((Date.now() - new Date(inst.start_time || inst.created_at).getTime()) / 1000));
       const pendingMailByCharacter = new Map<number, { userId: number; items: MailAttachItem[] }>();
       try {
-        return await withTransaction(async (client) => {
 
-        const instLockRes = await client.query(`SELECT status FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
+        const instLockRes = await query(`SELECT status FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
         if (instLockRes.rows.length === 0) {
           return { success: false, message: '秘境实例不存在' };
         }
@@ -1585,7 +1581,7 @@ export const nextDungeonInstance = async (
           return { success: false, message: '秘境状态异常，无法结算' };
         }
 
-        await client.query(
+        await query(
           `UPDATE dungeon_instance SET status = 'cleared', end_time = NOW(), time_spent_sec = $2, total_damage = $3, death_count = $4 WHERE id = $1`,
           [instanceId, timeSpentSec, totalDamage, deathCount]
         );
@@ -1612,8 +1608,8 @@ export const nextDungeonInstance = async (
 
         if (participantCharacterIds.length > 0) {
           // 发奖流程会同时更新 characters 并写入背包，先统一获取背包互斥锁，
-          // 避免与“先背包锁再锁角色行”的事务出现锁顺序反转。
-          await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
+          // 避免与”先背包锁再锁角色行”的事务出现锁顺序反转。
+          await lockCharacterInventoryMutexesTx(null, participantCharacterIds);
         }
 
         const appendGrantedItem = (
@@ -1686,7 +1682,7 @@ export const nextDungeonInstance = async (
         };
 
         if (participantCharacterIds.length > 0) {
-          const clearCountRes = await client.query(
+          const clearCountRes = await query(
             `
               SELECT character_id, COUNT(1)::int AS cnt
               FROM dungeon_record
@@ -1702,7 +1698,7 @@ export const nextDungeonInstance = async (
             clearCountMap.set(asNumber(row.character_id, 0), asNumber(row.cnt, 0));
           }
 
-          const settingRes = await client.query(
+          const settingRes = await query(
             `
               SELECT id, auto_disassemble_enabled, auto_disassemble_rules
               FROM characters
@@ -1741,7 +1737,7 @@ export const nextDungeonInstance = async (
           }
 
           if (rewardBundle.exp > 0 || rewardBundle.silver > 0) {
-            await client.query(
+            await query(
               `UPDATE characters SET exp = exp + $1, silver = silver + $2, updated_at = NOW() WHERE id = $3`,
               [rewardBundle.exp, rewardBundle.silver, characterId]
             );
@@ -1769,18 +1765,17 @@ export const nextDungeonInstance = async (
               autoDisassembleSetting,
               sourceObtainedFrom: 'dungeon_clear_reward',
               createItem: async ({ itemDefId, qty, bindType, obtainedFrom, equipOptions }) => {
-                return createItem(p.userId, characterId, itemDefId, qty, {
+                return itemService.createItem(p.userId, characterId, itemDefId, qty, {
                   location: 'bag',
                   obtainedFrom,
                   ...(bindType ? { bindType } : {}),
                   ...(equipOptions ? { equipOptions } : {}),
-                  dbClient: client,
                 });
               },
               addSilver: async (ownerCharacterId, silverGain) => {
                 const safeSilver = Math.max(0, Math.floor(Number(silverGain) || 0));
                 if (safeSilver <= 0) return { success: true, message: '无需增加银两' };
-                const updateRes = await client.query(
+                const updateRes = await query(
                   `
                     UPDATE characters
                     SET silver = silver + $1,
@@ -1813,7 +1808,7 @@ export const nextDungeonInstance = async (
             is_first_clear: isFirstClear,
           };
 
-          await client.query(
+          await query(
             `
               INSERT INTO dungeon_record (character_id, dungeon_id, difficulty_id, instance_id, result, time_spent_sec, damage_dealt, death_count, rewards, is_first_clear)
               VALUES ($1, $2, $3, $4, 'cleared', $5, $6, $7, $8::jsonb, $9)
@@ -1859,7 +1854,6 @@ export const nextDungeonInstance = async (
         } catch { }
 
           return { success: true, data: { instanceId, status: 'cleared', finished: true } };
-        });
       } catch (error) {
         console.error('秘境结算失败:', error);
         return { success: false, message: '秘境结算失败' };
@@ -1893,3 +1887,56 @@ export const nextDungeonInstance = async (
     return { success: false, message: '推进秘境失败' };
   }
 };
+
+/**
+ * 秘境服务 class
+ *
+ * 作用：将现有的秘境函数包装为 class 方法，支持 @Transactional 装饰器
+ *
+ * 数据流：委托给对应的独立函数
+ *
+ * 关键边界条件：
+ * 1) startDungeonInstance 和 nextDungeonInstance 使用 @Transactional 保证事务原子性
+ * 2) 其他方法直接委托给独立函数
+ */
+class DungeonService {
+  async getDungeonCategories() {
+    return getDungeonCategories();
+  }
+
+  async getDungeonWeeklyTargets(userId: number) {
+    return getDungeonWeeklyTargets(userId);
+  }
+
+  async getDungeonList(params: Parameters<typeof getDungeonList>[0]) {
+    return getDungeonList(params);
+  }
+
+  async getDungeonPreview(dungeonId: string, difficultyRank?: number, userId?: number) {
+    return getDungeonPreview(dungeonId, difficultyRank, userId);
+  }
+
+  async createDungeonInstance(userId: number, dungeonId: string, difficultyRank: number) {
+    return createDungeonInstance(userId, dungeonId, difficultyRank);
+  }
+
+  async joinDungeonInstance(userId: number, instanceId: string) {
+    return joinDungeonInstance(userId, instanceId);
+  }
+
+  async getDungeonInstance(userId: number, instanceId: string) {
+    return getDungeonInstance(userId, instanceId);
+  }
+
+  @Transactional
+  async startDungeonInstance(userId: number, instanceId: string) {
+    return startDungeonInstance(userId, instanceId);
+  }
+
+  @Transactional
+  async nextDungeonInstance(userId: number, instanceId: string) {
+    return nextDungeonInstance(userId, instanceId);
+  }
+}
+
+export const dungeonService = new DungeonService();

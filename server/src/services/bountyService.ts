@@ -1,9 +1,9 @@
-import { pool, withTransaction } from '../config/database.js';
+import { query } from '../config/database.js';
 import crypto from 'crypto';
 import { getBountyDefinitions, getItemDefinitions, getItemDefinitionsByIds } from './staticConfigLoader.js';
 import { getTaskDefinitionById } from './taskDefinitionService.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
-import { rollbackAndReturn, safeRollback } from './shared/transaction.js';
+import { Transactional } from '../decorators/transactional.js';
 
 export type BountySourceType = 'daily' | 'player';
 export type BountyClaimPolicy = 'unique' | 'limited' | 'unlimited';
@@ -110,12 +110,14 @@ const pickWeightedUnique = (defs: BountyDefRow[], take: number): BountyDefRow[] 
   return result;
 };
 
-export const ensureDailyBountyInstances = async (desiredCount: number = 6): Promise<void> => {
-  const today = getLocalDateKey();
-  const take = Math.max(1, Math.min(30, Math.trunc(desiredCount)));
-  const expiresAt = getLocalNextMidnight();
-  return await withTransaction(async (client) => {
-await client.query(
+class BountyService {
+  @Transactional
+  async ensureDailyBountyInstances(desiredCount: number = 6): Promise<void> {
+    const today = getLocalDateKey();
+    const take = Math.max(1, Math.min(30, Math.trunc(desiredCount)));
+    const expiresAt = getLocalNextMidnight();
+
+    await query(
       `
         DELETE FROM bounty_instance
         WHERE source_type = 'daily'
@@ -125,16 +127,16 @@ await client.query(
           )
       `,
     );
-  
-    const existingRes = await client.query(
+
+    const existingRes = await query(
       `SELECT COUNT(*)::int AS cnt FROM bounty_instance WHERE source_type = 'daily' AND refresh_date = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
       [today],
     );
-    const existing = asFiniteInt(existingRes.rows?.[0]?.cnt, 0);
+    const existing = asFiniteInt((existingRes as any).rows?.[0]?.cnt, 0);
     if (existing >= take) {
-return;
+      return;
     }
-  
+
     const defs = getBountyDefinitions()
       .filter((entry) => entry.enabled !== false)
       .filter((entry) => (entry.pool ?? 'daily') === 'daily')
@@ -150,9 +152,9 @@ return;
       }))
       .sort((left, right) => right.weight - left.weight || left.id.localeCompare(right.id));
     const picked = pickWeightedUnique(defs, take);
-  
+
     for (const d of picked) {
-      await client.query(
+      await query(
         `
           INSERT INTO bounty_instance (
             source_type, bounty_def_id, task_id, title, description,
@@ -177,109 +179,107 @@ return;
         ],
       );
     }
-  
-  });
-};
-
-export const getBountyBoard = async (
-  characterId: number,
-  poolName: 'daily' | 'all' | 'player' = 'daily',
-): Promise<{ success: true; data: { bounties: BountyBoardRowDto[]; today: string } } | { success: false; message: string }> => {
-  const cid = Number(characterId);
-  if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
-  const today = getLocalDateKey();
-
-  if (poolName === 'daily' || poolName === 'all') {
-    await ensureDailyBountyInstances(6);
   }
 
-  const params: unknown[] = [cid];
-  if (poolName === 'daily' || poolName === 'all') params.push(today);
-  const whereParts: string[] = [];
-  if (poolName === 'daily') whereParts.push(`i.source_type = 'daily' AND i.refresh_date = $2 AND (i.expires_at IS NULL OR i.expires_at > NOW())`);
-  if (poolName === 'player') whereParts.push(`i.source_type = 'player' AND (i.expires_at IS NULL OR i.expires_at > NOW())`);
-  if (poolName === 'all')
-    whereParts.push(
-      `(i.source_type = 'daily' AND i.refresh_date = $2 AND (i.expires_at IS NULL OR i.expires_at > NOW())) OR (i.source_type = 'player' AND (i.expires_at IS NULL OR i.expires_at > NOW()))`,
+  async getBountyBoard(
+    characterId: number,
+    poolName: 'daily' | 'all' | 'player' = 'daily',
+  ): Promise<{ success: true; data: { bounties: BountyBoardRowDto[]; today: string } } | { success: false; message: string }> {
+    const cid = Number(characterId);
+    if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
+    const today = getLocalDateKey();
+
+    if (poolName === 'daily' || poolName === 'all') {
+      await this.ensureDailyBountyInstances(6);
+    }
+
+    const params: unknown[] = [cid];
+    if (poolName === 'daily' || poolName === 'all') params.push(today);
+    const whereParts: string[] = [];
+    if (poolName === 'daily') whereParts.push(`i.source_type = 'daily' AND i.refresh_date = $2 AND (i.expires_at IS NULL OR i.expires_at > NOW())`);
+    if (poolName === 'player') whereParts.push(`i.source_type = 'player' AND (i.expires_at IS NULL OR i.expires_at > NOW())`);
+    if (poolName === 'all')
+      whereParts.push(
+        `(i.source_type = 'daily' AND i.refresh_date = $2 AND (i.expires_at IS NULL OR i.expires_at > NOW())) OR (i.source_type = 'player' AND (i.expires_at IS NULL OR i.expires_at > NOW()))`,
+      );
+    const where = whereParts.length > 0 ? `WHERE ${whereParts.map((p) => `(${p})`).join(' OR ')}` : '';
+
+    const res = await query(
+      `
+        SELECT
+          i.id,
+          i.source_type,
+          i.task_id,
+          i.title,
+          COALESCE(i.description, '') AS description,
+          i.claim_policy,
+          i.max_claims,
+          i.claimed_count,
+          i.refresh_date,
+          i.expires_at,
+          i.published_by_character_id,
+          i.spirit_stones_reward,
+          i.silver_reward,
+          i.spirit_stones_fee,
+          i.silver_fee,
+          i.required_items,
+          CASE WHEN c.id IS NULL THEN false ELSE true END AS claimed_by_me,
+          c.status AS my_claim_status,
+          p.status AS my_task_status
+        FROM bounty_instance i
+        LEFT JOIN bounty_claim c
+          ON c.bounty_instance_id = i.id
+         AND c.character_id = $1
+        LEFT JOIN character_task_progress p
+          ON p.character_id = $1
+         AND p.task_id = i.task_id
+        ${where}
+        ORDER BY
+          CASE WHEN i.source_type = 'daily' THEN 0 ELSE 1 END ASC,
+          i.id DESC
+      `,
+      params,
     );
-  const where = whereParts.length > 0 ? `WHERE ${whereParts.map((p) => `(${p})`).join(' OR ')}` : '';
 
-  const res = await pool.query(
-    `
-      SELECT
-        i.id,
-        i.source_type,
-        i.task_id,
-        i.title,
-        COALESCE(i.description, '') AS description,
-        i.claim_policy,
-        i.max_claims,
-        i.claimed_count,
-        i.refresh_date,
-        i.expires_at,
-        i.published_by_character_id,
-        i.spirit_stones_reward,
-        i.silver_reward,
-        i.spirit_stones_fee,
-        i.silver_fee,
-        i.required_items,
-        CASE WHEN c.id IS NULL THEN false ELSE true END AS claimed_by_me,
-        c.status AS my_claim_status,
-        p.status AS my_task_status
-      FROM bounty_instance i
-      LEFT JOIN bounty_claim c
-        ON c.bounty_instance_id = i.id
-       AND c.character_id = $1
-      LEFT JOIN character_task_progress p
-        ON p.character_id = $1
-       AND p.task_id = i.task_id
-      ${where}
-      ORDER BY
-        CASE WHEN i.source_type = 'daily' THEN 0 ELSE 1 END ASC,
-        i.id DESC
-    `,
-    params,
-  );
+    const bounties: BountyBoardRowDto[] = ((res as any).rows ?? []).map((r: any) => ({
+      id: asFiniteInt(r?.id, 0),
+      sourceType: (asNonEmptyString(r?.source_type) ?? 'daily') as BountySourceType,
+      taskId: asNonEmptyString(r?.task_id) ?? '',
+      title: String(r?.title ?? ''),
+      description: String(r?.description ?? ''),
+      claimPolicy: ((asNonEmptyString(r?.claim_policy) ?? 'limited') as BountyClaimPolicy) ?? 'limited',
+      maxClaims: asFiniteInt(r?.max_claims, 0),
+      claimedCount: asFiniteInt(r?.claimed_count, 0),
+      refreshDate: r?.refresh_date ? String(r.refresh_date) : null,
+      expiresAt: r?.expires_at ? new Date(r.expires_at).toISOString() : null,
+      publishedByCharacterId: r?.published_by_character_id === null || r?.published_by_character_id === undefined ? null : asFiniteInt(r.published_by_character_id, 0),
+      spiritStonesReward: asFiniteNonNegativeInt(r?.spirit_stones_reward, 0),
+      silverReward: asFiniteNonNegativeInt(r?.silver_reward, 0),
+      spiritStonesFee: asFiniteNonNegativeInt(r?.spirit_stones_fee, 0),
+      silverFee: asFiniteNonNegativeInt(r?.silver_fee, 0),
+      requiredItems: asRequiredItems(r?.required_items),
+      claimedByMe: r?.claimed_by_me === true,
+      myClaimStatus: asNonEmptyString(r?.my_claim_status),
+      myTaskStatus: asNonEmptyString(r?.my_task_status),
+    }));
 
-  const bounties: BountyBoardRowDto[] = (res.rows ?? []).map((r: any) => ({
-    id: asFiniteInt(r?.id, 0),
-    sourceType: (asNonEmptyString(r?.source_type) ?? 'daily') as BountySourceType,
-    taskId: asNonEmptyString(r?.task_id) ?? '',
-    title: String(r?.title ?? ''),
-    description: String(r?.description ?? ''),
-    claimPolicy: ((asNonEmptyString(r?.claim_policy) ?? 'limited') as BountyClaimPolicy) ?? 'limited',
-    maxClaims: asFiniteInt(r?.max_claims, 0),
-    claimedCount: asFiniteInt(r?.claimed_count, 0),
-    refreshDate: r?.refresh_date ? String(r.refresh_date) : null,
-    expiresAt: r?.expires_at ? new Date(r.expires_at).toISOString() : null,
-    publishedByCharacterId: r?.published_by_character_id === null || r?.published_by_character_id === undefined ? null : asFiniteInt(r.published_by_character_id, 0),
-    spiritStonesReward: asFiniteNonNegativeInt(r?.spirit_stones_reward, 0),
-    silverReward: asFiniteNonNegativeInt(r?.silver_reward, 0),
-    spiritStonesFee: asFiniteNonNegativeInt(r?.spirit_stones_fee, 0),
-    silverFee: asFiniteNonNegativeInt(r?.silver_fee, 0),
-    requiredItems: asRequiredItems(r?.required_items),
-    claimedByMe: r?.claimed_by_me === true,
-    myClaimStatus: asNonEmptyString(r?.my_claim_status),
-    myTaskStatus: asNonEmptyString(r?.my_task_status),
-  }));
+    return { success: true, data: { bounties, today } };
+  }
 
-  return { success: true, data: { bounties, today } };
-};
+  @Transactional
+  async claimBounty(
+    characterId: number,
+    bountyInstanceId: number,
+  ): Promise<
+    | { success: true; message: string; data: { bountyInstanceId: number; taskId: string } }
+    | { success: false; message: string }
+  > {
+    const cid = Number(characterId);
+    const bid = Number(bountyInstanceId);
+    if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
+    if (!Number.isFinite(bid) || bid <= 0) return { success: false, message: '悬赏不存在' };
 
-export const claimBounty = async (
-  characterId: number,
-  bountyInstanceId: number,
-): Promise<
-  | { success: true; message: string; data: { bountyInstanceId: number; taskId: string } }
-  | { success: false; message: string }
-> => {
-  const cid = Number(characterId);
-  const bid = Number(bountyInstanceId);
-  if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
-  if (!Number.isFinite(bid) || bid <= 0) return { success: false, message: '悬赏不存在' };
-
-  return await withTransaction(async (client) => {
-const instRes = await client.query(
+    const instRes = await query(
       `
         SELECT id, task_id, claim_policy, max_claims, claimed_count, expires_at
         FROM bounty_instance
@@ -289,10 +289,10 @@ const instRes = await client.query(
       `,
       [bid],
     );
-    if ((instRes.rows ?? []).length === 0) {
+    if (((instRes as any).rows ?? []).length === 0) {
       return { success: false, message: '悬赏不存在' };
     }
-    const inst = instRes.rows[0] as any;
+    const inst = (instRes as any).rows[0] as any;
     const taskId = asNonEmptyString(inst?.task_id) ?? '';
     if (!taskId) {
       return { success: false, message: '悬赏数据异常' };
@@ -301,30 +301,30 @@ const instRes = await client.query(
     if (expiresAtMs && Number.isFinite(expiresAtMs) && Date.now() > expiresAtMs) {
       return { success: false, message: '悬赏已过期' };
     }
-  
+
     const claimPolicy = (asNonEmptyString(inst?.claim_policy) ?? 'limited') as BountyClaimPolicy;
     const maxClaims = asFiniteInt(inst?.max_claims, 0);
     const claimedCount = asFiniteInt(inst?.claimed_count, 0);
-  
+
     if (claimPolicy === 'unique' && claimedCount >= 1) {
       return { success: false, message: '该悬赏已被接取' };
     }
     if (claimPolicy === 'limited' && maxClaims > 0 && claimedCount >= maxClaims) {
       return { success: false, message: '该悬赏接取次数已满' };
     }
-  
-    const taskProgRes = await client.query(
+
+    const taskProgRes = await query(
       `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 LIMIT 1 FOR UPDATE`,
       [cid, taskId],
     );
-    if ((taskProgRes.rows ?? []).length > 0) {
-      const st = asNonEmptyString(taskProgRes.rows[0]?.status);
+    if (((taskProgRes as any).rows ?? []).length > 0) {
+      const st = asNonEmptyString((taskProgRes as any).rows[0]?.status);
       if (st && st !== 'claimed') {
         return { success: false, message: '该任务已接取' };
       }
     }
-  
-    const insertClaimRes = await client.query(
+
+    const insertClaimRes = await query(
       `
         INSERT INTO bounty_claim (bounty_instance_id, character_id, status, claimed_at, updated_at)
         VALUES ($1, $2, 'claimed', NOW(), NOW())
@@ -333,24 +333,24 @@ const instRes = await client.query(
       `,
       [bid, cid],
     );
-    if ((insertClaimRes.rows ?? []).length === 0) {
+    if (((insertClaimRes as any).rows ?? []).length === 0) {
       return { success: false, message: '已接取该悬赏' };
     }
-  
-    await client.query(
+
+    await query(
       `UPDATE bounty_instance SET claimed_count = claimed_count + 1, updated_at = NOW() WHERE id = $1`,
       [bid],
     );
-  
-    const taskDef = await getTaskDefinitionById(taskId, client);
+
+    const taskDef = await getTaskDefinitionById(taskId);
     if (!taskDef) {
       return { success: false, message: '任务不存在' };
     }
     const objectives = Array.isArray(taskDef.objectives) ? (taskDef.objectives as any[]) : [];
     const hasSubmitObjective = objectives.some((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
     const initialStatus = hasSubmitObjective ? 'turnin' : 'ongoing';
-  
-    await client.query(
+
+    await query(
       `
         INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
         VALUES ($1, $2, $3, '{}'::jsonb, true, NOW(), NULL, NULL, NOW())
@@ -365,356 +365,385 @@ const instRes = await client.query(
       `,
       [cid, taskId, initialStatus],
     );
-return { success: true, message: '接取成功', data: { bountyInstanceId: bid, taskId } };
-  });
-};
-
-export const publishBounty = async (
-  characterId: number,
-  payload: {
-    title: string;
-    description?: string;
-    claimPolicy?: BountyClaimPolicy;
-    maxClaims?: number;
-    expiresAt?: string;
-    spiritStonesReward?: number;
-    silverReward?: number;
-    requiredItems?: Array<{ itemDefId?: unknown; qty?: unknown }>;
-    taskId?: string;
-  },
-): Promise<
-  | { success: true; message: string; data: { bountyInstanceId: number } }
-  | { success: false; message: string }
-> => {
-  const cid = Number(characterId);
-  if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
-
-  const title = asNonEmptyString(payload.title) ?? '';
-  if (!title) return { success: false, message: '标题不能为空' };
-
-  const claimPolicy = ((asNonEmptyString(payload.claimPolicy) ?? 'limited') as BountyClaimPolicy) ?? 'limited';
-  const maxClaimsRaw = asFiniteNonNegativeInt(payload.maxClaims, 0);
-  const maxClaims = claimPolicy === 'limited' ? maxClaimsRaw : 0;
-  if (claimPolicy === 'limited' && maxClaims <= 0) return { success: false, message: '限次接取必须设置最大次数' };
-  if (claimPolicy === 'unlimited') return { success: false, message: '玩家悬赏暂不支持不限接取' };
-  const desc = typeof payload.description === 'string' ? payload.description : '';
-  const expiresAtMs = payload.expiresAt ? Date.parse(payload.expiresAt) : NaN;
-  const expiresAt = Number.isFinite(expiresAtMs) && expiresAtMs > Date.now() ? new Date(expiresAtMs).toISOString() : null;
-
-  const spiritStonesReward = asFiniteNonNegativeInt(payload.spiritStonesReward, 0);
-  const silverReward = asFiniteNonNegativeInt(payload.silverReward, 0);
-  if (spiritStonesReward <= 0 && silverReward <= 0) return { success: false, message: '奖励不能都为0' };
-
-  const rawRequiredItems = Array.isArray(payload.requiredItems) ? payload.requiredItems : [];
-  const requiredItems: Array<{ itemDefId: string; qty: number }> = [];
-  for (const it of rawRequiredItems) {
-    if (!it || typeof it !== 'object') continue;
-    const itemDefId = asNonEmptyString((it as any).itemDefId) ?? '';
-    const qty = Math.max(1, asFiniteNonNegativeInt((it as any).qty, 1));
-    if (!itemDefId) continue;
-    requiredItems.push({ itemDefId, qty });
+    return { success: true, message: '接取成功', data: { bountyInstanceId: bid, taskId } };
   }
-  if (requiredItems.length === 0) return { success: false, message: '必须设置需要提交的材料' };
-  if (requiredItems.length > 8) return { success: false, message: '一次最多设置8种材料' };
 
-  const multiplier = claimPolicy === 'limited' ? Math.max(1, maxClaims) : 1;
-  const spiritBudget = spiritStonesReward * multiplier;
-  const silverBudget = silverReward * multiplier;
+  async publishBounty(
+    characterId: number,
+    payload: {
+      title: string;
+      description?: string;
+      claimPolicy?: BountyClaimPolicy;
+      maxClaims?: number;
+      expiresAt?: string;
+      spiritStonesReward?: number;
+      silverReward?: number;
+      requiredItems?: Array<{ itemDefId?: unknown; qty?: unknown }>;
+      taskId?: string;
+    },
+  ): Promise<
+    | { success: true; message: string; data: { bountyInstanceId: number } }
+    | { success: false; message: string }
+  > {
+    const cid = Number(characterId);
+    if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
 
-  const spiritStonesFee = spiritBudget > 0 ? Math.ceil(spiritBudget * 0.1) : 0;
-  const silverFee = silverBudget > 0 ? Math.ceil(silverBudget * 0.1) : 0;
-  const spiritCost = spiritBudget + spiritStonesFee;
-  const silverCost = silverBudget + silverFee;
+    const title = asNonEmptyString(payload.title) ?? '';
+    if (!title) return { success: false, message: '标题不能为空' };
 
-  try {
-    return await withTransaction(async (client) => {
-  const itemIds = Array.from(new Set(requiredItems.map((x) => x.itemDefId)));
-      const nameById = new Map<string, string>();
-      const defs = getItemDefinitionsByIds(itemIds);
-      for (const id of itemIds) {
-        const def = defs.get(id);
-        if (!def || def.enabled === false) continue;
-        const name = asNonEmptyString(def.name) ?? id;
-        nameById.set(id, name);
-      }
-      if (nameById.size !== itemIds.length) {
-        return { success: false, message: '包含不存在的材料' };
-      }
-  
-      const providedTaskId = asNonEmptyString(payload.taskId);
-      const taskId = providedTaskId ? providedTaskId : `task-bounty-${crypto.randomUUID()}`;
-      if (taskId.length > 64) {
-        return { success: false, message: '任务ID过长' };
-      }
-  
-      const objectiveText = requiredItems
-        .map((x) => `${nameById.get(x.itemDefId) ?? x.itemDefId}×${x.qty}`)
-        .join('、');
-      const taskObjectives = [
-        {
-          id: 'obj-submit',
-          type: 'submit_items',
-          text: `提交材料：${objectiveText}`,
-          target: 1,
-          params: { items: requiredItems.map((x) => ({ item_def_id: x.itemDefId, qty: x.qty })) },
-        },
-      ];
-  
-      const normalizedRequiredItems = requiredItems.map((x) => ({
-        item_def_id: x.itemDefId,
-        name: nameById.get(x.itemDefId) ?? x.itemDefId,
-        qty: x.qty,
-      }));
-  
-      if (!providedTaskId) {
-        await client.query(
-          `
-            INSERT INTO task_def (
-              id, category, title, realm, description,
-              giver_npc_id, map_id, room_id,
-              objectives, rewards, prereq_task_ids,
-              enabled, sort_weight, version, updated_at
-            ) VALUES (
-              $1, 'event', $2, '凡人', $3,
-              NULL, NULL, NULL,
-              $4::jsonb, '[]'::jsonb, '[]'::jsonb,
-              true, 0, 1, NOW()
-            )
-          `,
-          [taskId, title, desc || null, JSON.stringify(taskObjectives)],
-        );
-      } else {
-        const existsTaskDef = await getTaskDefinitionById(taskId, client);
-        if (!existsTaskDef) {
-          return { success: false, message: '任务不存在' };
-        }
-      }
-  
-      const charRes = await client.query(
-        `SELECT spirit_stones, silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE`,
-        [cid],
-      );
-      if ((charRes.rows ?? []).length === 0) {
-        return { success: false, message: '角色不存在' };
-      }
-      const curSpirit = asFiniteNonNegativeInt(charRes.rows[0]?.spirit_stones, 0);
-      const curSilver = asFiniteNonNegativeInt(charRes.rows[0]?.silver, 0);
-      if (curSpirit < spiritCost) {
-        return { success: false, message: '灵石不足' };
-      }
-      if (curSilver < silverCost) {
-        return { success: false, message: '银两不足' };
-      }
-  
-      await client.query(
-        `UPDATE characters SET spirit_stones = spirit_stones - $1, silver = silver - $2, updated_at = NOW() WHERE id = $3`,
-        [spiritCost, silverCost, cid],
-      );
-  
-      const res = await client.query(
+    const claimPolicy = ((asNonEmptyString(payload.claimPolicy) ?? 'limited') as BountyClaimPolicy) ?? 'limited';
+    const maxClaimsRaw = asFiniteNonNegativeInt(payload.maxClaims, 0);
+    const maxClaims = claimPolicy === 'limited' ? maxClaimsRaw : 0;
+    if (claimPolicy === 'limited' && maxClaims <= 0) return { success: false, message: '限次接取必须设置最大次数' };
+    if (claimPolicy === 'unlimited') return { success: false, message: '玩家悬赏暂不支持不限接取' };
+    const desc = typeof payload.description === 'string' ? payload.description : '';
+    const expiresAtMs = payload.expiresAt ? Date.parse(payload.expiresAt) : NaN;
+    const expiresAt = Number.isFinite(expiresAtMs) && expiresAtMs > Date.now() ? new Date(expiresAtMs).toISOString() : null;
+
+    const spiritStonesReward = asFiniteNonNegativeInt(payload.spiritStonesReward, 0);
+    const silverReward = asFiniteNonNegativeInt(payload.silverReward, 0);
+    if (spiritStonesReward <= 0 && silverReward <= 0) return { success: false, message: '奖励不能都为0' };
+
+    const rawRequiredItems = Array.isArray(payload.requiredItems) ? payload.requiredItems : [];
+    const requiredItems: Array<{ itemDefId: string; qty: number }> = [];
+    for (const it of rawRequiredItems) {
+      if (!it || typeof it !== 'object') continue;
+      const itemDefId = asNonEmptyString((it as any).itemDefId) ?? '';
+      const qty = Math.max(1, asFiniteNonNegativeInt((it as any).qty, 1));
+      if (!itemDefId) continue;
+      requiredItems.push({ itemDefId, qty });
+    }
+    if (requiredItems.length === 0) return { success: false, message: '必须设置需要提交的材料' };
+    if (requiredItems.length > 8) return { success: false, message: '一次最多设置8种材料' };
+
+    const multiplier = claimPolicy === 'limited' ? Math.max(1, maxClaims) : 1;
+    const spiritBudget = spiritStonesReward * multiplier;
+    const silverBudget = silverReward * multiplier;
+
+    const spiritStonesFee = spiritBudget > 0 ? Math.ceil(spiritBudget * 0.1) : 0;
+    const silverFee = silverBudget > 0 ? Math.ceil(silverBudget * 0.1) : 0;
+    const spiritCost = spiritBudget + spiritStonesFee;
+    const silverCost = silverBudget + silverFee;
+
+    try {
+      return await this._publishBountyInner(cid, payload, title, desc, claimPolicy, maxClaims, expiresAt, spiritStonesReward, silverReward, requiredItems, spiritStonesFee, silverFee, spiritCost, silverCost);
+    } catch (error) {
+      console.error('发布悬赏失败:', error);
+      return { success: false, message: '服务器错误' };
+    }
+  }
+
+  @Transactional
+  private async _publishBountyInner(
+    cid: number,
+    payload: { taskId?: string },
+    title: string,
+    desc: string,
+    claimPolicy: BountyClaimPolicy,
+    maxClaims: number,
+    expiresAt: string | null,
+    spiritStonesReward: number,
+    silverReward: number,
+    requiredItems: Array<{ itemDefId: string; qty: number }>,
+    spiritStonesFee: number,
+    silverFee: number,
+    spiritCost: number,
+    silverCost: number,
+  ): Promise<
+    | { success: true; message: string; data: { bountyInstanceId: number } }
+    | { success: false; message: string }
+  > {
+    const itemIds = Array.from(new Set(requiredItems.map((x) => x.itemDefId)));
+    const nameById = new Map<string, string>();
+    const defs = getItemDefinitionsByIds(itemIds);
+    for (const id of itemIds) {
+      const def = defs.get(id);
+      if (!def || def.enabled === false) continue;
+      const name = asNonEmptyString(def.name) ?? id;
+      nameById.set(id, name);
+    }
+    if (nameById.size !== itemIds.length) {
+      return { success: false, message: '包含不存在的材料' };
+    }
+
+    const providedTaskId = asNonEmptyString(payload.taskId);
+    const taskId = providedTaskId ? providedTaskId : `task-bounty-${crypto.randomUUID()}`;
+    if (taskId.length > 64) {
+      return { success: false, message: '任务ID过长' };
+    }
+
+    const objectiveText = requiredItems
+      .map((x) => `${nameById.get(x.itemDefId) ?? x.itemDefId}×${x.qty}`)
+      .join('、');
+    const taskObjectives = [
+      {
+        id: 'obj-submit',
+        type: 'submit_items',
+        text: `提交材料：${objectiveText}`,
+        target: 1,
+        params: { items: requiredItems.map((x) => ({ item_def_id: x.itemDefId, qty: x.qty })) },
+      },
+    ];
+
+    const normalizedRequiredItems = requiredItems.map((x) => ({
+      item_def_id: x.itemDefId,
+      name: nameById.get(x.itemDefId) ?? x.itemDefId,
+      qty: x.qty,
+    }));
+
+    if (!providedTaskId) {
+      await query(
         `
-          INSERT INTO bounty_instance (
-            source_type, bounty_def_id, task_id, title, description,
-            claim_policy, max_claims, claimed_count, refresh_date, expires_at,
-            published_by_character_id,
-            spirit_stones_reward, silver_reward, spirit_stones_fee, silver_fee,
-            required_items,
-            created_at, updated_at
+          INSERT INTO task_def (
+            id, category, title, realm, description,
+            giver_npc_id, map_id, room_id,
+            objectives, rewards, prereq_task_ids,
+            enabled, sort_weight, version, updated_at
           ) VALUES (
-            'player', NULL, $1, $2, $3,
-            $4, $5, 0, NULL, $6,
-            $7,
-            $8, $9, $10, $11,
-            $12::jsonb,
-            NOW(), NOW()
+            $1, 'event', $2, '凡人', $3,
+            NULL, NULL, NULL,
+            $4::jsonb, '[]'::jsonb, '[]'::jsonb,
+            true, 0, 1, NOW()
           )
-          RETURNING id
         `,
-        [
-          taskId,
-          title,
-          desc || null,
-          claimPolicy,
-          maxClaims,
-          expiresAt,
-          cid,
-          spiritStonesReward,
-          silverReward,
-          spiritStonesFee,
-          silverFee,
-          JSON.stringify(normalizedRequiredItems),
-        ],
+        [taskId, title, desc || null, JSON.stringify(taskObjectives)],
       );
-      const id = asFiniteInt(res.rows?.[0]?.id, 0);
-      if (!id) {
-        return rollbackAndReturn(client, { success: false, message: '发布失败' });
+    } else {
+      const existsTaskDef = await getTaskDefinitionById(taskId);
+      if (!existsTaskDef) {
+        return { success: false, message: '任务不存在' };
       }
-  return { success: true, message: '发布成功', data: { bountyInstanceId: id } };
-    });
-  } catch (error) {
-    console.error('发布悬赏失败:', error);
-    return { success: false, message: '服务器错误' };
+    }
+
+    const charRes = await query(
+      `SELECT spirit_stones, silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE`,
+      [cid],
+    );
+    if (((charRes as any).rows ?? []).length === 0) {
+      return { success: false, message: '角色不存在' };
+    }
+    const curSpirit = asFiniteNonNegativeInt((charRes as any).rows[0]?.spirit_stones, 0);
+    const curSilver = asFiniteNonNegativeInt((charRes as any).rows[0]?.silver, 0);
+    if (curSpirit < spiritCost) {
+      return { success: false, message: '灵石不足' };
+    }
+    if (curSilver < silverCost) {
+      return { success: false, message: '银两不足' };
+    }
+
+    await query(
+      `UPDATE characters SET spirit_stones = spirit_stones - $1, silver = silver - $2, updated_at = NOW() WHERE id = $3`,
+      [spiritCost, silverCost, cid],
+    );
+
+    const res = await query(
+      `
+        INSERT INTO bounty_instance (
+          source_type, bounty_def_id, task_id, title, description,
+          claim_policy, max_claims, claimed_count, refresh_date, expires_at,
+          published_by_character_id,
+          spirit_stones_reward, silver_reward, spirit_stones_fee, silver_fee,
+          required_items,
+          created_at, updated_at
+        ) VALUES (
+          'player', NULL, $1, $2, $3,
+          $4, $5, 0, NULL, $6,
+          $7,
+          $8, $9, $10, $11,
+          $12::jsonb,
+          NOW(), NOW()
+        )
+        RETURNING id
+      `,
+      [
+        taskId,
+        title,
+        desc || null,
+        claimPolicy,
+        maxClaims,
+        expiresAt,
+        cid,
+        spiritStonesReward,
+        silverReward,
+        spiritStonesFee,
+        silverFee,
+        JSON.stringify(normalizedRequiredItems),
+      ],
+    );
+    const id = asFiniteInt((res as any).rows?.[0]?.id, 0);
+    if (!id) {
+      return { success: false, message: '发布失败' };
+    }
+    return { success: true, message: '发布成功', data: { bountyInstanceId: id } };
   }
-};
 
-export const searchItemDefsForBounty = async (
-  keyword: string,
-  limit: number = 20,
-): Promise<{ success: true; data: { items: Array<{ id: string; name: string; icon: string | null; category: string | null }> } } | { success: false; message: string }> => {
-  const q = asNonEmptyString(keyword) ?? '';
-  const take = Math.max(1, Math.min(50, Math.trunc(limit)));
-  if (!q) return { success: true, data: { items: [] } };
-  const keywordLower = q.toLowerCase();
-  const items = getItemDefinitions()
-    .filter((entry) => entry.enabled !== false)
-    .filter((entry) => String(entry.name || '').toLowerCase().includes(keywordLower))
-    .sort((left, right) => {
-      const categoryDiff = String(left.category || '').localeCompare(String(right.category || ''));
-      if (categoryDiff !== 0) return categoryDiff;
-      const qualityRankDiff =
-        resolveQualityRankFromName(right.quality, 0) - resolveQualityRankFromName(left.quality, 0);
-      if (qualityRankDiff !== 0) return qualityRankDiff;
-      return String(left.id || '').localeCompare(String(right.id || ''));
-    })
-    .slice(0, take)
-    .map((entry) => ({
-      id: String(entry.id || ''),
-      name: String(entry.name || ''),
-      icon: typeof entry.icon === 'string' ? entry.icon : null,
-      category: typeof entry.category === 'string' ? entry.category : null,
-    }))
-    .filter((entry) => entry.id);
+  async searchItemDefsForBounty(
+    keyword: string,
+    limit: number = 20,
+  ): Promise<{ success: true; data: { items: Array<{ id: string; name: string; icon: string | null; category: string | null }> } } | { success: false; message: string }> {
+    const q = asNonEmptyString(keyword) ?? '';
+    const take = Math.max(1, Math.min(50, Math.trunc(limit)));
+    if (!q) return { success: true, data: { items: [] } };
+    const keywordLower = q.toLowerCase();
+    const items = getItemDefinitions()
+      .filter((entry) => entry.enabled !== false)
+      .filter((entry) => String(entry.name || '').toLowerCase().includes(keywordLower))
+      .sort((left, right) => {
+        const categoryDiff = String(left.category || '').localeCompare(String(right.category || ''));
+        if (categoryDiff !== 0) return categoryDiff;
+        const qualityRankDiff =
+          resolveQualityRankFromName(right.quality, 0) - resolveQualityRankFromName(left.quality, 0);
+        if (qualityRankDiff !== 0) return qualityRankDiff;
+        return String(left.id || '').localeCompare(String(right.id || ''));
+      })
+      .slice(0, take)
+      .map((entry) => ({
+        id: String(entry.id || ''),
+        name: String(entry.name || ''),
+        icon: typeof entry.icon === 'string' ? entry.icon : null,
+        category: typeof entry.category === 'string' ? entry.category : null,
+      }))
+      .filter((entry) => entry.id);
 
-  return { success: true, data: { items } };
-};
+    return { success: true, data: { items } };
+  }
 
-export const submitBountyMaterials = async (
-  characterId: number,
-  taskId: string,
-): Promise<{ success: true; message: string; data: { taskId: string } } | { success: false; message: string }> => {
-  const cid = Number(characterId);
-  if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
-  const tid = asNonEmptyString(taskId) ?? '';
-  if (!tid) return { success: false, message: '任务ID不能为空' };
+  async submitBountyMaterials(
+    characterId: number,
+    taskId: string,
+  ): Promise<{ success: true; message: string; data: { taskId: string } } | { success: false; message: string }> {
+    const cid = Number(characterId);
+    if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
+    const tid = asNonEmptyString(taskId) ?? '';
+    if (!tid) return { success: false, message: '任务ID不能为空' };
 
-  try {
-    return await withTransaction(async (client) => {
-  const claimRes = await client.query(
+    try {
+      return await this._submitBountyMaterialsInner(cid, tid);
+    } catch (error) {
+      console.error('提交悬赏材料失败:', error);
+      return { success: false, message: '服务器错误' };
+    }
+  }
+
+  @Transactional
+  private async _submitBountyMaterialsInner(
+    cid: number,
+    tid: string,
+  ): Promise<{ success: true; message: string; data: { taskId: string } } | { success: false; message: string }> {
+    const claimRes = await query(
+      `
+        SELECT
+          c.id AS claim_id,
+          c.status AS claim_status,
+          i.id AS bounty_instance_id,
+          i.required_items
+        FROM bounty_claim c
+        JOIN bounty_instance i ON i.id = c.bounty_instance_id
+        WHERE c.character_id = $1
+          AND i.task_id = $2
+          AND c.status IN ('claimed','completed')
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [cid, tid],
+    );
+    if (((claimRes as any).rows ?? []).length === 0) {
+      return { success: false, message: '未接取该悬赏' };
+    }
+
+    const claimRow = (claimRes as any).rows[0] as any;
+    const claimId = Number(claimRow?.claim_id);
+    const claimStatus = asNonEmptyString(claimRow?.claim_status) ?? 'claimed';
+    if (claimStatus === 'completed') {
+      return { success: false, message: '已提交材料' };
+    }
+
+    const requiredItems = asRequiredItems(claimRow?.required_items);
+    if (requiredItems.length === 0) {
+      return { success: false, message: '该悬赏无需提交材料' };
+    }
+
+    const progRes = await query(
+      `SELECT progress, status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
+      [cid, tid],
+    );
+    if (((progRes as any).rows ?? []).length === 0) {
+      return { success: false, message: '任务未接取' };
+    }
+    const currentStatus = asNonEmptyString((progRes as any).rows[0]?.status) ?? 'ongoing';
+    if (currentStatus === 'claimable') {
+      return { success: false, message: '任务已可领取' };
+    }
+    if (currentStatus === 'claimed') {
+      return { success: false, message: '任务已完成' };
+    }
+
+    const taskDef = await getTaskDefinitionById(tid);
+    const objectives = Array.isArray(taskDef?.objectives) ? (taskDef.objectives as any[]) : [];
+    const submitObj = objectives.find((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
+    const submitObjId = submitObj && typeof submitObj === 'object' ? asNonEmptyString((submitObj as any).id) : null;
+    const submitTarget = submitObj && typeof submitObj === 'object' ? Math.max(1, asFiniteNonNegativeInt((submitObj as any).target, 1)) : 1;
+
+    for (const reqItem of requiredItems) {
+      let remaining = Math.max(1, Math.floor(reqItem.qty));
+      const rowsRes = await query(
         `
-          SELECT
-            c.id AS claim_id,
-            c.status AS claim_status,
-            i.id AS bounty_instance_id,
-            i.required_items
-          FROM bounty_claim c
-          JOIN bounty_instance i ON i.id = c.bounty_instance_id
-          WHERE c.character_id = $1
-            AND i.task_id = $2
-            AND c.status IN ('claimed','completed')
-          LIMIT 1
+          SELECT id, qty, locked, location
+          FROM item_instance
+          WHERE owner_character_id = $1
+            AND item_def_id = $2
+            AND location IN ('bag','warehouse')
+          ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, created_at ASC
           FOR UPDATE
         `,
-        [cid, tid],
+        [cid, reqItem.itemDefId],
       );
-      if ((claimRes.rows ?? []).length === 0) {
-        return { success: false, message: '未接取该悬赏' };
+      const rows = ((rowsRes as any).rows ?? []) as Array<{ id: number; qty: number; locked: boolean }>;
+      const available = rows.filter((r) => !r.locked).reduce((sum, r) => sum + Math.max(0, Number(r.qty) || 0), 0);
+      if (available < remaining) {
+        return { success: false, message: `${reqItem.name}数量不足` };
       }
-  
-      const claimRow = claimRes.rows[0] as any;
-      const claimId = Number(claimRow?.claim_id);
-      const claimStatus = asNonEmptyString(claimRow?.claim_status) ?? 'claimed';
-      if (claimStatus === 'completed') {
-        return { success: false, message: '已提交材料' };
-      }
-  
-      const requiredItems = asRequiredItems(claimRow?.required_items);
-      if (requiredItems.length === 0) {
-        return { success: false, message: '该悬赏无需提交材料' };
-      }
-  
-      const progRes = await client.query(
-        `SELECT progress, status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
-        [cid, tid],
-      );
-      if ((progRes.rows ?? []).length === 0) {
-        return { success: false, message: '任务未接取' };
-      }
-      const currentStatus = asNonEmptyString(progRes.rows[0]?.status) ?? 'ongoing';
-      if (currentStatus === 'claimable') {
-        return { success: false, message: '任务已可领取' };
-      }
-      if (currentStatus === 'claimed') {
-        return { success: false, message: '任务已完成' };
-      }
-  
-      const taskDef = await getTaskDefinitionById(tid, client);
-      const objectives = Array.isArray(taskDef?.objectives) ? (taskDef.objectives as any[]) : [];
-      const submitObj = objectives.find((o) => (o && typeof o === 'object' ? String((o as any).type ?? '').trim() : '') === 'submit_items');
-      const submitObjId = submitObj && typeof submitObj === 'object' ? asNonEmptyString((submitObj as any).id) : null;
-      const submitTarget = submitObj && typeof submitObj === 'object' ? Math.max(1, asFiniteNonNegativeInt((submitObj as any).target, 1)) : 1;
-  
-      for (const reqItem of requiredItems) {
-        let remaining = Math.max(1, Math.floor(reqItem.qty));
-        const rowsRes = await client.query(
-          `
-            SELECT id, qty, locked, location
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND item_def_id = $2
-              AND location IN ('bag','warehouse')
-            ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, created_at ASC
-            FOR UPDATE
-          `,
-          [cid, reqItem.itemDefId],
-        );
-        const rows = (rowsRes.rows ?? []) as Array<{ id: number; qty: number; locked: boolean }>;
-        const available = rows.filter((r) => !r.locked).reduce((sum, r) => sum + Math.max(0, Number(r.qty) || 0), 0);
-        if (available < remaining) {
-          return { success: false, message: `${reqItem.name}数量不足` };
+
+      for (const row of rows) {
+        if (remaining <= 0) break;
+        if (row.locked) continue;
+        const rowQty = Math.max(0, Number(row.qty) || 0);
+        if (rowQty <= 0) continue;
+        const takeQty = Math.min(remaining, rowQty);
+        if (takeQty === rowQty) {
+          await query('DELETE FROM item_instance WHERE id = $1', [row.id]);
+        } else {
+          await query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [takeQty, row.id]);
         }
-  
-        for (const row of rows) {
-          if (remaining <= 0) break;
-          if (row.locked) continue;
-          const rowQty = Math.max(0, Number(row.qty) || 0);
-          if (rowQty <= 0) continue;
-          const takeQty = Math.min(remaining, rowQty);
-          if (takeQty === rowQty) {
-            await client.query('DELETE FROM item_instance WHERE id = $1', [row.id]);
-          } else {
-            await client.query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [takeQty, row.id]);
-          }
-          remaining -= takeQty;
-        }
+        remaining -= takeQty;
       }
-  
-      const progressRecord = progRes.rows[0]?.progress && typeof progRes.rows[0].progress === 'object' ? (progRes.rows[0].progress as Record<string, unknown>) : {};
-      const nextProgress: Record<string, number> = {};
-      for (const [k, v] of Object.entries(progressRecord)) {
-        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
-        if (Number.isFinite(n)) nextProgress[k] = Math.max(0, Math.floor(n));
-      }
-      if (submitObjId) nextProgress[submitObjId] = submitTarget;
-  
-      await client.query(
-        `
-          UPDATE character_task_progress
-          SET progress = $3::jsonb,
-              status = 'claimable',
-              completed_at = COALESCE(completed_at, NOW()),
-              updated_at = NOW()
-          WHERE character_id = $1 AND task_id = $2
-        `,
-        [cid, tid, JSON.stringify(nextProgress)],
-      );
-  
-      if (Number.isFinite(claimId) && claimId > 0) {
-        await client.query(`UPDATE bounty_claim SET status = 'completed', updated_at = NOW() WHERE id = $1`, [claimId]);
-      }
-  return { success: true, message: '提交成功', data: { taskId: tid } };
-    });
-  } catch (error) {
-    console.error('提交悬赏材料失败:', error);
-    return { success: false, message: '服务器错误' };
+    }
+
+    const progressRecord = (progRes as any).rows[0]?.progress && typeof (progRes as any).rows[0].progress === 'object' ? ((progRes as any).rows[0].progress as Record<string, unknown>) : {};
+    const nextProgress: Record<string, number> = {};
+    for (const [k, v] of Object.entries(progressRecord)) {
+      const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+      if (Number.isFinite(n)) nextProgress[k] = Math.max(0, Math.floor(n));
+    }
+    if (submitObjId) nextProgress[submitObjId] = submitTarget;
+
+    await query(
+      `
+        UPDATE character_task_progress
+        SET progress = $3::jsonb,
+            status = 'claimable',
+            completed_at = COALESCE(completed_at, NOW()),
+            updated_at = NOW()
+        WHERE character_id = $1 AND task_id = $2
+      `,
+      [cid, tid, JSON.stringify(nextProgress)],
+    );
+
+    if (Number.isFinite(claimId) && claimId > 0) {
+      await query(`UPDATE bounty_claim SET status = 'completed', updated_at = NOW() WHERE id = $1`, [claimId]);
+    }
+    return { success: true, message: '提交成功', data: { taskId: tid } };
   }
-};
+}
+
+export const bountyService = new BountyService();

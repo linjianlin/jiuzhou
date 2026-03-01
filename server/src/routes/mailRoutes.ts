@@ -4,16 +4,7 @@ import { Router, Request, Response } from 'express';
  */
 import { withRouteError } from '../middleware/routeError.js';
 import { requireCharacter } from '../middleware/auth.js';
-import {
-  getMailList,
-  readMail,
-  claimAttachments,
-  claimAllAttachments,
-  deleteMail,
-  deleteAllMails,
-  markAllRead,
-  getUnreadCount
-} from '../services/mailService.js';
+import { mailService } from '../services/mailService.js';
 
 const router = Router();
 
@@ -37,7 +28,7 @@ router.get('/list', async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize as string) || 50, 100);
 
-    const result = await getMailList(userId, characterId, page, pageSize);
+    const result = await mailService.getMailList(userId, characterId, page, pageSize);
 
     return res.json({
       success: true,
@@ -63,7 +54,7 @@ router.get('/unread', async (req: Request, res: Response) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const result = await getUnreadCount(userId, characterId);
+    const result = await mailService.getUnreadCount(userId, characterId);
 
     return res.json({
       success: true,
@@ -87,7 +78,7 @@ router.post('/read', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '参数错误' });
     }
 
-    const result = await readMail(userId, characterId, parsedMailId);
+    const result = await mailService.readMail(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
     return withRouteError(res, 'mailRoutes 路由异常', error);
@@ -107,7 +98,7 @@ router.post('/claim', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '参数错误' });
     }
 
-    const result = await claimAttachments(userId, characterId, parsedMailId);
+    const result = await mailService.claimAttachments(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
     return withRouteError(res, 'mailRoutes 路由异常', error);
@@ -122,7 +113,7 @@ router.post('/claim-all', async (req: Request, res: Response) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const result = await claimAllAttachments(userId, characterId);
+    const result = await mailService.claimAllAttachments(userId, characterId);
     return res.json(result);
   } catch (error) {
     return withRouteError(res, 'mailRoutes 路由异常', error);
@@ -142,7 +133,7 @@ router.post('/delete', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '参数错误' });
     }
 
-    const result = await deleteMail(userId, characterId, parsedMailId);
+    const result = await mailService.deleteMail(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
     return withRouteError(res, 'mailRoutes 路由异常', error);
@@ -158,7 +149,7 @@ router.post('/delete-all', async (req: Request, res: Response) => {
     const characterId = req.characterId!;
 
     const { onlyRead } = req.body;
-    const result = await deleteAllMails(userId, characterId, !!onlyRead);
+    const result = await mailService.deleteAllMails(userId, characterId, !!onlyRead);
     return res.json(result);
   } catch (error) {
     return withRouteError(res, 'mailRoutes 路由异常', error);
@@ -173,7 +164,7 @@ router.post('/read-all', async (req: Request, res: Response) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const result = await markAllRead(userId, characterId);
+    const result = await mailService.markAllRead(userId, characterId);
     return res.json(result);
   } catch (error) {
     return withRouteError(res, 'mailRoutes 路由异常', error);

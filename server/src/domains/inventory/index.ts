@@ -22,9 +22,9 @@ import {
   sortInventory,
   unequipItem,
 } from '../../services/inventory/index.js';
-export { default as itemService } from '../../services/itemService.js';
-export { default as craftService } from '../../services/craftService.js';
-export { default as gemSynthesisService } from '../../services/gemSynthesisService.js';
+export { itemService } from '../../services/itemService.js';
+export { craftService } from '../../services/craftService.js';
+export { gemSynthesisService } from '../../services/gemSynthesisService.js';
 
 export const inventoryService = {
   getInventoryInfo,

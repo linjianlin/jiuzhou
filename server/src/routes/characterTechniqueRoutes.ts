@@ -6,19 +6,10 @@ import { withRouteError } from '../middleware/routeError.js';
  */
 import { requireAuth } from '../middleware/auth.js';
 import {
-  getCharacterTechniques,
-  getEquippedTechniques,
-  learnTechnique,
-  getTechniqueUpgradeCost,
-  upgradeTechnique,
-  equipTechnique,
-  unequipTechnique,
-  getAvailableSkills,
-  getEquippedSkills,
-  equipSkill,
-  unequipSkill,
-  calculateTechniquePassives,
-  getCharacterTechniqueStatus
+  characterTechniqueService,
+} from '../domains/character/index.js';
+import type {
+  ServiceResult
 } from '../domains/character/index.js';
 import { query } from '../config/database.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
@@ -73,7 +64,7 @@ router.get('/:characterId/technique/status', async (req: Request, res: Response)
       return;
     }
     
-    const result = await getCharacterTechniqueStatus(characterId);
+    const result = await characterTechniqueService.getCharacterTechniqueStatus(characterId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -92,7 +83,7 @@ router.get('/:characterId/techniques', async (req: Request, res: Response) => {
       return;
     }
     
-    const result = await getCharacterTechniques(characterId);
+    const result = await characterTechniqueService.getCharacterTechniques(characterId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -111,7 +102,7 @@ router.get('/:characterId/techniques/equipped', async (req: Request, res: Respon
       return;
     }
     
-    const result = await getEquippedTechniques(characterId);
+    const result = await characterTechniqueService.getEquippedTechniques(characterId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -136,7 +127,7 @@ router.post('/:characterId/technique/learn', async (req: AuthRequest, res: Respo
       res.status(400).json({ success: false, message: '缺少功法ID' });
       return;
     }
-    const result = await learnTechnique(characterId, techniqueId, obtainedFrom, obtainedRefId);
+    const result = await characterTechniqueService.learnTechnique(characterId, techniqueId, obtainedFrom, obtainedRefId);
 
     if (result.success) {
       const userId = req.userId!;
@@ -165,7 +156,7 @@ router.get('/:characterId/technique/:techniqueId/upgrade-cost', async (req: Requ
       return;
     }
     
-    const result = await getTechniqueUpgradeCost(characterId, techniqueId);
+    const result = await characterTechniqueService.getTechniqueUpgradeCost(characterId, techniqueId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -192,7 +183,7 @@ router.post('/:characterId/technique/:techniqueId/upgrade', async (req: AuthRequ
       res.status(401).json({ success: false, message: '登录状态无效，请重新登录' });
       return;
     }
-    const result = await upgradeTechnique(characterId, techniqueId);
+    const result = await characterTechniqueService.upgradeTechnique(characterId, techniqueId);
 
     if (result.success) {
       await safePushCharacterUpdate(userId);
@@ -227,7 +218,7 @@ router.post('/:characterId/technique/equip', async (req: AuthRequest, res: Respo
       res.status(400).json({ success: false, message: '无效的槽位类型' });
       return;
     }
-    const result = await equipTechnique(characterId, techniqueId, slotType, slotIndex);
+    const result = await characterTechniqueService.equipTechnique(characterId, techniqueId, slotType, slotIndex);
 
     if (result.success) {
       const userId = req.userId!;
@@ -260,7 +251,7 @@ router.post('/:characterId/technique/unequip', async (req: AuthRequest, res: Res
       res.status(400).json({ success: false, message: '缺少功法ID' });
       return;
     }
-    const result = await unequipTechnique(characterId, techniqueId);
+    const result = await characterTechniqueService.unequipTechnique(characterId, techniqueId);
 
     if (result.success) {
       const userId = req.userId!;
@@ -287,7 +278,7 @@ router.get('/:characterId/skills/available', async (req: Request, res: Response)
       return;
     }
     
-    const result = await getAvailableSkills(characterId);
+    const result = await characterTechniqueService.getAvailableSkills(characterId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -306,7 +297,7 @@ router.get('/:characterId/skills/equipped', async (req: Request, res: Response) 
       return;
     }
     
-    const result = await getEquippedSkills(characterId);
+    const result = await characterTechniqueService.getEquippedSkills(characterId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -333,7 +324,7 @@ router.post('/:characterId/skill/equip', async (req: Request, res: Response) => 
       return;
     }
     
-    const result = await equipSkill(characterId, skillId, slotIndex);
+    const result = await characterTechniqueService.equipSkill(characterId, skillId, slotIndex);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -359,7 +350,7 @@ router.post('/:characterId/skill/unequip', async (req: Request, res: Response) =
       return;
     }
     
-    const result = await unequipSkill(characterId, slotIndex);
+    const result = await characterTechniqueService.unequipSkill(characterId, slotIndex);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
@@ -378,7 +369,7 @@ router.get('/:characterId/technique/passives', async (req: Request, res: Respons
       return;
     }
     
-    const result = await calculateTechniquePassives(characterId);
+    const result = await characterTechniqueService.calculateTechniquePassives(characterId);
     res.json(result);
   } catch (error) {
     return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);

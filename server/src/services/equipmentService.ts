@@ -8,8 +8,8 @@
  * 4. 设置数值（根据词条tier随机）
  * 5. 创建实例（写入item_instance）
  */
-import { query, pool, withTransaction } from '../config/database.js';
-import type { PoolClient } from 'pg';
+import { query } from '../config/database.js';
+import { Transactional } from '../decorators/transactional.js';
 import { findEmptySlotsWithClient } from './inventory/index.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import {
@@ -694,216 +694,221 @@ export const generateEquipment = async (
 };
 
 /**
- * 创建装备实例（写入数据库）
+ * 装备生成服务
+ *
+ * 作用：装备模板查询、装备生成、装备实例创建与查询
+ * 不做：装备强化/精炼/词条重铸（由其他服务负责）
+ *
+ * 数据流：
+ * - getEquipmentDef / getAffixPool：从静态配置读取模板
+ * - generateEquipment：纯计算生成装备数据
+ * - createEquipmentInstance：事务中写入 item_instance 表
+ * - getEquipmentInstance：读取装备实例详情
+ *
+ * 边界条件：
+ * 1) createEquipmentInstance 使用 @Transactional 保证背包槽位分配与写入的原子性
+ * 2) createEquipmentInstanceTx 为事务内调用入口，被其他 service 在已有事务中复用
  */
-export const createEquipmentInstance = async (
-  userId: number,
-  characterId: number,
-  generated: GeneratedEquipment,
-  options: {
-    location?: string;
-    locationSlot?: number;
-    bindType?: string;
-    identified?: boolean;
-    obtainedFrom?: string;
-  } = {}
-): Promise<{ success: boolean; instanceId?: number; message: string }> => {
-  return await withTransaction(async (client) => {
-const txResult = await createEquipmentInstanceTx(client, userId, characterId, generated, options);
-    if (!txResult.success) {
-      return txResult;
-    }
-return {
-      success: true,
-      instanceId: txResult.instanceId,
-      message: txResult.message
+class EquipmentService {
+  // 创建装备实例（自动开启事务）
+  @Transactional
+  async createEquipmentInstance(
+    userId: number,
+    characterId: number,
+    generated: GeneratedEquipment,
+    options: {
+      location?: string;
+      locationSlot?: number;
+      bindType?: string;
+      identified?: boolean;
+      obtainedFrom?: string;
+    } = {}
+  ): Promise<{ success: boolean; instanceId?: number; message: string }> {
+    return this.createEquipmentInstanceTx(userId, characterId, generated, options);
+  }
+
+  // 事务内创建装备实例（供其他 service 在已有事务中调用）
+  async createEquipmentInstanceTx(
+    userId: number,
+    characterId: number,
+    generated: GeneratedEquipment,
+    options: {
+      location?: string;
+      locationSlot?: number;
+      bindType?: string;
+      identified?: boolean;
+      obtainedFrom?: string;
+    } = {}
+  ): Promise<{ success: boolean; instanceId?: number; message: string }> {
+    const isUniqueViolation = (error: unknown): boolean => {
+      if (!error || typeof error !== 'object') return false;
+      return (error as { code?: unknown }).code === '23505';
     };
-  });
-};
 
-export const createEquipmentInstanceTx = async (
-  client: PoolClient,
-  userId: number,
-  characterId: number,
-  generated: GeneratedEquipment,
-  options: {
-    location?: string;
-    locationSlot?: number;
-    bindType?: string;
-    identified?: boolean;
-    obtainedFrom?: string;
-  } = {}
-): Promise<{ success: boolean; instanceId?: number; message: string }> => {
-  const isUniqueViolation = (error: unknown): boolean => {
-    if (!error || typeof error !== 'object') return false;
-    return (error as { code?: unknown }).code === '23505';
-  };
+    const location = options.location || 'bag';
+    const hasExplicitSlot = options.locationSlot !== undefined && options.locationSlot !== null;
+    let locationSlot = options.locationSlot ?? null;
+    const obtainedFrom = normalizeItemInstanceObtainedFrom(options.obtainedFrom).value;
 
-  const location = options.location || 'bag';
-  const hasExplicitSlot = options.locationSlot !== undefined && options.locationSlot !== null;
-  let locationSlot = options.locationSlot ?? null;
-  const obtainedFrom = normalizeItemInstanceObtainedFrom(options.obtainedFrom).value;
+    await lockCharacterInventoryMutexTx(null, characterId);
 
-  await lockCharacterInventoryMutexTx(client, characterId);
+    let attempt = 0;
+    while (attempt < 6) {
+      attempt += 1;
 
-  let attempt = 0;
-  while (attempt < 6) {
-    attempt += 1;
-
-    if ((location === 'bag' || location === 'warehouse') && (locationSlot === null || locationSlot === undefined)) {
-      const slots = await findEmptySlotsWithClient(characterId, location, 6, client);
-      if (slots.length === 0) {
-        return { success: false, message: '背包已满' };
+      if ((location === 'bag' || location === 'warehouse') && (locationSlot === null || locationSlot === undefined)) {
+        const slots = await findEmptySlotsWithClient(characterId, location, 6, null);
+        if (slots.length === 0) {
+          return { success: false, message: '背包已满' };
+        }
+        locationSlot = slots[0];
       }
-      locationSlot = slots[0];
+
+      try {
+        const result = await query(
+          `
+            INSERT INTO item_instance (
+              owner_user_id, owner_character_id, item_def_id, qty,
+              quality, quality_rank,
+              location, location_slot, bind_type,
+              random_seed, affixes, identified,
+              affix_gen_version,
+              obtained_from
+            ) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            RETURNING id
+          `,
+          [
+            userId,
+            characterId,
+            generated.itemDefId,
+            generated.quality,
+            generated.qualityRank,
+            location,
+            locationSlot,
+            options.bindType || 'none',
+            generated.seed,
+            JSON.stringify(generated.affixes),
+            options.identified !== false,
+            generated.affixGenVersion || AFFIX_GEN_VERSION,
+            obtainedFrom,
+          ]
+        );
+
+        return {
+          success: true,
+          instanceId: result.rows[0].id,
+          message: '装备创建成功',
+        };
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        if (hasExplicitSlot) return { success: false, message: '目标格子已被占用' };
+        locationSlot = null;
+      }
     }
 
-    try {
-      const result = await client.query(
-        `
-          INSERT INTO item_instance (
-            owner_user_id, owner_character_id, item_def_id, qty,
-            quality, quality_rank,
-            location, location_slot, bind_type, 
-            random_seed, affixes, identified,
-            affix_gen_version,
-            obtained_from
-          ) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          RETURNING id
-        `,
-        [
-          userId,
-          characterId,
-          generated.itemDefId,
-          generated.quality,
-          generated.qualityRank,
-          location,
-          locationSlot,
-          options.bindType || 'none',
-          generated.seed,
-          JSON.stringify(generated.affixes),
-          options.identified !== false,
-          generated.affixGenVersion || AFFIX_GEN_VERSION,
-          obtainedFrom,
-        ]
-      );
+    return {
+      success: false,
+      message: '背包已满'
+    };
+  }
 
-      return {
-        success: true,
-        instanceId: result.rows[0].id,
-        message: '装备创建成功',
-      };
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      if (hasExplicitSlot) return { success: false, message: '目标格子已被占用' };
-      locationSlot = null;
+  // 一键生成并创建装备实例
+  async generateAndCreateEquipment(
+    userId: number,
+    characterId: number,
+    itemDefId: string,
+    options: GenerateOptions & {
+      location?: string;
+      locationSlot?: number;
+    } = {}
+  ): Promise<{
+    success: boolean;
+    instanceId?: number;
+    equipment?: GeneratedEquipment;
+    message: string;
+  }> {
+    // 生成装备
+    const generated = await generateEquipment(itemDefId, options);
+    if (!generated) {
+      return { success: false, message: '装备生成失败' };
     }
+
+    // 创建实例
+    const result = await this.createEquipmentInstance(userId, characterId, generated, {
+      location: options.location,
+      locationSlot: options.locationSlot,
+      bindType: options.bindType,
+      identified: options.identified,
+      obtainedFrom: options.obtainedFrom
+    });
+
+    if (!result.success) {
+      return { success: false, message: result.message };
+    }
+
+    return {
+      success: true,
+      instanceId: result.instanceId,
+      equipment: generated,
+      message: '装备生成并创建成功'
+    };
   }
 
-  return {
-    success: false,
-    message: '背包已满'
-  };
-};
+  // 获取装备实例详情（纯读，不加 @Transactional）
+  async getEquipmentInstance(instanceId: number): Promise<any | null> {
+    const result = await query(
+      `
+      SELECT *
+      FROM item_instance
+      WHERE id = $1
+    `,
+      [instanceId],
+    );
 
-/**
- * 一键生成并创建装备实例
- */
-export const generateAndCreateEquipment = async (
-  userId: number,
-  characterId: number,
-  itemDefId: string,
-  options: GenerateOptions & {
-    location?: string;
-    locationSlot?: number;
-  } = {}
-): Promise<{
-  success: boolean;
-  instanceId?: number;
-  equipment?: GeneratedEquipment;
-  message: string;
-}> => {
-  // 生成装备
-  const generated = await generateEquipment(itemDefId, options);
-  if (!generated) {
-    return { success: false, message: '装备生成失败' };
+    if (result.rows.length === 0) return null;
+
+    const row = result.rows[0];
+    const itemDefId = String(row.item_def_id || '').trim();
+    if (!itemDefId) return null;
+    const itemDef = getItemDefinitionById(itemDefId);
+    if (!itemDef || itemDef.category !== 'equipment') return null;
+
+    const resolvedQuality = coerceQuality(row.quality) ?? '黄';
+    const resolvedQualityRank = Number(row.quality_rank) || QUALITY_RANK[resolvedQuality] || 1;
+    const baseRank = QUALITY_RANK['黄'];
+    const attrFactor = getQualityMultiplier(resolvedQualityRank) / getQualityMultiplier(baseRank);
+    const strengthenFactor = getStrengthenMultiplier(Number(row.strengthen_level) || 0);
+    const baseAttrs = itemDef.base_attrs && typeof itemDef.base_attrs === 'object'
+      ? (itemDef.base_attrs as Record<string, number>)
+      : {};
+    return {
+      id: row.id,
+      itemDefId: row.item_def_id,
+      name: itemDef.name,
+      icon: itemDef.icon,
+      quality: resolvedQuality,
+      qualityRank: resolvedQualityRank,
+      equipSlot: itemDef.equip_slot,
+      equipReqRealm: itemDef.equip_req_realm,
+      baseAttrs: scaleAttrs(
+        baseAttrs,
+        attrFactor * strengthenFactor
+      ),
+      affixes: row.affixes || [],
+      setId: itemDef.set_id,
+      strengthenLevel: row.strengthen_level,
+      refineLevel: row.refine_level,
+      socketedGems: row.socketed_gems,
+      identified: row.identified,
+      locked: row.locked,
+      bindType: row.bind_type,
+      location: row.location,
+      locationSlot: row.location_slot,
+      equippedSlot: row.equipped_slot,
+      description: itemDef.description,
+      createdAt: row.created_at
+    };
   }
-  
-  // 创建实例
-  const result = await createEquipmentInstance(userId, characterId, generated, {
-    location: options.location,
-    locationSlot: options.locationSlot,
-    bindType: options.bindType,
-    identified: options.identified,
-    obtainedFrom: options.obtainedFrom
-  });
-  
-  if (!result.success) {
-    return { success: false, message: result.message };
-  }
-  
-  return {
-    success: true,
-    instanceId: result.instanceId,
-    equipment: generated,
-    message: '装备生成并创建成功'
-  };
-};
+}
 
-/**
- * 获取装备实例详情（包含模板信息和词条）
- */
-export const getEquipmentInstance = async (instanceId: number): Promise<any | null> => {
-  const result = await query(
-    `
-    SELECT *
-    FROM item_instance
-    WHERE id = $1
-  `,
-    [instanceId],
-  );
-  
-  if (result.rows.length === 0) return null;
-  
-  const row = result.rows[0];
-  const itemDefId = String(row.item_def_id || '').trim();
-  if (!itemDefId) return null;
-  const itemDef = getItemDefinitionById(itemDefId);
-  if (!itemDef || itemDef.category !== 'equipment') return null;
-
-  const resolvedQuality = coerceQuality(row.quality) ?? '黄';
-  const resolvedQualityRank = Number(row.quality_rank) || QUALITY_RANK[resolvedQuality] || 1;
-  const baseRank = QUALITY_RANK['黄'];
-  const attrFactor = getQualityMultiplier(resolvedQualityRank) / getQualityMultiplier(baseRank);
-  const strengthenFactor = getStrengthenMultiplier(Number(row.strengthen_level) || 0);
-  const baseAttrs = itemDef.base_attrs && typeof itemDef.base_attrs === 'object'
-    ? (itemDef.base_attrs as Record<string, number>)
-    : {};
-  return {
-    id: row.id,
-    itemDefId: row.item_def_id,
-    name: itemDef.name,
-    icon: itemDef.icon,
-    quality: resolvedQuality,
-    qualityRank: resolvedQualityRank,
-    equipSlot: itemDef.equip_slot,
-    equipReqRealm: itemDef.equip_req_realm,
-    baseAttrs: scaleAttrs(
-      baseAttrs,
-      attrFactor * strengthenFactor
-    ),
-    affixes: row.affixes || [],
-    setId: itemDef.set_id,
-    strengthenLevel: row.strengthen_level,
-    refineLevel: row.refine_level,
-    socketedGems: row.socketed_gems,
-    identified: row.identified,
-    locked: row.locked,
-    bindType: row.bind_type,
-    location: row.location,
-    locationSlot: row.location_slot,
-    equippedSlot: row.equipped_slot,
-    description: itemDef.description,
-    createdAt: row.created_at
-  };
-};
+export const equipmentService = new EquipmentService();

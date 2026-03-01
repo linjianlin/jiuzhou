@@ -43,12 +43,7 @@ import { resolveIdleBattleRewards } from './idleBattleRewardResolver.js';
 import { simulateIdleBattle } from './idleBattleSimulationCore.js';
 import type { BattleLogEntry } from '../../battle/types.js';
 import { rowToIdleSessionRow } from './rowMappers.js';
-import {
-  completeIdleSession,
-  releaseIdleLock,
-  updateSessionSummary,
-  getIdleSessionById,
-} from './idleSessionService.js';
+import { idleSessionService } from './idleSessionService.js';
 
 // ============================================
 // 常量
@@ -274,7 +269,7 @@ async function flushBuffer(
   );
 
   // 2. 更新会话汇总
-  await updateSessionSummary(sessionId, summaryDelta);
+  await idleSessionService.updateSessionSummary(sessionId, summaryDelta);
 }
 
 /**
@@ -386,8 +381,8 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
     }
 
     clearLoopRuntimeState();
-    await completeIdleSession(session.id, stop.status);
-    await releaseIdleLock(session.characterId);
+    await idleSessionService.completeIdleSession(session.id, stop.status);
+    await idleSessionService.releaseIdleLock(session.characterId);
 
     try {
       getGameServer().emitToUser(userId, 'idle:finished', {
@@ -526,7 +521,7 @@ type TerminationCheckResult =
 async function checkTerminationConditions(
   session: IdleSessionRow,
 ): Promise<TerminationCheckResult> {
-  const currentSession = await getIdleSessionById(session.id);
+  const currentSession = await idleSessionService.getIdleSessionById(session.id);
   if (!currentSession) {
     return { terminate: true, status: 'completed', reason: 'session_not_found' };
   }
@@ -631,7 +626,7 @@ export async function recoverActiveIdleSessions(): Promise<void> {
     const userId = await getCharacterUserId(characterId);
     if (!userId) {
       console.warn(`  跳过会话 ${sessionId}：角色 ${characterId} 不存在`);
-      await completeIdleSession(sessionId, 'interrupted');
+      await idleSessionService.completeIdleSession(sessionId, 'interrupted');
       continue;
     }
 

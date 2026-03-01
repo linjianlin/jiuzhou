@@ -1,5 +1,5 @@
-import type { PoolClient } from 'pg';
-import { pool, withTransaction } from '../../config/database.js';
+import { query } from '../../config/database.js';
+import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, toNumber } from './db.js';
 import type { ClaimSectQuestResult, Result, SectQuest, SubmitSectQuestResult } from './types.js';
 import { getItemDefinitions } from '../staticConfigLoader.js';
@@ -126,22 +126,8 @@ const hashTextU32 = (value: string): number => {
   return hash >>> 0;
 };
 
-const addLogTx = async (
-  client: PoolClient,
-  sectId: string,
-  logType: string,
-  operatorId: number | null,
-  targetId: number | null,
-  content: string
-) => {
-  await client.query(
-    `INSERT INTO sect_log (sect_id, log_type, operator_id, target_id, content) VALUES ($1, $2, $3, $4, $5)`,
-    [sectId, logType, operatorId, targetId, content]
-  );
-};
-
-const getQuestPeriodKeysTx = async (client: PoolClient): Promise<QuestPeriodKeys> => {
-  const periodRes = await client.query<{ daily_key: string; weekly_key: string }>(
+const getQuestPeriodKeysTx = async (): Promise<QuestPeriodKeys> => {
+  const periodRes = await query<{ daily_key: string; weekly_key: string }>(
     `
       SELECT
         to_char(date_trunc('day', NOW()), 'YYYY-MM-DD') AS daily_key,
@@ -155,10 +141,7 @@ const getQuestPeriodKeysTx = async (client: PoolClient): Promise<QuestPeriodKeys
   };
 };
 
-const loadSubmitItemCandidatesTx = async (
-  client: PoolClient
-): Promise<Record<SubmitQuestPool, SubmitItemCandidate[]>> => {
-  void client;
+const loadSubmitItemCandidatesTx = async (): Promise<Record<SubmitQuestPool, SubmitItemCandidate[]>> => {
   const rows = getItemDefinitions()
     .filter((entry) => entry.enabled !== false)
     .filter((entry) => entry.quest_only !== true)
@@ -269,27 +252,26 @@ const resolveQuestTemplate = (
   };
 };
 
-const resolveQuestDefsTx = async (client: PoolClient, characterId: number): Promise<ResolvedQuestDef[]> => {
-  const periodKeys = await getQuestPeriodKeysTx(client);
+const resolveQuestDefsTx = async (characterId: number): Promise<ResolvedQuestDef[]> => {
+  const periodKeys = await getQuestPeriodKeysTx();
   const hasSubmitQuest = QUESTS.some((quest) => quest.objectiveType === 'submit_item');
-  const submitPools = hasSubmitQuest ? await loadSubmitItemCandidatesTx(client) : EMPTY_SUBMIT_POOLS;
+  const submitPools = hasSubmitQuest ? await loadSubmitItemCandidatesTx() : EMPTY_SUBMIT_POOLS;
   return QUESTS.map((template) => resolveQuestTemplate(template, characterId, periodKeys, submitPools));
 };
 
 const resolveQuestDefByIdTx = async (
-  client: PoolClient,
   characterId: number,
   questId: string
 ): Promise<ResolvedQuestDef | null> => {
   const template = QUEST_TEMPLATE_BY_ID.get(questId);
   if (!template) return null;
-  const periodKeys = await getQuestPeriodKeysTx(client);
-  const submitPools = isSubmitQuestTemplate(template) ? await loadSubmitItemCandidatesTx(client) : EMPTY_SUBMIT_POOLS;
+  const periodKeys = await getQuestPeriodKeysTx();
+  const submitPools = isSubmitQuestTemplate(template) ? await loadSubmitItemCandidatesTx() : EMPTY_SUBMIT_POOLS;
   return resolveQuestTemplate(template, characterId, periodKeys, submitPools);
 };
 
-const resetSectQuestProgressIfNeededTx = async (client: PoolClient, characterId: number): Promise<void> => {
-  await client.query(
+const resetSectQuestProgressIfNeededTx = async (characterId: number): Promise<void> => {
+  await query(
     `
       DELETE FROM sect_quest_progress
       WHERE character_id = $1
@@ -304,7 +286,6 @@ const resetSectQuestProgressIfNeededTx = async (client: PoolClient, characterId:
 };
 
 const applyQuestProgressDeltaTx = async (
-  client: PoolClient,
   characterId: number,
   questId: string,
   delta: number
@@ -314,7 +295,7 @@ const applyQuestProgressDeltaTx = async (
   if (!Number.isFinite(delta) || delta <= 0) return;
 
   const safeDelta = Math.max(1, Math.floor(delta));
-  await client.query(
+  await query(
     `
       UPDATE sect_quest_progress
       SET progress = LEAST($3, progress + $4),
@@ -335,28 +316,26 @@ const applyQuestProgressDeltaTx = async (
 };
 
 const recordSectQuestEventTx = async (
-  client: PoolClient,
   characterId: number,
   event: QuestProgressEvent,
   delta: number
 ): Promise<void> => {
   if (!Number.isFinite(delta) || delta <= 0) return;
-  await resetSectQuestProgressIfNeededTx(client, characterId);
+  await resetSectQuestProgressIfNeededTx(characterId);
   const questIds = QUEST_IDS_BY_EVENT[event] ?? [];
   if (questIds.length === 0) return;
   for (const questId of questIds) {
-    await applyQuestProgressDeltaTx(client, characterId, questId, delta);
+    await applyQuestProgressDeltaTx(characterId, questId, delta);
   }
 };
 
 const consumeItemDefQtyTx = async (
-  client: PoolClient,
   characterId: number,
   itemDefId: string,
   qty: number
 ): Promise<{ success: boolean; message: string; consumed: number }> => {
   const requested = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
-  const rowsRes = await client.query<{ id: number; qty: number }>(
+  const rowsRes = await query<{ id: number; qty: number }>(
     `
       SELECT id, qty
       FROM item_instance
@@ -384,12 +363,12 @@ const consumeItemDefQtyTx = async (
     if (rowQty <= 0) continue;
 
     if (rowQty <= remaining) {
-      await client.query(`DELETE FROM item_instance WHERE id = $1`, [row.id]);
+      await query(`DELETE FROM item_instance WHERE id = $1`, [row.id]);
       remaining -= rowQty;
       continue;
     }
 
-    await client.query(`UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2`, [remaining, row.id]);
+    await query(`UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2`, [remaining, row.id]);
     remaining = 0;
   }
 
@@ -397,31 +376,61 @@ const consumeItemDefQtyTx = async (
 };
 
 export const recordSectDonateEventTx = async (
-  client: PoolClient,
   characterId: number,
   donatedSpiritStones: number
 ): Promise<void> => {
   const delta = Number.isFinite(donatedSpiritStones) ? Math.max(0, Math.floor(donatedSpiritStones)) : 0;
   if (delta <= 0) return;
-  await recordSectQuestEventTx(client, characterId, 'donate_spirit_stones', delta);
+  await recordSectQuestEventTx(characterId, 'donate_spirit_stones', delta);
 };
 
-export const recordSectShopBuyEventTx = async (client: PoolClient, characterId: number, quantity: number): Promise<void> => {
+export const recordSectShopBuyEventTx = async (characterId: number, quantity: number): Promise<void> => {
   const delta = Number.isFinite(quantity) ? Math.max(0, Math.floor(quantity)) : 0;
   if (delta <= 0) return;
-  await recordSectQuestEventTx(client, characterId, 'shop_buy_count', delta);
+  await recordSectQuestEventTx(characterId, 'shop_buy_count', delta);
 };
 
-export const getSectQuests = async (
-  characterId: number
-): Promise<{ success: boolean; message: string; data?: SectQuest[] }> => {
-  try {
-    return await withTransaction(async (client) => {
-  await assertMember(characterId, client);
-      await resetSectQuestProgressIfNeededTx(client, characterId);
-  
-      const resolvedQuestDefs = await resolveQuestDefsTx(client, characterId);
-      const progressRes = await client.query(`SELECT quest_id, progress, status FROM sect_quest_progress WHERE character_id = $1`, [
+/**
+ * 宗门任务服务
+ *
+ * 作用：处理宗门任务查询、接取、提交、领取逻辑
+ * 不做：不处理路由层参数校验、不做权限判断
+ *
+ * 数据流：
+ * - getSectQuests：读取任务进度，计算任务状态
+ * - acceptSectQuest：接取任务，插入进度记录
+ * - submitSectQuest：提交物品，更新任务进度
+ * - claimSectQuest：领取奖励，更新宗门资金、建设点、个人贡献
+ *
+ * 边界条件：
+ * 1) 所有写操作使用 @Transactional 保证原子性
+ * 2) getSectQuests 使用事务保证读一致性（需要重置过期任务）
+ * 3) recordSectDonateEventTx 和 recordSectShopBuyEventTx 被外部事务调用，不加装饰器
+ */
+class SectQuestService {
+  private async addLog(
+    sectId: string,
+    logType: string,
+    operatorId: number | null,
+    targetId: number | null,
+    content: string
+  ): Promise<void> {
+    await query(
+      `INSERT INTO sect_log (sect_id, log_type, operator_id, target_id, content) VALUES ($1, $2, $3, $4, $5)`,
+      [sectId, logType, operatorId, targetId, content]
+    );
+  }
+
+  @Transactional
+  async getSectQuests(
+    characterId: number
+  ): Promise<{ success: boolean; message: string; data?: SectQuest[] }> {
+    try {
+      await assertMember(characterId);
+      await resetSectQuestProgressIfNeededTx(characterId);
+
+      const resolvedQuestDefs = await resolveQuestDefsTx(characterId);
+      const progressRes = await query(`SELECT quest_id, progress, status FROM sect_quest_progress WHERE character_id = $1`, [
         characterId,
       ]);
       const progressMap = new Map<string, { progress: number; status: SectQuest['status'] }>();
@@ -431,7 +440,7 @@ export const getSectQuests = async (
           status: normalizeQuestStatus(row.status),
         });
       }
-  
+
       const quests: SectQuest[] = resolvedQuestDefs.map((quest) => {
         const progress = progressMap.get(quest.id);
         if (!progress) {
@@ -447,71 +456,69 @@ export const getSectQuests = async (
           progress: Math.max(0, Math.min(quest.required, progress.progress)),
         };
       });
-  return { success: true, message: 'ok', data: quests };
-    });
-  } catch (error) {
-console.error('获取宗门任务失败:', error);
-    return { success: false, message: '获取宗门任务失败' };
+      return { success: true, message: 'ok', data: quests };
+    } catch (error) {
+      console.error('获取宗门任务失败:', error);
+      return { success: false, message: '获取宗门任务失败' };
+    }
   }
-};
 
-export const acceptSectQuest = async (characterId: number, questIdRaw: string): Promise<Result> => {
-  const questId = questIdRaw.trim();
-  if (!questId) return { success: false, message: '任务不存在' };
+  @Transactional
+  async acceptSectQuest(characterId: number, questIdRaw: string): Promise<Result> {
+    const questId = questIdRaw.trim();
+    if (!questId) return { success: false, message: '任务不存在' };
 
-  return await withTransaction(async (client) => {
-await assertMember(characterId, client);
-    await resetSectQuestProgressIfNeededTx(client, characterId);
-  
-    const quest = await resolveQuestDefByIdTx(client, characterId, questId);
+    await assertMember(characterId);
+    await resetSectQuestProgressIfNeededTx(characterId);
+
+    const quest = await resolveQuestDefByIdTx(characterId, questId);
     if (!quest) {
       return { success: false, message: '任务不存在' };
     }
-  
-    const existing = await client.query(
+
+    const existing = await query(
       `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
       [characterId, questId]
     );
     if (existing.rows.length > 0) {
       return { success: false, message: '任务已接取' };
     }
-  
-    await client.query(
+
+    await query(
       `INSERT INTO sect_quest_progress (character_id, quest_id, progress, status) VALUES ($1, $2, 0, 'in_progress')`,
       [characterId, questId]
     );
-return { success: true, message: `接取成功：${quest.name}` };
-  });
-};
+    return { success: true, message: `接取成功：${quest.name}` };
+  }
 
-export const submitSectQuest = async (
-  characterId: number,
-  questIdRaw: string,
-  quantity?: number
-): Promise<SubmitSectQuestResult> => {
-  const questId = questIdRaw.trim();
-  if (!questId) return { success: false, message: '任务不存在' };
+  @Transactional
+  async submitSectQuest(
+    characterId: number,
+    questIdRaw: string,
+    quantity?: number
+  ): Promise<SubmitSectQuestResult> {
+    const questId = questIdRaw.trim();
+    if (!questId) return { success: false, message: '任务不存在' };
 
-  return await withTransaction(async (client) => {
-const member = await assertMember(characterId, client);
-    await resetSectQuestProgressIfNeededTx(client, characterId);
-  
-    const quest = await resolveQuestDefByIdTx(client, characterId, questId);
+    const member = await assertMember(characterId);
+    await resetSectQuestProgressIfNeededTx(characterId);
+
+    const quest = await resolveQuestDefByIdTx(characterId, questId);
     if (!quest) {
       return { success: false, message: '任务不存在' };
     }
     if (quest.actionType !== 'submit_item' || !quest.submitRequirement) {
       return { success: false, message: '该任务无需提交物品' };
     }
-  
-    const progressRes = await client.query(
+
+    const progressRes = await query(
       `SELECT progress, status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
       [characterId, questId]
     );
     if (progressRes.rows.length === 0) {
       return { success: false, message: '任务未接取' };
     }
-  
+
     const status = normalizeQuestStatus(progressRes.rows[0].status);
     if (status === 'claimed') {
       return { success: false, message: '奖励已领取' };
@@ -522,32 +529,31 @@ const member = await assertMember(characterId, client);
     if (status !== 'in_progress') {
       return { success: false, message: '任务状态异常' };
     }
-  
+
     const currentProgress = Math.max(0, Math.min(quest.required, toNumber(progressRes.rows[0].progress)));
     const remaining = Math.max(0, quest.required - currentProgress);
     if (remaining <= 0) {
       return { success: false, message: '任务已达成，请先领取奖励' };
     }
-  
+
     const requested = typeof quantity === 'number' && Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : remaining;
     const submitQty = Math.min(remaining, requested);
-    const consumeRes = await consumeItemDefQtyTx(client, characterId, quest.submitRequirement.itemDefId, submitQty);
+    const consumeRes = await consumeItemDefQtyTx(characterId, quest.submitRequirement.itemDefId, submitQty);
     if (!consumeRes.success || consumeRes.consumed <= 0) {
       return { success: false, message: `${quest.submitRequirement.itemName}数量不足` };
     }
-  
-    await applyQuestProgressDeltaTx(client, characterId, questId, consumeRes.consumed);
-    const updatedRes = await client.query<{ progress: number; status: string }>(
+
+    await applyQuestProgressDeltaTx(characterId, questId, consumeRes.consumed);
+    const updatedRes = await query<{ progress: number; status: string }>(
       `SELECT progress, status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2`,
       [characterId, questId]
     );
     const updatedProgress = Math.max(0, Math.min(quest.required, toNumber(updatedRes.rows[0]?.progress)));
     const updatedStatus = normalizeQuestStatus(updatedRes.rows[0]?.status);
-  
-    // 任务在本次提交后已完成时，只保留“领取奖励”日志，避免同一完成动作出现提交+领奖双记录。
+
+    // 任务在本次提交后已完成时，只保留"领取奖励"日志，避免同一完成动作出现提交+领奖双记录。
     if (updatedStatus !== 'completed') {
-      await addLogTx(
-        client,
+      await this.addLog(
         member.sectId,
         'quest_submit',
         characterId,
@@ -555,37 +561,36 @@ const member = await assertMember(characterId, client);
         `提交宗门任务物资：${quest.submitRequirement.itemName}×${consumeRes.consumed}（${updatedProgress}/${quest.required}）`
       );
     }
-return {
+    return {
       success: true,
       message: updatedStatus === 'completed' ? '提交成功，任务已完成' : '提交成功',
       consumed: consumeRes.consumed,
       progress: updatedProgress,
       status: updatedStatus,
     };
-  });
-};
+  }
 
-export const claimSectQuest = async (characterId: number, questIdRaw: string): Promise<ClaimSectQuestResult> => {
-  const questId = questIdRaw.trim();
-  if (!questId) return { success: false, message: '任务不存在' };
+  @Transactional
+  async claimSectQuest(characterId: number, questIdRaw: string): Promise<ClaimSectQuestResult> {
+    const questId = questIdRaw.trim();
+    if (!questId) return { success: false, message: '任务不存在' };
 
-  return await withTransaction(async (client) => {
-const member = await assertMember(characterId, client);
-    await resetSectQuestProgressIfNeededTx(client, characterId);
-  
-    const quest = await resolveQuestDefByIdTx(client, characterId, questId);
+    const member = await assertMember(characterId);
+    await resetSectQuestProgressIfNeededTx(characterId);
+
+    const quest = await resolveQuestDefByIdTx(characterId, questId);
     if (!quest) {
       return { success: false, message: '任务不存在' };
     }
-  
-    const progressRes = await client.query(
+
+    const progressRes = await query(
       `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
       [characterId, questId]
     );
     if (progressRes.rows.length === 0) {
       return { success: false, message: '任务未接取' };
     }
-  
+
     const status = normalizeQuestStatus(progressRes.rows[0].status);
     if (status === 'claimed') {
       return { success: false, message: '奖励已领取' };
@@ -593,12 +598,12 @@ const member = await assertMember(characterId, client);
     if (status !== 'completed') {
       return { success: false, message: '任务未完成' };
     }
-  
-    await client.query(
+
+    await query(
       `UPDATE sect_def SET funds = funds + $2, build_points = build_points + $3, updated_at = NOW() WHERE id = $1`,
       [member.sectId, quest.reward.funds, quest.reward.buildPoints]
     );
-    await client.query(
+    await query(
       `
         UPDATE sect_member
         SET contribution = contribution + $2,
@@ -607,7 +612,7 @@ const member = await assertMember(characterId, client);
       `,
       [characterId, quest.reward.contribution]
     );
-    await client.query(
+    await query(
       `
         UPDATE sect_quest_progress
         SET status = 'claimed',
@@ -618,14 +623,24 @@ const member = await assertMember(characterId, client);
       `,
       [characterId, questId, quest.required]
     );
-    await addLogTx(
-      client,
+    await this.addLog(
       member.sectId,
       'quest_claim',
       characterId,
       null,
       `领取宗门任务：${quest.name}（贡献+${quest.reward.contribution}，建设点+${quest.reward.buildPoints}，资金+${quest.reward.funds}）`
     );
-return { success: true, message: '领取成功', reward: quest.reward };
-  });
-};
+    return { success: true, message: '领取成功', reward: quest.reward };
+  }
+}
+
+export const sectQuestService = new SectQuestService();
+
+// 向后兼容的命名导出
+export const getSectQuests = (characterId: number) => sectQuestService.getSectQuests(characterId);
+export const acceptSectQuest = (characterId: number, questIdRaw: string) =>
+  sectQuestService.acceptSectQuest(characterId, questIdRaw);
+export const submitSectQuest = (characterId: number, questIdRaw: string, quantity?: number) =>
+  sectQuestService.submitSectQuest(characterId, questIdRaw, quantity);
+export const claimSectQuest = (characterId: number, questIdRaw: string) =>
+  sectQuestService.claimSectQuest(characterId, questIdRaw);

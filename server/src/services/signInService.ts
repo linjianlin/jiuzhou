@@ -1,6 +1,6 @@
 import { HolidayUtil } from 'lunar-typescript';
-import { pool, query, withTransaction } from '../config/database.js';
-import { rollbackAndReturn, safeRollback } from './shared/transaction.js';
+import { query } from '../config/database.js';
+import { Transactional } from '../decorators/transactional.js';
 
 export interface SignInRecordDto {
   date: string;
@@ -75,117 +75,135 @@ const getHolidayInfo = (date: Date) => {
   return { isHoliday: Boolean(name), holidayName: name };
 };
 
-export const getSignInOverview = async (userId: number, month: string): Promise<SignInOverviewResult> => {
-  const parsed = parseMonth(month);
-  if (!parsed) return { success: false, message: '月份参数错误' };
+/**
+ * 签到服务
+ *
+ * 作用：处理用户每日签到逻辑，包括签到概览查询与执行签到
+ * 不做：不处理路由层参数校验、不做权限判断
+ *
+ * 数据流：
+ * - getOverview：读取 sign_in_records 表，计算当月记录与连续签到天数
+ * - doSignIn：在事务中插入签到记录并更新角色灵石
+ *
+ * 边界条件：
+ * 1) doSignIn 使用 @Transactional 保证签到记录插入与灵石更新的原子性
+ * 2) getOverview 为纯读方法，不需要事务
+ */
+class SignInService {
+  // 纯读方法，不加 @Transactional
+  async getOverview(userId: number, month: string): Promise<SignInOverviewResult> {
+    const parsed = parseMonth(month);
+    if (!parsed) return { success: false, message: '月份参数错误' };
 
-  const start = `${month}-01`;
-  const nextMonthDate = new Date(parsed.year, parsed.month, 1);
-  const next = `${nextMonthDate.getFullYear()}-${pad2(nextMonthDate.getMonth() + 1)}-01`;
+    const start = `${month}-01`;
+    const nextMonthDate = new Date(parsed.year, parsed.month, 1);
+    const next = `${nextMonthDate.getFullYear()}-${pad2(nextMonthDate.getMonth() + 1)}-01`;
 
-  const monthRows = await query(
-    `
-      SELECT sign_date, reward, is_holiday, holiday_name, created_at
-      FROM sign_in_records
-      WHERE user_id = $1 AND sign_date >= $2::date AND sign_date < $3::date
-      ORDER BY sign_date ASC
-    `,
-    [userId, start, next]
-  );
+    const monthRows = await query(
+      `
+        SELECT sign_date, reward, is_holiday, holiday_name, created_at
+        FROM sign_in_records
+        WHERE user_id = $1 AND sign_date >= $2::date AND sign_date < $3::date
+        ORDER BY sign_date ASC
+      `,
+      [userId, start, next]
+    );
 
-  const records: Record<string, SignInRecordDto> = {};
-  for (const row of monthRows.rows as Array<Record<string, unknown>>) {
-    const dateKey = normalizeDateKey(row.sign_date);
-    if (!dateKey) continue;
-    const signedAt =
-      row.created_at instanceof Date ? row.created_at.toISOString() : typeof row.created_at === 'string' ? row.created_at : '';
-    records[dateKey] = {
-      date: dateKey,
-      signedAt,
-      reward: Number(row.reward ?? 0),
-      isHoliday: Boolean(row.is_holiday),
-      holidayName: typeof row.holiday_name === 'string' ? row.holiday_name : null,
+    const records: Record<string, SignInRecordDto> = {};
+    for (const row of monthRows.rows as Array<Record<string, unknown>>) {
+      const dateKey = normalizeDateKey(row.sign_date);
+      if (!dateKey) continue;
+      const signedAt =
+        row.created_at instanceof Date ? row.created_at.toISOString() : typeof row.created_at === 'string' ? row.created_at : '';
+      records[dateKey] = {
+        date: dateKey,
+        signedAt,
+        reward: Number(row.reward ?? 0),
+        isHoliday: Boolean(row.is_holiday),
+        holidayName: typeof row.holiday_name === 'string' ? row.holiday_name : null,
+      };
+    }
+
+    const todayKey = buildDateKey(new Date());
+    const signedToday = Boolean(records[todayKey]) || (await query(
+      'SELECT 1 FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
+      [userId, todayKey]
+    )).rows.length > 0;
+
+    const historyRows = await query(
+      `
+        SELECT sign_date
+        FROM sign_in_records
+        WHERE user_id = $1 AND sign_date >= ($2::date - INTERVAL '366 days')
+        ORDER BY sign_date DESC
+        LIMIT 366
+      `,
+      [userId, todayKey]
+    );
+
+    const signedSet = new Set<string>();
+    for (const row of historyRows.rows as Array<Record<string, unknown>>) {
+      const key = normalizeDateKey(row.sign_date);
+      if (key) signedSet.add(key);
+    }
+
+    let streakDays = 0;
+    let cursor = new Date();
+    while (streakDays < 366) {
+      const key = buildDateKey(cursor);
+      if (!signedSet.has(key)) break;
+      streakDays += 1;
+      cursor = addDays(cursor, -1);
+    }
+
+    return {
+      success: true,
+      message: '获取成功',
+      data: {
+        today: todayKey,
+        signedToday,
+        month,
+        monthSignedCount: Object.keys(records).length,
+        streakDays,
+        records,
+      },
     };
   }
 
-  const todayKey = buildDateKey(new Date());
-  const signedToday = Boolean(records[todayKey]) || (await query(
-    'SELECT 1 FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
-    [userId, todayKey]
-  )).rows.length > 0;
+  // 签到操作，需要事务保证原子性
+  @Transactional
+  async doSignIn(userId: number): Promise<DoSignInResult> {
+    const todayKey = buildDateKey(new Date());
+    const holidayInfo = getHolidayInfo(new Date());
+    const reward = holidayInfo.isHoliday ? 50 : 10;
 
-  const historyRows = await query(
-    `
-      SELECT sign_date
-      FROM sign_in_records
-      WHERE user_id = $1 AND sign_date >= ($2::date - INTERVAL '366 days')
-      ORDER BY sign_date DESC
-      LIMIT 366
-    `,
-    [userId, todayKey]
-  );
-
-  const signedSet = new Set<string>();
-  for (const row of historyRows.rows as Array<Record<string, unknown>>) {
-    const key = normalizeDateKey(row.sign_date);
-    if (key) signedSet.add(key);
-  }
-
-  let streakDays = 0;
-  let cursor = new Date();
-  while (streakDays < 366) {
-    const key = buildDateKey(cursor);
-    if (!signedSet.has(key)) break;
-    streakDays += 1;
-    cursor = addDays(cursor, -1);
-  }
-
-  return {
-    success: true,
-    message: '获取成功',
-    data: {
-      today: todayKey,
-      signedToday,
-      month,
-      monthSignedCount: Object.keys(records).length,
-      streakDays,
-      records,
-    },
-  };
-};
-
-export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
-  const todayKey = buildDateKey(new Date());
-  const holidayInfo = getHolidayInfo(new Date());
-  const reward = holidayInfo.isHoliday ? 50 : 10;
-
-  return await withTransaction(async (client) => {
-const characterCheck = await client.query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
+    const characterCheck = await query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
     if (characterCheck.rows.length === 0) {
-      return rollbackAndReturn(client, { success: false, message: '角色不存在，无法签到' });
+      return { success: false, message: '角色不存在，无法签到' };
     }
-  
-    const exist = await client.query(
+
+    const exist = await query(
       'SELECT id FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
       [userId, todayKey]
     );
     if (exist.rows.length > 0) {
-      return rollbackAndReturn(client, { success: false, message: '今日已签到' });
+      return { success: false, message: '今日已签到' };
     }
-  
-    await client.query(
+
+    await query(
       `
         INSERT INTO sign_in_records (user_id, sign_date, reward, is_holiday, holiday_name)
         VALUES ($1, $2::date, $3, $4, $5)
       `,
       [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
     );
-  
-    const updated = await client.query(
+
+    const updated = await query(
       'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
       [reward, userId]
     );
-return {
+
+    return {
       success: true,
       message: '签到成功',
       data: {
@@ -196,5 +214,7 @@ return {
         spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
       },
     };
-  });
-};
+  }
+}
+
+export const signInService = new SignInService();

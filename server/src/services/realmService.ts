@@ -1,11 +1,10 @@
-import { query, pool, withTransaction } from "../config/database.js";
-import type { PoolClient } from "pg";
+import { query } from "../config/database.js";
+import { Transactional } from "../decorators/transactional.js";
 import { readFile, stat } from "fs/promises";
 import path from "path";
 import { updateSectionProgress } from "./mainQuest/index.js";
 import { updateAchievementProgress } from "./achievementService.js";
 import { invalidateCharacterComputedCache } from "./characterComputedService.js";
-import { getCharacterIdByUserId } from "./shared/characterId.js";
 import {
   getDungeonDefinitions,
   getDungeonDifficultyById,
@@ -262,24 +261,9 @@ const getBreakthroughConfig = (
   return b ?? null;
 };
 
-const withClient = async <T>(
-  fn: (client: PoolClient) => Promise<T>,
-): Promise<T> => {
-  try {
-    return await withTransaction(async (client) => {
-      const result = await fn(client);
-      return result;
-    });
-  } catch (error) {
-    throw error;
-  }
-};
-
 const getItemDefMap = async (
-  client: PoolClient,
   itemDefIds: string[],
 ): Promise<Record<string, { name: string; icon: string | null }>> => {
-  void client;
   const ids = Array.from(
     new Set(itemDefIds.map((s) => String(s || "").trim()).filter((s) => !!s)),
   );
@@ -301,10 +285,8 @@ const getItemDefMap = async (
 };
 
 const getTechniqueDefMap = async (
-  client: PoolClient,
   techniqueIds: string[],
 ): Promise<Record<string, { name: string }>> => {
-  void client;
   const ids = Array.from(
     new Set(techniqueIds.map((s) => String(s || "").trim()).filter((s) => !!s)),
   );
@@ -319,10 +301,8 @@ const getTechniqueDefMap = async (
 };
 
 const getDungeonDefMap = async (
-  client: PoolClient,
   dungeonIds: string[],
 ): Promise<Record<string, { name: string }>> => {
-  void client;
   const ids = Array.from(
     new Set(dungeonIds.map((s) => String(s || "").trim()).filter((s) => !!s)),
   );
@@ -337,10 +317,8 @@ const getDungeonDefMap = async (
 };
 
 const getDungeonDifficultyMap = async (
-  client: PoolClient,
   difficultyIds: string[],
 ): Promise<Record<string, { name: string }>> => {
-  void client;
   const ids = Array.from(
     new Set(
       difficultyIds.map((s) => String(s || "").trim()).filter((s) => !!s),
@@ -357,11 +335,10 @@ const getDungeonDifficultyMap = async (
 };
 
 const getItemQtyInBag = async (
-  client: PoolClient,
   characterId: number,
   itemDefId: string,
 ): Promise<number> => {
-  const res = await client.query(
+  const res = await query(
     `
       SELECT COALESCE(SUM(qty), 0)::int AS qty
       FROM item_instance
@@ -373,7 +350,6 @@ const getItemQtyInBag = async (
 };
 
 const getEquippedMainTechnique = async (
-  client: PoolClient,
   characterId: number,
 ): Promise<{ techniqueId: string; name: string; layer: number } | null> => {
   const nameByTechniqueId = new Map(
@@ -381,7 +357,7 @@ const getEquippedMainTechnique = async (
       .filter((entry) => entry.enabled !== false)
       .map((entry) => [entry.id, String(entry.name || entry.id)] as const),
   );
-  const res = await client.query(
+  const res = await query(
     `
       SELECT ct.technique_id, ct.current_layer
       FROM character_technique ct
@@ -400,7 +376,6 @@ const getEquippedMainTechnique = async (
 };
 
 const getEquippedSubTechniques = async (
-  client: PoolClient,
   characterId: number,
 ): Promise<
   Array<{ techniqueId: string; name: string; layer: number; slotIndex: number }>
@@ -410,7 +385,7 @@ const getEquippedSubTechniques = async (
       .filter((entry) => entry.enabled !== false)
       .map((entry) => [entry.id, String(entry.name || entry.id)] as const),
   );
-  const res = await client.query(
+  const res = await query(
     `
       SELECT ct.technique_id, ct.current_layer, ct.slot_index
       FROM character_technique ct
@@ -442,11 +417,10 @@ const getEquippedSubTechniques = async (
 };
 
 const getTechniqueLayer = async (
-  client: PoolClient,
   characterId: number,
   techniqueId: string,
 ): Promise<number> => {
-  const res = await client.query(
+  const res = await query(
     "SELECT current_layer FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1",
     [characterId, techniqueId],
   );
@@ -454,11 +428,10 @@ const getTechniqueLayer = async (
 };
 
 const getTechniquesCountMinLayer = async (
-  client: PoolClient,
   characterId: number,
   minLayer: number,
 ): Promise<number> => {
-  const res = await client.query(
+  const res = await query(
     "SELECT COUNT(1)::int AS cnt FROM character_technique WHERE character_id = $1 AND current_layer >= $2",
     [characterId, minLayer],
   );
@@ -466,12 +439,11 @@ const getTechniquesCountMinLayer = async (
 };
 
 const getDungeonClearCount = async (args: {
-  client: PoolClient;
   characterId: number;
   dungeonId?: string;
   difficultyId?: string;
 }): Promise<number> => {
-  const { client, characterId } = args;
+  const { characterId } = args;
   const dungeonId = String(args.dungeonId || "").trim();
   const difficultyId = String(args.difficultyId || "").trim();
 
@@ -487,7 +459,7 @@ const getDungeonClearCount = async (args: {
     where.push(`difficulty_id = $${values.length}`);
   }
 
-  const res = await client.query(
+  const res = await query(
     `
       SELECT COUNT(1)::int AS cnt
       FROM dungeon_record
@@ -499,10 +471,9 @@ const getDungeonClearCount = async (args: {
 };
 
 const getCompletedMainQuestChapterSet = async (
-  client: PoolClient,
   characterId: number,
 ): Promise<Set<string>> => {
-  const res = await client.query(
+  const res = await query(
     `
       SELECT completed_chapters
       FROM character_main_quest_progress
@@ -524,13 +495,12 @@ const getCompletedMainQuestChapterSet = async (
 };
 
 const evaluateRequirements = async (args: {
-  client: PoolClient;
   characterId: number;
   exp: number;
   spiritStones: number;
   requirements: BreakthroughRequirement[];
 }): Promise<RealmRequirementView[]> => {
-  const { client, characterId, exp, spiritStones } = args;
+  const { characterId, exp, spiritStones } = args;
   const reqs = Array.isArray(args.requirements) ? args.requirements : [];
 
   const itemIds: string[] = [];
@@ -547,13 +517,13 @@ const evaluateRequirements = async (args: {
       difficultyIds.push(String((r as any).difficultyId || ""));
     }
   }
-  const itemMap = await getItemDefMap(client, itemIds);
-  const techniqueMap = await getTechniqueDefMap(client, techniqueIds);
-  const dungeonMap = await getDungeonDefMap(client, dungeonIds);
-  const difficultyMap = await getDungeonDifficultyMap(client, difficultyIds);
+  const itemMap = await getItemDefMap(itemIds);
+  const techniqueMap = await getTechniqueDefMap(techniqueIds);
+  const dungeonMap = await getDungeonDefMap(dungeonIds);
+  const difficultyMap = await getDungeonDifficultyMap(difficultyIds);
 
   const out: RealmRequirementView[] = [];
-  const mainTech = await getEquippedMainTechnique(client, characterId);
+  const mainTech = await getEquippedMainTechnique(characterId);
   let equippedSubs: Array<{
     techniqueId: string;
     name: string;
@@ -573,7 +543,6 @@ const evaluateRequirements = async (args: {
     if (dungeonClearCountCache.has(cacheKey))
       return dungeonClearCountCache.get(cacheKey) || 0;
     const cnt = await getDungeonClearCount({
-      client,
       characterId,
       dungeonId: d,
       difficultyId: diff,
@@ -615,7 +584,7 @@ const evaluateRequirements = async (args: {
       const techniqueId = String((r as any).techniqueId || "").trim();
       const minLayer = Number((r as any).minLayer ?? 0) || 0;
       const layer = techniqueId
-        ? await getTechniqueLayer(client, characterId, techniqueId)
+        ? await getTechniqueLayer(characterId, techniqueId)
         : 0;
       const ok = layer >= minLayer;
       const techName = techniqueMap[techniqueId]?.name || techniqueId || "功法";
@@ -663,7 +632,7 @@ const evaluateRequirements = async (args: {
       }
 
       if (!equippedSubs)
-        equippedSubs = await getEquippedSubTechniques(client, characterId);
+        equippedSubs = await getEquippedSubTechniques(characterId);
       const okMain = (mainTech.layer ?? 0) >= minLayer;
       const bestSub = equippedSubs.reduce(
         (acc, cur) => (!acc || cur.layer > acc.layer ? cur : acc),
@@ -691,7 +660,6 @@ const evaluateRequirements = async (args: {
       const minLayer = Number((r as any).minLayer ?? 0) || 0;
       const minCount = Number((r as any).minCount ?? 0) || 0;
       const cnt = await getTechniquesCountMinLayer(
-        client,
         characterId,
         minLayer,
       );
@@ -709,7 +677,7 @@ const evaluateRequirements = async (args: {
       const itemDefId = String((r as any).itemDefId || "").trim();
       const qtyNeed = Number((r as any).qty ?? 0) || 0;
       const qtyHave = itemDefId
-        ? await getItemQtyInBag(client, characterId, itemDefId)
+        ? await getItemQtyInBag(characterId, itemDefId)
         : 0;
       const ok = qtyHave >= qtyNeed;
       const meta = itemMap[itemDefId];
@@ -767,7 +735,6 @@ const evaluateRequirements = async (args: {
       const chapterId = String((r as any).chapterId || "").trim();
       if (!completedChapterSet) {
         completedChapterSet = await getCompletedMainQuestChapterSet(
-          client,
           characterId,
         );
       }
@@ -812,7 +779,6 @@ const evaluateRequirements = async (args: {
 };
 
 const buildCostsView = async (args: {
-  client: PoolClient;
   costs: BreakthroughCost[];
   characterId?: number;
   currentExp?: number;
@@ -824,7 +790,6 @@ const buildCostsView = async (args: {
   view: RealmCostView[];
   affordable: boolean;
 }> => {
-  const { client } = args;
   const costs = Array.isArray(args.costs) ? args.costs : [];
   const characterId = Number(args.characterId ?? 0) || 0;
   const currentExp = Number(args.currentExp ?? NaN);
@@ -854,7 +819,7 @@ const buildCostsView = async (args: {
   }
 
   const itemDefIds = costItems.map((x) => x.itemDefId);
-  const itemMap = await getItemDefMap(client, itemDefIds);
+  const itemMap = await getItemDefMap(itemDefIds);
 
   const view: RealmCostView[] = [];
   if (costExp > 0) {
@@ -891,7 +856,7 @@ const buildCostsView = async (args: {
     const meta = itemMap[it.itemDefId];
     const have =
       characterId > 0
-        ? await getItemQtyInBag(client, characterId, it.itemDefId)
+        ? await getItemQtyInBag(characterId, it.itemDefId)
         : NaN;
     const ok = Number.isFinite(have) ? have >= it.qty : true;
     view.push({
@@ -961,7 +926,6 @@ const buildRewardsView = (rewards?: RewardConfig): RealmRewardView[] => {
 };
 
 const consumeItemFromBagTx = async (
-  client: PoolClient,
   characterId: number,
   itemDefId: string,
   qty: number,
@@ -970,7 +934,7 @@ const consumeItemFromBagTx = async (
   if (!itemDefId || remaining <= 0) return { success: true, message: "ok" };
 
   while (remaining > 0) {
-    const res = await client.query(
+    const res = await query(
       `
         SELECT id, qty
         FROM item_instance
@@ -993,13 +957,13 @@ const consumeItemFromBagTx = async (
       return { success: false, message: "材料数据异常" };
 
     if (hasQty <= remaining) {
-      await client.query(
+      await query(
         "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
         [instanceId, characterId],
       );
       remaining -= hasQty;
     } else {
-      await client.query(
+      await query(
         "UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
         [remaining, instanceId, characterId],
       );
@@ -1010,112 +974,114 @@ const consumeItemFromBagTx = async (
   return { success: true, message: "ok" };
 };
 
-export const getRealmOverview = async (
-  userId: number,
-): Promise<{
-  success: boolean;
-  message: string;
-  data?: {
-    configPath: string | null;
-    realmOrder: string[];
-    currentRealm: string;
-    currentIndex: number;
-    nextRealm: string | null;
-    exp: number;
-    spiritStones: number;
-    requirements: RealmRequirementView[];
-    costs: RealmCostView[];
-    rewards: RealmRewardView[];
-    canBreakthrough: boolean;
-  };
-}> => {
-  const cfg = await loadConfig();
+class RealmService {
+  /**
+   * 获取境界总览（纯读，不需要事务）
+   * - 加载配置、查询角色信息
+   * - 评估突破条件、消耗、奖励
+   * - 返回是否可突破
+   */
+  async getOverview(userId: number): Promise<{
+    success: boolean;
+    message: string;
+    data?: {
+      configPath: string | null;
+      realmOrder: string[];
+      currentRealm: string;
+      currentIndex: number;
+      nextRealm: string | null;
+      exp: number;
+      spiritStones: number;
+      requirements: RealmRequirementView[];
+      costs: RealmCostView[];
+      rewards: RealmRewardView[];
+      canBreakthrough: boolean;
+    };
+  }> {
+    const cfg = await loadConfig();
 
-  const res = await query(
-    "SELECT id, realm, sub_realm, exp, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
-    [userId],
-  );
-  if (res.rows.length === 0) return { success: false, message: "角色不存在" };
+    const res = await query(
+      "SELECT id, realm, sub_realm, exp, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
+      [userId],
+    );
+    if (res.rows.length === 0) return { success: false, message: "角色不存在" };
 
-  const row = res.rows[0] as {
-    id?: unknown;
-    realm?: unknown;
-    sub_realm?: unknown;
-    exp?: unknown;
-    spirit_stones?: unknown;
-  };
-  const characterId = Number(row.id ?? 0) || 0;
-  const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
-  const subRealm =
-    typeof row.sub_realm === "string" ? row.sub_realm.trim() : "";
-  const currentRealm =
-    realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
-  const exp = Number(row.exp ?? 0) || 0;
-  const spiritStones = Number(row.spirit_stones ?? 0) || 0;
+    const row = res.rows[0] as {
+      id?: unknown;
+      realm?: unknown;
+      sub_realm?: unknown;
+      exp?: unknown;
+      spirit_stones?: unknown;
+    };
+    const characterId = Number(row.id ?? 0) || 0;
+    const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
+    const subRealm =
+      typeof row.sub_realm === "string" ? row.sub_realm.trim() : "";
+    const currentRealm =
+      realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
+    const exp = Number(row.exp ?? 0) || 0;
+    const spiritStones = Number(row.spirit_stones ?? 0) || 0;
 
-  const currentIndex = getRealmIndex(cfg.realmOrder, currentRealm);
-  const nextRealm = getNextRealmName(cfg.realmOrder, currentRealm);
-  const bt = nextRealm ? getBreakthroughConfig(cfg, currentRealm) : null;
+    const currentIndex = getRealmIndex(cfg.realmOrder, currentRealm);
+    const nextRealm = getNextRealmName(cfg.realmOrder, currentRealm);
+    const bt = nextRealm ? getBreakthroughConfig(cfg, currentRealm) : null;
 
-  const requirements = bt
-    ? await withClient(async (client) =>
-        evaluateRequirements({
-          client,
+    const requirements = bt
+      ? await evaluateRequirements({
           characterId,
           exp,
           spiritStones,
           requirements: bt.requirements ?? [],
-        }),
-      )
-    : [];
+        })
+      : [];
 
-  const costsBuilt = bt
-    ? await withClient(async (client) =>
-        buildCostsView({
-          client,
+    const costsBuilt = bt
+      ? await buildCostsView({
           costs: bt.costs ?? [],
           characterId,
           currentExp: exp,
           currentSpiritStones: spiritStones,
-        }),
-      )
-    : null;
-  const costs = costsBuilt?.view ?? [];
-  const rewards = buildRewardsView(bt?.rewards);
+        })
+      : null;
+    const costs = costsBuilt?.view ?? [];
+    const rewards = buildRewardsView(bt?.rewards);
 
-  const canBreakthrough =
-    !!nextRealm &&
-    bt?.to === nextRealm &&
-    requirements.every((r) => r.status === "done") &&
-    (costsBuilt ? costsBuilt.affordable : true);
+    const canBreakthrough =
+      !!nextRealm &&
+      bt?.to === nextRealm &&
+      requirements.every((r) => r.status === "done") &&
+      (costsBuilt ? costsBuilt.affordable : true);
 
-  return {
-    success: true,
-    message: "ok",
-    data: {
-      configPath: cachedConfigPath,
-      realmOrder: cfg.realmOrder,
-      currentRealm,
-      currentIndex,
-      nextRealm,
-      exp,
-      spiritStones,
-      requirements,
-      costs,
-      rewards,
-      canBreakthrough,
-    },
-  };
-};
+    return {
+      success: true,
+      message: "ok",
+      data: {
+        configPath: cachedConfigPath,
+        realmOrder: cfg.realmOrder,
+        currentRealm,
+        currentIndex,
+        nextRealm,
+        exp,
+        spiritStones,
+        requirements,
+        costs,
+        rewards,
+        canBreakthrough,
+      },
+    };
+  }
 
-export const breakthroughToNextRealm = async (
-  userId: number,
-): Promise<RealmBreakthroughResult> => {
-  const cfg = await loadConfig();
+  /**
+   * 突破到下一境界（写操作，需要事务）
+   * - 校验条件、扣除消耗、更新境界
+   * - 事务提交后清除角色计算缓存
+   */
+  @Transactional
+  async breakthroughToNextRealm(userId: number): Promise<RealmBreakthroughResult> {
+    const cfg = await loadConfig();
 
-  const result = await withClient<RealmBreakthroughResult>(async (client) => {
-    const charRes = await client.query(
-      `SELECT 
+    const charRes = await query(
+      `SELECT
          id, realm, sub_realm, exp, spirit_stones, attribute_points
        FROM characters
        WHERE user_id = $1
@@ -1145,7 +1111,6 @@ export const breakthroughToNextRealm = async (
       return { success: false, message: "下一境界配置不存在" };
 
     const reqViews = await evaluateRequirements({
-      client,
       characterId,
       exp,
       spiritStones,
@@ -1163,7 +1128,6 @@ export const breakthroughToNextRealm = async (
     }
 
     const costsBuilt = await buildCostsView({
-      client,
       costs: bt.costs ?? [],
     });
     if (exp < costsBuilt.exp)
@@ -1175,10 +1139,10 @@ export const breakthroughToNextRealm = async (
       };
 
     const itemDefIds = costsBuilt.items.map((x) => x.itemDefId);
-    const itemMap = await getItemDefMap(client, itemDefIds);
+    const itemMap = await getItemDefMap(itemDefIds);
 
     for (const it of costsBuilt.items) {
-      const have = await getItemQtyInBag(client, characterId, it.itemDefId);
+      const have = await getItemQtyInBag(characterId, it.itemDefId);
       if (have < it.qty) {
         const meta = itemMap[it.itemDefId];
         return {
@@ -1190,7 +1154,6 @@ export const breakthroughToNextRealm = async (
 
     for (const it of costsBuilt.items) {
       const consumeRes = await consumeItemFromBagTx(
-        client,
         characterId,
         it.itemDefId,
         it.qty,
@@ -1206,7 +1169,7 @@ export const breakthroughToNextRealm = async (
     const newSpiritStones = spiritStones - costsBuilt.spiritStones;
     const newAttributePoints = attributePoints + apAdd;
 
-    await client.query(
+    await query(
       `
         UPDATE characters
         SET realm = $1,
@@ -1225,6 +1188,9 @@ export const breakthroughToNextRealm = async (
       realm: bt.to,
     });
     await updateAchievementProgress(characterId, `realm:reach:${bt.to}`, 1);
+
+    // 清除角色计算缓存（不依赖事务，放在方法末尾即可）
+    await invalidateCharacterComputedCache(characterId);
 
     const spentItems = costsBuilt.items.map((x) => {
       const meta = itemMap[x.itemDefId];
@@ -1250,35 +1216,33 @@ export const breakthroughToNextRealm = async (
         currentSpiritStones: newSpiritStones,
       },
     };
-  });
-
-  if (result.success) {
-    const characterId = await getCharacterIdByUserId(userId);
-    if (characterId) {
-      await invalidateCharacterComputedCache(characterId);
-    }
   }
 
-  return result;
-};
+  /**
+   * 突破到指定目标境界（委托给 breakthroughToNextRealm）
+   * - 校验目标是否为下一境界
+   * - 不需要 @Transactional，由 breakthroughToNextRealm 管理事务
+   */
+  async breakthroughToTargetRealm(
+    userId: number,
+    targetRealm: string,
+  ): Promise<RealmBreakthroughResult> {
+    const target = typeof targetRealm === "string" ? targetRealm.trim() : "";
+    if (!target) return { success: false, message: "目标境界无效" };
 
-export const breakthroughToTargetRealm = async (
-  userId: number,
-  targetRealm: string,
-): Promise<RealmBreakthroughResult> => {
-  const target = typeof targetRealm === "string" ? targetRealm.trim() : "";
-  if (!target) return { success: false, message: "目标境界无效" };
+    const cfg = await loadConfig();
+    if (!cfg.realmOrder.includes(target))
+      return { success: false, message: "目标境界未开放" };
 
-  const cfg = await loadConfig();
-  if (!cfg.realmOrder.includes(target))
-    return { success: false, message: "目标境界未开放" };
+    const overview = await this.getOverview(userId);
+    if (!overview.success) return { success: false, message: overview.message };
+    const nextRealm = overview.data?.nextRealm ?? null;
+    if (!nextRealm) return { success: false, message: "已达最高境界" };
+    if (nextRealm !== target)
+      return { success: false, message: "只能突破到下一境界" };
 
-  const overview = await getRealmOverview(userId);
-  if (!overview.success) return { success: false, message: overview.message };
-  const nextRealm = overview.data?.nextRealm ?? null;
-  if (!nextRealm) return { success: false, message: "已达最高境界" };
-  if (nextRealm !== target)
-    return { success: false, message: "只能突破到下一境界" };
+    return this.breakthroughToNextRealm(userId);
+  }
+}
 
-  return breakthroughToNextRealm(userId);
-};
+export const realmService = new RealmService();

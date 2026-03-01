@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { withRouteError } from '../middleware/routeError.js';
 import { requireCharacter, getOptionalUserId } from '../middleware/auth.js';
 import { getEnabledMaps, getMapDefById, getRoomInMap, getRoomsInMap, getWorldMap } from '../services/mapService.js';
-import { getAreaObjects, getRoomObjects, gatherRoomResource, pickupRoomItem } from '../services/roomObjectService.js';
+import { roomObjectService } from '../services/roomObjectService.js';
 import { getMonsterDefinitions } from '../services/staticConfigLoader.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { getSingleParam } from '../services/shared/httpParam.js';
@@ -20,8 +20,8 @@ router.get('/world', async (_req: Request, res: Response) => {
 
 router.get('/area/:area/objects', async (req: Request, res: Response) => {
   try {
-    const area = getSingleParam(req.params.area) as Parameters<typeof getAreaObjects>[0];
-    const objects = await getAreaObjects(area);
+    const area = getSingleParam(req.params.area) as Parameters<typeof roomObjectService.getAreaObjects>[0];
+    const objects = await roomObjectService.getAreaObjects(area);
     res.json({ success: true, data: { area, objects } });
   } catch (error) {
     return withRouteError(res, 'mapRoutes 路由异常', error);
@@ -84,7 +84,7 @@ router.get('/:mapId/rooms/:roomId/objects', async (req: Request, res: Response) 
     const mapId = getSingleParam(req.params.mapId);
     const roomId = getSingleParam(req.params.roomId);
     const userId = getOptionalUserId(req);
-    const objects = await getRoomObjects(mapId, roomId, userId);
+    const objects = await roomObjectService.getRoomObjects(mapId, roomId, userId);
     res.json({ success: true, data: { mapId, roomId, objects } });
   } catch (error) {
     return withRouteError(res, 'mapRoutes 路由异常', error);
@@ -99,7 +99,7 @@ router.post('/:mapId/rooms/:roomId/resources/:resourceId/gather', requireCharact
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const result = await gatherRoomResource({ mapId, roomId, resourceId, userId, characterId });
+    const result = await roomObjectService.gatherRoomResource({ mapId, roomId, resourceId, userId, characterId });
 
     const didGain = Boolean(result.success && result.data && typeof result.data.qty === 'number' && result.data.qty > 0);
     if (didGain) {
@@ -120,7 +120,7 @@ router.post('/:mapId/rooms/:roomId/items/:itemDefId/pickup', requireCharacter, a
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const result = await pickupRoomItem({ mapId, roomId, itemDefId, userId, characterId });
+    const result = await roomObjectService.pickupRoomItem({ mapId, roomId, itemDefId, userId, characterId });
 
     const didGain = Boolean(result.success && result.data && typeof result.data.qty === 'number' && result.data.qty > 0);
     if (didGain) {

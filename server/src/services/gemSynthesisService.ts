@@ -1,5 +1,5 @@
-import type { PoolClient } from 'pg';
-import { query, withTransaction } from '../config/database.js';
+import { query, getTransactionClient } from '../config/database.js';
+import { Transactional } from '../decorators/transactional.js';
 import { randomInt } from 'crypto';
 import { addItemToInventoryTx } from './inventory/index.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
@@ -283,7 +283,6 @@ const parseRecipeModel = (row: GemRecipeRow): GemRecipeModel | null => {
 };
 
 const getCharacterWalletTx = async (
-  client: PoolClient,
   characterId: number,
   forUpdate: boolean,
 ): Promise<CharacterWallet | null> => {
@@ -294,7 +293,7 @@ const getCharacterWalletTx = async (
     ${forUpdate ? 'FOR UPDATE' : ''}
     LIMIT 1
   `;
-  const result = await client.query(sql, [characterId]);
+  const result = await query(sql, [characterId]);
   if (!result.rows[0]) return null;
   const row = result.rows[0] as { silver: unknown; spirit_stones: unknown };
   return {
@@ -304,10 +303,8 @@ const getCharacterWalletTx = async (
 };
 
 const getGemRecipeRows = async (
-  client: PoolClient,
   options: { recipeId?: string; gemType?: GemType } = {},
 ): Promise<GemRecipeRow[]> => {
-  void client;
   let recipes = getItemRecipeDefinitionsByType('gem_synthesis');
 
   if (options.recipeId) {
@@ -344,10 +341,8 @@ const getGemRecipeRows = async (
 };
 
 const getItemDefMap = async (
-  client: PoolClient,
   itemDefIds: string[],
 ): Promise<Map<string, ItemDefLite>> => {
-  void client;
   const ids = [...new Set(itemDefIds.map((x) => x.trim()).filter((x) => x.length > 0))];
   if (ids.length === 0) return new Map();
 
@@ -366,14 +361,13 @@ const getItemDefMap = async (
 };
 
 const getItemOwnedQtyMapTx = async (
-  client: PoolClient,
   characterId: number,
   itemDefIds: string[],
 ): Promise<Map<string, number>> => {
   const ids = [...new Set(itemDefIds.map((x) => x.trim()).filter((x) => x.length > 0))];
   if (ids.length === 0) return new Map();
 
-  const result = await client.query(
+  const result = await query(
     `
       SELECT item_def_id, SUM(qty)::bigint AS qty
       FROM item_instance
@@ -394,7 +388,6 @@ const getItemOwnedQtyMapTx = async (
 };
 
 const consumeItemDefQtyTx = async (
-  client: PoolClient,
   characterId: number,
   itemDefId: string,
   qty: number,
@@ -402,7 +395,7 @@ const consumeItemDefQtyTx = async (
   const need = clampInt(qty, 1, Number.MAX_SAFE_INTEGER);
   if (need <= 0) return { success: true, message: '无需扣除材料' };
 
-  const result = await client.query(
+  const result = await query(
     `
       SELECT id, qty
       FROM item_instance
@@ -429,12 +422,12 @@ const consumeItemDefQtyTx = async (
     if (rowQty <= 0) continue;
 
     if (rowQty <= remaining) {
-      await client.query('DELETE FROM item_instance WHERE id = $1', [row.id]);
+      await query('DELETE FROM item_instance WHERE id = $1', [row.id]);
       remaining -= rowQty;
       continue;
     }
 
-    await client.query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [remaining, row.id]);
+    await query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [remaining, row.id]);
     remaining = 0;
   }
 
@@ -458,8 +451,8 @@ const calcMaxSynthesizeTimes = (params: {
   return Math.max(0, Math.min(byItems, bySilver, bySpirit));
 };
 
-const updateCharacterWalletTx = async (client: PoolClient, characterId: number, wallet: CharacterWallet): Promise<void> => {
-  await client.query(
+const updateCharacterWalletTx = async (characterId: number, wallet: CharacterWallet): Promise<void> => {
+  await query(
     `
       UPDATE characters
       SET silver = $2,
@@ -471,12 +464,29 @@ const updateCharacterWalletTx = async (client: PoolClient, characterId: number, 
   );
 };
 
-export const getGemSynthesisRecipeList = async (characterId: number): Promise<GemSynthesisRecipeListResult> => {
-  return await withTransaction(async (client) => {
-    const wallet = await getCharacterWalletTx(client, characterId, false);
+/**
+ * 宝石合成服务
+ *
+ * 作用：提供宝石合成相关功能，包括配方列表查询、单次合成、批量合成
+ *
+ * 输入/输出：
+ * - getGemSynthesisRecipeList: 输入角色ID，输出配方列表及角色钱包信息
+ * - synthesizeGem: 输入角色ID、用户ID、配方ID和次数，输出合成结果
+ * - synthesizeGemBatch: 输入角色ID、用户ID、宝石类型和目标等级，输出批量合成结果
+ *
+ * 数据流/状态流：
+ * - 查询配方 → 检查材料和货币 → 扣除材料 → 执行合成（概率判定）→ 产出物品 → 更新角色状态
+ *
+ * 关键边界条件与坑点：
+ * 1) synthesizeGem 和 synthesizeGemBatch 使用 @Transactional 确保事务一致性
+ * 2) getGemSynthesisRecipeList 为纯读操作，不需要事务装饰器
+ */
+class GemSynthesisService {
+  async getGemSynthesisRecipeList(characterId: number): Promise<GemSynthesisRecipeListResult> {
+    const wallet = await getCharacterWalletTx(characterId, false);
     if (!wallet) return { success: false, message: '角色不存在' };
 
-    const recipeRows = await getGemRecipeRows(client);
+    const recipeRows = await getGemRecipeRows();
     const recipes = recipeRows
       .map((row) => parseRecipeModel(row))
       .filter((row): row is GemRecipeModel => !!row)
@@ -501,9 +511,8 @@ export const getGemSynthesisRecipeList = async (characterId: number): Promise<Ge
 
     const itemDefIds = recipes.flatMap((recipe) => [recipe.inputItemDefId, recipe.outputItemDefId]);
     const [itemDefMap, ownedMap] = await Promise.all([
-      getItemDefMap(client, itemDefIds),
+      getItemDefMap(itemDefIds),
       getItemOwnedQtyMapTx(
-        client,
         characterId,
         recipes.map((recipe) => recipe.inputItemDefId),
       ),
@@ -559,209 +568,35 @@ export const getGemSynthesisRecipeList = async (characterId: number): Promise<Ge
         recipes: views,
       },
     };
-  });
-    
-};
+  }
 
-export const synthesizeGem = async (
-  characterId: number,
-  userId: number,
-  params: { recipeId: string; times?: number },
-): Promise<GemSynthesisExecuteResult> => {
-  const recipeId = String(params.recipeId || '').trim();
-  const times = clampInt(params.times ?? 1, 1, 999999);
-  if (!recipeId) return { success: false, message: 'recipeId参数错误' };
+  @Transactional
+  async synthesizeGem(
+    characterId: number,
+    userId: number,
+    params: { recipeId: string; times?: number },
+  ): Promise<GemSynthesisExecuteResult> {
+    const recipeId = String(params.recipeId || '').trim();
+    const times = clampInt(params.times ?? 1, 1, 999999);
+    if (!recipeId) return { success: false, message: 'recipeId参数错误' };
 
-  return await withTransaction(async (client) => {
+    const client = getTransactionClient();
+    if (!client) return { success: false, message: '事务上下文缺失' };
+
     await lockCharacterInventoryMutexTx(client, characterId);
 
-  const wallet = await getCharacterWalletTx(client, characterId, true);
-  if (!wallet) {
-    return { success: false, message: '角色不存在' };
-  }
-
-  const recipeRows = await getGemRecipeRows(client, { recipeId });
-  const recipe = recipeRows.length > 0 ? parseRecipeModel(recipeRows[0]) : null;
-  if (!recipe) {
-    return { success: false, message: '宝石配方不存在' };
-  }
-
-  const ownedMap = await getItemOwnedQtyMapTx(client, characterId, [recipe.inputItemDefId]);
-  const ownedInputQty = ownedMap.get(recipe.inputItemDefId) ?? 0;
-  const maxTimes = calcMaxSynthesizeTimes({
-    ownedInputQty,
-    needInputQty: recipe.inputQty,
-    wallet,
-    silverCost: recipe.costSilver,
-    spiritStoneCost: recipe.costSpiritStones,
-  });
-
-  if (maxTimes <= 0) {
-    return { success: false, message: '材料或货币不足' };
-  }
-
-  if (times > maxTimes) {
-    return { success: false, message: `当前最多可合成${maxTimes}次` };
-  }
-
-  const consumeQty = recipe.inputQty * times;
-  const consumeRes = await consumeItemDefQtyTx(client, characterId, recipe.inputItemDefId, consumeQty);
-  if (!consumeRes.success) {
-    return { success: false, message: consumeRes.message };
-  }
-
-  const totalSilverCost = recipe.costSilver * times;
-  const totalSpiritStoneCost = recipe.costSpiritStones * times;
-  wallet.silver -= totalSilverCost;
-  wallet.spiritStones -= totalSpiritStoneCost;
-
-  if (wallet.silver < 0 || wallet.spiritStones < 0) {
-    return { success: false, message: '货币不足' };
-  }
-
-  await updateCharacterWalletTx(client, characterId, wallet);
-
-  const successRate = Math.max(0, Math.min(1, Number(recipe.successRate) || 0));
-  let successCount = 0;
-  for (let i = 0; i < times; i += 1) {
-    const roll = randomInt(0, 10_000) / 10_000;
-    if (roll < successRate) successCount += 1;
-  }
-  const failCount = times - successCount;
-
-  const produceQty = recipe.outputQty * successCount;
-  let produced: { itemDefId: string; qty: number; itemIds: number[] } | null = null;
-  if (produceQty > 0) {
-    const addRes = await addItemToInventoryTx(client, characterId, userId, recipe.outputItemDefId, produceQty, {
-      location: 'bag',
-      obtainedFrom: 'gem-synthesis',
-    });
-    if (!addRes.success) {
-      return { success: false, message: addRes.message };
+    const wallet = await getCharacterWalletTx(characterId, true);
+    if (!wallet) {
+      return { success: false, message: '角色不存在' };
     }
-    produced = {
-      itemDefId: recipe.outputItemDefId,
-      qty: produceQty,
-      itemIds: addRes.itemIds ?? [],
-    };
-  }
 
-  const character = await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true });
-  const message =
-    successCount <= 0
-      ? '宝石合成失败，材料已损失'
-      : failCount <= 0
-      ? '宝石合成成功'
-      : `宝石合成完成（成功${successCount}次，失败${failCount}次）`;
-    return {
-    success: true,
-    message,
-    data: {
-      recipeId: recipe.id,
-      gemType: recipe.gemType,
-      seriesKey: recipe.seriesKey,
-      fromLevel: recipe.fromLevel,
-      toLevel: recipe.toLevel,
-      times,
-      successCount,
-      failCount,
-      successRate: recipe.successRate,
-      consumed: {
-        itemDefId: recipe.inputItemDefId,
-        qty: consumeQty,
-      },
-      spent: {
-        silver: totalSilverCost,
-        spiritStones: totalSpiritStoneCost,
-      },
-      produced,
-      character,
-    },
-    };
-  });
-};
-
-export const synthesizeGemBatch = async (
-  characterId: number,
-  userId: number,
-  params: { gemType: string; targetLevel: number; sourceLevel?: number; seriesKey?: string },
-): Promise<GemSynthesisBatchResult> => {
-  const gemType = normalizeGemType(params.gemType);
-  const sourceLevel = clampInt(params.sourceLevel ?? 1, 1, 9);
-  const targetLevel = clampInt(params.targetLevel, 2, 10);
-  const requestedSeriesKey = String(params.seriesKey || '').trim().toLowerCase();
-
-  if (!gemType) return { success: false, message: 'gemType参数错误' };
-  if (sourceLevel >= targetLevel) return { success: false, message: 'targetLevel必须大于sourceLevel' };
-
-  return await withTransaction(async (client) => {
-    await lockCharacterInventoryMutexTx(client, characterId);
-
-  const wallet = await getCharacterWalletTx(client, characterId, true);
-  if (!wallet) {
-    return { success: false, message: '角色不存在' };
-  }
-
-  const recipeRows = await getGemRecipeRows(client, { gemType });
-  const recipes = recipeRows
-    .map((row) => parseRecipeModel(row))
-    .filter((row): row is GemRecipeModel => !!row)
-    .filter((row) => row.gemType === gemType);
-
-  if (recipes.length === 0) {
-    return { success: false, message: '宝石配方不存在' };
-  }
-
-  const seriesKeySet = new Set(recipes.map((recipe) => recipe.seriesKey));
-  let selectedSeriesKey = requestedSeriesKey;
-  if (selectedSeriesKey) {
-    if (!seriesKeySet.has(selectedSeriesKey)) {
-      return { success: false, message: '宝石子类型参数错误' };
+    const recipeRows = await getGemRecipeRows({ recipeId });
+    const recipe = recipeRows.length > 0 ? parseRecipeModel(recipeRows[0]) : null;
+    if (!recipe) {
+      return { success: false, message: '宝石配方不存在' };
     }
-  } else if (seriesKeySet.size > 1) {
-    return { success: false, message: '该类型包含多个子类型，请先选择具体宝石后再批量合成' };
-  } else {
-    selectedSeriesKey = recipes[0]?.seriesKey || '';
-  }
 
-  const selectedSeriesRecipes = recipes.filter((recipe) => recipe.seriesKey === selectedSeriesKey);
-  const recipeByFromLevel = new Map<number, GemRecipeModel>();
-  for (const recipe of selectedSeriesRecipes) {
-    recipeByFromLevel.set(recipe.fromLevel, recipe);
-  }
-
-  const steps: Array<{
-    recipeId: string;
-    seriesKey: string;
-    fromLevel: number;
-    toLevel: number;
-    times: number;
-    successCount: number;
-    failCount: number;
-    successRate: number;
-    consumed: {
-      itemDefId: string;
-      qty: number;
-    };
-    spent: {
-      silver: number;
-      spiritStones: number;
-    };
-    produced: {
-      itemDefId: string;
-      qty: number;
-      itemIds: number[];
-    };
-  }> = [];
-
-  let spentSilver = 0;
-  let spentSpiritStones = 0;
-
-  for (let level = sourceLevel; level < targetLevel; level += 1) {
-    const recipe = recipeByFromLevel.get(level);
-    if (!recipe) continue;
-
-    const ownedMap = await getItemOwnedQtyMapTx(client, characterId, [recipe.inputItemDefId]);
+    const ownedMap = await getItemOwnedQtyMapTx(characterId, [recipe.inputItemDefId]);
     const ownedInputQty = ownedMap.get(recipe.inputItemDefId) ?? 0;
     const maxTimes = calcMaxSynthesizeTimes({
       ownedInputQty,
@@ -771,36 +606,41 @@ export const synthesizeGemBatch = async (
       spiritStoneCost: recipe.costSpiritStones,
     });
 
-    if (maxTimes <= 0) continue;
+    if (maxTimes <= 0) {
+      return { success: false, message: '材料或货币不足' };
+    }
 
-    const consumeQty = recipe.inputQty * maxTimes;
-    const consumeRes = await consumeItemDefQtyTx(client, characterId, recipe.inputItemDefId, consumeQty);
+    if (times > maxTimes) {
+      return { success: false, message: `当前最多可合成${maxTimes}次` };
+    }
+
+    const consumeQty = recipe.inputQty * times;
+    const consumeRes = await consumeItemDefQtyTx(characterId, recipe.inputItemDefId, consumeQty);
     if (!consumeRes.success) {
       return { success: false, message: consumeRes.message };
     }
 
-    const totalSilverCost = recipe.costSilver * maxTimes;
-    const totalSpiritCost = recipe.costSpiritStones * maxTimes;
-
+    const totalSilverCost = recipe.costSilver * times;
+    const totalSpiritStoneCost = recipe.costSpiritStones * times;
     wallet.silver -= totalSilverCost;
-    wallet.spiritStones -= totalSpiritCost;
+    wallet.spiritStones -= totalSpiritStoneCost;
+
     if (wallet.silver < 0 || wallet.spiritStones < 0) {
       return { success: false, message: '货币不足' };
     }
 
-    spentSilver += totalSilverCost;
-    spentSpiritStones += totalSpiritCost;
+    await updateCharacterWalletTx(characterId, wallet);
 
     const successRate = Math.max(0, Math.min(1, Number(recipe.successRate) || 0));
     let successCount = 0;
-    for (let i = 0; i < maxTimes; i += 1) {
+    for (let i = 0; i < times; i += 1) {
       const roll = randomInt(0, 10_000) / 10_000;
       if (roll < successRate) successCount += 1;
     }
-    const failCount = maxTimes - successCount;
+    const failCount = times - successCount;
 
     const produceQty = recipe.outputQty * successCount;
-    let itemIds: number[] = [];
+    let produced: { itemDefId: string; qty: number; itemIds: number[] } | null = null;
     if (produceQty > 0) {
       const addRes = await addItemToInventoryTx(client, characterId, userId, recipe.outputItemDefId, produceQty, {
         location: 'bag',
@@ -809,70 +649,239 @@ export const synthesizeGemBatch = async (
       if (!addRes.success) {
         return { success: false, message: addRes.message };
       }
-      itemIds = addRes.itemIds ?? [];
-    }
-
-    steps.push({
-      recipeId: recipe.id,
-      seriesKey: recipe.seriesKey,
-      fromLevel: recipe.fromLevel,
-      toLevel: recipe.toLevel,
-      times: maxTimes,
-      successCount,
-      failCount,
-      successRate: recipe.successRate,
-      consumed: {
-        itemDefId: recipe.inputItemDefId,
-        qty: consumeQty,
-      },
-      spent: {
-        silver: totalSilverCost,
-        spiritStones: totalSpiritCost,
-      },
-      produced: {
+      produced = {
         itemDefId: recipe.outputItemDefId,
         qty: produceQty,
-        itemIds,
-      },
-    });
-  }
+        itemIds: addRes.itemIds ?? [],
+      };
+    }
 
-  if (steps.length === 0) {
-    return { success: false, message: '材料或货币不足，无法批量合成' };
-  }
-
-  await updateCharacterWalletTx(client, characterId, wallet);
-
-  const character = await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true });
-  const totalSuccess = steps.reduce((sum, step) => sum + step.successCount, 0);
-  const totalFail = steps.reduce((sum, step) => sum + step.failCount, 0);
-  const message =
-    totalSuccess <= 0
-      ? '批量合成完成，但全部失败，材料已损失'
-      : totalFail <= 0
-      ? '批量合成成功'
-      : `批量合成完成（成功${totalSuccess}次，失败${totalFail}次）`;
+    const character = await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true });
+    const message =
+      successCount <= 0
+        ? '宝石合成失败，材料已损失'
+        : failCount <= 0
+          ? '宝石合成成功'
+          : `宝石合成完成（成功${successCount}次，失败${failCount}次）`;
     return {
-    success: true,
-    message,
-    data: {
-      gemType,
-      seriesKey: selectedSeriesKey,
-      sourceLevel,
-      targetLevel,
-      totalSpent: {
-        silver: spentSilver,
-        spiritStones: spentSpiritStones,
+      success: true,
+      message,
+      data: {
+        recipeId: recipe.id,
+        gemType: recipe.gemType,
+        seriesKey: recipe.seriesKey,
+        fromLevel: recipe.fromLevel,
+        toLevel: recipe.toLevel,
+        times,
+        successCount,
+        failCount,
+        successRate: recipe.successRate,
+        consumed: {
+          itemDefId: recipe.inputItemDefId,
+          qty: consumeQty,
+        },
+        spent: {
+          silver: totalSilverCost,
+          spiritStones: totalSpiritStoneCost,
+        },
+        produced,
+        character,
       },
-      steps,
-      character,
-    },
     };
-  });
-};
+  }
 
-export default {
-  getGemSynthesisRecipeList,
-  synthesizeGem,
-  synthesizeGemBatch,
-};
+  @Transactional
+  async synthesizeGemBatch(
+    characterId: number,
+    userId: number,
+    params: { gemType: string; targetLevel: number; sourceLevel?: number; seriesKey?: string },
+  ): Promise<GemSynthesisBatchResult> {
+    const gemType = normalizeGemType(params.gemType);
+    const sourceLevel = clampInt(params.sourceLevel ?? 1, 1, 9);
+    const targetLevel = clampInt(params.targetLevel, 2, 10);
+    const requestedSeriesKey = String(params.seriesKey || '').trim().toLowerCase();
+
+    if (!gemType) return { success: false, message: 'gemType参数错误' };
+    if (sourceLevel >= targetLevel) return { success: false, message: 'targetLevel必须大于sourceLevel' };
+
+    const client = getTransactionClient();
+    if (!client) return { success: false, message: '事务上下文缺失' };
+
+    await lockCharacterInventoryMutexTx(client, characterId);
+
+    const wallet = await getCharacterWalletTx(characterId, true);
+    if (!wallet) {
+      return { success: false, message: '角色不存在' };
+    }
+
+    const recipeRows = await getGemRecipeRows({ gemType });
+    const recipes = recipeRows
+      .map((row) => parseRecipeModel(row))
+      .filter((row): row is GemRecipeModel => !!row)
+      .filter((row) => row.gemType === gemType);
+
+    if (recipes.length === 0) {
+      return { success: false, message: '宝石配方不存在' };
+    }
+
+    const seriesKeySet = new Set(recipes.map((recipe) => recipe.seriesKey));
+    let selectedSeriesKey = requestedSeriesKey;
+    if (selectedSeriesKey) {
+      if (!seriesKeySet.has(selectedSeriesKey)) {
+        return { success: false, message: '宝石子类型参数错误' };
+      }
+    } else if (seriesKeySet.size > 1) {
+      return { success: false, message: '该类型包含多个子类型，请先选择具体宝石后再批量合成' };
+    } else {
+      selectedSeriesKey = recipes[0]?.seriesKey || '';
+    }
+
+    const selectedSeriesRecipes = recipes.filter((recipe) => recipe.seriesKey === selectedSeriesKey);
+    const recipeByFromLevel = new Map<number, GemRecipeModel>();
+    for (const recipe of selectedSeriesRecipes) {
+      recipeByFromLevel.set(recipe.fromLevel, recipe);
+    }
+
+    const steps: Array<{
+      recipeId: string;
+      seriesKey: string;
+      fromLevel: number;
+      toLevel: number;
+      times: number;
+      successCount: number;
+      failCount: number;
+      successRate: number;
+      consumed: {
+        itemDefId: string;
+        qty: number;
+      };
+      spent: {
+        silver: number;
+        spiritStones: number;
+      };
+      produced: {
+        itemDefId: string;
+        qty: number;
+        itemIds: number[];
+      };
+    }> = [];
+
+    let spentSilver = 0;
+    let spentSpiritStones = 0;
+
+    for (let level = sourceLevel; level < targetLevel; level += 1) {
+      const recipe = recipeByFromLevel.get(level);
+      if (!recipe) continue;
+
+      const ownedMap = await getItemOwnedQtyMapTx(characterId, [recipe.inputItemDefId]);
+      const ownedInputQty = ownedMap.get(recipe.inputItemDefId) ?? 0;
+      const maxTimes = calcMaxSynthesizeTimes({
+        ownedInputQty,
+        needInputQty: recipe.inputQty,
+        wallet,
+        silverCost: recipe.costSilver,
+        spiritStoneCost: recipe.costSpiritStones,
+      });
+
+      if (maxTimes <= 0) continue;
+
+      const consumeQty = recipe.inputQty * maxTimes;
+      const consumeRes = await consumeItemDefQtyTx(characterId, recipe.inputItemDefId, consumeQty);
+      if (!consumeRes.success) {
+        return { success: false, message: consumeRes.message };
+      }
+
+      const totalSilverCost = recipe.costSilver * maxTimes;
+      const totalSpiritCost = recipe.costSpiritStones * maxTimes;
+
+      wallet.silver -= totalSilverCost;
+      wallet.spiritStones -= totalSpiritCost;
+      if (wallet.silver < 0 || wallet.spiritStones < 0) {
+        return { success: false, message: '货币不足' };
+      }
+
+      spentSilver += totalSilverCost;
+      spentSpiritStones += totalSpiritCost;
+
+      const successRate = Math.max(0, Math.min(1, Number(recipe.successRate) || 0));
+      let successCount = 0;
+      for (let i = 0; i < maxTimes; i += 1) {
+        const roll = randomInt(0, 10_000) / 10_000;
+        if (roll < successRate) successCount += 1;
+      }
+      const failCount = maxTimes - successCount;
+
+      const produceQty = recipe.outputQty * successCount;
+      let itemIds: number[] = [];
+      if (produceQty > 0) {
+        const addRes = await addItemToInventoryTx(client, characterId, userId, recipe.outputItemDefId, produceQty, {
+          location: 'bag',
+          obtainedFrom: 'gem-synthesis',
+        });
+        if (!addRes.success) {
+          return { success: false, message: addRes.message };
+        }
+        itemIds = addRes.itemIds ?? [];
+      }
+
+      steps.push({
+        recipeId: recipe.id,
+        seriesKey: recipe.seriesKey,
+        fromLevel: recipe.fromLevel,
+        toLevel: recipe.toLevel,
+        times: maxTimes,
+        successCount,
+        failCount,
+        successRate: recipe.successRate,
+        consumed: {
+          itemDefId: recipe.inputItemDefId,
+          qty: consumeQty,
+        },
+        spent: {
+          silver: totalSilverCost,
+          spiritStones: totalSpiritCost,
+        },
+        produced: {
+          itemDefId: recipe.outputItemDefId,
+          qty: produceQty,
+          itemIds,
+        },
+      });
+    }
+
+    if (steps.length === 0) {
+      return { success: false, message: '材料或货币不足，无法批量合成' };
+    }
+
+    await updateCharacterWalletTx(characterId, wallet);
+
+    const character = await getCharacterComputedByCharacterId(characterId, { bypassStaticCache: true });
+    const totalSuccess = steps.reduce((sum, step) => sum + step.successCount, 0);
+    const totalFail = steps.reduce((sum, step) => sum + step.failCount, 0);
+    const message =
+      totalSuccess <= 0
+        ? '批量合成完成，但全部失败，材料已损失'
+        : totalFail <= 0
+          ? '批量合成成功'
+          : `批量合成完成（成功${totalSuccess}次，失败${totalFail}次）`;
+    return {
+      success: true,
+      message,
+      data: {
+        gemType,
+        seriesKey: selectedSeriesKey,
+        sourceLevel,
+        targetLevel,
+        totalSpent: {
+          silver: spentSilver,
+          spiritStones: spentSpiritStones,
+        },
+        steps,
+        character,
+      },
+    };
+  }
+}
+
+export const gemSynthesisService = new GemSynthesisService();
+export default gemSynthesisService;

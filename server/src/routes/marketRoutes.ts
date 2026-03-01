@@ -1,15 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { withRouteError } from '../middleware/routeError.js';
 import { requireAuth, requireCharacter } from '../middleware/auth.js';
-import {
-  buyMarketListing,
-  cancelMarketListing,
-  createMarketListing,
-  getMarketListings,
-  getMarketTradeRecords,
-  getMyMarketListings,
-  type MarketSort,
-} from '../services/marketService.js';
+import { marketService, type MarketSort } from '../services/marketService.js';
 
 const router = Router();
 
@@ -34,7 +26,7 @@ router.get('/listings', requireAuth, async (req: Request, res: Response) => {
     const page = parseQueryNumber(req.query.page);
     const pageSize = parseQueryNumber(req.query.pageSize);
 
-    const result = await getMarketListings({
+    const result = await marketService.getMarketListings({
       category,
       quality,
       query: queryText,
@@ -61,7 +53,7 @@ router.get('/my-listings', requireCharacter, async (req: Request, res: Response)
     const page = parseQueryNumber(req.query.page);
     const pageSize = parseQueryNumber(req.query.pageSize);
 
-    const result = await getMyMarketListings({ characterId, status, page, pageSize });
+    const result = await marketService.getMyMarketListings({ characterId, status, page, pageSize });
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {
@@ -76,7 +68,7 @@ router.get('/records', requireCharacter, async (req: Request, res: Response) => 
 
     const page = parseQueryNumber(req.query.page);
     const pageSize = parseQueryNumber(req.query.pageSize);
-    const result = await getMarketTradeRecords({ characterId, page, pageSize });
+    const result = await marketService.getMarketTradeRecords({ characterId, page, pageSize });
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {
@@ -95,7 +87,7 @@ router.post('/list', requireCharacter, async (req: Request, res: Response) => {
       unitPriceSpiritStones?: unknown;
     };
 
-    const result = await createMarketListing({
+    const result = await marketService.createMarketListing({
       userId,
       characterId,
       itemInstanceId: Number(itemInstanceId),
@@ -116,7 +108,7 @@ router.post('/cancel', requireCharacter, async (req: Request, res: Response) => 
     const characterId = req.characterId!;
 
     const { listingId } = req.body as { listingId?: unknown };
-    const result = await cancelMarketListing({ userId, characterId, listingId: Number(listingId) });
+    const result = await marketService.cancelMarketListing({ userId, characterId, listingId: Number(listingId) });
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {
@@ -130,7 +122,7 @@ router.post('/buy', requireCharacter, async (req: Request, res: Response) => {
     const characterId = req.characterId!;
 
     const { listingId } = req.body as { listingId?: unknown };
-    const result = await buyMarketListing({ buyerUserId: userId, buyerCharacterId: characterId, listingId: Number(listingId) });
+    const result = await marketService.buyMarketListing({ buyerUserId: userId, buyerCharacterId: characterId, listingId: Number(listingId) });
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {

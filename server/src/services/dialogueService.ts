@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { createItem } from './itemService.js';
+import { itemService } from './itemService.js';
 import { getDialogueDefinitions } from './staticConfigLoader.js';
 
 export type DialogueNodeType = 'narration' | 'npc' | 'player' | 'choice' | 'system' | 'action';
@@ -183,7 +183,7 @@ export const applyDialogueEffectsTx = async (
         const itemDefId = typeof params.item_def_id === 'string' ? params.item_def_id : '';
         const qty = Number(params.quantity) || 1;
         if (itemDefId && qty > 0) {
-          const result = await createItem(userId, characterId, itemDefId, qty, {
+          const result = await itemService.createItem(userId, characterId, itemDefId, qty, {
             dbClient: client,
             location: 'bag',
             obtainedFrom: 'dialogue',

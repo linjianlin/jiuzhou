@@ -1,8 +1,9 @@
-import { pool, query, withTransaction, withTransactionAuto } from '../config/database.js';
-import { createItem } from './itemService.js';
+import { query } from '../config/database.js';
+import { itemService } from './itemService.js';
 import type { PoolClient } from 'pg';
 import { ensureMainQuestProgressForNewChapters, updateSectionProgress } from './mainQuest/index.js';
 import { updateAchievementProgress } from './achievementService.js';
+import { Transactional } from '../decorators/transactional.js';
 import {
   getItemDefinitionById,
   getItemDefinitionsByIds,
@@ -602,157 +603,12 @@ type ClaimedRewardResult =
   | { type: 'spirit_stones'; amount: number }
   | { type: 'item'; itemDefId: string; qty: number; itemIds?: number[]; itemName?: string; itemIcon?: string };
 
-const applyTaskRewardsTx = async (
-  client: PoolClient,
-  userId: number,
-  characterId: number,
-  rewards: RawReward[]
-): Promise<{ success: boolean; message: string; rewards: ClaimedRewardResult[] }> => {
-  const out: ClaimedRewardResult[] = [];
-
-  for (const rw of rewards) {
-    const type = asNonEmptyString(rw?.type) ?? '';
-    if (type === 'silver') {
-      const amount = asFiniteNonNegativeInt(rw?.amount, 0);
-      if (amount <= 0) continue;
-      await client.query(`UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`, [amount, characterId]);
-      out.push({ type: 'silver', amount });
-      continue;
-    }
-    if (type === 'spirit_stones') {
-      const amount = asFiniteNonNegativeInt(rw?.amount, 0);
-      if (amount <= 0) continue;
-      await client.query(`UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`, [amount, characterId]);
-      out.push({ type: 'spirit_stones', amount });
-      continue;
-    }
-    if (type === 'item') {
-      const itemDefId = asNonEmptyString(rw?.item_def_id);
-      if (!itemDefId) continue;
-      const qtyRange = resolveRewardQtyRange(rw);
-      const qty = rollRangeIntInclusive(qtyRange.min, qtyRange.max);
-      const itemDef = getItemDefinitionById(itemDefId);
-      const itemName = asNonEmptyString(itemDef?.name);
-      const itemIcon = asNonEmptyString(itemDef?.icon);
-      const result = await createItem(userId, characterId, itemDefId, qty, { dbClient: client, obtainedFrom: 'task_reward' });
-      if (!result.success) return { success: false, message: result.message, rewards: out };
-      out.push({
-        type: 'item',
-        itemDefId,
-        qty,
-        itemIds: result.itemIds,
-        itemName: itemName || undefined,
-        itemIcon: itemIcon || undefined,
-      });
-      continue;
-    }
-  }
-
-  return { success: true, message: 'ok', rewards: out };
-};
-
-const applyBountyRewardOnTaskClaimTx = async (
-  client: PoolClient,
-  characterId: number,
-  taskId: string
-): Promise<ClaimedRewardResult[]> => {
-  const res = await client.query(
-    `
-      SELECT
-        c.id AS claim_id,
-        i.spirit_stones_reward,
-        i.silver_reward
-      FROM bounty_claim c
-      JOIN bounty_instance i ON i.id = c.bounty_instance_id
-      WHERE c.character_id = $1
-        AND i.task_id = $2
-        AND c.status IN ('claimed','completed')
-      LIMIT 1
-      FOR UPDATE
-    `,
-    [characterId, taskId]
-  );
-  if ((res.rows ?? []).length === 0) return [];
-
-  const row = res.rows[0] as any;
-  const claimId = Number(row?.claim_id);
-  if (!Number.isFinite(claimId) || claimId <= 0) return [];
-
-  const spirit = asFiniteNonNegativeInt(row?.spirit_stones_reward, 0);
-  const silver = asFiniteNonNegativeInt(row?.silver_reward, 0);
-  const out: ClaimedRewardResult[] = [];
-
-  if (spirit > 0) {
-    await client.query(`UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`, [
-      spirit,
-      characterId,
-    ]);
-    out.push({ type: 'spirit_stones', amount: spirit });
-  }
-  if (silver > 0) {
-    await client.query(`UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`, [silver, characterId]);
-    out.push({ type: 'silver', amount: silver });
-  }
-
-  await client.query(`UPDATE bounty_claim SET status = 'rewarded', updated_at = NOW() WHERE id = $1`, [claimId]);
-  return out;
-};
-
 export const claimTaskReward = async (
   userId: number,
   characterId: number,
   taskId: string
 ): Promise<{ success: boolean; message: string; data?: { taskId: string; rewards: ClaimedRewardResult[] } }> => {
-  const uid = Number(userId);
-  const cid = Number(characterId);
-  if (!Number.isFinite(uid) || uid <= 0) return { success: false, message: '未登录' };
-  if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
-  const tid = asNonEmptyString(taskId);
-  if (!tid) return { success: false, message: '任务ID不能为空' };
-
-  return await withTransactionAuto(async (client) => {
-await resetRecurringTaskProgressIfNeeded(cid, client);
-  
-    const progressRes = await client.query(
-      `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
-      [cid, tid]
-    );
-    if ((progressRes.rows ?? []).length === 0) {
-      return { success: false, message: '任务未接取' };
-    }
-    const status = asNonEmptyString(progressRes.rows[0]?.status) ?? 'ongoing';
-    if (status !== 'claimable') {
-      return { success: false, message: '任务不可领取' };
-    }
-  
-    const taskDef = await getTaskDefinitionById(tid, client);
-    if (!taskDef) {
-      return { success: false, message: '任务不存在' };
-    }
-  
-    const rewards = parseRewards(taskDef.rewards);
-    const applyResult = await applyTaskRewardsTx(client, uid, cid, rewards);
-    if (!applyResult.success) {
-      return { success: false, message: applyResult.message };
-    }
-  
-    const bountyRewards = await applyBountyRewardOnTaskClaimTx(client, cid, tid);
-    if (bountyRewards.length > 0) applyResult.rewards.push(...bountyRewards);
-  
-    await client.query(
-      `
-        UPDATE character_task_progress
-        SET status = 'claimed',
-            completed_at = COALESCE(completed_at, NOW()),
-            claimed_at = NOW(),
-            tracked = false,
-            updated_at = NOW()
-        WHERE character_id = $1 AND task_id = $2
-      `,
-      [cid, tid]
-    );
-return { success: true, message: 'ok', data: { taskId: tid, rewards: applyResult.rewards } };
-  });
+  return taskService.claimTaskReward(userId, characterId, taskId);
 };
 
 type TaskProgressStatusDb = 'ongoing' | 'turnin' | 'claimable' | 'claimed';
@@ -1124,13 +980,7 @@ export const recordGatherResourceEvent = async (characterId: number, resourceId:
 };
 
 export const recordCollectItemEvent = async (characterId: number, itemId: string, count: number): Promise<void> => {
-  const iid = asNonEmptyString(itemId);
-  if (!iid) return;
-  const c = normalizePositiveInt(count, 1);
-
-  await updateSectionProgress(characterId, { type: 'collect', itemId: iid, count: c });
-
-  await updateAchievementProgress(characterId, `item:obtain:${iid}`, c);
+  return taskService.recordCollectItemEvent(characterId, itemId, count);
 };
 
 export const recordDungeonClearEvent = async (
@@ -1338,3 +1188,213 @@ export const npcTalk = async (
 
   return { success: true, message: 'ok', data: { npcId: nid, npcName, lines, tasks, mainQuest } };
 };
+
+/**
+ * TaskService 类
+ *
+ * 作用：封装任务相关的核心业务逻辑，使用 @Transactional 装饰器管理事务
+ *
+ * 关键方法：
+ * - claimTaskReward: 领取任务奖励（事务）
+ * - recordCollectItemEvent: 记录收集物品事件（事务）
+ *
+ * 数据流：
+ * - 输入：用户ID、角色ID、任务ID等业务参数
+ * - 处理：校验状态、发放奖励、更新进度
+ * - 输出：操作结果与奖励详情
+ *
+ * 边界条件：
+ * - 使用 @Transactional 自动管理事务，无需手动 commit/rollback
+ * - 所有 client.query 调用已替换为 query
+ */
+class TaskService {
+  /**
+   * 领取任务奖励
+   *
+   * @Transactional 自动管理事务边界
+   *
+   * 流程：
+   * 1. 校验任务状态为 claimable
+   * 2. 发放任务奖励（银两、灵石、物品）
+   * 3. 发放悬赏奖励（如果有）
+   * 4. 更新任务状态为 claimed
+   */
+  @Transactional
+  async claimTaskReward(
+    userId: number,
+    characterId: number,
+    taskId: string
+  ): Promise<{ success: boolean; message: string; data?: { taskId: string; rewards: ClaimedRewardResult[] } }> {
+    const uid = Number(userId);
+    const cid = Number(characterId);
+    if (!Number.isFinite(uid) || uid <= 0) return { success: false, message: '未登录' };
+    if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
+    const tid = asNonEmptyString(taskId);
+    if (!tid) return { success: false, message: '任务ID不能为空' };
+
+    await resetRecurringTaskProgressIfNeeded(cid);
+
+    const progressRes = await query(
+      `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
+      [cid, tid]
+    );
+    if ((progressRes.rows ?? []).length === 0) {
+      return { success: false, message: '任务未接取' };
+    }
+    const status = asNonEmptyString(progressRes.rows[0]?.status) ?? 'ongoing';
+    if (status !== 'claimable') {
+      return { success: false, message: '任务不可领取' };
+    }
+
+    const taskDef = await getTaskDefinitionById(tid);
+    if (!taskDef) {
+      return { success: false, message: '任务不存在' };
+    }
+
+    const rewards = parseRewards(taskDef.rewards);
+    const applyResult = await this.applyTaskRewards(uid, cid, rewards);
+    if (!applyResult.success) {
+      return { success: false, message: applyResult.message };
+    }
+
+    const bountyRewards = await this.applyBountyRewardOnTaskClaim(cid, tid);
+    if (bountyRewards.length > 0) applyResult.rewards.push(...bountyRewards);
+
+    await query(
+      `
+        UPDATE character_task_progress
+        SET status = 'claimed',
+            completed_at = COALESCE(completed_at, NOW()),
+            claimed_at = NOW(),
+            tracked = false,
+            updated_at = NOW()
+        WHERE character_id = $1 AND task_id = $2
+      `,
+      [cid, tid]
+    );
+    return { success: true, message: 'ok', data: { taskId: tid, rewards: applyResult.rewards } };
+  }
+
+  /**
+   * 应用任务奖励（内部方法，在事务中调用）
+   */
+  private async applyTaskRewards(
+    userId: number,
+    characterId: number,
+    rewards: RawReward[]
+  ): Promise<{ success: boolean; message: string; rewards: ClaimedRewardResult[] }> {
+    const out: ClaimedRewardResult[] = [];
+
+    for (const rw of rewards) {
+      const type = asNonEmptyString(rw?.type) ?? '';
+      if (type === 'silver') {
+        const amount = asFiniteNonNegativeInt(rw?.amount, 0);
+        if (amount <= 0) continue;
+        await query(`UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`, [amount, characterId]);
+        out.push({ type: 'silver', amount });
+        continue;
+      }
+      if (type === 'spirit_stones') {
+        const amount = asFiniteNonNegativeInt(rw?.amount, 0);
+        if (amount <= 0) continue;
+        await query(`UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`, [amount, characterId]);
+        out.push({ type: 'spirit_stones', amount });
+        continue;
+      }
+      if (type === 'item') {
+        const itemDefId = asNonEmptyString(rw?.item_def_id);
+        if (!itemDefId) continue;
+        const qtyRange = resolveRewardQtyRange(rw);
+        const qty = rollRangeIntInclusive(qtyRange.min, qtyRange.max);
+        const itemDef = getItemDefinitionById(itemDefId);
+        const itemName = asNonEmptyString(itemDef?.name);
+        const itemIcon = asNonEmptyString(itemDef?.icon);
+        const result = await itemService.createItem(userId, characterId, itemDefId, qty, { obtainedFrom: 'task_reward' });
+        if (!result.success) return { success: false, message: result.message, rewards: out };
+        out.push({
+          type: 'item',
+          itemDefId,
+          qty,
+          itemIds: result.itemIds,
+          itemName: itemName || undefined,
+          itemIcon: itemIcon || undefined,
+        });
+        continue;
+      }
+    }
+
+    return { success: true, message: 'ok', rewards: out };
+  }
+
+  /**
+   * 应用悬赏奖励（内部方法，在事务中调用）
+   */
+  private async applyBountyRewardOnTaskClaim(
+    characterId: number,
+    taskId: string
+  ): Promise<ClaimedRewardResult[]> {
+    const res = await query(
+      `
+        SELECT
+          c.id AS claim_id,
+          i.spirit_stones_reward,
+          i.silver_reward
+        FROM bounty_claim c
+        JOIN bounty_instance i ON i.id = c.bounty_instance_id
+        WHERE c.character_id = $1
+          AND i.task_id = $2
+          AND c.status IN ('claimed','completed')
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [characterId, taskId]
+    );
+    if ((res.rows ?? []).length === 0) return [];
+
+    const row = res.rows[0] as any;
+    const claimId = Number(row?.claim_id);
+    if (!Number.isFinite(claimId) || claimId <= 0) return [];
+
+    const spirit = asFiniteNonNegativeInt(row?.spirit_stones_reward, 0);
+    const silver = asFiniteNonNegativeInt(row?.silver_reward, 0);
+    const out: ClaimedRewardResult[] = [];
+
+    if (spirit > 0) {
+      await query(`UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`, [
+        spirit,
+        characterId,
+      ]);
+      out.push({ type: 'spirit_stones', amount: spirit });
+    }
+    if (silver > 0) {
+      await query(`UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`, [silver, characterId]);
+      out.push({ type: 'silver', amount: silver });
+    }
+
+    await query(`UPDATE bounty_claim SET status = 'rewarded', updated_at = NOW() WHERE id = $1`, [claimId]);
+    return out;
+  }
+
+  /**
+   * 记录收集物品事件
+   *
+   * @Transactional 自动管理事务边界
+   *
+   * 流程：
+   * 1. 更新主线任务进度
+   * 2. 更新成就进度
+   */
+  @Transactional
+  async recordCollectItemEvent(characterId: number, itemId: string, count: number): Promise<void> {
+    const iid = asNonEmptyString(itemId);
+    if (!iid) return;
+    const c = normalizePositiveInt(count, 1);
+
+    await updateSectionProgress(characterId, { type: 'collect', itemId: iid, count: c });
+
+    await updateAchievementProgress(characterId, `item:obtain:${iid}`, c);
+  }
+}
+
+// 单例导出
+export const taskService = new TaskService();

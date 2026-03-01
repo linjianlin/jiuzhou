@@ -28,14 +28,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import { requireCharacter } from '../middleware/auth.js';
-import {
-  startIdleSession,
-  stopIdleSession,
-  getActiveIdleSession,
-  getIdleHistory,
-  getSessionBatches,
-  markSessionViewed,
-} from '../services/idle/idleSessionService.js';
+import { idleSessionService } from '../services/idle/idleSessionService.js';
 import {
   startExecutionLoop,
   requestImmediateStop,
@@ -140,7 +133,7 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
     targetMonsterDefId,
   };
 
-  const result = await startIdleSession({ characterId, userId, config });
+  const result = await idleSessionService.startIdleSession({ characterId, userId, config });
 
   if (!result.success) {
     // 已有活跃会话 → 409
@@ -154,7 +147,7 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
   }
 
   // 启动执行循环（异步，不阻塞响应）
-  const session = await getActiveIdleSession(characterId);
+  const session = await idleSessionService.getActiveIdleSession(characterId);
   if (session) {
     startExecutionLoop(session, userId);
   }
@@ -169,7 +162,7 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
 router.post('/stop', requireCharacter, async (req: Request, res: Response): Promise<void> => {
   const characterId = req.characterId!;
 
-  const result = await stopIdleSession(characterId);
+  const result = await idleSessionService.stopIdleSession(characterId);
 
   if (!result.success) {
     res.status(400).json({ success: false, message: result.error });
@@ -191,7 +184,7 @@ router.post('/stop', requireCharacter, async (req: Request, res: Response): Prom
 router.get('/status', requireCharacter, async (req: Request, res: Response): Promise<void> => {
   const characterId = req.characterId!;
 
-  const session = await getActiveIdleSession(characterId);
+  const session = await idleSessionService.getActiveIdleSession(characterId);
   res.json({ success: true, session: session ? sessionToDto(session) : null });
 });
 
@@ -202,7 +195,7 @@ router.get('/status', requireCharacter, async (req: Request, res: Response): Pro
 router.get('/history', requireCharacter, async (req: Request, res: Response): Promise<void> => {
   const characterId = req.characterId!;
 
-  const history = await getIdleHistory(characterId);
+  const history = await idleSessionService.getIdleHistory(characterId);
   res.json({ success: true, history: history.map(sessionToDto) });
 });
 
@@ -219,7 +212,7 @@ router.get('/history/:id/batches', requireCharacter, async (req: Request, res: R
     return;
   }
 
-  const batches = await getSessionBatches(sessionId, characterId);
+  const batches = await idleSessionService.getSessionBatches(sessionId, characterId);
   res.json({ success: true, batches });
 });
 
@@ -236,7 +229,7 @@ router.post('/history/:id/viewed', requireCharacter, async (req: Request, res: R
     return;
   }
 
-  await markSessionViewed(sessionId, characterId);
+  await idleSessionService.markSessionViewed(sessionId, characterId);
   res.json({ success: true });
 });
 
@@ -247,13 +240,13 @@ router.post('/history/:id/viewed', requireCharacter, async (req: Request, res: R
 router.get('/progress', requireCharacter, async (req: Request, res: Response): Promise<void> => {
   const characterId = req.characterId!;
 
-  const session = await getActiveIdleSession(characterId);
+  const session = await idleSessionService.getActiveIdleSession(characterId);
   if (!session) {
     res.json({ success: true, session: null, batches: [] });
     return;
   }
 
-  const batches = await getSessionBatches(session.id, characterId);
+  const batches = await idleSessionService.getSessionBatches(session.id, characterId);
   res.json({ success: true, session: sessionToDto(session), batches });
 });
 

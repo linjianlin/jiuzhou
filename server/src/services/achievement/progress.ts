@@ -1,4 +1,5 @@
-import { withTransactionAuto } from '../../config/database.js';
+import { query, getTransactionClient } from '../../config/database.js';
+import { Transactional } from '../../decorators/transactional.js';
 import {
   asFiniteNonNegativeInt,
   asNonEmptyString,
@@ -13,97 +14,110 @@ import {
 import type { AchievementDefRow } from './types.js';
 import { getAchievementDefinitions } from '../staticConfigLoader.js';
 
-const normalizeIncrement = (value: number): number => {
-  const n = Math.floor(Number(value));
-  if (!Number.isFinite(n) || n <= 0) return 1;
-  return n;
-};
-
-const trackPatternMatches = (pattern: string, actual: string): boolean => {
-  const p = pattern.trim();
-  const a = actual.trim();
-  if (!p || !a) return false;
-  if (p === '*' || p === a) return true;
-
-  const pParts = p.split(':');
-  const aParts = a.split(':');
-  if (pParts.length !== aParts.length) return false;
-
-  for (let i = 0; i < pParts.length; i += 1) {
-    if (pParts[i] === '*') continue;
-    if (pParts[i] !== aParts[i]) return false;
+/**
+ * 成就进度更新服务
+ *
+ * 作用：处理成就进度追踪与自动完成检测
+ * 不做：不处理奖励领取（由 claim.ts 负责）
+ *
+ * 数据流：
+ * - updateAchievementProgress：根据 trackKey 匹配成就定义 → 锁定进度记录 → 更新进度 → 检测完成条件 → 更新点数
+ *
+ * 边界条件：
+ * 1) 使用 @Transactional 保证进度更新与点数增加的原子性
+ * 2) 支持嵌套调用（被其他服务在事务中调用时复用同一事务）
+ */
+class AchievementProgressService {
+  private normalizeIncrement(value: number): number {
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n) || n <= 0) return 1;
+    return n;
   }
 
-  return true;
-};
+  private trackPatternMatches(pattern: string, actual: string): boolean {
+    const p = pattern.trim();
+    const a = actual.trim();
+    if (!p || !a) return false;
+    if (p === '*' || p === a) return true;
 
-const extractMultiTargetKeys = (achievement: AchievementDefRow): string[] => {
-  const out = new Set<string>();
-  for (const item of achievement.target_list) {
-    if (typeof item === 'string') {
-      const key = item.trim();
-      if (key) out.add(key);
-      continue;
+    const pParts = p.split(':');
+    const aParts = a.split(':');
+    if (pParts.length !== aParts.length) return false;
+
+    for (let i = 0; i < pParts.length; i += 1) {
+      if (pParts[i] === '*') continue;
+      if (pParts[i] !== aParts[i]) return false;
     }
-    if (!item || typeof item !== 'object') continue;
-    const record = item as Record<string, unknown>;
-    const key = asNonEmptyString(record.key) ?? asNonEmptyString(record.track_key) ?? asNonEmptyString(record.trackKey);
-    if (key) out.add(key);
-  }
-  return Array.from(out);
-};
 
-const mergeProgressForMulti = (
-  baseProgressData: Record<string, number | boolean | string>,
-  targetKeys: string[],
-  trackKey: string,
-): { nextProgressData: Record<string, number | boolean | string>; nextProgress: number; changed: boolean } => {
-  if (targetKeys.length === 0) {
-    return { nextProgressData: baseProgressData, nextProgress: 0, changed: false };
+    return true;
   }
 
-  const next = { ...baseProgressData };
-  let changed = false;
-
-  for (const targetKey of targetKeys) {
-    if (!trackPatternMatches(targetKey, trackKey)) continue;
-    if (next[targetKey] === true || next[targetKey] === 1) continue;
-    next[targetKey] = true;
-    changed = true;
+  private extractMultiTargetKeys(achievement: AchievementDefRow): string[] {
+    const out = new Set<string>();
+    for (const item of achievement.target_list) {
+      if (typeof item === 'string') {
+        const key = item.trim();
+        if (key) out.add(key);
+        continue;
+      }
+      if (!item || typeof item !== 'object') continue;
+      const record = item as Record<string, unknown>;
+      const key = asNonEmptyString(record.key) ?? asNonEmptyString(record.track_key) ?? asNonEmptyString(record.trackKey);
+      if (key) out.add(key);
+    }
+    return Array.from(out);
   }
 
-  let completed = 0;
-  for (const targetKey of targetKeys) {
-    if (next[targetKey] === true || next[targetKey] === 1) completed += 1;
+  private mergeProgressForMulti(
+    baseProgressData: Record<string, number | boolean | string>,
+    targetKeys: string[],
+    trackKey: string,
+  ): { nextProgressData: Record<string, number | boolean | string>; nextProgress: number; changed: boolean } {
+    if (targetKeys.length === 0) {
+      return { nextProgressData: baseProgressData, nextProgress: 0, changed: false };
+    }
+
+    const next = { ...baseProgressData };
+    let changed = false;
+
+    for (const targetKey of targetKeys) {
+      if (!this.trackPatternMatches(targetKey, trackKey)) continue;
+      if (next[targetKey] === true || next[targetKey] === 1) continue;
+      next[targetKey] = true;
+      changed = true;
+    }
+
+    let completed = 0;
+    for (const targetKey of targetKeys) {
+      if (next[targetKey] === true || next[targetKey] === 1) completed += 1;
+    }
+
+    return { nextProgressData: next, nextProgress: completed, changed };
   }
 
-  return { nextProgressData: next, nextProgress: completed, changed };
-};
+  private isPrerequisiteSatisfied(
+    prerequisiteId: string | null,
+    statusByAchievement: Map<string, 'in_progress' | 'completed' | 'claimed'>,
+  ): boolean {
+    if (!prerequisiteId) return true;
+    const status = statusByAchievement.get(prerequisiteId);
+    return status === 'completed' || status === 'claimed';
+  }
 
-const isPrerequisiteSatisfied = (
-  prerequisiteId: string | null,
-  statusByAchievement: Map<string, 'in_progress' | 'completed' | 'claimed'>,
-): boolean => {
-  if (!prerequisiteId) return true;
-  const status = statusByAchievement.get(prerequisiteId);
-  return status === 'completed' || status === 'claimed';
-};
+  private async applyPointsDeltaTx(
+    characterId: number,
+    categoryToPoints: Map<string, number>,
+    totalAdd: number,
+  ): Promise<void> {
+    if (totalAdd <= 0) return;
+    const combat = categoryToPoints.get('combat') ?? 0;
+    const cultivation = categoryToPoints.get('cultivation') ?? 0;
+    const exploration = categoryToPoints.get('exploration') ?? 0;
+    const social = categoryToPoints.get('social') ?? 0;
+    const collection = categoryToPoints.get('collection') ?? 0;
 
-const applyPointsDeltaTx = async (
-  characterId: number,
-  categoryToPoints: Map<string, number>,
-  totalAdd: number,
-  client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
-): Promise<void> => {
-  if (totalAdd <= 0) return;
-  const combat = categoryToPoints.get('combat') ?? 0;
-  const cultivation = categoryToPoints.get('cultivation') ?? 0;
-  const exploration = categoryToPoints.get('exploration') ?? 0;
-  const social = categoryToPoints.get('social') ?? 0;
-  const collection = categoryToPoints.get('collection') ?? 0;
-
-  await client.query(
-    `
+    await query(
+      `
       UPDATE character_achievement_points
       SET total_points = total_points + $2,
           combat_points = combat_points + $3,
@@ -114,25 +128,25 @@ const applyPointsDeltaTx = async (
           updated_at = NOW()
       WHERE character_id = $1
     `,
-    [characterId, totalAdd, combat, cultivation, exploration, social, collection],
-  );
-};
+      [characterId, totalAdd, combat, cultivation, exploration, social, collection],
+    );
+  }
 
-export const updateAchievementProgress = async (
-  characterId: number,
-  trackKey: string,
-  increment = 1,
-  _metadata?: Record<string, unknown>,
-): Promise<void> => {
-  const cid = asFiniteNonNegativeInt(characterId, 0);
-  const key = asNonEmptyString(trackKey);
-  if (!cid || !key) return;
+  @Transactional
+  async updateAchievementProgress(
+    characterId: number,
+    trackKey: string,
+    increment = 1,
+    _metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    const cid = asFiniteNonNegativeInt(characterId, 0);
+    const key = asNonEmptyString(trackKey);
+    if (!cid || !key) return;
 
-  const candidates = buildTrackKeyCandidates(key);
-  if (candidates.length === 0) return;
+    const candidates = buildTrackKeyCandidates(key);
+    if (candidates.length === 0) return;
 
-  return await withTransactionAuto(async (client) => {
-await ensureCharacterAchievementPoints(cid, client);
+    await ensureCharacterAchievementPoints(cid);
 
     const defs = getAchievementDefinitions()
       .filter((row) => candidates.includes(String(row.track_key ?? '')))
@@ -141,12 +155,12 @@ await ensureCharacterAchievementPoints(cid, client);
       .filter((row): row is AchievementDefRow => row !== null);
 
     if (defs.length === 0) {
-return;
+      return;
     }
 
     const achievementIds = defs.map((d) => d.id);
 
-    const progressRes = await client.query(
+    const progressRes = await query(
       `
         SELECT *
         FROM character_achievement
@@ -166,7 +180,7 @@ return;
 
     const missingIds = achievementIds.filter((id) => !progressById.has(id));
     if (missingIds.length > 0) {
-      await client.query(
+      await query(
         `
           INSERT INTO character_achievement (character_id, achievement_id, status, progress, progress_data)
           SELECT $1, x.achievement_id, 'in_progress', 0, '{}'::jsonb
@@ -176,7 +190,7 @@ return;
         [cid, missingIds],
       );
 
-      const createdRes = await client.query(
+      const createdRes = await query(
         `
           SELECT *
           FROM character_achievement
@@ -196,7 +210,7 @@ return;
     const prereqIds = defs.map((d) => d.prerequisite_id).filter((id): id is string => !!id);
     const prereqStatus = new Map<string, 'in_progress' | 'completed' | 'claimed'>();
     if (prereqIds.length > 0) {
-      const prereqRes = await client.query(
+      const prereqRes = await query(
         `
           SELECT achievement_id, status
           FROM character_achievement
@@ -214,12 +228,12 @@ return;
 
     const categoryToPoints = new Map<string, number>();
     let totalPointsToAdd = 0;
-    const delta = normalizeIncrement(increment);
+    const delta = this.normalizeIncrement(increment);
 
     for (const def of defs) {
       const row = progressById.get(def.id);
       if (!row) continue;
-      if (!isPrerequisiteSatisfied(def.prerequisite_id, prereqStatus)) continue;
+      if (!this.isPrerequisiteSatisfied(def.prerequisite_id, prereqStatus)) continue;
       if (row.status === 'completed' || row.status === 'claimed') continue;
 
       let nextProgress = row.progress;
@@ -241,8 +255,8 @@ return;
           changed = true;
         }
       } else {
-        const targetKeys = extractMultiTargetKeys(def);
-        const merged = mergeProgressForMulti(nextProgressData, targetKeys, key);
+        const targetKeys = this.extractMultiTargetKeys(def);
+        const merged = this.mergeProgressForMulti(nextProgressData, targetKeys, key);
         nextProgressData = merged.nextProgressData;
         nextProgress = merged.nextProgress;
         changed = merged.changed;
@@ -262,7 +276,7 @@ return;
 
       const target = def.track_type === 'multi'
         ? (() => {
-            const keys = extractMultiTargetKeys(def);
+            const keys = this.extractMultiTargetKeys(def);
             return keys.length > 0 ? keys.length : Math.max(1, def.target_value);
           })()
         : Math.max(1, def.target_value);
@@ -270,7 +284,7 @@ return;
       const done = nextProgress >= target;
       const nextStatus = done ? 'completed' : 'in_progress';
 
-      await client.query(
+      await query(
         `
           UPDATE character_achievement
           SET status = $4::varchar(32),
@@ -297,7 +311,11 @@ return;
       }
     }
 
-    await applyPointsDeltaTx(cid, categoryToPoints, totalPointsToAdd, client);
+    await this.applyPointsDeltaTx(cid, categoryToPoints, totalPointsToAdd);
+  }
+}
 
-  });
-};
+export const achievementProgressService = new AchievementProgressService();
+
+// 向后兼容的命名导出
+export const updateAchievementProgress = achievementProgressService.updateAchievementProgress.bind(achievementProgressService);

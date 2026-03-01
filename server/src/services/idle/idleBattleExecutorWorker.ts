@@ -33,12 +33,7 @@ import type { IdleSessionRow, RewardItemEntry } from './types.js';
 import { resolveIdleBattleRewards } from './idleBattleRewardResolver.js';
 import { toPgTextArrayLiteral } from './pgTextArrayLiteral.js';
 import { rowToIdleSessionRow } from './rowMappers.js';
-import {
-  completeIdleSession,
-  getIdleSessionById,
-  releaseIdleLock,
-  updateSessionSummary,
-} from './idleSessionService.js';
+import { idleSessionService } from './idleSessionService.js';
 import { getWorkerPool } from '../../workers/workerPool.js';
 
 // ============================================
@@ -175,7 +170,7 @@ async function flushBuffer(
     const newItems = batches.flatMap((b) => b.itemsGained);
     const bagFullFlag = batches.some((b) => b.bagFullFlag);
 
-    await updateSessionSummary(sessionId, {
+    await idleSessionService.updateSessionSummary(sessionId, {
       totalBattlesDelta,
       winDelta,
       loseDelta,
@@ -259,8 +254,8 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
     }
 
     clearLoopRuntimeState();
-    await completeIdleSession(session.id, stop.status);
-    await releaseIdleLock(session.characterId);
+    await idleSessionService.completeIdleSession(session.id, stop.status);
+    await idleSessionService.releaseIdleLock(session.characterId);
 
     try {
       getGameServer().emitToUser(userId, 'idle:finished', {
@@ -454,7 +449,7 @@ async function checkTerminationConditions(
   session: IdleSessionRow,
 ): Promise<TerminationCheckResult> {
   // 1. 检查会话状态（是否被手动停止）
-  const currentSession = await getIdleSessionById(session.id);
+  const currentSession = await idleSessionService.getIdleSessionById(session.id);
   if (!currentSession) {
     return { terminate: true, status: 'completed', reason: 'session_not_found' };
   }
@@ -502,7 +497,7 @@ export async function recoverActiveIdleSessions(): Promise<void> {
     const userIdRes = await getCharacterUserId(session.characterId);
     if (!userIdRes) {
       console.warn(`会话 ${session.id} 的角色 ${session.characterId} 不存在，跳过恢复`);
-      await completeIdleSession(session.id, 'interrupted');
+      await idleSessionService.completeIdleSession(session.id, 'interrupted');
       continue;
     }
 
