@@ -1,4 +1,11 @@
 .battle-area {
+  --battle-surface-radius: 10px;
+  --battle-panel-gap: clamp(6px, 1vw, 10px);
+  --battle-card-radius: 10px;
+  --battle-card-min-w: clamp(152px, 21vw, 196px);
+  --battle-card-max-w: 220px;
+  --battle-card-gap: clamp(6px, 0.9vw, 10px);
+
   height: 100%;
   min-height: 0;
   display: flex;
@@ -9,10 +16,11 @@
 .battle-area-topbar {
   flex: 0 0 auto;
   min-height: 44px;
-  padding: 8px 12px;
+  padding: 8px clamp(12px, 1.4vw, 16px);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   border-bottom: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
 }
@@ -56,6 +64,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--battle-panel-gap);
+  padding: var(--battle-panel-gap);
 }
 
 .battle-panel {
@@ -64,6 +74,10 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--border-color-soft);
+  border-radius: var(--battle-surface-radius);
+  background: var(--panel-bg);
+  isolation: isolate;
 }
 
 .battle-panel-title {
@@ -74,36 +88,35 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px;
+  padding: clamp(10px, 1.4vw, 16px);
 }
 
 .battle-divider {
-  height: 1px;
-  background: var(--border-color-soft);
-  flex: 0 0 auto;
+  display: none;
 }
 
 .battle-units {
-  --battle-card-w: 172px;
-
   display: grid;
-  grid-template-columns: repeat(auto-fit, var(--battle-card-w));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--battle-card-min-w)), 1fr));
+  gap: var(--battle-card-gap);
   align-content: flex-start;
-  justify-content: center;
-  max-width: calc(var(--battle-card-w) * 4 + 10px * 3);
+  justify-content: stretch;
+  max-width: min(100%, calc(var(--battle-card-max-w) * 4 + var(--battle-card-gap) * 3));
   margin: 0 auto;
+  width: 100%;
 }
 
 .battle-unit-card {
   position: relative;
   width: 100%;
+  max-width: var(--battle-card-max-w);
+  justify-self: center;
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--border-color);
-  border-radius: 9px;
+  border-radius: var(--battle-card-radius);
   background: var(--panel-bg-soft);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
 }
 
 .battle-unit-card.active {
@@ -117,7 +130,7 @@
 }
 
 .battle-unit-card.dead {
-  opacity: 0.55;
+  opacity: 0.58;
 }
 
 .battle-unit-head {
@@ -252,12 +265,16 @@
 
 @media screen and (max-width: 1200px) {
   .battle-units {
-    grid-template-columns: repeat(2, var(--battle-card-w));
+    max-width: min(100%, calc(var(--battle-card-max-w) * 3 + var(--battle-card-gap) * 2));
   }
 }
 
 @media screen and (max-width: 768px) {
   .battle-area {
+    --battle-surface-radius: 10px;
+    --battle-card-gap: 7px;
+    --battle-card-min-w: 0;
+
     background: var(--panel-bg);
   }
 
@@ -265,6 +282,7 @@
     min-height: 38px;
     padding: 6px 10px;
     gap: 8px;
+    flex-wrap: wrap;
   }
 
   .battle-top-left {
@@ -289,6 +307,7 @@
   .battle-top-right {
     width: auto;
     gap: 6px;
+    margin-left: auto;
   }
 
   .battle-top-action {
@@ -303,16 +322,16 @@
 
   .battle-area-panels {
     overflow: hidden;
-    padding: 0;
-    gap: 0;
+    padding: 0 6px 6px;
+    gap: 6px;
   }
 
   .battle-panel {
     flex: 1 1 0;
     min-height: 0;
     overflow: hidden;
-    border: none;
-    border-radius: 0;
+    border-color: var(--border-color-soft);
+    border-radius: var(--battle-surface-radius);
     background: var(--panel-bg);
   }
 
@@ -324,23 +343,22 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 6px 8px;
+    padding: 7px;
   }
 
   .battle-divider {
-    display: block;
+    display: none;
   }
 
   .battle-units {
-    --battle-card-w: 100%;
-
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-width: none;
-    gap: 6px;
+    gap: var(--battle-card-gap);
   }
 
   .battle-unit-card {
-    border-radius: 9px;
+    max-width: none;
+    border-radius: 10px;
     padding: 7px 8px;
   }
 
@@ -380,5 +398,10 @@
 @media screen and (max-width: 340px) {
   .battle-units {
     grid-template-columns: 1fr;
+  }
+
+  .battle-top-right {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
