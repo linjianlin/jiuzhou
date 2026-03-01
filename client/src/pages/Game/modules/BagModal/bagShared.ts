@@ -1353,6 +1353,11 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   const quality = qualityLabels.includes(rawQuality as BagQuality)
     ? (rawQuality as BagQuality)
     : "黄";
+  const defQualityName = qualityLabels.includes(def.quality as BagQuality)
+    ? (def.quality as BagQuality)
+    : "黄";
+  const defQualityRank = qualityRank[defQualityName];
+  const resolvedQualityRank = Number(it.quality_rank) || qualityRank[quality];
   const category = mapCategory(def.category);
   const tags = normalizeDisplayTags(coerceStringArray(def.tags), category, quality);
   const isEquip = category === "equipment";
@@ -1385,10 +1390,10 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
           identified: !!it.identified,
           baseAttrs: coerceAttrRecord(def.base_attrs),
           baseAttrsRaw: coerceAttrRecord(def.base_attrs_raw ?? def.base_attrs),
-          defQualityRank: qualityRank[quality],
-          resolvedQualityRank: Number(it.quality_rank) || qualityRank[quality],
+          defQualityRank,
+          resolvedQualityRank,
           affixes: coerceAffixes(it.affixes),
-          socketMax: resolveSocketMax(def.socket_max, qualityRank[quality]),
+          socketMax: resolveSocketMax(def.socket_max, resolvedQualityRank),
           gemSlotTypes: def.gem_slot_types,
           socketedGems: parseSocketedGems(it.socketed_gems),
           equipReqRealm:
