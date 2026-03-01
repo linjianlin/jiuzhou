@@ -697,6 +697,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [battleActiveUnitId, setBattleActiveUnitId] = useState<string | null>(null);
   const [battlePhase, setBattlePhase] = useState<string | null>(null);
   const [teamBattleId, setTeamBattleId] = useState<string | null>(null);
+  const [reconnectBattleId, setReconnectBattleId] = useState<string | null>(null);
   const [dungeonBattleId, setDungeonBattleId] = useState<string | null>(null);
   const [arenaBattleId, setArenaBattleId] = useState<string | null>(null);
   const [dungeonInstanceId, setDungeonInstanceId] = useState<string | null>(null);
@@ -720,7 +721,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const lastKeepalivePositionKeyRef = useRef<string>('');
   const teamBattleAutoCloseTimerRef = useRef<number | null>(null);
   const inTeam = Boolean(teamInfo?.id);
-  const externalBattleId = arenaBattleId || dungeonBattleId || (inTeam && !isTeamLeader ? teamBattleId : null);
+  const externalBattleId = arenaBattleId || dungeonBattleId || (inTeam && !isTeamLeader ? teamBattleId : null) || reconnectBattleId;
 
   const handleRoomObjectSelect = useCallback((target: InfoTarget) => {
     if (target.type === 'item' && target.id === 'obj-warehouse') {
@@ -921,6 +922,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
         setDungeonBattleId(null);
         setDungeonInstanceId(null);
+        setReconnectBattleId(null);
         setViewMode('map');
         setTopTab('map');
         setBattleTurn(0);
@@ -942,6 +944,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
   const handleArenaNext = useCallback(async () => {
     setArenaBattleId(null);
+    setReconnectBattleId(null);
     setViewMode('map');
     setTopTab('map');
     setBattleTurn(0);
@@ -990,6 +993,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     setArenaBattleId(null);
     setDungeonBattleId(null);
     setDungeonInstanceId(null);
+    setReconnectBattleId(null);
   }, []);
 
   const handleBattleCastSkill = useCallback((skillId: string, targetType?: string) => {
@@ -1308,7 +1312,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   useEffect(() => {
     gameSocket.connect();
     const unsub = gameSocket.onBattleUpdate((raw) => {
-      if (!inTeam || isTeamLeader) return;
       const data = raw as { kind?: unknown; battleId?: unknown };
       const kind = typeof data?.kind === 'string' ? data.kind : '';
       const battleId = typeof data?.battleId === 'string' ? data.battleId : '';
@@ -1319,7 +1322,12 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           window.clearTimeout(teamBattleAutoCloseTimerRef.current);
           teamBattleAutoCloseTimerRef.current = null;
         }
-        setTeamBattleId(battleId);
+        if (inTeam && !isTeamLeader) {
+          setTeamBattleId(battleId);
+        } else {
+          setTeamBattleId(null);
+          setReconnectBattleId(battleId);
+        }
         setViewMode('battle');
         setTopTab('map');
         setInfoTarget(null);
@@ -1332,6 +1340,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           teamBattleAutoCloseTimerRef.current = null;
         }
         setTeamBattleId(null);
+        setReconnectBattleId(null);
         setViewMode('map');
         setTopTab('map');
         setInfoTarget(null);
@@ -1343,12 +1352,18 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           window.clearTimeout(teamBattleAutoCloseTimerRef.current);
           teamBattleAutoCloseTimerRef.current = null;
         }
-        setTeamBattleId(battleId);
+        if (inTeam && !isTeamLeader) {
+          setTeamBattleId(battleId);
+        } else {
+          setTeamBattleId(null);
+          setReconnectBattleId(battleId);
+        }
         setViewMode('battle');
         setTopTab('map');
         setInfoTarget(null);
         teamBattleAutoCloseTimerRef.current = window.setTimeout(() => {
           setTeamBattleId(null);
+          setReconnectBattleId(null);
           setViewMode('map');
         }, 6000);
       }
@@ -1384,6 +1399,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         teamBattleAutoCloseTimerRef.current = null;
       }
       setTeamBattleId(null);
+      setReconnectBattleId(null);
       setArenaBattleId(null);
       setDungeonBattleId(null);
       setDungeonInstanceId(null);
@@ -1564,6 +1580,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       }
       setBattleEnemies(buildEnemyGroup(target));
       setBattleAllies(buildAllyGroup(character));
+      setReconnectBattleId(null);
       setViewMode('battle');
       setTopTab('map');
       setInfoTarget(null);
@@ -2419,6 +2436,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           setArenaBattleId(null);
           setDungeonBattleId(null);
           setDungeonInstanceId(null);
+          setReconnectBattleId(null);
 
           try {
             const createRes = await createDungeonInstance(dungeonId, rank);
@@ -2438,6 +2456,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
             setBattleAllies(buildAllyGroup(character));
             setDungeonInstanceId(instanceId);
             setDungeonBattleId(String(startRes.data.battleId));
+            setReconnectBattleId(null);
             setViewMode('battle');
             gameSocket.refreshCharacter();
           } catch (e) {
@@ -2484,6 +2503,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
             setBattleAllies(buildAllyGroup(character));
             setDungeonBattleId(null);
             setDungeonInstanceId(null);
+            setReconnectBattleId(null);
             setArenaBattleId(String(battleId));
             setViewMode('battle');
           }}
