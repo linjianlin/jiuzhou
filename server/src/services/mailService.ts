@@ -18,6 +18,7 @@ import { query, getTransactionClient } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { itemService } from './itemService.js';
 import { getInventoryInfoWithClient } from './inventory/index.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordCollectItemEvent } from './taskService.js';
 import { getItemDefinitionsByIds } from './staticConfigLoader.js';
 
@@ -72,6 +73,15 @@ export interface MailDto {
   expireAt: string | null;
   createdAt: string;
 }
+
+type ClaimMailRow = {
+  id: number;
+  attach_silver: number;
+  attach_spirit_stones: number;
+  attach_items: MailAttachItem[] | null;
+  claimed_at: Date | string | null;
+  expire_at: Date | string | null;
+};
 
 type MailAttachItemView = MailAttachItem & {
   item_name?: string;
@@ -139,8 +149,18 @@ class MailService {
       message === '邮件不存在' ||
       message === '附件已领取' ||
       message === '邮件已过期' ||
-      message === '该邮件没有附件'
+      message === '该邮件没有附件' ||
+      message === '邮件正在处理中，请稍后重试'
     );
+  }
+
+  /**
+   * 判断是否为 PostgreSQL 行锁冲突（FOR UPDATE NOWAIT）
+   */
+  private isLockNotAvailableError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+    const code = (error as { code?: unknown }).code;
+    return code === '55P03';
   }
 
   /**
@@ -399,15 +419,27 @@ class MailService {
       throw new Error('事务上下文不可用');
     }
 
-    // 1. 获取邮件并锁定
-    const mailResult = await client.query(`
-      SELECT id, attach_silver, attach_spirit_stones, attach_items, claimed_at, expire_at
-      FROM mail
-      WHERE id = $1
-        AND (recipient_character_id = $2 OR (recipient_user_id = $3 AND recipient_character_id IS NULL))
-        AND deleted_at IS NULL
-      FOR UPDATE
-    `, [mailId, characterId, userId]);
+    // 1. 先获取角色背包互斥锁，统一“背包锁 → 邮件行锁”的顺序，避免并发领取形成锁等待链。
+    await lockCharacterInventoryMutexTx(client, characterId);
+
+    // 2. 获取邮件并锁定（NOWAIT 避免锁等待拖到 statement_timeout）。
+    let mailResult: { rows: ClaimMailRow[] };
+    try {
+      const lockedMailResult = await client.query<ClaimMailRow>(`
+        SELECT id, attach_silver, attach_spirit_stones, attach_items, claimed_at, expire_at
+        FROM mail
+        WHERE id = $1
+          AND (recipient_character_id = $2 OR (recipient_user_id = $3 AND recipient_character_id IS NULL))
+          AND deleted_at IS NULL
+        FOR UPDATE NOWAIT
+      `, [mailId, characterId, userId]);
+      mailResult = { rows: lockedMailResult.rows };
+    } catch (error) {
+      if (this.isLockNotAvailableError(error)) {
+        return { success: false, message: '邮件正在处理中，请稍后重试' };
+      }
+      throw error;
+    }
 
     if (mailResult.rows.length === 0) {
       return { success: false, message: '邮件不存在' };
@@ -415,17 +447,17 @@ class MailService {
 
     const mail = mailResult.rows[0];
 
-    // 2. 检查是否已领取
+    // 3. 检查是否已领取
     if (mail.claimed_at) {
       return { success: false, message: '附件已领取' };
     }
 
-    // 3. 检查是否过期
+    // 4. 检查是否过期
     if (mail.expire_at && new Date(mail.expire_at) < new Date()) {
       return { success: false, message: '邮件已过期' };
     }
 
-    // 4. 检查是否有附件
+    // 5. 检查是否有附件
     const hasCurrency = mail.attach_silver > 0 || mail.attach_spirit_stones > 0;
     const hasItems = mail.attach_items && mail.attach_items.length > 0;
 
@@ -433,7 +465,7 @@ class MailService {
       return { success: false, message: '该邮件没有附件' };
     }
 
-    // 5. 检查背包空间（如果有物品附件）
+    // 6. 检查背包空间（如果有物品附件）
     if (hasItems) {
       const inventoryInfo = await getInventoryInfoWithClient(characterId, client);
       const requiredSlots = await this.estimateRequiredSlots(mail.attach_items as MailAttachItem[]);
@@ -445,7 +477,7 @@ class MailService {
 
     const rewards: { silver?: number; spiritStones?: number; itemIds?: number[] } = {};
 
-    // 6. 发放货币
+    // 7. 发放货币
     if (hasCurrency) {
       await query(`
         UPDATE characters
@@ -457,7 +489,7 @@ class MailService {
       if (mail.attach_spirit_stones > 0) rewards.spiritStones = mail.attach_spirit_stones;
     }
 
-    // 7. 发放物品
+    // 8. 发放物品
     const itemIds: number[] = [];
     if (hasItems) {
       for (const attachItem of mail.attach_items as MailAttachItem[]) {
@@ -489,7 +521,7 @@ class MailService {
       rewards.itemIds = itemIds;
     }
 
-    // 8. 更新邮件状态
+    // 9. 更新邮件状态
     await query(`
       UPDATE mail
       SET claimed_at = NOW(), read_at = COALESCE(read_at, NOW()),
@@ -508,7 +540,6 @@ class MailService {
   // 一键领取所有附件
   // ============================================
 
-  @Transactional
   async claimAllAttachments(
     userId: number,
     characterId: number
@@ -519,13 +550,8 @@ class MailService {
     skippedCount?: number;
     rewards?: { silver: number; spiritStones: number; itemCount: number };
   }> {
-    const client = getTransactionClient();
-
-    if (!client) {
-      throw new Error('事务上下文不可用');
-    }
-
     // 1. 获取所有可尝试领取的邮件（不做总量空间校验，改为逐封领取）
+    // 说明：此方法不包裹单一大事务，避免批量领取时长时间持有 mail 行锁与背包互斥锁。
     const mailsResult = await query(
       `
       SELECT id, attach_silver, attach_spirit_stones, attach_items
