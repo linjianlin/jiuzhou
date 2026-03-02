@@ -119,6 +119,23 @@ body.theme-dark .skill-fab-tooltip-chip.is-element {
   color: #fbbf24;
 }
 
+.skill-fab-tooltip-row.is-unusable .skill-fab-tooltip-label {
+  color: var(--danger-color, #ff4d4f);
+  opacity: 0.9;
+}
+
+.skill-fab-tooltip-chip.is-unusable {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #dc2626;
+}
+
+body.theme-dark .skill-fab-tooltip-chip.is-unusable {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(248, 113, 113, 0.36);
+  color: #fca5a5;
+}
+
 .skill-fab-tooltip-effects {
   margin-top: 8px;
   padding-top: 8px;
@@ -306,6 +323,22 @@ body.theme-dark .skill-fab-tooltip-chip.is-element {
   transform: translateX(-50%);
   font-size: 10px;
   color: var(--warning-color, #faad14);
+  font-weight: 700;
+}
+
+.skill-fab-tile.is-unusable {
+  opacity: 0.54;
+  border-color: var(--danger-color, #ff4d4f);
+}
+
+.skill-fab-tile.is-unusable::after {
+  content: '禁用';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--danger-color, #ff4d4f);
   font-weight: 700;
 }
 

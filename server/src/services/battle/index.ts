@@ -12,7 +12,8 @@ import {
   type SkillData,
 } from "../../battle/battleFactory.js";
 import { BattleEngine } from "../../battle/battleEngine.js";
-import { isFeared, isStunned } from "../../battle/modules/control.js";
+import { canUseSkill, isFeared, isStunned } from "../../battle/modules/control.js";
+import { getNormalAttack } from "../../battle/modules/skill.js";
 import type {
   BattleAttrs,
   BattleUnit,
@@ -1596,8 +1597,85 @@ const hasPgErrorCode = (error: unknown, code: string): boolean => {
   return "code" in error && (error as { code?: unknown }).code === code;
 };
 
+const rethrowIfTransactionAborted = (error: unknown): void => {
+  if (hasPgErrorCode(error, "25P02")) {
+    throw error;
+  }
+};
+
+const handleOptionalBattleSideEffectError = (
+  context: string,
+  error: unknown,
+): void => {
+  rethrowIfTransactionAborted(error);
+  console.warn(`[battle] ${context} 失败:`, error);
+};
+
 const isTransientBattleTickError = (error: unknown): boolean => {
   return hasPgErrorCode(error, "55P03") || hasPgErrorCode(error, "57014");
+};
+
+const resolveAutoSkipTargetIds = (
+  state: BattleState,
+  unit: BattleUnit,
+  skill: BattleSkill,
+): string[] => {
+  const isAttacker = state.teams.attacker.units.some((u) => u.id === unit.id);
+  const allies = isAttacker ? state.teams.attacker.units : state.teams.defender.units;
+  const enemies = isAttacker ? state.teams.defender.units : state.teams.attacker.units;
+  const aliveAllies = allies.filter((u) => u.isAlive);
+  const aliveEnemies = enemies.filter((u) => u.isAlive);
+
+  if (skill.targetType === "self") {
+    return [unit.id];
+  }
+  if (skill.targetType === "single_enemy") {
+    return aliveEnemies[0] ? [aliveEnemies[0].id] : [];
+  }
+  if (skill.targetType === "single_ally") {
+    return aliveAllies[0] ? [aliveAllies[0].id] : [];
+  }
+  return [];
+};
+
+const canCastSkillForAutoSkip = (
+  state: BattleState,
+  unit: BattleUnit,
+  skill: BattleSkill,
+): boolean => {
+  if (skill.triggerType !== "active") return false;
+  if (!canUseSkill(unit, skill.damageType)) return false;
+  if ((unit.skillCooldowns[skill.id] || 0) > 0) return false;
+  if (skill.cost.lingqi && unit.lingqi < skill.cost.lingqi) return false;
+  if (skill.cost.qixue && unit.qixue <= skill.cost.qixue) return false;
+
+  if (
+    skill.targetType === "self" ||
+    skill.targetType === "single_enemy" ||
+    skill.targetType === "single_ally"
+  ) {
+    return resolveAutoSkipTargetIds(state, unit, skill).length > 0;
+  }
+  return true;
+};
+
+const canPlayerUseAnySkillThisTurn = (
+  state: BattleState,
+  currentUnit: BattleUnit,
+): boolean => {
+  const activeSkills = currentUnit.skills.filter(
+    (skill) => skill.triggerType === "active",
+  );
+  const normalAttack = getNormalAttack(currentUnit);
+  const candidateSkills = [...activeSkills, normalAttack];
+  const seenSkillIds = new Set<string>();
+
+  for (const skill of candidateSkills) {
+    if (seenSkillIds.has(skill.id)) continue;
+    seenSkillIds.add(skill.id);
+    if (canCastSkillForAutoSkip(state, currentUnit, skill)) return true;
+  }
+  return false;
 };
 
 async function tickBattle(battleId: string): Promise<void> {
@@ -1648,6 +1726,16 @@ async function tickBattle(battleId: string): Promise<void> {
           currentUnit,
         )
       ) {
+        engine.aiAction(true);
+        emitBattleUpdate(battleId, {
+          kind: "battle_state",
+          battleId,
+          state: engine.getState(),
+        });
+        return;
+      }
+      if (!canPlayerUseAnySkillThisTurn(state, currentUnit)) {
+        // 手动模式下若无可用技能（控制/资源/冷却共同导致），由服务端自动推进，避免卡回合。
         engine.aiAction(true);
         emitBattleUpdate(battleId, {
           kind: "battle_state",
@@ -1898,7 +1986,9 @@ export async function startPVEBattle(
         if (!Number.isFinite(uid) || uid <= 0) continue;
         void gameServer.pushCharacterUpdate(uid);
       }
-    } catch {}
+    } catch (error) {
+      handleOptionalBattleSideEffectError("同步战前资源（普通战斗）", error);
+    }
 
     const playerCount = validTeamMembers.length + 1;
     const maxMonsters = playerCount > 1 ? Math.min(playerCount, 5) : 2;
@@ -2178,7 +2268,9 @@ export async function startDungeonPVEBattle(
         if (!Number.isFinite(uid) || uid <= 0) continue;
         void gameServer.pushCharacterUpdate(uid);
       }
-    } catch {}
+    } catch (error) {
+      handleOptionalBattleSideEffectError("同步战前资源（秘境战斗）", error);
+    }
 
     const playerCount = validTeamMembers.length + 1;
     const maxMonsters = Math.min(
@@ -2347,7 +2439,9 @@ export async function startPVPBattle(
         opponentUserId > 0
       )
         void gameServer.pushCharacterUpdate(opponentUserId);
-    } catch {}
+    } catch (error) {
+      handleOptionalBattleSideEffectError("同步战前资源（PVP战斗）", error);
+    }
 
     const finalBattleId = requestedBattleId
       ? requestedBattleId
@@ -2594,7 +2688,9 @@ async function finishBattleCore(
             }
           }
         }
-      } catch {}
+      } catch (error) {
+        handleOptionalBattleSideEffectError("记录击杀怪物事件", error);
+      }
     } else if (result.result === "defender_win") {
       for (const participantUserId of participantUserIds) {
         const computed = await getCharacterComputedByUserId(participantUserId);

@@ -39,6 +39,7 @@ type BattleUnitWithCooldownDto = {
   lingqi?: unknown;
   qixue?: unknown;
   skillCooldowns?: SkillCooldownMapDto;
+  buffs?: unknown;
 };
 
 type BattleStateWithUnitsDto = {
@@ -58,6 +59,102 @@ type BattleUpdatePayloadDto = {
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+type BattleBuffDto = {
+  control?: unknown;
+};
+
+type SkillControlState = {
+  silenced: boolean;
+  disarmed: boolean;
+};
+
+type SkillResourceState = {
+  lingqi: number;
+  qixue: number;
+};
+
+type SkillAvailabilityReason =
+  | 'available'
+  | 'cooldown'
+  | 'silenced'
+  | 'disarmed'
+  | 'insufficient_lingqi'
+  | 'insufficient_qixue';
+
+type SkillAvailabilityResult = {
+  available: boolean;
+  reason: SkillAvailabilityReason;
+  message: string | null;
+};
+
+const EMPTY_SKILL_CONTROL_STATE: SkillControlState = {
+  silenced: false,
+  disarmed: false,
+};
+
+const SKILL_CAST_BLOCKED_MESSAGE_KEY = 'skill-fab-cast-blocked';
+
+const readSkillControlState = (buffs: unknown): SkillControlState => {
+  const list: BattleBuffDto[] = Array.isArray(buffs) ? (buffs as BattleBuffDto[]) : [];
+  let silenced = false;
+  let disarmed = false;
+  for (const buff of list) {
+    const control = String(isRecord(buff) ? buff.control ?? '' : '').trim();
+    if (control === 'silence') silenced = true;
+    if (control === 'disarm') disarmed = true;
+    if (silenced && disarmed) break;
+  }
+  return { silenced, disarmed };
+};
+
+const resolveSkillAvailability = (
+  skill: SkillItem,
+  resourceState: SkillResourceState,
+  controlState: SkillControlState,
+): SkillAvailabilityResult => {
+  if (skill.cooldownLeft > 0) {
+    return {
+      available: false,
+      reason: 'cooldown',
+      message: `${skill.name} 冷却中：${skill.cooldownLeft}回合`,
+    };
+  }
+  const damageType = String(skill.damageType ?? '').trim();
+  if (damageType === 'magic' && controlState.silenced) {
+    return {
+      available: false,
+      reason: 'silenced',
+      message: '被沉默中，无法释放法术技能',
+    };
+  }
+  if (damageType === 'physical' && controlState.disarmed) {
+    return {
+      available: false,
+      reason: 'disarmed',
+      message: '被缴械中，无法释放物理技能',
+    };
+  }
+  if (skill.costLingqi > 0 && resourceState.lingqi < skill.costLingqi) {
+    return {
+      available: false,
+      reason: 'insufficient_lingqi',
+      message: `灵气不足：需要${skill.costLingqi}，当前${resourceState.lingqi}`,
+    };
+  }
+  if (skill.costQixue > 0 && resourceState.qixue <= skill.costQixue) {
+    return {
+      available: false,
+      reason: 'insufficient_qixue',
+      message: `气血不足：需要高于${skill.costQixue}，当前${resourceState.qixue}`,
+    };
+  }
+  return {
+    available: true,
+    reason: 'available',
+    message: null,
+  };
+};
 
 type AvailableSkillDto = {
   skillId: string;
@@ -260,10 +357,17 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
   onCastSkill
 }) => {
   const { message } = App.useApp();
+  const initialLingqi = Math.max(0, Math.floor(Number(gameSocket.getCharacter()?.lingqi) || 0));
+  const initialQixue = Math.max(0, Math.floor(Number(gameSocket.getCharacter()?.qixue) || 0));
   const [open, setOpen] = useState(false);
   const [characterId, setCharacterId] = useState<number | null>(() => gameSocket.getCharacter()?.id ?? null);
   const [skills, setSkills] = useState<SkillItem[]>(() => buildSkillItems([], [], []));
   const [isCasting, setIsCasting] = useState(false);
+  const [skillResourceState, setSkillResourceState] = useState<SkillResourceState>({
+    lingqi: initialLingqi,
+    qixue: initialQixue,
+  });
+  const [controlState, setControlState] = useState<SkillControlState>(EMPTY_SKILL_CONTROL_STATE);
   const [localTurn, setLocalTurn] = useState(1);
   // 自动战斗状态（使用外部传入的 autoMode）
   const autoRelease = autoMode;
@@ -281,8 +385,9 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
   const lastExternalTurnRef = useRef<number | null>(turn ?? null);
   const lastBattleIdRef = useRef<string | null>(null);
   const skillsRef = useRef<SkillItem[]>(skills);
-  const myLingqiRef = useRef<number>(0);
-  const myQixueRef = useRef<number>(0);
+  const myLingqiRef = useRef<number>(initialLingqi);
+  const myQixueRef = useRef<number>(initialQixue);
+  const controlStateRef = useRef<SkillControlState>(EMPTY_SKILL_CONTROL_STATE);
   const lastAutoActionKeyRef = useRef<string | null>(null);
   const lastAutoAttemptKeyRef = useRef<string | null>(null);
   const autoRetryCountRef = useRef(0);
@@ -301,10 +406,31 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
     skillsRef.current = skills;
   }, [skills]);
 
+  const showCastBlockedMessage = useCallback(
+    (content: string) => {
+      message.open({
+        type: 'error',
+        key: SKILL_CAST_BLOCKED_MESSAGE_KEY,
+        content,
+        duration: 1.2,
+      });
+    },
+    [message],
+  );
+
   useEffect(() => {
     gameSocket.connect();
     const unsubscribe = gameSocket.onCharacterUpdate((c) => {
       setCharacterId(c?.id ?? null);
+      const nextLingqi = Math.max(0, Math.floor(Number(c?.lingqi) || 0));
+      const nextQixue = Math.max(0, Math.floor(Number(c?.qixue) || 0));
+      myLingqiRef.current = nextLingqi;
+      myQixueRef.current = nextQixue;
+      setSkillResourceState((prev) =>
+        prev.lingqi === nextLingqi && prev.qixue === nextQixue
+          ? prev
+          : { lingqi: nextLingqi, qixue: nextQixue },
+      );
     });
     return () => {
       unsubscribe();
@@ -387,7 +513,19 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
         ? (attackerUnitsRaw as BattleUnitWithCooldownDto[])
         : [];
       const myUnit = attackerUnits.find((u) => String(u?.id ?? '') === myUnitId);
-      if (!myUnit) return;
+      if (!myUnit) {
+        controlStateRef.current = EMPTY_SKILL_CONTROL_STATE;
+        setControlState((prev) => (prev.silenced || prev.disarmed ? EMPTY_SKILL_CONTROL_STATE : prev));
+        return;
+      }
+
+      const nextControlState = readSkillControlState(myUnit?.buffs);
+      controlStateRef.current = nextControlState;
+      setControlState((prev) =>
+        prev.silenced === nextControlState.silenced && prev.disarmed === nextControlState.disarmed
+          ? prev
+          : nextControlState,
+      );
 
       const nextLingqi = Number(myUnit?.lingqi) || 0;
       const nextQixue = Number(myUnit?.qixue) || 0;
@@ -395,6 +533,11 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
       const qixueChanged = myQixueRef.current !== nextQixue;
       myLingqiRef.current = nextLingqi;
       myQixueRef.current = nextQixue;
+      setSkillResourceState((prev) =>
+        prev.lingqi === nextLingqi && prev.qixue === nextQixue
+          ? prev
+          : { lingqi: nextLingqi, qixue: nextQixue },
+      );
 
       if (lingqiChanged || qixueChanged) {
         gameSocket.updateCharacterLocal({
@@ -433,6 +576,8 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
   useEffect(() => {
     if (!isBattleRunning) {
       lastBattleIdRef.current = null;
+      controlStateRef.current = EMPTY_SKILL_CONTROL_STATE;
+      setControlState((prev) => (prev.silenced || prev.disarmed ? EMPTY_SKILL_CONTROL_STATE : prev));
       return;
     }
     const rawKey = String(actionKey ?? '').trim();
@@ -473,8 +618,19 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
 
       const target = skillsRef.current.find((s) => s.id === skillId);
       if (!target) return false;
-      if (target.cooldownLeft > 0) {
-        if (notify) message.info(`${target.name} 冷却中：${target.cooldownLeft}回合`);
+      const skillAvailability = resolveSkillAvailability(
+        target,
+        { lingqi: myLingqiRef.current, qixue: myQixueRef.current },
+        controlStateRef.current,
+      );
+      if (!skillAvailability.available) {
+        if (notify) {
+          if (skillAvailability.reason === 'cooldown') {
+            message.info(skillAvailability.message || `${target.name} 冷却中`);
+          } else {
+            showCastBlockedMessage(skillAvailability.message || '当前无法释放');
+          }
+        }
         return false;
       }
 
@@ -483,7 +639,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
         try {
           const ok = await onCastSkill(skillId, target.targetType);
           if (!ok) {
-            if (notify) message.error('当前无法释放');
+            if (notify) showCastBlockedMessage('当前无法释放');
             return false;
           }
           if (notify) message.success(`已释放：${target.name}`);
@@ -496,7 +652,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
         return true;
       }
     },
-    [isCasting, isBattleRunning, isMyTurn, message, onCastSkill, turn],
+    [isCasting, isBattleRunning, isMyTurn, message, onCastSkill, showCastBlockedMessage, turn],
   );
 
   useEffect(() => {
@@ -549,16 +705,24 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
       if (!autoRelease || !isBattleRunning || !isMyTurn || isCasting) return;
 
       const equipped = skillsRef.current.filter((s) => s.equipped);
+      const resourceState = { lingqi: myLingqiRef.current, qixue: myQixueRef.current };
+      const currentControlState = controlStateRef.current;
       let ok = false;
       for (const s of equipped) {
         if (s.id === 'basic_attack') continue;
-        if (s.cooldownLeft > 0) continue;
-        if (s.costLingqi > 0 && myLingqiRef.current < s.costLingqi) continue;
-        if (s.costQixue > 0 && myQixueRef.current <= s.costQixue) continue;
+        const availability = resolveSkillAvailability(s, resourceState, currentControlState);
+        if (!availability.available) continue;
         ok = await castSkill(s.id, false);
         if (ok) break;
       }
-      const finalOk = ok ? true : await castSkill('basic_attack', false);
+      const basicAttack = equipped.find((s) => s.id === 'basic_attack');
+      let finalOk = ok;
+      if (!finalOk && basicAttack) {
+        const basicAvailability = resolveSkillAvailability(basicAttack, resourceState, currentControlState);
+        if (basicAvailability.available) {
+          finalOk = await castSkill('basic_attack', false);
+        }
+      }
 
       if (finalOk) {
         lastAutoActionKeyRef.current = key;
@@ -650,8 +814,11 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
       {skills
         .filter((s) => s.equipped)
         .map((s) => {
-          // 禁用条件：冷却中、正在释放、战斗中但不是玩家回合
-          const isDisabled = s.cooldownLeft > 0 || isCasting || (turn != null && isBattleRunning && !isMyTurn);
+          const skillAvailability = resolveSkillAvailability(s, skillResourceState, controlState);
+          const waitingForTurn = turn != null && isBattleRunning && !isMyTurn;
+          const disabledByAvailability = !skillAvailability.available;
+          const isDisabled = isCasting || waitingForTurn || disabledByAvailability;
+          const unavailableReason = disabledByAvailability ? skillAvailability.message : null;
           const effectLines = formatSkillEffectLines(s.effects, {
             damageType: s.damageType,
             element: s.element,
@@ -688,6 +855,14 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
                     {hasElement && <span className="skill-fab-tooltip-chip is-element">{elementLabel}</span>}
                   </span>
                 </div>
+                {unavailableReason ? (
+                  <div className="skill-fab-tooltip-row is-unusable">
+                    <span className="skill-fab-tooltip-label">状态</span>
+                    <span className="skill-fab-tooltip-value">
+                      <span className="skill-fab-tooltip-chip is-unusable">{unavailableReason}</span>
+                    </span>
+                  </div>
+                ) : null}
               </div>
               {effectLines.length > 0 && (
                 <div className="skill-fab-tooltip-effects">
@@ -712,7 +887,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
               <span style={{ display: 'inline-block' }}>
                 <button
                   type="button"
-                  className={`skill-fab-tile skill-fab-skill-tile ${s.cooldownLeft > 0 ? 'is-cd' : ''} ${isDisabled && s.cooldownLeft === 0 ? 'is-waiting' : ''}`}
+                  className={`skill-fab-tile skill-fab-skill-tile ${skillAvailability.reason === 'cooldown' ? 'is-cd' : ''} ${waitingForTurn && skillAvailability.available ? 'is-waiting' : ''} ${!skillAvailability.available && skillAvailability.reason !== 'cooldown' ? 'is-unusable' : ''}`}
                   onClick={() => void castSkill(s.id, true)}
                   disabled={isDisabled}
                 >
