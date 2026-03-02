@@ -4,6 +4,7 @@
 export type {
   InventoryInfo,
   InventoryItem,
+  InventoryItemWithDef,
   InventoryLocation,
   SlottedInventoryLocation,
-} from './index.js';
+} from './shared/types.js';
