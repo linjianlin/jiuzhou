@@ -6,8 +6,9 @@
  * 1) 宗主不可被踢出。
  * 2) 宗主转让只能转给他人。
  * 3) 权限不足时按钮禁用并给出明确文案。
+ * 4) 踢出成员和转让宗主需要二次确认。
  */
-import { Button, Modal, Select, Tag } from 'antd';
+import { App, Button, Modal, Select, Tag } from 'antd';
 import { APPOINTABLE_POSITION_OPTIONS } from '../../constants';
 import type { MemberActionDraft, SectMemberVm, SectPermissionState } from '../../types';
 
@@ -36,6 +37,7 @@ const MemberActionDialog: React.FC<MemberActionDialogProps> = ({
   onKick,
   onTransferLeader,
 }) => {
+  const { modal } = App.useApp();
   const target = draft.target;
   const myCharacterId = myMember?.characterId ?? 0;
   const isSelf = !!target && target.characterId === myCharacterId;
@@ -43,6 +45,34 @@ const MemberActionDialog: React.FC<MemberActionDialogProps> = ({
   const canAppoint = Boolean(target && permissions.canAppointPosition && target.position !== 'leader');
   const canKick = Boolean(target && permissions.canKickMember && target.position !== 'leader' && !isSelf);
   const canTransferLeader = Boolean(target && permissions.canTransferLeader && target.position !== 'leader' && !isSelf);
+
+  const handleKickClick = () => {
+    if (!canKick || !target) return;
+    modal.confirm({
+      title: `确认将「${target.nickname}」踢出宗门？`,
+      content: '该操作不可撤销，被踢出的成员需要重新申请才能加入。',
+      okText: '确认踢出',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await onKick(target.characterId);
+      },
+    });
+  };
+
+  const handleTransferClick = () => {
+    if (!canTransferLeader || !target) return;
+    modal.confirm({
+      title: `确认将宗主转让给「${target.nickname}」？`,
+      content: '转让后你将退位为普通成员，此操作不可撤销。',
+      okText: '确认转让',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await onTransferLeader(target.characterId);
+      },
+    });
+  };
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} centered width={560} title="成员管理" className="sect-submodal" destroyOnHidden>
@@ -95,10 +125,7 @@ const MemberActionDialog: React.FC<MemberActionDialogProps> = ({
               danger
               disabled={!canKick}
               loading={actionLoadingKey === `kick-${target.characterId}`}
-              onClick={() => {
-                if (!canKick) return;
-                void onKick(target.characterId);
-              }}
+              onClick={handleKickClick}
             >
               {canKick ? '踢出成员' : '不可踢出'}
             </Button>
@@ -106,10 +133,7 @@ const MemberActionDialog: React.FC<MemberActionDialogProps> = ({
             <Button
               disabled={!canTransferLeader}
               loading={actionLoadingKey === `transfer-${target.characterId}`}
-              onClick={() => {
-                if (!canTransferLeader) return;
-                void onTransferLeader(target.characterId);
-              }}
+              onClick={handleTransferClick}
             >
               {canTransferLeader ? '转让宗主' : '不可转让'}
             </Button>

@@ -2,9 +2,11 @@
  * 宗门建筑面板。
  * 输入：建筑列表、升级权限、升级动作。
  * 输出：建筑效果、升级需求与升级按钮。
- * 约束：按钮禁用规则 = 必须有权限 + 可升级 + 资源足够。
+ * 约束：
+ * 1) 按钮禁用规则 = 必须有权限 + 可升级 + 资源足够。
+ * 2) 升级建筑需要二次确认，提示消耗的资源。
  */
-import { Button, Tag, Tooltip } from 'antd';
+import { App, Button, Tag, Tooltip } from 'antd';
 import {
   ArrowRightOutlined,
 } from '@ant-design/icons';
@@ -18,6 +20,22 @@ interface BuildingsPanelProps {
 }
 
 const BuildingsPanel: React.FC<BuildingsPanelProps> = ({ buildings, permissions, actionLoadingKey, onUpgrade }) => {
+  const { modal } = App.useApp();
+
+  const handleUpgradeClick = (building: SectBuildingVm) => {
+    const funds = building.requirement.funds ?? 0;
+    const buildPoints = building.requirement.buildPoints ?? 0;
+    modal.confirm({
+      title: `确认升级「${building.name}」？`,
+      content: `升级将消耗宗门资金 ${funds.toLocaleString()} 和建设点 ${buildPoints.toLocaleString()}。`,
+      okText: '确认升级',
+      cancelText: '取消',
+      onOk: async () => {
+        await onUpgrade(building.buildingType);
+      },
+    });
+  };
+
   return (
     <div className="sect-pane">
       <div className="sect-pane-top">
@@ -101,7 +119,7 @@ const BuildingsPanel: React.FC<BuildingsPanelProps> = ({ buildings, permissions,
                         className="upgrade-btn"
                         disabled={!canTriggerUpgrade}
                         loading={actionLoadingKey === loadingKey}
-                        onClick={() => onUpgrade(building.buildingType)}
+                        onClick={() => handleUpgradeClick(building)}
                       >
                         {upgradeLabel}
                       </Button>
