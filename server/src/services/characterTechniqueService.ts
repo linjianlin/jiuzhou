@@ -242,6 +242,15 @@ type AvailableSkillEntry = {
   effects: unknown[];
 };
 
+type SkillSlotLite = {
+  slotIndex: number;
+  skillId: string;
+};
+
+type ReconciledSkillSlot = SkillSlotLite & {
+  skillName: string;
+};
+
 const loadEquippedTechniqueLite = async (characterId: number): Promise<EquippedTechniqueLite[]> => {
   const res = await query(
     `
@@ -324,6 +333,72 @@ const loadAvailableSkillEntries = async (characterId: number): Promise<Available
   }
 
   return entries.sort((left, right) => left.techniqueName.localeCompare(right.techniqueName) || left.skillName.localeCompare(right.skillName));
+};
+
+const listAvailableSkillIdSet = async (characterId: number): Promise<Set<string>> => {
+  const available = await loadAvailableSkillEntries(characterId);
+  return new Set(available.map((entry) => entry.skillId));
+};
+
+const filterSkillSlotsByAvailableSkillSet = (
+  slots: SkillSlotLite[],
+  availableSkillIds: Set<string>,
+): SkillSlotLite[] => {
+  if (slots.length === 0) return [];
+  if (availableSkillIds.size === 0) return [];
+  return slots.filter((slot) => availableSkillIds.has(slot.skillId));
+};
+
+const buildReconciledSkillSlots = (slots: SkillSlotLite[]): ReconciledSkillSlot[] => {
+  const skillMap = getSkillDefMap();
+  return slots
+    .map((slot) => {
+      const def = skillMap.get(slot.skillId);
+      return {
+        slotIndex: slot.slotIndex,
+        skillId: slot.skillId,
+        skillName: String(def?.name || slot.skillId),
+      };
+    })
+    .sort((left, right) => left.slotIndex - right.slotIndex);
+};
+
+const buildTechniqueSwitchMessage = (baseMessage: string, removedSlots: ReconciledSkillSlot[]): string => {
+  if (removedSlots.length === 0) return baseMessage;
+  const removedText = removedSlots
+    .map((entry) => `${entry.slotIndex}号位${entry.skillName}`)
+    .join('、');
+  return `${baseMessage}，已自动卸下不兼容技能：${removedText}`;
+};
+
+const reconcileEquippedSkillSlots = async (characterId: number): Promise<ReconciledSkillSlot[]> => {
+  const availableSkillIds = await listAvailableSkillIdSet(characterId);
+  const removedResult =
+    availableSkillIds.size === 0
+      ? await query(
+          `DELETE FROM character_skill_slot
+           WHERE character_id = $1
+           RETURNING slot_index, skill_id`,
+          [characterId],
+        )
+      : await query(
+          `DELETE FROM character_skill_slot
+           WHERE character_id = $1
+             AND NOT (skill_id = ANY($2::text[]))
+           RETURNING slot_index, skill_id`,
+          [characterId, Array.from(availableSkillIds)],
+        );
+
+  const removedSlots: SkillSlotLite[] = (removedResult.rows as Array<Record<string, unknown>>)
+    .map((row) => {
+      const slotIndex = Number(row.slot_index ?? 0) || 0;
+      const skillId = typeof row.skill_id === 'string' ? row.skill_id.trim() : '';
+      if (!skillId || slotIndex <= 0) return null;
+      return { slotIndex, skillId };
+    })
+    .filter((entry): entry is SkillSlotLite => Boolean(entry));
+
+  return buildReconciledSkillSlots(removedSlots);
 };
 
 /**
@@ -752,8 +827,12 @@ class CharacterTechniqueService {
         );
       }
     }
+    const removedSlots = await reconcileEquippedSkillSlots(characterId);
     await invalidateCharacterComputedCache(characterId);
-    return { success: true, message: '装备成功' };
+    return {
+      success: true,
+      message: buildTechniqueSwitchMessage('装备成功', removedSlots),
+    };
   }
 
   // ============================================
@@ -787,8 +866,12 @@ class CharacterTechniqueService {
         [characterId]
       );
     }
+    const removedSlots = await reconcileEquippedSkillSlots(characterId);
     await invalidateCharacterComputedCache(characterId);
-    return { success: true, message: '卸下成功' };
+    return {
+      success: true,
+      message: buildTechniqueSwitchMessage('卸下成功', removedSlots),
+    };
   }
 
 
@@ -849,14 +932,22 @@ class CharacterTechniqueService {
       `,
       [characterId],
     );
+    const slots: SkillSlotLite[] = (result.rows as Array<Record<string, unknown>>)
+      .map((row) => {
+        const skillId = typeof row.skill_id === 'string' ? row.skill_id.trim() : '';
+        const slotIndex = Number(row.slot_index ?? 0) || 0;
+        if (!skillId || slotIndex <= 0) return null;
+        return { slotIndex, skillId };
+      })
+      .filter((entry): entry is SkillSlotLite => Boolean(entry));
+
     const skillMap = getSkillDefMap();
-    const rows = (result.rows as Array<Record<string, unknown>>).map((row) => {
-      const skillId = typeof row.skill_id === 'string' ? row.skill_id : '';
-      const def = skillMap.get(skillId);
+    const rows = slots.map((slot) => {
+      const def = skillMap.get(slot.skillId);
       return {
-        slot_index: Number(row.slot_index ?? 0) || 0,
-        skill_id: skillId,
-        skill_name: String(def?.name || skillId),
+        slot_index: slot.slotIndex,
+        skill_id: slot.skillId,
+        skill_name: String(def?.name || slot.skillId),
         skill_icon: String(def?.icon || ''),
       };
     });
@@ -1007,9 +1098,12 @@ class CharacterTechniqueService {
       return { success: true, message: '无装备技能', data: [] };
     }
 
-    const orderedSkillIds = slotResult.rows
+    const rawOrderedSkillIds = slotResult.rows
       .map((row) => (typeof row.skill_id === 'string' ? row.skill_id.trim() : ''))
       .filter((skillId): skillId is string => skillId.length > 0);
+
+    const availableSkillIds = await listAvailableSkillIdSet(characterId);
+    const orderedSkillIds = rawOrderedSkillIds.filter((skillId) => availableSkillIds.has(skillId));
 
     if (orderedSkillIds.length === 0) {
       return { success: true, message: '无装备技能', data: [] };
@@ -1103,6 +1197,28 @@ class CharacterTechniqueService {
       return { success: false, message: '获取功法状态失败' };
     }
 
+    const availableSkills = availableRes.data!;
+    const availableSkillIdSet = new Set(availableSkills.map((entry) => entry.skillId));
+    const equippedSkillSlots: SkillSlotLite[] = (skillsRes.data ?? [])
+      .map((entry) => {
+        const skillId = typeof entry.skill_id === 'string' ? entry.skill_id.trim() : '';
+        const slotIndex = Number(entry.slot_index ?? 0) || 0;
+        if (!skillId || slotIndex <= 0) return null;
+        return { slotIndex, skillId };
+      })
+      .filter((entry): entry is SkillSlotLite => Boolean(entry));
+    const filteredSlots = filterSkillSlotsByAvailableSkillSet(equippedSkillSlots, availableSkillIdSet);
+    const skillMap = getSkillDefMap();
+    const filteredEquippedSkills: CharacterSkillSlot[] = filteredSlots.map((entry) => {
+      const def = skillMap.get(entry.skillId);
+      return {
+        slot_index: entry.slotIndex,
+        skill_id: entry.skillId,
+        skill_name: String(def?.name || entry.skillId),
+        skill_icon: String(def?.icon || ''),
+      };
+    });
+
     return {
       success: true,
       message: '获取成功',
@@ -1110,8 +1226,8 @@ class CharacterTechniqueService {
         techniques: techniquesRes.data!,
         equippedMain: equippedRes.data!.main,
         equippedSubs: equippedRes.data!.subs,
-        equippedSkills: skillsRes.data!,
-        availableSkills: availableRes.data!,
+        equippedSkills: filteredEquippedSkills,
+        availableSkills,
         passives: passivesRes.data!
       }
     };
