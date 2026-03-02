@@ -233,9 +233,19 @@ class GameSocketService {
 
     this.socket.on(
       "game:character",
-      (data: { character: CharacterData | null }) => {
-        this.currentCharacter = data.character;
-        this.notifyCharacterListeners(data.character);
+      (data: {
+        type?: "full" | "delta";
+        character?: CharacterData | null;
+        delta?: Partial<CharacterData> & { id: number };
+      }) => {
+        if (data.type === "delta" && data.delta && this.currentCharacter) {
+          // 增量合并：仅更新变化字段
+          this.currentCharacter = { ...this.currentCharacter, ...data.delta };
+        } else {
+          // 全量替换（含 type="full" 及无 type 的兼容场景）
+          this.currentCharacter = data.character ?? null;
+        }
+        this.notifyCharacterListeners(this.currentCharacter);
       },
     );
 

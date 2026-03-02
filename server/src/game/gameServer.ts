@@ -86,6 +86,9 @@ class GameServer {
     this.io = new SocketServer(httpServer, {
       cors: { origin: corsOrigin, credentials: true },
       path: "/game-socket",
+      perMessageDeflate: {
+        threshold: 1024,
+      },
     });
 
     this.setupEventHandlers();
@@ -156,8 +159,8 @@ class GameServer {
             socket.join(`chat:sect:${sectId}`);
           }
 
-          // 发送角色数据
-          socket.emit("game:character", { character });
+          // 发送角色数据（全量）
+          socket.emit("game:character", { type: "full", character });
 
           // 同步战斗冷却状态（重连时）
           if (character) {
@@ -329,8 +332,11 @@ class GameServer {
             session.character = updatedCharacter;
             session.lastUpdate = Date.now();
 
-            // 广播更新
-            socket.emit("game:character", { character: updatedCharacter });
+            // 广播更新（全量）
+            socket.emit("game:character", {
+              type: "full",
+              character: updatedCharacter,
+            });
           } else {
             socket.emit("game:error", { message: "加点失败" });
           }
@@ -348,7 +354,7 @@ class GameServer {
         const character = await this.loadCharacter(session.userId);
         session.character = character;
         session.lastUpdate = Date.now();
-        socket.emit("game:character", { character });
+        socket.emit("game:character", { type: "full", character });
       });
 
       // 断开连接
@@ -630,6 +636,35 @@ class GameServer {
     this.characterPushTimers.set(userId, timer);
   }
 
+  /**
+   * 计算两个角色对象之间的增量差异。
+   *
+   * 作用：避免每次推送 50+ 字段全量 JSON，仅传输变化字段。
+   * 输入：prev（上次推送的快照）、next（当前最新数据）
+   * 输出：仅包含变化字段的 Partial 对象，若无变化返回 null
+   *
+   * 边界条件：
+   *   - prev 为 null 时返回 null（需走全量路径）
+   *   - next 为 null 时返回 null（角色被删除，需走全量路径）
+   */
+  private diffCharacter(
+    prev: CharacterAttributes | null,
+    next: CharacterAttributes | null,
+  ): Partial<CharacterAttributes> | null {
+    if (!prev || !next) return null;
+    const keys = Object.keys(next) as (keyof CharacterAttributes)[];
+    const delta: Record<string, unknown> = {};
+    let changed = false;
+    for (const k of keys) {
+      if (prev[k] !== next[k]) {
+        delta[k] = next[k];
+        changed = true;
+      }
+    }
+    if (!changed) return null;
+    return delta as Partial<CharacterAttributes>;
+  }
+
   private async flushCharacterPush(userId: number): Promise<void> {
     if (this.characterPushInFlight.has(userId)) {
       this.characterPushQueued.add(userId);
@@ -649,7 +684,19 @@ class GameServer {
         session.lastUpdate = Date.now();
       }
 
-      this.io.to(socketId).emit("game:character", { character });
+      const delta = this.diffCharacter(prevCharacter, character);
+      if (delta) {
+        // 增量推送：仅发送变化字段 + id 用于客户端校验
+        this.io.to(socketId).emit("game:character", {
+          type: "delta",
+          delta: { ...delta, id: character!.id },
+        });
+      } else {
+        // 全量推送：首次加载 / 角色为 null / 无变化时也发全量确保同步
+        this.io
+          .to(socketId)
+          .emit("game:character", { type: "full", character });
+      }
       if (this.shouldRefreshOnlinePlayers(prevCharacter, character)) {
         this.scheduleEmitOnlinePlayers(false);
       }
