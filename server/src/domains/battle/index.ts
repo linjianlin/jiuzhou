@@ -24,4 +24,38 @@ export const battleService = {
   recoverBattlesFromRedis,
 };
 
-export * from '../../services/battle/index.js';
+export {
+  abandonBattle,
+  getBattleState,
+  recoverBattlesFromRedis,
+  startDungeonPVEBattle,
+  startPVEBattle,
+  startPVPBattle,
+  playerAction,
+  isCharacterInBattle,
+} from '../../services/battle/index.js';
+
+export {
+  onUserJoinTeam,
+  onUserLeaveTeam,
+  syncBattleStateOnReconnect,
+} from '../../services/battle/index.js';
+
+export {
+  stopBattleService,
+} from '../../services/battle/index.js';
+
+export {
+  buildCharacterBattleSnapshot,
+} from '../../services/battle/index.js';
+
+export {
+  resolveMonsterDataForBattle,
+} from '../../services/battle/index.js';
+
+export {
+  BATTLE_TICK_MS,
+  BATTLE_START_COOLDOWN_MS,
+} from '../../services/battle/index.js';
+
+export type { BattleResult, StartDungeonPVEBattleOptions } from '../../services/battle/index.js';
