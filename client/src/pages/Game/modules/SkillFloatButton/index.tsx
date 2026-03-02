@@ -1,6 +1,7 @@
 import { App, Tooltip } from 'antd';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { SERVER_BASE, getCharacterTechniqueStatus, type CharacterSkillSlotDto } from '../../../../services/api';
+import { getCharacterTechniqueStatus, resolveAssetUrl, type CharacterSkillSlotDto } from '../../../../services/api';
+import { resolveIconUrl } from '../../shared/resolveIcon';
 import { gameSocket } from '../../../../services/gameSocket';
 import { readIsMobileViewport } from '../../shared/responsive';
 import { formatSkillEffectLines } from '../skillEffectFormatter';
@@ -106,37 +107,10 @@ const SKILL_FAB_TOOLTIP_CLASS_NAMES = {
   container: 'skill-fab-tooltip-container game-tooltip-surface-container',
 } as const;
 
-const SKILL_ICON_GLOB_SKILLS = import.meta.glob('../../../../assets/images/skills/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>;
+const FALLBACK_SKILL_ICON = resolveAssetUrl('/assets/skills/icon_skill_01.png');
 
-const SKILL_ICON_GLOB_ITEMS = import.meta.glob('../../../../assets/images/items/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>;
-
-const SKILL_ICON_BY_FILENAME: Record<string, string> = Object.fromEntries(
-  [...Object.entries(SKILL_ICON_GLOB_SKILLS), ...Object.entries(SKILL_ICON_GLOB_ITEMS)].map(([p, url]) => {
-    const parts = p.split(/[/\\]/);
-    return [parts[parts.length - 1] ?? p, url];
-  })
-);
-
-const FALLBACK_SKILL_ICON =
-  SKILL_ICON_BY_FILENAME['icon_skill_01.png'] ?? Object.values(SKILL_ICON_BY_FILENAME)[0] ?? '';
-
-const resolveSkillIcon = (icon: string | null | undefined): string => {
-  const raw = (icon ?? '').trim();
-  const filename = raw.split('/').filter(Boolean).pop() ?? raw;
-  const local = SKILL_ICON_BY_FILENAME[filename];
-  if (local) return local;
-  if (!raw) return FALLBACK_SKILL_ICON;
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  if (raw.startsWith('/uploads/')) return `${SERVER_BASE}${raw}`;
-  if (raw.startsWith('/')) return `${SERVER_BASE}${raw}`;
-  return FALLBACK_SKILL_ICON;
-};
+const resolveSkillIcon = (icon: string | null | undefined): string =>
+  resolveIconUrl(icon, FALLBACK_SKILL_ICON);
 
 const buildSkillItems = (
   equippedSkills: CharacterSkillSlotDto[],

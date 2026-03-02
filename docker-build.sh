@@ -18,8 +18,11 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 echo "🚀 Building and pushing to $REGISTRY..."
 
 log_info "📦 Building client..."
+# VITE_CDN_BASE / VITE_API_BASE 从环境变量读取，构建时静态替换到产物中
 docker build \
     -t $REGISTRY/jiuzhou-client:$VERSION \
+    ${VITE_CDN_BASE:+--build-arg VITE_CDN_BASE="$VITE_CDN_BASE"} \
+    ${VITE_API_BASE:+--build-arg VITE_API_BASE="$VITE_API_BASE"} \
     -f client/Dockerfile .
 
 log_info "📦 Building server..."

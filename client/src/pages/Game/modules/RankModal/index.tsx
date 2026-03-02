@@ -1,6 +1,6 @@
 import { App, Button, Modal, Segmented, Table, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
+import { IMG_COIN as coin01 } from '../../shared/imageAssets';
 import {
   getArenaRanks,
   getRankOverview,

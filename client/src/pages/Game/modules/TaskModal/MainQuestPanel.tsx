@@ -11,10 +11,8 @@ import {
   type ChapterDto,
   type SectionDto,
 } from '../../../../services/mainQuestApi';
-import { resolveAssetUrl } from '../../../../services/api';
-import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
-import lingshiIcon from '../../../../assets/images/ui/lingshi.png';
-import tongqianIcon from '../../../../assets/images/ui/tongqian.png';
+import { resolveIconUrl } from '../../shared/resolveIcon';
+import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../shared/imageAssets';
 import './MainQuestPanel.scss';
 
 interface MainQuestPanelProps {
@@ -24,37 +22,7 @@ interface MainQuestPanelProps {
 
 type ViewMode = 'progress' | 'chapters' | 'sections';
 
-const ITEM_ICON_GLOB = import.meta.glob('../../../../assets/images/**/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>;
-
-const ITEM_ICON_BY_FILENAME: Record<string, string> = Object.fromEntries(
-  Object.entries(ITEM_ICON_GLOB).map(([p, url]) => {
-    const parts = p.split(/[/\\]/);
-    return [parts[parts.length - 1] ?? p, url];
-  }),
-);
-
-const resolveRewardIcon = (icon: string | null | undefined): string => {
-  const raw = String(icon || '').trim();
-  if (!raw) return coin01;
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-
-  const filename = raw.split('/').filter(Boolean).pop() ?? '';
-  if (filename && ITEM_ICON_BY_FILENAME[filename]) return ITEM_ICON_BY_FILENAME[filename];
-
-  if (raw.startsWith('/assets/')) {
-    return coin01;
-  }
-
-  if (raw.startsWith('/')) {
-    const resolved = resolveAssetUrl(raw);
-    return resolved || coin01;
-  }
-
-  return filename ? (ITEM_ICON_BY_FILENAME[filename] ?? coin01) : coin01;
-};
+const resolveRewardIcon = resolveIconUrl;
 
 const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
   const { message } = App.useApp();

@@ -7,11 +7,6 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const analyze = env.ANALYZE === "true";
 
-  // CDN 基础路径，默认为 '/'
-  // 设置后静态资源会从 CDN 加载
-  const cdnBase = env.VITE_CDN_BASE?.trim().replace(/\/+$/, "") || "";
-  const base = cdnBase ? `${cdnBase}/` : "/";
-
   return {
     plugins: [
       react(),
@@ -22,7 +17,7 @@ export default defineConfig(({ mode }) => {
           gzipSize: true,
         }),
     ].filter(Boolean),
-    base,
+    base: "/",
     server: {
       host: true,
     },

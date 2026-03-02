@@ -52,18 +52,13 @@ import {
   updateCharacterAutoCastSkills,
   updateCharacterPosition,
   updateCharacterPositionKeepalive,
-  SERVER_BASE,
 } from '../../services/api';
 import { getUnifiedApiErrorMessage } from '../../services/api';
 import type { InventoryItemDto } from '../../services/api';
 import { getMainQuestProgress, startDialogue, advanceDialogue, selectDialogueChoice, completeSection, type DialogueState } from '../../services/mainQuestApi';
 import { getMyTeam, getTeamApplications, leaveTeam, type TeamInfo } from '../../services/teamApi';
-import logo from '../../assets/images/logo.png';
-import lingshi from '../../assets/images/ui/lingshi.png';
-import tongqian from '../../assets/images/ui/tongqian.png';
-import equipMale from '../../assets/images/ui/ep-n.png';
-import equipFemale from '../../assets/images/ui/ep.png';
-import coin01 from '../../assets/images/ui/sh_icon_0006_jinbi_02.png';
+import { IMG_LOGO as logo, IMG_LINGSHI as lingshi, IMG_TONGQIAN as tongqian, IMG_EQUIP_MALE as equipMale, IMG_EQUIP_FEMALE as equipFemale } from './shared/imageAssets';
+import { resolveIconUrl } from './shared/resolveIcon';
 import './index.scss';
 import { useIsMobile } from './shared/responsive';
 import { coerceAffixes } from './shared/itemMetaFormat';
@@ -76,31 +71,7 @@ interface GameProps {
 const EQUIP_SLOTS_LEFT = ['武器', '头部', '衣服', '护手'] as const;
 const EQUIP_SLOTS_RIGHT = ['下装', '项链', '饰品', '法宝'] as const;
 
-const ITEM_ICON_GLOB = import.meta.glob('../../assets/images/**/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>;
-
-const ITEM_ICON_BY_FILENAME: Record<string, string> = Object.fromEntries(
-  Object.entries(ITEM_ICON_GLOB).map(([p, url]) => {
-    const parts = p.split(/[/\\]/);
-    return [parts[parts.length - 1] ?? p, url];
-  }),
-);
-
-const resolveItemIcon = (icon: string | null | undefined): string => {
-  const raw = (icon ?? '').trim();
-  if (!raw) return coin01;
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  if (raw.startsWith('/uploads/')) return `${SERVER_BASE}${raw}`;
-  if (raw.startsWith('/assets/')) {
-    const filename = raw.split('/').filter(Boolean).pop() ?? raw;
-    return ITEM_ICON_BY_FILENAME[filename] ?? raw;
-  }
-  if (raw.startsWith('/')) return `${SERVER_BASE}${raw}`;
-  const filename = raw.split('/').filter(Boolean).pop() ?? raw;
-  return ITEM_ICON_BY_FILENAME[filename] ?? coin01;
-};
+const resolveItemIcon = resolveIconUrl;
 
 const EQUIPPED_SLOT_TO_UI_LABEL: Record<string, string> = {
   weapon: '武器',

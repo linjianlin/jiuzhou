@@ -1,13 +1,7 @@
 import { App, Button, Modal, Table, Tag, Tooltip } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import dan01 from '../../../../assets/images/danyao/qing_ling_dan.png';
-import dan02 from '../../../../assets/images/danyao/pei_yuan_dan.png';
-import dan03 from '../../../../assets/images/danyao/hui_chun_dan.png';
-import it01 from '../../../../assets/images/items/bai_yi_sheng_ling.png';
-import it02 from '../../../../assets/images/items/bai_zhan_hu_xin_jing.png';
-import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
-import lingshiIcon from '../../../../assets/images/ui/lingshi.png';
-import tongqianIcon from '../../../../assets/images/ui/tongqian.png';
+import { resolveIconUrl, DEFAULT_ICON as coin01 } from '../../shared/resolveIcon';
+import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../shared/imageAssets';
 import { gameSocket } from '../../../../services/gameSocket';
 import {
   equipCharacterSkill,
@@ -28,19 +22,6 @@ import { useIsMobile } from '../../shared/responsive';
 import { formatSkillEffectLines } from '../skillEffectFormatter';
 import './index.scss';
 
-// 动态加载所有图片资源
-const ICON_GLOB = import.meta.glob('../../../../assets/images/**/*.{png,jpg,jpeg,webp,gif}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>;
-
-// 按文件名建立映射
-const ICON_BY_FILENAME: Record<string, string> = Object.fromEntries(
-  Object.entries(ICON_GLOB).map(([p, url]) => {
-    const parts = p.split(/[/\\]/);
-    return [parts[parts.length - 1] ?? p, url];
-  }),
-);
 
 type TechQuality = '黄' | '玄' | '地' | '天';
 
@@ -120,26 +101,7 @@ const SKILL_TOOLTIP_CLASS_NAMES = {
   container: 'skill-tooltip-overlay-container game-tooltip-surface-container',
 } as const;
 
-const iconByFilename: Record<string, string> = {
-  'qing_ling_dan.png': dan01,
-  'pei_yuan_dan.png': dan02,
-  'hui_chun_dan.png': dan03,
-  'bai_yi_sheng_ling.png': it01,
-  'bai_zhan_hu_xin_jing.png': it02,
-};
-
-const resolveIcon = (icon: string | null | undefined): string => {
-  const raw = (icon ?? '').trim();
-  if (!raw) return coin01;
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  // 处理 /assets/skills/xxx.png 格式的路径
-  if (raw.startsWith('/assets/')) {
-    const filename = raw.split('/').filter(Boolean).pop() ?? raw;
-    return ICON_BY_FILENAME[filename] ?? iconByFilename[filename] ?? coin01;
-  }
-  const filename = raw.split('/').filter(Boolean).pop() ?? '';
-  return ICON_BY_FILENAME[filename] ?? iconByFilename[filename] ?? coin01;
-};
+const resolveIcon = resolveIconUrl;
 
 const mapQuality = (value: unknown): TechQuality => {
   if (value === '天' || value === '地' || value === '玄' || value === '黄') return value;

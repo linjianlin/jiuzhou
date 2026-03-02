@@ -3,7 +3,7 @@ import { Form, Input, Button, App } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { login as apiLogin, register as apiRegister, checkCharacter } from '../../services/api';
 import CreateCharacter from '../../components/CreateCharacter';
-import logo from '../../assets/images/logo.png';
+import { IMG_LOGO as logo } from '../Game/shared/imageAssets';
 import './index.scss';
 
 interface AuthProps {

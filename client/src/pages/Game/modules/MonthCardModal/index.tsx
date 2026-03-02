@@ -1,6 +1,6 @@
 import { App, Button, Modal, Progress, Tag } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
-import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
+import { IMG_COIN as coin01 } from '../../shared/imageAssets';
 import { activateMonthCardItem, claimMonthCardReward, getInventoryItems, getMonthCardStatus } from '../../../../services/api';
 import './index.scss';
 

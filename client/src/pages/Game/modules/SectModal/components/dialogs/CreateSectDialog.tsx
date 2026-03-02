@@ -5,7 +5,7 @@
  * 约束：名称为空或灵石不足时禁止提交。
  */
 import { Input, Modal, Tag } from 'antd';
-import coin01 from '../../../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
+import { IMG_COIN as coin01 } from '../../../../shared/imageAssets';
 
 interface CreateSectDialogProps {
   open: boolean;

@@ -1,12 +1,7 @@
 import { Button, Input, Modal, Select, Table, Tabs, Tag } from 'antd';
 import { LeftOutlined, SearchOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
-import map01 from '../../../../assets/images/map/cp_icon_map01.png';
-import map02 from '../../../../assets/images/map/cp_icon_map02.png';
-import map03 from '../../../../assets/images/map/cp_icon_map03.png';
-import map04 from '../../../../assets/images/map/cp_icon_map04.png';
-import map05 from '../../../../assets/images/map/cp_icon_map05.png';
-import map06 from '../../../../assets/images/map/cp_icon_map06.png';
+import { IMG_MAP_01 as map01, IMG_MAP_02 as map02, IMG_MAP_03 as map03, IMG_MAP_04 as map04, IMG_MAP_05 as map05, IMG_MAP_06 as map06 } from '../../shared/imageAssets';
 import {
   type DungeonDefLite,
   type DungeonPreviewResponse,

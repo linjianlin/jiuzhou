@@ -3,7 +3,8 @@ FROM guergeiro/pnpm:22-10-alpine AS builder
 
 WORKDIR /app
 
-# CDN 静态资源地址（构建时传入，可选）
+# Vite 构建时环境变量（通过 --build-arg 传入，可选）
+ARG VITE_API_BASE=""
 ARG VITE_CDN_BASE=""
 
 # 配置 pnpm 镜像源与 lockfile 相关配置
@@ -23,7 +24,8 @@ RUN pnpm install --frozen-lockfile --filter client
 # Copy client source
 COPY client ./client
 
-# Build with CDN base URL
+# Build with Vite env vars
+ENV VITE_API_BASE=${VITE_API_BASE}
 ENV VITE_CDN_BASE=${VITE_CDN_BASE}
 RUN pnpm --filter client build
 

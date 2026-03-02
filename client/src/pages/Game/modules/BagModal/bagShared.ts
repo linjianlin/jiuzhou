@@ -2,16 +2,23 @@
  * BagModal 共享类型、常量与工具函数
  * 桌面端和移动端 BagModal 均引用此文件
  */
-import coin01 from "../../../../assets/images/ui/sh_icon_0006_jinbi_02.png";
-import { SERVER_BASE } from "../../../../services/api";
+import { resolveIconUrl } from "../../shared/resolveIcon";
 import type {
   InventoryItemDto,
   InventoryLocation,
   ItemDefLite,
 } from "../../../../services/api";
 import { buildEquipmentAffixDisplayText } from "../../shared/equipmentAffixText";
-import { formatAffixRollPercent, getAffixRollColor, getAffixRollPercent } from "../../shared/equipmentAffixRoll";
-import { formatSignedNumber, formatSignedPercent, formatPercent } from "../../shared/formatAttr";
+import {
+  formatAffixRollPercent,
+  getAffixRollColor,
+  getAffixRollPercent,
+} from "../../shared/equipmentAffixRoll";
+import {
+  formatSignedNumber,
+  formatSignedPercent,
+  formatPercent,
+} from "../../shared/formatAttr";
 import { coerceAffixes as coerceItemMetaAffixes } from "../../shared/itemMetaFormat";
 import { ITEM_CATEGORY_LABELS } from "../../shared/itemTaxonomy";
 import type { GameItemCategory as SharedGameItemCategory } from "../../shared/itemTaxonomy";
@@ -295,34 +302,8 @@ export const percentAttrKeys = new Set<string>([
 
 /* ───────── 图标解析 ───────── */
 
-const ITEM_ICON_GLOB = import.meta.glob(
-  "../../../../assets/images/**/*.{png,jpg,jpeg,webp,gif}",
-  {
-    eager: true,
-    import: "default",
-  },
-) as Record<string, string>;
-
-const ITEM_ICON_BY_FILENAME: Record<string, string> = Object.fromEntries(
-  Object.entries(ITEM_ICON_GLOB).map(([p, url]) => {
-    const parts = p.split(/[/\\]/);
-    return [parts[parts.length - 1] ?? p, url];
-  }),
-);
-
-export const resolveIcon = (def?: Pick<ItemDefLite, "icon"> | null): string => {
-  const raw = (def?.icon ?? "").trim();
-  if (!raw) return coin01;
-  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-  if (raw.startsWith("/uploads/")) return `${SERVER_BASE}${raw}`;
-  if (raw.startsWith("/assets/")) {
-    const filename = raw.split("/").filter(Boolean).pop() ?? raw;
-    return ITEM_ICON_BY_FILENAME[filename] ?? raw;
-  }
-  if (raw.startsWith("/")) return `${SERVER_BASE}${raw}`;
-  const filename = raw.split("/").filter(Boolean).pop() ?? raw;
-  return ITEM_ICON_BY_FILENAME[filename] ?? coin01;
-};
+export const resolveIcon = (def?: Pick<ItemDefLite, "icon"> | null): string =>
+  resolveIconUrl(def?.icon);
 
 /* ───────── 通用工具 ───────── */
 
@@ -366,9 +347,8 @@ export const coerceAffixes = (value: unknown): EquipmentAffix[] => {
         if (!attrKey || !Number.isFinite(modifierValue)) return null;
         return { attr_key: attrKey, value: modifierValue };
       })
-      .filter(
-        (modifier): modifier is { attr_key: string; value: number } =>
-          Boolean(modifier),
+      .filter((modifier): modifier is { attr_key: string; value: number } =>
+        Boolean(modifier),
       );
 
     return {
@@ -524,7 +504,9 @@ export const buildGrowthPreviewAttrs = (
     const n = Number(v);
     if (!Number.isFinite(n)) continue;
     const scaled = n * factor;
-    out[k] = percentAttrKeys.has(k) ? Number(scaled.toFixed(6)) : Math.round(scaled);
+    out[k] = percentAttrKeys.has(k)
+      ? Number(scaled.toFixed(6))
+      : Math.round(scaled);
   }
   return out;
 };
@@ -577,9 +559,7 @@ export interface GrowthCostPlan {
   spiritStoneCost: number;
 }
 
-export const buildEnhanceCostPlan = (
-  targetLevel: number,
-): GrowthCostPlan => {
+export const buildEnhanceCostPlan = (targetLevel: number): GrowthCostPlan => {
   const target = Math.max(
     1,
     Math.min(15, Math.floor(Number(targetLevel) || 1)),
@@ -592,9 +572,7 @@ export const buildEnhanceCostPlan = (
   };
 };
 
-export const buildRefineCostPlan = (
-  targetLevel: number,
-): GrowthCostPlan => {
+export const buildRefineCostPlan = (targetLevel: number): GrowthCostPlan => {
   const target = Math.max(
     1,
     Math.min(10, Math.floor(Number(targetLevel) || 1)),
@@ -753,8 +731,12 @@ const hasSocketBuffEffect = (effectDefsRaw: unknown): boolean => {
   return coerceEffectDefs(effectDefsRaw).some((effect) => {
     const row = effect as { trigger?: unknown; effect_type?: unknown };
     return (
-      String(row.trigger || "").trim().toLowerCase() === "socket" &&
-      String(row.effect_type || "").trim().toLowerCase() === "buff"
+      String(row.trigger || "")
+        .trim()
+        .toLowerCase() === "socket" &&
+      String(row.effect_type || "")
+        .trim()
+        .toLowerCase() === "buff"
     );
   });
 };
@@ -801,7 +783,9 @@ type EquipmentDetailTextLine = {
   value?: string;
 };
 
-export type EquipmentDetailLine = EquipmentDetailAffixLine | EquipmentDetailTextLine;
+export type EquipmentDetailLine =
+  | EquipmentDetailAffixLine
+  | EquipmentDetailTextLine;
 
 const buildDetailLine = (
   kind: Exclude<EquipmentDetailLineKind, "affix">,
@@ -817,7 +801,9 @@ const buildDetailLine = (
   };
 };
 
-export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetailLine[] => {
+export const buildEquipmentDetailLines = (
+  item: BagItem | null,
+): EquipmentDetailLine[] => {
   if (!item?.equip) return [];
   const {
     strengthenLevel,
@@ -830,7 +816,8 @@ export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetail
   } = item.equip;
 
   const lines: EquipmentDetailLine[] = [];
-  const strengthenText = strengthenLevel > 0 ? `+${strengthenLevel}` : String(strengthenLevel);
+  const strengthenText =
+    strengthenLevel > 0 ? `+${strengthenLevel}` : String(strengthenLevel);
   const refineText = refineLevel > 0 ? `+${refineLevel}` : String(refineLevel);
   lines.push(buildDetailLine("progress", "强化", strengthenText));
   lines.push(buildDetailLine("progress", "精炼", refineText));
@@ -846,10 +833,14 @@ export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetail
     const valText = percentAttrKeys.has(k)
       ? formatSignedPercent(v)
       : formatSignedNumber(v);
-    lines.push(buildDetailLine("base", label, valText, `基础：${label} ${valText}`));
+    lines.push(
+      buildDetailLine("base", label, valText, `基础：${label} ${valText}`),
+    );
   }
 
-  lines.push(buildDetailLine("socket", "孔位", `${socketedGems.length}/${socketMax}`));
+  lines.push(
+    buildDetailLine("socket", "孔位", `${socketedGems.length}/${socketMax}`),
+  );
   for (const gem of socketedGems) {
     const gemName = gem.name || gem.itemDefId;
     const displaySlot = gem.slot + 1;
@@ -861,7 +852,14 @@ export const buildEquipmentDetailLines = (item: BagItem | null): EquipmentDetail
         effect.applyType === "percent"
           ? formatSignedPercent(effect.value)
           : formatSignedNumber(effect.value);
-      lines.push(buildDetailLine("gem_effect", label, valText, `  - ${label} ${valText}`));
+      lines.push(
+        buildDetailLine(
+          "gem_effect",
+          label,
+          valText,
+          `  - ${label} ${valText}`,
+        ),
+      );
     }
   }
 
@@ -917,7 +915,9 @@ const hasLearnTechniqueEffect = (effectDefs: unknown): boolean => {
   });
 };
 
-export const isTechniqueBookSubCategory = (subCategoryValue: unknown): boolean => {
+export const isTechniqueBookSubCategory = (
+  subCategoryValue: unknown,
+): boolean => {
   return normalizeCategoryToken(subCategoryValue) === "technique_book";
 };
 
@@ -949,7 +949,11 @@ export const collectBatchDisassembleCandidates = (
     Array.isArray(rules?.subCategories) && rules.subCategories.length > 0
       ? new Set(
           rules.subCategories
-            .map((value) => String(value ?? "").trim().toLowerCase())
+            .map((value) =>
+              String(value ?? "")
+                .trim()
+                .toLowerCase(),
+            )
             .filter((value) => value.length > 0),
         )
       : null;
@@ -960,16 +964,26 @@ export const collectBatchDisassembleCandidates = (
   const includeKeywords =
     Array.isArray(rules?.includeKeywords) && rules.includeKeywords.length > 0
       ? rules.includeKeywords
-          .map((value) => String(value ?? "").trim().toLowerCase())
+          .map((value) =>
+            String(value ?? "")
+              .trim()
+              .toLowerCase(),
+          )
           .filter((value) => value.length > 0)
       : [];
   const excludeKeywords =
     Array.isArray(rules?.excludeKeywords) && rules.excludeKeywords.length > 0
       ? rules.excludeKeywords
-          .map((value) => String(value ?? "").trim().toLowerCase())
+          .map((value) =>
+            String(value ?? "")
+              .trim()
+              .toLowerCase(),
+          )
           .filter((value) => value.length > 0)
       : [];
-  const keyword = String(rules?.keyword ?? "").trim().toLowerCase();
+  const keyword = String(rules?.keyword ?? "")
+    .trim()
+    .toLowerCase();
 
   const out: BagItem[] = [];
   for (const item of items) {
@@ -978,13 +992,21 @@ export const collectBatchDisassembleCandidates = (
     if (!isDisassemblableBagItem(item)) continue;
     if (categorySet && !categorySet.has(item.category)) continue;
     if (subCategorySet) {
-      const subCategory = String(item.subCategory ?? "").trim().toLowerCase();
+      const subCategory = String(item.subCategory ?? "")
+        .trim()
+        .toLowerCase();
       if (!subCategorySet.has(subCategory)) continue;
     }
     if (qualitySet && !qualitySet.has(item.quality)) continue;
-    const searchableText = `${item.name} ${item.tags.join(" ")} ${item.subCategory ?? ""}`.toLowerCase();
-    if (includeKeywords.length > 0 && !includeKeywords.some((value) => searchableText.includes(value))) continue;
-    if (excludeKeywords.some((value) => searchableText.includes(value))) continue;
+    const searchableText =
+      `${item.name} ${item.tags.join(" ")} ${item.subCategory ?? ""}`.toLowerCase();
+    if (
+      includeKeywords.length > 0 &&
+      !includeKeywords.some((value) => searchableText.includes(value))
+    )
+      continue;
+    if (excludeKeywords.some((value) => searchableText.includes(value)))
+      continue;
     if (keyword) {
       if (!searchableText.includes(keyword)) continue;
     }
@@ -1022,9 +1044,7 @@ export const buildBatchDisassemblePayloadItems = (
   return [...qtyById.entries()].map(([itemId, qty]) => ({ itemId, qty }));
 };
 
-const mapCategory = (
-  value: unknown,
-): Exclude<BagCategory, "all"> => {
+const mapCategory = (value: unknown): Exclude<BagCategory, "all"> => {
   const category = normalizeCategoryToken(value);
   if (!category || category === "all") return "other";
   return category;
@@ -1097,7 +1117,8 @@ const formatSetEffectLine = (raw: unknown): string | null => {
   const formatValueWithScale = (baseValue: number, prefix: string): string => {
     const scalePart = formatScalePart();
     const hasBase = baseValue > 0;
-    if (hasBase && scalePart) return `${prefix} ${Math.floor(baseValue)}+${scalePart}`;
+    if (hasBase && scalePart)
+      return `${prefix} ${Math.floor(baseValue)}+${scalePart}`;
     if (scalePart) return `${prefix} ${scalePart}`;
     return `${prefix} ${Math.floor(baseValue)}`;
   };
@@ -1122,7 +1143,8 @@ const formatSetEffectLine = (raw: unknown): string | null => {
     }
   } else if (effectType === "damage") {
     const value = toFiniteNumber(params.value) ?? 0;
-    const damageType = typeof params.damage_type === "string" ? params.damage_type : "";
+    const damageType =
+      typeof params.damage_type === "string" ? params.damage_type : "";
     if (damageType === "reflect") {
       // 反弹伤害：value 是比例（如 0.22 = 22%）
       main = `反弹 ${formatPercent(value)}伤害`;
@@ -1134,9 +1156,16 @@ const formatSetEffectLine = (raw: unknown): string | null => {
     main = formatValueWithScale(value, "恢复气血");
   } else if (effectType === "shield") {
     const value = toFiniteNumber(params.value) ?? 0;
-    const absorbTypeRaw = typeof params.absorb_type === "string" ? params.absorb_type : "";
-    const absorbLabel: Record<string, string> = { magic: "法术", physical: "物理", all: "全部" };
-    const absorbText = absorbLabel[absorbTypeRaw] ? `（${absorbLabel[absorbTypeRaw]}吸收）` : "";
+    const absorbTypeRaw =
+      typeof params.absorb_type === "string" ? params.absorb_type : "";
+    const absorbLabel: Record<string, string> = {
+      magic: "法术",
+      physical: "物理",
+      all: "全部",
+    };
+    const absorbText = absorbLabel[absorbTypeRaw]
+      ? `（${absorbLabel[absorbTypeRaw]}吸收）`
+      : "";
     main = `${formatValueWithScale(value, "护盾")}${absorbText}`;
   } else if (effectType === "resource") {
     const value = toFiniteNumber(params.value) ?? 0;
@@ -1163,7 +1192,8 @@ const formatSetEffectLine = (raw: unknown): string | null => {
   if (!main) return null;
 
   const parts: string[] = [];
-  if (trigger !== "equip") parts.push(`触发：${triggerLabel[trigger] ?? trigger}`);
+  if (trigger !== "equip")
+    parts.push(`触发：${triggerLabel[trigger] ?? trigger}`);
   parts.push(main);
   if (chance !== null) parts.push(`概率 ${formatPercent(chance)}`);
   if (durationRound !== null && durationRound > 0) {
@@ -1176,7 +1206,8 @@ const buildSetInfo = (def: ItemDefLite): SetInfo | null => {
   const setId = typeof def.set_id === "string" ? def.set_id.trim() : "";
   if (!setId) return null;
 
-  const setNameRaw = typeof def.set_name === "string" ? def.set_name.trim() : "";
+  const setNameRaw =
+    typeof def.set_name === "string" ? def.set_name.trim() : "";
   const setName = setNameRaw || setId;
   const equippedCount = Math.max(
     0,
@@ -1187,8 +1218,13 @@ const buildSetInfo = (def: ItemDefLite): SetInfo | null => {
 
   for (const bonusRaw of rawBonuses) {
     const bonus = toRecord(bonusRaw);
-    const pieceCount = Math.max(1, Math.floor(toFiniteNumber(bonus.piece_count) ?? 1));
-    const effectDefs = Array.isArray(bonus.effect_defs) ? bonus.effect_defs : [];
+    const pieceCount = Math.max(
+      1,
+      Math.floor(toFiniteNumber(bonus.piece_count) ?? 1),
+    );
+    const effectDefs = Array.isArray(bonus.effect_defs)
+      ? bonus.effect_defs
+      : [];
     const lines = effectDefs
       .map((effect) => formatSetEffectLine(effect))
       .filter((line): line is string => Boolean(line));
@@ -1243,8 +1279,7 @@ const buildEffects = (def?: ItemDefLite): string[] => {
               : "资源";
       const action = resource === "exp" ? "获得" : "恢复";
       effects.push(`${action}${resourceName} ${value}`);
-    }
-    else if (
+    } else if (
       (effectType === "restore_mana" || effectType === "mana") &&
       typeof value === "number"
     )
@@ -1260,7 +1295,8 @@ const buildEffects = (def?: ItemDefLite): string[] => {
   const isTechniqueBook =
     isTechniqueBookSubCategory(def?.sub_category) ||
     hasLearnTechniqueEffect(def?.effect_defs);
-  const reqRealm = typeof def?.use_req_realm === "string" ? def.use_req_realm.trim() : "";
+  const reqRealm =
+    typeof def?.use_req_realm === "string" ? def.use_req_realm.trim() : "";
   const reqLevelRaw =
     typeof def?.use_req_level === "number"
       ? def.use_req_level
@@ -1272,7 +1308,9 @@ const buildEffects = (def?: ItemDefLite): string[] => {
   if (reqRealm) reqParts.push(`境界≥${reqRealm}`);
   if (reqLevel > 0) reqParts.push(`等级≥${reqLevel}`);
   if (reqParts.length > 0) {
-    effects.push(`${isTechniqueBook ? "学习要求" : "使用要求"}：${reqParts.join("，")}`);
+    effects.push(
+      `${isTechniqueBook ? "学习要求" : "使用要求"}：${reqParts.join("，")}`,
+    );
   }
 
   const dailyLimitRaw =
@@ -1318,7 +1356,11 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   const defQualityRank = qualityRank[defQualityName];
   const resolvedQualityRank = Number(it.quality_rank) || qualityRank[quality];
   const category = mapCategory(def.category);
-  const tags = normalizeDisplayTags(coerceStringArray(def.tags), category, quality);
+  const tags = normalizeDisplayTags(
+    coerceStringArray(def.tags),
+    category,
+    quality,
+  );
   const isEquip = category === "equipment";
   const hasSocketEffect = hasSocketBuffEffect(def.effect_defs);
 
@@ -1356,7 +1398,9 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
           gemSlotTypes: def.gem_slot_types,
           socketedGems: parseSocketedGems(it.socketed_gems),
           equipReqRealm:
-            typeof def.equip_req_realm === "string" ? def.equip_req_realm : null,
+            typeof def.equip_req_realm === "string"
+              ? def.equip_req_realm
+              : null,
         }
       : null,
   };
