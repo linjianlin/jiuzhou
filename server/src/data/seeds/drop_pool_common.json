@@ -44,7 +44,7 @@
         },
         {
           "item_def_id": "scroll-003",
-          "chance": 0.01,
+          "chance": 0.005,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -793,7 +793,7 @@
         },
         {
           "item_def_id": "scroll-003",
-          "chance": 0.05,
+          "chance": 0.025,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true,
@@ -817,7 +817,7 @@
         },
         {
           "item_def_id": "scroll-003",
-          "chance": 0.5,
+          "chance": 0.25,
           "qty_min": 1,
           "qty_max": 2,
           "show_in_ui": true,
