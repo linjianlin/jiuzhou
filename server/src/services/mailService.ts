@@ -8,6 +8,7 @@
  * 4. 领取附件（严格校验+事务）
  * 5. 删除邮件
  * 6. 批量操作
+ * 7. 实例附件发放（用于坊市等需保留实例属性的场景）
  *
  * 改造说明：
  * - 使用 class 单例模式组织代码
@@ -17,7 +18,7 @@
 import { query, getTransactionClient } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { itemService } from './itemService.js';
-import { getInventoryInfoWithClient } from './inventory/index.js';
+import { findEmptySlotsWithClient, getInventoryInfoWithClient } from './inventory/index.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordCollectItemEvent } from './taskService.js';
 import { getItemDefinitionsByIds } from './staticConfigLoader.js';
@@ -52,6 +53,7 @@ export interface SendMailOptions {
   attachSilver?: number;
   attachSpiritStones?: number;
   attachItems?: MailAttachItem[];
+  attachInstanceIds?: number[];
   expireDays?: number;
   source?: string;
   sourceRefId?: string;
@@ -79,6 +81,7 @@ type ClaimMailRow = {
   attach_silver: number;
   attach_spirit_stones: number;
   attach_items: MailAttachItem[] | null;
+  attach_instance_ids: unknown;
   claimed_at: Date | string | null;
   expire_at: Date | string | null;
 };
@@ -87,6 +90,8 @@ type MailAttachItemView = MailAttachItem & {
   item_name?: string;
   quality?: string;
 };
+
+const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_instance_ids IS NOT NULL)';
 
 // ============================================
 // MailService Class
@@ -171,6 +176,76 @@ class MailService {
     return items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.qty) || 0)), 0);
   }
 
+  /**
+   * 统一清洗邮件中的“定义附件”结构，避免同一解析逻辑在列表/领取/批量领取里重复实现。
+   *
+   * 数据流说明：
+   * - 输入：数据库 JSONB 字段 `attach_items` 的原始值。
+   * - 输出：仅保留 `item_def_id` 合法且 `qty > 0` 的附件条目。
+   *
+   * 边界条件：
+   * 1) 非数组输入直接视为“无附件”，不做兜底修复。
+   * 2) 数量会被规整为正整数，非法条目直接丢弃，避免污染后续发奖逻辑。
+   */
+  private normalizeAttachItems(raw: unknown): MailAttachItem[] {
+    if (!Array.isArray(raw)) return [];
+
+    const normalized: MailAttachItem[] = [];
+    for (const row of raw) {
+      if (!row || typeof row !== 'object') continue;
+      const source = row as Record<string, unknown>;
+
+      const itemDefId = String(source.item_def_id || '').trim();
+      const qty = Math.floor(Number(source.qty) || 0);
+      if (!itemDefId || qty <= 0) continue;
+
+      const optionsRaw = source.options;
+      const normalizedOptions =
+        optionsRaw && typeof optionsRaw === 'object'
+          ? {
+              bindType:
+                typeof (optionsRaw as Record<string, unknown>).bindType === 'string'
+                  ? String((optionsRaw as Record<string, unknown>).bindType).trim()
+                  : undefined,
+              equipOptions: (optionsRaw as Record<string, unknown>).equipOptions,
+            }
+          : undefined;
+
+      normalized.push({
+        item_def_id: itemDefId,
+        item_name: typeof source.item_name === 'string' ? source.item_name : undefined,
+        qty,
+        options: normalizedOptions,
+      });
+    }
+
+    return normalized;
+  }
+
+  /**
+   * 解析邮件中的“实例附件ID”列表。
+   *
+   * 设计目的：
+   * - 坊市交易需要保留原实例（强化/词条/随机种子），不能重建新实例。
+   * - 通过统一解析函数复用在领取和批量扫描逻辑中，避免重复数据清洗代码。
+   *
+   * 边界条件：
+   * 1) 仅接受正整数实例ID，非法值直接丢弃。
+   * 2) 自动去重，避免重复ID导致同一实例被重复处理。
+   */
+  private normalizeAttachInstanceIds(raw: unknown): number[] {
+    if (!Array.isArray(raw)) return [];
+
+    const ids = new Set<number>();
+    for (const row of raw) {
+      const n = typeof row === 'number' ? row : Number(row);
+      if (Number.isInteger(n) && n > 0) {
+        ids.add(n);
+      }
+    }
+    return Array.from(ids);
+  }
+
   // ============================================
   // 发送邮件
   // ============================================
@@ -192,6 +267,16 @@ class MailService {
     if (options.attachItems && options.attachItems.length > 10) {
       return { success: false, message: '附件物品不能超过10个' };
     }
+    if (options.attachInstanceIds && options.attachInstanceIds.length > 10) {
+      return { success: false, message: '附件实例不能超过10个' };
+    }
+
+    const attachInstanceIds = options.attachInstanceIds
+      ? this.normalizeAttachInstanceIds(options.attachInstanceIds)
+      : [];
+    if (options.attachInstanceIds && attachInstanceIds.length !== options.attachInstanceIds.length) {
+      return { success: false, message: '附件实例ID无效' };
+    }
 
     // 计算过期时间
     let expireAt: Date | null = null;
@@ -206,9 +291,9 @@ class MailService {
           recipient_user_id, recipient_character_id,
           sender_type, sender_user_id, sender_character_id, sender_name,
           mail_type, title, content,
-          attach_silver, attach_spirit_stones, attach_items,
+          attach_silver, attach_spirit_stones, attach_items, attach_instance_ids,
           expire_at, source, source_ref_id, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING id
       `, [
         options.recipientUserId,
@@ -223,6 +308,7 @@ class MailService {
         options.attachSilver || 0,
         options.attachSpiritStones || 0,
         options.attachItems ? JSON.stringify(options.attachItems) : null,
+        attachInstanceIds.length > 0 ? JSON.stringify(attachInstanceIds) : null,
         expireAt,
         options.source || null,
         options.sourceRefId || null,
@@ -292,7 +378,7 @@ class MailService {
       const result = await query(`
         SELECT
           id, sender_type, sender_name, mail_type, title, content,
-          attach_silver, attach_spirit_stones, attach_items,
+          attach_silver, attach_spirit_stones, attach_items, attach_instance_ids,
           read_at, claimed_at, expire_at, created_at
         FROM mail
         WHERE (recipient_character_id = $1 OR (recipient_user_id = $2 AND recipient_character_id IS NULL))
@@ -306,7 +392,7 @@ class MailService {
         SELECT
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE read_at IS NULL) as unread_count,
-          COUNT(*) FILTER (WHERE claimed_at IS NULL AND (attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL)) as unclaimed_count
+          COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}) as unclaimed_count
         FROM mail
         WHERE (recipient_character_id = $1 OR (recipient_user_id = $2 AND recipient_character_id IS NULL))
           AND deleted_at IS NULL
@@ -317,7 +403,7 @@ class MailService {
       const itemDefIds = Array.from(
         new Set(
           result.rows.flatMap((row: any) => {
-            const items = Array.isArray(row.attach_items) ? (row.attach_items as MailAttachItem[]) : [];
+            const items = this.normalizeAttachItems(row.attach_items);
             return items
               .map((item) => String(item.item_def_id || '').trim())
               .filter((id) => id.length > 0);
@@ -348,7 +434,7 @@ class MailService {
         content: row.content,
         attachSilver: row.attach_silver,
         attachSpiritStones: row.attach_spirit_stones,
-        attachItems: (Array.isArray(row.attach_items) ? row.attach_items : []).map((item: MailAttachItem) => {
+        attachItems: this.normalizeAttachItems(row.attach_items).map((item: MailAttachItem) => {
           const itemDefId = String(item.item_def_id || '').trim();
           const defInfo = itemDefId ? itemDefMap.get(itemDefId) : undefined;
           const itemName = defInfo?.name || item.item_name || itemDefId || '未知物品';
@@ -426,7 +512,7 @@ class MailService {
     let mailResult: { rows: ClaimMailRow[] };
     try {
       const lockedMailResult = await client.query<ClaimMailRow>(`
-        SELECT id, attach_silver, attach_spirit_stones, attach_items, claimed_at, expire_at
+        SELECT id, attach_silver, attach_spirit_stones, attach_items, attach_instance_ids, claimed_at, expire_at
         FROM mail
         WHERE id = $1
           AND (recipient_character_id = $2 OR (recipient_user_id = $3 AND recipient_character_id IS NULL))
@@ -459,7 +545,9 @@ class MailService {
 
     // 5. 检查是否有附件
     const hasCurrency = mail.attach_silver > 0 || mail.attach_spirit_stones > 0;
-    const hasItems = mail.attach_items && mail.attach_items.length > 0;
+    const attachItems = this.normalizeAttachItems(mail.attach_items);
+    const attachInstanceIds = this.normalizeAttachInstanceIds(mail.attach_instance_ids);
+    const hasItems = attachItems.length > 0 || attachInstanceIds.length > 0;
 
     if (!hasCurrency && !hasItems) {
       return { success: false, message: '该邮件没有附件' };
@@ -468,7 +556,12 @@ class MailService {
     // 6. 检查背包空间（如果有物品附件）
     if (hasItems) {
       const inventoryInfo = await getInventoryInfoWithClient(characterId, client);
-      const requiredSlots = await this.estimateRequiredSlots(mail.attach_items as MailAttachItem[]);
+      // 约定：实例附件存在时，按实例附件发放；定义附件仅用于展示，不再重复创建实例。
+      // 这样可保证坊市交易装备的强化/词条等实例属性不丢失。
+      const requiredSlots =
+        attachInstanceIds.length > 0
+          ? attachInstanceIds.length
+          : await this.estimateRequiredSlots(attachItems);
       const freeSlots = inventoryInfo.bag_capacity - inventoryInfo.bag_used;
       if (freeSlots < requiredSlots) {
         return { success: false, message: `背包空间不足，需要${requiredSlots}格，当前剩余${freeSlots}格` };
@@ -492,33 +585,111 @@ class MailService {
     // 8. 发放物品
     const itemIds: number[] = [];
     if (hasItems) {
-      for (const attachItem of mail.attach_items as MailAttachItem[]) {
-        const createResult = await itemService.createItem(
-          userId,
-          characterId,
-          attachItem.item_def_id,
-          attachItem.qty,
-          {
-            location: 'bag',
-            bindType: attachItem.options?.bindType,
-            obtainedFrom: 'mail',
-            equipOptions: attachItem.options?.equipOptions,
-            dbClient: client
-          }
+      if (attachInstanceIds.length > 0) {
+        // 实例附件领取：直接把实例从 mail 位置搬运到 bag，避免重建实例导致属性丢失。
+        const lockedInstanceResult = await client.query<{
+          id: number;
+          item_def_id: string;
+          qty: number;
+        }>(
+          `
+            SELECT id, item_def_id, qty
+            FROM item_instance
+            WHERE id = ANY($1::bigint[])
+              AND owner_user_id = $2
+              AND owner_character_id = $3
+              AND location = 'mail'
+            FOR UPDATE
+          `,
+          [attachInstanceIds, userId, characterId],
         );
 
-        if (!createResult.success) {
-          return { success: false, message: `物品创建失败: ${createResult.message}` };
+        const lockedIds = new Set(lockedInstanceResult.rows.map((row) => Number(row.id)));
+        for (const attachInstanceId of attachInstanceIds) {
+          if (!lockedIds.has(attachInstanceId)) {
+            return { success: false, message: '邮件附件状态异常' };
+          }
         }
 
-        if (createResult.itemIds) {
-          itemIds.push(...createResult.itemIds);
+        const targetSlots = await findEmptySlotsWithClient(characterId, 'bag', attachInstanceIds.length, client);
+        if (targetSlots.length < attachInstanceIds.length) {
+          return {
+            success: false,
+            message: `背包空间不足，需要${attachInstanceIds.length}格，当前剩余${targetSlots.length}格`,
+          };
         }
 
-        const key = String(attachItem.item_def_id || '').trim();
-        if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + Math.max(1, Math.floor(Number(attachItem.qty) || 1)));
+        const slotByInstanceId = new Map<number, number>();
+        for (let index = 0; index < attachInstanceIds.length; index += 1) {
+          slotByInstanceId.set(attachInstanceIds[index], targetSlots[index]);
+        }
+
+        for (const attachInstanceId of attachInstanceIds) {
+          const slot = slotByInstanceId.get(attachInstanceId);
+          if (slot === undefined) {
+            return { success: false, message: '邮件附件状态异常' };
+          }
+
+          const updateResult = await client.query(
+            `
+              UPDATE item_instance
+              SET owner_user_id = $1,
+                  owner_character_id = $2,
+                  location = 'bag',
+                  location_slot = $3,
+                  equipped_slot = NULL,
+                  updated_at = NOW()
+              WHERE id = $4
+                AND owner_user_id = $1
+                AND owner_character_id = $2
+                AND location = 'mail'
+              RETURNING id
+            `,
+            [userId, characterId, slot, attachInstanceId],
+          );
+
+          if (updateResult.rows.length === 0) {
+            return { success: false, message: '邮件附件状态异常' };
+          }
+          itemIds.push(Number(updateResult.rows[0].id));
+        }
+
+        for (const row of lockedInstanceResult.rows) {
+          const key = String(row.item_def_id || '').trim();
+          const qty = Math.max(1, Math.floor(Number(row.qty) || 1));
+          if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + qty);
+        }
+      } else {
+        for (const attachItem of attachItems) {
+          const createResult = await itemService.createItem(
+            userId,
+            characterId,
+            attachItem.item_def_id,
+            attachItem.qty,
+            {
+              location: 'bag',
+              bindType: attachItem.options?.bindType,
+              obtainedFrom: 'mail',
+              equipOptions: attachItem.options?.equipOptions,
+              dbClient: client
+            }
+          );
+
+          if (!createResult.success) {
+            return { success: false, message: `物品创建失败: ${createResult.message}` };
+          }
+
+          if (createResult.itemIds) {
+            itemIds.push(...createResult.itemIds);
+          }
+
+          const key = String(attachItem.item_def_id || '').trim();
+          if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + Math.max(1, Math.floor(Number(attachItem.qty) || 1)));
+        }
       }
-      rewards.itemIds = itemIds;
+      if (itemIds.length > 0) {
+        rewards.itemIds = itemIds;
+      }
     }
 
     // 9. 更新邮件状态
@@ -554,12 +725,12 @@ class MailService {
     // 说明：此方法不包裹单一大事务，避免批量领取时长时间持有 mail 行锁与背包互斥锁。
     const mailsResult = await query(
       `
-      SELECT id, attach_silver, attach_spirit_stones, attach_items
+      SELECT id, attach_silver, attach_spirit_stones, attach_items, attach_instance_ids
       FROM mail
       WHERE (recipient_character_id = $1 OR (recipient_user_id = $2 AND recipient_character_id IS NULL))
         AND deleted_at IS NULL
         AND claimed_at IS NULL
-        AND (attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL)
+        AND ${MAIL_HAS_ATTACHMENTS_SQL}
         AND (expire_at IS NULL OR expire_at > NOW())
       ORDER BY created_at ASC, id ASC
     `,
@@ -578,9 +749,10 @@ class MailService {
 
     for (const row of mailsResult.rows) {
       const mailId = Number(row.id);
-      const attachItems = Array.isArray(row.attach_items) ? (row.attach_items as MailAttachItem[]) : [];
+      const attachItems = this.normalizeAttachItems(row.attach_items);
+      const attachInstanceIds = this.normalizeAttachInstanceIds(row.attach_instance_ids);
       const hasCurrency = Number(row.attach_silver) > 0 || Number(row.attach_spirit_stones) > 0;
-      const hasItems = attachItems.length > 0;
+      const hasItems = attachItems.length > 0 || attachInstanceIds.length > 0;
       if (!hasCurrency && !hasItems) continue;
 
       const claimResult = await this.claimAttachments(userId, characterId, mailId);
@@ -599,7 +771,7 @@ class MailService {
       claimedCount += 1;
       totalSilver += Math.max(0, Math.floor(Number(claimResult.rewards?.silver) || 0));
       totalSpiritStones += Math.max(0, Math.floor(Number(claimResult.rewards?.spiritStones) || 0));
-      totalItemCount += this.getAttachItemTotalQty(attachItems);
+      totalItemCount += attachItems.length > 0 ? this.getAttachItemTotalQty(attachItems) : attachInstanceIds.length;
     }
 
     if (claimedCount === 0) {
@@ -647,7 +819,7 @@ class MailService {
       WHERE id = $1
         AND (recipient_character_id = $2 OR (recipient_user_id = $3 AND recipient_character_id IS NULL))
         AND deleted_at IS NULL
-      RETURNING id, claimed_at, attach_silver, attach_spirit_stones, attach_items
+      RETURNING id, claimed_at, attach_silver, attach_spirit_stones, attach_items, attach_instance_ids
     `, [mailId, characterId, userId]);
 
     if (result.rows.length === 0) {
@@ -656,7 +828,8 @@ class MailService {
 
     const mail = result.rows[0];
     const hasAttachments = mail.attach_silver > 0 || mail.attach_spirit_stones > 0 ||
-                          (mail.attach_items && mail.attach_items.length > 0);
+                          this.normalizeAttachItems(mail.attach_items).length > 0 ||
+                          this.normalizeAttachInstanceIds(mail.attach_instance_ids).length > 0;
 
     if (hasAttachments && !mail.claimed_at) {
       // 有未领取的附件，提示用户
@@ -731,7 +904,7 @@ class MailService {
       const result = await query(`
         SELECT
           COUNT(*) FILTER (WHERE read_at IS NULL) as unread_count,
-          COUNT(*) FILTER (WHERE claimed_at IS NULL AND (attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL)) as unclaimed_count
+          COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}) as unclaimed_count
         FROM mail
         WHERE (recipient_character_id = $1 OR (recipient_user_id = $2 AND recipient_character_id IS NULL))
           AND deleted_at IS NULL

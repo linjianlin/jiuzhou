@@ -13,6 +13,7 @@ import {
   parseGeneratedAffixesForReroll,
 } from './equipmentAffixRerollService.js';
 import { normalizeMarketCategoryFilter, resolveMarketItemCategory } from './shared/marketItemCategory.js';
+import { mailService } from './mailService.js';
 
 export type MarketSort = 'timeDesc' | 'priceAsc' | 'priceDesc' | 'qtyDesc';
 
@@ -692,10 +693,6 @@ class MarketService {
       return { success: false, message: `灵石不足，需要${totalPrice.toString()}` };
     }
 
-    const slot = await requireBuyerBagSlot(params.buyerCharacterId);
-    if (slot === null) {
-      return { success: false, message: '背包已满，无法购买' };
-    }
     await query(
       `UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2`,
       [totalPrice.toString(), params.buyerCharacterId],
@@ -710,13 +707,14 @@ class MarketService {
         UPDATE item_instance
         SET owner_user_id = $1,
             owner_character_id = $2,
-            location = 'bag',
-            location_slot = $3,
+            -- 坊市成交后先进入邮件附件池，不直接写入背包，避免背包容量成为交易阻断点。
+            location = 'mail',
+            location_slot = NULL,
             equipped_slot = NULL,
             updated_at = NOW()
-        WHERE id = $4
+        WHERE id = $3
       `,
-      [params.buyerUserId, params.buyerCharacterId, slot, itemInstanceId],
+      [params.buyerUserId, params.buyerCharacterId, itemInstanceId],
     );
 
     await query(
@@ -767,7 +765,39 @@ class MarketService {
         taxAmount.toString(),
       ],
     );
-    return { success: true, message: '购买成功' };
+
+    // 统一复用邮件服务发放成交物品，避免在坊市模块重复实现“附件写库 + 领取流转”逻辑。
+    const mailTitle = '坊市购买到账通知';
+    const itemName = String(itemDef.name || itemDefId);
+    const mailContent = `你在坊市购买的【${itemName}】已通过邮件发放，请及时领取附件。`;
+    const mailResult = await mailService.sendMail({
+      recipientUserId: params.buyerUserId,
+      recipientCharacterId: params.buyerCharacterId,
+      senderType: 'system',
+      senderName: '坊市',
+      mailType: 'trade',
+      title: mailTitle,
+      content: mailContent,
+      attachItems: [
+        {
+          item_def_id: itemDefId,
+          item_name: itemName,
+          qty,
+        },
+      ],
+      attachInstanceIds: [itemInstanceId],
+      expireDays: 30,
+      source: 'market',
+      sourceRefId: String(listingId),
+      metadata: {
+        listingId,
+      },
+    });
+    if (!mailResult.success) {
+      throw new Error(`坊市购买邮件发送失败: ${mailResult.message}`);
+    }
+
+    return { success: true, message: '购买成功，物品已通过邮件发放' };
   }
 
   // 纯读方法，不加 @Transactional
