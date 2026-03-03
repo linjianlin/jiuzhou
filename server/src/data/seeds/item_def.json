@@ -649,7 +649,7 @@
       "category": "consumable",
       "sub_category": "box",
       "quality": "玄",
-      "stack_max": 1,
+      "stack_max": 999,
       "bind_type": "pickup",
       "tradeable": false,
       "icon": "/assets/items/Props-baodai-1.png",
