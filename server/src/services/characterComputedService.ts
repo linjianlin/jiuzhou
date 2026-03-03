@@ -17,9 +17,16 @@ import path from 'path';
 import { query } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
-import { getItemDefinitionsByIds, getItemSetDefinitions, getTechniqueLayerDefinitions, getTitleDefinitions } from './staticConfigLoader.js';
+import {
+  getInsightGrowthConfig,
+  getItemDefinitionsByIds,
+  getItemSetDefinitions,
+  getTechniqueLayerDefinitions,
+  getTitleDefinitions,
+} from './staticConfigLoader.js';
 import { extractFlatAffixDeltas } from './shared/affixModifier.js';
 import { convertRatingToPercent, getEffectiveLevelByRealm, resolveRatingBaseAttrKey } from './shared/affixRating.js';
+import { buildInsightPctBonusByLevel } from './shared/insightRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { CHARACTER_BASE_COLUMNS_SQL } from './shared/sqlFragments.js';
 
@@ -41,6 +48,7 @@ interface CharacterBaseRow {
   realm: string;
   sub_realm: string | null;
   exp: number;
+  insight_level: number;
   attribute_points: number;
   jing: number;
   qi: number;
@@ -82,7 +90,9 @@ interface CharacterComputedStats {
   fuyuan: number;
 }
 
-export interface CharacterComputedRow extends CharacterBaseRow, CharacterComputedStats {
+type CharacterBasePublicRow = Omit<CharacterBaseRow, 'insight_level'>;
+
+export interface CharacterComputedRow extends CharacterBasePublicRow, CharacterComputedStats {
   qixue: number;
   lingqi: number;
 }
@@ -376,6 +386,7 @@ const buildSignature = (base: CharacterBaseRow): string => {
     base.shen,
     base.realm,
     base.sub_realm || '',
+    base.insight_level,
     base.attribute_type,
     base.attribute_element,
   ].join('|');
@@ -583,6 +594,24 @@ const applyRealmRewardsToStats = async (
   }
 };
 
+const applyInsightRewardsToStats = (
+  base: CharacterBaseRow,
+  pctModifiers: Record<string, number>,
+): void => {
+  const insightConfig = getInsightGrowthConfig();
+  const insightLevel = Math.max(0, Math.floor(Number(base.insight_level) || 0));
+  if (insightLevel <= 0) return;
+
+  const insightBonusPct = buildInsightPctBonusByLevel(insightLevel, insightConfig);
+  if (!Number.isFinite(insightBonusPct) || insightBonusPct <= 0) return;
+
+  pctModifiers.max_qixue = (pctModifiers.max_qixue || 0) + insightBonusPct;
+  pctModifiers.wugong = (pctModifiers.wugong || 0) + insightBonusPct;
+  pctModifiers.fagong = (pctModifiers.fagong || 0) + insightBonusPct;
+  pctModifiers.wufang = (pctModifiers.wufang || 0) + insightBonusPct;
+  pctModifiers.fafang = (pctModifiers.fafang || 0) + insightBonusPct;
+};
+
 const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: number): Promise<CharacterComputedStats> => {
   const stats = emptyStats();
   for (const key of Object.keys(stats) as Array<keyof CharacterComputedStats>) {
@@ -752,6 +781,7 @@ const computeStaticAttrs = async (base: CharacterBaseRow): Promise<CharacterComp
   stats.baoji = roundRatio(DEFAULT_ATTRS.baoji + base.shen * 0.001);
 
   await applyRealmRewardsToStats(base, stats, pctModifiers);
+  applyInsightRewardsToStats(base, pctModifiers);
   const effectiveLevel = getEffectiveLevelByRealm(base.realm, base.sub_realm);
 
   const [equipBonus, titleEffects, techniquePassives] = await Promise.all([
@@ -867,9 +897,11 @@ const selectBaseCharacterByUserId = async (userId: number): Promise<CharacterBas
   const result = await query(
     `
       SELECT
-        ${CHARACTER_BASE_COLUMNS_SQL}
-      FROM characters
-      WHERE user_id = $1
+        ${CHARACTER_BASE_COLUMNS_SQL},
+        COALESCE(cip.level, 0) AS insight_level
+      FROM characters c
+      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      WHERE c.user_id = $1
       LIMIT 1
     `,
     [userId],
@@ -882,9 +914,11 @@ const selectBaseCharacterByCharacterId = async (characterId: number): Promise<Ch
   const result = await query(
     `
       SELECT
-        ${CHARACTER_BASE_COLUMNS_SQL}
-      FROM characters
-      WHERE id = $1
+        ${CHARACTER_BASE_COLUMNS_SQL},
+        COALESCE(cip.level, 0) AS insight_level
+      FROM characters c
+      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      WHERE c.id = $1
       LIMIT 1
     `,
     [characterId],
@@ -936,9 +970,10 @@ const buildComputedRow = async (
   const bypassStaticCache = options?.bypassStaticCache === true;
   const staticAttrs = await resolveStaticAttrs(base, bypassStaticCache);
   const resources = await ensureResourceState(base.id, staticAttrs.max_qixue, staticAttrs.max_lingqi);
+  const { insight_level: _ignoredInsightLevel, ...baseWithoutInsight } = base;
 
   return {
-    ...base,
+    ...baseWithoutInsight,
     ...staticAttrs,
     qixue: resources.qixue,
     lingqi: resources.lingqi,
@@ -978,9 +1013,11 @@ export const getCharacterComputedBatchByCharacterIds = async (
   const result = await query(
     `
       SELECT
-        ${CHARACTER_BASE_COLUMNS_SQL}
-      FROM characters
-      WHERE id = ANY($1)
+        ${CHARACTER_BASE_COLUMNS_SQL},
+        COALESCE(cip.level, 0) AS insight_level
+      FROM characters c
+      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      WHERE c.id = ANY($1)
     `,
     [ids],
   );

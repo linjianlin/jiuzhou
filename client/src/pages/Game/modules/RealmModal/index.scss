@@ -8,21 +8,19 @@
 
 .realm-modal.is-mobile {
   .ant-modal-content {
-    height: calc(100vh - 16px);
-    height: calc(100dvh - 16px);
     max-height: calc(100vh - 16px);
     max-height: calc(100dvh - 16px);
   }
 
   .ant-modal-body {
-    height: 100%;
-    max-height: 100%;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
     overflow: hidden;
   }
 }
 
 .realm-shell {
-  height: 560px;
+  height: min(620px, calc(100dvh - 96px));
   display: flex;
   background: var(--panel-bg);
 }
@@ -105,24 +103,6 @@
   font-weight: 600;
 }
 
-.realm-left-tip {
-  margin-top: auto;
-  padding: 12px 14px 16px;
-  border-top: 1px solid var(--border-color-soft);
-}
-
-.realm-left-tip-title {
-  font-size: 12px;
-  font-weight: 900;
-  color: var(--text-color);
-  margin-bottom: 4px;
-}
-
-.realm-left-tip-text {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  line-height: 1.6;
-}
 
 .realm-right {
   flex: 1;
@@ -142,6 +122,17 @@
 .realm-pane-top {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color-soft);
+}
+
+.realm-mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.realm-mode-tab {
+  border-radius: 8px;
+  min-width: 84px;
 }
 
 .realm-title {
@@ -167,7 +158,12 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 12px 16px 14px;
+}
+
+.realm-pane-body > .realm-section:last-child {
+  margin-bottom: 0;
 }
 
 .realm-section {
@@ -400,6 +396,10 @@
   font-size: 13px;
 }
 
+.realm-mode-tabs-mobile {
+  margin-bottom: 8px;
+}
+
 .realm-mobile-intro .realm-subtitle {
   margin-top: 3px;
   font-size: 11px;
@@ -433,6 +433,7 @@
   padding: 8px 12px 12px;
   overscroll-behavior: contain;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .realm-mobile-body::-webkit-scrollbar {
@@ -463,6 +464,158 @@
   flex: 1;
   min-width: 0;
   padding-inline: 8px;
+}
+
+.realm-insight-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/**
+ * 移动端悟道总览是纯展示区域（无可点击控件），禁用内部命中可确保
+ * 触摸手势统一落到滚动容器 `.realm-mobile-body`，解决“只能在边缘拖动”问题。
+ */
+.realm-mobile-body .realm-insight-panel,
+.realm-mobile-body .realm-insight-panel * {
+  pointer-events: none;
+}
+
+.realm-insight-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.realm-insight-overview-card {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 10px;
+  background: var(--panel-bg-soft);
+  padding: 8px 10px;
+}
+
+.realm-insight-overview-k {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.realm-insight-overview-v {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.realm-insight-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.realm-insight-value-delta {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.realm-insight-inject-card {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 10px;
+  background: var(--panel-bg-soft);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.realm-insight-inject-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.realm-insight-inject-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.realm-insight-inject-tip {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.realm-insight-inject-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.realm-insight-inject-metric {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  padding: 8px 10px;
+}
+
+.realm-insight-inject-metric-k {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.realm-insight-inject-metric-v {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--primary-color);
+}
+
+.realm-insight-progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.realm-insight-progress-k {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.realm-insight-progress-v {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+
+.realm-insight-hold-btn {
+  min-width: 180px;
+}
+
+.realm-insight-hold-btn.is-holding {
+  filter: saturate(1.2);
+}
+
+.realm-insight-lock {
+  border: 1px dashed var(--border-color-soft);
+  border-radius: 10px;
+  padding: 14px 12px;
+  background: var(--panel-bg-soft);
+}
+
+.realm-insight-lock-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.realm-insight-lock-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 
 @media screen and (max-width: 768px) {
@@ -548,6 +701,18 @@
 
   .realm-pane-top {
     padding: 10px 12px;
+  }
+
+  .realm-mode-tabs {
+    margin-bottom: 8px;
+    gap: 6px;
+  }
+
+  .realm-mode-tab {
+    min-width: 0;
+    height: 28px;
+    padding-inline: 8px;
+    font-size: 11px;
   }
 
   .realm-title {
@@ -670,6 +835,61 @@
     min-width: 0;
     padding-inline: 8px;
   }
+
+  .realm-insight-overview-grid,
+  .realm-insight-inject-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .realm-insight-overview-card,
+  .realm-insight-inject-card,
+  .realm-insight-inject-metric {
+    border-radius: 9px;
+    padding: 7px 8px;
+  }
+
+  .realm-insight-overview-k,
+  .realm-insight-inject-tip,
+  .realm-insight-inject-metric-k,
+  .realm-insight-progress-k {
+    font-size: 11px;
+  }
+
+  .realm-insight-overview-v,
+  .realm-insight-inject-metric-v,
+  .realm-insight-progress-v {
+    font-size: 12px;
+  }
+
+  .realm-insight-value-row {
+    gap: 6px;
+  }
+
+  .realm-insight-value-delta {
+    font-size: 11px;
+  }
+
+  .realm-insight-inject-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+
+  .realm-insight-lock {
+    border-radius: 9px;
+    padding: 10px 8px;
+  }
+
+  .realm-insight-lock-title {
+    font-size: 12px;
+  }
+
+  .realm-insight-lock-detail {
+    font-size: 11px;
+  }
+
 }
 
 @media screen and (max-width: 520px) {
@@ -702,4 +922,5 @@
   .realm-pane-footer {
     padding: 8px 10px 10px;
   }
+
 }

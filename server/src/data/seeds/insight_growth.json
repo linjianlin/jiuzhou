@@ -1,0 +1,6 @@
+{
+  "unlock_realm": "凡人",
+  "cost_stage_levels": 50,
+  "cost_stage_base_exp": 500000,
+  "bonus_pct_per_level": 0.0005
+}

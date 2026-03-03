@@ -28,6 +28,7 @@ import arenaRoutes from '../routes/arenaRoutes.js';
 import achievementRoutes from '../routes/achievementRoutes.js';
 import titleRoutes from '../routes/titleRoutes.js';
 import idleRoutes from '../routes/idleRoutes.js';
+import insightRoutes from '../routes/insightRoutes.js';
 
 /**
  * 统一注册 HTTP 路由。
@@ -62,6 +63,7 @@ export const registerRoutes = (app: Express): void => {
   app.use('/api/achievement', achievementRoutes);
   app.use('/api/title', titleRoutes);
   app.use('/api/idle', idleRoutes);
+  app.use('/api/insight', insightRoutes);
 
   app.get('/', (_req: Request, res: Response) => {
     res.json({
@@ -78,4 +80,3 @@ export const registerRoutes = (app: Express): void => {
   // 全局错误处理中间件（必须注册在所有路由之后）
   app.use(errorHandler);
 };
-

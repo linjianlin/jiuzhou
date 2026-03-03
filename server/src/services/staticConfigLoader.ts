@@ -698,6 +698,20 @@ type TechniqueLayerFile = {
   layers: TechniqueLayerConfig[];
 };
 
+export type InsightGrowthConfig = {
+  unlock_realm: string;
+  cost_stage_levels: number;
+  cost_stage_base_exp: number;
+  bonus_pct_per_level: number;
+};
+
+type InsightGrowthFile = {
+  unlock_realm?: unknown;
+  cost_stage_levels?: unknown;
+  cost_stage_base_exp?: unknown;
+  bonus_pct_per_level?: unknown;
+};
+
 let battlePassCache: BattlePassStaticConfig | null | undefined;
 let monthCardCache: MonthCardDef[] | null | undefined;
 let itemDefCache: ItemDefConfig[] | null | undefined;
@@ -730,6 +744,7 @@ let commonDropPoolDefCache: DropPoolDefConfig[] | null | undefined;
 let affixPoolDefCache: AffixPoolDefConfig[] | null | undefined;
 let itemSetDefCache: ItemSetDefConfig[] | null | undefined;
 let techniqueLayerCache: TechniqueLayerConfig[] | null | undefined;
+let insightGrowthCache: InsightGrowthConfig | undefined;
 let mainQuestChapterCache: MainQuestChapterConfig[] | null | undefined;
 let mainQuestSectionCache: MainQuestSectionConfig[] | null | undefined;
 let mainQuestChapterByIdCache: Map<string, MainQuestChapterConfig> | null | undefined;
@@ -1391,4 +1406,67 @@ export const getTechniqueLayerDefinitions = (): TechniqueLayerConfig[] => {
   const file = readJsonFile<TechniqueLayerFile>('technique_layer.json');
   techniqueLayerCache = Array.isArray(file?.layers) ? file.layers : [];
   return techniqueLayerCache;
+};
+
+/**
+ * 严格读取悟道成长配置。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：从 `insight_growth.json` 读取并校验悟道核心参数；校验通过后缓存。
+ * 2) 不做什么：不提供默认值、不做字段兜底、不兼容旧结构。
+ *
+ * 输入/输出：
+ * - 输入：无。
+ * - 输出：完整且合法的悟道配置对象。
+ *
+ * 数据流/状态流：
+ * getInsightGrowthConfig() -> 读取 seeds 文件 -> JSON 解析 -> 字段校验 -> 返回缓存对象。
+ *
+ * 关键边界条件与坑点：
+ * 1) 任意字段缺失或类型非法都会抛错，调用方必须显式处理失败。
+ * 2) `bonus_pct_per_level` 要求在 (0, 1) 区间，防止把百分比写成 5 这类数量级错误。
+ */
+export const getInsightGrowthConfig = (): InsightGrowthConfig => {
+  if (insightGrowthCache) return insightGrowthCache;
+
+  const filePath = path.join(SEEDS_DIR, 'insight_growth.json');
+  if (!fs.existsSync(filePath)) {
+    throw new Error('insight_growth.json 不存在');
+  }
+
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  let parsed: InsightGrowthFile;
+  try {
+    parsed = JSON.parse(raw) as InsightGrowthFile;
+  } catch {
+    throw new Error('insight_growth.json JSON 解析失败');
+  }
+
+  const unlockRealm = typeof parsed.unlock_realm === 'string' ? parsed.unlock_realm.trim() : '';
+  if (!unlockRealm) {
+    throw new Error('insight_growth.unlock_realm 非法');
+  }
+
+  const costStageLevels = Number(parsed.cost_stage_levels);
+  if (!Number.isFinite(costStageLevels) || costStageLevels <= 0 || !Number.isInteger(costStageLevels)) {
+    throw new Error('insight_growth.cost_stage_levels 非法');
+  }
+
+  const costStageBaseExp = Number(parsed.cost_stage_base_exp);
+  if (!Number.isFinite(costStageBaseExp) || costStageBaseExp <= 0 || !Number.isInteger(costStageBaseExp)) {
+    throw new Error('insight_growth.cost_stage_base_exp 非法');
+  }
+
+  const bonusPctPerLevel = Number(parsed.bonus_pct_per_level);
+  if (!Number.isFinite(bonusPctPerLevel) || bonusPctPerLevel <= 0 || bonusPctPerLevel >= 1) {
+    throw new Error('insight_growth.bonus_pct_per_level 非法');
+  }
+
+  insightGrowthCache = {
+    unlock_realm: unlockRealm,
+    cost_stage_levels: costStageLevels,
+    cost_stage_base_exp: costStageBaseExp,
+    bonus_pct_per_level: bonusPctPerLevel,
+  };
+  return insightGrowthCache;
 };

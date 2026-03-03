@@ -20,6 +20,7 @@ import { initArenaTables } from './arenaTable.js';
 import { initAchievementTables } from './achievementTable.js';
 import { ensureMigrationHistoryTable } from './migrationHistoryTable.js';
 import { initIdleTables } from './idleTable.js';
+import { initInsightTables } from './insightTable.js';
 import { loadAllSeeds } from '../services/seedService.js';
 
 // 用户表结构定义
@@ -149,6 +150,9 @@ export const initTables = async (): Promise<void> => {
 
   // 初始化离线挂机系统表
   await initIdleTables();
+
+  // 初始化悟道系统表
+  await initInsightTables();
     
   // 加载种子数据
   await loadAllSeeds();

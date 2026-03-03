@@ -287,3 +287,51 @@ export interface RealmBreakthroughResult {
 export const breakthroughToNextRealm = (): Promise<RealmBreakthroughResult> => {
   return api.post('/realm/breakthrough', { direction: 'next' });
 };
+
+export interface InsightOverviewDto {
+  unlocked: boolean;
+  unlockRealm: string;
+  currentLevel: number;
+  currentBonusPct: number;
+  nextLevelCostExp: number;
+  characterExp: number;
+}
+
+export interface InsightInjectRequest {
+  levels: number;
+}
+
+export interface InsightInjectResultDto {
+  beforeLevel: number;
+  afterLevel: number;
+  actualInjectedLevels: number;
+  spentExp: number;
+  remainingExp: number;
+  gainedBonusPct: number;
+  currentBonusPct: number;
+}
+
+export interface GetInsightOverviewResponse {
+  success: boolean;
+  message: string;
+  data?: InsightOverviewDto;
+}
+
+export interface InjectInsightResponse {
+  success: boolean;
+  message: string;
+  data?: InsightInjectResultDto;
+}
+
+export const getInsightOverview = (
+  requestConfig?: AxiosRequestConfig,
+): Promise<GetInsightOverviewResponse> => {
+  return api.get('/insight/overview', requestConfig);
+};
+
+export const injectInsightExp = (
+  body: InsightInjectRequest,
+  requestConfig?: AxiosRequestConfig,
+): Promise<InjectInsightResponse> => {
+  return api.post('/insight/inject', body, requestConfig);
+};
