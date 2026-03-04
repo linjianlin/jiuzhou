@@ -36,6 +36,7 @@ import {
   collectGemCandidates,
   formatAffixRollPercent,
   formatEquipmentAffixLine,
+  formatMergedLootResultParts,
   getAffixRollColor,
   getAffixRollPercent,
   getEnhanceSuccessRatePercent,
@@ -419,7 +420,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
       let content: string;
       if (lootResults && lootResults.length > 0) {
-        const rewardParts = lootResults.map((r) => `${r.name || r.type}×${r.amount}`);
+        const rewardParts = formatMergedLootResultParts(lootResults);
         const qtyPart = useCount > 1 ? `×${useCount}` : '';
         content = `打开【${activeItem.name}】${qtyPart}，获得${rewardParts.join('、')}。`;
       } else {

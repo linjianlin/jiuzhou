@@ -3,6 +3,7 @@ import { Button, Drawer, Input, Popover, Select, Table, Tabs, Tooltip, type Inpu
 import { BarChartOutlined, CloseOutlined, LineChartOutlined, SendOutlined } from '@ant-design/icons';
 import { gameSocket, type CharacterData, type OnlinePlayerDto } from '../../../../services/gameSocket';
 import type { InfoTarget } from '../InfoModal';
+import { parseBattleLootLine } from '../../shared/battleLoot';
 import StatsShell from './StatsShell';
 import './index.scss';
 
@@ -795,31 +796,34 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
 
     for (const bm of battleMessages) {
       const line = bm.content;
-      const m = /^【战利分配】(.+?)\s+取走\s+(.+?)×(\d+)$/.exec(line);
-      if (!m) continue;
-      const receiverName = String(m[1] ?? '').trim();
-      const itemName = String(m[2] ?? '').trim();
-      const qty = Math.max(1, Math.floor(Number(m[3]) || 1));
-      if (!itemName) continue;
+      const parsed = parseBattleLootLine(line);
+      if (!parsed) continue;
+      const receiverName = parsed.receiverName || '未知';
 
-      details.push({ itemName, quantity: qty, receiverName, timestamp: bm.timestamp, raw: line });
+      for (const lootItem of parsed.items) {
+        const itemName = lootItem.itemName;
+        const qty = Math.max(1, Math.floor(Number(lootItem.quantity) || 1));
+        if (!itemName) continue;
 
-      const receiverKeyForItem = receiverName || '未知';
-      const prevItem = byItem.get(itemName) ?? { quantity: 0, dropCount: 0, receiverQty: new Map<string, number>() };
-      prevItem.quantity += qty;
-      prevItem.dropCount += 1;
-      prevItem.receiverQty.set(receiverKeyForItem, (prevItem.receiverQty.get(receiverKeyForItem) ?? 0) + qty);
-      byItem.set(itemName, prevItem);
+        details.push({ itemName, quantity: qty, receiverName, timestamp: bm.timestamp, raw: line });
 
-      const receiverKey = receiverName || '未知';
-      const prevReceiver = byReceiver.get(receiverKey) ?? { quantity: 0, dropCount: 0, itemSet: new Set<string>() };
-      prevReceiver.quantity += qty;
-      prevReceiver.dropCount += 1;
-      prevReceiver.itemSet.add(itemName);
-      byReceiver.set(receiverKey, prevReceiver);
+        const receiverKeyForItem = receiverName || '未知';
+        const prevItem = byItem.get(itemName) ?? { quantity: 0, dropCount: 0, receiverQty: new Map<string, number>() };
+        prevItem.quantity += qty;
+        prevItem.dropCount += 1;
+        prevItem.receiverQty.set(receiverKeyForItem, (prevItem.receiverQty.get(receiverKeyForItem) ?? 0) + qty);
+        byItem.set(itemName, prevItem);
 
-      totalQty += qty;
-      totalRecords += 1;
+        const receiverKey = receiverName || '未知';
+        const prevReceiver = byReceiver.get(receiverKey) ?? { quantity: 0, dropCount: 0, itemSet: new Set<string>() };
+        prevReceiver.quantity += qty;
+        prevReceiver.dropCount += 1;
+        prevReceiver.itemSet.add(itemName);
+        byReceiver.set(receiverKey, prevReceiver);
+
+        totalQty += qty;
+        totalRecords += 1;
+      }
     }
 
     const byItemRows: Array<DropStatRow & { dropCount: number; receiverName: string; ratio: number }> = Array.from(byItem.entries())

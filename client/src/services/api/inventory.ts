@@ -107,8 +107,14 @@ export interface InventoryUseResponse {
   effects?: unknown[];
   data?: {
     character: unknown;
-    lootResults?: { type: string; name?: string; amount: number }[];
+    lootResults?: InventoryUseLootResult[];
   };
+}
+
+export interface InventoryUseLootResult {
+  type: string;
+  name?: string;
+  amount: number;
 }
 
 export const inventoryUseItem = (body: {

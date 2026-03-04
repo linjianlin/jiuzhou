@@ -4,6 +4,7 @@ import type {
   BattleRewardsDto,
   BattleStateDto,
 } from '../../../../services/api';
+import { buildBattleLootLine } from '../../shared/battleLoot';
 import { translateBuffName, translateBuffNames, translateControlName } from './logNameMap';
 
 const toSafeInt = (value: number | string | null | undefined): number => {
@@ -277,7 +278,7 @@ export const buildDropLinesFast = (
   const playerNameMap = buildCharacterNameMap(state);
 
   // 按玩家分组物品
-  const itemsByReceiver = new Map<number, Array<{ name: string; quantity: number }>>();
+  const itemsByReceiver = new Map<number, Array<{ itemName: string; quantity: number }>>();
 
   for (const item of items) {
     const receiverId = item.receiverId;
@@ -287,13 +288,12 @@ export const buildDropLinesFast = (
     if (!itemsByReceiver.has(receiverId)) {
       itemsByReceiver.set(receiverId, []);
     }
-    itemsByReceiver.get(receiverId)!.push({ name: itemName, quantity });
+    itemsByReceiver.get(receiverId)!.push({ itemName, quantity });
   }
 
   // 为每个玩家生成一行日志
   return Array.from(itemsByReceiver.entries()).map(([receiverId, receiverItems]) => {
     const receiverName = playerNameMap.get(receiverId) ?? `角色${receiverId}`;
-    const itemTexts = receiverItems.map((item) => `${item.name}×${item.quantity}`);
-    return `【战利分配】${receiverName} 取走 ${itemTexts.join('、')}`;
+    return buildBattleLootLine(receiverName, receiverItems);
   });
 };

@@ -6,6 +6,7 @@ import { resolveIconUrl } from "../../shared/resolveIcon";
 import type {
   InventoryItemDto,
   InventoryLocation,
+  InventoryUseLootResult,
   ItemDefLite,
 } from "../../../../services/api";
 import { buildEquipmentAffixDisplayText } from "../../shared/equipmentAffixText";
@@ -1404,6 +1405,36 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
         }
       : null,
   };
+};
+
+/**
+ * 按物品名合并掉落结果，保持首次出现顺序，避免同一物品在文案里重复出现。
+ */
+export const mergeLootResultsByItemName = (
+  lootResults: readonly InventoryUseLootResult[],
+): Array<{ itemName: string; amount: number }> => {
+  const merged = new Map<string, { itemName: string; amount: number }>();
+  for (const loot of lootResults) {
+    const itemName = loot.name || loot.type;
+    const prev = merged.get(itemName);
+    if (prev) {
+      prev.amount += loot.amount;
+      continue;
+    }
+    merged.set(itemName, { itemName, amount: loot.amount });
+  }
+  return Array.from(merged.values());
+};
+
+/**
+ * 把合并后的掉落结果格式化为聊天文案片段，如：灵石袋×6。
+ */
+export const formatMergedLootResultParts = (
+  lootResults: readonly InventoryUseLootResult[],
+): string[] => {
+  return mergeLootResultsByItemName(lootResults).map(
+    (entry) => `${entry.itemName}×${entry.amount}`,
+  );
 };
 
 /* ───────── 使用效果计算 ───────── */
