@@ -70,6 +70,7 @@ type RollDropsOptions = {
   monsterKind?: MonsterKind;
   monsterRealm?: string | null;
   playerRealm?: string | null;
+  realmSuppressionMultiplier?: number;
 };
 
 type DistributeBattleRewardsOptions = {
@@ -251,7 +252,10 @@ class BattleDropService {
     const monsterKind = normalizeMonsterKind(options.monsterKind);
     const monsterRealm = typeof options.monsterRealm === 'string' ? options.monsterRealm : null;
     const playerRealm = typeof options.playerRealm === 'string' ? options.playerRealm : null;
-    const realmSuppressionMultiplier = this.getRealmSuppressionMultiplier(playerRealm, monsterRealm);
+    const optionsSuppression = Number(options.realmSuppressionMultiplier);
+    const realmSuppressionMultiplier = Number.isFinite(optionsSuppression)
+      ? this.clamp01(optionsSuppression)
+      : this.getRealmSuppressionMultiplier(playerRealm, monsterRealm);
 
     if (dropPool.mode === 'prob') {
       // 概率模式：每个条目独立判定
@@ -469,15 +473,19 @@ class BattleDropService {
       const dropPool = await this.getDropPool(monster.drop_pool_id);
       if (!dropPool) continue;
 
-      // 掉落生成按“队伍平均福缘 + 一次角色境界压制”计算，
+      // 掉落生成按“队伍平均福缘 + 队伍平均境界压制”计算，
       // 但战利品归属改为“每个掉落条目按数量逐件独立ROLL点”。
-      const dropRollParticipant = pickRollPointWinner();
+      const teamRealmSuppressionMultiplier =
+        participants.reduce(
+          (sum, participant) => sum + this.getRealmSuppressionMultiplier(participant.realm, monster.realm),
+          0,
+        ) / participantCount;
 
       const drops = this.rollDrops(dropPool, teamAverageFuyuan, {
         isDungeonBattle,
         monsterKind: normalizeMonsterKind(monster.kind),
         monsterRealm: monster.realm,
-        playerRealm: dropRollParticipant.realm,
+        realmSuppressionMultiplier: teamRealmSuppressionMultiplier,
       });
       for (const drop of drops) {
         const dropQty = Math.max(0, Math.floor(Number(drop.quantity) || 0));
