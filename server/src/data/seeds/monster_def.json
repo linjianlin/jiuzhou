@@ -3309,15 +3309,36 @@
       "attr_multiplier_min": 1.18,
       "attr_multiplier_max": 1.44,
       "display_stats": [
-        { "label": "等级", "value": 45 },
-        { "label": "气血", "value": 7800 },
-        { "label": "物攻", "value": 290 },
-        { "label": "物防", "value": 184 },
-        { "label": "法防", "value": 172 }
+        {
+          "label": "等级",
+          "value": 45
+        },
+        {
+          "label": "气血",
+          "value": 7800
+        },
+        {
+          "label": "物攻",
+          "value": 290
+        },
+        {
+          "label": "物防",
+          "value": 184
+        },
+        {
+          "label": "法防",
+          "value": 172
+        }
       ],
       "ai_profile": {
-        "skills": ["sk-void-slash", "sk-shadow-bind"],
-        "skill_weights": { "sk-void-slash": 55, "sk-shadow-bind": 45 }
+        "skills": [
+          "sk-void-slash",
+          "sk-shadow-bind"
+        ],
+        "skill_weights": {
+          "sk-void-slash": 55,
+          "sk-shadow-bind": 45
+        }
       },
       "drop_pool_id": "dp-yangshen-void-phantom",
       "exp_reward": 1420,
@@ -3355,15 +3376,36 @@
       "attr_multiplier_min": 1.16,
       "attr_multiplier_max": 1.42,
       "display_stats": [
-        { "label": "等级", "value": 46 },
-        { "label": "气血", "value": 6400 },
-        { "label": "法攻", "value": 268 },
-        { "label": "物防", "value": 148 },
-        { "label": "法防", "value": 192 }
+        {
+          "label": "等级",
+          "value": 46
+        },
+        {
+          "label": "气血",
+          "value": 6400
+        },
+        {
+          "label": "法攻",
+          "value": 268
+        },
+        {
+          "label": "物防",
+          "value": 148
+        },
+        {
+          "label": "法防",
+          "value": 192
+        }
       ],
       "ai_profile": {
-        "skills": ["sk-soul-bolt", "sk-mind-drain"],
-        "skill_weights": { "sk-soul-bolt": 55, "sk-mind-drain": 45 }
+        "skills": [
+          "sk-soul-bolt",
+          "sk-mind-drain"
+        ],
+        "skill_weights": {
+          "sk-soul-bolt": 55,
+          "sk-mind-drain": 45
+        }
       },
       "drop_pool_id": "dp-yangshen-soul-wisp",
       "exp_reward": 1480,
@@ -3401,15 +3443,38 @@
       "attr_multiplier_min": 1.34,
       "attr_multiplier_max": 1.62,
       "display_stats": [
-        { "label": "等级", "value": 47 },
-        { "label": "气血", "value": 20200 },
-        { "label": "双攻", "value": 388 },
-        { "label": "物防", "value": 254 },
-        { "label": "法防", "value": 246 }
+        {
+          "label": "等级",
+          "value": 47
+        },
+        {
+          "label": "气血",
+          "value": 20200
+        },
+        {
+          "label": "双攻",
+          "value": 388
+        },
+        {
+          "label": "物防",
+          "value": 254
+        },
+        {
+          "label": "法防",
+          "value": 246
+        }
       ],
       "ai_profile": {
-        "skills": ["sk-realm-crush", "sk-void-shield", "sk-earth-bind"],
-        "skill_weights": { "sk-realm-crush": 40, "sk-void-shield": 30, "sk-earth-bind": 30 }
+        "skills": [
+          "sk-realm-crush",
+          "sk-void-shield",
+          "sk-earth-bind"
+        ],
+        "skill_weights": {
+          "sk-realm-crush": 40,
+          "sk-void-shield": 30,
+          "sk-earth-bind": 30
+        }
       },
       "drop_pool_id": "dp-yangshen-elite-realm-warden",
       "exp_reward": 2080,
@@ -3447,15 +3512,38 @@
       "attr_multiplier_min": 1.36,
       "attr_multiplier_max": 1.66,
       "display_stats": [
-        { "label": "等级", "value": 48 },
-        { "label": "气血", "value": 21800 },
-        { "label": "双攻", "value": 396 },
-        { "label": "物防", "value": 262 },
-        { "label": "法防", "value": 252 }
+        {
+          "label": "等级",
+          "value": 48
+        },
+        {
+          "label": "气血",
+          "value": 21800
+        },
+        {
+          "label": "双攻",
+          "value": 396
+        },
+        {
+          "label": "物防",
+          "value": 262
+        },
+        {
+          "label": "法防",
+          "value": 252
+        }
       ],
       "ai_profile": {
-        "skills": ["sk-void-pierce", "sk-phantom-fear", "sk-dark-heal"],
-        "skill_weights": { "sk-void-pierce": 36, "sk-phantom-fear": 34, "sk-dark-heal": 30 }
+        "skills": [
+          "sk-void-pierce",
+          "sk-phantom-fear",
+          "sk-dark-heal"
+        ],
+        "skill_weights": {
+          "sk-void-pierce": 36,
+          "sk-phantom-fear": 34,
+          "sk-dark-heal": 30
+        }
       },
       "drop_pool_id": "dp-yangshen-elite-void-marshal",
       "exp_reward": 2240,
@@ -3483,7 +3571,7 @@
         "wufang": 416,
         "fafang": 398,
         "mingzhong": 1.82,
-        "shanbi": 0.10,
+        "shanbi": 0.1,
         "baoji": 0.24,
         "baoshang": 2.92,
         "sudu": 6,
@@ -3493,14 +3581,34 @@
       "attr_multiplier_min": 1.42,
       "attr_multiplier_max": 1.78,
       "display_stats": [
-        { "label": "等级", "value": 50 },
-        { "label": "气血", "value": 52000 },
-        { "label": "双攻", "value": 618 },
-        { "label": "物防", "value": 416 },
-        { "label": "法防", "value": 398 }
+        {
+          "label": "等级",
+          "value": 50
+        },
+        {
+          "label": "气血",
+          "value": 52000
+        },
+        {
+          "label": "双攻",
+          "value": 618
+        },
+        {
+          "label": "物防",
+          "value": 416
+        },
+        {
+          "label": "法防",
+          "value": 398
+        }
       ],
       "ai_profile": {
-        "skills": ["sk-void-pierce", "sk-phantom-fear", "sk-soul-storm", "sk-dark-heal"],
+        "skills": [
+          "sk-void-pierce",
+          "sk-phantom-fear",
+          "sk-soul-storm",
+          "sk-dark-heal"
+        ],
         "skill_weights": {
           "sk-void-pierce": 30,
           "sk-phantom-fear": 26,
@@ -3533,6 +3641,373 @@
       "exp_reward": 3200,
       "silver_reward_min": 1060,
       "silver_reward_max": 1580,
+      "enabled": true
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚一期怪物 =========="
+    },
+    {
+      "id": "monster-huanxu-rift-blade",
+      "code": "huanxu_rift_blade",
+      "name": "虚蚀裂刃",
+      "title": "裂界守锋",
+      "realm": "炼神返虚·还虚期",
+      "level": 51,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "normal",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 8400,
+        "max_qixue": 8400,
+        "lingqi": 700,
+        "max_lingqi": 700,
+        "wugong": 328,
+        "fagong": 246,
+        "wufang": 210,
+        "fafang": 196,
+        "mingzhong": 1.46,
+        "shanbi": 0.108,
+        "baoji": 0.214,
+        "baoshang": 2.62,
+        "sudu": 8,
+        "kongzhi_kangxing": 1.08
+      },
+      "attr_variance": 0.07,
+      "attr_multiplier_min": 1.2,
+      "attr_multiplier_max": 1.46,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 51
+        },
+        {
+          "label": "气血",
+          "value": 8400
+        },
+        {
+          "label": "物攻",
+          "value": 328
+        },
+        {
+          "label": "物防",
+          "value": 210
+        },
+        {
+          "label": "法防",
+          "value": 196
+        }
+      ],
+      "ai_profile": {
+        "skills": [
+          "sk-void-slash",
+          "sk-shadow-bind"
+        ],
+        "skill_weights": {
+          "sk-void-slash": 58,
+          "sk-shadow-bind": 42
+        }
+      },
+      "drop_pool_id": "dp-huanxu-rift-blade",
+      "exp_reward": 1640,
+      "silver_reward_min": 430,
+      "silver_reward_max": 660,
+      "enabled": true
+    },
+    {
+      "id": "monster-huanxu-xushi-wisp",
+      "code": "huanxu_xushi_wisp",
+      "name": "虚蚀游灵",
+      "title": "裂界游魂",
+      "realm": "炼神返虚·还虚期",
+      "level": 52,
+      "avatar": "/assets/monster/shadow_viper.png",
+      "kind": "normal",
+      "element": "光",
+      "base_attrs": {
+        "qixue": 7600,
+        "max_qixue": 7600,
+        "lingqi": 760,
+        "max_lingqi": 760,
+        "wugong": 236,
+        "fagong": 306,
+        "wufang": 188,
+        "fafang": 214,
+        "mingzhong": 1.5,
+        "shanbi": 0.114,
+        "baoji": 0.22,
+        "baoshang": 2.66,
+        "sudu": 9,
+        "kongzhi_kangxing": 1.02
+      },
+      "attr_variance": 0.07,
+      "attr_multiplier_min": 1.18,
+      "attr_multiplier_max": 1.44,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 52
+        },
+        {
+          "label": "气血",
+          "value": 7600
+        },
+        {
+          "label": "法攻",
+          "value": 306
+        },
+        {
+          "label": "物防",
+          "value": 188
+        },
+        {
+          "label": "法防",
+          "value": 214
+        }
+      ],
+      "ai_profile": {
+        "skills": [
+          "sk-soul-bolt",
+          "sk-mind-drain"
+        ],
+        "skill_weights": {
+          "sk-soul-bolt": 56,
+          "sk-mind-drain": 44
+        }
+      },
+      "drop_pool_id": "dp-huanxu-xushi-wisp",
+      "exp_reward": 1700,
+      "silver_reward_min": 450,
+      "silver_reward_max": 690,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-huanxu-mark-warden",
+      "code": "elite_huanxu_mark_warden",
+      "name": "蚀纹镇卫",
+      "title": "精英",
+      "realm": "炼神返虚·还虚期",
+      "level": 53,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "elite",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 23200,
+        "max_qixue": 23200,
+        "lingqi": 1220,
+        "max_lingqi": 1220,
+        "wugong": 446,
+        "fagong": 416,
+        "wufang": 296,
+        "fafang": 282,
+        "mingzhong": 1.62,
+        "shanbi": 0.11,
+        "baoji": 0.23,
+        "baoshang": 2.84,
+        "sudu": 8,
+        "kongzhi_kangxing": 1.22
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.38,
+      "attr_multiplier_max": 1.68,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 53
+        },
+        {
+          "label": "气血",
+          "value": 23200
+        },
+        {
+          "label": "双攻",
+          "value": 446
+        },
+        {
+          "label": "物防",
+          "value": 296
+        },
+        {
+          "label": "法防",
+          "value": 282
+        }
+      ],
+      "ai_profile": {
+        "skills": [
+          "sk-realm-crush",
+          "sk-void-shield",
+          "sk-earth-bind"
+        ],
+        "skill_weights": {
+          "sk-realm-crush": 42,
+          "sk-void-shield": 28,
+          "sk-earth-bind": 30
+        }
+      },
+      "drop_pool_id": "dp-huanxu-elite-mark-warden",
+      "exp_reward": 2360,
+      "silver_reward_min": 660,
+      "silver_reward_max": 980,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-huanxu-null-priest",
+      "code": "elite_huanxu_null_priest",
+      "name": "寂灭祭司",
+      "title": "精英",
+      "realm": "炼神返虚·还虚期",
+      "level": 54,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "elite",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 24400,
+        "max_qixue": 24400,
+        "lingqi": 1280,
+        "max_lingqi": 1280,
+        "wugong": 452,
+        "fagong": 432,
+        "wufang": 304,
+        "fafang": 292,
+        "mingzhong": 1.66,
+        "shanbi": 0.112,
+        "baoji": 0.234,
+        "baoshang": 2.88,
+        "sudu": 8,
+        "kongzhi_kangxing": 1.26
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.4,
+      "attr_multiplier_max": 1.7,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 54
+        },
+        {
+          "label": "气血",
+          "value": 24400
+        },
+        {
+          "label": "双攻",
+          "value": 452
+        },
+        {
+          "label": "物防",
+          "value": 304
+        },
+        {
+          "label": "法防",
+          "value": 292
+        }
+      ],
+      "ai_profile": {
+        "skills": [
+          "sk-void-pierce",
+          "sk-phantom-fear",
+          "sk-dark-heal"
+        ],
+        "skill_weights": {
+          "sk-void-pierce": 38,
+          "sk-phantom-fear": 34,
+          "sk-dark-heal": 28
+        }
+      },
+      "drop_pool_id": "dp-huanxu-elite-null-priest",
+      "exp_reward": 2480,
+      "silver_reward_min": 700,
+      "silver_reward_max": 1040,
+      "enabled": true
+    },
+    {
+      "id": "monster-boss-huanxu-guixu-lord",
+      "code": "boss_huanxu_guixu_lord",
+      "name": "归墟领主",
+      "title": "首领",
+      "realm": "炼神返虚·还虚期",
+      "level": 56,
+      "avatar": "/assets/monster/withered_ent.png",
+      "kind": "boss",
+      "element": "暗",
+      "base_attrs": {
+        "qixue": 59800,
+        "max_qixue": 59800,
+        "lingqi": 2760,
+        "max_lingqi": 2760,
+        "wugong": 704,
+        "fagong": 694,
+        "wufang": 476,
+        "fafang": 456,
+        "mingzhong": 1.96,
+        "shanbi": 0.104,
+        "baoji": 0.252,
+        "baoshang": 3.08,
+        "sudu": 7,
+        "kongzhi_kangxing": 1.42
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.46,
+      "attr_multiplier_max": 1.84,
+      "display_stats": [
+        {
+          "label": "等级",
+          "value": 56
+        },
+        {
+          "label": "气血",
+          "value": 59800
+        },
+        {
+          "label": "双攻",
+          "value": 704
+        },
+        {
+          "label": "物防",
+          "value": 476
+        },
+        {
+          "label": "法防",
+          "value": 456
+        }
+      ],
+      "ai_profile": {
+        "skills": [
+          "sk-void-pierce",
+          "sk-phantom-fear",
+          "sk-soul-storm",
+          "sk-dark-heal"
+        ],
+        "skill_weights": {
+          "sk-void-pierce": 30,
+          "sk-phantom-fear": 24,
+          "sk-soul-storm": 26,
+          "sk-dark-heal": 20
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 0.65,
+            "action": "enrage",
+            "effects": [
+              {
+                "type": "buff",
+                "buffId": "buff-zengshang-up",
+                "value": 0.32,
+                "duration": 99,
+                "stacks": 1
+              }
+            ]
+          },
+          {
+            "hp_percent": 0.3,
+            "action": "summon",
+            "summon_id": "monster-huanxu-xushi-wisp",
+            "summon_count": 2
+          }
+        ]
+      },
+      "drop_pool_id": "dp-huanxu-boss-guixu-lord",
+      "exp_reward": 3600,
+      "silver_reward_min": 1180,
+      "silver_reward_max": 1760,
       "enabled": true
     }
   ]

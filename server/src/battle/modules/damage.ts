@@ -6,6 +6,7 @@ import type { BattleState, BattleUnit, DamageResult } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
 import { calculateDefenseReductionRate } from './defense.js';
+import { getVoidErosionDamageBonusRate } from './mark.js';
 
 interface DamageProfile {
   damageType: 'physical' | 'magic' | 'true';
@@ -77,6 +78,12 @@ export function calculateDamage(
   // 6. 增伤加成
   const damageBonus = Math.min(attacker.currentAttrs.zengshang, BATTLE_CONSTANTS.MAX_DAMAGE_BONUS);
   damage *= (1 + damageBonus);
+
+  // 6.1 虚蚀印记增伤（按施加者来源隔离）
+  const markDamageBonus = getVoidErosionDamageBonusRate(attacker, defender);
+  if (markDamageBonus > 0) {
+    damage *= (1 + markDamageBonus);
+  }
 
   // 7. 五行克制
   if (isElementCounter(profile.element, defender.currentAttrs.element)) {

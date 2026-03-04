@@ -56,6 +56,8 @@ export interface BattleUnit {
   
   // Buff/Debuff
   buffs: ActiveBuff[];
+  // 战斗印记（如：虚蚀印记）
+  marks?: ActiveMark[];
   
   // 技能与冷却
   skills: BattleSkill[];
@@ -139,6 +141,17 @@ export interface Shield {
   duration: number;  // -1为永久
   absorbType: 'all' | 'physical' | 'magic';
   priority: number;
+}
+
+// ============================================
+// 战斗印记
+// ============================================
+export interface ActiveMark {
+  id: string;
+  sourceUnitId: string;
+  stacks: number;
+  maxStacks: number;
+  remainingDuration: number;
 }
 
 // ============================================
@@ -234,7 +247,8 @@ export interface SkillEffect {
     | 'cleanse'
     | 'cleanse_control'
     | 'lifesteal'
-    | 'control';
+    | 'control'
+    | 'mark';
   value?: number;
   valueType?: 'flat' | 'percent' | 'scale' | 'combined';
   baseValue?: number;  // 固定基础值（用于 combined 模式）
@@ -253,6 +267,13 @@ export interface SkillEffect {
   damageType?: 'physical' | 'magic' | 'true';
   element?: string;
   hit_count?: number;
+  markId?: string;
+  operation?: 'apply' | 'consume';
+  maxStacks?: number;
+  consumeMode?: 'all' | 'fixed';
+  consumeStacks?: number;
+  perStackRate?: number;
+  resultType?: 'damage' | 'shield_self' | 'heal_self';
 }
 
 interface SkillConditions {
@@ -276,7 +297,7 @@ export interface BattleSetBonusEffect {
   pieceCount: number;
   trigger: BattleSetBonusTrigger;
   target: 'self' | 'enemy';
-  effectType: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield';
+  effectType: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield' | 'mark';
   durationRound?: number;
   element?: string;
   params: Record<string, unknown>;
@@ -367,6 +388,8 @@ export interface TargetResult {
   shieldAbsorbed?: number;
   buffsApplied?: string[];
   buffsRemoved?: string[];
+  marksApplied?: string[];
+  marksConsumed?: string[];
   controlApplied?: string;
   controlResisted?: boolean;
 }

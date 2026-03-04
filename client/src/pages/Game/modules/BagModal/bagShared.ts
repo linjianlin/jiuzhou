@@ -14,6 +14,7 @@ import type {
   ItemDefLite,
 } from "../../../../services/api";
 import { buildEquipmentAffixDisplayText } from "../../shared/equipmentAffixText";
+import { formatMarkEffectText } from "../../shared/markEffectText";
 import {
   formatAffixRollPercent,
   getAffixRollColor,
@@ -1093,7 +1094,7 @@ const normalizeDisplayTags = (
   return tags;
 };
 
-const formatSetEffectLine = (raw: unknown): string | null => {
+export const formatSetEffectLine = (raw: unknown): string | null => {
   const row = toRecord(raw);
   const effectType = typeof row.effect_type === "string" ? row.effect_type : "";
   if (!effectType) return null;
@@ -1191,6 +1192,12 @@ const formatSetEffectLine = (raw: unknown): string | null => {
             : "资源";
     const action = resource === "exp" ? "获得" : "恢复";
     main = `${action}${resourceName} ${Math.floor(value)}`;
+  } else if (effectType === "mark") {
+    main =
+      formatMarkEffectText({
+        ...params,
+        duration_round: row.duration_round,
+      }) ?? "印记效果";
   } else {
     main = effectType;
   }
@@ -1291,6 +1298,10 @@ const buildEffects = (def?: ItemDefLite): string[] => {
     )
       effects.push(`恢复灵气 ${value}`);
     else if (effectType === "learn_technique") effects.push("学习功法");
+    else if (effectType === "mark") {
+      const markText = formatMarkEffectText(e);
+      effects.push(markText ?? "施加印记效果");
+    }
     else if (typeof effectType === "string")
       effects.push(`效果：${effectType}`);
 

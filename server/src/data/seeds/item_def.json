@@ -2299,6 +2299,89 @@
           }
         }
       ]
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚期材料 =========="
+    },
+    {
+      "id": "mat-xushi-jinghe",
+      "name": "虚蚀精核",
+      "category": "material",
+      "sub_category": "technique",
+      "quality": "天",
+      "stack_max": 999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/xinmo_jinghua.png",
+      "description": "还虚裂界中析出的高密度虚蚀核心，可用于功法推演与印记稳固。",
+      "long_desc": "精核内部维持着短时自洽的虚蚀回路，是还虚一期功法与套装锻铸的关键材料。",
+      "tags": [
+        "材料",
+        "功法",
+        "还虚期"
+      ],
+      "source_hint": [
+        "还虚裂界采集",
+        "还虚天台",
+        "还虚期周常"
+      ]
+    },
+    {
+      "id": "mat-huanxu-dan",
+      "name": "还虚丹",
+      "category": "material",
+      "sub_category": "breakthrough",
+      "quality": "天",
+      "stack_max": 999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/yangshen_dan.png",
+      "description": "用于养神期冲击还虚期的核心丹药，可显著降低虚蚀反噬风险。",
+      "long_desc": "丹方以聚神、引虚、归元为主，需以虚蚀精核稳定药性，属于还虚突破硬门槛材料。",
+      "tags": [
+        "材料",
+        "突破",
+        "丹药",
+        "还虚期"
+      ],
+      "source_hint": [
+        "第六章主线",
+        "还虚天台困难/噩梦",
+        "还虚期周常"
+      ]
+    },
+    {
+      "id": "box-011",
+      "name": "还虚宝石袋",
+      "category": "consumable",
+      "sub_category": "box",
+      "quality": "地",
+      "stack_max": 999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/Props-baodai-2.png",
+      "description": "打开后可随机获得1个4~6级宝石。",
+      "long_desc": "用于还虚阶段构筑强化，产出区间高于养神宝石袋。",
+      "tags": [
+        "宝箱",
+        "宝石",
+        "还虚",
+        "随机"
+      ],
+      "use_type": "instant",
+      "effect_defs": [
+        {
+          "trigger": "use",
+          "target": "self",
+          "effect_type": "loot",
+          "params": {
+            "loot_type": "random_gem",
+            "min_level": 4,
+            "max_level": 6,
+            "gems_per_use": 1
+          }
+        }
+      ]
     }
   ]
 }

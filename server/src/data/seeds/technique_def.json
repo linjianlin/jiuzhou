@@ -489,6 +489,54 @@
         "九台宫阙·噩梦"
       ],
       "sort_weight": 65
+    },
+    {
+      "id": "tech-taixu-shiwen-jue",
+      "code": "taixu_shiwen_jue",
+      "name": "太虚蚀纹诀",
+      "type": "法诀",
+      "quality": "天",
+      "max_layer": 9,
+      "required_realm": "炼神返虚·养神期",
+      "attribute_type": "magic",
+      "attribute_element": "an",
+      "tags": [
+        "法诀",
+        "虚蚀",
+        "爆发",
+        "印记"
+      ],
+      "description": "以虚蚀纹路侵蚀敌识，叠层后引爆形成高额伤害。",
+      "obtain_type": "drop",
+      "obtain_hint": [
+        "还虚天台·困难",
+        "还虚天台·噩梦"
+      ],
+      "sort_weight": 66
+    },
+    {
+      "id": "tech-zhenhun-guiyuan-jing",
+      "code": "zhenhun_guiyuan_jing",
+      "name": "镇魂归元经",
+      "type": "武技",
+      "quality": "天",
+      "max_layer": 9,
+      "required_realm": "炼神返虚·养神期",
+      "attribute_type": "physical",
+      "attribute_element": "tu",
+      "tags": [
+        "武技",
+        "防御",
+        "反制",
+        "印记"
+      ],
+      "description": "以镇魂劲反挂虚蚀印记，并将其转化为护体之力。",
+      "obtain_type": "drop",
+      "obtain_hint": [
+        "还虚天台·困难",
+        "还虚天台·噩梦"
+      ],
+      "sort_weight": 67
     }
   ]
 }

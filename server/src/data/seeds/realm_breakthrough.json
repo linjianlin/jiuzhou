@@ -457,15 +457,9 @@
       "to": "炼神返虚·还虚期",
       "requirements": [
         {
-          "id": "version-lock-huanxu",
-          "type": "version_locked",
-          "title": "境界开放进度",
-          "reason": "炼炁化神·采药期及以上境界暂未开放"
-        },
-        {
           "id": "exp",
           "type": "exp_min",
-          "min": 3200000,
+          "min": 3350000,
           "title": "修为经验"
         },
         {
@@ -476,41 +470,69 @@
           "title": "九重功法圆满"
         },
         {
-          "id": "dungeon-clear-any-22",
+          "id": "dungeon-clear-huixu-hard-3",
           "type": "dungeon_clear_min",
-          "minCount": 22,
-          "title": "秘境通关沉淀"
+          "dungeonId": "dungeon-lianshen-huixu-tiantai",
+          "difficultyId": "dd-huixu-tiantai-h",
+          "minCount": 3,
+          "title": "还虚天台困难通关"
         },
         {
-          "id": "dungeon-clear-frost-abyss-10",
-          "type": "dungeon_clear_min",
-          "dungeonId": "dungeon-qiqi-frost-abyss",
-          "minCount": 10,
-          "title": "寒渊反复证道"
+          "id": "main-quest-chapter-6",
+          "type": "main_quest_chapter_completed",
+          "chapterId": "mq-chapter-6",
+          "title": "完成第六章主线"
+        },
+        {
+          "id": "item-xushi-jinghe-18",
+          "type": "item_qty_min",
+          "itemDefId": "mat-xushi-jinghe",
+          "qty": 18,
+          "title": "虚蚀精核储备"
+        },
+        {
+          "id": "item-huanxu-dan-4",
+          "type": "item_qty_min",
+          "itemDefId": "mat-huanxu-dan",
+          "qty": 4,
+          "title": "还虚丹准备"
         }
       ],
       "costs": [
         {
           "type": "spirit_stones",
-          "amount": 12800
+          "amount": 13800
         },
         {
           "type": "exp",
-          "amount": 3200000
+          "amount": 3350000
+        },
+        {
+          "type": "items",
+          "items": [
+            {
+              "itemDefId": "mat-xushi-jinghe",
+              "qty": 12
+            },
+            {
+              "itemDefId": "mat-huanxu-dan",
+              "qty": 3
+            }
+          ]
         }
       ],
       "rewards": {
-        "attributePoints": 26,
+        "attributePoints": 24,
         "pct": {
-          "max_qixue": 0.26,
-          "max_lingqi": 0.26,
-          "wugong": 0.16,
-          "fagong": 0.16,
-          "wufang": 0.16,
-          "fafang": 0.16
+          "max_qixue": 0.27,
+          "max_lingqi": 0.27,
+          "wugong": 0.156,
+          "fagong": 0.156,
+          "wufang": 0.156,
+          "fafang": 0.156
         },
         "addPercent": {
-          "kongzhi_kangxing": 0.08
+          "kongzhi_kangxing": 0.072
         }
       }
     },

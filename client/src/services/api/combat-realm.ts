@@ -52,6 +52,8 @@ export type BattleActionTargetDto = {
   shieldAbsorbed?: number;
   buffsApplied?: string[];
   buffsRemoved?: string[];
+  marksApplied?: string[];
+  marksConsumed?: string[];
   controlApplied?: string;
   controlResisted?: boolean;
 };

@@ -21,6 +21,7 @@ import { executeSkill, getNormalAttack } from './modules/skill.js';
 import { makeAIDecision, selectTargets } from './modules/ai.js';
 import { isFeared, isStunned } from './modules/control.js';
 import { triggerSetBonusEffects } from './modules/setBonus.js';
+import { decayUnitMarksAtRoundStart } from './modules/mark.js';
 
 import type { BattleSkill } from './types.js';
 
@@ -163,6 +164,9 @@ export class BattleEngine {
 
       // 每回合开始重置行动资格，确保召唤单位“下回合生效”
       unit.canAct = true;
+
+      // 统一回合开始印记衰减
+      decayUnitMarksAtRoundStart(unit);
       
       // DOT/HOT结算
       const effectLogs = processRoundStartEffects(this.state, unit);
@@ -433,6 +437,7 @@ export class BattleEngine {
         lingqi: attrs.max_lingqi,
         shields: [],
         buffs: [],
+        marks: [],
         skills: battleSkills,
         skillCooldowns: {},
         setBonusEffects: [],

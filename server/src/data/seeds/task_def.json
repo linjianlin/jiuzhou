@@ -1489,6 +1489,301 @@
       "prereq_task_ids": [],
       "enabled": true,
       "sort_weight": 671
+    },
+    {
+      "id": "task-huanxu-daily-001",
+      "category": "daily",
+      "title": "裂刃清场",
+      "realm": "炼神返虚·养神期",
+      "description": "清理裂缝前沿的虚蚀裂刃。",
+      "giver_npc_id": "npc-huixu-observer",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-entrance",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "击败虚蚀裂刃 8 个",
+          "target": 8,
+          "params": {
+            "monster_id": "monster-huanxu-rift-blade"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 980
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 96
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-xushi-jinghe",
+          "qty": 3
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 720
+    },
+    {
+      "id": "task-huanxu-daily-002",
+      "category": "daily",
+      "title": "游灵驱散",
+      "realm": "炼神返虚·养神期",
+      "description": "压制蚀镜回廊中的虚蚀游灵。",
+      "giver_npc_id": "npc-huixu-observer",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-entrance",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "击败虚蚀游灵 8 个",
+          "target": 8,
+          "params": {
+            "monster_id": "monster-huanxu-xushi-wisp"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1000
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 98
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 721
+    },
+    {
+      "id": "task-huanxu-daily-003",
+      "category": "daily",
+      "title": "天台例修",
+      "realm": "炼神返虚·养神期",
+      "description": "完成一次还虚天台试炼。",
+      "giver_npc_id": "npc-huixu-guide",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-tiantai-gate",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "dungeon_clear",
+          "text": "通关还虚天台 1 次",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1080
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 108
+        },
+        {
+          "type": "item",
+          "item_def_id": "box-011",
+          "qty": 1
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 722
+    },
+    {
+      "id": "task-huanxu-daily-004",
+      "category": "daily",
+      "title": "精核采炼",
+      "realm": "炼神返虚·养神期",
+      "description": "采集并收束虚蚀精核。",
+      "giver_npc_id": "npc-huixu-alchemist",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-altar",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "gather_resource",
+          "text": "收集虚蚀精核 12 份",
+          "target": 12,
+          "params": {
+            "resource_id": "mat-xushi-jinghe"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1040
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 104
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-xushi-jinghe",
+          "qty": 4
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 723
+    },
+    {
+      "id": "task-huanxu-daily-005",
+      "category": "daily",
+      "title": "困难巡检",
+      "realm": "炼神返虚·养神期",
+      "description": "完成一次困难难度还虚天台巡检。",
+      "giver_npc_id": "npc-huixu-guide",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-tiantai-gate",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "dungeon_clear",
+          "text": "通关还虚天台（困难）1次",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+            "difficulty_id": "dd-huixu-tiantai-h"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1120
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 112
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 724
+    },
+    {
+      "id": "task-huanxu-weekly-001",
+      "category": "event",
+      "title": "周常：天台轮战",
+      "realm": "炼神返虚·养神期",
+      "description": "多次完成困难还虚天台并击败归墟领主。",
+      "giver_npc_id": "npc-huixu-guide",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-tiantai-gate",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "dungeon_clear",
+          "text": "通关还虚天台（困难）3次",
+          "target": 3,
+          "params": {
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+            "difficulty_id": "dd-huixu-tiantai-h"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "kill_monster",
+          "text": "击败归墟领主 1 次",
+          "target": 1,
+          "params": {
+            "monster_id": "monster-boss-huanxu-guixu-lord"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 460
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-huanxu-dan",
+          "qty": 3
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-xushi-jinghe",
+          "qty": 8
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 725
+    },
+    {
+      "id": "task-huanxu-weekly-002",
+      "category": "event",
+      "title": "周常：破界备丹",
+      "realm": "炼神返虚·养神期",
+      "description": "累计收集突破所需虚蚀精核与还虚丹。",
+      "giver_npc_id": "npc-huixu-alchemist",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-altar",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "gather_resource",
+          "text": "收集虚蚀精核 24 份",
+          "target": 24,
+          "params": {
+            "resource_id": "mat-xushi-jinghe"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "gather_resource",
+          "text": "收集还虚丹 6 份",
+          "target": 6,
+          "params": {
+            "resource_id": "mat-huanxu-dan"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 520
+        },
+        {
+          "type": "item",
+          "item_def_id": "box-011",
+          "qty": 2
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-huanxu-dan",
+          "qty": 2
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 726
     }
   ]
 }

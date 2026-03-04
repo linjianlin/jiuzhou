@@ -222,7 +222,7 @@ export interface InventoryRerolledAffixDto {
   description?: string;
   trigger?: 'on_turn_start' | 'on_skill' | 'on_hit' | 'on_crit' | 'on_be_hit' | 'on_heal';
   target?: 'self' | 'enemy';
-  effect_type?: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource';
+  effect_type?: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield' | 'mark';
   duration_round?: number;
   params?: Record<string, string | number | boolean>;
 }

@@ -1,3 +1,5 @@
+import { formatMarkEffectText } from "../shared/markEffectText";
+
 type SkillEffectContext = {
   damageType?: string | null | undefined;
   element?: string | null | undefined;
@@ -371,6 +373,11 @@ export const formatSkillEffectLines = (effectsRaw: unknown, context: SkillEffect
     }
     if (type === 'debuff') {
       lines.push(formatBuffEffect(effect, 'debuff'));
+      continue;
+    }
+    if (type === 'mark') {
+      const markText = formatMarkEffectText(effect);
+      lines.push(markText ?? '施加印记效果');
       continue;
     }
     if (type === 'lifesteal') {

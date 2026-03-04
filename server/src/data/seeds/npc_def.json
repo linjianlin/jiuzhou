@@ -519,6 +519,81 @@
       "talk_tree_id": "talk-shenshi-merchant",
       "sort_weight": 246,
       "enabled": true
+    },
+    {
+      "id": "npc-huixu-observer",
+      "code": "huixu_observer",
+      "name": "裂界观界者",
+      "title": "界隙监测官",
+      "gender": "女",
+      "realm": "炼神返虚·还虚期",
+      "avatar": "/assets/npc/teleporter.png",
+      "description": "长期驻守裂界入口，负责评估虚蚀潮汐并发布主线试炼。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 12800,
+        "max_qixue": 12800,
+        "wugong": 320,
+        "fagong": 356,
+        "wufang": 282,
+        "fafang": 298,
+        "sudu": 12
+      },
+      "talk_tree_id": "talk-shenshi-watcher",
+      "quest_giver_id": "qg-chapter6-main",
+      "sort_weight": 256,
+      "enabled": true
+    },
+    {
+      "id": "npc-huixu-guide",
+      "code": "huixu_guide",
+      "name": "天台引路使",
+      "title": "还虚试炼向导",
+      "gender": "男",
+      "realm": "炼神返虚·还虚期",
+      "avatar": "/assets/npc/guide.png",
+      "description": "掌握还虚天台界门开合节律，负责引导修士进入试炼。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 11800,
+        "max_qixue": 11800,
+        "wugong": 305,
+        "fagong": 340,
+        "wufang": 268,
+        "fafang": 284,
+        "sudu": 13
+      },
+      "talk_tree_id": "talk-shenshi-guide",
+      "quest_giver_id": "qg-chapter6-main",
+      "sort_weight": 257,
+      "enabled": true
+    },
+    {
+      "id": "npc-huixu-alchemist",
+      "code": "huixu_alchemist",
+      "name": "还虚丹师",
+      "title": "祭坛炼丹官",
+      "gender": "女",
+      "realm": "炼神返虚·还虚期",
+      "avatar": "/assets/npc/mysterious_merchant.png",
+      "description": "专门炼制还虚丹的祭坛丹师，负责主线复命与成丹校验。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 12200,
+        "max_qixue": 12200,
+        "wugong": 298,
+        "fagong": 368,
+        "wufang": 260,
+        "fafang": 306,
+        "sudu": 11
+      },
+      "talk_tree_id": "talk-shenshi-merchant",
+      "quest_giver_id": "qg-chapter6-main",
+      "sort_weight": 258,
+      "enabled": true
     }
   ],
   "talk_trees": [

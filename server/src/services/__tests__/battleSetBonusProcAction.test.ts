@@ -326,3 +326,111 @@ test('damage_echo护盾词条应按本次受击伤害比例生成护盾', () => 
   assert.equal(owner.shields[0]?.maxValue, 60);
   assert.equal(owner.shields[0]?.duration, 2);
 });
+
+test('on_hit印记词条应写入 marksApplied 日志并施加到目标', () => {
+  const effect: BattleSetBonusEffect = {
+    setId: 'set-taixu',
+    setName: '太虚套装',
+    pieceCount: 4,
+    trigger: 'on_hit',
+    target: 'enemy',
+    effectType: 'mark',
+    params: {
+      chance: 1,
+      operation: 'apply',
+      mark_id: 'void_erosion',
+      max_stacks: 5,
+    },
+  };
+  const owner = createUnit('player-10', '测试剑修', [effect]);
+  const target = createUnit('monster-10', '木桩妖', []);
+  const state = createState(owner, target);
+
+  const logs = triggerSetBonusEffects(state, 'on_hit', owner, { target, damage: 120 });
+  assert.equal(logs.length, 1);
+  const actionLog = assertActionLog(logs[0]);
+  assert.equal(actionLog.targets[0]?.marksApplied?.length, 1);
+  assert.match(actionLog.targets[0]?.marksApplied?.[0] ?? '', /虚蚀印记/);
+  assert.equal(target.marks?.length, 1);
+  assert.equal(target.marks?.[0]?.sourceUnitId, owner.id);
+});
+
+test('on_crit印记引爆词条应写入 marksConsumed 并造成伤害', () => {
+  const effect: BattleSetBonusEffect = {
+    setId: 'set-taixu',
+    setName: '太虚套装',
+    pieceCount: 8,
+    trigger: 'on_crit',
+    target: 'enemy',
+    effectType: 'mark',
+    params: {
+      chance: 1,
+      operation: 'consume',
+      mark_id: 'void_erosion',
+      consume_mode: 'all',
+      per_stack_rate: 0.4,
+      result_type: 'damage',
+      value: 100,
+    },
+  };
+  const owner = createUnit('player-11', '测试剑修', [effect]);
+  const target = createUnit('monster-11', '木桩妖', []);
+  target.marks = [
+    {
+      id: 'void_erosion',
+      sourceUnitId: owner.id,
+      stacks: 3,
+      maxStacks: 5,
+      remainingDuration: 2,
+    },
+  ];
+  const state = createState(owner, target);
+
+  const logs = triggerSetBonusEffects(state, 'on_crit', owner, { target, damage: 180 });
+  assert.equal(logs.length, 1);
+  const actionLog = assertActionLog(logs[0]);
+  assert.equal(actionLog.targets[0]?.marksConsumed?.length, 1);
+  assert.ok((actionLog.targets[0]?.damage ?? 0) > 0);
+  assert.equal(target.marks?.length, 0);
+});
+
+test('on_be_hit印记转护盾词条应写入 marksConsumed 并为自身加盾', () => {
+  const effect: BattleSetBonusEffect = {
+    setId: 'set-zhenhun',
+    setName: '镇魂套装',
+    pieceCount: 8,
+    trigger: 'on_be_hit',
+    target: 'enemy',
+    effectType: 'mark',
+    params: {
+      chance: 1,
+      operation: 'consume',
+      mark_id: 'void_erosion',
+      consume_mode: 'fixed',
+      consume_stacks: 2,
+      per_stack_rate: 1,
+      result_type: 'shield_self',
+      value: 100,
+    },
+  };
+  const owner = createUnit('player-12', '测试体修', [effect]);
+  const attacker = createUnit('monster-12', '木桩妖', []);
+  attacker.marks = [
+    {
+      id: 'void_erosion',
+      sourceUnitId: owner.id,
+      stacks: 2,
+      maxStacks: 5,
+      remainingDuration: 2,
+    },
+  ];
+  const state = createState(owner, attacker);
+
+  const logs = triggerSetBonusEffects(state, 'on_be_hit', owner, { target: attacker, damage: 200 });
+  assert.equal(logs.length, 1);
+  const actionLog = assertActionLog(logs[0]);
+  assert.equal(actionLog.targets[0]?.marksConsumed?.length, 1);
+  assert.equal(owner.shields.length, 1);
+  assert.ok((owner.shields[0]?.value ?? 0) > 0);
+  assert.equal(attacker.marks?.length, 0);
+});

@@ -22,6 +22,7 @@ import { addBuff, addShield, removeBuff } from './buff.js';
 import { tryApplyControl, canUseSkill, isSilenced, isDisarmed } from './control.js';
 import { resolveTargets } from './target.js';
 import { triggerSetBonusEffects } from './setBonus.js';
+import { applyMarkStacks, consumeMarkStacks, resolveMarkEffectConfig } from './mark.js';
 
 interface SkillExecutionResult {
   success: boolean;
@@ -432,6 +433,8 @@ function executeSkillOnTarget(
     hits: [],
     buffsApplied: [],
     buffsRemoved: [],
+    marksApplied: [],
+    marksConsumed: [],
   };
 
   // 先处理伤害效果，保持“先伤害后附加效果”的执行顺序
@@ -521,6 +524,103 @@ function executeEffect(
     case 'control':
       executeControlEffect(state, caster, target, effect, result);
       break;
+
+    case 'mark':
+      executeMarkEffect(state, caster, target, skill, effect, result);
+      break;
+  }
+}
+
+function executeMarkEffect(
+  state: BattleState,
+  caster: BattleUnit,
+  target: BattleUnit,
+  skill: BattleSkill,
+  effect: SkillEffect,
+  result: TargetResult
+): void {
+  const config = resolveMarkEffectConfig(effect as unknown as Record<string, unknown>);
+  if (!config) return;
+
+  if (config.operation === 'apply') {
+    const applied = applyMarkStacks(target, caster.id, config);
+    if (applied.applied) {
+      result.marksApplied?.push(applied.text);
+    }
+    return;
+  }
+
+  const fallbackScaleAttr = skill.damageType === 'magic' ? 'fagong' : 'wugong';
+  const baseValue = Math.max(0, resolveEffectValue(caster, skill, effect, fallbackScaleAttr));
+  const consumed = consumeMarkStacks(
+    target,
+    caster.id,
+    config,
+    baseValue,
+    target.currentAttrs.max_qixue
+  );
+  if (!consumed.consumed) return;
+
+  const consumeText = consumed.wasCapped ? `${consumed.text}（触发35%上限）` : consumed.text;
+  result.marksConsumed?.push(consumeText);
+
+  const convertedValue = Math.max(0, consumed.finalValue);
+  if (convertedValue <= 0) return;
+
+  if (consumed.resultType === 'damage') {
+    const hitIndex = result.hits.length + 1;
+    const { actualDamage, shieldAbsorbed } = applyDamage(state, target, convertedValue, 'true');
+    const safeDamage = Math.max(0, actualDamage);
+    const safeShieldAbsorbed = Math.max(0, shieldAbsorbed);
+    result.hits.push({
+      index: hitIndex,
+      damage: safeDamage,
+      isMiss: false,
+      isCrit: false,
+      isParry: false,
+      isElementBonus: false,
+      shieldAbsorbed: safeShieldAbsorbed,
+    });
+    result.damage = (result.damage || 0) + safeDamage;
+    result.shieldAbsorbed = (result.shieldAbsorbed || 0) + safeShieldAbsorbed;
+    caster.stats.damageDealt += safeDamage;
+
+    if (!target.isAlive) {
+      caster.stats.killCount++;
+      state.logs.push({
+        type: 'death',
+        round: state.roundCount,
+        unitId: target.id,
+        unitName: target.name,
+        killerId: caster.id,
+        killerName: caster.name,
+      });
+    }
+    return;
+  }
+
+  if (consumed.resultType === 'shield_self') {
+    const duration = Math.max(1, Math.floor(toFiniteNumber(effect.duration, 2)));
+    addShield(caster, {
+      value: convertedValue,
+      maxValue: convertedValue,
+      duration,
+      absorbType: 'all',
+      priority: 1,
+      sourceSkillId: skill.id,
+    }, caster.id);
+    if (target.id === caster.id) {
+      result.buffsApplied?.push('护盾');
+    }
+    return;
+  }
+
+  const actualHeal = applyHealing(caster, convertedValue);
+  if (actualHeal > 0) {
+    caster.stats.healingDone += actualHeal;
+    if (target.id === caster.id) {
+      result.heal = (result.heal || 0) + actualHeal;
+    }
   }
 }
 

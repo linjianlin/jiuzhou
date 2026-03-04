@@ -52,6 +52,7 @@ const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
   "heal",
   "resource",
   "shield",
+  "mark",
 ]);
 
 // ------ 套装效果 ------

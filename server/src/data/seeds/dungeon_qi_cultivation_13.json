@@ -1,0 +1,530 @@
+{
+  "version": 1,
+  "description": "秘境种子数据 - 还虚一期 - 还虚天台",
+  "dungeons": [
+    {
+      "def": {
+        "id": "dungeon-lianshen-huixu-tiantai",
+        "name": "还虚天台",
+        "type": "trial",
+        "category": "境界",
+        "description": "裂界中心升起的天台，虚蚀与神识在此共振，唯有控印者方可通行。",
+        "icon": "/assets/dungeon/withered_altar.png",
+        "background": "/assets/dungeon/bg_withered_altar.png",
+        "min_players": 1,
+        "max_players": 4,
+        "min_realm": "炼神返虚·养神期",
+        "recommended_realm": "炼神返虚·还虚期",
+        "unlock_condition": {},
+        "daily_limit": 0,
+        "weekly_limit": 0,
+        "stamina_cost": 24,
+        "time_limit_sec": 1260,
+        "revive_limit": 2,
+        "tags": [
+          "还虚一期",
+          "试炼",
+          "还虚天台"
+        ],
+        "sort_weight": 108,
+        "enabled": true,
+        "version": 1
+      },
+      "difficulties": [
+        {
+          "id": "dd-huixu-tiantai-n",
+          "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+          "name": "普通",
+          "difficulty_rank": 1,
+          "monster_level_add": 0,
+          "monster_attr_mult": 1.48,
+          "reward_mult": 1,
+          "min_realm": "炼神返虚·养神期",
+          "unlock_prev_difficulty": false,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-xushi-jinghe",
+                "qty": 6
+              },
+              {
+                "item_def_id": "mat-huanxu-dan",
+                "qty": 1
+              },
+              {
+                "item_def_id": "set-taixu-head",
+                "qty": 1
+              }
+            ],
+            "silver": 1900,
+            "exp": 2300
+          },
+          "drop_pool_id": "dp-dungeon-huixu-n",
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-huixu-tiantai-n-1",
+              "difficulty_id": "dd-huixu-tiantai-n",
+              "stage_index": 1,
+              "name": "裂刃前阶",
+              "type": "battle",
+              "description": "裂界前阶的守卫以高频印记压制来者。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-elite-huanxu-mark-warden",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-huixu-tiantai-n-2",
+              "difficulty_id": "dd-huixu-tiantai-n",
+              "stage_index": 2,
+              "name": "镜潮回廊",
+              "type": "battle",
+              "description": "回廊镜潮会持续放大印记层数与爆发压力。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-null-priest",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-huixu-tiantai-n-3",
+              "difficulty_id": "dd-huixu-tiantai-n",
+              "stage_index": 3,
+              "name": "归墟主台",
+              "type": "boss",
+              "description": "归墟领主镇守主台，具备狂暴与召唤双阶段能力。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-mark-warden",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-huanxu-guixu-lord",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dd-huixu-tiantai-h",
+          "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+          "name": "困难",
+          "difficulty_rank": 2,
+          "monster_level_add": 2,
+          "monster_attr_mult": 1.72,
+          "reward_mult": 1.45,
+          "min_realm": "炼神返虚·养神期",
+          "unlock_prev_difficulty": true,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-xushi-jinghe",
+                "qty": 9
+              },
+              {
+                "item_def_id": "mat-huanxu-dan",
+                "qty": 2
+              },
+              {
+                "item_def_id": "set-zhenhun-weapon",
+                "qty": 1
+              }
+            ],
+            "silver": 2400,
+            "exp": 2900
+          },
+          "drop_pool_id": "dp-dungeon-huixu-h",
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-huixu-tiantai-h-1",
+              "difficulty_id": "dd-huixu-tiantai-h",
+              "stage_index": 1,
+              "name": "裂刃前阶·极",
+              "type": "battle",
+              "description": "高压裂刃群会快速叠加印记。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 4
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-mark-warden",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-huixu-tiantai-h-2",
+              "difficulty_id": "dd-huixu-tiantai-h",
+              "stage_index": 2,
+              "name": "镜潮回廊·极",
+              "type": "battle",
+              "description": "双精英轮换施压，治疗窗口极短。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-null-priest",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-elite-huanxu-mark-warden",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-huixu-tiantai-h-3",
+              "difficulty_id": "dd-huixu-tiantai-h",
+              "stage_index": 3,
+              "name": "归墟主台·极",
+              "type": "boss",
+              "description": "归墟领主会更频繁触发召唤与狂暴。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-null-priest",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-huanxu-guixu-lord",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dd-huixu-tiantai-nm",
+          "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+          "name": "噩梦",
+          "difficulty_rank": 3,
+          "monster_level_add": 4,
+          "monster_attr_mult": 2.02,
+          "reward_mult": 1.95,
+          "min_realm": "炼神返虚·养神期",
+          "unlock_prev_difficulty": true,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-xushi-jinghe",
+                "qty": 12
+              },
+              {
+                "item_def_id": "mat-huanxu-dan",
+                "qty": 3
+              },
+              {
+                "item_def_id": "set-taixu-clothes",
+                "qty": 1
+              },
+              {
+                "item_def_id": "set-zhenhun-clothes",
+                "qty": 1
+              }
+            ],
+            "silver": 3200,
+            "exp": 3700
+          },
+          "drop_pool_id": "dp-dungeon-huixu-nm",
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-huixu-tiantai-nm-1",
+              "difficulty_id": "dd-huixu-tiantai-nm",
+              "stage_index": 1,
+              "name": "裂刃前阶·噩",
+              "type": "battle",
+              "description": "怪潮规模扩大，容错显著降低。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 4
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 3
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-mark-warden",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-elite-huanxu-null-priest",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-huixu-tiantai-nm-2",
+              "difficulty_id": "dd-huixu-tiantai-nm",
+              "stage_index": 2,
+              "name": "镜潮回廊·噩",
+              "type": "battle",
+              "description": "持续高压下需要稳定处理印记引爆节奏。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-huanxu-xushi-wisp",
+                      "count": 4
+                    },
+                    {
+                      "monster_def_id": "monster-huanxu-rift-blade",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-null-priest",
+                      "count": 1
+                    },
+                    {
+                      "monster_def_id": "monster-elite-huanxu-mark-warden",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-huixu-tiantai-nm-3",
+              "difficulty_id": "dd-huixu-tiantai-nm",
+              "stage_index": 3,
+              "name": "归墟主台·噩",
+              "type": "boss",
+              "description": "最终阶段会触发更高频召唤，考验控场与生存。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-huanxu-null-priest",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-huanxu-guixu-lord",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

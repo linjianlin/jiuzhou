@@ -8,7 +8,7 @@
  */
 
 export type AffixApplyType = 'flat' | 'percent' | 'special';
-export type AffixEffectType = 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield';
+export type AffixEffectType = 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield' | 'mark';
 export type AffixParamValue = string | number | boolean;
 export type AffixParams = Record<string, AffixParamValue>;
 

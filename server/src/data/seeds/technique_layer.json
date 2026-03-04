@@ -2933,6 +2933,514 @@
       ],
       "required_realm": "炼神返虚·养神期",
       "layer_desc": "九狱缚灵印极境，形成高频控制与高爆发闭环"
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 1,
+      "cost_spirit_stones": 0,
+      "cost_exp": 0,
+      "cost_materials": [],
+      "passives": [
+        {
+          "key": "fagong",
+          "value": 0.06
+        },
+        {
+          "key": "zengshang",
+          "value": 0.02
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀入门，法攻与增伤提升，解锁蚀纹刺",
+      "unlock_skill_ids": [
+        "skill-taixu-shiwen-ci"
+      ]
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 2,
+      "cost_spirit_stones": 1200,
+      "cost_exp": 2200,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 16
+        }
+      ],
+      "passives": [
+        {
+          "key": "baoji",
+          "value": 0.025
+        },
+        {
+          "key": "sudu",
+          "value": 0.03
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀小成，暴击与出手节奏提升",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 3,
+      "cost_spirit_stones": 3600,
+      "cost_exp": 6800,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 24
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "passives": [
+        {
+          "key": "fagong",
+          "value": 0.05
+        },
+        {
+          "key": "baoshang",
+          "value": 0.04
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀进阶，解锁虚蚀爆并强化蚀纹刺",
+      "required_realm": "炼神返虚·养神期",
+      "unlock_skill_ids": [
+        "skill-taixu-xushi-bao"
+      ],
+      "upgrade_skill_ids": [
+        "skill-taixu-shiwen-ci"
+      ]
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 4,
+      "cost_spirit_stones": 7600,
+      "cost_exp": 14000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 34
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "passives": [
+        {
+          "key": "mingzhong",
+          "value": 0.04
+        },
+        {
+          "key": "fagong",
+          "value": 0.06
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀大成，命中与法攻同步提高",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 5,
+      "cost_spirit_stones": 14800,
+      "cost_exp": 27000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 48
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "passives": [
+        {
+          "key": "zengshang",
+          "value": 0.04
+        },
+        {
+          "key": "baoji",
+          "value": 0.03
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀圆融，强化虚蚀爆引爆效率",
+      "required_realm": "炼神返虚·养神期",
+      "upgrade_skill_ids": [
+        "skill-taixu-xushi-bao"
+      ]
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 6,
+      "cost_spirit_stones": 28000,
+      "cost_exp": 52000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 62
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 2
+        }
+      ],
+      "passives": [
+        {
+          "key": "fagong",
+          "value": 0.08
+        },
+        {
+          "key": "lengque",
+          "value": 0.03
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀通玄，技能循环更平滑",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 7,
+      "cost_spirit_stones": 42000,
+      "cost_exp": 80000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 80
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 2
+        }
+      ],
+      "passives": [
+        {
+          "key": "baoshang",
+          "value": 0.05
+        },
+        {
+          "key": "mingzhong",
+          "value": 0.05
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀返璞，爆发稳定性提升",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 8,
+      "cost_spirit_stones": 70000,
+      "cost_exp": 140000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 100
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 3
+        }
+      ],
+      "passives": [
+        {
+          "key": "fagong",
+          "value": 0.11
+        },
+        {
+          "key": "zengshang",
+          "value": 0.05
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀归一，印记爆发抬升",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-taixu-shiwen-jue",
+      "layer": 9,
+      "cost_spirit_stones": 165000,
+      "cost_exp": 320000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 120
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 4
+        }
+      ],
+      "passives": [
+        {
+          "key": "fagong",
+          "value": 0.14
+        },
+        {
+          "key": "baoji",
+          "value": 0.04
+        },
+        {
+          "key": "baoshang",
+          "value": 0.06
+        }
+      ],
+      "layer_desc": "太虚蚀纹诀极境，形成高频叠印与高爆发闭环",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 1,
+      "cost_spirit_stones": 0,
+      "cost_exp": 0,
+      "cost_materials": [],
+      "passives": [
+        {
+          "key": "max_qixue",
+          "value": 0.08
+        },
+        {
+          "key": "wufang",
+          "value": 0.04
+        }
+      ],
+      "layer_desc": "镇魂归元经入门，生存与物防提升，解锁镇骨击",
+      "unlock_skill_ids": [
+        "skill-zhenhun-zhengu"
+      ]
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 2,
+      "cost_spirit_stones": 1200,
+      "cost_exp": 2200,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 16
+        }
+      ],
+      "passives": [
+        {
+          "key": "fafang",
+          "value": 0.04
+        },
+        {
+          "key": "kangbao",
+          "value": 0.025
+        }
+      ],
+      "layer_desc": "镇魂归元经小成，抗压能力增强",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 3,
+      "cost_spirit_stones": 3600,
+      "cost_exp": 6800,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 24
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "passives": [
+        {
+          "key": "max_qixue",
+          "value": 0.05
+        },
+        {
+          "key": "wufang",
+          "value": 0.05
+        }
+      ],
+      "layer_desc": "镇魂归元经进阶，解锁归元镇魂盾并强化镇骨击",
+      "required_realm": "炼神返虚·养神期",
+      "unlock_skill_ids": [
+        "skill-zhenhun-guiyuan-dun"
+      ],
+      "upgrade_skill_ids": [
+        "skill-zhenhun-zhengu"
+      ]
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 4,
+      "cost_spirit_stones": 7600,
+      "cost_exp": 14000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 34
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "passives": [
+        {
+          "key": "kongzhi_kangxing",
+          "value": 0.03
+        },
+        {
+          "key": "wufang",
+          "value": 0.06
+        }
+      ],
+      "layer_desc": "镇魂归元经大成，抗控与前排稳定性提高",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 5,
+      "cost_spirit_stones": 14800,
+      "cost_exp": 27000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 48
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 1
+        }
+      ],
+      "passives": [
+        {
+          "key": "max_qixue",
+          "value": 0.06
+        },
+        {
+          "key": "fafang",
+          "value": 0.06
+        }
+      ],
+      "layer_desc": "镇魂归元经圆融，强化归元镇魂盾",
+      "required_realm": "炼神返虚·养神期",
+      "upgrade_skill_ids": [
+        "skill-zhenhun-guiyuan-dun"
+      ]
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 6,
+      "cost_spirit_stones": 28000,
+      "cost_exp": 52000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 62
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 2
+        }
+      ],
+      "passives": [
+        {
+          "key": "wufang",
+          "value": 0.07
+        },
+        {
+          "key": "kangbao",
+          "value": 0.03
+        }
+      ],
+      "layer_desc": "镇魂归元经通玄，受击反制能力提升",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 7,
+      "cost_spirit_stones": 42000,
+      "cost_exp": 80000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 80
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 2
+        }
+      ],
+      "passives": [
+        {
+          "key": "max_qixue",
+          "value": 0.08
+        },
+        {
+          "key": "kongzhi_kangxing",
+          "value": 0.04
+        }
+      ],
+      "layer_desc": "镇魂归元经返璞，长线承伤更稳",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 8,
+      "cost_spirit_stones": 70000,
+      "cost_exp": 140000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 100
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 3
+        }
+      ],
+      "passives": [
+        {
+          "key": "wufang",
+          "value": 0.09
+        },
+        {
+          "key": "fafang",
+          "value": 0.09
+        }
+      ],
+      "layer_desc": "镇魂归元经归一，双防显著抬升",
+      "required_realm": "炼神返虚·养神期"
+    },
+    {
+      "technique_id": "tech-zhenhun-guiyuan-jing",
+      "layer": 9,
+      "cost_spirit_stones": 165000,
+      "cost_exp": 320000,
+      "cost_materials": [
+        {
+          "itemId": "mat-xushi-jinghe",
+          "qty": 120
+        },
+        {
+          "itemId": "mat-huanxu-dan",
+          "qty": 4
+        }
+      ],
+      "passives": [
+        {
+          "key": "max_qixue",
+          "value": 0.12
+        },
+        {
+          "key": "wufang",
+          "value": 0.12
+        },
+        {
+          "key": "fafang",
+          "value": 0.1
+        }
+      ],
+      "layer_desc": "镇魂归元经极境，形成受击反挂与护盾转化闭环",
+      "required_realm": "炼神返虚·养神期"
     }
   ]
 }

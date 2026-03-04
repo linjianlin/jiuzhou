@@ -3824,6 +3824,446 @@
         "法攻",
         "养神期"
       ]
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚期套装：太虚套装（法攻/印记爆发） =========="
+    },
+    {
+      "id": "set-taixu-weapon",
+      "name": "太虚裂杖",
+      "category": "equipment",
+      "sub_category": "sword",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/01-weapon-set-xuying-weapon.webp",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "fagong": 34,
+        "lengque_rating": 103
+      },
+      "implicit_attrs": {
+        "fagong": 17,
+        "baoji_rating": 103
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "set_id": "set-taixu",
+      "tags": [
+        "武器",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-head",
+      "name": "太虚蚀冠",
+      "category": "equipment",
+      "sub_category": "hat",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/02-head-set-xuying-head.webp",
+      "equip_slot": "head",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_lingqi": 502,
+        "fagong": 23,
+        "kongzhi_kangxing_rating": 306
+      },
+      "implicit_attrs": {
+        "max_lingqi": 171,
+        "zhaojia_rating": 154
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-taixu",
+      "tags": [
+        "头部",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-clothes",
+      "name": "太虚蚀袍",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/03-clothes-set-xuying-clothes.webp",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_lingqi": 730,
+        "fagong": 27,
+        "fafang": 25
+      },
+      "implicit_attrs": {
+        "max_lingqi": 217
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-taixu",
+      "tags": [
+        "衣服",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-gloves",
+      "name": "太虚蚀缚",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/04-gloves-set-xuying-gloves.webp",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "fagong": 23,
+        "lengque_rating": 456
+      },
+      "implicit_attrs": {
+        "fagong": 11
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-taixu",
+      "tags": [
+        "手部",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-pants",
+      "name": "太虚蚀裳",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/05-pants-set-xuying-pants.webp",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_qixue": 365,
+        "fafang": 27,
+        "fagong": 14
+      },
+      "implicit_attrs": {
+        "fafang": 14
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-taixu",
+      "tags": [
+        "腿部",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-necklace",
+      "name": "太虚蚀坠",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/06-necklace-set-xuying-necklace.webp",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "fagong": 21,
+        "kongzhi_kangxing_rating": 306
+      },
+      "implicit_attrs": {
+        "fagong": 13,
+        "baoji_rating": 103
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-taixu",
+      "tags": [
+        "项链",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-accessory",
+      "name": "太虚蚀珠",
+      "category": "equipment",
+      "sub_category": "ring",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/07-accessory-set-xuying-accessory.webp",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "fagong": 25,
+        "zengshang_rating": 456
+      },
+      "implicit_attrs": {
+        "fagong": 14,
+        "lengque_rating": 251
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-taixu",
+      "tags": [
+        "饰品",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-taixu-artifact",
+      "name": "太虚蚀印",
+      "category": "equipment",
+      "sub_category": "token",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-xuying/08-artifact-set-xuying-artifact.webp",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "kongzhi_kangxing_rating": 1026,
+        "lengque_rating": 513
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing_rating": 306
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "set_id": "set-taixu",
+      "tags": [
+        "法宝",
+        "太虚套装",
+        "法攻",
+        "还虚期"
+      ]
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚期套装：镇魂套装（坦度/印记反制） =========="
+    },
+    {
+      "id": "set-zhenhun-weapon",
+      "name": "镇魂重锋",
+      "category": "equipment",
+      "sub_category": "sword",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/01-weapon-set-ningshen-weapon.webp",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "wugong": 30,
+        "wufang": 31
+      },
+      "implicit_attrs": {
+        "wugong": 14,
+        "wufang": 15
+      },
+      "affix_pool_id": "ap-weapon-rare",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "武器",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-head",
+      "name": "镇魂盔",
+      "category": "equipment",
+      "sub_category": "hat",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/02-head-set-ningshen-head.webp",
+      "equip_slot": "head",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_qixue": 547,
+        "wufang": 27,
+        "kangbao_rating": 331
+      },
+      "implicit_attrs": {
+        "max_qixue": 228
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "头部",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-clothes",
+      "name": "镇魂战甲",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/03-clothes-set-ningshen-clothes.webp",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_qixue": 741,
+        "wufang": 32,
+        "fafang": 25
+      },
+      "implicit_attrs": {
+        "max_qixue": 274
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "衣服",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-gloves",
+      "name": "镇魂护臂",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/04-gloves-set-ningshen-gloves.webp",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "wufang": 25,
+        "zhaojia_rating": 593
+      },
+      "implicit_attrs": {
+        "zhaojia_rating": 251
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "手部",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-pants",
+      "name": "镇魂战裤",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/05-pants-set-ningshen-pants.webp",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_qixue": 433,
+        "fafang": 25
+      },
+      "implicit_attrs": {
+        "fafang": 17
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "腿部",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-necklace",
+      "name": "镇魂符链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/06-necklace-set-ningshen-necklace.webp",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "max_qixue": 319,
+        "kangbao_rating": 410
+      },
+      "implicit_attrs": {
+        "kangbao_rating": 251
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "项链",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-accessory",
+      "name": "镇魂玉环",
+      "category": "equipment",
+      "sub_category": "ring",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/07-accessory-set-ningshen-accessory.webp",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "wufang": 30,
+        "fafang": 21
+      },
+      "implicit_attrs": {
+        "wufang": 15
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "饰品",
+        "镇魂套装",
+        "还虚期"
+      ]
+    },
+    {
+      "id": "set-zhenhun-artifact",
+      "name": "镇魂归元符",
+      "category": "equipment",
+      "sub_category": "token",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/images/set-ningshen/08-artifact-set-ningshen-artifact.webp",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼神返虚·还虚期",
+      "base_attrs": {
+        "kongzhi_kangxing_rating": 878,
+        "zhaojia_rating": 456
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing_rating": 353
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "set_id": "set-zhenhun",
+      "tags": [
+        "法宝",
+        "镇魂套装",
+        "还虚期"
+      ]
     }
   ]
 }

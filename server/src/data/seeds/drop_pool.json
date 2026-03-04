@@ -1721,6 +1721,262 @@
         }
       ],
       "common_pool_ids": []
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚一期怪物掉落池 =========="
+    },
+    {
+      "id": "dp-huanxu-rift-blade",
+      "name": "虚蚀裂刃掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 0.9,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.2,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-huanxu"
+      ]
+    },
+    {
+      "id": "dp-huanxu-xushi-wisp",
+      "name": "虚蚀游灵掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 0.82,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.24,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-huanxu"
+      ]
+    },
+    {
+      "id": "dp-huanxu-elite-mark-warden",
+      "name": "蚀纹镇卫掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.52,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-huanxu",
+        "dp-common-monster-elite"
+      ]
+    },
+    {
+      "id": "dp-huanxu-elite-null-priest",
+      "name": "寂灭祭司掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.56,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-huanxu",
+        "dp-common-monster-elite"
+      ]
+    },
+    {
+      "id": "dp-huanxu-boss-guixu-lord",
+      "name": "归墟领主掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 1,
+          "qty_min": 6,
+          "qty_max": 10,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "box-011",
+          "chance": 0.92,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-taixu-weapon",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-taixu-artifact",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-zhenhun-weapon",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-zhenhun-artifact",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-huanxu",
+        "dp-common-monster-boss"
+      ]
+    },
+    {
+      "_comment": "========== 还虚一期秘境掉落池 =========="
+    },
+    {
+      "id": "dp-dungeon-huixu-n",
+      "name": "还虚天台普通掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 0.82,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.16,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": []
+    },
+    {
+      "id": "dp-dungeon-huixu-h",
+      "name": "还虚天台困难掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 0.74,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.2,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "box-011",
+          "chance": 0.24,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": []
+    },
+    {
+      "id": "dp-dungeon-huixu-nm",
+      "name": "还虚天台噩梦掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-xushi-jinghe",
+          "chance": 0.72,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-huanxu-dan",
+          "chance": 0.24,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-taixu-head",
+          "chance": 0.03,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-zhenhun-head",
+          "chance": 0.03,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": []
     }
   ]
 }

@@ -1,0 +1,194 @@
+{
+  "dialogues": [
+    {
+      "id": "dlg-main-6-001",
+      "name": "第六章-001 裂界初启",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "narration",
+          "text": "还虚裂界的地面遍布断纹，灵压如潮反卷。\n每一步都像踩在将要崩塌的镜面上。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "观界者",
+          "text": "你总算到了。裂界正在外扩，虚蚀波动已经渗进神识荒原。\n若再放任下去，养神修士会被整片界隙吞没。",
+          "next": "npc-2"
+        },
+        {
+          "id": "npc-2",
+          "type": "npc",
+          "speaker": "观界者",
+          "text": "先去外围清理虚蚀裂刃与游灵，稳住裂界边缘。活着回来，我们再谈天台试炼。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：击败虚蚀裂刃与虚蚀游灵。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-6-002",
+      "name": "第六章-002 裂隙清剿",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "观界者",
+          "text": "你身上的虚蚀余波很重，但神识未乱，说明你扛住了第一轮侵蚀。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "观界者",
+          "text": "真正的考验在还虚天台。那里会主动放大印记共振，只有能控印记者才有资格继续。",
+          "next": "npc-2"
+        },
+        {
+          "id": "npc-2",
+          "type": "npc",
+          "speaker": "观界者",
+          "text": "去找天台引路使，完成普通试炼后再回来。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：通关还虚天台普通难度。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-6-003",
+      "name": "第六章-003 天台试锋",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "天台引路使",
+          "text": "普通试炼已过，你对虚蚀印记的掌控还算稳定。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "天台引路使",
+          "text": "但想叩开还虚门槛，仅靠稳定不够，你还需要足够的虚蚀精核来炼制还虚丹。",
+          "next": "npc-2"
+        },
+        {
+          "id": "npc-2",
+          "type": "npc",
+          "speaker": "天台引路使",
+          "text": "去祭坛找还虚丹师，按她的配方收集材料。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：收集虚蚀精核14个，并向还虚丹师复命。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-6-004",
+      "name": "第六章-004 精核归炉",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "还虚丹师",
+          "text": "精核纯度足够，但你还差最后一步：在困难天台中压制归墟领主。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "还虚丹师",
+          "text": "只有领主核心回流，丹炉才能稳定点火，否则还虚丹会在炼制中崩散。",
+          "next": "npc-2"
+        },
+        {
+          "id": "npc-2",
+          "type": "npc",
+          "speaker": "还虚丹师",
+          "text": "完成两轮困难试炼并击杀归墟领主，我在祭坛等你。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：通关还虚天台困难2次，并击败归墟领主1次。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-6-005",
+      "name": "第六章-005 困难镇界",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "天台引路使",
+          "text": "你已在困难天台站稳脚跟，归墟领主也被你击破。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "天台引路使",
+          "text": "剩下的就是把还虚丹炼成。带着领主残核去祭坛，完成最后收束。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "目标更新：收集还虚丹4个，向还虚丹师复命。"
+        }
+      ],
+      "enabled": true
+    },
+    {
+      "id": "dlg-main-6-006",
+      "name": "第六章-006 还虚成丹",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "npc",
+          "speaker": "还虚丹师",
+          "text": "四枚还虚丹火候一致，足够支撑你完成破界。",
+          "next": "npc-1"
+        },
+        {
+          "id": "npc-1",
+          "type": "npc",
+          "speaker": "还虚丹师",
+          "text": "从这一刻起，你不再只是承受虚蚀，而是可以驾驭它。还虚期的大门已经为你打开。",
+          "next": "npc-2"
+        },
+        {
+          "id": "npc-2",
+          "type": "npc",
+          "speaker": "还虚丹师",
+          "text": "去完成突破吧。下一次归来，你将是裂界真正的镇守者。",
+          "next": "end"
+        },
+        {
+          "id": "end",
+          "type": "system",
+          "text": "第六章完成：还虚破界。已满足养神突破还虚主线前置。"
+        }
+      ],
+      "enabled": true
+    }
+  ]
+}

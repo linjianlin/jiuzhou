@@ -1,0 +1,316 @@
+{
+  "chapters": [
+    {
+      "id": "mq-chapter-6",
+      "chapter_num": 6,
+      "name": "第六章：还虚破界",
+      "description": "神识已定，你将踏入还虚裂界，以虚蚀之力完成从养神到还虚的破界。",
+      "background": "还虚裂界并非单纯秘境，而是神识与虚蚀交错的断层。修士若无法掌控虚蚀印记，便会在界隙中被反噬。你需要完成六段试炼，收束虚蚀精核并炼成还虚丹，方可叩开还虚门槛。",
+      "min_realm": "炼神返虚·养神期",
+      "chapter_rewards": {
+        "exp": 22000,
+        "silver": 30000,
+        "spirit_stones": 2600,
+        "items": [
+          {
+            "item_def_id": "box-011",
+            "quantity": 2
+          },
+          {
+            "item_def_id": "mat-huanxu-dan",
+            "quantity": 1
+          }
+        ]
+      },
+      "unlock_features": [
+        "map-huixu-rift",
+        "dungeon-lianshen-huixu-tiantai"
+      ],
+      "sort_weight": 900,
+      "enabled": true
+    }
+  ],
+  "sections": [
+    {
+      "id": "main-6-001",
+      "chapter_id": "mq-chapter-6",
+      "section_num": 1,
+      "name": "裂界初启",
+      "description": "前往还虚裂界入口，与观界者确认界隙异常。",
+      "brief": "抵达还虚裂界入口并与观界者交谈。",
+      "npc_id": "npc-huixu-observer",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-entrance",
+      "min_realm": "炼神返虚·养神期",
+      "dialogue_id": "dlg-main-6-001",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "reach",
+          "text": "抵达还虚裂界入口",
+          "target": 1,
+          "params": {
+            "room_id": "room-huixu-entrance"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "与观界者交谈",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-huixu-observer"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 1600,
+        "silver": 2200,
+        "spirit_stones": 180
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 900,
+      "enabled": true
+    },
+    {
+      "id": "main-6-002",
+      "chapter_id": "mq-chapter-6",
+      "section_num": 2,
+      "name": "裂隙清剿",
+      "description": "在裂界中击败虚蚀裂刃与虚蚀游灵，稳住外围波动。",
+      "brief": "击败虚蚀裂刃6只、虚蚀游灵6只。",
+      "npc_id": "npc-huixu-observer",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-fissure",
+      "min_realm": "炼神返虚·养神期",
+      "dialogue_id": "dlg-main-6-002",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "kill_monster",
+          "text": "击败虚蚀裂刃",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-huanxu-rift-blade"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "kill_monster",
+          "text": "击败虚蚀游灵",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-huanxu-xushi-wisp"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 1900,
+        "silver": 2600,
+        "spirit_stones": 220,
+        "items": [
+          {
+            "item_def_id": "mat-xushi-jinghe",
+            "quantity": 4
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 901,
+      "enabled": true
+    },
+    {
+      "id": "main-6-003",
+      "chapter_id": "mq-chapter-6",
+      "section_num": 3,
+      "name": "天台试锋",
+      "description": "在还虚天台完成一次普通试炼，验证裂界承压能力。",
+      "brief": "通关还虚天台（普通）1次。",
+      "npc_id": "npc-huixu-guide",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-tiantai-gate",
+      "min_realm": "炼神返虚·养神期",
+      "dialogue_id": "dlg-main-6-003",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关还虚天台（普通）",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+            "difficulty_id": "dd-huixu-tiantai-n"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 2200,
+        "silver": 3000,
+        "spirit_stones": 260,
+        "items": [
+          {
+            "item_def_id": "mat-huanxu-dan",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 902,
+      "enabled": true
+    },
+    {
+      "id": "main-6-004",
+      "chapter_id": "mq-chapter-6",
+      "section_num": 4,
+      "name": "精核归炉",
+      "description": "收集足量虚蚀精核并向炼丹师复命。",
+      "brief": "收集虚蚀精核14个，向还虚丹师复命。",
+      "npc_id": "npc-huixu-alchemist",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-altar",
+      "min_realm": "炼神返虚·养神期",
+      "dialogue_id": "dlg-main-6-004",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "collect",
+          "text": "收集虚蚀精核",
+          "target": 14,
+          "params": {
+            "item_id": "mat-xushi-jinghe"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "向还虚丹师复命",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-huixu-alchemist"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 2600,
+        "silver": 3600,
+        "spirit_stones": 300,
+        "items": [
+          {
+            "item_def_id": "mat-huanxu-dan",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 903,
+      "enabled": true
+    },
+    {
+      "id": "main-6-005",
+      "chapter_id": "mq-chapter-6",
+      "section_num": 5,
+      "name": "困难镇界",
+      "description": "连续完成困难试炼并击败归墟领主。",
+      "brief": "通关还虚天台困难2次，并击败归墟领主1次。",
+      "npc_id": "npc-huixu-guide",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-tiantai-gate",
+      "min_realm": "炼神返虚·养神期",
+      "dialogue_id": "dlg-main-6-005",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关还虚天台（困难）",
+          "target": 2,
+          "params": {
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
+            "difficulty_id": "dd-huixu-tiantai-h"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "kill_monster",
+          "text": "击败归墟领主",
+          "target": 1,
+          "params": {
+            "monster_id": "monster-boss-huanxu-guixu-lord"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 3200,
+        "silver": 4200,
+        "spirit_stones": 360,
+        "items": [
+          {
+            "item_def_id": "mat-xushi-jinghe",
+            "quantity": 6
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 904,
+      "enabled": true
+    },
+    {
+      "id": "main-6-006",
+      "chapter_id": "mq-chapter-6",
+      "section_num": 6,
+      "name": "还虚成丹",
+      "description": "备齐还虚丹并完成最终复命，开启还虚突破。",
+      "brief": "收集还虚丹4个，向还虚丹师复命。",
+      "npc_id": "npc-huixu-alchemist",
+      "map_id": "map-huixu-rift",
+      "room_id": "room-huixu-altar",
+      "min_realm": "炼神返虚·养神期",
+      "dialogue_id": "dlg-main-6-006",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "collect",
+          "text": "收集还虚丹",
+          "target": 4,
+          "params": {
+            "item_id": "mat-huanxu-dan"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "向还虚丹师复命",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-huixu-alchemist"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 3800,
+        "silver": 5000,
+        "spirit_stones": 420,
+        "items": [
+          {
+            "item_def_id": "box-011",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": true,
+      "sort_weight": 905,
+      "enabled": true
+    }
+  ]
+}

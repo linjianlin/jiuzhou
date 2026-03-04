@@ -2643,7 +2643,7 @@
           "type": "shield",
           "valueType": "scale",
           "scaleAttr": "max_qixue",
-          "scaleRate": 0.10,
+          "scaleRate": 0.1,
           "duration": 3
         },
         {
@@ -3316,6 +3316,238 @@
       "trigger_type": "active",
       "ai_priority": 86,
       "sort_weight": 410,
+      "enabled": true
+    },
+    {
+      "id": "skill-taixu-shiwen-ci",
+      "code": "taixu_shiwen_ci",
+      "name": "蚀纹刺",
+      "description": "以虚蚀印纹穿刺单体，附加虚蚀印记。",
+      "icon": "/assets/skills/icon_skill_39.png",
+      "source_type": "technique",
+      "source_id": "tech-taixu-shiwen-jue",
+      "cost_lingqi": 24,
+      "cost_qixue": 0,
+      "cooldown": 3,
+      "target_type": "single_enemy",
+      "target_count": 1,
+      "damage_type": "magic",
+      "element": "an",
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 1.52
+        },
+        {
+          "type": "mark",
+          "markId": "void_erosion",
+          "operation": "apply",
+          "maxStacks": 5,
+          "duration": 2
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 78,
+      "upgrades": [
+        {
+          "layer": 3,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 1.86,
+                "value": 186
+              },
+              {
+                "type": "mark",
+                "markId": "void_erosion",
+                "operation": "apply",
+                "maxStacks": 5,
+                "applyStacks": 2,
+                "duration": 2
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 420,
+      "enabled": true
+    },
+    {
+      "id": "skill-taixu-xushi-bao",
+      "code": "taixu_xushi_bao",
+      "name": "虚蚀爆",
+      "description": "引爆目标虚蚀印记，按层数结算爆发伤害。",
+      "icon": "/assets/skills/icon_skill_31.png",
+      "source_type": "technique",
+      "source_id": "tech-taixu-shiwen-jue",
+      "cost_lingqi": 30,
+      "cost_qixue": 0,
+      "cooldown": 4,
+      "target_type": "single_enemy",
+      "target_count": 1,
+      "damage_type": "magic",
+      "element": "an",
+      "effects": [
+        {
+          "type": "mark",
+          "markId": "void_erosion",
+          "operation": "consume",
+          "consumeMode": "all",
+          "perStackRate": 0.34,
+          "resultType": "damage",
+          "valueType": "scale",
+          "scaleAttr": "fagong",
+          "scaleRate": 0.4
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 84,
+      "upgrades": [
+        {
+          "layer": 5,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "mark",
+                "markId": "void_erosion",
+                "operation": "consume",
+                "consumeMode": "all",
+                "perStackRate": 0.44,
+                "resultType": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 0.5
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 421,
+      "enabled": true
+    },
+    {
+      "id": "skill-zhenhun-zhengu",
+      "code": "zhenhun_zhengu",
+      "name": "镇骨击",
+      "description": "镇魂劲轰击目标并反挂虚蚀印记。",
+      "icon": "/assets/skills/icon_skill_34.png",
+      "source_type": "technique",
+      "source_id": "tech-zhenhun-guiyuan-jing",
+      "cost_lingqi": 22,
+      "cost_qixue": 0,
+      "cooldown": 3,
+      "target_type": "single_enemy",
+      "target_count": 1,
+      "damage_type": "physical",
+      "element": "tu",
+      "effects": [
+        {
+          "type": "damage",
+          "valueType": "scale",
+          "scaleAttr": "wufang",
+          "scaleRate": 1.46
+        },
+        {
+          "type": "mark",
+          "markId": "void_erosion",
+          "operation": "apply",
+          "maxStacks": 5,
+          "duration": 2
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 76,
+      "upgrades": [
+        {
+          "layer": 3,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "wufang",
+                "scaleRate": 1.78,
+                "value": 178
+              },
+              {
+                "type": "mark",
+                "markId": "void_erosion",
+                "operation": "apply",
+                "maxStacks": 5,
+                "applyStacks": 2,
+                "duration": 2
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 422,
+      "enabled": true
+    },
+    {
+      "id": "skill-zhenhun-guiyuan-dun",
+      "code": "zhenhun_guiyuan_dun",
+      "name": "归元镇魂盾",
+      "description": "消耗目标虚蚀印记并转化为自身护盾。",
+      "icon": "/assets/skills/icon_skill_26.png",
+      "source_type": "technique",
+      "source_id": "tech-zhenhun-guiyuan-jing",
+      "cost_lingqi": 28,
+      "cost_qixue": 0,
+      "cooldown": 4,
+      "target_type": "single_enemy",
+      "target_count": 1,
+      "damage_type": "physical",
+      "element": "tu",
+      "effects": [
+        {
+          "type": "mark",
+          "markId": "void_erosion",
+          "operation": "consume",
+          "consumeMode": "fixed",
+          "consumeStacks": 2,
+          "perStackRate": 0.92,
+          "resultType": "shield_self",
+          "valueType": "scale",
+          "scaleAttr": "wufang",
+          "scaleRate": 0.52,
+          "duration": 2
+        }
+      ],
+      "trigger_type": "active",
+      "ai_priority": 72,
+      "upgrades": [
+        {
+          "layer": 5,
+          "upgradeType": "value",
+          "changes": {
+            "effects": [
+              {
+                "type": "mark",
+                "markId": "void_erosion",
+                "operation": "consume",
+                "consumeMode": "fixed",
+                "consumeStacks": 3,
+                "perStackRate": 1.15,
+                "resultType": "shield_self",
+                "valueType": "scale",
+                "scaleAttr": "wufang",
+                "scaleRate": 0.62,
+                "duration": 2
+              }
+            ]
+          }
+        }
+      ],
+      "sort_weight": 423,
       "enabled": true
     }
   ]

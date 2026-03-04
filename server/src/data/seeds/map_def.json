@@ -2860,7 +2860,10 @@
           "id": "room-shenshi-entrance",
           "name": "荒原入口",
           "description": "荒原入口处灵纹闪烁，守望者在此甄别来者神识强度。",
-          "position": { "x": 0, "y": 0 },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
           "room_type": "safe",
           "connections": [
             {
@@ -2868,10 +2871,19 @@
               "target_map_id": "map-jiutai-sanctum",
               "target_room_id": "room-jiutai-core-hall"
             },
-            { "direction": "north", "target_room_id": "room-shenshi-void-rift" },
-            { "direction": "east", "target_room_id": "room-shenshi-soul-lake" }
+            {
+              "direction": "north",
+              "target_room_id": "room-shenshi-void-rift"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-shenshi-soul-lake"
+            }
           ],
-          "npcs": ["npc-shenshi-watcher", "npc-shenshi-merchant"],
+          "npcs": [
+            "npc-shenshi-watcher",
+            "npc-shenshi-merchant"
+          ],
           "monsters": [],
           "resources": [],
           "items": [],
@@ -2882,19 +2894,41 @@
           "id": "room-shenshi-void-rift",
           "name": "虚空裂隙",
           "description": "裂隙中虚空能量不断涌出，虚空残影与神魂游丝在此游荡。",
-          "position": { "x": 0, "y": 1 },
+          "position": {
+            "x": 0,
+            "y": 1
+          },
           "room_type": "field",
           "connections": [
-            { "direction": "south", "target_room_id": "room-shenshi-entrance" },
-            { "direction": "east", "target_room_id": "room-shenshi-realm-peak" }
+            {
+              "direction": "south",
+              "target_room_id": "room-shenshi-entrance"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-shenshi-realm-peak"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-yangshen-void-phantom", "count": 3, "respawn_sec": 55 },
-            { "monster_def_id": "monster-yangshen-soul-wisp", "count": 2, "respawn_sec": 60 }
+            {
+              "monster_def_id": "monster-yangshen-void-phantom",
+              "count": 3,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-yangshen-soul-wisp",
+              "count": 2,
+              "respawn_sec": 60
+            }
           ],
           "resources": [
-            { "resource_id": "mat-shenhun-ningjing", "count": 8, "collect_limit": 8, "respawn_sec": 300 }
+            {
+              "resource_id": "mat-shenhun-ningjing",
+              "count": 8,
+              "collect_limit": 8,
+              "respawn_sec": 300
+            }
           ],
           "items": [],
           "portals": [],
@@ -2904,19 +2938,41 @@
           "id": "room-shenshi-soul-lake",
           "name": "魂湖畔",
           "description": "湖面映照着虚幻的神魂光影，游丝在湖畔密集出没。",
-          "position": { "x": 1, "y": 0 },
+          "position": {
+            "x": 1,
+            "y": 0
+          },
           "room_type": "field",
           "connections": [
-            { "direction": "west", "target_room_id": "room-shenshi-entrance" },
-            { "direction": "north", "target_room_id": "room-shenshi-realm-peak" }
+            {
+              "direction": "west",
+              "target_room_id": "room-shenshi-entrance"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-shenshi-realm-peak"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-yangshen-soul-wisp", "count": 3, "respawn_sec": 55 },
-            { "monster_def_id": "monster-yangshen-void-phantom", "count": 2, "respawn_sec": 60 }
+            {
+              "monster_def_id": "monster-yangshen-soul-wisp",
+              "count": 3,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-yangshen-void-phantom",
+              "count": 2,
+              "respawn_sec": 60
+            }
           ],
           "resources": [
-            { "resource_id": "mat-xuling-jinghua", "count": 8, "collect_limit": 8, "respawn_sec": 320 }
+            {
+              "resource_id": "mat-xuling-jinghua",
+              "count": 8,
+              "collect_limit": 8,
+              "respawn_sec": 320
+            }
           ],
           "items": [],
           "portals": [],
@@ -2926,20 +2982,45 @@
           "id": "room-shenshi-realm-peak",
           "name": "意境之巅",
           "description": "荒原最高处，精英守卫在此巡逻，虚灵神主偶尔现身。",
-          "position": { "x": 1, "y": 1 },
+          "position": {
+            "x": 1,
+            "y": 1
+          },
           "room_type": "field",
           "connections": [
-            { "direction": "south", "target_room_id": "room-shenshi-soul-lake" },
-            { "direction": "west", "target_room_id": "room-shenshi-void-rift" },
-            { "direction": "north", "target_room_id": "room-shenshi-temple-gate" }
+            {
+              "direction": "south",
+              "target_room_id": "room-shenshi-soul-lake"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-shenshi-void-rift"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-shenshi-temple-gate"
+            }
           ],
           "npcs": [],
           "monsters": [
-            { "monster_def_id": "monster-elite-yangshen-realm-warden", "count": 1, "respawn_sec": 200 },
-            { "monster_def_id": "monster-elite-yangshen-void-marshal", "count": 1, "respawn_sec": 220 }
+            {
+              "monster_def_id": "monster-elite-yangshen-realm-warden",
+              "count": 1,
+              "respawn_sec": 200
+            },
+            {
+              "monster_def_id": "monster-elite-yangshen-void-marshal",
+              "count": 1,
+              "respawn_sec": 220
+            }
           ],
           "resources": [
-            { "resource_id": "mat-shenhun-ningjing", "count": 5, "collect_limit": 5, "respawn_sec": 360 }
+            {
+              "resource_id": "mat-shenhun-ningjing",
+              "count": 5,
+              "collect_limit": 5,
+              "respawn_sec": 360
+            }
           ],
           "items": [],
           "portals": [],
@@ -2949,15 +3030,260 @@
           "id": "room-shenshi-temple-gate",
           "name": "神殿门前",
           "description": "虚灵神殿的入口，秘境引导者在此等候有缘之人。",
-          "position": { "x": 1, "y": 2 },
+          "position": {
+            "x": 1,
+            "y": 2
+          },
           "room_type": "safe",
           "connections": [
-            { "direction": "south", "target_room_id": "room-shenshi-realm-peak" }
+            {
+              "direction": "south",
+              "target_room_id": "room-shenshi-realm-peak"
+            }
           ],
-          "npcs": ["npc-shenshi-guide"],
+          "npcs": [
+            "npc-shenshi-guide"
+          ],
           "monsters": [],
           "resources": [
-            { "resource_id": "mat-yangshen-dan", "count": 3, "collect_limit": 3, "respawn_sec": 480 }
+            {
+              "resource_id": "mat-yangshen-dan",
+              "count": 3,
+              "collect_limit": 3,
+              "respawn_sec": 480
+            }
+          ],
+          "items": [],
+          "portals": [
+            {
+              "target_map_id": "map-huixu-rift",
+              "target_room_id": "room-huixu-entrance",
+              "name": "还虚裂界传送阵",
+              "req_realm_min": "炼神返虚·养神期"
+            }
+          ],
+          "events": []
+        }
+      ]
+    },
+    {
+      "id": "map-huixu-rift",
+      "code": "huixu_rift",
+      "name": "还虚裂界",
+      "description": "神识荒原外侧撕裂出的界隙地带，虚蚀潮汐不定，唯有养神后期方可驻足。",
+      "background_image": "/assets/map/yanbing_rift.png",
+      "map_type": "field",
+      "parent_map_id": "map-shenshi-wasteland",
+      "region": "东洲",
+      "world_position": {
+        "x": 226,
+        "y": 248
+      },
+      "req_realm_min": "炼神返虚·养神期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-huixu-rift",
+      "revive_room_id": "room-huixu-entrance",
+      "sort_weight": 580,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-huixu-entrance",
+          "name": "裂界入口",
+          "description": "裂界入口灵压紊乱，观界者在此监测虚蚀潮汐。",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "south",
+              "target_map_id": "map-shenshi-wasteland",
+              "target_room_id": "room-shenshi-temple-gate"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-huixu-fissure"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-huixu-mirror"
+            }
+          ],
+          "npcs": [
+            "npc-huixu-observer"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-huixu-fissure",
+          "name": "裂缝前沿",
+          "description": "裂缝前沿不断涌出虚蚀裂刃与游灵。",
+          "position": {
+            "x": 0,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-huixu-entrance"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-huixu-altar"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-huanxu-rift-blade",
+              "count": 3,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-huanxu-xushi-wisp",
+              "count": 2,
+              "respawn_sec": 60
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-xushi-jinghe",
+              "count": 9,
+              "collect_limit": 9,
+              "respawn_sec": 320
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-huixu-mirror",
+          "name": "蚀镜回廊",
+          "description": "蚀镜折射虚蚀流，游灵密集巡游于此。",
+          "position": {
+            "x": 1,
+            "y": 0
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "west",
+              "target_room_id": "room-huixu-entrance"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-huixu-tiantai-gate"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-huanxu-xushi-wisp",
+              "count": 3,
+              "respawn_sec": 55
+            },
+            {
+              "monster_def_id": "monster-huanxu-rift-blade",
+              "count": 2,
+              "respawn_sec": 60
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-xushi-jinghe",
+              "count": 7,
+              "collect_limit": 7,
+              "respawn_sec": 340
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-huixu-altar",
+          "name": "归流祭坛",
+          "description": "祭坛附近由精英镇守，丹师在此收束精核。",
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "west",
+              "target_room_id": "room-huixu-fissure"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-huixu-tiantai-gate"
+            }
+          ],
+          "npcs": [
+            "npc-huixu-alchemist"
+          ],
+          "monsters": [
+            {
+              "monster_def_id": "monster-elite-huanxu-mark-warden",
+              "count": 1,
+              "respawn_sec": 200
+            },
+            {
+              "monster_def_id": "monster-elite-huanxu-null-priest",
+              "count": 1,
+              "respawn_sec": 220
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-xushi-jinghe",
+              "count": 6,
+              "collect_limit": 6,
+              "respawn_sec": 380
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-huixu-tiantai-gate",
+          "name": "天台界门",
+          "description": "还虚天台界门前，引路使在此指引试炼流程。",
+          "position": {
+            "x": 1,
+            "y": 2
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-huixu-altar"
+            },
+            {
+              "direction": "west",
+              "target_room_id": "room-huixu-mirror"
+            }
+          ],
+          "npcs": [
+            "npc-huixu-guide"
+          ],
+          "monsters": [],
+          "resources": [
+            {
+              "resource_id": "mat-huanxu-dan",
+              "count": 3,
+              "collect_limit": 3,
+              "respawn_sec": 520
+            }
           ],
           "items": [],
           "portals": [],

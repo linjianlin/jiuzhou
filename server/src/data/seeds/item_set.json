@@ -2217,14 +2217,46 @@
       "quality_rank": 5,
       "min_realm": "炼神返虚·养神期",
       "pieces": [
-        { "equip_slot": "weapon", "item_def_id": "set-ningshen-weapon", "piece_key": "weapon" },
-        { "equip_slot": "head", "item_def_id": "set-ningshen-head", "piece_key": "head" },
-        { "equip_slot": "clothes", "item_def_id": "set-ningshen-clothes", "piece_key": "clothes" },
-        { "equip_slot": "gloves", "item_def_id": "set-ningshen-gloves", "piece_key": "gloves" },
-        { "equip_slot": "pants", "item_def_id": "set-ningshen-pants", "piece_key": "pants" },
-        { "equip_slot": "necklace", "item_def_id": "set-ningshen-necklace", "piece_key": "necklace" },
-        { "equip_slot": "accessory", "item_def_id": "set-ningshen-accessory", "piece_key": "accessory" },
-        { "equip_slot": "artifact", "item_def_id": "set-ningshen-artifact", "piece_key": "artifact" }
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-ningshen-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-ningshen-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-ningshen-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-ningshen-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-ningshen-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-ningshen-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-ningshen-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-ningshen-artifact",
+          "piece_key": "artifact"
+        }
       ],
       "bonuses": [
         {
@@ -2234,13 +2266,21 @@
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "fafang", "value": 22, "apply_type": "flat" }
+              "params": {
+                "attr_key": "fafang",
+                "value": 22,
+                "apply_type": "flat"
+              }
             },
             {
               "trigger": "on_turn_start",
               "target": "self",
               "effect_type": "heal",
-              "params": { "value": 0, "scale_key": "max_qixue", "scale_rate": 0.015 }
+              "params": {
+                "value": 0,
+                "scale_key": "max_qixue",
+                "scale_rate": 0.015
+              }
             }
           ],
           "priority": 0
@@ -2252,14 +2292,23 @@
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "kongzhi_kangxing_rating", "value": 350, "apply_type": "flat" }
+              "params": {
+                "attr_key": "kongzhi_kangxing_rating",
+                "value": 350,
+                "apply_type": "flat"
+              }
             },
             {
               "trigger": "on_be_hit",
               "target": "enemy",
               "effect_type": "debuff",
               "duration_round": 2,
-              "params": { "attr_key": "fagong", "value": 22, "apply_type": "flat", "chance": 0.3 }
+              "params": {
+                "attr_key": "fagong",
+                "value": 22,
+                "apply_type": "flat",
+                "chance": 0.3
+              }
             }
           ],
           "priority": 1
@@ -2271,21 +2320,35 @@
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "max_qixue", "value": 500, "apply_type": "flat" }
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 500,
+                "apply_type": "flat"
+              }
             },
             {
               "trigger": "on_be_hit",
               "target": "self",
               "effect_type": "buff",
               "duration_round": 1,
-              "params": { "attr_key": "fafang", "value": 0.18, "apply_type": "percent", "chance": 0.25 }
+              "params": {
+                "attr_key": "fafang",
+                "value": 0.18,
+                "apply_type": "percent",
+                "chance": 0.25
+              }
             },
             {
               "trigger": "on_turn_start",
               "target": "enemy",
               "effect_type": "debuff",
               "duration_round": 1,
-              "params": { "attr_key": "baoji_rating", "value": 200, "apply_type": "flat", "chance": 0.3 }
+              "params": {
+                "attr_key": "baoji_rating",
+                "value": 200,
+                "apply_type": "flat",
+                "chance": 0.3
+              }
             }
           ],
           "priority": 2
@@ -2297,14 +2360,23 @@
               "trigger": "on_turn_start",
               "target": "self",
               "effect_type": "heal",
-              "params": { "value": 0, "scale_key": "max_qixue", "scale_rate": 0.035 }
+              "params": {
+                "value": 0,
+                "scale_key": "max_qixue",
+                "scale_rate": 0.035
+              }
             },
             {
               "trigger": "on_be_hit",
               "target": "self",
               "effect_type": "buff",
               "duration_round": 2,
-              "params": { "attr_key": "kangbao_rating", "value": 500, "apply_type": "flat", "chance": 0.22 }
+              "params": {
+                "attr_key": "kangbao_rating",
+                "value": 500,
+                "apply_type": "flat",
+                "chance": 0.22
+              }
             }
           ],
           "priority": 3
@@ -2321,14 +2393,46 @@
       "quality_rank": 5,
       "min_realm": "炼神返虚·养神期",
       "pieces": [
-        { "equip_slot": "weapon", "item_def_id": "set-xuying-weapon", "piece_key": "weapon" },
-        { "equip_slot": "head", "item_def_id": "set-xuying-head", "piece_key": "head" },
-        { "equip_slot": "clothes", "item_def_id": "set-xuying-clothes", "piece_key": "clothes" },
-        { "equip_slot": "gloves", "item_def_id": "set-xuying-gloves", "piece_key": "gloves" },
-        { "equip_slot": "pants", "item_def_id": "set-xuying-pants", "piece_key": "pants" },
-        { "equip_slot": "necklace", "item_def_id": "set-xuying-necklace", "piece_key": "necklace" },
-        { "equip_slot": "accessory", "item_def_id": "set-xuying-accessory", "piece_key": "accessory" },
-        { "equip_slot": "artifact", "item_def_id": "set-xuying-artifact", "piece_key": "artifact" }
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-xuying-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-xuying-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-xuying-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-xuying-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-xuying-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-xuying-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-xuying-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-xuying-artifact",
+          "piece_key": "artifact"
+        }
       ],
       "bonuses": [
         {
@@ -2338,13 +2442,21 @@
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "fagong", "value": 22, "apply_type": "flat" }
+              "params": {
+                "attr_key": "fagong",
+                "value": 22,
+                "apply_type": "flat"
+              }
             },
             {
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "baoji_rating", "value": 120, "apply_type": "flat" }
+              "params": {
+                "attr_key": "baoji_rating",
+                "value": 120,
+                "apply_type": "flat"
+              }
             }
           ],
           "priority": 0
@@ -2356,14 +2468,23 @@
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "zengshang", "value": 0.06, "apply_type": "flat" }
+              "params": {
+                "attr_key": "zengshang",
+                "value": 0.06,
+                "apply_type": "flat"
+              }
             },
             {
               "trigger": "on_skill",
               "target": "enemy",
               "effect_type": "debuff",
               "duration_round": 1,
-              "params": { "attr_key": "fafang", "value": 18, "apply_type": "flat", "chance": 0.28 }
+              "params": {
+                "attr_key": "fafang",
+                "value": 18,
+                "apply_type": "flat",
+                "chance": 0.28
+              }
             }
           ],
           "priority": 1
@@ -2375,14 +2496,23 @@
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "fagong", "value": 0.08, "apply_type": "percent" }
+              "params": {
+                "attr_key": "fagong",
+                "value": 0.08,
+                "apply_type": "percent"
+              }
             },
             {
               "trigger": "on_skill",
               "target": "enemy",
               "effect_type": "debuff",
               "duration_round": 1,
-              "params": { "attr_key": "kongzhi_kangxing", "value": 0.022, "apply_type": "flat", "chance": 0.25 }
+              "params": {
+                "attr_key": "kongzhi_kangxing",
+                "value": 0.022,
+                "apply_type": "flat",
+                "chance": 0.25
+              }
             }
           ],
           "priority": 2
@@ -2395,13 +2525,305 @@
               "target": "self",
               "effect_type": "shield",
               "duration_round": 2,
-              "params": { "value": 160, "scale_key": "fagong", "scale_rate": 0.24, "absorb_type": "magic" }
+              "params": {
+                "value": 160,
+                "scale_key": "fagong",
+                "scale_rate": 0.24,
+                "absorb_type": "magic"
+              }
             },
             {
               "trigger": "equip",
               "target": "self",
               "effect_type": "buff",
-              "params": { "attr_key": "baoshang", "value": 0.18, "apply_type": "flat" }
+              "params": {
+                "attr_key": "baoshang",
+                "value": 0.18,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚期套装：太虚套装（法攻/印记爆发） =========="
+    },
+    {
+      "id": "set-taixu",
+      "name": "太虚套装",
+      "description": "太虚套装围绕虚蚀印记展开，通过高频叠层与暴击引爆形成爆发闭环。",
+      "quality_rank": 6,
+      "min_realm": "炼神返虚·还虚期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-taixu-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-taixu-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-taixu-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-taixu-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-taixu-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-taixu-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-taixu-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-taixu-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 26,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji_rating",
+                "value": 150,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "on_hit",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "apply",
+                "mark_id": "void_erosion",
+                "max_stacks": 5,
+                "chance": 0.35
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 0.05,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_hit",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "apply",
+                "mark_id": "void_erosion",
+                "max_stacks": 5,
+                "apply_stacks": 2,
+                "chance": 0.42
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_crit",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "consume",
+                "mark_id": "void_erosion",
+                "consume_mode": "all",
+                "per_stack_rate": 0.36,
+                "result_type": "damage",
+                "value": 0,
+                "scale_key": "fagong",
+                "scale_rate": 0.42
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "_comment": "========== 炼神返虚·还虚期套装：镇魂套装（坦度/印记反制） =========="
+    },
+    {
+      "id": "set-zhenhun",
+      "name": "镇魂套装",
+      "description": "镇魂套装以受击反制为核心，通过反挂虚蚀并消耗印记转护盾来稳定前排。",
+      "quality_rank": 6,
+      "min_realm": "炼神返虚·还虚期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-zhenhun-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-zhenhun-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-zhenhun-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-zhenhun-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-zhenhun-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-zhenhun-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-zhenhun-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-zhenhun-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 560,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wufang",
+                "value": 28,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "on_be_hit",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "apply",
+                "mark_id": "void_erosion",
+                "max_stacks": 5,
+                "chance": 0.33
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "on_be_hit",
+              "target": "self",
+              "effect_type": "shield",
+              "duration_round": 2,
+              "params": {
+                "shield_mode": "damage_echo",
+                "value": 0.42,
+                "chance": 0.35
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_be_hit",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "consume",
+                "mark_id": "void_erosion",
+                "consume_mode": "fixed",
+                "consume_stacks": 2,
+                "per_stack_rate": 0.95,
+                "result_type": "shield_self",
+                "value": 0,
+                "scale_key": "wufang",
+                "scale_rate": 0.55,
+                "chance": 0.45
+              }
             }
           ],
           "priority": 3

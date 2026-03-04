@@ -16,6 +16,7 @@ import { rollChance } from '../utils/random.js';
 import { addBuff, addShield } from './buff.js';
 import { applyDamage } from './damage.js';
 import { applyHealing } from './healing.js';
+import { applyMarkStacks, consumeMarkStacks, resolveMarkEffectConfig } from './mark.js';
 
 interface SetBonusTriggerContext {
   target?: BattleUnit;
@@ -69,6 +70,9 @@ export function triggerSetBonusEffects(
         break;
       case 'shield':
         applyResult = applySetShield(effect, owner, target, params, context.damage);
+        break;
+      case 'mark':
+        applyResult = applySetMark(state, effect, owner, target, params);
         break;
       default:
         break;
@@ -373,6 +377,124 @@ function applySetShield(
       buffsApplied: [`${effect.setName}·护盾`],
     },
   };
+}
+
+function applySetMark(
+  state: BattleState,
+  effect: BattleSetBonusEffect,
+  owner: BattleUnit,
+  target: BattleUnit,
+  params: Record<string, unknown>
+): SetBonusApplyResult | null {
+  const config = resolveMarkEffectConfig(params);
+  if (!config) return null;
+
+  if (config.operation === 'apply') {
+    const applied = applyMarkStacks(target, owner.id, config);
+    if (!applied.applied) return null;
+    return {
+      targetResult: {
+        ...buildTargetResultBase(target),
+        marksApplied: [applied.text],
+      },
+    };
+  }
+
+  let baseValue = Math.max(0, Math.floor(asFiniteNumber(params.value) ?? 0));
+  const scaleKey = asNonEmptyString(params.scale_key);
+  const scaleRate = asFiniteNumber(params.scale_rate);
+  if (scaleKey && scaleRate !== null) {
+    const attrValue = asFiniteNumber(readAttrValue(owner, scaleKey)) ?? 0;
+    baseValue += Math.max(0, Math.floor(attrValue * normalizeRate(scaleRate)));
+  }
+
+  const consumed = consumeMarkStacks(
+    target,
+    owner.id,
+    config,
+    baseValue,
+    target.currentAttrs.max_qixue
+  );
+  if (!consumed.consumed) return null;
+
+  const consumeText = consumed.wasCapped ? `${consumed.text}（触发35%上限）` : consumed.text;
+  const convertedValue = Math.max(0, consumed.finalValue);
+  const targetResult: TargetResult = {
+    ...buildTargetResultBase(target),
+    marksConsumed: [consumeText],
+  };
+
+  if (convertedValue <= 0) {
+    return { targetResult };
+  }
+
+  if (consumed.resultType === 'damage') {
+    const wasAlive = target.isAlive;
+    const { actualDamage, shieldAbsorbed } = applyDamage(state, target, convertedValue, 'true');
+    const safeDamage = Math.max(0, actualDamage);
+    const safeShieldAbsorbed = Math.max(0, shieldAbsorbed);
+    owner.stats.damageDealt += safeDamage;
+
+    const extraLogs: BattleLogEntry[] = [];
+    if (wasAlive && !target.isAlive) {
+      owner.stats.killCount += 1;
+      extraLogs.push({
+        type: 'death',
+        round: state.roundCount,
+        unitId: target.id,
+        unitName: target.name,
+        killerId: owner.id,
+        killerName: owner.name,
+      });
+    }
+
+    targetResult.hits = [
+      {
+        index: 1,
+        damage: safeDamage,
+        isMiss: false,
+        isCrit: false,
+        isParry: false,
+        isElementBonus: false,
+        shieldAbsorbed: safeShieldAbsorbed,
+      },
+    ];
+    targetResult.damage = safeDamage;
+    targetResult.shieldAbsorbed = safeShieldAbsorbed;
+    return {
+      targetResult,
+      extraLogs,
+    };
+  }
+
+  if (consumed.resultType === 'shield_self') {
+    const duration = normalizeDuration(effect.durationRound);
+    addShield(
+      owner,
+      {
+        value: convertedValue,
+        maxValue: convertedValue,
+        duration,
+        absorbType: 'all',
+        priority: 1,
+        sourceSkillId: effect.setId,
+      },
+      owner.id
+    );
+    if (target.id === owner.id) {
+      targetResult.buffsApplied = [`${effect.setName}·护盾`];
+    }
+    return { targetResult };
+  }
+
+  const actualHeal = applyHealing(owner, convertedValue);
+  if (actualHeal > 0) {
+    owner.stats.healingDone += actualHeal;
+    if (target.id === owner.id) {
+      targetResult.heal = actualHeal;
+    }
+  }
+  return { targetResult };
 }
 
 function buildPreparedTriggerEffects(

@@ -123,6 +123,20 @@ const buildTargetSummary = (target: BattleActionTargetDto): string => {
     parts.push(`移除状态:${buffsRemoved.join('、')}`);
   }
 
+  const marksApplied = (target.marksApplied ?? [])
+    .map((entry) => normalizeName(entry, ''))
+    .filter(Boolean);
+  if (marksApplied.length > 0) {
+    parts.push(`施加印记:${marksApplied.join('、')}`);
+  }
+
+  const marksConsumed = (target.marksConsumed ?? [])
+    .map((entry) => normalizeName(entry, ''))
+    .filter(Boolean);
+  if (marksConsumed.length > 0) {
+    parts.push(`消耗印记:${marksConsumed.join('、')}`);
+  }
+
   if (parts.length === 0) {
     return name;
   }
