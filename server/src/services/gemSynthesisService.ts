@@ -524,6 +524,21 @@ const consumeSelectedItemInstancesTx = async (
   return { success: true, message: '扣除材料成功' };
 };
 
+const calcMaxConvertTimesBySelectedItems = (
+  consumeBaseQtyByItemId: Map<number, number>,
+  rowsByItemId: Map<number, ItemInstanceMaterialRow>,
+): number => {
+  let maxTimes = Number.MAX_SAFE_INTEGER;
+  for (const [itemId, baseQty] of consumeBaseQtyByItemId.entries()) {
+    const row = rowsByItemId.get(itemId);
+    if (!row || baseQty <= 0) return 0;
+    const byItem = Math.floor(row.qty / baseQty);
+    maxTimes = Math.min(maxTimes, byItem);
+  }
+  if (!Number.isFinite(maxTimes) || maxTimes <= 0) return 0;
+  return maxTimes;
+};
+
 const consumeItemDefIdsQtyTx = async (
   characterId: number,
   itemDefIds: string[],
@@ -1012,6 +1027,7 @@ class GemSynthesisService {
    * - characterId：角色 ID
    * - userId：用户 ID
    * - params.selectedGemItemIds：手动选择的 2 个宝石实例 ID（支持同一堆叠重复选择）
+   * - params.times：按同一组手选宝石重复转换次数（默认 1）
    *
    * 输出：
    * - GemConvertExecuteResult：消耗、产出、角色快照
@@ -1027,7 +1043,7 @@ class GemSynthesisService {
   async convertGem(
     characterId: number,
     userId: number,
-    params: { selectedGemItemIds: number[] },
+    params: { selectedGemItemIds: number[]; times?: number },
   ): Promise<GemConvertExecuteResult> {
     const selectedGemItemIdsRaw = Array.isArray(params.selectedGemItemIds) ? params.selectedGemItemIds : [];
     if (selectedGemItemIdsRaw.length !== GEM_CONVERT_INPUT_QTY) {
@@ -1041,12 +1057,12 @@ class GemSynthesisService {
       return { success: false, message: 'selectedGemItemIds参数错误' };
     }
 
-    const consumeQtyByItemId = new Map<number, number>();
+    const consumeBaseQtyByItemId = new Map<number, number>();
     for (const itemId of selectedGemItemIds) {
-      consumeQtyByItemId.set(itemId, (consumeQtyByItemId.get(itemId) ?? 0) + 1);
+      consumeBaseQtyByItemId.set(itemId, (consumeBaseQtyByItemId.get(itemId) ?? 0) + 1);
     }
 
-    const times = 1;
+    const requestedTimes = clampInt(params.times ?? 1, 1, 999999);
 
     const client = getTransactionClient();
     if (!client) return { success: false, message: '事务上下文缺失' };
@@ -1064,8 +1080,8 @@ class GemSynthesisService {
     }
     const context = contextResult.data;
 
-    const selectedRows = await getItemInstanceRowsByIdsForUpdateTx(characterId, [...consumeQtyByItemId.keys()]);
-    if (selectedRows.length !== consumeQtyByItemId.size) {
+    const selectedRows = await getItemInstanceRowsByIdsForUpdateTx(characterId, [...consumeBaseQtyByItemId.keys()]);
+    if (selectedRows.length !== consumeBaseQtyByItemId.size) {
       return { success: false, message: '所选宝石不存在' };
     }
 
@@ -1081,7 +1097,7 @@ class GemSynthesisService {
         return { success: false, message: '仅可选择背包内宝石进行转换' };
       }
 
-      const requestedQty = consumeQtyByItemId.get(row.id) ?? 0;
+      const requestedQty = consumeBaseQtyByItemId.get(row.id) ?? 0;
       if (requestedQty <= 0 || row.qty < requestedQty) {
         return { success: false, message: '所选宝石数量不足' };
       }
@@ -1113,8 +1129,22 @@ class GemSynthesisService {
       return { success: false, message: `宝石转换配置缺失：${inputLevel}级灵石消耗未定义` };
     }
 
-    if (wallet.spiritStones < costSpiritStonesPerConvert) {
-      return { success: false, message: '灵石不足' };
+    const maxBySelectedItems = calcMaxConvertTimesBySelectedItems(consumeBaseQtyByItemId, rowsByItemId);
+    const maxBySpirit =
+      costSpiritStonesPerConvert > 0
+        ? Math.floor(wallet.spiritStones / costSpiritStonesPerConvert)
+        : Number.MAX_SAFE_INTEGER;
+    const maxConvertTimes = Math.max(0, Math.min(maxBySelectedItems, maxBySpirit));
+    if (maxConvertTimes <= 0) {
+      return { success: false, message: '所选宝石或灵石不足' };
+    }
+    if (requestedTimes > maxConvertTimes) {
+      return { success: false, message: `当前最多可转换${maxConvertTimes}次` };
+    }
+
+    const consumeQtyByItemId = new Map<number, number>();
+    for (const [itemId, baseQty] of consumeBaseQtyByItemId.entries()) {
+      consumeQtyByItemId.set(itemId, baseQty * requestedTimes);
     }
 
     const consumeRes = await consumeSelectedItemInstancesTx(consumeQtyByItemId, rowsByItemId);
@@ -1122,12 +1152,12 @@ class GemSynthesisService {
       return { success: false, message: consumeRes.message };
     }
 
-    const consumeInputGemQty = GEM_CONVERT_INPUT_QTY;
-    const spentSpiritStones = costSpiritStonesPerConvert;
+    const consumeInputGemQty = GEM_CONVERT_INPUT_QTY * requestedTimes;
+    const spentSpiritStones = costSpiritStonesPerConvert * requestedTimes;
     wallet.spiritStones -= spentSpiritStones;
     await updateCharacterWalletTx(characterId, wallet);
 
-    const rolledOutputCounts = rollRandomGemOutputCounts(candidateOutputItemDefIds, 1);
+    const rolledOutputCounts = rollRandomGemOutputCounts(candidateOutputItemDefIds, requestedTimes);
     const producedItemDefIds = [...rolledOutputCounts.keys()].sort((a, b) => a.localeCompare(b));
     const outputDefMap = await getItemDefMap(producedItemDefIds);
     const producedItems: Array<{
@@ -1167,7 +1197,7 @@ class GemSynthesisService {
       data: {
         inputLevel,
         outputLevel,
-        times,
+        times: requestedTimes,
         consumed: {
           inputGemQty: consumeInputGemQty,
           selectedGemItemIds,
@@ -1176,7 +1206,7 @@ class GemSynthesisService {
           spiritStones: spentSpiritStones,
         },
         produced: {
-          totalQty: times,
+          totalQty: requestedTimes,
           items: producedItems,
         },
         character,

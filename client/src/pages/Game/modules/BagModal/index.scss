@@ -1131,6 +1131,14 @@
   white-space: nowrap;
 }
 
+.bag-gem-convert-times {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .bag-gem-convert-formula {
   padding: 10px 12px;
   border: 1px dashed var(--border-color);
@@ -1293,6 +1301,11 @@
 
   .bag-gem-convert-selected {
     width: 100%;
+  }
+
+  .bag-gem-convert-times {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .bag-gem-convert-selected-value {

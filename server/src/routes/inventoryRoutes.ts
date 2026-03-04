@@ -164,7 +164,7 @@ router.get('/gem/convert/options', asyncHandler(async (req, res) => {
 // ============================================
 // 执行宝石转换
 // POST /api/inventory/gem/convert
-// Body: { selectedGemItemIds: number[] }（必须手动选择2个宝石）
+// Body: { selectedGemItemIds: number[], times?: number }（必须手动选择2个宝石）
 // ============================================
 router.post('/gem/convert', asyncHandler(async (req, res) => {
     const userId = req.userId!;
@@ -174,9 +174,14 @@ router.post('/gem/convert', asyncHandler(async (req, res) => {
     if (!selectedGemItemIds || selectedGemItemIds.length !== 2) {
       throw new BusinessError('selectedGemItemIds参数错误，需要手动选择2个宝石');
     }
+    const parsedTimes = parseOptionalPositiveInt(req.body?.times);
+    if (Number.isNaN(parsedTimes)) {
+      throw new BusinessError('times参数错误');
+    }
 
     const result = await gemSynthesisService.convertGem(characterId, userId, {
       selectedGemItemIds,
+      ...(parsedTimes !== undefined ? { times: parsedTimes } : {}),
     });
 
     if (result.success) {

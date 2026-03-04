@@ -189,6 +189,7 @@ export const synthesizeInventoryGemBatch = (body: {
 
 export const convertInventoryGem = (body: {
   selectedGemItemIds: number[];
+  times?: number;
 }): Promise<GemConvertExecuteResponse> => {
   return api.post('/inventory/gem/convert', body);
 };

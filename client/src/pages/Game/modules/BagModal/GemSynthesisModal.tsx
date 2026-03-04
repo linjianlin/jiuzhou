@@ -222,6 +222,7 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
   const [targetLevel, setTargetLevel] = useState(2);
   const targetLevelRef = useRef(2);
 
+  const [convertTimes, setConvertTimes] = useState(1);
   const [selectedConvertGemItemIds, setSelectedConvertGemItemIds] = useState<number[]>([]);
   const selectedConvertGemItemIdsRef = useRef<number[]>([]);
 
@@ -300,6 +301,7 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
       setSelectedRecipeId('');
       setTimes(1);
       setTargetLevel(2);
+      setConvertTimes(1);
       setSelectedConvertGemItemIds([]);
     } finally {
       setLoading(false);
@@ -403,6 +405,43 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
     return convertOptionByInputLevel.get(selectedConvertLevel) ?? null;
   }, [convertOptionByInputLevel, selectedConvertLevel]);
 
+  const selectedConvertMaxTimesByItems = useMemo(() => {
+    if (selectedConvertGemItemIds.length !== GEM_CONVERT_MANUAL_SELECT_QTY) return 0;
+    const needByItemId = new Map<number, number>();
+    for (const itemId of selectedConvertGemItemIds) {
+      needByItemId.set(itemId, (needByItemId.get(itemId) ?? 0) + 1);
+    }
+    let maxTimes = Number.MAX_SAFE_INTEGER;
+    for (const [itemId, needQty] of needByItemId.entries()) {
+      const item = convertGemItemById.get(itemId);
+      if (!item || needQty <= 0) return 0;
+      maxTimes = Math.min(maxTimes, Math.floor(item.qty / needQty));
+    }
+    if (!Number.isFinite(maxTimes) || maxTimes <= 0) return 0;
+    return maxTimes;
+  }, [convertGemItemById, selectedConvertGemItemIds]);
+
+  const selectedConvertMaxTimesBySpirit = useMemo(() => {
+    if (!selectedConvertOption) return 0;
+    const cost = selectedConvertOption.costSpiritStonesPerConvert;
+    if (cost <= 0) return Number.MAX_SAFE_INTEGER;
+    return Math.floor((wallet?.spiritStones ?? 0) / cost);
+  }, [selectedConvertOption, wallet?.spiritStones]);
+
+  const selectedConvertMaxTimes = useMemo(() => {
+    if (!selectedConvertOption) return 0;
+    if (selectedConvertOption.candidateGemCount <= 0) return 0;
+    return Math.max(0, Math.min(selectedConvertMaxTimesByItems, selectedConvertMaxTimesBySpirit));
+  }, [selectedConvertMaxTimesByItems, selectedConvertMaxTimesBySpirit, selectedConvertOption]);
+
+  useEffect(() => {
+    if (selectedConvertMaxTimes <= 0) {
+      setConvertTimes(1);
+      return;
+    }
+    setConvertTimes((prev) => clampSynthesizeTimes(prev, selectedConvertMaxTimes));
+  }, [selectedConvertMaxTimes]);
+
   const addSelectedConvertGem = useCallback((itemId: number) => {
     setSelectedConvertGemItemIds((prev) => {
       if (prev.length >= GEM_CONVERT_MANUAL_SELECT_QTY) return prev;
@@ -483,12 +522,14 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
   const handleConvert = useCallback(async () => {
     if (selectedConvertGemItemIds.length !== GEM_CONVERT_MANUAL_SELECT_QTY) return;
     if (!selectedConvertOption) return;
-    if (selectedConvertOption.maxConvertTimes <= 0 || selectedConvertOption.candidateGemCount <= 0) return;
+    if (selectedConvertMaxTimes <= 0) return;
 
+    const executeTimes = clampSynthesizeTimes(convertTimes, selectedConvertMaxTimes);
     setConvertSubmitting(true);
     try {
       const res = await convertInventoryGem({
         selectedGemItemIds: selectedConvertGemItemIds,
+        times: executeTimes,
       });
       if (!res.success || !res.data) throw new Error(res.message || '宝石转换失败');
 
@@ -507,15 +548,14 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
     } finally {
       setConvertSubmitting(false);
     }
-  }, [message, onSuccess, refresh, selectedConvertGemItemIds, selectedConvertOption]);
+  }, [convertTimes, message, onSuccess, refresh, selectedConvertGemItemIds, selectedConvertMaxTimes, selectedConvertOption]);
 
   const canSynthesize = !!selectedRecipe && selectedRecipe.maxSynthesizeTimes > 0;
   const canBatch = !!batchSeriesKey && batchTargetLevelOptions.length > 0 && !batchSubmitting;
   const canConvert =
     selectedConvertGemItemIds.length === GEM_CONVERT_MANUAL_SELECT_QTY &&
     !!selectedConvertOption &&
-    selectedConvertOption.maxConvertTimes > 0 &&
-    selectedConvertOption.candidateGemCount > 0 &&
+    selectedConvertMaxTimes > 0 &&
     !convertSubmitting;
   const selectedConvertGemLabelText = useMemo(() => {
     if (selectedConvertGemItemIds.length <= 0) {
@@ -742,6 +782,16 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
                     <span className="bag-gem-convert-selected-label">已选择</span>
                     <span className="bag-gem-convert-selected-value">{selectedConvertGemLabelText}</span>
                   </div>
+                  <div className="bag-gem-convert-times">
+                    <span>转换次数</span>
+                    <InputNumber
+                      min={1}
+                      max={Math.max(1, selectedConvertMaxTimes)}
+                      value={convertTimes}
+                      onChange={(value) => setConvertTimes(clampSynthesizeTimes(Number(value || 1), selectedConvertMaxTimes))}
+                    />
+                    <span>最多 {selectedConvertMaxTimes}</span>
+                  </div>
                   <Button
                     onClick={clearSelectedConvertGems}
                     disabled={selectedConvertGemItemIds.length <= 0 || convertSubmitting}
@@ -768,8 +818,9 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
                     <div className="bag-gem-convert-summary">
                       <span>当前选择 <strong>{selectedConvertGemItemIds.length}</strong> / {GEM_CONVERT_MANUAL_SELECT_QTY}</span>
                       <span>单次消耗灵石 <strong>{selectedConvertOption.costSpiritStonesPerConvert.toLocaleString()}</strong></span>
+                      <span>本次消耗灵石 <strong>{(selectedConvertOption.costSpiritStonesPerConvert * clampSynthesizeTimes(convertTimes, selectedConvertMaxTimes)).toLocaleString()}</strong></span>
                       <span>随机池数量 <strong>{selectedConvertOption.candidateGemCount}</strong></span>
-                      <span>当前可转 <strong>{selectedConvertOption.maxConvertTimes > 0 ? '是' : '否'}</strong></span>
+                      <span>当前最多可转 <strong>{selectedConvertMaxTimes}</strong> 次</span>
                     </div>
                   </>
                 ) : (
