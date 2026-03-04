@@ -1,7 +1,14 @@
 import { App, Button, Drawer, Modal, Segmented, Spin, Tabs, Tooltip } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveIconUrl } from '../../shared/resolveIcon';
-import { getInventoryInfo, getInventoryItems, moveInventoryItem, type InventoryItemDto, type ItemDefLite } from '../../../../services/api';
+import {
+  INVENTORY_ITEMS_PAGE_SIZE_MAX,
+  getInventoryInfo,
+  getInventoryItems,
+  moveInventoryItem,
+  type InventoryItemDto,
+  type ItemDefLite,
+} from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
 import { getItemQualityMeta } from '../../shared/itemQuality';
 import InventoryItemCell from '../../shared/InventoryItemCell';
@@ -157,7 +164,7 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
   const mobilePreviewSide = mobilePreview?.side ?? null;
 
   const fetchAllInventoryItems = useCallback(async (location: 'bag' | 'warehouse'): Promise<InventoryItemDto[]> => {
-    const pageSize = 500;
+    const pageSize = INVENTORY_ITEMS_PAGE_SIZE_MAX;
     const out: InventoryItemDto[] = [];
     let page = 1;
     for (; ;) {
@@ -165,8 +172,11 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
       if (!res?.success || !res.data) return out;
       const items = res.data.items ?? [];
       out.push(...items);
-      const total = Number(res.data.total || 0);
-      if (out.length >= total || items.length < pageSize) return out;
+      const totalRaw = Number(res.data.total);
+      const hasValidTotal = Number.isFinite(totalRaw) && totalRaw >= 0;
+      // 终止条件基于“是否还有数据”而不是“是否小于请求页大小”，
+      // 避免服务端 pageSize 上限与前端请求值不一致时提前结束分页。
+      if (items.length === 0 || (hasValidTotal && out.length >= totalRaw)) return out;
       page += 1;
       if (page > 50) return out;
     }

@@ -2,6 +2,12 @@ import api from './core';
 
 export type InventoryLocation = 'bag' | 'warehouse' | 'equipped';
 
+/**
+ * 背包分页单页上限（与服务端 /inventory/items 路由保持一致）。
+ * 统一导出常量，避免调用方硬编码导致“分页漏拉”。
+ */
+export const INVENTORY_ITEMS_PAGE_SIZE_MAX = 200;
+
 export interface InventoryInfoData {
   bag_capacity: number;
   warehouse_capacity: number;
@@ -83,7 +89,7 @@ export const getInventoryInfo = (): Promise<InventoryInfoResponse> => {
 export const getInventoryItems = (
   location: InventoryLocation = 'bag',
   page: number = 1,
-  pageSize: number = 200
+  pageSize: number = INVENTORY_ITEMS_PAGE_SIZE_MAX
 ): Promise<InventoryItemsResponse> => {
   return api.get('/inventory/items', { params: { location, page, pageSize } });
 };
