@@ -102,7 +102,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    command: postgres -c max_connections=200
+    command: postgres -c max_connections=200 -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
     environment:
       - POSTGRES_DB=jiuzhou
       - POSTGRES_USER=postgres
@@ -140,6 +140,59 @@ services:
       update_config:
         order: stop-first
 
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:${DB_PASSWORD:-postgres}@postgres:5432/jiuzhou?sslmode=disable
+      - PG_EXPORTER_AUTO_DISCOVER_DATABASES=false
+    networks:
+      - jiuzhou_net
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - jiuzhou_net
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    configs:
+      - source: grafana_datasource_config
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - jiuzhou_net
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+
 volumes:
   postgres_data:
     external: true
@@ -156,6 +209,14 @@ volumes:
   caddy_config:
     external: true
     name: jiuzhou_caddy_config
+  prometheus_data:
+  grafana_data:
+
+configs:
+  prometheus_config:
+    file: ./ops/monitoring/prometheus.yml
+  grafana_datasource_config:
+    file: ./ops/monitoring/grafana-datasource.yml
 
 networks:
   jiuzhou_net:
