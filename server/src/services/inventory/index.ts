@@ -61,6 +61,7 @@ export {
   equipItem,
   unequipItem,
   enhanceEquipment,
+  getEquipmentGrowthCostPreview,
   refineEquipment,
   rerollEquipmentAffixes,
   getRerollCostPreview,

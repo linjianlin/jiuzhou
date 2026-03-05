@@ -41,6 +41,7 @@ import {
   equipItem,
   unequipItem,
   enhanceEquipment,
+  getEquipmentGrowthCostPreview,
   refineEquipment,
   rerollEquipmentAffixes,
   getRerollCostPreview,
@@ -104,6 +105,44 @@ class InventoryService {
     };
   }> {
     return getRerollCostPreview(characterId, itemInstanceId);
+  }
+
+  async getEquipmentGrowthCostPreview(
+    characterId: number,
+    itemInstanceId: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    data?: {
+      enhance: {
+        currentLevel: number;
+        targetLevel: number;
+        maxLevel: number;
+        successRate: number;
+        downgradeOnFail: boolean;
+        costs: {
+          materialItemDefId: string;
+          materialQty: number;
+          silverCost: number;
+          spiritStoneCost: number;
+        } | null;
+      };
+      refine: {
+        currentLevel: number;
+        targetLevel: number;
+        maxLevel: number;
+        successRate: number;
+        downgradeOnFail: boolean;
+        costs: {
+          materialItemDefId: string;
+          materialQty: number;
+          silverCost: number;
+          spiritStoneCost: number;
+        } | null;
+      };
+    };
+  }> {
+    return getEquipmentGrowthCostPreview(characterId, itemInstanceId);
   }
 
   async findEmptySlots(

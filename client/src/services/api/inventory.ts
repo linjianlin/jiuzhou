@@ -172,14 +172,14 @@ export interface InventoryEnhanceResponse {
   };
 }
 
-export interface InventoryEnhanceRequest {
+export interface InventoryItemInstanceRequest {
   itemId?: number;
   itemInstanceId?: number;
   instanceId?: number;
 }
 
 export const enhanceInventoryItem = (
-  body: InventoryEnhanceRequest
+  body: InventoryItemInstanceRequest
 ): Promise<InventoryEnhanceResponse> => {
   return api.post('/inventory/enhance', body);
 };
@@ -198,16 +198,49 @@ export interface InventoryRefineResponse {
   };
 }
 
-export interface InventoryRefineRequest {
-  itemId?: number;
-  itemInstanceId?: number;
-  instanceId?: number;
-}
-
 export const refineInventoryItem = (
-  body: InventoryRefineRequest
+  body: InventoryItemInstanceRequest
 ): Promise<InventoryRefineResponse> => {
   return api.post('/inventory/refine', body);
+};
+
+export interface InventoryGrowthCostPreviewResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    enhance: {
+      currentLevel: number;
+      targetLevel: number;
+      maxLevel: number;
+      successRate: number;
+      downgradeOnFail: boolean;
+      costs: {
+        materialItemDefId: string;
+        materialQty: number;
+        silverCost: number;
+        spiritStoneCost: number;
+      } | null;
+    };
+    refine: {
+      currentLevel: number;
+      targetLevel: number;
+      maxLevel: number;
+      successRate: number;
+      downgradeOnFail: boolean;
+      costs: {
+        materialItemDefId: string;
+        materialQty: number;
+        silverCost: number;
+        spiritStoneCost: number;
+      } | null;
+    };
+  };
+}
+
+export const getInventoryGrowthCostPreview = (
+  body: InventoryItemInstanceRequest
+): Promise<InventoryGrowthCostPreviewResponse> => {
+  return api.post('/inventory/growth/cost-preview', body);
 };
 
 export interface InventoryRerolledAffixDto {

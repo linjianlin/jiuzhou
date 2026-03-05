@@ -633,6 +633,112 @@ export const refineEquipment = async (
 };
 
 // ============================================
+// 强化/精炼消耗预览（纯查询，不需要事务）
+// ============================================
+
+export const getEquipmentGrowthCostPreview = async (
+  characterId: number,
+  itemInstanceId: number,
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: {
+    enhance: {
+      currentLevel: number;
+      targetLevel: number;
+      maxLevel: number;
+      successRate: number;
+      downgradeOnFail: boolean;
+      costs: {
+        materialItemDefId: string;
+        materialQty: number;
+        silverCost: number;
+        spiritStoneCost: number;
+      } | null;
+    };
+    refine: {
+      currentLevel: number;
+      targetLevel: number;
+      maxLevel: number;
+      successRate: number;
+      downgradeOnFail: boolean;
+      costs: {
+        materialItemDefId: string;
+        materialQty: number;
+        silverCost: number;
+        spiritStoneCost: number;
+      } | null;
+    };
+  };
+}> => {
+  const enhanceState = await getEnhanceItemState(characterId, itemInstanceId);
+  if (!enhanceState.success || !enhanceState.item) {
+    return { success: false, message: enhanceState.message };
+  }
+  const refineState = await getRefineItemState(characterId, itemInstanceId);
+  if (!refineState.success || !refineState.item) {
+    return { success: false, message: refineState.message };
+  }
+
+  const equipReqRealmRank = getRealmRankOneBasedForEquipment(
+    enhanceState.item.equipReqRealm ?? refineState.item.equipReqRealm,
+  );
+
+  const enhanceCurrentLevel = clampInt(
+    enhanceState.item.strengthenLevel,
+    0,
+    ENHANCE_MAX_LEVEL,
+  );
+  const enhanceAtMaxLevel = enhanceCurrentLevel >= ENHANCE_MAX_LEVEL;
+  const enhanceTargetLevel = enhanceAtMaxLevel
+    ? ENHANCE_MAX_LEVEL
+    : enhanceCurrentLevel + 1;
+  const enhanceCostPlan = enhanceAtMaxLevel
+    ? null
+    : buildEnhanceCostPlan(enhanceTargetLevel, equipReqRealmRank);
+
+  const refineCurrentLevel = clampInt(
+    refineState.item.refineLevel,
+    0,
+    REFINE_MAX_LEVEL,
+  );
+  const refineAtMaxLevel = refineCurrentLevel >= REFINE_MAX_LEVEL;
+  const refineTargetLevel = refineAtMaxLevel
+    ? REFINE_MAX_LEVEL
+    : refineCurrentLevel + 1;
+  const refineCostPlan = refineAtMaxLevel
+    ? null
+    : buildRefineCostPlan(refineTargetLevel, equipReqRealmRank);
+
+  return {
+    success: true,
+    message: "ok",
+    data: {
+      enhance: {
+        currentLevel: enhanceCurrentLevel,
+        targetLevel: enhanceTargetLevel,
+        maxLevel: ENHANCE_MAX_LEVEL,
+        successRate: enhanceAtMaxLevel
+          ? 0
+          : getEnhanceSuccessRatePercent(enhanceTargetLevel),
+        downgradeOnFail: enhanceTargetLevel >= 8,
+        costs: enhanceCostPlan,
+      },
+      refine: {
+        currentLevel: refineCurrentLevel,
+        targetLevel: refineTargetLevel,
+        maxLevel: REFINE_MAX_LEVEL,
+        successRate: refineAtMaxLevel
+          ? 0
+          : getRefineSuccessRatePercent(refineTargetLevel),
+        downgradeOnFail: refineTargetLevel >= 6,
+        costs: refineCostPlan,
+      },
+    },
+  };
+};
+
+// ============================================
 // 洗炼消耗预览（纯查询，不需要事务）
 // ============================================
 

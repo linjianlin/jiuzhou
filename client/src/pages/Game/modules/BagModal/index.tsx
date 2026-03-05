@@ -27,9 +27,6 @@ import {
   buildBagItem,
   buildBatchDisassemblePayloadItems,
   buildEquipmentDetailLines,
-  buildEnhanceCostPlan,
-  buildGrowthPreviewAttrs,
-  buildRefineCostPlan,
   calcUseEffectDelta,
   categoryLabels,
   collectBatchDisassembleCandidates,
@@ -39,9 +36,7 @@ import {
   formatMergedLootResultParts,
   getAffixRollColor,
   getAffixRollPercent,
-  getEnhanceSuccessRatePercent,
   getEquipSlotLabel,
-  getRefineSuccessRatePercent,
   isDisassemblableBagItem,
   isGemTypeAllowedInSlot,
   normalizeGemType,
@@ -67,6 +62,7 @@ import { getItemQualityMeta } from '../../shared/itemQuality';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
 import { SetBonusDisplay } from './SetBonusDisplay';
+import { useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import './index.scss';
 
 interface BagModalProps {
@@ -316,17 +312,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
   const usedSlots = info?.bag_used ?? items.filter((i) => i.location === 'bag').length;
 
-  const materialCounts = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const it of items) {
-      if (it.category !== 'material') continue;
-      out[it.itemDefId] = (out[it.itemDefId] ?? 0) + Math.max(0, Math.floor(it.qty));
-    }
-    return out;
-  }, [items]);
-
   const bagItemCounts = useMemo(() => {
-    // 洗炼符属于 consumable，不在 materialCounts 里；这里按背包全部道具统计 itemDefId 数量。
+    // 洗炼符属于 consumable，这里按背包全部道具统计 itemDefId 数量。
     const out: Record<string, number> = {};
     for (const it of items) {
       if (it.location !== 'bag') continue;
@@ -334,6 +321,16 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     }
     return out;
   }, [items]);
+
+  const {
+    enhanceState,
+    refineState,
+    loading: growthPreviewLoading,
+  } = useEquipmentGrowthPreview({
+    item: activeItem,
+    allItems: items,
+    enabled: enhanceOpen && (growthMode === 'enhance' || growthMode === 'refine'),
+  });
 
   const openBatch = useCallback(
     (mode: BatchMode) => {
@@ -490,69 +487,6 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       setLoading(false);
     }
   }, [activeItem, message, refresh]);
-
-  const enhanceState = useMemo(() => {
-    if (!activeItem?.equip || activeItem.category !== 'equipment') return null;
-    const curLv = Math.max(0, Math.min(15, Math.floor(Number(activeItem.equip.strengthenLevel) || 0)));
-    const targetLv = Math.min(15, curLv + 1);
-    const costPlan = buildEnhanceCostPlan(targetLv);
-    const materialName = costPlan.materialItemDefId === 'enhance-001' ? '淬灵石' : '蕴灵石';
-    const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
-    const previewBaseAttrs = buildGrowthPreviewAttrs(
-      {
-        baseAttrsRaw: activeItem.equip.baseAttrsRaw,
-        defQualityRankRaw: activeItem.equip.defQualityRank,
-        resolvedQualityRankRaw: activeItem.equip.resolvedQualityRank,
-        strengthenLevelRaw: curLv,
-        refineLevelRaw: activeItem.equip.refineLevel,
-      },
-      'enhance',
-    );
-    return {
-      curLv,
-      targetLv,
-      materialItemDefId: costPlan.materialItemDefId,
-      materialName,
-      owned,
-      silverCost: costPlan.silverCost,
-      spiritStoneCost: costPlan.spiritStoneCost,
-      successRate: getEnhanceSuccessRatePercent(targetLv),
-      downgradeOnFail: targetLv >= 8,
-      previewBaseAttrs,
-    };
-  }, [activeItem, materialCounts]);
-
-  const refineState = useMemo(() => {
-    if (!activeItem?.equip || activeItem.category !== 'equipment') return null;
-    const curLv = Math.max(0, Math.min(10, Math.floor(Number(activeItem.equip.refineLevel) || 0)));
-    const targetLv = Math.min(10, curLv + 1);
-    const costPlan = buildRefineCostPlan(targetLv);
-    const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
-    const previewBaseAttrs = buildGrowthPreviewAttrs(
-      {
-        baseAttrsRaw: activeItem.equip.baseAttrsRaw,
-        defQualityRankRaw: activeItem.equip.defQualityRank,
-        resolvedQualityRankRaw: activeItem.equip.resolvedQualityRank,
-        strengthenLevelRaw: activeItem.equip.strengthenLevel,
-        refineLevelRaw: curLv,
-      },
-      'refine',
-    );
-
-    const materialName = costPlan.materialItemDefId === 'enhance-002' ? '蕴灵石' : costPlan.materialItemDefId;
-    return {
-      curLv,
-      targetLv,
-      materialItemDefId: costPlan.materialItemDefId,
-      materialName,
-      materialQty: costPlan.materialQty,
-      owned,
-      silverCost: costPlan.silverCost,
-      spiritStoneCost: costPlan.spiritStoneCost,
-      successRate: getRefineSuccessRatePercent(targetLv),
-      previewBaseAttrs,
-    };
-  }, [activeItem, materialCounts]);
 
   const socketState = useMemo(() => {
     if (!activeItem?.equip || activeItem.category !== 'equipment') return null;
@@ -1358,11 +1292,13 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               <div className="bag-growth-cost-card">
                 <div className="bag-growth-cost-title">消耗</div>
                 <div className="bag-growth-cost-list">
-                  <div className={'bag-growth-cost-chip' + (enhanceState.owned < 1 ? ' is-insufficient' : '')}>
-                    <span className="bag-growth-cost-name">{enhanceState.materialName}</span>
-                    <span className="bag-growth-cost-val">×1</span>
-                    <span className="bag-growth-cost-own">/{enhanceState.owned}</span>
-                  </div>
+                  {enhanceState.materialQty > 0 && (
+                    <div className={'bag-growth-cost-chip' + (enhanceState.owned < enhanceState.materialQty ? ' is-insufficient' : '')}>
+                      <span className="bag-growth-cost-name">{enhanceState.materialName}</span>
+                      <span className="bag-growth-cost-val">×{enhanceState.materialQty}</span>
+                      <span className="bag-growth-cost-own">/{enhanceState.owned}</span>
+                    </div>
+                  )}
                   {enhanceState.silverCost > 0 && (
                     <div className={'bag-growth-cost-chip' + (playerSilver < enhanceState.silverCost ? ' is-insufficient' : '')}>
                       <span className="bag-growth-cost-name">银两</span>
@@ -1409,8 +1345,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 block
                 disabled={
                   enhanceSubmitting ||
-                  enhanceState.curLv >= 15 ||
-                  enhanceState.owned < 1 ||
+                  enhanceState.curLv >= enhanceState.maxLv ||
+                  enhanceState.owned < enhanceState.materialQty ||
                   playerSilver < enhanceState.silverCost ||
                   playerSpiritStones < enhanceState.spiritStoneCost ||
                   !!activeItem?.locked
@@ -1419,11 +1355,11 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 onClick={() => void handleEnhance()}
                 loading={enhanceSubmitting}
               >
-                {activeItem?.locked ? '物品已锁定' : enhanceState.curLv >= 15 ? '已达上限' : '强化'}
+                {activeItem?.locked ? '物品已锁定' : enhanceState.curLv >= enhanceState.maxLv ? '已达上限' : '强化'}
               </Button>
             </>
           ) : (
-            <div className="bag-enhance-hint">请选择可强化的装备</div>
+            <div className="bag-enhance-hint">{growthPreviewLoading ? '正在获取强化消耗...' : '请选择可强化的装备'}</div>
           ))}
 
           {growthMode === 'refine' && (refineState ? (
@@ -1440,11 +1376,13 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               <div className="bag-growth-cost-card">
                 <div className="bag-growth-cost-title">消耗</div>
                 <div className="bag-growth-cost-list">
-                  <div className={'bag-growth-cost-chip' + (refineState.owned < refineState.materialQty ? ' is-insufficient' : '')}>
-                    <span className="bag-growth-cost-name">{refineState.materialName}</span>
-                    <span className="bag-growth-cost-val">×{refineState.materialQty}</span>
-                    <span className="bag-growth-cost-own">/{refineState.owned}</span>
-                  </div>
+                  {refineState.materialQty > 0 && (
+                    <div className={'bag-growth-cost-chip' + (refineState.owned < refineState.materialQty ? ' is-insufficient' : '')}>
+                      <span className="bag-growth-cost-name">{refineState.materialName}</span>
+                      <span className="bag-growth-cost-val">×{refineState.materialQty}</span>
+                      <span className="bag-growth-cost-own">/{refineState.owned}</span>
+                    </div>
+                  )}
                   {refineState.silverCost > 0 && (
                     <div className={'bag-growth-cost-chip' + (playerSilver < refineState.silverCost ? ' is-insufficient' : '')}>
                       <span className="bag-growth-cost-name">银两</span>
@@ -1491,7 +1429,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 block
                 disabled={
                   refineSubmitting ||
-                  refineState.curLv >= 10 ||
+                  refineState.curLv >= refineState.maxLv ||
                   refineState.owned < refineState.materialQty ||
                   playerSilver < refineState.silverCost ||
                   playerSpiritStones < refineState.spiritStoneCost ||
@@ -1501,11 +1439,11 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 onClick={() => void handleRefine()}
                 loading={refineSubmitting}
               >
-                {activeItem?.locked ? '物品已锁定' : refineState.curLv >= 10 ? '已达上限' : '精炼'}
+                {activeItem?.locked ? '物品已锁定' : refineState.curLv >= refineState.maxLv ? '已达上限' : '精炼'}
               </Button>
             </>
           ) : (
-            <div className="bag-enhance-hint">请选择可精炼的装备</div>
+            <div className="bag-enhance-hint">{growthPreviewLoading ? '正在获取精炼消耗...' : '请选择可精炼的装备'}</div>
           ))}
 
           {growthMode === 'socket' && (socketState ? (

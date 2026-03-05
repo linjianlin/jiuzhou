@@ -36,9 +36,6 @@ import {
   buildBagItem,
   buildBatchDisassemblePayloadItems,
   buildEquipmentDetailLines,
-  buildEnhanceCostPlan,
-  buildGrowthPreviewAttrs,
-  buildRefineCostPlan,
   calcUseEffectDelta,
   categoryLabels,
   collectBatchDisassembleCandidates,
@@ -48,8 +45,6 @@ import {
   formatMergedLootResultParts,
   getAffixRollColor,
   getAffixRollPercent,
-  getEnhanceSuccessRatePercent,
-  getRefineSuccessRatePercent,
   isDisassemblableBagItem,
   isGemTypeAllowedInSlot,
   normalizeAffixLockIndexes,
@@ -74,6 +69,7 @@ import { SetBonusDisplay } from './SetBonusDisplay';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
+import { useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import './MobileBagModal.scss';
 
 /* ─── 排序面板 ─── */
@@ -548,15 +544,6 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   const [socketSlot, setSocketSlot] = useState<number | undefined>(undefined);
   const [selectedGemItemId, setSelectedGemItemId] = useState<number | undefined>(undefined);
 
-  const materialCounts = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const it of allItems) {
-      if (it.category !== 'material') continue;
-      out[it.itemDefId] = (out[it.itemDefId] ?? 0) + Math.max(0, it.qty);
-    }
-    return out;
-  }, [allItems]);
-
   const bagItemCounts = useMemo(() => {
     // 洗炼符是 consumable，因此需要按背包全部物品统计，而不是仅 material。
     const out: Record<string, number> = {};
@@ -566,6 +553,16 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
     }
     return out;
   }, [allItems]);
+
+  const {
+    enhanceState,
+    refineState,
+    loading: growthPreviewLoading,
+  } = useEquipmentGrowthPreview({
+    item,
+    allItems,
+    enabled: mode === 'enhance' || mode === 'refine',
+  });
 
   useEffect(() => {
     const affixCount = item.equip?.affixes.length ?? 0;
@@ -597,53 +594,6 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
     setSocketSlot(undefined);
     setSelectedGemItemId(undefined);
   }, [item.id]);
-
-  const enhanceState = useMemo(() => {
-    if (!item.equip) return null;
-    const curLv = Math.max(0, Math.min(15, item.equip.strengthenLevel));
-    const targetLv = Math.min(15, curLv + 1);
-    const costPlan = buildEnhanceCostPlan(targetLv);
-    const materialName = costPlan.materialItemDefId === 'enhance-001' ? '淬灵石' : '蕴灵石';
-    const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
-    const previewBaseAttrs = buildGrowthPreviewAttrs({
-      baseAttrsRaw: item.equip.baseAttrsRaw,
-      defQualityRankRaw: item.equip.defQualityRank,
-      resolvedQualityRankRaw: item.equip.resolvedQualityRank,
-      strengthenLevelRaw: curLv,
-      refineLevelRaw: item.equip.refineLevel,
-    }, 'enhance');
-    return {
-      curLv, targetLv, materialName, owned,
-      silverCost: costPlan.silverCost,
-      spiritStoneCost: costPlan.spiritStoneCost,
-      successRate: getEnhanceSuccessRatePercent(targetLv),
-      downgradeOnFail: targetLv >= 8,
-      previewBaseAttrs,
-    };
-  }, [item, materialCounts]);
-
-  const refineState = useMemo(() => {
-    if (!item.equip) return null;
-    const curLv = Math.max(0, Math.min(10, item.equip.refineLevel));
-    const targetLv = Math.min(10, curLv + 1);
-    const costPlan = buildRefineCostPlan(targetLv);
-    const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
-    const materialName = costPlan.materialItemDefId === 'enhance-002' ? '蕴灵石' : costPlan.materialItemDefId;
-    const previewBaseAttrs = buildGrowthPreviewAttrs({
-      baseAttrsRaw: item.equip.baseAttrsRaw,
-      defQualityRankRaw: item.equip.defQualityRank,
-      resolvedQualityRankRaw: item.equip.resolvedQualityRank,
-      strengthenLevelRaw: item.equip.strengthenLevel,
-      refineLevelRaw: curLv,
-    }, 'refine');
-    return {
-      curLv, targetLv, materialName, materialQty: costPlan.materialQty, owned,
-      silverCost: costPlan.silverCost,
-      spiritStoneCost: costPlan.spiritStoneCost,
-      successRate: getRefineSuccessRatePercent(targetLv),
-      previewBaseAttrs,
-    };
-  }, [item, materialCounts]);
 
   const rerollState = useMemo(() => {
     if (!item.equip) return null;
@@ -883,11 +833,13 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
               <div className="mbag-sheet-section">
                 <div className="mbag-sheet-section-title">消耗</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  <CostChip
-                    label={st.materialName}
-                    cost={mode === 'refine' && refineState ? refineState.materialQty : 1}
-                    owned={st.owned}
-                  />
+                  {st.materialQty > 0 && (
+                    <CostChip
+                      label={st.materialName}
+                      cost={st.materialQty}
+                      owned={st.owned}
+                    />
+                  )}
                   {st.silverCost > 0 && (
                     <CostChip label="银两" cost={st.silverCost} owned={playerSilver} />
                   )}
@@ -1083,7 +1035,7 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
 
           {(mode === 'enhance' || mode === 'refine') && !st ? (
             <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 20 }}>
-              无法{mode === 'enhance' ? '强化' : '精炼'}
+              {growthPreviewLoading ? '正在获取成长消耗...' : `无法${mode === 'enhance' ? '强化' : '精炼'}`}
             </div>
           ) : null}
         </div>
@@ -1095,13 +1047,13 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
             disabled={
               submitting || item.locked ||
               (mode === 'enhance' && enhanceState
-                ? enhanceState.curLv >= 15 || enhanceState.owned < 1 ||
+                ? enhanceState.curLv >= enhanceState.maxLv || enhanceState.owned < enhanceState.materialQty ||
                 playerSilver < enhanceState.silverCost || playerSpiritStones < enhanceState.spiritStoneCost
-                : false) ||
+                : mode === 'enhance') ||
               (mode === 'refine' && refineState
-                ? refineState.curLv >= 10 || refineState.owned < refineState.materialQty ||
+                ? refineState.curLv >= refineState.maxLv || refineState.owned < refineState.materialQty ||
                 playerSilver < refineState.silverCost || playerSpiritStones < refineState.spiritStoneCost
-                : false) ||
+                : mode === 'refine') ||
               (mode === 'reroll' && rerollState
                 ? rerollState.affixes.length <= 0 ||
                 rerollState.rerollScrollOwned < rerollState.rerollScrollQty ||

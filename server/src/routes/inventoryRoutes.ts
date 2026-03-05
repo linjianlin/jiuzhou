@@ -64,6 +64,22 @@ const parsePositiveIntArray = (value: unknown): number[] | null => {
   return out;
 };
 
+const parseBodyItemInstanceId = (body: {
+  itemId?: unknown;
+  itemInstanceId?: unknown;
+  instanceId?: unknown;
+}): number => {
+  const rawItemInstanceId = body.itemInstanceId ?? body.instanceId ?? body.itemId;
+  if (rawItemInstanceId === undefined || rawItemInstanceId === null) {
+    throw new BusinessError('参数不完整');
+  }
+  const parsedItemId = Number(rawItemInstanceId);
+  if (!Number.isInteger(parsedItemId) || parsedItemId <= 0) {
+    throw new BusinessError('itemId参数错误');
+  }
+  return parsedItemId;
+};
+
 
 router.use(requireCharacter);
 
@@ -416,26 +432,13 @@ router.post('/unequip', asyncHandler(async (req, res) => {
 router.post('/enhance', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
-
-    const {
-      itemId,
-      itemInstanceId,
-      instanceId,
-    } = req.body as {
-      itemId?: unknown;
-      itemInstanceId?: unknown;
-      instanceId?: unknown;
-    };
-
-    const rawItemInstanceId = itemInstanceId ?? instanceId ?? itemId;
-    if (rawItemInstanceId === undefined || rawItemInstanceId === null) {
-      throw new BusinessError('参数不完整');
-    }
-
-    const parsedItemId = Number(rawItemInstanceId);
-    if (!Number.isInteger(parsedItemId) || parsedItemId <= 0) {
-      throw new BusinessError('itemId参数错误');
-    }
+    const parsedItemId = parseBodyItemInstanceId(
+      req.body as {
+        itemId?: unknown;
+        itemInstanceId?: unknown;
+        instanceId?: unknown;
+      },
+    );
 
     const result = await inventoryService.enhanceEquipment(characterId, userId, parsedItemId);
 
@@ -461,22 +464,13 @@ router.post('/enhance', asyncHandler(async (req, res) => {
 router.post('/refine', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
-
-    const { itemId, itemInstanceId, instanceId } = req.body as {
-      itemId?: unknown;
-      itemInstanceId?: unknown;
-      instanceId?: unknown;
-    };
-
-    const rawItemInstanceId = itemInstanceId ?? instanceId ?? itemId;
-    if (rawItemInstanceId === undefined || rawItemInstanceId === null) {
-      throw new BusinessError('参数不完整');
-    }
-
-    const parsedItemId = Number(rawItemInstanceId);
-    if (!Number.isInteger(parsedItemId) || parsedItemId <= 0) {
-      throw new BusinessError('itemId参数错误');
-    }
+    const parsedItemId = parseBodyItemInstanceId(
+      req.body as {
+        itemId?: unknown;
+        itemInstanceId?: unknown;
+        instanceId?: unknown;
+      },
+    );
 
     const result = await inventoryService.refineEquipment(characterId, userId, parsedItemId);
 
@@ -492,6 +486,25 @@ router.post('/refine', asyncHandler(async (req, res) => {
         character: null,
       },
     });
+}));
+
+// ============================================
+// 强化/精炼消耗预览
+// POST /api/inventory/growth/cost-preview
+// Body: { itemId: number }
+// ============================================
+router.post('/growth/cost-preview', asyncHandler(async (req, res) => {
+    const characterId = req.characterId!;
+    const parsedItemId = parseBodyItemInstanceId(
+      req.body as {
+        itemId?: unknown;
+        itemInstanceId?: unknown;
+        instanceId?: unknown;
+      },
+    );
+
+    const result = await inventoryService.getEquipmentGrowthCostPreview(characterId, parsedItemId);
+    return sendResult(res, result);
 }));
 
 // ============================================
