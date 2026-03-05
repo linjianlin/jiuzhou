@@ -1,0 +1,26 @@
+/**
+ * 模块作用：
+ * - 统一大型游戏弹窗（如背包/坊市）外壳高度规则，避免各模块重复维护固定高度。
+ * - 不做：不负责宽度、内部分栏、滚动容器细节，只输出 shell 高度与最大高度约束。
+ *
+ * 输入/输出：
+ * - 输入：最小高度、期望高度、最大高度、视口安全边距。
+ * - 输出：`height` + `max-height` 样式声明（通过 mixin 注入）。
+ *
+ * 数据流/状态流：
+ * - 业务模块（Bag/Market）在各自 `.scss` 中调用本 mixin。
+ * - mixin 只做纯样式计算，不依赖运行时状态，不引入副作用。
+ *
+ * 关键边界条件与坑点：
+ * 1) 低分辨率场景：当 `min-height` 大于可视区时，`max-height` 会兜底约束最终高度，避免弹窗溢出视口。
+ * 2) 移动端场景：可传入 `0px` 作为最小高度，得到 `min(88dvh, 760px)` 等无下限口径，避免被桌面最小值挤压。
+ */
+@mixin large-game-modal-shell-height(
+  $min-height,
+  $preferred-height: 88dvh,
+  $max-height: 760px,
+  $viewport-gap: 16px
+) {
+  height: clamp($min-height, $preferred-height, $max-height);
+  max-height: calc(100dvh - $viewport-gap);
+}

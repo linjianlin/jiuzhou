@@ -1,5 +1,6 @@
 @use './rerollRollShared' as rerollRoll;
 @use './qualityTagShared' as qualityTag;
+@use '../../shared/modalShellLayout' as modalShell;
 
 .bag-modal {
   .ant-modal-content {
@@ -335,7 +336,7 @@
 }
 
 .bag-modal-shell {
-  height: 660px;
+  @include modalShell.large-game-modal-shell-height(660px);
   display: flex;
   background: var(--panel-bg);
 }

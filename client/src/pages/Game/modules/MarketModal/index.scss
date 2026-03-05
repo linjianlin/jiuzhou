@@ -1,5 +1,6 @@
 @use '../../shared/tooltipSurfaceShared';
 @use '../../shared/itemQualityTag' as qualityTag;
+@use '../../shared/modalShellLayout' as modalShell;
 
 .market-modal {
   .ant-modal-content {
@@ -17,7 +18,7 @@
 .market-modal-shell {
   --market-item-icon-size: 48px;
   --market-item-icon-padding: 3px;
-  height: 680px;
+  @include modalShell.large-game-modal-shell-height(680px);
   display: flex;
   background: var(--panel-bg);
 }
@@ -666,8 +667,7 @@
   .market-modal-shell {
     --market-item-icon-size: 42px;
     --market-item-icon-padding: 3px;
-    height: min(88dvh, 760px);
-    max-height: calc(100dvh - 16px);
+    @include modalShell.large-game-modal-shell-height(0px);
     flex-direction: column;
     overflow: hidden;
   }
