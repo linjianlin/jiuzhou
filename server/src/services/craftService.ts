@@ -4,6 +4,7 @@ import { addItemToInventory } from './inventory/index.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import { recordCraftItemEvent } from './taskService.js';
 import { REALM_ORDER } from './shared/realmRules.js';
+import { normalizeRecipeRateToPercent, normalizeRecipeRateToRatio } from './shared/recipeRate.js';
 import { getItemDefinitionById, getItemDefinitionsByIds, getItemRecipeById, getItemRecipeDefinitionsByType } from './staticConfigLoader.js';
 
 type CraftRecipeType = 'craft' | 'refine' | 'decompose' | 'upgrade' | string;
@@ -137,6 +138,10 @@ const clampInt = (value: unknown, min: number, max: number): number => {
   return n;
 };
 
+const getDefaultSuccessRateRaw = (recipeType: string): number => {
+  return recipeType.trim() === 'gem_synthesis' ? 1 : 100;
+};
+
 const parseCostItems = (value: unknown): Array<{ itemDefId: string; qty: number }> => {
   if (!Array.isArray(value)) return [];
   const out: Array<{ itemDefId: string; qty: number }> = [];
@@ -219,7 +224,7 @@ const getRecipeRows = async (recipeType?: string): Promise<RecipeRow[]> => {
         req_realm: recipe.req_realm ?? null,
         req_level: recipe.req_level ?? 0,
         req_building: recipe.req_building ?? null,
-        success_rate: recipe.success_rate ?? 100,
+        success_rate: recipe.success_rate ?? getDefaultSuccessRateRaw(String(recipe.recipe_type || 'craft')),
         fail_return_rate: recipe.fail_return_rate ?? 0,
         product_name: product?.name ?? null,
         product_icon: product?.icon ?? null,
@@ -411,11 +416,11 @@ class CraftService {
           )
         : 0;
 
-      const successRate = Math.max(0, Math.min(100, asNumber(row.success_rate, 100)));
-      const failReturnRate = Math.max(0, Math.min(100, asNumber(row.fail_return_rate, 0)));
       const productCategory = asString(row.product_category);
       const productSubCategory = asString(row.product_sub_category);
       const craftKind = inferCraftKind(recipeType, productCategory, productSubCategory);
+      const successRate = normalizeRecipeRateToPercent(row.success_rate, recipeType, 1);
+      const failReturnRate = normalizeRecipeRateToPercent(row.fail_return_rate, recipeType, 0);
 
       return {
         id: asString(row.id),
@@ -505,7 +510,7 @@ class CraftService {
       req_realm: recipeDef.req_realm ?? null,
       req_level: recipeDef.req_level ?? 0,
       req_building: recipeDef.req_building ?? null,
-      success_rate: recipeDef.success_rate ?? 100,
+      success_rate: recipeDef.success_rate ?? getDefaultSuccessRateRaw(String(recipeDef.recipe_type || 'craft')),
       fail_return_rate: recipeDef.fail_return_rate ?? 0,
       product_name: recipeProductDef?.name ?? null,
       product_icon: recipeProductDef?.icon ?? null,
@@ -561,14 +566,14 @@ class CraftService {
       );
     }
 
-    const successRate = Math.max(0, Math.min(100, asNumber(recipe.success_rate, 100)));
-    const failReturnRate = Math.max(0, Math.min(100, asNumber(recipe.fail_return_rate, 0)));
+    const successRateRatio = normalizeRecipeRateToRatio(recipe.success_rate, recipeType, 1);
+    const failReturnRateRatio = normalizeRecipeRateToRatio(recipe.fail_return_rate, recipeType, 0);
     let successCount = 0;
     let failCount = 0;
 
     for (let i = 0; i < times; i += 1) {
-      const roll = Math.random() * 100;
-      if (roll < successRate) successCount += 1;
+      const roll = Math.random();
+      if (roll < successRateRatio) successCount += 1;
       else failCount += 1;
     }
 
@@ -603,9 +608,9 @@ class CraftService {
     }
 
     const returnedItems: Array<{ itemDefId: string; qty: number }> = [];
-    if (failCount > 0 && failReturnRate > 0 && costItems.length > 0) {
+    if (failCount > 0 && failReturnRateRatio > 0 && costItems.length > 0) {
       for (const itemCost of costItems) {
-        const rollbackQty = Math.floor(itemCost.qty * failCount * (failReturnRate / 100));
+        const rollbackQty = Math.floor(itemCost.qty * failCount * failReturnRateRatio);
         if (rollbackQty <= 0) continue;
         const addResult = await addItemToInventory(
           character.id,

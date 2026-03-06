@@ -1,6 +1,7 @@
 import { App, Button, Empty, InputNumber, Modal, Segmented, Select, Spin, Tag } from 'antd';
-import { formatPercent } from '../../shared/formatAttr';
+import { formatPercent, formatRecovery } from '../../shared/formatAttr';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { estimateBatchOutput, type BatchEstimate, EMPTY_BATCH_ESTIMATE } from './gemSynthesisEstimate';
 import {
   convertInventoryGem,
   getInventoryItems,
@@ -35,16 +36,6 @@ const clampSynthesizeTimes = (value: number, maxValue: number): number => {
   return Math.min(safeMax, Math.max(1, Math.floor(value)));
 };
 
-interface BatchEstimate {
-  /** 各等级预估产出/余量，level 升序；最后一项为目标等级产出，其余为中间余量 */
-  byLevel: Array<{ level: number; count: number }>;
-  /** 预估消耗银两 */
-  silver: number;
-  /** 预估消耗灵石 */
-  spiritStones: number;
-}
-
-const EMPTY_ESTIMATE: BatchEstimate = { byLevel: [], silver: 0, spiritStones: 0 };
 const GEM_CONVERT_MANUAL_SELECT_QTY = 2;
 const GEM_ITEM_LEVEL_RE = /^gem-(?:atk|def|sur|all)(?:-[a-z0-9_]+)?-([1-9]|10)$/i;
 
@@ -55,80 +46,6 @@ interface ConvertSelectableGemItem {
   level: number;
   qty: number;
 }
-
-/**
- * 预估快捷合成的产出数量与消耗
- *
- * 逐级模拟合成链：从1级到目标等级，每一步根据持有材料、货币、成功率计算期望产出，
- * 上一步的产出会累加到下一步的可用材料中。
- *
- * 输入：该系列的配方列表、目标等级、当前钱包
- * 输出：{ byLevel, silver, spiritStones }
- *
- * 边界：
- * - 某一级配方缺失时链条中断，返回全0
- * - 货币不足时会限制合成次数
- */
-const estimateBatchOutput = (
-  seriesRecipes: GemSynthesisRecipeDto[],
-  targetLevel: number,
-  wallet: { silver: number; spiritStones: number } | null,
-): BatchEstimate => {
-  const zero: BatchEstimate = EMPTY_ESTIMATE;
-  if (!wallet || seriesRecipes.length === 0 || targetLevel < 2) return zero;
-
-  const recipeByFromLevel = new Map<number, GemSynthesisRecipeDto>();
-  for (const recipe of seriesRecipes) {
-    if (!recipeByFromLevel.has(recipe.fromLevel)) {
-      recipeByFromLevel.set(recipe.fromLevel, recipe);
-    }
-  }
-
-  let carry = 0;
-  let remainingSilver = wallet.silver;
-  let remainingSpiritStones = wallet.spiritStones;
-  let totalSilver = 0;
-  let totalSpiritStones = 0;
-  const byLevel: Array<{ level: number; count: number }> = [];
-
-  for (let fromLevel = 1; fromLevel < targetLevel; fromLevel += 1) {
-    const recipe = recipeByFromLevel.get(fromLevel);
-    if (!recipe) return EMPTY_ESTIMATE;
-
-    const available = recipe.input.owned + carry;
-    const maxByGems = recipe.input.qty > 0 ? Math.floor(available / recipe.input.qty) : 0;
-    const maxBySilver = recipe.costs.silver > 0 ? Math.floor(remainingSilver / recipe.costs.silver) : maxByGems;
-    const maxBySpirit =
-      recipe.costs.spiritStones > 0
-        ? Math.floor(remainingSpiritStones / recipe.costs.spiritStones)
-        : maxByGems;
-    const times = Math.max(0, Math.min(maxByGems, maxBySilver, maxBySpirit));
-
-    const consumed = times * recipe.input.qty;
-    const remainder = available - consumed;
-    if (remainder > 0) {
-      byLevel.push({ level: fromLevel, count: remainder });
-    }
-
-    const silverCost = times * recipe.costs.silver;
-    const spiritCost = times * recipe.costs.spiritStones;
-    remainingSilver -= silverCost;
-    remainingSpiritStones -= spiritCost;
-    totalSilver += silverCost;
-    totalSpiritStones += spiritCost;
-
-    carry = Math.floor(times * recipe.successRate) * recipe.output.qty;
-    if (carry <= 0) {
-      return { byLevel, silver: totalSilver, spiritStones: totalSpiritStones };
-    }
-  }
-
-  if (carry > 0) {
-    byLevel.push({ level: targetLevel, count: carry });
-  }
-
-  return { byLevel, silver: totalSilver, spiritStones: totalSpiritStones };
-};
 
 /**
  * 从配方列表中提取系列选项
@@ -351,7 +268,7 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
   }, [targetLevel, batchTargetLevelOptions]);
 
   const batchEstimate = useMemo((): BatchEstimate => {
-    if (!batchSeriesKey) return EMPTY_ESTIMATE;
+    if (!batchSeriesKey) return EMPTY_BATCH_ESTIMATE;
     const seriesRecipes = filteredRecipes.filter((recipe) => recipe.seriesKey === batchSeriesKey);
     return estimateBatchOutput(seriesRecipes, targetLevel, wallet);
   }, [batchSeriesKey, filteredRecipes, targetLevel, wallet]);
@@ -659,7 +576,7 @@ const GemSynthesisModal: React.FC<GemSynthesisModalProps> = ({ open, onClose, on
                       {batchEstimate.byLevel.length > 0
                         ? batchEstimate.byLevel.map((item) => (
                             <span key={item.level} className={item.level === targetLevel ? 'is-target' : 'is-remainder'}>
-                              {item.level}级×{item.count}
+                              {item.level}级×{formatRecovery(item.count)}
                             </span>
                           ))
                         : <span className="is-empty">无法合成</span>}

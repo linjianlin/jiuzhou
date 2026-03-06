@@ -9,6 +9,7 @@ import {
   getItemDefinitionsByIds,
   getItemRecipeDefinitionsByType,
 } from './staticConfigLoader.js';
+import { normalizeRecipeRateToRatio } from './shared/recipeRate.js';
 
 export type GemType = 'attack' | 'defense' | 'survival' | 'all';
 type GemTypeToken = 'atk' | 'def' | 'sur' | 'all';
@@ -325,10 +326,7 @@ const parseRecipeModel = (row: GemRecipeRow): GemRecipeModel | null => {
 
   const outputQty = clampInt(row.product_qty, 1, 999999);
   if (outputQty <= 0) return null;
-  const successRateRaw = typeof row.success_rate === 'number' ? row.success_rate : Number(row.success_rate);
-  const successRate = Number.isFinite(successRateRaw)
-    ? Math.max(0, Math.min(1, Math.round(successRateRaw * 10000) / 10000))
-    : 1;
+  const successRate = normalizeRecipeRateToRatio(row.success_rate, 'gem_synthesis', 1);
 
   return {
     id: String(row.id || '').trim(),
