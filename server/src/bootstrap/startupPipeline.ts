@@ -29,6 +29,10 @@ import {
   shutdownWorkerPool,
 } from "../workers/workerPool.js";
 import { refreshGeneratedTechniqueSnapshots } from "../services/staticConfigLoader.js";
+import {
+  initializeTechniqueGenerationJobRunner,
+  shutdownTechniqueGenerationJobRunner,
+} from "../services/techniqueGenerationJobRunner.js";
 
 export interface StartServerOptions {
   httpServer: HttpServer;
@@ -73,6 +77,8 @@ export const startServerWithPipeline = async (
     workerCount,
   });
   console.log(`✓ Worker 池已就绪（${workerCount} 个 Worker）\n`);
+  await initializeTechniqueGenerationJobRunner();
+  console.log("✓ 洞府研修 worker 协调器已就绪\n");
 
   await initGameTimeService();
   await initArenaWeeklySettlementService();
@@ -127,6 +133,9 @@ export const registerGracefulShutdown = (httpServer: HttpServer): void => {
     console.log("✓ 挂机执行循环已停止");
 
     // 3. 关闭 Worker 池
+    await shutdownTechniqueGenerationJobRunner();
+    console.log("✓ 洞府研修 worker 协调器已关闭");
+
     await shutdownWorkerPool();
     console.log("✓ Worker 池已关闭");
 

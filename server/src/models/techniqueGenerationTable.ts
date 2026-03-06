@@ -178,6 +178,9 @@ CREATE TABLE IF NOT EXISTS technique_generation_job (
   generated_technique_id VARCHAR(64),
   publish_attempts INTEGER NOT NULL DEFAULT 0,
   draft_expire_at TIMESTAMPTZ,
+  viewed_at TIMESTAMPTZ,
+  failed_viewed_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ,
 
   error_code VARCHAR(32),
   error_message TEXT,
@@ -187,11 +190,18 @@ CREATE TABLE IF NOT EXISTS technique_generation_job (
 );
 
 COMMENT ON TABLE technique_generation_job IS 'AI生成功法任务表';
+COMMENT ON COLUMN technique_generation_job.viewed_at IS '生成成功结果首次被玩家查看时间';
+COMMENT ON COLUMN technique_generation_job.failed_viewed_at IS '生成失败结果首次被玩家查看时间';
+COMMENT ON COLUMN technique_generation_job.finished_at IS '异步生成任务结束时间';
 
 CREATE INDEX IF NOT EXISTS idx_technique_generation_job_character_week
   ON technique_generation_job(character_id, week_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_technique_generation_job_status
   ON technique_generation_job(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_technique_generation_job_unread_result
+  ON technique_generation_job(character_id, status, created_at DESC)
+  WHERE (status = 'generated_draft' AND viewed_at IS NULL)
+     OR (status IN ('failed', 'refunded') AND failed_viewed_at IS NULL);
 `;
 
 export const initTechniqueGenerationTables = async (): Promise<void> => {
@@ -211,6 +221,15 @@ export const initTechniqueGenerationTables = async (): Promise<void> => {
 
   await query(`ALTER TABLE technique_generation_job ADD COLUMN IF NOT EXISTS draft_technique_id VARCHAR(64)`);
   await query(`ALTER TABLE technique_generation_job ADD COLUMN IF NOT EXISTS publish_attempts INTEGER NOT NULL DEFAULT 0`);
+  await query(`ALTER TABLE technique_generation_job ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMPTZ`);
+  await query(`ALTER TABLE technique_generation_job ADD COLUMN IF NOT EXISTS failed_viewed_at TIMESTAMPTZ`);
+  await query(`ALTER TABLE technique_generation_job ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ`);
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_technique_generation_job_unread_result
+      ON technique_generation_job(character_id, status, created_at DESC)
+      WHERE (status = 'generated_draft' AND viewed_at IS NULL)
+         OR (status IN ('failed', 'refunded') AND failed_viewed_at IS NULL)
+  `);
 
   console.log('✓ AI生成功法系统表检测完成');
 };

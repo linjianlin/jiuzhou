@@ -14,9 +14,10 @@ import {
   getInventoryItems,
   getTechniqueResearchStatus,
   getTechniqueDetail,
+  markTechniqueResearchResultViewed,
   publishTechniqueResearchDraft,
   type SkillDefDto,
-  type TechniqueResearchStatusResponse,
+  type TechniqueResearchResultStatusDto,
   type TechniqueDefDto,
   type TechniqueLayerDto,
   type TechniqueUpgradeCostResponse,
@@ -26,7 +27,9 @@ import {
   upgradeCharacterTechnique,
 } from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
-import { formatSkillEffectLines } from '../skillEffectFormatter';
+import ResearchPanel from './ResearchPanel';
+import { type TechniqueResearchStatusData } from './researchShared';
+import { getSkillInlineSummary, renderSkillInlineDetails, renderSkillTooltip } from './skillDetailShared';
 import './index.scss';
 
 
@@ -48,12 +51,6 @@ type TechniqueSkill = {
   damage_type?: string | null;
   element?: string;
   effects?: unknown[];
-};
-
-type SkillDetailItem = {
-  label: string;
-  value: string;
-  isEffect?: boolean;
 };
 
 type TechniqueCostItem = { id: string; name: string; icon: string; amount: number };
@@ -178,145 +175,6 @@ const normalizePassiveKey = (raw: string): string =>
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/-/g, '_')
     .toLowerCase();
-
-// 技能目标类型中文映射
-const targetTypeLabel: Record<string, string> = {
-  self: '自身',
-  single_enemy: '单体敌人',
-  all_enemy: '全体敌人',
-  single_ally: '单体友方',
-  all_ally: '全体友方',
-  random_enemy: '随机敌人',
-  random_ally: '随机友方',
-};
-
-const getSkillDetailItems = (skill: TechniqueSkill): SkillDetailItem[] => {
-  const items: SkillDetailItem[] = [];
-
-  if (skill.description) {
-    items.push({ label: '描述', value: skill.description });
-  }
-  if (skill.cost_lingqi && skill.cost_lingqi > 0) {
-    items.push({ label: '灵气消耗', value: String(skill.cost_lingqi) });
-  }
-  if (skill.cost_qixue && skill.cost_qixue > 0) {
-    items.push({ label: '气血消耗', value: String(skill.cost_qixue) });
-  }
-  if (skill.cooldown && skill.cooldown > 0) {
-    items.push({ label: '冷却回合', value: `${skill.cooldown}回合` });
-  }
-  if (skill.target_type) {
-    items.push({ label: '目标类型', value: targetTypeLabel[skill.target_type] || skill.target_type });
-  }
-  if (skill.target_count && skill.target_count > 0) {
-    items.push({ label: '目标数量', value: String(skill.target_count) });
-  }
-  const effectLines = formatSkillEffectLines(skill.effects, {
-    damageType: skill.damage_type,
-    element: skill.element,
-  });
-  effectLines.forEach((line, idx) => {
-    items.push({ label: `效果${idx + 1}`, value: line, isEffect: true });
-  });
-
-  return items;
-};
-
-const INLINE_SKILL_DETAIL_ORDER = [
-  '描述',
-  '灵气消耗',
-  '冷却回合',
-  '目标类型',
-  '目标数量',
-  '气血消耗',
-] as const;
-
-const getSkillInlineDetailItems = (skill: TechniqueSkill): SkillDetailItem[] => {
-  const allItems = getSkillDetailItems(skill);
-  if (allItems.length === 0) return [];
-
-  const byLabel = new Map(allItems.map((item) => [item.label, item]));
-
-  const inlineItems = INLINE_SKILL_DETAIL_ORDER.reduce<SkillDetailItem[]>((acc, label) => {
-    const item = byLabel.get(label);
-    if (item !== undefined) {
-      acc.push(item);
-    }
-    return acc;
-  }, []);
-
-  const effectItems = allItems.filter((item) => item.isEffect);
-
-  // 控制卡片信息密度，避免列表卡片过高
-  return [...inlineItems, ...effectItems].slice(0, 7);
-};
-
-const getSkillInlineSummary = (skill: TechniqueSkill): string => {
-  const detailItems = getSkillInlineDetailItems(skill);
-  if (detailItems.length === 0) return '暂无详细信息';
-
-  return detailItems
-    .map((item) => (item.label === '描述' || item.isEffect ? item.value : `${item.label}:${item.value}`))
-    .join(' · ');
-};
-
-const renderSkillInlineDetails = (skill: TechniqueSkill): React.ReactNode => {
-  const detailItems = getSkillInlineDetailItems(skill);
-  if (detailItems.length === 0) {
-    return <div className="skill-inline-empty">暂无详细信息</div>;
-  }
-
-  return (
-    <div className="skill-inline-lines">
-      {detailItems.map((item, idx) => {
-        if (item.label === '描述' || item.isEffect) {
-          const rowClassName = item.isEffect ? 'skill-inline-row is-effect' : 'skill-inline-row is-description';
-          return (
-            <div key={`${item.label}-${idx}`} className={rowClassName}>
-              <span className="skill-inline-value">{item.value}</span>
-            </div>
-          );
-        }
-
-        return (
-          <div key={`${item.label}-${idx}`} className="skill-inline-row">
-            <span className="skill-inline-label">{item.label}：</span>
-            <span className="skill-inline-value">{item.value}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// 技能Tooltip内容渲染
-const renderSkillTooltip = (skill: TechniqueSkill): React.ReactNode => {
-  const items = getSkillDetailItems(skill);
-
-  return (
-    <div className="skill-tooltip">
-      <div className="skill-tooltip-title">{skill.name}</div>
-      {items.length > 0 ? (
-        <div className="skill-tooltip-content">
-          {items.map((item, idx) =>
-            item.isEffect ? (
-              <div key={idx} className="skill-tooltip-row is-effect">
-                <span className="skill-tooltip-value">{item.value}</span>
-              </div>
-            ) : (
-              <div key={idx} className="skill-tooltip-row">
-                <span className="skill-tooltip-label">{item.label}：</span>
-                <span className="skill-tooltip-value">{item.value}</span>
-              </div>
-            ),
-          )}
-        </div>
-      ) : (
-        <div className="skill-tooltip-empty">暂无详细信息</div>
-      )}
-    </div>
-  );
-};
 
 const getTechniqueUnlockedInfo = (t: Technique): { bonuses: TechniqueBonus[]; skills: TechniqueSkill[] } => {
   const unlockedLayers = t.layers.slice(0, Math.max(0, Math.min(t.layer, t.layers.length)));
@@ -516,12 +374,11 @@ const slotLabels: Record<SlotKey, string> = {
 interface TechniqueModalProps {
   open: boolean;
   onClose: () => void;
+  onResearchIndicatorChange?: (resultStatus: TechniqueResearchResultStatusDto | null) => void;
 }
-
-type TechniqueResearchStatusData = NonNullable<TechniqueResearchStatusResponse['data']>;
 const TECHNIQUE_RESEARCH_ENABLED = !import.meta.env.PROD;
 
-const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
+const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResearchIndicatorChange }) => {
   const { message } = App.useApp();
   const [characterId, setCharacterId] = useState<number | null>(() => gameSocket.getCharacter()?.id ?? null);
   const [panel, setPanel] = useState<TechniquePanel>('slots');
@@ -560,6 +417,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishGenerationId, setPublishGenerationId] = useState('');
   const [publishCustomName, setPublishCustomName] = useState('');
+  const markingResearchViewedRef = useRef(false);
 
   useEffect(() => {
     gameSocket.connect();
@@ -663,6 +521,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
   const refreshResearchStatus = useCallback(async () => {
     if (!characterId) {
       setResearchStatus(null);
+      onResearchIndicatorChange?.(null);
       return;
     }
     setResearchLoading(true);
@@ -672,22 +531,51 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
         throw new Error(statusRes?.message || '获取研修状态失败');
       }
       setResearchStatus(statusRes.data);
+      onResearchIndicatorChange?.(statusRes.data.hasUnreadResult ? statusRes.data.resultStatus : null);
     } catch {
       setResearchStatus(null);
+      onResearchIndicatorChange?.(null);
     } finally {
       setResearchLoading(false);
     }
-  }, [characterId]);
+  }, [characterId, onResearchIndicatorChange]);
 
   useEffect(() => {
     if (!open || !TECHNIQUE_RESEARCH_ENABLED) {
       if (!TECHNIQUE_RESEARCH_ENABLED) {
         setResearchStatus(null);
+        onResearchIndicatorChange?.(null);
       }
       return;
     }
     void refreshResearchStatus();
-  }, [open, refreshResearchStatus]);
+  }, [onResearchIndicatorChange, open, refreshResearchStatus]);
+
+  useEffect(() => {
+    if (!open || !TECHNIQUE_RESEARCH_ENABLED || !characterId) return undefined;
+    return gameSocket.onTechniqueResearchResult((payload) => {
+      if (payload.characterId !== characterId) return;
+      void refreshResearchStatus();
+    });
+  }, [characterId, open, refreshResearchStatus]);
+
+  useEffect(() => {
+    if (!open || panel !== 'research' || !characterId || !researchStatus?.hasUnreadResult) return;
+    if (markingResearchViewedRef.current) return;
+
+    markingResearchViewedRef.current = true;
+    void (async () => {
+      try {
+        const res = await markTechniqueResearchResultViewed(characterId);
+        if (res.success) {
+          onResearchIndicatorChange?.(null);
+          await refreshResearchStatus();
+        }
+      } finally {
+        markingResearchViewedRef.current = false;
+      }
+    })();
+  }, [characterId, onResearchIndicatorChange, open, panel, refreshResearchStatus, researchStatus?.hasUnreadResult]);
 
   const collectExchangeItems = useCallback(async (): Promise<Array<{ itemInstanceId: number; qty: number }>> => {
     if (!characterId) return [];
@@ -754,10 +642,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
         throw new Error(generateRes?.message || '生成失败');
       }
 
-      setPublishGenerationId(generateRes.data.generationId);
-      setPublishCustomName(generateRes.data.aiSuggestedName || '');
-      setPublishOpen(true);
-      message.success('已领悟草稿，请输入名称并发布');
+      message.success(generateRes.message || '已加入洞府推演队列');
       await refreshResearchStatus();
     } catch (error: unknown) {
       message.error(error instanceof Error ? error.message : '生成失败');
@@ -809,6 +694,12 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
     refreshResearchStatus,
     refreshStatus,
   ]);
+
+  const handleOpenPublish = useCallback((generationId: string, suggestedName: string) => {
+    setPublishGenerationId(generationId);
+    setPublishCustomName(suggestedName || '');
+    setPublishOpen(true);
+  }, []);
 
   const layerText = (layer: number) => `${layer}层`;
 
@@ -1336,92 +1227,17 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
   };
 
   const renderResearchPanel = () => {
-    const status = researchStatus;
-    const draft = status?.currentDraft ?? null;
-    const minCost = status
-      ? Math.min(...Object.values(status.generationCostByQuality || { 黄: 200, 玄: 280, 地: 360, 天: 480 }))
-      : 200;
-    const canTryGenerate =
-      Boolean(status) &&
-      (status?.weeklyRemaining ?? 0) > 0 &&
-      (status?.pointsBalance ?? 0) >= minCost;
-
     return (
-      <div className="tech-pane">
-        <div className="tech-pane-scroll">
-          <div className="tech-subtitle">洞府研修（每角色每周最多 1 次）</div>
-          <div className="tech-research-stats">
-            <div className="tech-research-stat"><span>研修点</span><strong>{status?.pointsBalance ?? '--'}</strong></div>
-            <div className="tech-research-stat"><span>本周已用</span><strong>{status?.weeklyUsed ?? '--'}</strong></div>
-            <div className="tech-research-stat"><span>本周剩余</span><strong>{status?.weeklyRemaining ?? '--'}</strong></div>
-          </div>
-
-          <div className="tech-research-costs">
-            {(Object.entries(status?.generationCostByQuality || { 黄: 500, 玄: 500, 地: 500, 天: 500 }) as Array<[string, number]>).map(
-              ([quality, cost]) => (
-                <Tag key={quality} color="default">
-                  {quality}品: {cost}点
-                </Tag>
-              ),
-            )}
-          </div>
-
-          <div className="tech-research-actions">
-            <Button loading={exchangeSubmitting} onClick={() => void handleExchangeBooks()}>
-              一键兑换功法书
-            </Button>
-            <Button
-              type="primary"
-              loading={generateSubmitting}
-              disabled={!canTryGenerate}
-              onClick={() => void handleGenerateResearchDraft()}
-            >
-              开始领悟
-            </Button>
-            <Button loading={researchLoading} onClick={() => void refreshResearchStatus()}>
-              刷新
-            </Button>
-          </div>
-
-          <div className="tech-research-tips">
-            <div>1. 先将多余功法书兑换为研修点，再进行领悟。</div>
-            <div>2. 领悟成功后进入草稿态，需要命名发布才会发放秘卷。</div>
-            <div>3. 名称一经发布不可修改，且全服唯一。</div>
-          </div>
-
-          <div className="tech-subtitle">当前草稿</div>
-          {researchLoading ? (
-            <div className="tech-empty">加载中...</div>
-          ) : draft ? (
-            <div className="tech-research-draft">
-              <div className="tech-research-draft-name">{draft.suggestedName}</div>
-              <div className="tech-research-draft-meta">
-                <Tag color={qualityColor[mapQuality(draft.quality)]}>{qualityText[mapQuality(draft.quality)]}</Tag>
-                <Tag color="default">{draft.type}</Tag>
-                <Tag color="default">最高{draft.maxLayer}层</Tag>
-              </div>
-              <div className="tech-research-draft-desc">{draft.description || '暂无描述'}</div>
-              <div className="tech-research-draft-expire">
-                草稿过期时间：{draft.draftExpireAt ? new Date(draft.draftExpireAt).toLocaleString() : '--'}
-              </div>
-              <div className="tech-research-actions">
-                <Button
-                  type="primary"
-                  onClick={() => {
-                    setPublishGenerationId(draft.generationId);
-                    setPublishCustomName(draft.suggestedName || '');
-                    setPublishOpen(true);
-                  }}
-                >
-                  命名并发布
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="tech-empty">暂无草稿，点击“开始领悟”开始研修</div>
-          )}
-        </div>
-      </div>
+      <ResearchPanel
+        status={researchStatus}
+        loading={researchLoading}
+        exchangeSubmitting={exchangeSubmitting}
+        generateSubmitting={generateSubmitting}
+        onExchangeBooks={() => void handleExchangeBooks()}
+        onGenerateDraft={() => void handleGenerateResearchDraft()}
+        onRefresh={() => void refreshResearchStatus()}
+        onOpenPublish={handleOpenPublish}
+      />
     );
   };
 

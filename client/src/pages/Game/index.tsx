@@ -15,6 +15,7 @@ import BagModal from './modules/BagModal';
 import TeamModal from './modules/TeamModal';
 import SkillFloatButton from './modules/SkillFloatButton';
 import TechniqueModal from './modules/TechniqueModal';
+import { getTechniqueResearchIndicatorTooltip } from './modules/TechniqueModal/researchShared';
 import TaskModal from './modules/TaskModal';
 import SectModal from './modules/SectModal';
 import MarketModal from './modules/MarketModal';
@@ -44,6 +45,7 @@ import {
   getMySect,
   getMySectApplications,
   getMailUnread,
+  getTechniqueResearchStatus,
   getSectApplications,
   nextDungeonInstance,
   startDungeonInstance,
@@ -54,7 +56,7 @@ import {
   updateCharacterPositionKeepalive,
 } from '../../services/api';
 import { getUnifiedApiErrorMessage } from '../../services/api';
-import type { InventoryItemDto } from '../../services/api';
+import type { InventoryItemDto, TechniqueResearchResultStatusDto } from '../../services/api';
 import { getMainQuestProgress, startDialogue, advanceDialogue, selectDialogueChoice, completeSection, type DialogueState } from '../../services/mainQuestApi';
 import { getMyTeam, getTeamApplications, leaveTeam, type TeamInfo } from '../../services/teamApi';
 import { IMG_LOGO as logo, IMG_LINGSHI as lingshi, IMG_TONGQIAN as tongqian, IMG_EQUIP_MALE as equipMale, IMG_EQUIP_FEMALE as equipFemale } from './shared/imageAssets';
@@ -91,6 +93,7 @@ const EQUIP_QUALITY_COLOR: Record<string, string> = {
   黄: 'var(--rarity-huang)',
 };
 const SILENT_REQUEST_CONFIG = { meta: { autoErrorToast: false } } as const;
+const TECHNIQUE_RESEARCH_ENABLED = !import.meta.env.PROD;
 
 const EQUIP_QUALITY_TEXT: Record<string, string> = {
   天: '天品',
@@ -644,6 +647,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [showSignInDot, setShowSignInDot] = useState(false);
   const [showMailDot, setShowMailDot] = useState(false);
+  const [techniqueIndicatorStatus, setTechniqueIndicatorStatus] = useState<TechniqueResearchResultStatusDto | null>(null);
   const [mailModalOpen, setMailModalOpen] = useState(false);
   const [settingModalOpen, setSettingModalOpen] = useState(false);
   // 挂机面板 Modal 开关
@@ -1544,6 +1548,44 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     return () => window.clearInterval(timer);
   }, [characterId, refreshMailDot]);
 
+  const refreshTechniqueIndicator = useCallback(async () => {
+    if (!TECHNIQUE_RESEARCH_ENABLED) {
+      setTechniqueIndicatorStatus(null);
+      return;
+    }
+    if (!characterId) {
+      setTechniqueIndicatorStatus(null);
+      return;
+    }
+    try {
+      const res = await getTechniqueResearchStatus(characterId);
+      if (!res.success || !res.data || !res.data.hasUnreadResult) {
+        setTechniqueIndicatorStatus(null);
+        return;
+      }
+      setTechniqueIndicatorStatus(res.data.resultStatus);
+    } catch {
+      setTechniqueIndicatorStatus(null);
+    }
+  }, [characterId]);
+
+  useEffect(() => {
+    if (!TECHNIQUE_RESEARCH_ENABLED) return undefined;
+    const t = window.setTimeout(() => {
+      void refreshTechniqueIndicator();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [refreshTechniqueIndicator]);
+
+  useEffect(() => {
+    if (!TECHNIQUE_RESEARCH_ENABLED) return undefined;
+    if (!characterId) return undefined;
+    return gameSocket.onTechniqueResearchResult((payload) => {
+      if (payload.characterId !== characterId) return;
+      setTechniqueIndicatorStatus(payload.status);
+    });
+  }, [characterId]);
+
   const refreshAchievementIndicator = useCallback(async () => {
     try {
       const res = await getAchievementList({ status: 'claimable', page: 1, limit: 1 });
@@ -1599,8 +1641,14 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         tooltip: `有${achievementClaimableCount}个成就奖励可领取`,
       };
     }
+    if (techniqueIndicatorStatus) {
+      out.technique = {
+        badgeDot: true,
+        tooltip: getTechniqueResearchIndicatorTooltip(techniqueIndicatorStatus),
+      };
+    }
     return Object.keys(out).length > 0 ? out : undefined;
-  }, [achievementClaimableCount, isTeamLeader, sectMyApplicationCount, sectPendingApplicationCount, teamApplicationUnread]);
+  }, [achievementClaimableCount, isTeamLeader, sectMyApplicationCount, sectPendingApplicationCount, teamApplicationUnread, techniqueIndicatorStatus]);
 
   const handleInfoAction = (action: string, target: InfoTarget) => {
     if (action === 'attack') {
@@ -2512,7 +2560,11 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         <WarehouseModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />
       )}
       {techniqueModalOpen && (
-        <TechniqueModal open={techniqueModalOpen} onClose={() => setTechniqueModalOpen(false)} />
+        <TechniqueModal
+          open={techniqueModalOpen}
+          onClose={() => setTechniqueModalOpen(false)}
+          onResearchIndicatorChange={setTechniqueIndicatorStatus}
+        />
       )}
       {taskModalOpen && (
         <TaskModal

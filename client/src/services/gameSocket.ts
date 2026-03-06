@@ -164,6 +164,23 @@ export interface IdleFinishedPayload {
 type IdleUpdateListener = (data: IdleUpdatePayload) => void;
 type IdleFinishedListener = (data: IdleFinishedPayload) => void;
 
+export interface TechniqueResearchResultPayload {
+  characterId: number;
+  generationId: string;
+  status: 'generated_draft' | 'failed';
+  hasUnreadResult: true;
+  message: string;
+  preview?: {
+    aiSuggestedName: string;
+    quality: '黄' | '玄' | '地' | '天';
+    type: string;
+    maxLayer: number;
+  };
+  errorMessage?: string;
+}
+
+type TechniqueResearchResultListener = (data: TechniqueResearchResultPayload) => void;
+
 export interface OnlinePlayerDto {
   id: number;
   nickname: string;
@@ -191,6 +208,7 @@ class GameSocketService {
   private onlinePlayersListeners: Set<OnlinePlayersListener> = new Set();
   private idleUpdateListeners: Set<IdleUpdateListener> = new Set();
   private idleFinishedListeners: Set<IdleFinishedListener> = new Set();
+  private techniqueResearchResultListeners: Set<TechniqueResearchResultListener> = new Set();
   private currentCharacter: CharacterData | null = null;
   private currentOnlinePlayers: OnlinePlayersPayloadDto | null = null;
   /** 本地在线玩家索引，用于增量合并 delta 消息 */
@@ -279,6 +297,10 @@ class GameSocketService {
 
     this.socket.on("idle:finished", (data: IdleFinishedPayload) => {
       this.notifyIdleFinishedListeners(data);
+    });
+
+    this.socket.on("techniqueResearchResult", (data: TechniqueResearchResultPayload) => {
+      this.notifyTechniqueResearchResultListeners(data);
     });
 
     this.socket.on("chat:message", (data: ChatMessageDto) => {
@@ -462,6 +484,11 @@ class GameSocketService {
     return () => this.idleFinishedListeners.delete(listener);
   }
 
+  onTechniqueResearchResult(listener: TechniqueResearchResultListener): () => void {
+    this.techniqueResearchResultListeners.add(listener);
+    return () => this.techniqueResearchResultListeners.delete(listener);
+  }
+
   onChatMessage(listener: ChatMessageListener): () => void {
     this.chatMessageListeners.add(listener);
     return () => this.chatMessageListeners.delete(listener);
@@ -571,6 +598,10 @@ class GameSocketService {
 
   private notifyIdleFinishedListeners(data: IdleFinishedPayload): void {
     this.idleFinishedListeners.forEach((listener) => listener(data));
+  }
+
+  private notifyTechniqueResearchResultListeners(data: TechniqueResearchResultPayload): void {
+    this.techniqueResearchResultListeners.forEach((listener) => listener(data));
   }
 
   private notifyChatMessageListeners(message: ChatMessageDto): void {

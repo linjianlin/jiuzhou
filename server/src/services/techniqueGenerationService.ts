@@ -26,8 +26,9 @@ import { addItemToInventory } from './inventory/index.js';
 import { getItemDefinitionById, getTechniqueDefinitions, refreshGeneratedTechniqueSnapshots } from './staticConfigLoader.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { getRealmRankZeroBased } from './shared/realmRules.js';
+import { buildTechniqueResearchJobState } from './shared/techniqueResearchJobShared.js';
 import { normalizeTechniqueName, validateTechniqueCustomName, getTechniqueNameRulesView } from './shared/techniqueNameRules.js';
-import { generateTechniqueSkillIconMap } from './shared/techniqueSkillImageGenerator.js';
+import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
 import {
   buildTechniqueGeneratorPromptInput,
   TECHNIQUE_EFFECT_TYPE_LIST,
@@ -59,7 +60,7 @@ type ResearchExchangeItemInput = {
   qty: number;
 };
 
-type TechniqueGenerationCandidate = {
+export type TechniqueGenerationCandidate = {
   technique: {
     name: string;
     type: '武技' | '心法' | '法诀' | '身法' | '辅修';
@@ -102,14 +103,29 @@ type TechniqueGenerationCandidate = {
   }>;
 };
 
-type TechniquePreview = {
+export type TechniquePreview = {
   draftTechniqueId: string;
   aiSuggestedName: string;
   quality: TechniqueQuality;
   type: string;
   maxLayer: number;
   description: string;
+  longDesc: string;
   skillNames: string[];
+  skills: Array<{
+    id: string;
+    name: string;
+    description: string;
+    icon: string | null;
+    costLingqi: number;
+    costQixue: number;
+    cooldown: number;
+    targetType: string;
+    targetCount: number;
+    damageType: string | null;
+    element: string;
+    effects: unknown[];
+  }>;
 };
 
 type GeneratedDraftRow = {
@@ -122,6 +138,34 @@ type GeneratedDraftRow = {
   longDesc: string;
   suggestedName: string;
   draftExpireAt: string;
+};
+
+export type TechniqueResearchResultStatus = 'generated_draft' | 'failed';
+
+export type TechniqueResearchJobView = {
+  generationId: string;
+  status: TechniqueGenerationStatus;
+  quality: TechniqueQuality;
+  draftTechniqueId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  draftExpireAt: string | null;
+  preview: TechniquePreview | null;
+  errorMessage: string | null;
+};
+
+type TechniqueResearchStatusData = {
+  pointsBalance: number;
+  weeklyLimit: number;
+  weeklyUsed: number;
+  weeklyRemaining: number;
+  generationCostByQuality: Record<TechniqueQuality, number>;
+  currentDraft: GeneratedDraftRow | null;
+  draftExpireAt: string | null;
+  nameRules: ReturnType<typeof getTechniqueNameRulesView>;
+  currentJob: TechniqueResearchJobView | null;
+  hasUnreadResult: boolean;
+  resultStatus: TechniqueResearchResultStatus | null;
 };
 
 const WEEKLY_LIMIT = 1;
@@ -257,6 +301,64 @@ const serializePromptSnapshot = (payload: Record<string, unknown>): string => {
 
 const chooseFrom = <T>(list: T[]): T => {
   return list[Math.floor(Math.random() * list.length)] as T;
+};
+
+const toIsoString = (raw: unknown): string | null => {
+  if (!raw) return null;
+  const date = raw instanceof Date ? raw : new Date(String(raw));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const toStringArray = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => asString(entry)).filter(Boolean);
+};
+
+const toTechniquePreviewSkills = (raw: unknown): TechniquePreview['skills'] => {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const row = entry as Record<string, unknown>;
+    const id = asString(row.id);
+    const name = asString(row.name);
+    if (!id || !name) return [];
+    return [{
+      id,
+      name,
+      description: asString(row.description),
+      icon: asString(row.icon) || null,
+      costLingqi: Math.max(0, Math.floor(asNumber(row.costLingqi ?? row.cost_lingqi, 0))),
+      costQixue: Math.max(0, Math.floor(asNumber(row.costQixue ?? row.cost_qixue, 0))),
+      cooldown: Math.max(0, Math.floor(asNumber(row.cooldown, 0))),
+      targetType: asString(row.targetType ?? row.target_type),
+      targetCount: Math.max(1, Math.floor(asNumber(row.targetCount ?? row.target_count, 1))),
+      damageType: asString(row.damageType ?? row.damage_type) || null,
+      element: asString(row.element) || 'none',
+      effects: Array.isArray(row.effects) ? row.effects : [],
+    }];
+  });
+};
+
+const buildTechniquePreviewFromRow = (
+  row: Record<string, unknown>,
+  qualityFallback: TechniqueQuality,
+): TechniquePreview | null => {
+  const draftTechniqueId = asString(row.draft_technique_id);
+  const suggestedName = asString(row.suggested_name);
+  const type = asString(row.technique_type);
+  if (!draftTechniqueId || !suggestedName || !type) return null;
+
+  return {
+    draftTechniqueId,
+    aiSuggestedName: suggestedName,
+    quality: (asString(row.technique_quality) as TechniqueQuality) || qualityFallback,
+    type,
+    maxLayer: Math.max(1, Math.floor(asNumber(row.max_layer, 1))),
+    description: asString(row.description),
+    longDesc: asString(row.long_desc),
+    skillNames: toStringArray(row.skill_names),
+    skills: toTechniquePreviewSkills(row.skill_previews),
+  };
 };
 
 const sanitizeTechniqueEffect = (raw: Record<string, unknown>): Record<string, unknown> => {
@@ -776,40 +878,6 @@ const remapGeneratedSkillIds = (
   };
 };
 
-const decorateGeneratedCandidateSkillIcons = async (
-  candidate: TechniqueGenerationCandidate,
-): Promise<TechniqueGenerationCandidate> => {
-  const inputs = candidate.skills.map((skill) => ({
-    skillId: skill.id,
-    techniqueName: candidate.technique.name,
-    techniqueType: candidate.technique.type,
-    techniqueQuality: candidate.technique.quality,
-    techniqueElement: candidate.technique.attributeElement,
-    skillName: skill.name,
-    skillDescription: skill.description,
-    skillEffects: skill.effects,
-  }));
-
-  const iconMap = await generateTechniqueSkillIconMap(inputs);
-  if (iconMap.size <= 0) {
-    return {
-      ...candidate,
-      skills: candidate.skills.map((skill) => ({
-        ...skill,
-        icon: skill.icon || DEFAULT_GENERATED_SKILL_ICON,
-      })),
-    };
-  }
-
-  return {
-    ...candidate,
-    skills: candidate.skills.map((skill) => ({
-      ...skill,
-      icon: iconMap.get(skill.id) || skill.icon || DEFAULT_GENERATED_SKILL_ICON,
-    })),
-  };
-};
-
 class TechniqueGenerationService {
   private async ensureResearchPointRowTx(characterId: number): Promise<void> {
     await query(
@@ -876,6 +944,8 @@ class TechniqueGenerationService {
         SET status = 'refunded',
             error_code = 'GENERATION_EXPIRED',
             error_message = '草稿已过期，系统自动退款',
+            finished_at = COALESCE(finished_at, NOW()),
+            failed_viewed_at = NULL,
             updated_at = NOW()
         WHERE character_id = $1
           AND status = 'generated_draft'
@@ -886,21 +956,12 @@ class TechniqueGenerationService {
     );
   }
 
-  async getResearchStatus(characterId: number): Promise<ServiceResult<{
-    pointsBalance: number;
-    weeklyLimit: number;
-    weeklyUsed: number;
-    weeklyRemaining: number;
-    generationCostByQuality: Record<TechniqueQuality, number>;
-    currentDraft: GeneratedDraftRow | null;
-    draftExpireAt: string | null;
-    nameRules: ReturnType<typeof getTechniqueNameRulesView>;
-  }>> {
+  async getResearchStatus(characterId: number): Promise<ServiceResult<TechniqueResearchStatusData>> {
     await this.refundExpiredDraftJobsTx(characterId);
     await this.ensureResearchPointRowTx(characterId);
 
     const weekKey = resolveWeekKey(new Date());
-    const [pointsRes, usedRes, draftRes] = await Promise.all([
+    const [pointsRes, usedRes, draftRes, currentJobRes] = await Promise.all([
       query(
         `
           SELECT balance_points
@@ -941,6 +1002,59 @@ class TechniqueGenerationService {
         `,
         [characterId],
       ),
+      query(
+        `
+          SELECT
+            j.id AS generation_id,
+            j.status,
+            j.quality_rolled,
+            j.draft_technique_id,
+            j.created_at,
+            j.finished_at,
+            j.draft_expire_at,
+            j.error_message,
+            j.viewed_at,
+            j.failed_viewed_at,
+            d.name AS suggested_name,
+            d.quality AS technique_quality,
+            d.type AS technique_type,
+            d.max_layer,
+            d.description,
+            d.long_desc,
+            (
+              SELECT json_agg(s.name ORDER BY s.created_at ASC)
+              FROM generated_skill_def s
+              WHERE s.generation_id = j.id
+            ) AS skill_names,
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', s.id,
+                  'name', s.name,
+                  'description', s.description,
+                  'icon', s.icon,
+                  'costLingqi', s.cost_lingqi,
+                  'costQixue', s.cost_qixue,
+                  'cooldown', s.cooldown,
+                  'targetType', s.target_type,
+                  'targetCount', s.target_count,
+                  'damageType', s.damage_type,
+                  'element', s.element,
+                  'effects', s.effects
+                )
+                ORDER BY s.created_at ASC, s.id ASC
+              )
+              FROM generated_skill_def s
+              WHERE s.generation_id = j.id
+            ) AS skill_previews
+          FROM technique_generation_job j
+          LEFT JOIN generated_technique_def d ON d.id = j.draft_technique_id
+          WHERE j.character_id = $1
+          ORDER BY j.created_at DESC
+          LIMIT 1
+        `,
+        [characterId],
+      ),
     ]);
 
     const pointsBalance = Math.max(0, Math.floor(asNumber((pointsRes.rows[0] as Record<string, unknown> | undefined)?.balance_points, 0)));
@@ -961,6 +1075,27 @@ class TechniqueGenerationService {
           draftExpireAt: new Date(String(draftRow.draft_expire_at || '')).toISOString(),
         }
       : null;
+    const currentJobRow = currentJobRes.rows[0] as Record<string, unknown> | undefined;
+    const currentJobState = buildTechniqueResearchJobState(
+      currentJobRow
+        ? {
+            generationId: asString(currentJobRow.generation_id),
+            status: (asString(currentJobRow.status) as TechniqueGenerationStatus) || 'pending',
+            quality: (asString(currentJobRow.quality_rolled) as TechniqueQuality) || '黄',
+            draftTechniqueId: asString(currentJobRow.draft_technique_id) || null,
+            draftExpireAt: toIsoString(currentJobRow.draft_expire_at),
+            startedAt: toIsoString(currentJobRow.created_at) || new Date().toISOString(),
+            finishedAt: toIsoString(currentJobRow.finished_at),
+            viewedAt: toIsoString(currentJobRow.viewed_at),
+            failedViewedAt: toIsoString(currentJobRow.failed_viewed_at),
+            errorMessage: asString(currentJobRow.error_message) || null,
+            preview: buildTechniquePreviewFromRow(
+              currentJobRow,
+              (asString(currentJobRow.quality_rolled) as TechniqueQuality) || '黄',
+            ),
+          }
+        : null,
+    );
 
     return {
       success: true,
@@ -974,6 +1109,9 @@ class TechniqueGenerationService {
         currentDraft,
         draftExpireAt: currentDraft?.draftExpireAt ?? null,
         nameRules: getTechniqueNameRulesView(),
+        currentJob: currentJobState.currentJob,
+        hasUnreadResult: currentJobState.hasUnreadResult,
+        resultStatus: currentJobState.resultStatus,
       },
     };
   }
@@ -1424,6 +1562,11 @@ class TechniqueGenerationService {
             attempt_count = $3,
             model_name = $4,
             prompt_snapshot = $5::jsonb,
+            finished_at = NOW(),
+            viewed_at = NULL,
+            failed_viewed_at = NULL,
+            error_code = NULL,
+            error_message = NULL,
             updated_at = NOW()
         WHERE id = $1
       `,
@@ -1442,14 +1585,35 @@ class TechniqueGenerationService {
           type: normalizedCandidate.technique.type,
           maxLayer: normalizedCandidate.technique.maxLayer,
           description: normalizedCandidate.technique.description,
+          longDesc: normalizedCandidate.technique.longDesc,
           skillNames: normalizedCandidate.skills.map((skill) => skill.name),
+          skills: normalizedCandidate.skills.map((skill) => ({
+            id: skill.id,
+            name: skill.name,
+            description: skill.description,
+            icon: skill.icon,
+            costLingqi: skill.costLingqi,
+            costQixue: skill.costQixue,
+            cooldown: skill.cooldown,
+            targetType: skill.targetType,
+            targetCount: skill.targetCount,
+            damageType: skill.damageType,
+            element: skill.element,
+            effects: skill.effects,
+          })),
         },
       },
     };
   }
 
   @Transactional
-  private async refundGenerationJobTx(characterId: number, generationId: string, reason: string): Promise<void> {
+  private async refundGenerationJobTx(
+    characterId: number,
+    generationId: string,
+    reason: string,
+    nextStatus: 'failed' | 'refunded' = 'refunded',
+    errorCode: string = nextStatus === 'failed' ? 'GENERATION_FAILED' : 'GENERATION_REFUNDED',
+  ): Promise<void> {
     await this.ensureResearchPointRowTx(characterId);
     const jobRes = await query(
       `
@@ -1465,7 +1629,7 @@ class TechniqueGenerationService {
     const row = jobRes.rows[0] as Record<string, unknown>;
     const status = asString(row.status);
     const costPoints = Math.max(0, Math.floor(asNumber(row.cost_points, 0)));
-    if (status === 'refunded' || status === 'published' || costPoints <= 0) return;
+    if ((status === 'refunded' || status === 'failed' || status === 'published') || costPoints <= 0) return;
 
     await query(
       `
@@ -1489,22 +1653,92 @@ class TechniqueGenerationService {
     await query(
       `
         UPDATE technique_generation_job
-        SET status = 'refunded',
-            error_code = 'GENERATION_REFUNDED',
+        SET status = $4,
+            error_code = $5,
             error_message = $3,
+            finished_at = NOW(),
+            failed_viewed_at = NULL,
             updated_at = NOW()
         WHERE id = $1
       `,
-      [generationId, characterId, reason],
+      [generationId, characterId, reason, nextStatus, errorCode],
     );
+  }
+
+  async processPendingGenerationJob(args: {
+    characterId: number;
+    generationId: string;
+    quality: TechniqueQuality;
+  }): Promise<ServiceResult<{
+    generationId: string;
+    status: TechniqueResearchResultStatus;
+    preview: TechniquePreview | null;
+    errorMessage: string | null;
+  }>> {
+    const { characterId, generationId, quality } = args;
+
+    try {
+      const generated = await generateCandidateWithRetry(quality);
+      const executionResult = await generateTechniqueCandidateWithIcons({
+        quality,
+        candidate: generated.candidate,
+        defaultSkillIcon: DEFAULT_GENERATED_SKILL_ICON,
+      });
+      const saveRes = await this.saveGeneratedDraftTx({
+        characterId,
+        generationId,
+        quality,
+        modelName: generated.modelName,
+        promptSnapshot: generated.promptSnapshot,
+        attemptCount: generated.attemptCount,
+        candidate: executionResult.candidate,
+      });
+
+      if (!saveRes.success || !saveRes.data) {
+        const reason = saveRes.message || '草稿落库失败，已自动退款';
+        await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', saveRes.code || 'GENERATION_FAILED');
+        return {
+          success: true,
+          message: reason,
+          data: {
+            generationId,
+            status: 'failed',
+            preview: null,
+            errorMessage: reason,
+          },
+        };
+      }
+
+      return {
+        success: true,
+        message: '领悟草稿成功',
+        data: {
+          generationId,
+          status: 'generated_draft',
+          preview: saveRes.data.preview,
+          errorMessage: null,
+        },
+      };
+    } catch (error) {
+      const reason = `AI生成异常，已自动退款：${error instanceof Error ? error.message : '未知异常'}`;
+      await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', 'GENERATION_FAILED');
+      return {
+        success: true,
+        message: reason,
+        data: {
+          generationId,
+          status: 'failed',
+          preview: null,
+          errorMessage: reason,
+        },
+      };
+    }
   }
 
   async generateTechniqueDraft(characterId: number): Promise<ServiceResult<{
     generationId: string;
-    draftTechniqueId: string;
     quality: TechniqueQuality;
-    aiSuggestedName: string;
-    preview: TechniquePreview;
+    status: 'pending';
   }>> {
     const createRes = await this.createGenerationJobTx(characterId);
     if (!createRes.success) {
@@ -1515,44 +1749,76 @@ class TechniqueGenerationService {
     }
 
     const { generationId, quality } = createRes.data;
-
-    try {
-      const generated = await generateCandidateWithRetry(quality);
-      const candidateWithIcons = await decorateGeneratedCandidateSkillIcons(generated.candidate);
-      const saveRes = await this.saveGeneratedDraftTx({
-        characterId,
+    return {
+      success: true,
+      message: '已加入洞府推演队列',
+      data: {
         generationId,
         quality,
-        modelName: generated.modelName,
-        promptSnapshot: generated.promptSnapshot,
-        attemptCount: generated.attemptCount,
-        candidate: candidateWithIcons,
-      });
+        status: 'pending',
+      },
+    };
+  }
 
-      if (!saveRes.success || !saveRes.data) {
-        await this.refundGenerationJobTx(characterId, generationId, saveRes.message || '草稿落库失败，已自动退款');
-        return { success: false, message: saveRes.message || '领悟失败', code: saveRes.code || 'GENERATION_FAILED' };
-      }
+  async failPendingGenerationJob(characterId: number, generationId: string, reason: string): Promise<void> {
+    await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', 'GENERATION_FAILED');
+  }
 
-      return {
-        success: true,
-        message: '领悟草稿成功，请输入自定义名称后发布',
-        data: {
-          generationId,
-          draftTechniqueId: saveRes.data.draftTechniqueId,
-          quality,
-          aiSuggestedName: saveRes.data.preview.aiSuggestedName,
-          preview: saveRes.data.preview,
-        },
-      };
-    } catch (error) {
-      await this.refundGenerationJobTx(characterId, generationId, 'AI生成异常，已自动退款');
-      return {
-        success: false,
-        message: `领悟失败：${error instanceof Error ? error.message : '未知异常'}`,
-        code: 'GENERATION_FAILED',
-      };
+  @Transactional
+  async markLatestResultViewed(characterId: number): Promise<ServiceResult<{ marked: boolean }>> {
+    const jobRes = await query(
+      `
+        SELECT id, status
+        FROM technique_generation_job
+        WHERE character_id = $1
+          AND (
+            (status = 'generated_draft' AND viewed_at IS NULL)
+            OR (status IN ('failed', 'refunded') AND failed_viewed_at IS NULL)
+          )
+        ORDER BY created_at DESC
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [characterId],
+    );
+    if (jobRes.rows.length === 0) {
+      return { success: true, message: '无未查看结果', data: { marked: false } };
     }
+
+    const row = jobRes.rows[0] as Record<string, unknown>;
+    const generationId = asString(row.id);
+    const status = asString(row.status);
+    if (!generationId || !status) {
+      return { success: false, message: '未找到可标记结果', code: 'GENERATION_NOT_FOUND' };
+    }
+
+    if (status === 'generated_draft') {
+      await query(
+        `
+          UPDATE technique_generation_job
+          SET viewed_at = COALESCE(viewed_at, NOW()),
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [generationId],
+      );
+    } else {
+      await query(
+        `
+          UPDATE technique_generation_job
+          SET failed_viewed_at = COALESCE(failed_viewed_at, NOW()),
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [generationId],
+      );
+    }
+
+    return {
+      success: true,
+      message: '已标记查看',
+      data: { marked: true },
+    };
   }
 
   @Transactional
@@ -1657,6 +1923,7 @@ class TechniqueGenerationService {
         SET status = 'published',
             generated_technique_id = $2,
             publish_attempts = publish_attempts + 1,
+            viewed_at = COALESCE(viewed_at, NOW()),
             updated_at = NOW()
         WHERE id = $1
       `,
@@ -1719,6 +1986,9 @@ export const safeGetTechniqueGenerationStatus = async (characterId: number): Pro
           currentDraft: null,
           draftExpireAt: null,
           nameRules: getTechniqueNameRulesView(),
+          currentJob: null,
+          hasUnreadResult: false,
+          resultStatus: null,
         },
       };
     }

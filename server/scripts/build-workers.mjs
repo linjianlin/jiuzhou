@@ -28,8 +28,11 @@ try {
   execSync(
     'npx tsc ' +
     'src/workers/idleBattleWorker.ts ' +
+    'src/workers/techniqueGenerationWorker.ts ' +
+    'src/workers/techniqueGenerationWorkerShared.ts ' +
     'src/services/idle/idleBattleSimulationCore.ts ' +
     'src/services/idle/types.ts ' +
+    'src/services/shared/techniqueGenerationExecution.ts ' +
     '--outDir dist ' +
     '--module esnext ' +
     '--target es2022 ' +

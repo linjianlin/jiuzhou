@@ -433,9 +433,141 @@
   line-height: 1.6;
 }
 
+.tech-research-draft-long-desc {
+  font-size: 12px;
+  color: var(--text-color);
+  line-height: 1.7;
+}
+
+.tech-research-card {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg-soft);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tech-research-card.is-pending {
+  border-style: dashed;
+}
+
+.tech-research-card.is-failed {
+  border-color: var(--danger-color, #dc2626);
+}
+
+.tech-research-card-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.tech-research-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tech-research-card-meta .ant-tag {
+  margin: 0;
+}
+
+.tech-research-card-subtle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+.tech-research-card-long-desc {
+  font-size: 12px;
+  color: var(--text-color);
+  line-height: 1.7;
+}
+
+.tech-research-skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tech-research-skill-list .ant-tag {
+  margin: 0;
+}
+
 .tech-research-draft-expire {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.tech-research-status-card {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg-soft);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tech-research-status-card.is-pending {
+  border-style: dashed;
+}
+
+.tech-research-status-card.is-failed {
+  border-color: var(--danger-color, #dc2626);
+}
+
+.tech-research-status-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.tech-research-status-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.tech-research-status-foot {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+.tech-research-status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tech-research-status-meta .ant-tag {
+  margin: 0;
+}
+
+.tech-research-skill-card {
+  min-width: 0;
+  border: 1px solid var(--border-color-soft);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 220px;
+}
+
+.tech-research-skill-name {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.tech-research-skill-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
 }
 
 .tech-research-publish {

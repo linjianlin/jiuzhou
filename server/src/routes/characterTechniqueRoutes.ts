@@ -17,6 +17,7 @@ import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { getSingleParam, parsePositiveInt } from '../services/shared/httpParam.js';
 import { sendResult } from '../middleware/response.js';
 import { BusinessError } from '../middleware/BusinessError.js';
+import { enqueueTechniqueGenerationJob } from '../services/techniqueGenerationJobRunner.js';
 
 const router = Router();
 const isTechniqueResearchEnabled = process.env.NODE_ENV !== 'production';
@@ -142,7 +143,38 @@ router.post('/:characterId/technique/research/generate', asyncHandler(async (req
   const result = await techniqueGenerationService.generateTechniqueDraft(characterId);
   if (result.success) {
     await safePushCharacterUpdate(userId);
+    if (result.data) {
+      try {
+        await enqueueTechniqueGenerationJob({
+          characterId,
+          generationId: result.data.generationId,
+          quality: result.data.quality,
+          userId,
+        });
+      } catch (error) {
+        await techniqueGenerationService.failPendingGenerationJob(
+          characterId,
+          result.data.generationId,
+          `洞府推演任务投递失败：${error instanceof Error ? error.message : '未知异常'}`,
+        );
+        throw new BusinessError('洞府推演任务投递失败，请稍后重试');
+      }
+    }
   }
+  sendResult(res, result);
+}));
+
+// ============================================
+// 标记最新研修结果已查看
+// POST /api/character/:characterId/technique/research/mark-result-viewed
+// ============================================
+router.post('/:characterId/technique/research/mark-result-viewed', asyncHandler(async (req, res) => {
+  const characterId = parseCharacterIdParam(req);
+  if (characterId === null) {
+    throw new BusinessError('无效的角色ID');
+  }
+
+  const result = await techniqueGenerationService.markLatestResultViewed(characterId);
   sendResult(res, result);
 }));
 

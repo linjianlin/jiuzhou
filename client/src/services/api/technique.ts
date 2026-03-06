@@ -219,6 +219,43 @@ export type TechniqueResearchDraftDto = {
   draftExpireAt: string;
 };
 
+export type TechniqueResearchResultStatusDto = 'generated_draft' | 'failed';
+
+export type TechniqueResearchJobDto = {
+  generationId: string;
+  status: 'pending' | 'generated_draft' | 'published' | 'failed' | 'refunded';
+  quality: '黄' | '玄' | '地' | '天';
+  draftTechniqueId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  draftExpireAt: string | null;
+  preview: {
+    draftTechniqueId: string;
+    aiSuggestedName: string;
+    quality: '黄' | '玄' | '地' | '天';
+    type: string;
+    maxLayer: number;
+    description: string;
+    longDesc: string;
+    skillNames: string[];
+    skills: Array<{
+      id: string;
+      name: string;
+      description: string;
+      icon: string | null;
+      costLingqi: number;
+      costQixue: number;
+      cooldown: number;
+      targetType: string;
+      targetCount: number;
+      damageType: string | null;
+      element: string;
+      effects: unknown[];
+    }>;
+  } | null;
+  errorMessage: string | null;
+};
+
 export interface TechniqueResearchStatusResponse {
   success: boolean;
   message: string;
@@ -232,6 +269,9 @@ export interface TechniqueResearchStatusResponse {
     currentDraft: TechniqueResearchDraftDto | null;
     draftExpireAt: string | null;
     nameRules: TechniqueResearchNameRulesDto;
+    currentJob: TechniqueResearchJobDto | null;
+    hasUnreadResult: boolean;
+    resultStatus: TechniqueResearchResultStatusDto | null;
   };
 }
 
@@ -262,18 +302,8 @@ export interface TechniqueResearchGenerateResponse {
   code?: string;
   data?: {
     generationId: string;
-    draftTechniqueId: string;
     quality: '黄' | '玄' | '地' | '天';
-    aiSuggestedName: string;
-    preview: {
-      draftTechniqueId: string;
-      aiSuggestedName: string;
-      quality: '黄' | '玄' | '地' | '天';
-      type: string;
-      maxLayer: number;
-      description: string;
-      skillNames: string[];
-    };
+    status: 'pending';
   };
 }
 
@@ -300,4 +330,10 @@ export const publishTechniqueResearchDraft = (
   customName: string,
 ): Promise<TechniqueResearchPublishResponse> => {
   return api.post(`/character/${characterId}/technique/research/generate/${generationId}/publish`, { customName });
+};
+
+export const markTechniqueResearchResultViewed = (
+  characterId: number,
+): Promise<{ success: boolean; message: string; data?: { marked: boolean } }> => {
+  return api.post(`/character/${characterId}/technique/research/mark-result-viewed`);
 };
