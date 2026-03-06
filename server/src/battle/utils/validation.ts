@@ -199,10 +199,17 @@ function validateTargets(
       break;
       
     case 'single_ally':
-      if (targetIds.length !== 1) {
-        return { valid: false, error: '单体友方技能只能选择一个目标' };
+      if (targetIds.length > 1) {
+        return { valid: false, error: '单体友方技能最多只能选择一个目标' };
       }
-      if (!allies.some(a => a.isAlive)) {
+      if (targetIds.length === 0) {
+        if (!allies.some(a => a.isAlive)) {
+          return { valid: false, error: '目标不是有效的友方单位' };
+        }
+        break;
+      }
+      // 友方辅助技能一旦目标漂移就会误加到自己，必须严格校验显式目标。
+      if (!allies.some(a => a.isAlive && a.id === targetIds[0])) {
         return { valid: false, error: '目标不是有效的友方单位' };
       }
       break;

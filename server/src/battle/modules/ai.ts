@@ -8,6 +8,7 @@
 
 import type { BattleState, BattleUnit, BattleSkill } from '../types.js';
 import { getNextRandom, getRandomInt } from '../utils/random.js';
+import { resolveSingleAllyTargetId } from '../utils/allyTargeting.js';
 import { getAvailableSkills, getNormalAttack } from './skill.js';
 import { getLowestHpTarget, getHighestThreatTarget, getHealTargets } from './target.js';
 import { isStunned, isFeared, getTauntSource } from './control.js';
@@ -220,23 +221,6 @@ function selectSingleAllyTarget(
   skill: BattleSkill,
   allies: BattleUnit[]
 ): string[] {
-  if (allies.length === 0) return [];
-
-  if (hasHealEffect(skill)) {
-    const healTargets = getHealTargets(allies, 1);
-    if (healTargets.length === 0) {
-      return [];
-    }
-    return [healTargets[0].id];
-  }
-
-  const isBuffSkill = skill.effects.some((e) => e.type === 'buff');
-  if (isBuffSkill) {
-    const highestDamage = allies.reduce((highest, current) =>
-      current.stats.damageDealt > highest.stats.damageDealt ? current : highest
-    );
-    return [highestDamage.id];
-  }
-
-  return [unit.id];
+  const targetId = resolveSingleAllyTargetId(unit, skill, allies);
+  return targetId ? [targetId] : [];
 }

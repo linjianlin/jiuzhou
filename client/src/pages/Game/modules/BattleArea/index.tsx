@@ -1076,9 +1076,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       if (tt === 'self') {
         targets = [currentUnitId];
       } else if (tt === 'single_ally') {
-        const picked = selectedAllyId && aliveAllyIds.includes(selectedAllyId) ? selectedAllyId : aliveAllyIds[0];
-        if (!picked) return false;
-        targets = [picked];
+        const picked = selectedAllyId && aliveAllyIds.includes(selectedAllyId) ? selectedAllyId : null;
+        targets = picked ? [picked] : [];
       } else if (tt === 'all_ally' || tt === 'random_ally') {
         targets = [];
       } else if (tt === 'all_enemy' || tt === 'random_enemy') {

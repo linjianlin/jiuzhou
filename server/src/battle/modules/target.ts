@@ -4,6 +4,7 @@
 
 import type { BattleState, BattleUnit, BattleSkill } from '../types.js';
 import { shuffle } from '../utils/random.js';
+import { resolveSingleAllyTargetId } from '../utils/allyTargeting.js';
 import { getTauntSource } from './control.js';
 
 /**
@@ -30,7 +31,7 @@ export function resolveTargets(
       return resolveSingleEnemy(caster, aliveEnemies, selectedTargetIds);
       
     case 'single_ally':
-      return resolveSingleAlly(aliveAllies, selectedTargetIds);
+      return resolveSingleAlly(caster, skill, aliveAllies, selectedTargetIds);
       
     case 'all_enemy':
       return aliveEnemies;
@@ -82,17 +83,15 @@ function resolveSingleEnemy(
  * 解析单体友方目标
  */
 function resolveSingleAlly(
+  caster: BattleUnit,
+  skill: BattleSkill,
   allies: BattleUnit[],
   selectedTargetIds?: string[]
 ): BattleUnit[] {
-  if (selectedTargetIds && selectedTargetIds.length > 0) {
-    const target = allies.find(a => a.id === selectedTargetIds[0]);
-    if (target) {
-      return [target];
-    }
-  }
-  
-  return allies.length > 0 ? [allies[0]] : [];
+  const targetId = resolveSingleAllyTargetId(caster, skill, allies, selectedTargetIds);
+  if (!targetId) return [];
+  const target = allies.find((ally) => ally.id === targetId);
+  return target ? [target] : [];
 }
 
 /**

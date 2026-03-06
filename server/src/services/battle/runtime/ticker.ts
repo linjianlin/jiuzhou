@@ -22,6 +22,7 @@
 import type { BattleSkill, BattleState, BattleUnit } from "../../../battle/types.js";
 import { canUseSkill, isFeared, isStunned } from "../../../battle/modules/control.js";
 import { getNormalAttack } from "../../../battle/modules/skill.js";
+import { resolveSingleAllyTargetId } from "../../../battle/utils/allyTargeting.js";
 import { getGameServer } from "../../../game/gameServer.js";
 import {
   activeBattles,
@@ -150,7 +151,8 @@ const resolveAutoSkipTargetIds = (
     return aliveEnemies[0] ? [aliveEnemies[0].id] : [];
   }
   if (skill.targetType === "single_ally") {
-    return aliveAllies[0] ? [aliveAllies[0].id] : [];
+    const targetId = resolveSingleAllyTargetId(unit, skill, aliveAllies);
+    return targetId ? [targetId] : [];
   }
   return [];
 };
