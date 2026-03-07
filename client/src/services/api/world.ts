@@ -93,19 +93,6 @@ export type MapObjectDto =
       techniques?: Array<{ name: string; level: string; type: string }>;
     };
 
-export interface AreaObjectsResponse {
-  success: boolean;
-  message?: string;
-  data?: {
-    area: GridPosition;
-    objects: MapObjectDto[];
-  };
-}
-
-export const getAreaObjects = (area: GridPosition): Promise<AreaObjectsResponse> => {
-  return api.get(`/map/area/${area}/objects`);
-};
-
 export interface MapDefLite {
   id: string;
   code: string | null;

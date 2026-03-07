@@ -16,12 +16,6 @@ router.get('/world', asyncHandler(async (_req, res) => {
   sendSuccess(res, data);
 }));
 
-router.get('/area/:area/objects', asyncHandler(async (req, res) => {
-  const area = getSingleParam(req.params.area) as Parameters<typeof roomObjectService.getAreaObjects>[0];
-  const objects = await roomObjectService.getAreaObjects(area);
-  sendSuccess(res, { area, objects });
-}));
-
 router.get('/maps', asyncHandler(async (_req, res) => {
   const maps = await getEnabledMaps();
   sendSuccess(res, { maps });

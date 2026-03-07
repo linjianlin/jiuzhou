@@ -591,12 +591,12 @@
         {
           "id": "room-ancient-tree",
           "name": "古树之地",
-          "description": "一棵参天古树矗立于此，树身散发着诡异的绿光。传说这是一只修炼千年的树妖。",
+          "description": "一棵参天古树矗立于此，树身仍残留着淡淡妖气，四周安静得只剩风声穿过枝叶。",
           "position": {
             "x": 0,
             "y": 4
           },
-          "room_type": "boss",
+          "room_type": "normal",
           "connections": [
             {
               "direction": "north",
@@ -609,23 +609,11 @@
             }
           ],
           "npcs": [],
-          "monsters": [
-            {
-              "monster_def_id": "monster-boss-ancient-tree",
-              "count": 1,
-              "respawn_sec": 3600
-            }
-          ],
+          "monsters": [],
           "resources": [],
           "items": [],
           "portals": [],
-          "events": [
-            {
-              "event_id": "evt-boss-ancient-tree",
-              "trigger": "enter",
-              "once": false
-            }
-          ]
+          "events": []
         }
       ]
     },
@@ -1359,12 +1347,12 @@
         {
           "id": "room-withered-heart",
           "name": "枯心祭场",
-          "description": "幽林核心的古老祭场，树妖王在此沉眠，苏醒时会吞噬一切闯入者。",
+          "description": "幽林核心的古老祭场早已残破，只剩衰败木气在地面缓慢游走。",
           "position": {
             "x": 0,
             "y": 3
           },
-          "room_type": "boss",
+          "room_type": "normal",
           "connections": [
             {
               "direction": "south",
@@ -1377,23 +1365,12 @@
               "monster_def_id": "monster-elite-storm-wolf",
               "count": 1,
               "respawn_sec": 900
-            },
-            {
-              "monster_def_id": "monster-boss-withered-ent",
-              "count": 1,
-              "respawn_sec": 3600
             }
           ],
           "resources": [],
           "items": [],
           "portals": [],
-          "events": [
-            {
-              "event_id": "evt-withered-grove-boss",
-              "trigger": "enter",
-              "once": false
-            }
-          ]
+          "events": []
         }
       ]
     },

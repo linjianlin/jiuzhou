@@ -239,24 +239,9 @@ export type MonsterDefConfig = {
   enabled?: boolean;
 };
 
-export type SpawnRuleConfig = {
-  id: string;
-  area: string;
-  pool_type?: string;
-  pool_entries?: Array<{ monster_def_id?: string; npc_def_id?: string; weight?: number }>;
-  max_alive?: number;
-  respawn_sec?: number;
-  elite_chance?: number;
-  boss_window?: Record<string, unknown>;
-  req_realm_min?: string;
-  req_quest_id?: string;
-  enabled?: boolean;
-};
-
 type NpcDefFile = { npcs: NpcDefConfig[]; talk_trees?: TalkTreeDefConfig[] };
 type MapDefFile = { maps: MapDefConfig[] };
 type MonsterDefFile = { monsters: MonsterDefConfig[] };
-type SpawnRuleFile = { rules: SpawnRuleConfig[] };
 
 export type BountyDefConfig = {
   id: string;
@@ -731,7 +716,6 @@ let npcDefCache: NpcDefConfig[] | null | undefined;
 let talkTreeDefCache: TalkTreeDefConfig[] | null | undefined;
 let mapDefCache: MapDefConfig[] | null | undefined;
 let monsterDefCache: MonsterDefConfig[] | null | undefined;
-let spawnRuleCache: SpawnRuleConfig[] | null | undefined;
 let bountyDefCache: BountyDefConfig[] | null | undefined;
 let dungeonDefCache: DungeonDefConfig[] | null | undefined;
 let dungeonDifficultyCache: DungeonDifficultyConfig[] | null | undefined;
@@ -1281,13 +1265,6 @@ export const getMonsterDefinitions = (): MonsterDefConfig[] => {
   const file = readJsonFile<MonsterDefFile>('monster_def.json');
   monsterDefCache = Array.isArray(file?.monsters) ? file.monsters : [];
   return monsterDefCache;
-};
-
-export const getSpawnRuleDefinitions = (): SpawnRuleConfig[] => {
-  if (spawnRuleCache !== undefined) return spawnRuleCache ?? [];
-  const file = readJsonFile<SpawnRuleFile>('spawn_rule.json');
-  spawnRuleCache = Array.isArray(file?.rules) ? file.rules : [];
-  return spawnRuleCache;
 };
 
 export const getBountyDefinitions = (): BountyDefConfig[] => {

@@ -1,6 +1,6 @@
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
-import type { GridPosition, MapRoom } from './mapService.js';
+import type { MapRoom } from './mapService.js';
 import { getRoomInMap } from './mapService.js';
 import { getGameServer } from '../game/gameServer.js';
 import { addItemToInventory } from './inventory/index.js';
@@ -11,7 +11,6 @@ import {
   getMainQuestSectionById,
   getNpcDefinitions,
   getMonsterDefinitions,
-  getSpawnRuleDefinitions,
 } from './staticConfigLoader.js';
 import { getTaskDefinitionsByIds, getTaskDefinitionsByNpcIds } from './taskDefinitionService.js';
 import { getCharacterIdByUserId } from './shared/characterId.js';
@@ -861,112 +860,6 @@ const getRoomObjectsImpl = async (mapId: string, roomId: string, excludeUserId?:
   return objects;
 };
 
-type SpawnRuleRow = {
-  id: string;
-  area: string;
-  pool_type: string;
-  pool_entries: unknown;
-  max_alive: number;
-  respawn_sec: number;
-  enabled: boolean;
-};
-
-type SpawnEntry = { monster_def_id?: string; npc_def_id?: string; weight?: number };
-
-const parseSpawnEntries = (value: unknown): SpawnEntry[] => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value as SpawnEntry[];
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      return Array.isArray(parsed) ? (parsed as SpawnEntry[]) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
-
-const getAreaObjectsImpl = async (area: GridPosition): Promise<MapObjectDto[]> => {
-  const npcRows: NpcLiteRow[] = getNpcDefinitions()
-    .filter((entry) => entry.enabled !== false)
-    .filter((entry) => String(entry.area ?? '') === area)
-    .sort((left, right) => {
-      const leftSortWeight = Number(left.sort_weight ?? 0);
-      const rightSortWeight = Number(right.sort_weight ?? 0);
-      if (leftSortWeight !== rightSortWeight) return rightSortWeight - leftSortWeight;
-      return String(left.id || '').localeCompare(String(right.id || ''));
-    })
-    .map((entry) => ({
-      id: entry.id,
-      name: entry.name,
-      title: entry.title ?? null,
-      gender: entry.gender ?? null,
-      realm: entry.realm ?? null,
-      avatar: entry.avatar ?? null,
-      description: entry.description ?? null,
-    }));
-
-  const spawnRules: SpawnRuleRow[] = getSpawnRuleDefinitions()
-    .filter((entry) => entry.enabled !== false)
-    .filter((entry) => String(entry.area ?? '') === area)
-    .filter((entry) => String(entry.pool_type ?? 'monster') === 'monster')
-    .map((entry) => ({
-      id: entry.id,
-      area: entry.area,
-      pool_type: entry.pool_type ?? 'monster',
-      pool_entries: entry.pool_entries ?? [],
-      max_alive: Number(entry.max_alive ?? 0),
-      respawn_sec: Number(entry.respawn_sec ?? 0),
-      enabled: entry.enabled !== false,
-    }));
-  const monsterIds = [
-    ...new Set(
-      spawnRules
-        .flatMap((r) => parseSpawnEntries(r.pool_entries))
-        .map((e) => e.monster_def_id)
-        .filter((x): x is string => typeof x === 'string' && x.length > 0)
-    ),
-  ];
-
-  const monsterMap = await getMonsterLiteByIds(monsterIds);
-
-  const objects: MapObjectDto[] = [];
-
-  for (const npc of npcRows) {
-    objects.push({
-      type: 'npc',
-      id: npc.id,
-      name: npc.name,
-      title: npc.title ?? undefined,
-      gender: npc.gender ?? undefined,
-      realm: npc.realm ?? undefined,
-      avatar: npc.avatar ?? null,
-      desc: npc.description ?? undefined,
-    });
-  }
-
-  for (const id of monsterIds) {
-    const m = monsterMap.get(id);
-    if (!m) continue;
-    objects.push({
-      type: 'monster',
-      id: m.id,
-      name: m.name,
-      title: m.title ?? undefined,
-      gender: '-',
-      realm: m.realm ?? undefined,
-      avatar: m.avatar ?? null,
-      base_attrs: asNumberRecord(m.base_attrs),
-      attr_variance: asNumber(m.attr_variance),
-      attr_multiplier_min: asNumber(m.attr_multiplier_min),
-      attr_multiplier_max: asNumber(m.attr_multiplier_max),
-    });
-  }
-
-  return objects;
-};
-
 const normalizePositiveInt = (value: unknown): number | null => {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(n)) return null;
@@ -1302,7 +1195,7 @@ const pickupRoomItemImpl = async (params: {
  * - 提供房间对象查询、资源采集、物品拾取功能
  *
  * 数据流：
- * - getRoomObjects/getAreaObjects：从数据库和静态配置加载对象信息，返回给前端展示
+ * - getRoomObjects：从数据库和静态配置加载对象信息，返回给前端展示
  * - gatherRoomResource：处理资源采集逻辑，更新采集状态，添加物品到背包
  * - pickupRoomItem：处理物品拾取逻辑，检查任务条件，添加物品到背包
  *
@@ -1314,11 +1207,6 @@ class RoomObjectService {
   // 纯读方法，不加 @Transactional
   async getRoomObjects(mapId: string, roomId: string, excludeUserId?: number): Promise<MapObjectDto[]> {
     return getRoomObjectsImpl(mapId, roomId, excludeUserId);
-  }
-
-  // 纯读方法，不加 @Transactional
-  async getAreaObjects(area: GridPosition): Promise<MapObjectDto[]> {
-    return getAreaObjectsImpl(area);
   }
 
   // 事务方法，添加 @Transactional
