@@ -19,7 +19,6 @@ import {
   buildRewardSummaryLinesFast,
   formatBattleLogLineFast,
 } from './logFormatterFast';
-import { createBattleCooldownFallbackController } from './battleCooldownFallback';
 import './index.scss';
 
 export type BattleUnit = {
@@ -295,17 +294,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const pollInFlightRef = useRef(false);
   const battleStartCooldownMsRef = useRef(DEFAULT_BATTLE_START_COOLDOWN_MS);
   const nextBattleAvailableAtRef = useRef<number | null>(null);
-  const cooldownFallbackOnReadyRef = useRef<(() => void) | null>(null);
-  const cooldownFallbackControllerRef = useRef(
-    createBattleCooldownFallbackController({
-      now: () => Date.now(),
-      setTimer: (fn, delayMs) => window.setTimeout(fn, delayMs),
-      clearTimer: (timerId) => window.clearTimeout(timerId),
-      onReady: () => {
-        cooldownFallbackOnReadyRef.current?.();
-      },
-    }),
-  );
 
   useEffect(() => {
     onAppendBattleLinesRef.current = onAppendBattleLines ?? null;
@@ -322,24 +310,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       autoNextTimerRef.current = null;
     }
   }, []);
-
-  const clearBattleCooldownFallback = useCallback(() => {
-    cooldownFallbackControllerRef.current.clear();
-  }, []);
-
-  const clearBattleRecoveryTimers = useCallback(() => {
-    clearAutoNextTimer();
-    clearBattleCooldownFallback();
-  }, [clearAutoNextTimer, clearBattleCooldownFallback]);
-
-  const scheduleBattleCooldownFallback = useCallback(() => {
-    const nextBattleAvailableAt = nextBattleAvailableAtRef.current;
-    if (nextBattleAvailableAt == null) {
-      clearBattleCooldownFallback();
-      return;
-    }
-    cooldownFallbackControllerRef.current.schedule(nextBattleAvailableAt);
-  }, [clearBattleCooldownFallback]);
 
   const syncBattleCooldownMeta = useCallback((raw: BattleCooldownMetaLike | null | undefined) => {
     if (!raw || typeof raw !== 'object') return;
@@ -448,9 +418,9 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   useEffect(() => {
     return () => {
       clearFloatTimers();
-      clearBattleRecoveryTimers();
+      clearAutoNextTimer();
     };
-  }, [clearBattleRecoveryTimers, clearFloatTimers]);
+  }, [clearAutoNextTimer, clearFloatTimers]);
 
   const applyLogsToFloats = useCallback(
     (prevIndex: number, nextLogs: BattleLogEntryDto[]) => {
@@ -537,7 +507,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     async (monsterIds: string[], options?: StartBattleOptions): Promise<void> => {
       if (startingBattleRef.current) return;
       startingBattleRef.current = true;
-      clearBattleRecoveryTimers();
+      clearAutoNextTimer();
       const shouldRetryOnCooldown = options?.retryOnCooldown ?? false;
       const isSilentCooldown = options?.silentCooldown ?? false;
 
@@ -632,7 +602,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       }
     },
     [
-      clearBattleRecoveryTimers,
+      clearAutoNextTimer,
       clearFloatTimers,
       applyStartedBattleState,
       ensureBattleEndAnnounced,
@@ -656,31 +626,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     void startBattle(monsterIds, { retryOnCooldown: true, silentCooldown: true });
   }, [allowLocalStart, enemies, resolvedExternalBattleId, startBattle]);
 
-  useEffect(() => {
-    cooldownFallbackOnReadyRef.current = () => {
-      const currentState = battleStateRef.current;
-      const isFinishedWin =
-        currentState?.phase === 'finished' &&
-        currentState.result === 'attacker_win';
-
-      clearBattleCooldownFallback();
-      if (!resolvedAllowAutoNext || onNext || !isFinishedWin) {
-        return;
-      }
-
-      setWaitingForCooldown(false);
-      setStartupStatus('none');
-      void startBattle(lastMonsterIdsRef.current, {
-        retryOnCooldown: true,
-        silentCooldown: true,
-      });
-    };
-
-    return () => {
-      cooldownFallbackOnReadyRef.current = null;
-    };
-  }, [clearBattleCooldownFallback, onNext, resolvedAllowAutoNext, startBattle]);
-
   // 监听服务端冷却结束推送
   useEffect(() => {
     const handleCooldownReady = (event: Event) => {
@@ -690,7 +635,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       const isFinishedWin = currentState?.phase === 'finished' && currentState.result === 'attacker_win';
 
       if (customEvent.detail.characterId === myCharacterId) {
-        clearBattleCooldownFallback();
         setWaitingForCooldown(false);
         setStartupStatus('none');
 
@@ -706,10 +650,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       const myCharacterId = gameSocket.getCharacter()?.id;
 
       if (customEvent.detail.characterId === myCharacterId && customEvent.detail.remainingMs > 0) {
-        nextBattleAvailableAtRef.current = Date.now() + customEvent.detail.remainingMs;
         setWaitingForCooldown(true);
         setStartupStatus('cooldown');
-        scheduleBattleCooldownFallback();
       }
     };
 
@@ -720,18 +662,12 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       window.removeEventListener('battle:cooldown-ready', handleCooldownReady);
       window.removeEventListener('battle:cooldown-sync', handleCooldownSync);
     };
-  }, [
-    clearBattleCooldownFallback,
-    onNext,
-    resolvedAllowAutoNext,
-    scheduleBattleCooldownFallback,
-    startBattle,
-  ]);
+  }, [onNext, resolvedAllowAutoNext, startBattle]);
 
   useEffect(() => {
     if (!resolvedExternalBattleId) return;
     if (battleIdRef.current === resolvedExternalBattleId) return;
-    clearBattleRecoveryTimers();
+    clearAutoNextTimer();
     clearFloatTimers();
     setFloats([]);
     floatDxIndexRef.current = 0;
@@ -768,7 +704,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       setStartupStatus('none');
     })();
   }, [
-    clearBattleRecoveryTimers,
+    clearAutoNextTimer,
     clearFloatTimers,
     ensureBattleDropsAnnounced,
     ensureBattleEndAnnounced,
@@ -796,7 +732,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     if (!resolvedAllowAutoNext) return;
     if (!battleState || battleState.phase !== 'finished') {
       if (startupStatus !== 'cooldown') {
-        clearBattleRecoveryTimers();
+        clearAutoNextTimer();
       }
       announcedAutoNextBattleIdRef.current = null;
       return;
@@ -806,13 +742,12 @@ const BattleArea: React.FC<BattleAreaProps> = ({
 
     if (announcedAutoNextBattleIdRef.current === currentBattleId) return;
     announcedAutoNextBattleIdRef.current = currentBattleId;
-    clearBattleRecoveryTimers();
+    clearAutoNextTimer();
 
     // 战斗结束后，设置等待服务端冷却推送状态
     if (!onNext) {
       setWaitingForCooldown(true);
       setStartupStatus('cooldown');
-      scheduleBattleCooldownFallback();
       return;
     }
 
@@ -842,13 +777,12 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   }, [
     battleId,
     battleState,
-    clearBattleRecoveryTimers,
+    clearAutoNextTimer,
     getAutoNextDelayMs,
     message,
     onNext,
     resolvedAllowAutoNext,
     resolvedExternalBattleId,
-    scheduleBattleCooldownFallback,
     startupStatus,
   ]);
 
@@ -917,7 +851,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       lastSocketBattleUpdateAtRef.current = Date.now();
 
       if (kind === 'battle_started') {
-        clearBattleCooldownFallback();
         // 重连场景：如果已有 battleId 且与推送的不同，忽略
         if (currentId && incomingBattleId !== currentId) return;
 
@@ -1011,7 +944,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           announcedBattleEndIdRef.current = incomingBattleId;
           pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.abandoned]);
         }
-        clearBattleCooldownFallback();
         setBattleId(null);
         setBattleState(null);
         setResult('idle');
@@ -1027,7 +959,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     ensureBattleStartAnnounced,
     formatNewLogs,
     pushBattleLines,
-    clearBattleCooldownFallback,
     syncBattleCooldownMeta,
   ]);
 
@@ -1094,7 +1025,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       announcedBattleEndIdRef.current = id;
       pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.escaped]);
     }
-    clearBattleRecoveryTimers();
+    clearAutoNextTimer();
     setWaitingForCooldown(false);
     setBattleId(null);
     setBattleState(null);
@@ -1109,7 +1040,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     announcedBattleDropsIdRef.current = id ?? null;
     announcedAutoNextBattleIdRef.current = id ?? null;
     onEscape?.();
-  }, [clearBattleRecoveryTimers, onEscape, pushBattleLines]);
+  }, [clearAutoNextTimer, onEscape, pushBattleLines]);
 
   const handleNext = useCallback(async () => {
     if (!onNext) return;
