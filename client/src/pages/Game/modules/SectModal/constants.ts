@@ -21,6 +21,12 @@ export const JOINED_PANEL_ITEMS: Array<{ key: SectPanelKey; label: string }> = [
   { key: 'manage', label: '管理' },
 ];
 
+/**
+ * 宗门商店批量兑换输入上限。
+ * 这里只约束前端输入控件，服务端不再做同值硬截断。
+ */
+export const SECT_SHOP_BATCH_BUY_INPUT_MAX = 999;
+
 export const POSITION_LABEL_MAP: Record<SectPositionDto, string> = {
   leader: '宗主',
   vice_leader: '副宗主',

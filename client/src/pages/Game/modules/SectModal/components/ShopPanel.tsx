@@ -8,6 +8,7 @@ import { Button, InputNumber } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import type { SectShopItemDto } from '../../../../../services/api';
 import { resolveIcon } from '../../BagModal/bagShared';
+import { SECT_SHOP_BATCH_BUY_INPUT_MAX } from '../constants';
 
 interface ShopPanelProps {
   loading: boolean;
@@ -16,12 +17,6 @@ interface ShopPanelProps {
   actionLoadingKey: string | null;
   onBuy: (itemId: string, quantity: number) => void;
 }
-
-/**
- * 后端当前单次购买上限（buyFromSectShop 内部会 clamp 到 99）。
- * 前端同步该上限，避免用户输入超范围后再被服务端回退。
- */
-const SERVER_MAX_BUY_COUNT = 99;
 
 /**
  * 商店名称去重：当名称末尾已经包含“xN / ×N”数量后缀时，移除该后缀，
@@ -39,7 +34,7 @@ const normalizeShopItemName = (name: string, qty: number): string => {
  * 将后端字段归一化为“每天最多可兑换次数”。
  * 约定：
  * 1) <= 0 或非法值 = 不限购；
- * 2) 限购存在时，仍会再叠加服务端单次上限 99。
+ * 2) 限购存在时，前端输入上限仍会再叠加本地批量输入上限。
  */
 const resolveDailyLimit = (rawLimit: number | undefined): number => {
   if (!Number.isFinite(rawLimit)) return 0;
@@ -55,9 +50,9 @@ const resolveDailyLimit = (rawLimit: number | undefined): number => {
  */
 const calcMaxBuyCount = (myContribution: number, costContribution: number, dailyLimit: number): number => {
   const maxByContribution =
-    costContribution > 0 ? Math.max(0, Math.floor(myContribution / costContribution)) : SERVER_MAX_BUY_COUNT;
-  const maxByDailyLimit = dailyLimit > 0 ? Math.max(0, dailyLimit) : SERVER_MAX_BUY_COUNT;
-  return Math.max(0, Math.min(SERVER_MAX_BUY_COUNT, maxByContribution, maxByDailyLimit));
+    costContribution > 0 ? Math.max(0, Math.floor(myContribution / costContribution)) : SECT_SHOP_BATCH_BUY_INPUT_MAX;
+  const maxByDailyLimit = dailyLimit > 0 ? Math.max(0, dailyLimit) : SECT_SHOP_BATCH_BUY_INPUT_MAX;
+  return Math.max(0, Math.min(SECT_SHOP_BATCH_BUY_INPUT_MAX, maxByContribution, maxByDailyLimit));
 };
 
 const clampBuyCount = (value: number, maxCount: number): number => {

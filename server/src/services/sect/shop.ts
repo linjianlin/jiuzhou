@@ -89,7 +89,7 @@ class SectShopService {
    */
   @Transactional
   async buyFromSectShop(characterId: number, itemId: string, quantity: number): Promise<BuyResult> {
-    const q = Number.isFinite(quantity) && quantity > 0 ? Math.min(99, Math.floor(quantity)) : 1;
+    const q = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
     const shopItem = SHOP.find((x) => x.id === itemId);
     if (!shopItem) return { success: false, message: '商品不存在' };
     const shopItemUnitQty = Math.max(1, Math.floor(shopItem.qty));
