@@ -19,6 +19,7 @@ import {
   TECHNIQUE_RESEARCH_STATUS_POLL_INTERVAL_MS,
   getTechniqueResearchIndicatorTooltip,
   resolveTechniqueResearchIndicatorStatus,
+  shouldPollTechniqueResearchStatus,
 } from './modules/TechniqueModal/researchShared';
 import TaskModal from './modules/TaskModal';
 import SectModal from './modules/SectModal';
@@ -652,6 +653,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [showSignInDot, setShowSignInDot] = useState(false);
   const [showMailDot, setShowMailDot] = useState(false);
   const [techniqueIndicatorStatus, setTechniqueIndicatorStatus] = useState<TechniqueResearchResultStatusDto | null>(null);
+  const [techniqueResearchPending, setTechniqueResearchPending] = useState(false);
   const [mailModalOpen, setMailModalOpen] = useState(false);
   const [settingModalOpen, setSettingModalOpen] = useState(false);
   // 挂机面板 Modal 开关
@@ -1555,10 +1557,12 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const refreshTechniqueIndicator = useCallback(async () => {
     if (!TECHNIQUE_RESEARCH_ENABLED) {
       setTechniqueIndicatorStatus(null);
+      setTechniqueResearchPending(false);
       return;
     }
     if (!characterId) {
       setTechniqueIndicatorStatus(null);
+      setTechniqueResearchPending(false);
       return;
     }
     try {
@@ -1566,6 +1570,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       if (!res.success || !res.data) {
         return;
       }
+      setTechniqueResearchPending(shouldPollTechniqueResearchStatus(res.data));
       const nextStatus = resolveTechniqueResearchIndicatorStatus(res.data);
       if (!nextStatus) {
         setTechniqueIndicatorStatus(null);
@@ -1586,18 +1591,19 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   }, [refreshTechniqueIndicator]);
 
   useEffect(() => {
-    if (!TECHNIQUE_RESEARCH_ENABLED || !characterId) return undefined;
+    if (!TECHNIQUE_RESEARCH_ENABLED || !characterId || !techniqueResearchPending) return undefined;
     const timer = window.setInterval(() => {
       void refreshTechniqueIndicator();
     }, TECHNIQUE_RESEARCH_STATUS_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [characterId, refreshTechniqueIndicator]);
+  }, [characterId, refreshTechniqueIndicator, techniqueResearchPending]);
 
   useEffect(() => {
     if (!TECHNIQUE_RESEARCH_ENABLED) return undefined;
     if (!characterId) return undefined;
     return gameSocket.onTechniqueResearchResult((payload) => {
       if (payload.characterId !== characterId) return;
+      setTechniqueResearchPending(false);
       setTechniqueIndicatorStatus(payload.status);
       void refreshTechniqueIndicator();
     });

@@ -2,12 +2,12 @@
  * 洞府研修面板
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：承载洞府研修统计、生成中提示、草稿详情、失败结果与发布入口。
+ * 1. 做什么：承载洞府研修统计、生成中提示、草稿详情、失败结果与抄写入口。
  * 2. 做什么：复用 `researchShared` 的单一状态映射，避免组件内散落 `pending/generated_draft/failed` 判断。
  * 3. 不做什么：不直接发请求、不持有 socket 订阅，也不管理主界面红点状态。
  *
  * 输入/输出：
- * - 输入：研修状态数据、加载态、按钮提交态，以及兑换/生成/刷新/发布回调。
+ * - 输入：研修状态数据、加载态、按钮提交态，以及兑换/生成/刷新/抄写回调。
  * - 输出：纯渲染组件，通过回调把用户操作交给上层协调。
  *
  * 数据流/状态流：
@@ -29,12 +29,14 @@ import {
 type ResearchPanelProps = {
   status: TechniqueResearchStatusData | null;
   loading: boolean;
+  refreshing: boolean;
   exchangeSubmitting: boolean;
   generateSubmitting: boolean;
+  publishSubmitting: boolean;
   onExchangeBooks: () => void;
   onGenerateDraft: () => void;
   onRefresh: () => void;
-  onOpenPublish: (generationId: string, suggestedName: string) => void;
+  onCopyResearchBook: (generationId: string, suggestedName: string) => void;
 };
 
 const QUALITY_CLASS_COLOR: Record<'黄' | '玄' | '地' | '天', string> = {
@@ -54,12 +56,14 @@ const QUALITY_TEXT: Record<'黄' | '玄' | '地' | '天', string> = {
 const ResearchPanel: React.FC<ResearchPanelProps> = ({
   status,
   loading,
+  refreshing,
   exchangeSubmitting,
   generateSubmitting,
+  publishSubmitting,
   onExchangeBooks,
   onGenerateDraft,
   onRefresh,
-  onOpenPublish,
+  onCopyResearchBook,
 }) => {
   const minCost = status
     ? Math.min(...Object.values(status.generationCostByQuality || { 黄: 500, 玄: 500, 地: 500, 天: 500 }))
@@ -105,7 +109,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           >
             开始领悟
           </Button>
-          <Button loading={loading} onClick={onRefresh}>
+          <Button loading={refreshing} onClick={onRefresh}>
             刷新
           </Button>
         </div>
@@ -113,7 +117,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         <div className="tech-research-tips">
           <div>1. 先将多余功法书兑换为研修点，再进行领悟。</div>
           <div>2. 推演完成后，主界面“功法”入口会出现红点提醒。</div>
-          <div>3. 结果进入研修页后即视为已查看，发布前仍可在此处查看草稿详情。</div>
+          <div>3. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
         </div>
 
         <div className="tech-subtitle">当前研修结果</div>
@@ -169,10 +173,12 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
             </div>
             <div className="tech-research-actions">
               <Button
+                className="tech-research-copy-button"
                 type="primary"
-                onClick={() => onOpenPublish(panelView.job.generationId, panelView.preview.aiSuggestedName)}
+                loading={publishSubmitting}
+                onClick={() => onCopyResearchBook(panelView.job.generationId, panelView.preview.aiSuggestedName)}
               >
-                命名并发布
+                抄写功法书
               </Button>
             </div>
           </div>

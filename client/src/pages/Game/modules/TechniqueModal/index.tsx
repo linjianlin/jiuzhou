@@ -1,4 +1,4 @@
-import { App, Button, Input, Modal, Table, Tag, Tooltip } from 'antd';
+import { App, Button, Modal, Table, Tag, Tooltip } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveIconUrl, DEFAULT_ICON as coin01 } from '../../shared/resolveIcon';
 import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../shared/imageAssets';
@@ -31,6 +31,7 @@ import ResearchPanel from './ResearchPanel';
 import {
   TECHNIQUE_RESEARCH_STATUS_POLL_INTERVAL_MS,
   resolveTechniqueResearchIndicatorStatus,
+  shouldPollTechniqueResearchStatus,
   type TechniqueResearchStatusData,
 } from './researchShared';
 import { getSkillInlineSummary, renderSkillInlineDetails, renderSkillTooltip } from './skillDetailShared';
@@ -381,6 +382,7 @@ interface TechniqueModalProps {
   onResearchIndicatorChange?: (resultStatus: TechniqueResearchResultStatusDto | null) => void;
 }
 const TECHNIQUE_RESEARCH_ENABLED = !import.meta.env.PROD;
+type ResearchStatusRefreshMode = 'initial' | 'manual' | 'background';
 
 const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResearchIndicatorChange }) => {
   const { message } = App.useApp();
@@ -415,13 +417,12 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   const [activeSkillSlot, setActiveSkillSlot] = useState<number>(0);
   const [researchStatus, setResearchStatus] = useState<TechniqueResearchStatusData | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
+  const [researchRefreshing, setResearchRefreshing] = useState(false);
   const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
   const [generateSubmitting, setGenerateSubmitting] = useState(false);
   const [publishSubmitting, setPublishSubmitting] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
-  const [publishGenerationId, setPublishGenerationId] = useState('');
-  const [publishCustomName, setPublishCustomName] = useState('');
   const markingResearchViewedRef = useRef(false);
+  const researchStatusRef = useRef<TechniqueResearchStatusData | null>(null);
   const [researchVisitToken, setResearchVisitToken] = useState(0);
 
   useEffect(() => {
@@ -523,45 +524,61 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     void refreshStatus();
   }, [open, refreshStatus]);
 
-  const refreshResearchStatus = useCallback(async () => {
+  useEffect(() => {
+    researchStatusRef.current = researchStatus;
+  }, [researchStatus]);
+
+  const refreshResearchStatus = useCallback(async (mode: ResearchStatusRefreshMode = 'background') => {
     if (!characterId) {
+      setResearchLoading(false);
+      setResearchRefreshing(false);
+      researchStatusRef.current = null;
       setResearchStatus(null);
       onResearchIndicatorChange?.(null);
       return;
     }
-    setResearchLoading(true);
+    const shouldShowBlockingLoading = mode === 'initial' && researchStatusRef.current == null;
+    const shouldShowRefreshLoading = mode === 'manual';
+
+    if (shouldShowBlockingLoading) setResearchLoading(true);
+    if (shouldShowRefreshLoading) setResearchRefreshing(true);
     try {
       const statusRes = await getTechniqueResearchStatus(characterId);
       if (!statusRes?.success || !statusRes.data) {
         throw new Error(statusRes?.message || '获取研修状态失败');
       }
+      researchStatusRef.current = statusRes.data;
       setResearchStatus(statusRes.data);
       onResearchIndicatorChange?.(resolveTechniqueResearchIndicatorStatus(statusRes.data));
     } catch {
       // 拉取失败时保留上一份状态，避免网络抖动误清结果提示。
     } finally {
-      setResearchLoading(false);
+      if (shouldShowBlockingLoading) setResearchLoading(false);
+      if (shouldShowRefreshLoading) setResearchRefreshing(false);
     }
   }, [characterId, onResearchIndicatorChange]);
 
   useEffect(() => {
-    if (!open || !TECHNIQUE_RESEARCH_ENABLED) {
-      if (!TECHNIQUE_RESEARCH_ENABLED) {
-        setResearchStatus(null);
-        onResearchIndicatorChange?.(null);
-      }
+    if (!TECHNIQUE_RESEARCH_ENABLED) {
+      setResearchLoading(false);
+      setResearchRefreshing(false);
+      researchStatusRef.current = null;
+      setResearchStatus(null);
+      onResearchIndicatorChange?.(null);
       return;
     }
-    void refreshResearchStatus();
-  }, [onResearchIndicatorChange, open, refreshResearchStatus]);
+    if (!open || panel !== 'research') return;
+    const nextMode: ResearchStatusRefreshMode = researchStatusRef.current == null ? 'initial' : 'background';
+    void refreshResearchStatus(nextMode);
+  }, [onResearchIndicatorChange, open, panel, refreshResearchStatus]);
 
   useEffect(() => {
-    if (!open || !TECHNIQUE_RESEARCH_ENABLED || !characterId) return undefined;
+    if (!open || panel !== 'research' || !TECHNIQUE_RESEARCH_ENABLED || !characterId) return undefined;
     return gameSocket.onTechniqueResearchResult((payload) => {
       if (payload.characterId !== characterId) return;
-      void refreshResearchStatus();
+      void refreshResearchStatus('background');
     });
-  }, [characterId, open, refreshResearchStatus]);
+  }, [characterId, open, panel, refreshResearchStatus]);
 
   useEffect(() => {
     if (!open || panel !== 'research') return;
@@ -569,12 +586,18 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   }, [open, panel]);
 
   useEffect(() => {
-    if (!open || !TECHNIQUE_RESEARCH_ENABLED || !characterId) return undefined;
+    if (
+      !open ||
+      panel !== 'research' ||
+      !TECHNIQUE_RESEARCH_ENABLED ||
+      !characterId ||
+      !shouldPollTechniqueResearchStatus(researchStatus)
+    ) return undefined;
     const timer = window.setInterval(() => {
-      void refreshResearchStatus();
+      void refreshResearchStatus('background');
     }, TECHNIQUE_RESEARCH_STATUS_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [characterId, open, refreshResearchStatus]);
+  }, [characterId, open, panel, refreshResearchStatus, researchStatus]);
 
   useEffect(() => {
     if (
@@ -592,7 +615,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         const res = await markTechniqueResearchResultViewed(characterId);
         if (res.success) {
           onResearchIndicatorChange?.(null);
-          await refreshResearchStatus();
+          await refreshResearchStatus('background');
         }
       } finally {
         markingResearchViewedRef.current = false;
@@ -656,7 +679,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
       }
 
       message.success(exchangeRes.message || `已兑换${exchangeRes.data.gainedPoints}研修点`);
-      await Promise.all([refreshResearchStatus(), refreshStatus()]);
+      await Promise.all([refreshResearchStatus('background'), refreshStatus()]);
     } catch (error: unknown) {
       message.error(error instanceof Error ? error.message : '兑换失败');
     } finally {
@@ -674,7 +697,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
       }
 
       message.success(generateRes.message || '已加入洞府推演队列');
-      await refreshResearchStatus();
+      await refreshResearchStatus('background');
     } catch (error: unknown) {
       message.error(error instanceof Error ? error.message : '生成失败');
     } finally {
@@ -682,55 +705,44 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     }
   }, [characterId, generateSubmitting, message, refreshResearchStatus]);
 
-  const resolvePublishErrorMessage = (code?: string, fallbackMessage?: string): string => {
+  const resolveCopyResearchBookErrorMessage = (code?: string, fallbackMessage?: string): string => {
     if (code === 'NAME_CONFLICT') return '名称已存在，请更换';
     if (code === 'NAME_SENSITIVE') return '名称包含敏感内容，请重填';
     if (code === 'NAME_INVALID') return '名称不符合格式规则';
     if (code === 'GENERATION_NOT_READY') return '草稿尚未就绪，请先领悟';
     if (code === 'GENERATION_EXPIRED') return '草稿已过期，请重新领悟';
-    return fallbackMessage || '发布失败';
+    return fallbackMessage || '抄写失败';
   };
 
-  const handlePublishResearchDraft = useCallback(async () => {
-    if (!characterId || !publishGenerationId || publishSubmitting) return;
-    const customName = publishCustomName.trim();
-    if (!customName) {
-      message.warning('请输入功法名称');
+  const handleCopyResearchBook = useCallback(async (generationId: string, suggestedName: string) => {
+    if (!characterId || publishSubmitting) return;
+    const finalName = suggestedName.trim();
+    if (!finalName) {
+      message.warning('草稿名称未就绪，请稍后再试');
       return;
     }
 
     setPublishSubmitting(true);
     try {
-      const publishRes = await publishTechniqueResearchDraft(characterId, publishGenerationId, customName);
+      const publishRes = await publishTechniqueResearchDraft(characterId, generationId, finalName);
       if (!publishRes?.success || !publishRes.data) {
-        throw new Error(resolvePublishErrorMessage(publishRes?.code, publishRes?.message));
+        throw new Error(resolveCopyResearchBookErrorMessage(publishRes?.code, publishRes?.message));
       }
 
-      message.success(`发布成功，已发放《${publishRes.data.finalName}》秘卷`);
-      setPublishOpen(false);
-      setPublishGenerationId('');
-      setPublishCustomName('');
-      await Promise.all([refreshResearchStatus(), refreshStatus()]);
+      message.success(`抄写成功，已发放《${publishRes.data.finalName}》功法书`);
+      await Promise.all([refreshResearchStatus('background'), refreshStatus()]);
     } catch (error: unknown) {
-      message.error(error instanceof Error ? error.message : '发布失败');
+      message.error(error instanceof Error ? error.message : '抄写失败');
     } finally {
       setPublishSubmitting(false);
     }
   }, [
     characterId,
     message,
-    publishCustomName,
-    publishGenerationId,
     publishSubmitting,
     refreshResearchStatus,
     refreshStatus,
   ]);
-
-  const handleOpenPublish = useCallback((generationId: string, suggestedName: string) => {
-    setPublishGenerationId(generationId);
-    setPublishCustomName(suggestedName || '');
-    setPublishOpen(true);
-  }, []);
 
   const layerText = (layer: number) => `${layer}层`;
 
@@ -1262,12 +1274,14 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
       <ResearchPanel
         status={researchStatus}
         loading={researchLoading}
+        refreshing={researchRefreshing}
         exchangeSubmitting={exchangeSubmitting}
         generateSubmitting={generateSubmitting}
+        publishSubmitting={publishSubmitting}
         onExchangeBooks={() => void handleExchangeBooks()}
         onGenerateDraft={() => void handleGenerateResearchDraft()}
-        onRefresh={() => void refreshResearchStatus()}
-        onOpenPublish={handleOpenPublish}
+        onRefresh={() => void refreshResearchStatus('manual')}
+        onCopyResearchBook={(generationId, suggestedName) => void handleCopyResearchBook(generationId, suggestedName)}
       />
     );
   };
@@ -1308,9 +1322,6 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         setActiveTechId('');
         setDetailTechnique(null);
         setUpgradeCost(null);
-        setPublishOpen(false);
-        setPublishGenerationId('');
-        setPublishCustomName('');
       }}
     >
       <div className="tech-modal-shell">
@@ -1335,40 +1346,6 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
 
         <div className="tech-modal-right">{panelContent()}</div>
       </div>
-
-      <Modal
-        open={publishOpen}
-        onCancel={() => {
-          if (publishSubmitting) return;
-          setPublishOpen(false);
-        }}
-        title="发布生成功法"
-        centered
-        width="min(520px, calc(100vw - 16px))"
-        className="tech-submodal"
-        destroyOnHidden
-        okText="确认发布"
-        cancelText="取消"
-        onOk={() => void handlePublishResearchDraft()}
-        okButtonProps={{ loading: publishSubmitting }}
-      >
-        <div className="tech-research-publish">
-          <div className="tech-research-publish-label">功法名称</div>
-          <Input
-            value={publishCustomName}
-            maxLength={researchStatus?.nameRules?.maxLength ?? 14}
-            placeholder="请输入功法名称"
-            onChange={(event) => setPublishCustomName(event.target.value)}
-          />
-          <div className="tech-research-publish-rules">
-            {(() => {
-              const rules = researchStatus?.nameRules;
-              if (!rules) return '名称规则：2~14个纯中文字符，发布名会自动添加固定前缀。';
-              return `名称规则：${rules.minLength}~${rules.maxLength}字符，${rules.patternHint}。发布名固定前缀「${rules.fixedPrefix}」，发布后不可改名。`;
-            })()}
-          </div>
-        </div>
-      </Modal>
 
       <Modal
         open={detailOpen}

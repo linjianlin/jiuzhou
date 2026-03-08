@@ -50,6 +50,12 @@ export const resolveTechniqueResearchIndicatorStatus = (
   return status?.hasUnreadResult ? status.resultStatus : null;
 };
 
+export const shouldPollTechniqueResearchStatus = (
+  status: TechniqueResearchStatusData | null,
+): boolean => {
+  return status?.currentJob?.status === 'pending';
+};
+
 export const getTechniqueResearchIndicatorTooltip = (
   resultStatus: TechniqueResearchResultStatusDto | null | undefined,
 ): string | undefined => {
