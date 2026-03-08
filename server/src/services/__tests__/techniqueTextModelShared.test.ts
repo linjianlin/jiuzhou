@@ -19,8 +19,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildTechniqueTextModelPayload,
   extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
+  TECHNIQUE_TEXT_MODEL_SEED_MAX,
+  TECHNIQUE_TEXT_MODEL_SEED_MIN,
+  TECHNIQUE_TEXT_MODEL_TEMPERATURE,
   resolveTechniqueTextModelEndpoint,
 } from '../shared/techniqueTextModelShared.js';
 
@@ -40,6 +44,46 @@ test('已带完整 chat completions 地址时应保持不变', () => {
     resolveTechniqueTextModelEndpoint('https://api.deepseek.com/v1/chat/completions'),
     'https://api.deepseek.com/v1/chat/completions',
   );
+});
+
+test('请求 payload 应统一使用 temperature 1.0', () => {
+  const payload = buildTechniqueTextModelPayload({
+    modelName: 'gpt-4o-mini',
+    systemMessage: 'system prompt',
+    userMessage: '{"quality":"天"}',
+  });
+
+  assert.equal(payload.model, 'gpt-4o-mini');
+  assert.equal(payload.temperature, TECHNIQUE_TEXT_MODEL_TEMPERATURE);
+  assert.equal(payload.temperature, 1.0);
+  assert.deepEqual(payload.response_format, { type: 'json_object' });
+  assert.deepEqual(payload.messages, [
+    { role: 'system', content: 'system prompt' },
+    { role: 'user', content: '{"quality":"天"}' },
+  ]);
+});
+
+test('未显式传入 seed 时应自动生成合法随机整数', () => {
+  const payload = buildTechniqueTextModelPayload({
+    modelName: 'gpt-4o-mini',
+    systemMessage: 'system prompt',
+    userMessage: '{"quality":"玄"}',
+  });
+
+  assert.equal(Number.isInteger(payload.seed), true);
+  assert.equal(payload.seed >= TECHNIQUE_TEXT_MODEL_SEED_MIN, true);
+  assert.equal(payload.seed <= TECHNIQUE_TEXT_MODEL_SEED_MAX, true);
+});
+
+test('显式传入 seed 时应保留调用方提供的值', () => {
+  const payload = buildTechniqueTextModelPayload({
+    modelName: 'gpt-4o-mini',
+    systemMessage: 'system prompt',
+    userMessage: '{"quality":"地"}',
+    seed: 20260308,
+  });
+
+  assert.equal(payload.seed, 20260308);
 });
 
 test('分段 content 应拼接为统一文本', () => {

@@ -18,7 +18,7 @@
  * 2. 剩余秒数必须向上取整，保证服务端拦截与前端倒计时在临界秒上口径一致。
  */
 
-export const TECHNIQUE_RESEARCH_COOLDOWN_HOURS = 72;
+export const TECHNIQUE_RESEARCH_COOLDOWN_HOURS = 0;
 
 const SECOND_MS = 1_000;
 const MINUTE_SECONDS = 60;

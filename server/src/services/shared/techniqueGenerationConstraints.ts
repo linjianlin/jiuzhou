@@ -614,7 +614,7 @@ export const TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE = {
 
 export const TECHNIQUE_PROMPT_OUTPUT_SCHEMA = {
   technique: {
-    name: 'string(必须为中文字符串，建议 2~5 字)',
+    name: 'string(必须为中文字符串，建议 2~8 字)',
     type: 'enum',
     quality: 'enum(必须等于quality入参)',
     maxLayer: 'number(必须等于maxLayer入参)',

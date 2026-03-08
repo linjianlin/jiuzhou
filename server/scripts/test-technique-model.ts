@@ -3,11 +3,11 @@
  * AI 领悟模型联调脚本
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：读取环境变量中的模型服务配置，调用模型生成一份功法草稿，并打印到控制台。
+ * 1) 做什么：读取环境变量中的模型服务配置，调用模型生成一份功法草稿，并打印到控制台；支持可选 seed 复现结果。
  * 2) 不做什么：不写数据库、不创建生成任务、不扣除研修点，仅做模型联调验证。
  *
  * 输入/输出：
- * - 输入：CLI 参数（可选）：--quality <黄|玄|地|天>。
+ * - 输入：CLI 参数（可选）：`--quality <黄|玄|地|天>`、`--seed <正整数>`。
  * - 输出：控制台打印模型响应、结构化 JSON、功法摘要。
  *
  * 数据流/状态流：
@@ -20,6 +20,7 @@
 import dotenv from 'dotenv';
 import { generateTechniqueSkillIconMap } from '../src/services/shared/techniqueSkillImageGenerator.js';
 import {
+  buildTechniqueTextModelPayload,
   extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
   resolveTechniqueTextModelEndpoint,
@@ -171,6 +172,16 @@ const resolveQualityArg = (raw: string | undefined): TechniqueQuality => {
   return resolveQualityByWeight();
 };
 
+const resolveSeedArg = (raw: string | undefined): number | undefined => {
+  const text = asString(raw);
+  if (!text) return undefined;
+  const seed = Number(text);
+  if (!Number.isInteger(seed) || seed <= 0) {
+    throw new Error('CLI 参数 --seed 必须是正整数');
+  }
+  return seed;
+};
+
 const parseModelJson = (content: string): Record<string, unknown> => {
   const parsedResult = parseTechniqueTextModelJsonObject(content);
   if (!parsedResult.success) {
@@ -247,6 +258,7 @@ const attachGeneratedSkillIcons = async (
 const main = async (): Promise<void> => {
   const args = parseArgMap(process.argv.slice(2));
   const quality = resolveQualityArg(args.quality);
+  const seed = resolveSeedArg(args.seed);
   const endpointRaw = asString(process.env.AI_TECHNIQUE_MODEL_URL);
   const endpoint = resolveTechniqueTextModelEndpoint(endpointRaw);
   const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
@@ -264,20 +276,12 @@ const main = async (): Promise<void> => {
     throw new Error('缺少环境变量 AI_TECHNIQUE_MODEL_KEY');
   }
 
-  const payload = {
-    model: modelName,
-    response_format: { type: 'json_object' },
-    messages: [
-      {
-        role: 'system',
-        content: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify(promptInput),
-      },
-    ],
-  };
+  const payload = buildTechniqueTextModelPayload({
+    modelName,
+    systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
+    userMessage: JSON.stringify(promptInput),
+    seed,
+  });
 
   const response = await fetch(endpoint, {
     method: 'POST',

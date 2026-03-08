@@ -30,6 +30,7 @@ import { buildTechniqueResearchJobState } from './shared/techniqueResearchJobSha
 import { normalizeTechniqueName, validateTechniqueCustomName, getTechniqueNameRulesView } from './shared/techniqueNameRules.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
 import {
+  buildTechniqueTextModelPayload,
   extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
   resolveTechniqueTextModelEndpoint,
@@ -695,20 +696,11 @@ const tryCallExternalGenerator = async (quality: TechniqueQuality): Promise<Tech
     effectTypeEnum: Array.from(DAMAGE_EFFECT_TYPE_SET),
   });
 
-  const payload = {
-    model: modelName,
-    response_format: { type: 'json_object' },
-    messages: [
-      {
-        role: 'system',
-        content: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify(promptInput),
-      },
-    ],
-  };
+  const payload = buildTechniqueTextModelPayload({
+    modelName,
+    systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
+    userMessage: JSON.stringify(promptInput),
+  });
   const promptSnapshot = serializePromptSnapshot(payload as unknown as Record<string, unknown>);
 
   const controller = new AbortController();
