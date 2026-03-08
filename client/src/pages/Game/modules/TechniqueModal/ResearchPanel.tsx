@@ -7,7 +7,7 @@
  * 3. 不做什么：不直接发请求、不持有 socket 订阅，也不管理主界面红点状态。
  *
  * 输入/输出：
- * - 输入：研修状态数据、加载态、按钮提交态，以及兑换/生成/刷新/抄写回调。
+ * - 输入：研修状态数据、加载态、按钮提交态，以及生成/刷新/抄写回调。
  * - 输出：纯渲染组件，通过回调把用户操作交给上层协调。
  *
  * 数据流/状态流：
@@ -35,11 +35,9 @@ type ResearchPanelProps = {
   status: TechniqueResearchStatusData | null;
   loading: boolean;
   refreshing: boolean;
-  exchangeSubmitting: boolean;
   generateSubmitting: boolean;
   abandonSubmitting: boolean;
   publishSubmitting: boolean;
-  onExchangeBooks: () => void;
   onGenerateDraft: () => void;
   onAbandonPendingJob: (generationId: string) => void;
   onRefresh: () => void;
@@ -64,11 +62,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   status,
   loading,
   refreshing,
-  exchangeSubmitting,
   generateSubmitting,
   abandonSubmitting,
   publishSubmitting,
-  onExchangeBooks,
   onGenerateDraft,
   onAbandonPendingJob,
   onRefresh,
@@ -86,25 +82,12 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
       <div className="tech-pane-scroll">
         <div className="tech-subtitle">洞府研修</div>
         <div className="tech-research-stats">
-          <div className="tech-research-stat"><span>研修点</span><strong>{status?.pointsBalance ?? '--'}</strong></div>
-          <div className="tech-research-stat"><span>冷却时长</span><strong>{status ? `${status.cooldownHours}小时` : '--'}</strong></div>
+          <div className="tech-research-stat"><span>功法残页</span><strong>{status?.fragmentBalance ?? '--'}</strong></div>
+          <div className="tech-research-stat"><span>单次消耗</span><strong>{status ? `${status.fragmentCost}页` : '--'}</strong></div>
           <div className="tech-research-stat"><span>当前状态</span><strong>{cooldownText}</strong></div>
         </div>
 
-        {/* <div className="tech-research-costs">
-          {(Object.entries(status?.generationCostByQuality || { 黄: 500, 玄: 500, 地: 500, 天: 500 }) as Array<[string, number]>).map(
-            ([quality, cost]) => (
-              <Tag key={quality} color="default">
-                {quality}品: {cost}点
-              </Tag>
-            ),
-          )}
-        </div> */}
-
         <div className="tech-research-actions">
-          <Button loading={exchangeSubmitting} onClick={onExchangeBooks}>
-            一键兑换功法书
-          </Button>
           <Button
             type="primary"
             loading={generateSubmitting}
@@ -119,7 +102,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         </div>
 
         <div className="tech-research-tips">
-          <div>1. 先将多余功法书兑换为研修点，再进行领悟。</div>
+          <div>1. 每次开始领悟固定消耗 {status?.fragmentCost ?? '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
           <div>2. 每次开始领悟后会进入冷却，当前默认冷却时长为 {status?.cooldownHours ?? '--'} 小时。</div>
           <div>3. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
         </div>
@@ -144,7 +127,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
               </div>
             </div>
             <div className="tech-research-status-desc">
-              推演可能需要较长时间，请耐心等待结果。放弃后本次推演将立即结束，已消耗的研修点会自动退还。
+              推演可能需要较长时间，请耐心等待结果。放弃后本次推演将立即结束，已消耗的功法残页会自动退还。
             </div>
             <div className="tech-research-status-meta">
               <Tag color="processing">推演中</Tag>
@@ -156,7 +139,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           <div className="tech-research-status-card is-failed">
             <div className="tech-research-status-title">本次洞府研修未能成法</div>
             <div className="tech-research-status-desc">{panelView.errorMessage}</div>
-            <div className="tech-research-status-foot">若本次已消耗研修点，系统已自动退还，可在条件满足时重新开始领悟。</div>
+            <div className="tech-research-status-foot">若本次已消耗功法残页，系统已自动退还，可在条件满足时重新开始领悟。</div>
           </div>
         ) : null}
         {!loading && panelView.kind === 'draft' ? (

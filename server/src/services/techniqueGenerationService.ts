@@ -2,17 +2,16 @@
  * AI 生成功法服务
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：提供功法书兑换研修点、AI 生成功法草稿、放弃当前推演、自定义命名发布、状态查询。
+ * 1) 做什么：提供 AI 生成功法草稿、放弃当前推演、自定义命名发布、状态查询。
  * 2) 不做什么：不负责 HTTP 参数解析与鉴权（由路由层处理），不负责前端交互流程。
  *
  * 输入/输出：
- * - 输入：characterId、兑换条目、generationId、customName。
+ * - 输入：characterId、generationId、customName。
  * - 输出：统一 ServiceResult（success/message/data/code）。
  *
  * 数据流/状态流：
- * 1) 兑换：锁定物品实例 -> 校验功法书 -> 扣除实例 -> 增加研修点与流水。
- * 2) 生成：校验周限与余额 -> 扣点建任务(pending) -> AI 生成 -> 落草稿(generated_draft) 或失败退款。
- * 3) 发布：校验草稿状态与命名规则 -> 全服唯一检查 -> 发布功法 -> 发放可交易功法书(published)。
+ * 1) 生成：校验周限与功法残页余额 -> 扣除残页建任务(pending) -> AI 生成 -> 落草稿(generated_draft) 或失败退款。
+ * 2) 发布：校验草稿状态与命名规则 -> 全服唯一检查 -> 发布功法 -> 发放可交易功法书(published)。
  *
  * 关键边界条件与坑点：
  * 1) 草稿默认 24h 过期，过期后自动退款并置为 refunded。
@@ -21,8 +20,8 @@
 import { randomUUID } from 'crypto';
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
-import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import { addItemToInventory } from './inventory/index.js';
+import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { getItemDefinitionById, getTechniqueDefinitions, refreshGeneratedTechniqueSnapshots } from './staticConfigLoader.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { getRealmRankZeroBased } from './shared/realmRules.js';
@@ -62,11 +61,6 @@ export type ServiceResult<T = unknown> = {
   message: string;
   data?: T;
   code?: string;
-};
-
-type ResearchExchangeItemInput = {
-  itemInstanceId: number;
-  qty: number;
 };
 
 export type TechniqueGenerationCandidate = {
@@ -164,11 +158,11 @@ export type TechniqueResearchJobView = {
 };
 
 type TechniqueResearchStatusData = {
-  pointsBalance: number;
+  fragmentBalance: number;
+  fragmentCost: number;
   cooldownHours: number;
   cooldownUntil: string | null;
   cooldownRemainingSeconds: number;
-  generationCostByQuality: Record<TechniqueQuality, number>;
   currentDraft: GeneratedDraftRow | null;
   draftExpireAt: string | null;
   nameRules: ReturnType<typeof getTechniqueNameRulesView>;
@@ -233,6 +227,8 @@ const DRAFT_EXPIRE_HOURS = 24;
 const DEFAULT_REQUIRED_REALM = '凡人';
 const GENERATED_TECHNIQUE_BOOK_ITEM_DEF_ID = 'book-generated-technique';
 const DEFAULT_GENERATED_SKILL_ICON = '/assets/skills/icon_skill_44.png';
+const TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID = 'mat-gongfa-canye';
+const TECHNIQUE_RESEARCH_FRAGMENT_COST = 5_000;
 
 const QUALITY_MAX_LAYER: Record<TechniqueQuality, number> = {
   黄: 3,
@@ -247,20 +243,6 @@ const QUALITY_RANDOM_WEIGHT: Array<{ quality: TechniqueQuality; weight: number }
   { quality: '地', weight: 12 },
   { quality: '天', weight: 3 },
 ];
-
-const GENERATE_POINT_COST_BY_QUALITY: Record<TechniqueQuality, number> = {
-  黄: 0,
-  玄: 0,
-  地: 0,
-  天: 0,
-};
-
-const EXCHANGE_POINTS_BY_QUALITY_RANK: Record<number, number> = {
-  1: 10,
-  2: 20,
-  3: 35,
-  4: 60,
-};
 
 const DAMAGE_EFFECT_TYPE_SET = new Set<string>(TECHNIQUE_EFFECT_TYPE_LIST);
 
@@ -902,51 +884,66 @@ const remapGeneratedSkillIds = (
 };
 
 class TechniqueGenerationService {
-  private async ensureResearchPointRowTx(characterId: number): Promise<void> {
-    await query(
+  private async getResearchFragmentBalanceTx(characterId: number): Promise<number> {
+    const fragmentRes = await query(
       `
-        INSERT INTO character_research_points (character_id)
-        VALUES ($1)
-        ON CONFLICT (character_id) DO NOTHING
+        SELECT COALESCE(SUM(qty), 0) AS fragment_balance
+        FROM item_instance
+        WHERE owner_character_id = $1
+          AND item_def_id = $2
+          AND location IN ('bag', 'warehouse')
+          AND locked = false
       `,
-      [characterId],
+      [characterId, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID],
+    );
+    return Math.max(
+      0,
+      Math.floor(asNumber((fragmentRes.rows[0] as Record<string, unknown> | undefined)?.fragment_balance, 0)),
     );
   }
 
-  private async applyGenerationRefundLedgerTx(
-    characterId: number,
-    refundEntries: Array<{ generationId: string; refundPoints: number }>,
-  ): Promise<void> {
-    const refundableEntries = refundEntries.filter((entry) => entry.generationId && entry.refundPoints > 0);
-    if (refundableEntries.length === 0) return;
+  private async refundFragmentsToInventoryTx(characterId: number, qty: number, obtainedFrom: string): Promise<void> {
+    const refundQty = Math.max(0, Math.floor(asNumber(qty, 0)));
+    if (refundQty <= 0) return;
 
-    const totalRefund = refundableEntries.reduce((sum, entry) => sum + entry.refundPoints, 0);
-    await query(
+    const characterRes = await query(
       `
-        UPDATE character_research_points
-        SET balance_points = balance_points + $2,
-            total_earned_points = total_earned_points + $2,
-            updated_at = NOW()
-        WHERE character_id = $1
+        SELECT user_id
+        FROM characters
+        WHERE id = $1
+        LIMIT 1
       `,
-      [characterId, totalRefund],
+      [characterId],
     );
+    const userId = Math.floor(asNumber((characterRes.rows[0] as Record<string, unknown> | undefined)?.user_id, 0));
+    if (userId <= 0) {
+      throw new Error('退款失败：角色不存在');
+    }
 
+    const addRes = await addItemToInventory(characterId, userId, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID, refundQty, {
+      obtainedFrom,
+    });
+    if (!addRes.success) {
+      throw new Error(addRes.message || '退款失败：功法残页回退失败');
+    }
+  }
+
+  private async applyGenerationFragmentRefundTx(
+    characterId: number,
+    refundEntries: Array<{ generationId: string; refundFragments: number }>,
+  ): Promise<void> {
+    const refundableEntries = refundEntries.filter((entry) => entry.generationId && entry.refundFragments > 0);
     for (const entry of refundableEntries) {
-      await query(
-        `
-          INSERT INTO research_points_ledger (character_id, change_points, reason, ref_type, ref_id)
-          VALUES ($1, $2, 'generate_refund', 'generation_job', $3)
-        `,
-        [characterId, entry.refundPoints, entry.generationId],
+      await this.refundFragmentsToInventoryTx(
+        characterId,
+        entry.refundFragments,
+        `technique_research_refund:${entry.generationId}`,
       );
     }
   }
 
   @Transactional
   private async refundExpiredDraftJobsTx(characterId: number): Promise<void> {
-    await this.ensureResearchPointRowTx(characterId);
-
     const expiredRes = await query(
       `
         SELECT id, cost_points
@@ -962,11 +959,11 @@ class TechniqueGenerationService {
 
     if (expiredRes.rows.length === 0) return;
 
-    await this.applyGenerationRefundLedgerTx(
+    await this.applyGenerationFragmentRefundTx(
       characterId,
       (expiredRes.rows as Array<Record<string, unknown>>).map((row) => ({
         generationId: asString(row.id),
-        refundPoints: Math.max(0, Math.floor(asNumber(row.cost_points, 0))),
+        refundFragments: Math.max(0, Math.floor(asNumber(row.cost_points, 0))),
       })),
     );
 
@@ -975,7 +972,7 @@ class TechniqueGenerationService {
         UPDATE technique_generation_job
         SET status = 'refunded',
             error_code = 'GENERATION_EXPIRED',
-            error_message = '草稿已过期，系统自动退款',
+            error_message = '草稿已过期，系统已自动退还功法残页',
             finished_at = COALESCE(finished_at, NOW()),
             failed_viewed_at = NULL,
             updated_at = NOW()
@@ -990,18 +987,9 @@ class TechniqueGenerationService {
 
   async getResearchStatus(characterId: number): Promise<ServiceResult<TechniqueResearchStatusData>> {
     await this.refundExpiredDraftJobsTx(characterId);
-    await this.ensureResearchPointRowTx(characterId);
 
-    const [pointsRes, draftRes, currentJobRes] = await Promise.all([
-      query(
-        `
-          SELECT balance_points
-          FROM character_research_points
-          WHERE character_id = $1
-          LIMIT 1
-        `,
-        [characterId],
-      ),
+    const [fragmentBalance, draftRes, currentJobRes] = await Promise.all([
+      this.getResearchFragmentBalanceTx(characterId),
       query(
         `
           SELECT
@@ -1075,10 +1063,8 @@ class TechniqueGenerationService {
           LIMIT 1
         `,
         [characterId],
-      ),
+        ),
     ]);
-
-    const pointsBalance = Math.max(0, Math.floor(asNumber((pointsRes.rows[0] as Record<string, unknown> | undefined)?.balance_points, 0)));
 
     const draftRow = draftRes.rows[0] as Record<string, unknown> | undefined;
     const currentDraft: GeneratedDraftRow | null = draftRow
@@ -1121,11 +1107,11 @@ class TechniqueGenerationService {
       success: true,
       message: '获取成功',
       data: {
-        pointsBalance,
+        fragmentBalance,
+        fragmentCost: TECHNIQUE_RESEARCH_FRAGMENT_COST,
         cooldownHours: cooldownState.cooldownHours,
         cooldownUntil: cooldownState.cooldownUntil,
         cooldownRemainingSeconds: cooldownState.cooldownRemainingSeconds,
-        generationCostByQuality: { ...GENERATE_POINT_COST_BY_QUALITY },
         currentDraft,
         draftExpireAt: currentDraft?.draftExpireAt ?? null,
         nameRules: getTechniqueNameRulesView(),
@@ -1137,139 +1123,8 @@ class TechniqueGenerationService {
   }
 
   @Transactional
-  async exchangeTechniqueBooks(
-    characterId: number,
-    userId: number,
-    items: ResearchExchangeItemInput[],
-  ): Promise<ServiceResult<{ gainedPoints: number; pointsBalance: number }>> {
-    void userId;
-    if (!Array.isArray(items) || items.length === 0) {
-      return { success: false, message: '缺少兑换条目', code: 'INVALID_ARGS' };
-    }
-
-    await lockCharacterInventoryMutex(characterId);
-    await this.ensureResearchPointRowTx(characterId);
-
-    const qtyByInstanceId = new Map<number, number>();
-    for (const raw of items) {
-      const id = Math.floor(asNumber(raw.itemInstanceId, 0));
-      const qty = Math.floor(asNumber(raw.qty, 0));
-      if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(qty) || qty <= 0) {
-        return { success: false, message: '兑换条目参数错误', code: 'INVALID_ARGS' };
-      }
-      qtyByInstanceId.set(id, (qtyByInstanceId.get(id) ?? 0) + qty);
-    }
-
-    const itemIds = [...qtyByInstanceId.keys()];
-    const itemRowsRes = await query(
-      `
-        SELECT id, item_def_id, qty, locked, location, quality, quality_rank
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND id = ANY($2::bigint[])
-        FOR UPDATE
-      `,
-      [characterId, itemIds],
-    );
-
-    if (itemRowsRes.rows.length !== itemIds.length) {
-      return { success: false, message: '存在无效物品', code: 'INVALID_ITEMS' };
-    }
-
-    let gainedPoints = 0;
-    for (const rowRaw of itemRowsRes.rows as Array<Record<string, unknown>>) {
-      const instanceId = Math.floor(asNumber(rowRaw.id, 0));
-      const itemDefId = asString(rowRaw.item_def_id);
-      const rowQty = Math.max(0, Math.floor(asNumber(rowRaw.qty, 0)));
-      const consumeQty = qtyByInstanceId.get(instanceId) ?? 0;
-
-      if (!itemDefId || instanceId <= 0 || consumeQty <= 0) {
-        return { success: false, message: '兑换条目参数错误', code: 'INVALID_ARGS' };
-      }
-      if (consumeQty > rowQty) {
-        return { success: false, message: '道具数量不足', code: 'ITEM_NOT_ENOUGH' };
-      }
-      if (Boolean(rowRaw.locked)) {
-        return { success: false, message: '包含已锁定物品，无法兑换', code: 'ITEM_LOCKED' };
-      }
-
-      const location = asString(rowRaw.location);
-      if (location !== 'bag' && location !== 'warehouse') {
-        return { success: false, message: '仅背包或仓库中的功法书可兑换', code: 'ITEM_LOCATION_INVALID' };
-      }
-
-      const itemDef = getItemDefinitionById(itemDefId);
-      if (!itemDef || String(itemDef.sub_category || '').trim() !== 'technique_book') {
-        return { success: false, message: '仅支持功法书兑换研修点', code: 'ITEM_TYPE_INVALID' };
-      }
-
-      const qualityRank = Math.max(
-        1,
-        Math.floor(
-          asNumber(
-            rowRaw.quality_rank,
-            resolveQualityRankFromName(asString(rowRaw.quality) || itemDef.quality, 1),
-          ),
-        ),
-      );
-      const pointPerBook = EXCHANGE_POINTS_BY_QUALITY_RANK[qualityRank] ?? EXCHANGE_POINTS_BY_QUALITY_RANK[1];
-      gainedPoints += pointPerBook * consumeQty;
-
-      if (consumeQty === rowQty) {
-        await query('DELETE FROM item_instance WHERE id = $1', [instanceId]);
-      } else {
-        await query(
-          'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
-          [consumeQty, instanceId],
-        );
-      }
-    }
-
-    if (gainedPoints <= 0) {
-      return { success: false, message: '未获得任何研修点', code: 'NO_GAIN' };
-    }
-
-    await query(
-      `
-        UPDATE character_research_points
-        SET balance_points = balance_points + $2,
-            total_earned_points = total_earned_points + $2,
-            updated_at = NOW()
-        WHERE character_id = $1
-      `,
-      [characterId, gainedPoints],
-    );
-
-    await query(
-      `
-        INSERT INTO research_points_ledger (character_id, change_points, reason, ref_type, ref_id)
-        VALUES ($1, $2, 'exchange_book', 'batch', $3)
-      `,
-      [characterId, gainedPoints, `exchange:${Date.now()}`],
-    );
-
-    const balanceRes = await query(
-      `
-        SELECT balance_points
-        FROM character_research_points
-        WHERE character_id = $1
-        LIMIT 1
-      `,
-      [characterId],
-    );
-    const pointsBalance = Math.max(0, Math.floor(asNumber((balanceRes.rows[0] as Record<string, unknown> | undefined)?.balance_points, 0)));
-
-    return {
-      success: true,
-      message: `成功兑换${gainedPoints}研修点`,
-      data: { gainedPoints, pointsBalance },
-    };
-  }
-
-  @Transactional
   private async createGenerationJobTx(characterId: number): Promise<ServiceResult<{ generationId: string; quality: TechniqueQuality; costPoints: number; weekKey: string }>> {
     await this.refundExpiredDraftJobsTx(characterId);
-    await this.ensureResearchPointRowTx(characterId);
 
     const charRes = await query(
       `
@@ -1306,32 +1161,25 @@ class TechniqueGenerationService {
     const weekKey = resolveWeekKey(new Date());
 
     const quality = resolveQualityByWeight();
-    const costPoints = GENERATE_POINT_COST_BY_QUALITY[quality];
-
-    const pointsRes = await query(
-      `
-        SELECT balance_points
-        FROM character_research_points
-        WHERE character_id = $1
-        FOR UPDATE
-      `,
-      [characterId],
-    );
-    const pointsBalance = Math.max(0, Math.floor(asNumber((pointsRes.rows[0] as Record<string, unknown> | undefined)?.balance_points, 0)));
-    if (pointsBalance < costPoints) {
-      return { success: false, message: `研修点不足，需要${costPoints}，当前${pointsBalance}`, code: 'POINT_NOT_ENOUGH' };
+    const costPoints = TECHNIQUE_RESEARCH_FRAGMENT_COST;
+    const fragmentBalance = await this.getResearchFragmentBalanceTx(characterId);
+    if (fragmentBalance < costPoints) {
+      return {
+        success: false,
+        message: `功法残页不足，需要${costPoints}页，当前${fragmentBalance}页`,
+        code: 'FRAGMENT_NOT_ENOUGH',
+      };
     }
-
-    await query(
-      `
-        UPDATE character_research_points
-        SET balance_points = balance_points - $2,
-            total_spent_points = total_spent_points + $2,
-            updated_at = NOW()
-        WHERE character_id = $1
-      `,
-      [characterId, costPoints],
-    );
+    const consumeRes = await consumeMaterialByDefId(characterId, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID, costPoints);
+    if (!consumeRes.success) {
+      return {
+        success: false,
+        message: consumeRes.message === '材料已锁定'
+          ? '功法残页已锁定，无法用于洞府研修'
+          : `功法残页不足，需要${costPoints}页，当前${fragmentBalance}页`,
+        code: consumeRes.message === '材料已锁定' ? 'FRAGMENT_LOCKED' : 'FRAGMENT_NOT_ENOUGH',
+      };
+    }
 
     const generationId = buildGenerationId();
     await query(
@@ -1353,14 +1201,6 @@ class TechniqueGenerationService {
         )
       `,
       [generationId, characterId, weekKey, quality, costPoints],
-    );
-
-    await query(
-      `
-        INSERT INTO research_points_ledger (character_id, change_points, reason, ref_type, ref_id)
-        VALUES ($1, $2, 'generate_consume', 'generation_job', $3)
-      `,
-      [characterId, -costPoints, generationId],
     );
 
     return {
@@ -1640,7 +1480,6 @@ class TechniqueGenerationService {
     nextStatus: 'failed' | 'refunded' = 'refunded',
     errorCode: string = nextStatus === 'failed' ? 'GENERATION_FAILED' : 'GENERATION_REFUNDED',
   ): Promise<void> {
-    await this.ensureResearchPointRowTx(characterId);
     const jobRes = await query(
       `
         SELECT status, cost_points
@@ -1657,10 +1496,10 @@ class TechniqueGenerationService {
     const costPoints = Math.max(0, Math.floor(asNumber(row.cost_points, 0)));
     if (status === 'refunded' || status === 'failed' || status === 'published') return;
 
-    await this.applyGenerationRefundLedgerTx(characterId, [
+    await this.applyGenerationFragmentRefundTx(characterId, [
       {
         generationId,
-        refundPoints: costPoints,
+        refundFragments: costPoints,
       },
     ]);
 
@@ -1893,7 +1732,6 @@ class TechniqueGenerationService {
     const { characterId, userId, generationId, customName } = args;
 
     await this.refundExpiredDraftJobsTx(characterId);
-    await this.ensureResearchPointRowTx(characterId);
 
     if (!getItemDefinitionById(GENERATED_TECHNIQUE_BOOK_ITEM_DEF_ID)) {
       return { success: false, message: '系统缺少领悟功法书定义，请联系管理员', code: 'ITEM_DEF_MISSING' };
@@ -2062,11 +1900,11 @@ export const safeGetTechniqueGenerationStatus = async (characterId: number): Pro
         success: true,
         message: 'AI领悟系统未初始化',
         data: {
-          pointsBalance: 0,
+          fragmentBalance: 0,
+          fragmentCost: TECHNIQUE_RESEARCH_FRAGMENT_COST,
           cooldownHours: buildTechniqueResearchCooldownState(null).cooldownHours,
           cooldownUntil: null,
           cooldownRemainingSeconds: 0,
-          generationCostByQuality: { ...GENERATE_POINT_COST_BY_QUALITY },
           currentDraft: null,
           draftExpireAt: null,
           nameRules: getTechniqueNameRulesView(),

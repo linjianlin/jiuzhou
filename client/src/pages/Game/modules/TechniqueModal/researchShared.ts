@@ -15,7 +15,7 @@
  *
  * 关键边界条件与坑点：
  * 1. `pending` 只表示生成中，不能亮红点；否则玩家会把“处理中”误解为“已完成待查看”。
- * 2. 冷却按钮禁用与冷却文案必须共用同一组纯函数，避免组件内各自计算导致显示与交互不一致。
+ * 2. 功法残页余额判断与冷却按钮禁用必须共用同一组纯函数，避免组件内各自计算导致显示与交互不一致。
  */
 import type {
   TechniqueResearchJobDto,
@@ -86,7 +86,7 @@ export const resolveTechniqueResearchPanelView = (
     return {
       kind: 'failed',
       job,
-      errorMessage: job.errorMessage || '洞府推演未能成法，本次研修点已自动退还。',
+      errorMessage: job.errorMessage || '洞府推演未能成法，本次消耗的功法残页已自动退还。',
     };
   }
   return { kind: 'empty' };
@@ -132,14 +132,11 @@ export const resolveTechniqueResearchActionState = (
   status: TechniqueResearchStatusData | null,
 ): TechniqueResearchActionState => {
   const panelView = resolveTechniqueResearchPanelView(status);
-  const minCost = status
-    ? Math.min(...Object.values(status.generationCostByQuality || { 黄: 500, 玄: 500, 地: 500, 天: 500 }))
-    : 500;
   const canGenerate =
     status !== null &&
     panelView.kind !== 'pending' &&
     !isTechniqueResearchCoolingDown(status) &&
-    status.pointsBalance >= minCost;
+    status.fragmentBalance >= status.fragmentCost;
 
   return {
     canGenerate,

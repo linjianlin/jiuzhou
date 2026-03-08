@@ -8,16 +8,11 @@ import {
 const buildStatus = (
   overrides: Partial<TechniqueResearchStatusData> = {},
 ): TechniqueResearchStatusData => ({
-  pointsBalance: 20,
+  fragmentBalance: 6_000,
+  fragmentCost: 5_000,
   cooldownHours: 72,
   cooldownUntil: null,
   cooldownRemainingSeconds: 0,
-  generationCostByQuality: {
-    黄: 10,
-    玄: 20,
-    地: 30,
-    天: 40,
-  },
   currentDraft: null,
   draftExpireAt: null,
   nameRules: {
@@ -69,6 +64,15 @@ describe('researchShared', () => {
     const actionState = resolveTechniqueResearchActionState(buildStatus());
 
     expect(actionState.canGenerate).toBe(true);
+    expect(actionState.pendingGenerationId).toBeNull();
+  });
+
+  it('resolveTechniqueResearchActionState: 功法残页不足时应禁用开始领悟', () => {
+    const actionState = resolveTechniqueResearchActionState(buildStatus({
+      fragmentBalance: 4_999,
+    }));
+
+    expect(actionState.canGenerate).toBe(false);
     expect(actionState.pendingGenerationId).toBeNull();
   });
 

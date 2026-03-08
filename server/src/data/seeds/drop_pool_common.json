@@ -30,13 +30,6 @@
           "show_in_ui": true
         },
         {
-          "item_def_id": "mat-gongfa-canye",
-          "chance": 0.01,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
           "item_def_id": "mat-lingmo",
           "chance": 0.01,
           "qty_min": 1,

@@ -4,15 +4,12 @@ import { resolveIconUrl, DEFAULT_ICON as coin01 } from '../../shared/resolveIcon
 import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../shared/imageAssets';
 import { gameSocket } from '../../../../services/gameSocket';
 import {
-  INVENTORY_ITEMS_PAGE_SIZE_MAX,
   abandonTechniqueResearchDraft,
   equipCharacterSkill,
   equipCharacterTechnique,
-  exchangeTechniqueBooksForResearchPoints,
   generateTechniqueResearchDraft,
   getCharacterTechniqueStatus,
   getCharacterTechniqueUpgradeCost,
-  getInventoryItems,
   getTechniqueResearchStatus,
   getTechniqueDetail,
   markTechniqueResearchResultViewed,
@@ -420,7 +417,6 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   const [researchStatus, setResearchStatus] = useState<TechniqueResearchStatusData | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchRefreshing, setResearchRefreshing] = useState(false);
-  const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
   const [generateSubmitting, setGenerateSubmitting] = useState(false);
   const [abandonSubmitting, setAbandonSubmitting] = useState(false);
   const [publishSubmitting, setPublishSubmitting] = useState(false);
@@ -634,62 +630,6 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     researchVisitToken,
   ]);
 
-  const collectExchangeItems = useCallback(async (): Promise<Array<{ itemInstanceId: number; qty: number }>> => {
-    if (!characterId) return [];
-
-    const locations: Array<'bag' | 'warehouse'> = ['bag', 'warehouse'];
-    const exchangeItems: Array<{ itemInstanceId: number; qty: number }> = [];
-
-    for (const location of locations) {
-      let page = 1;
-      let total = 0;
-      do {
-        const pageRes = await getInventoryItems(location, page, INVENTORY_ITEMS_PAGE_SIZE_MAX);
-        if (!pageRes?.success || !pageRes.data) break;
-
-        const items = pageRes.data.items || [];
-        total = Number(pageRes.data.total || 0);
-        for (const item of items) {
-          const subCategory = String(item.def?.sub_category || '');
-          if (subCategory !== 'technique_book') continue;
-          if (item.item_def_id === 'book-generated-technique') continue;
-          if (!Number.isInteger(item.id) || item.id <= 0) continue;
-          const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
-          if (qty <= 0) continue;
-          exchangeItems.push({ itemInstanceId: item.id, qty });
-        }
-
-        page += 1;
-      } while ((page - 1) * INVENTORY_ITEMS_PAGE_SIZE_MAX < total);
-    }
-
-    return exchangeItems;
-  }, [characterId]);
-
-  const handleExchangeBooks = useCallback(async () => {
-    if (!characterId || exchangeSubmitting) return;
-    setExchangeSubmitting(true);
-    try {
-      const exchangeItems = await collectExchangeItems();
-      if (exchangeItems.length <= 0) {
-        message.info('背包与仓库暂无可兑换功法书');
-        return;
-      }
-
-      const exchangeRes = await exchangeTechniqueBooksForResearchPoints(characterId, exchangeItems);
-      if (!exchangeRes?.success || !exchangeRes.data) {
-        throw new Error(exchangeRes?.message || '兑换失败');
-      }
-
-      message.success(exchangeRes.message || `已兑换${exchangeRes.data.gainedPoints}研修点`);
-      await Promise.all([refreshResearchStatus('background'), refreshStatus()]);
-    } catch (error: unknown) {
-      message.error(error instanceof Error ? error.message : '兑换失败');
-    } finally {
-      setExchangeSubmitting(false);
-    }
-  }, [characterId, collectExchangeItems, exchangeSubmitting, message, refreshResearchStatus, refreshStatus]);
-
   const handleGenerateResearchDraft = useCallback(async () => {
     if (!characterId || generateSubmitting) return;
     setGenerateSubmitting(true);
@@ -724,7 +664,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
 
     modal.confirm({
       title: '确认放弃当前洞府推演？',
-      content: '放弃后会立即结束这次推演流程；若本次已消耗研修点，系统会原路退还。',
+      content: '放弃后会立即结束这次推演流程；若本次已消耗功法残页，系统会原路退还。',
       okText: '确认放弃',
       okButtonProps: { danger: true },
       cancelText: '继续等待',
@@ -1317,11 +1257,9 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         status={researchStatus}
         loading={researchLoading}
         refreshing={researchRefreshing}
-        exchangeSubmitting={exchangeSubmitting}
         generateSubmitting={generateSubmitting}
         abandonSubmitting={abandonSubmitting}
         publishSubmitting={publishSubmitting}
-        onExchangeBooks={() => void handleExchangeBooks()}
         onGenerateDraft={() => void handleGenerateResearchDraft()}
         onAbandonPendingJob={(generationId) => void handleAbandonResearchDraft(generationId)}
         onRefresh={() => void refreshResearchStatus('manual')}

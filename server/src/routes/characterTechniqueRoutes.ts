@@ -96,40 +96,6 @@ router.get('/:characterId/technique/research/status', asyncHandler(async (req, r
 }));
 
 // ============================================
-// 功法书兑换研修点
-// POST /api/character/:characterId/technique/research/exchange-books
-// Body: { items: [{ itemInstanceId: number, qty: number }] }
-// ============================================
-router.post('/:characterId/technique/research/exchange-books', asyncHandler(async (req, res) => {
-  const characterId = parseCharacterIdParam(req);
-  if (characterId === null) {
-    throw new BusinessError('无效的角色ID');
-  }
-  const userId = req.userId!;
-  if (!userId) {
-    throw new BusinessError('登录状态无效，请重新登录', 401);
-  }
-
-  const rawItems = req.body?.items;
-  if (!Array.isArray(rawItems) || rawItems.length === 0) {
-    throw new BusinessError('缺少兑换条目');
-  }
-  const items = rawItems.map((entry) => {
-    const row = entry as { itemInstanceId?: unknown; qty?: unknown };
-    return {
-      itemInstanceId: Number(row.itemInstanceId),
-      qty: Number(row.qty),
-    };
-  });
-
-  const result = await techniqueGenerationService.exchangeTechniqueBooks(characterId, userId, items);
-  if (result.success) {
-    await safePushCharacterUpdate(userId);
-  }
-  sendResult(res, result);
-}));
-
-// ============================================
 // 生成研修功法草稿
 // POST /api/character/:characterId/technique/research/generate
 // ============================================

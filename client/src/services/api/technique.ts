@@ -261,11 +261,11 @@ export interface TechniqueResearchStatusResponse {
   message: string;
   code?: string;
   data?: {
-    pointsBalance: number;
+    fragmentBalance: number;
+    fragmentCost: number;
     cooldownHours: number;
     cooldownUntil: string | null;
     cooldownRemainingSeconds: number;
-    generationCostByQuality: Record<'黄' | '玄' | '地' | '天', number>;
     currentDraft: TechniqueResearchDraftDto | null;
     draftExpireAt: string | null;
     nameRules: TechniqueResearchNameRulesDto;
@@ -277,23 +277,6 @@ export interface TechniqueResearchStatusResponse {
 
 export const getTechniqueResearchStatus = (characterId: number): Promise<TechniqueResearchStatusResponse> => {
   return api.get(`/character/${characterId}/technique/research/status`);
-};
-
-export interface TechniqueResearchExchangeResponse {
-  success: boolean;
-  message: string;
-  code?: string;
-  data?: {
-    gainedPoints: number;
-    pointsBalance: number;
-  };
-}
-
-export const exchangeTechniqueBooksForResearchPoints = (
-  characterId: number,
-  items: Array<{ itemInstanceId: number; qty: number }>,
-): Promise<TechniqueResearchExchangeResponse> => {
-  return api.post(`/character/${characterId}/technique/research/exchange-books`, { items });
 };
 
 export interface TechniqueResearchGenerateResponse {

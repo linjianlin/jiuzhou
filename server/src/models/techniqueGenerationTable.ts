@@ -2,7 +2,7 @@
  * AI 生成功法系统动态表
  *
  * 作用：
- * 1. 存储角色研修点余额与流水；
+ * 1. 保留历史研修点余额与流水表结构，避免旧库升级时报错；
  * 2. 存储 AI 生成的功法草稿/已发布定义（功法、技能、层级）；
  * 3. 存储生成功法任务状态机（pending/generated_draft/published/failed/refunded）。
  */
@@ -94,11 +94,11 @@ CREATE TABLE IF NOT EXISTS character_research_points (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE character_research_points IS '角色研修点余额表';
+COMMENT ON TABLE character_research_points IS '历史研修点余额表（已停用）';
 COMMENT ON COLUMN character_research_points.character_id IS '角色ID';
-COMMENT ON COLUMN character_research_points.balance_points IS '当前研修点余额';
-COMMENT ON COLUMN character_research_points.total_earned_points IS '累计获得研修点';
-COMMENT ON COLUMN character_research_points.total_spent_points IS '累计消耗研修点';
+COMMENT ON COLUMN character_research_points.balance_points IS '历史研修点余额';
+COMMENT ON COLUMN character_research_points.total_earned_points IS '历史累计获得研修点';
+COMMENT ON COLUMN character_research_points.total_spent_points IS '历史累计消耗研修点';
 `;
 
 const researchPointsLedgerTableSQL = `
@@ -112,9 +112,9 @@ CREATE TABLE IF NOT EXISTS research_points_ledger (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-COMMENT ON TABLE research_points_ledger IS '研修点流水';
-COMMENT ON COLUMN research_points_ledger.change_points IS '变化值（正负）';
-COMMENT ON COLUMN research_points_ledger.reason IS '流水原因：exchange_book/generate_consume/generate_refund/admin';
+COMMENT ON TABLE research_points_ledger IS '历史研修点流水（已停用）';
+COMMENT ON COLUMN research_points_ledger.change_points IS '历史变化值（正负）';
+COMMENT ON COLUMN research_points_ledger.reason IS '历史流水原因';
 
 CREATE INDEX IF NOT EXISTS idx_research_points_ledger_character_time
   ON research_points_ledger(character_id, created_at DESC);
