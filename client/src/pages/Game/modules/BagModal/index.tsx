@@ -1087,8 +1087,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                   hasAction('compose') ||
                   hasAction('equip') ||
                   hasAction('disassemble') ||
-                  hasAction('enhance') ||
-                  hasAction('show') ? (
+                  hasAction('enhance') ? (
                   <>
                     {canBatchUseConsumable ? (
                       <div className="bag-use-qty">
@@ -1175,11 +1174,6 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                             onClick={() => setEnhanceOpen(true)}
                           >
                             强化
-                          </Button>
-                        ) : null}
-                        {hasAction('show') ? (
-                          <Button size="small" disabled={actionDisabled('show')}>
-                            展示
                           </Button>
                         ) : null}
                         <Button

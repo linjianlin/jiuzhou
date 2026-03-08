@@ -1006,6 +1006,172 @@ export const formatSetEffectLine = (raw: unknown): string | null => {
   return parts.join("，");
 };
 
+const stripSetTriggerPrefix = (line: string): string => {
+  return line.replace(/^触发：[^，]+，/, "");
+};
+
+const DISPEL_TYPE_LABELS: Record<string, string> = {
+  poison: "中毒",
+};
+
+const CURRENCY_LABELS: Record<string, string> = {
+  silver: "银两",
+  spirit_stones: "灵石",
+};
+
+const buildItemEffectDisplayRecord = (
+  raw: Record<string, unknown>,
+): Record<string, unknown> => {
+  const params = toRecord(raw.params);
+  const nextParams: Record<string, unknown> = { ...params };
+
+  if (nextParams.value === undefined && raw.value !== undefined) {
+    nextParams.value = raw.value;
+  }
+
+  const effectType =
+    typeof raw.effect_type === "string" ? raw.effect_type.trim() : "";
+  if (
+    (effectType === "mana" || effectType === "restore_mana") &&
+    nextParams.resource === undefined &&
+    nextParams.resource_type === undefined
+  ) {
+    nextParams.resource = "lingqi";
+  }
+
+  return {
+    ...raw,
+    effect_type:
+      effectType === "mana" || effectType === "restore_mana"
+        ? "resource"
+        : effectType,
+    trigger: "equip",
+    params: nextParams,
+  };
+};
+
+const formatLootEffectLine = (params: Record<string, unknown>): string => {
+  const lootType =
+    typeof params.loot_type === "string" ? params.loot_type.trim() : "";
+  if (lootType === "currency") {
+    const currency =
+      typeof params.currency === "string" ? params.currency.trim() : "";
+    const min = toFiniteNumber(params.min);
+    const max = toFiniteNumber(params.max);
+    const currencyLabel = CURRENCY_LABELS[currency] ?? "货币";
+    if (min !== null && max !== null) {
+      const minText = Math.floor(min);
+      const maxText = Math.floor(max);
+      return minText === maxText
+        ? `获得${currencyLabel} ${minText}`
+        : `获得${currencyLabel} ${minText}~${maxText}`;
+    }
+    return `获得${currencyLabel}奖励`;
+  }
+
+  if (lootType === "random_gem") {
+    const minLevel = toFiniteNumber(params.min_level);
+    const maxLevel = toFiniteNumber(params.max_level);
+    const gemsPerUse = toFiniteNumber(params.gems_per_use);
+    const countText =
+      gemsPerUse !== null && Math.floor(gemsPerUse) > 1
+        ? `×${Math.floor(gemsPerUse)}`
+        : "";
+    if (minLevel !== null && maxLevel !== null) {
+      const minText = Math.floor(minLevel);
+      const maxText = Math.floor(maxLevel);
+      return minText === maxText
+        ? `随机获得${minText}级宝石${countText}`
+        : `随机获得${minText}~${maxText}级宝石${countText}`;
+    }
+    return `随机获得宝石${countText}`;
+  }
+
+  if (lootType === "multi") {
+    return "获得礼包奖励";
+  }
+
+  return "获得物品奖励";
+};
+
+const formatExpandEffectLine = (params: Record<string, unknown>): string => {
+  const expandType =
+    typeof params.expand_type === "string" ? params.expand_type.trim() : "";
+  const value = toFiniteNumber(params.value);
+  if (expandType === "bag" && value !== null) {
+    return `背包扩容 ${Math.floor(value)} 格`;
+  }
+  if (expandType === "bag") return "扩容背包容量";
+  return "扩展功能容量";
+};
+
+const formatRerollEffectLine = (params: Record<string, unknown>): string => {
+  const targetType =
+    typeof params.target_type === "string" ? params.target_type.trim() : "";
+  const rerollType =
+    typeof params.reroll_type === "string" ? params.reroll_type.trim() : "";
+  if (targetType === "equipment" && rerollType === "affixes") {
+    return "重洗装备词条";
+  }
+  return "重置目标属性";
+};
+
+/**
+ * 作用：
+ * - 做什么：把物品 effect_defs 的原始 effect_type 映射成背包详情可直接展示的中文文案。
+ * - 不做什么：不执行物品效果、不读取角色状态、不推导掉落结果，只负责静态展示格式化。
+ *
+ * 输入/输出：
+ * - 输入：单条物品 effect_def 原始记录。
+ * - 输出：中文效果文案；无法识别时回退“效果：xxx”。
+ *
+ * 数据流/状态流：
+ * - ItemDef.effect_defs -> formatBagItemEffectLine -> buildEffects -> Bag/Market/移动端详情面板。
+ *
+ * 关键边界条件与坑点：
+ * 1. `heal/resource` 等效果在物品定义里常把 `value` 放在顶层，而套装/技能格式化器使用 `params.value`，这里必须先归一化，避免中文格式化失效。
+ * 2. 物品效果不需要展示 trigger，因此复用 `formatSetEffectLine` 时要去掉触发前缀，否则会出现“触发：equip”之类的错误文案。
+ */
+export const formatBagItemEffectLine = (
+  raw: Record<string, unknown>,
+): string => {
+  const effectType =
+    typeof raw.effect_type === "string" ? raw.effect_type.trim() : "";
+  const params = toRecord(raw.params);
+  const normalizedRaw = buildItemEffectDisplayRecord(raw);
+
+  if (
+    effectType === "heal" ||
+    effectType === "resource" ||
+    effectType === "restore_mana" ||
+    effectType === "mana" ||
+    effectType === "buff" ||
+    effectType === "debuff" ||
+    effectType === "mark"
+  ) {
+    const line = formatSetEffectLine(normalizedRaw);
+    if (line) return stripSetTriggerPrefix(line);
+  }
+
+  if (effectType === "dispel") {
+    const dispelType =
+      typeof params.dispel_type === "string" ? params.dispel_type.trim() : "";
+    const dispelLabel = DISPEL_TYPE_LABELS[dispelType];
+    return dispelLabel ? `解除${dispelLabel}状态` : "解除负面状态";
+  }
+
+  if (effectType === "loot") return formatLootEffectLine(params);
+  if (effectType === "expand") return formatExpandEffectLine(params);
+  if (effectType === "reroll") return formatRerollEffectLine(params);
+  if (effectType === "learn_technique") return "学习功法";
+  if (effectType === "learn_generated_technique") return "学习功法";
+  if (effectType === "unbind") return "解除一件已绑定装备的绑定状态";
+  if (effectType === "activate_month_card") return "激活月卡";
+  if (effectType === "activate_battle_pass") return "激活战令";
+
+  return effectType ? `效果：${effectType}` : "效果：未知";
+};
+
 const buildSetInfo = (def: ItemDefLite): SetInfo | null => {
   const setId = typeof def.set_id === "string" ? def.set_id.trim() : "";
   if (!setId) return null;
@@ -1054,52 +1220,7 @@ const buildEffects = (def?: ItemDefLite): string[] => {
   const effectDefs = coerceEffectDefs(def?.effect_defs);
 
   for (const e of effectDefs) {
-    if (!e || typeof e !== "object") continue;
-    const effectType = (e as { effect_type?: unknown }).effect_type;
-    const value = (e as { value?: unknown }).value;
-    const durationRound = (e as { duration_round?: unknown }).duration_round;
-
-    if (effectType === "heal" && typeof value === "number")
-      effects.push(`恢复气血 ${value}`);
-    else if (effectType === "resource" && typeof value === "number") {
-      const params =
-        (e as { params?: unknown }).params &&
-        typeof (e as { params?: unknown }).params === "object"
-          ? ((e as { params?: Record<string, unknown> }).params as Record<
-              string,
-              unknown
-            >)
-          : null;
-      const resource = params
-        ? String(params.resource || params.resource_type || "")
-        : "";
-      const resourceName =
-        resource === "lingqi"
-          ? "灵气"
-          : resource === "qixue"
-            ? "气血"
-            : resource === "exp"
-              ? "经验"
-              : "资源";
-      const action = resource === "exp" ? "获得" : "恢复";
-      effects.push(`${action}${resourceName} ${value}`);
-    } else if (
-      (effectType === "restore_mana" || effectType === "mana") &&
-      typeof value === "number"
-    )
-      effects.push(`恢复灵气 ${value}`);
-    else if (effectType === "learn_technique") effects.push("学习功法");
-    else if (effectType === "unbind")
-      effects.push("解除一件已绑定装备的绑定状态");
-    else if (effectType === "mark") {
-      const markText = formatMarkEffectText(e);
-      effects.push(markText ?? "施加印记效果");
-    }
-    else if (typeof effectType === "string")
-      effects.push(`效果：${effectType}`);
-
-    if (typeof durationRound === "number" && durationRound > 0)
-      effects.push(`持续 ${durationRound} 回合`);
+    effects.push(formatBagItemEffectLine(e));
   }
 
   const isTechniqueBook =

@@ -374,6 +374,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .bag-modal-left-top {
@@ -446,7 +447,6 @@
   gap: 7px;
   align-content: start;
   background: var(--panel-bg);
-  max-height: 480px; /* 最大高度限制 */
 }
 
 .bag-modal-grid-overlay {
@@ -476,6 +476,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin-top: auto;
 }
 
 .bag-modal-left-footer-actions {
