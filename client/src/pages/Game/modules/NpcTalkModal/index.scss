@@ -1,0 +1,224 @@
+.npc-talk-modal {
+  .ant-modal-content {
+    overflow: hidden;
+  }
+}
+
+.npc-talk-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.npc-talk-transcript {
+  position: relative;
+  min-height: 240px;
+  max-height: min(56vh, 460px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color-soft);
+  background:
+    radial-gradient(circle at top left, rgba(250, 173, 20, 0.12), transparent 34%),
+    linear-gradient(180deg, var(--panel-bg-soft) 0%, var(--panel-bg) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.npc-talk-row {
+  display: flex;
+  animation: npc-talk-message-in 180ms ease-out;
+}
+
+.npc-talk-row.is-player {
+  justify-content: flex-end;
+}
+
+.npc-talk-row.is-npc {
+  justify-content: flex-start;
+}
+
+.npc-talk-row.is-system,
+.npc-talk-row.is-narration,
+.npc-talk-row.is-action {
+  justify-content: center;
+}
+
+.npc-talk-bubble {
+  max-width: min(88%, 540px);
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-color-soft);
+  background: var(--panel-bg);
+  color: var(--text-color);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.npc-talk-row.is-player .npc-talk-bubble {
+  border-color: color-mix(in srgb, var(--primary-color) 40%, var(--border-color-soft));
+  background: linear-gradient(180deg, var(--primary-bg-soft) 0%, color-mix(in srgb, var(--primary-bg-soft) 70%, var(--panel-bg)) 100%);
+}
+
+.npc-talk-row.is-system .npc-talk-bubble {
+  border-color: color-mix(in srgb, var(--warning-color) 38%, var(--border-color-soft));
+  background: color-mix(in srgb, var(--warning-color) 10%, var(--panel-bg));
+}
+
+.npc-talk-row.is-narration .npc-talk-bubble,
+.npc-talk-row.is-action .npc-talk-bubble {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.npc-talk-speaker {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+
+.npc-talk-row.is-player .npc-talk-speaker {
+  color: var(--primary-color);
+}
+
+.npc-talk-text {
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.npc-talk-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.npc-talk-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.npc-talk-skeleton-row {
+  display: flex;
+}
+
+.npc-talk-skeleton-row.is-player {
+  justify-content: flex-end;
+}
+
+.npc-talk-skeleton-bubble {
+  width: min(78%, 420px);
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.18) 0%, rgba(148, 163, 184, 0.08) 50%, rgba(148, 163, 184, 0.18) 100%);
+  background-size: 200% 100%;
+  animation: npc-talk-skeleton-shimmer 1.4s linear infinite;
+}
+
+.npc-talk-status {
+  position: sticky;
+  bottom: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-bg) 82%, transparent);
+  border: 1px solid var(--border-color-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+  backdrop-filter: blur(12px);
+}
+
+.npc-talk-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--primary-color);
+  animation: npc-talk-status-pulse 1s ease-in-out infinite alternate;
+}
+
+.npc-talk-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border-color-soft);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-bg-soft) 88%, transparent) 0%, var(--panel-bg) 100%);
+}
+
+.npc-talk-actions-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+@keyframes npc-talk-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes npc-talk-skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes npc-talk-status-pulse {
+  from {
+    transform: scale(0.85);
+    opacity: 0.56;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .npc-talk-transcript {
+    min-height: 220px;
+    max-height: 48vh;
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .npc-talk-bubble {
+    max-width: 94%;
+    padding: 9px 11px;
+    border-radius: 14px;
+  }
+
+  .npc-talk-actions {
+    padding: 12px;
+    border-radius: 16px;
+  }
+}

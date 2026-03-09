@@ -15,6 +15,7 @@ import BagModal from './modules/BagModal';
 import TeamModal from './modules/TeamModal';
 import SkillFloatButton from './modules/SkillFloatButton';
 import TechniqueModal from './modules/TechniqueModal';
+import NpcTalkModal from './modules/NpcTalkModal';
 import {
   TECHNIQUE_RESEARCH_STATUS_POLL_INTERVAL_MS,
   getTechniqueResearchIndicatorTooltip,
@@ -61,7 +62,7 @@ import {
   updateCharacterPositionKeepalive,
 } from '../../services/api';
 import { getUnifiedApiErrorMessage } from '../../services/api';
-import type { InventoryItemDto, TechniqueResearchResultStatusDto } from '../../services/api';
+import type { InventoryItemDto, NpcTalkResponse, NpcTalkTaskOption, TechniqueResearchResultStatusDto } from '../../services/api';
 import { getMainQuestProgress, startDialogue, advanceDialogue, selectDialogueChoice, completeSection, type DialogueState } from '../../services/mainQuestApi';
 import { getMyTeam, getTeamApplications, leaveTeam, type TeamInfo } from '../../services/teamApi';
 import { IMG_LOGO as logo, IMG_LINGSHI as lingshi, IMG_TONGQIAN as tongqian, IMG_EQUIP_MALE as equipMale, IMG_EQUIP_FEMALE as equipFemale } from './shared/imageAssets';
@@ -70,6 +71,15 @@ import './index.scss';
 import { useIsMobile } from './shared/responsive';
 import { coerceAffixes } from './shared/itemMetaFormat';
 import EquipmentAffixTooltipList from './shared/EquipmentAffixTooltipList';
+import {
+  NPC_TALK_TASK_STATUS_META,
+  createNpcDialogueEntriesFromDialogueNode,
+  createNpcDialogueEntriesFromLines,
+  createNpcDialogueEntry,
+  resolveNpcTalkMainQuestStatusLabel,
+  type NpcDialogueEntry,
+  type NpcTalkMainQuestStatus,
+} from './modules/NpcTalkModal/shared';
 
 interface GameProps {
   onLogout?: () => void;
@@ -349,18 +359,15 @@ const randBetween = (a: number, b: number) => {
   return min + Math.random() * (max - min);
 };
 
-type NpcTalkTaskStatus = 'locked' | 'available' | 'accepted' | 'turnin' | 'claimable' | 'claimed';
-type NpcTalkTaskOption = { taskId: string; title: string; category: 'main' | 'side' | 'daily' | 'event'; status: NpcTalkTaskStatus };
 type NpcTalkMainQuestOption = {
   sectionId: string;
   sectionName: string;
   chapterName: string;
-  status: 'not_started' | 'dialogue' | 'objectives' | 'turnin' | 'completed';
+  status: NpcTalkMainQuestStatus;
   canStartDialogue: boolean;
   canComplete: boolean;
 };
-type NpcTalkData = { npcId: string; npcName: string; lines: string[]; tasks: NpcTalkTaskOption[]; mainQuest?: NpcTalkMainQuestOption };
-type NpcDialogueEntry = { id: string; role: 'npc' | 'player'; text: string };
+type NpcTalkData = NonNullable<NpcTalkResponse['data']> & { mainQuest?: NpcTalkMainQuestOption };
 type NpcTalkPhase = 'root' | 'taskDetail' | 'mainQuestDialogue';
 type GatherActionUi =
   | {
@@ -690,6 +697,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   >([]);
   const [unequippingId, setUnequippingId] = useState<number | null>(null);
   const chatPanelRef = useRef<ChatPanelHandle | null>(null);
+  const mainQuestDialogueNodeIdRef = useRef('');
   const battleSkillCasterRef = useRef<(skillId: string, targetType?: string) => Promise<boolean>>(async () => false);
   const [gatherAction, setGatherAction] = useState<GatherActionUi>({ running: false });
   const gatherActionKeyRef = useRef<string>('');
@@ -1012,6 +1020,30 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     messageRef.current = message;
   }, [message]);
 
+  const resetNpcTalkState = useCallback(() => {
+    setNpcTalkNpcId('');
+    setNpcTalkData(null);
+    setNpcTalkActionKey('');
+    setNpcTalkSelectedTaskId('');
+    setNpcTalkPhase('root');
+    setNpcDialogue([]);
+    setMainQuestDialogueState(null);
+    setMainQuestDialogueLoading(false);
+    mainQuestDialogueNodeIdRef.current = '';
+  }, []);
+
+  const resetMainQuestDialogueFlow = useCallback(() => {
+    setNpcTalkPhase('root');
+    setMainQuestDialogueState(null);
+    setMainQuestDialogueLoading(false);
+    mainQuestDialogueNodeIdRef.current = '';
+  }, []);
+
+  const closeNpcTalk = useCallback(() => {
+    setNpcTalkOpen(false);
+    resetNpcTalkState();
+  }, [resetNpcTalkState]);
+
   const refreshNpcTalk = useCallback(async (npcId: string): Promise<NpcTalkData | null> => {
     const nid = (npcId || '').trim();
     if (!nid) return null;
@@ -1019,60 +1051,68 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     try {
       const res = await npcTalk(nid);
       if (!res?.success || !res.data) throw new Error(getUnifiedApiErrorMessage(res, '对话失败'));
-      const data = res.data as unknown as NpcTalkData;
+      const data: NpcTalkData = res.data;
       setNpcTalkData(data);
       return data;
-    } catch (e: unknown) {
+    } catch {
       void 0;
-      setNpcTalkData(null);
       return null;
     } finally {
       setNpcTalkLoading(false);
     }
   }, []);
 
-  const appendNpcDialogue = useCallback((role: NpcDialogueEntry['role'], text: string) => {
-    const t = String(text || '').trim();
-    if (!t) return;
-    setNpcDialogue((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, role, text: t }]);
+  const appendNpcDialogue = useCallback((role: NpcDialogueEntry['role'], text: string, speaker?: string) => {
+    const entry = createNpcDialogueEntry({ role, text, speaker });
+    if (!entry) return;
+    setNpcDialogue((prev) => [...prev, entry]);
   }, []);
 
-  const appendNpcDialogueLines = useCallback((lines: unknown, fallback: string) => {
-    const list = Array.isArray(lines) ? lines : [];
-    const normalized = list.map((line) => String(line || '').trim()).filter(Boolean);
-    if (normalized.length > 0) {
-      setNpcDialogue((prev) => [
-        ...prev,
-        ...normalized.map((text) => ({ id: `${Date.now()}-${Math.random()}`, role: 'npc' as const, text })),
-      ]);
-      return;
+  const appendNpcDialogueEntries = useCallback((entries: NpcDialogueEntry[]) => {
+    if (entries.length === 0) return;
+    setNpcDialogue((prev) => [...prev, ...entries]);
+  }, []);
+
+  const syncMainQuestDialogueNode = useCallback((dialogueState: DialogueState | null) => {
+    const node = dialogueState?.currentNode;
+    if (!node) return;
+    if (node.id === mainQuestDialogueNodeIdRef.current) return;
+    const entries = createNpcDialogueEntriesFromDialogueNode(node);
+    if (entries.length === 0) return;
+    mainQuestDialogueNodeIdRef.current = node.id;
+    appendNpcDialogueEntries(entries);
+  }, [appendNpcDialogueEntries]);
+
+  const openNpcTalk = useCallback(async (npcId: string) => {
+    setNpcTalkNpcId(npcId);
+    setNpcTalkOpen(true);
+    setNpcTalkData(null);
+    setNpcTalkActionKey('');
+    setNpcTalkSelectedTaskId('');
+    setNpcTalkPhase('root');
+    setNpcDialogue([]);
+    setMainQuestDialogueState(null);
+    setMainQuestDialogueLoading(false);
+    mainQuestDialogueNodeIdRef.current = '';
+    const data = await refreshNpcTalk(npcId);
+    setNpcDialogue(createNpcDialogueEntriesFromLines(data?.lines ?? [], '……'));
+  }, [refreshNpcTalk]);
+
+  const finalizeMainQuestDialogue = useCallback(async () => {
+    await refreshNpcTalk(npcTalkNpcId);
+    await refreshTrackedRoomIds();
+    resetMainQuestDialogueFlow();
+    window.dispatchEvent(new Event('room:objects:changed'));
+  }, [npcTalkNpcId, refreshNpcTalk, refreshTrackedRoomIds, resetMainQuestDialogueFlow]);
+
+  const npcTalkBusyText = useMemo(() => {
+    if (mainQuestDialogueLoading) return '对方正在整理回应……';
+    if (npcTalkActionKey) return '正在确认委托结果……';
+    if (npcTalkLoading) {
+      return npcDialogue.length > 0 ? '正在同步最新对话……' : '正在接入对话……';
     }
-    appendNpcDialogue('npc', fallback);
-  }, [appendNpcDialogue]);
-
-  const statusLabel = useMemo<Record<NpcTalkTaskStatus, string>>(
-    () => ({
-      locked: '未解锁',
-      available: '可接取',
-      accepted: '进行中',
-      turnin: '可提交',
-      claimable: '可领取',
-      claimed: '已完成',
-    }),
-    [],
-  );
-
-  const statusColor = useMemo<Record<NpcTalkTaskStatus, string>>(
-    () => ({
-      locked: 'default',
-      available: 'green',
-      accepted: 'blue',
-      turnin: 'purple',
-      claimable: 'gold',
-      claimed: 'default',
-    }),
-    [],
-  );
+    return null;
+  }, [mainQuestDialogueLoading, npcDialogue.length, npcTalkActionKey, npcTalkLoading]);
 
   const formatTaskRewardsToText = useCallback((rewards: unknown): string => {
     const list = Array.isArray(rewards) ? rewards : [];
@@ -1701,16 +1741,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }
     if (action === 'talk' && target.type === 'npc') {
       setInfoTarget(null);
-      setNpcTalkNpcId(target.id);
-      setNpcTalkOpen(true);
-      setNpcTalkPhase('root');
-      setNpcDialogue([]);
-      setNpcTalkSelectedTaskId('');
-      void (async () => {
-        const data = await refreshNpcTalk(target.id);
-        setNpcDialogue([]);
-        appendNpcDialogueLines(data?.lines, '……');
-      })();
+      void openNpcTalk(target.id);
       return;
     }
     if (action === 'pm' && target.type === 'player') {
@@ -2083,448 +2114,300 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       ) : null}
 
       <InfoModal open={!!infoTarget} target={infoTarget} onClose={() => setInfoTarget(null)} onAction={handleInfoAction} />
-      <Modal
+      <NpcTalkModal
         open={npcTalkOpen}
-        onCancel={() => {
-          setNpcTalkOpen(false);
-          setNpcTalkNpcId('');
-          setNpcTalkData(null);
-          setNpcTalkActionKey('');
-          setNpcTalkSelectedTaskId('');
-          setNpcTalkPhase('root');
-          setNpcDialogue([]);
-          setMainQuestDialogueState(null);
-        }}
-        footer={null}
-        centered
-        width={720}
-        title={npcTalkData?.npcName ? `与「${npcTalkData.npcName}」对话` : '对话'}
-        destroyOnHidden
-        maskClosable
+        npcName={npcTalkData?.npcName}
+        dialogue={npcDialogue}
+        loading={npcTalkLoading}
+        busyText={npcTalkBusyText}
+        onClose={closeNpcTalk}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div
-            style={{
-              minHeight: 120,
-              maxHeight: 340,
-              overflow: 'auto',
-              padding: 12,
-              border: '1px solid var(--border-color-soft)',
-              borderRadius: 8,
-              background: 'var(--panel-bg-soft)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            {npcTalkLoading ? (
-              <div>加载中...</div>
-            ) : npcDialogue.length > 0 ? (
-              npcDialogue.map((d) => (
-                <div
-                  key={d.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: d.role === 'player' ? 'flex-end' : 'flex-start',
-                  }}
-                >
-                  <div
-                    style={{
-                      maxWidth: '86%',
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      border: d.role === 'player' ? '1px solid var(--primary-color)' : '1px solid var(--border-color-soft)',
-                      background: d.role === 'player' ? 'var(--primary-bg-soft)' : 'var(--panel-bg)',
-                      color: 'var(--text-color)',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    {d.text}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div>暂无对白</div>
-            )}
-          </div>
-
-          <div style={{ fontWeight: 600 }}>选项</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {npcTalkPhase === 'root' ? (
-              <>
-                {/* 主线任务选项 */}
-                {npcTalkData?.mainQuest && npcTalkData.mainQuest.status !== 'completed' && (
-                  <Button
-                    block
-                    type="primary"
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                    onClick={async () => {
-                      const mq = npcTalkData.mainQuest!;
-                      appendNpcDialogue('player', `关于「${mq.sectionName}」…`);
-                      if (mq.canStartDialogue) {
-                        // 开始主线对话
-                        setMainQuestDialogueLoading(true);
-                        try {
-                          const res = await startDialogue();
-                          if (res?.success && res.data) {
-                            setMainQuestDialogueState(res.data.dialogueState);
-                            setNpcTalkPhase('mainQuestDialogue');
-                          } else {
-                            void 0;
-                          }
-                        } catch {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {npcTalkPhase === 'root' ? (
+            <>
+              {npcTalkData?.mainQuest && npcTalkData.mainQuest.status !== 'completed' ? (
+                <Button
+                  block
+                  type="primary"
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  onClick={async () => {
+                    const mq = npcTalkData.mainQuest!;
+                    appendNpcDialogue('player', `关于「${mq.sectionName}」……`);
+                    if (mq.canStartDialogue) {
+                      setMainQuestDialogueLoading(true);
+                      mainQuestDialogueNodeIdRef.current = '';
+                      try {
+                        const res = await startDialogue();
+                        if (res?.success && res.data) {
+                          setNpcTalkPhase('mainQuestDialogue');
+                          setMainQuestDialogueState(res.data.dialogueState);
+                          syncMainQuestDialogueNode(res.data.dialogueState);
+                        } else {
                           void 0;
-                        } finally {
-                          setMainQuestDialogueLoading(false);
                         }
-                      } else if (mq.canComplete) {
-                        // 完成主线任务
-                        setMainQuestDialogueLoading(true);
-                        try {
-                          const res = await completeSection();
-                          if (res?.success && res.data) {
-                            const rewards = res.data.rewards || [];
-                            const rewardTexts: string[] = [];
-                            for (const r of rewards) {
-                              const rr = r as { type?: string; amount?: number; itemDefId?: string; quantity?: number };
-                              if (rr.type === 'exp') rewardTexts.push(`经验 +${rr.amount}`);
-                              if (rr.type === 'silver') rewardTexts.push(`银两 +${rr.amount}`);
-                              if (rr.type === 'spirit_stones') rewardTexts.push(`灵石 +${rr.amount}`);
-                              if (rr.type === 'item') rewardTexts.push(`物品 ${rr.itemDefId} ×${rr.quantity || 1}`);
-                            }
-                            messageRef.current.success('主线任务完成！');
-                            if (rewardTexts.length > 0) {
-                              appendSystemChat(`【主线】获得奖励：${rewardTexts.join('，')}`);
-                            }
-                            appendNpcDialogue('npc', '做得好，继续前进吧。');
-                            gameSocket.refreshCharacter();
-                            await refreshNpcTalk(npcTalkNpcId);
-                            await refreshTrackedRoomIds();
-                            window.dispatchEvent(new Event('room:objects:changed'));
-                          } else {
-                            void 0;
-                          }
-                        } catch {
-                          void 0;
-                        } finally {
-                          setMainQuestDialogueLoading(false);
-                        }
-                      } else {
-                        appendNpcDialogue('npc', '你还有任务目标未完成，去完成它们吧。');
+                      } catch {
+                        void 0;
+                      } finally {
+                        setMainQuestDialogueLoading(false);
                       }
+                    } else if (mq.canComplete) {
+                      setMainQuestDialogueLoading(true);
+                      try {
+                        const res = await completeSection();
+                        if (res?.success && res.data) {
+                          const rewards = res.data.rewards || [];
+                          const rewardTexts: string[] = [];
+                          for (const r of rewards) {
+                            const rr = r as { type?: string; amount?: number; itemDefId?: string; quantity?: number };
+                            if (rr.type === 'exp') rewardTexts.push(`经验 +${rr.amount}`);
+                            if (rr.type === 'silver') rewardTexts.push(`银两 +${rr.amount}`);
+                            if (rr.type === 'spirit_stones') rewardTexts.push(`灵石 +${rr.amount}`);
+                            if (rr.type === 'item') rewardTexts.push(`物品 ${rr.itemDefId} ×${rr.quantity || 1}`);
+                          }
+                          messageRef.current.success('主线任务完成！');
+                          if (rewardTexts.length > 0) {
+                            appendSystemChat(`【主线】获得奖励：${rewardTexts.join('，')}`);
+                          }
+                          appendNpcDialogue('npc', '做得好，继续前进吧。');
+                          gameSocket.refreshCharacter();
+                          await refreshNpcTalk(npcTalkNpcId);
+                          await refreshTrackedRoomIds();
+                          window.dispatchEvent(new Event('room:objects:changed'));
+                        } else {
+                          void 0;
+                        }
+                      } catch {
+                        void 0;
+                      } finally {
+                        setMainQuestDialogueLoading(false);
+                      }
+                    } else {
+                      appendNpcDialogue('npc', '你还有任务目标未完成，先去把它们完成吧。');
+                    }
+                  }}
+                  disabled={npcTalkLoading || mainQuestDialogueLoading}
+                  loading={mainQuestDialogueLoading}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 600 }}>【主线】{npcTalkData.mainQuest.sectionName}</span>
+                    <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+                      {resolveNpcTalkMainQuestStatusLabel(npcTalkData.mainQuest.status)}
+                    </Tag>
+                  </span>
+                </Button>
+              ) : null}
+
+              {(npcTalkData?.tasks ?? []).length > 0 ? (
+                (npcTalkData?.tasks ?? []).map((task) => (
+                  <Button
+                    key={task.taskId}
+                    block
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    onClick={() => {
+                      setNpcTalkSelectedTaskId(task.taskId);
+                      appendNpcDialogue('player', `关于「${task.title}」……`);
+                      appendNpcDialogue('npc', buildTaskNpcLine(task));
+                      setNpcTalkPhase('taskDetail');
                     }}
-                    disabled={npcTalkLoading || mainQuestDialogueLoading}
-                    loading={mainQuestDialogueLoading}
+                    disabled={npcTalkLoading}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 600 }}>【主线】{npcTalkData.mainQuest.sectionName}</span>
-                      <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-                        {npcTalkData.mainQuest.status === 'not_started' ? '可接取' :
-                          npcTalkData.mainQuest.status === 'dialogue' ? '对话中' :
-                            npcTalkData.mainQuest.status === 'objectives' ? '进行中' :
-                              npcTalkData.mainQuest.status === 'turnin' ? '可交付' : ''}
+                      <span style={{ fontWeight: 600 }}>{task.title}</span>
+                      <Tag color={NPC_TALK_TASK_STATUS_META[task.status].color} style={{ marginInlineEnd: 0 }}>
+                        {NPC_TALK_TASK_STATUS_META[task.status].label}
                       </Tag>
                     </span>
                   </Button>
-                )}
+                ))
+              ) : (
+                !npcTalkData?.mainQuest ? <div>该 NPC 暂无可用任务</div> : null
+              )}
 
-                {(npcTalkData?.tasks ?? []).length > 0 ? (
-                  (npcTalkData?.tasks ?? []).map((t) => (
-                    <Button
-                      key={t.taskId}
-                      block
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                      onClick={() => {
-                        setNpcTalkSelectedTaskId(t.taskId);
-                        appendNpcDialogue('player', `关于「${t.title}」…`);
-                        appendNpcDialogue('npc', buildTaskNpcLine(t));
-                        setNpcTalkPhase('taskDetail');
-                      }}
-                      disabled={npcTalkLoading}
-                    >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 600 }}>{t.title}</span>
-                        <Tag color={statusColor[t.status]} style={{ marginInlineEnd: 0 }}>
-                          {statusLabel[t.status]}
-                        </Tag>
-                      </span>
-                    </Button>
-                  ))
-                ) : (
-                  !npcTalkData?.mainQuest && <div>该NPC暂无可用任务</div>
-                )}
+              <Button
+                block
+                onClick={() => {
+                  appendNpcDialogue('player', '告辞。');
+                  closeNpcTalk();
+                }}
+                disabled={npcTalkLoading}
+              >
+                告辞
+              </Button>
+            </>
+          ) : null}
 
-                <Button
-                  block
-                  onClick={() => {
-                    appendNpcDialogue('player', '告辞。');
-                    setNpcTalkOpen(false);
-                    setNpcTalkNpcId('');
-                    setNpcTalkData(null);
-                    setNpcTalkActionKey('');
-                    setNpcTalkSelectedTaskId('');
-                    setNpcTalkPhase('root');
-                    setNpcDialogue([]);
-                    setMainQuestDialogueState(null);
-                  }}
-                  disabled={npcTalkLoading}
-                >
-                  告辞
-                </Button>
-              </>
-            ) : null}
-
-            {npcTalkPhase === 'taskDetail' ? (
-              (() => {
-                const task = (npcTalkData?.tasks ?? []).find((x) => x.taskId === npcTalkSelectedTaskId) ?? null;
-                if (!task) {
-                  return (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <Button
-                        onClick={() => {
-                          setNpcTalkPhase('root');
-                        }}
-                      >
-                        返回
-                      </Button>
-                    </div>
-                  );
-                }
-
-                const doAccept = async () => {
-                  setNpcTalkActionKey(`accept:${task.taskId}`);
-                  try {
-                    const res = await acceptTaskFromNpc(npcTalkNpcId, task.taskId);
-                    if (!res?.success) throw new Error(getUnifiedApiErrorMessage(res, '接取失败'));
-                    messageRef.current.success('接取成功');
-                    appendSystemChat(`【任务】已接取：${task.title}`);
-                    appendNpcDialogue('npc', '好，我已为你记下。去吧。');
-                    const data = await refreshNpcTalk(npcTalkNpcId);
-                    if (data?.lines) {
-                      await refreshTrackedRoomIds();
-                      window.dispatchEvent(new Event('room:objects:changed'));
-                    }
-                  } catch (e: unknown) {
-                    void 0;
-                  } finally {
-                    setNpcTalkActionKey('');
-                  }
-                };
-
-                const doSubmit = async () => {
-                  setNpcTalkActionKey(`submit:${task.taskId}`);
-                  try {
-                    const res = await submitTaskToNpc(npcTalkNpcId, task.taskId);
-                    if (!res?.success) throw new Error(getUnifiedApiErrorMessage(res, '提交失败'));
-                    messageRef.current.success('提交成功');
-                    appendSystemChat(`【任务】已提交：${task.title}`);
-                    appendNpcDialogue('npc', '办得好。稍等，我为你结算。');
-                    await refreshNpcTalk(npcTalkNpcId);
-                    await refreshTrackedRoomIds();
-                    window.dispatchEvent(new Event('room:objects:changed'));
-                  } catch (e: unknown) {
-                    void 0;
-                  } finally {
-                    setNpcTalkActionKey('');
-                  }
-                };
-
-                const doClaim = async () => {
-                  setNpcTalkActionKey(`claim:${task.taskId}`);
-                  try {
-                    const res = await claimTaskReward(task.taskId);
-                    if (!res?.success) throw new Error(getUnifiedApiErrorMessage(res, '领取失败'));
-                    messageRef.current.success('领取成功');
-                    const rewardText = formatTaskRewardsToText(res.data?.rewards);
-                    appendSystemChat(`【任务】领取奖励：${task.title}${rewardText ? `（${rewardText}）` : ''}`);
-                    appendNpcDialogue('npc', '收好。');
-                    gameSocket.refreshCharacter();
-                    await refreshNpcTalk(npcTalkNpcId);
-                    await refreshTrackedRoomIds();
-                    window.dispatchEvent(new Event('room:objects:changed'));
-                  } catch (e: unknown) {
-                    void 0;
-                  } finally {
-                    setNpcTalkActionKey('');
-                  }
-                };
-
-                const primaryAction =
-                  task.status === 'available' ? (
-                    <Button type="primary" loading={npcTalkActionKey === `accept:${task.taskId}`} onClick={() => void doAccept()}>
-                      接取任务
-                    </Button>
-                  ) : task.status === 'turnin' ? (
-                    <Button type="primary" loading={npcTalkActionKey === `submit:${task.taskId}`} onClick={() => void doSubmit()}>
-                      提交任务
-                    </Button>
-                  ) : task.status === 'claimable' ? (
-                    <Button type="primary" loading={npcTalkActionKey === `claim:${task.taskId}`} onClick={() => void doClaim()}>
-                      领取奖励
-                    </Button>
-                  ) : null;
-
+          {npcTalkPhase === 'taskDetail'
+            ? (() => {
+              const task = (npcTalkData?.tasks ?? []).find((item) => item.taskId === npcTalkSelectedTaskId) ?? null;
+              if (!task) {
                 return (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {primaryAction}
-                    <Button
-                      onClick={() => {
-                        setNpcTalkPhase('root');
-                      }}
-                    >
-                      返回
-                    </Button>
+                    <Button onClick={() => setNpcTalkPhase('root')}>返回</Button>
                   </div>
                 );
-              })()
-            ) : null}
+              }
 
-            {npcTalkPhase === 'mainQuestDialogue' ? (
-              (() => {
-                const node = mainQuestDialogueState?.currentNode;
-
-                const handleAdvance = async () => {
-                  setMainQuestDialogueLoading(true);
-                  try {
-                    const res = await advanceDialogue();
-                    if (res?.success && res.data) {
-                      setMainQuestDialogueState(res.data.dialogueState);
-                      if (res.data.dialogueState.isComplete) {
-                        // 对话完成，返回根菜单
-                        await refreshNpcTalk(npcTalkNpcId);
-                        await refreshTrackedRoomIds();
-                        setNpcTalkPhase('root');
-                        setMainQuestDialogueState(null);
-                        window.dispatchEvent(new Event('room:objects:changed'));
-                      }
-                    } else {
-                      void 0;
-                    }
-                  } catch {
-                    void 0;
-                  } finally {
-                    setMainQuestDialogueLoading(false);
+              const doAccept = async () => {
+                setNpcTalkActionKey(`accept:${task.taskId}`);
+                try {
+                  const res = await acceptTaskFromNpc(npcTalkNpcId, task.taskId);
+                  if (!res?.success) throw new Error(getUnifiedApiErrorMessage(res, '接取失败'));
+                  messageRef.current.success('接取成功');
+                  appendSystemChat(`【任务】已接取：${task.title}`);
+                  appendNpcDialogue('npc', '好，我已为你记下。去吧。');
+                  const data = await refreshNpcTalk(npcTalkNpcId);
+                  if (data?.lines) {
+                    await refreshTrackedRoomIds();
+                    window.dispatchEvent(new Event('room:objects:changed'));
                   }
-                };
+                } catch {
+                  void 0;
+                } finally {
+                  setNpcTalkActionKey('');
+                }
+              };
 
-                const handleChoice = async (choiceId: string) => {
-                  setMainQuestDialogueLoading(true);
-                  try {
-                    const res = await selectDialogueChoice(choiceId);
-                    if (res?.success && res.data) {
-                      setMainQuestDialogueState(res.data.dialogueState);
-                      if (res.data.dialogueState.isComplete) {
-                        await refreshNpcTalk(npcTalkNpcId);
-                        await refreshTrackedRoomIds();
-                        setNpcTalkPhase('root');
-                        setMainQuestDialogueState(null);
-                        window.dispatchEvent(new Event('room:objects:changed'));
-                      }
-                    } else {
-                      void 0;
+              const doSubmit = async () => {
+                setNpcTalkActionKey(`submit:${task.taskId}`);
+                try {
+                  const res = await submitTaskToNpc(npcTalkNpcId, task.taskId);
+                  if (!res?.success) throw new Error(getUnifiedApiErrorMessage(res, '提交失败'));
+                  messageRef.current.success('提交成功');
+                  appendSystemChat(`【任务】已提交：${task.title}`);
+                  appendNpcDialogue('npc', '办得好。稍等，我为你结算。');
+                  await refreshNpcTalk(npcTalkNpcId);
+                  await refreshTrackedRoomIds();
+                  window.dispatchEvent(new Event('room:objects:changed'));
+                } catch {
+                  void 0;
+                } finally {
+                  setNpcTalkActionKey('');
+                }
+              };
+
+              const doClaim = async () => {
+                setNpcTalkActionKey(`claim:${task.taskId}`);
+                try {
+                  const res = await claimTaskReward(task.taskId);
+                  if (!res?.success) throw new Error(getUnifiedApiErrorMessage(res, '领取失败'));
+                  messageRef.current.success('领取成功');
+                  const rewardText = formatTaskRewardsToText(res.data?.rewards);
+                  appendSystemChat(`【任务】领取奖励：${task.title}${rewardText ? `（${rewardText}）` : ''}`);
+                  appendNpcDialogue('npc', '收好。');
+                  gameSocket.refreshCharacter();
+                  await refreshNpcTalk(npcTalkNpcId);
+                  await refreshTrackedRoomIds();
+                  window.dispatchEvent(new Event('room:objects:changed'));
+                } catch {
+                  void 0;
+                } finally {
+                  setNpcTalkActionKey('');
+                }
+              };
+
+              const primaryAction =
+                task.status === 'available' ? (
+                  <Button type="primary" loading={npcTalkActionKey === `accept:${task.taskId}`} onClick={() => void doAccept()}>
+                    接取任务
+                  </Button>
+                ) : task.status === 'turnin' ? (
+                  <Button type="primary" loading={npcTalkActionKey === `submit:${task.taskId}`} onClick={() => void doSubmit()}>
+                    提交任务
+                  </Button>
+                ) : task.status === 'claimable' ? (
+                  <Button type="primary" loading={npcTalkActionKey === `claim:${task.taskId}`} onClick={() => void doClaim()}>
+                    领取奖励
+                  </Button>
+                ) : null;
+
+              return (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {primaryAction}
+                  <Button onClick={() => setNpcTalkPhase('root')}>返回</Button>
+                </div>
+              );
+            })()
+            : null}
+
+          {npcTalkPhase === 'mainQuestDialogue'
+            ? (() => {
+              const node = mainQuestDialogueState?.currentNode;
+
+              const handleAdvance = async () => {
+                setMainQuestDialogueLoading(true);
+                try {
+                  const res = await advanceDialogue();
+                  if (res?.success && res.data) {
+                    setMainQuestDialogueState(res.data.dialogueState);
+                    syncMainQuestDialogueNode(res.data.dialogueState);
+                    if (res.data.dialogueState.isComplete) {
+                      await finalizeMainQuestDialogue();
                     }
-                  } catch {
+                  } else {
                     void 0;
-                  } finally {
-                    setMainQuestDialogueLoading(false);
                   }
-                };
+                } catch {
+                  void 0;
+                } finally {
+                  setMainQuestDialogueLoading(false);
+                }
+              };
 
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {/* 对话内容 */}
-                    {node && (
-                      <div style={{
-                        padding: 16,
-                        background: 'linear-gradient(135deg, rgba(24, 144, 255, 0.05) 0%, rgba(255, 193, 7, 0.05) 100%)',
-                        borderRadius: 12,
-                        border: '1px solid rgba(24, 144, 255, 0.2)'
-                      }}>
-                        {node.type === 'narration' && (
-                          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: 1.8 }}>
-                            {node.text}
-                          </div>
-                        )}
-                        {node.type === 'npc' && (
-                          <div>
-                            <div style={{ fontWeight: 600, color: '#1890ff', marginBottom: 8 }}>{node.speaker}</div>
-                            <div style={{ color: 'var(--text-color)', lineHeight: 1.7 }}>{node.text}</div>
-                          </div>
-                        )}
-                        {node.type === 'player' && (
-                          <div>
-                            <div style={{ fontWeight: 600, color: '#52c41a', marginBottom: 8 }}>你</div>
-                            <div style={{ color: 'var(--text-color)', lineHeight: 1.7 }}>{node.text}</div>
-                          </div>
-                        )}
-                        {node.type === 'action' && (
-                          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                            *{node.text}*
-                          </div>
-                        )}
-                        {node.type === 'system' && (
-                          <div style={{ textAlign: 'center', color: 'var(--warning-color)', padding: '8px 16px', background: 'rgba(250, 173, 20, 0.1)', borderRadius: 8 }}>
-                            {node.text}
-                          </div>
-                        )}
-                      </div>
-                    )}
+              const handleChoice = async (choiceId: string, choiceText: string) => {
+                appendNpcDialogue('player', choiceText, '你');
+                setMainQuestDialogueLoading(true);
+                try {
+                  const res = await selectDialogueChoice(choiceId);
+                  if (res?.success && res.data) {
+                    setMainQuestDialogueState(res.data.dialogueState);
+                    syncMainQuestDialogueNode(res.data.dialogueState);
+                    if (res.data.dialogueState.isComplete) {
+                      await finalizeMainQuestDialogue();
+                    }
+                  } else {
+                    void 0;
+                  }
+                } catch {
+                  void 0;
+                } finally {
+                  setMainQuestDialogueLoading(false);
+                }
+              };
 
-                    {/* 选项或继续按钮 */}
-                    {node?.type === 'choice' && node.choices ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {node.choices.map((choice) => (
-                          <Button
-                            key={choice.id}
-                            block
-                            onClick={() => void handleChoice(choice.id)}
-                            disabled={mainQuestDialogueLoading}
-                          >
-                            {choice.text}
-                          </Button>
-                        ))}
-                      </div>
-                    ) : mainQuestDialogueState?.isComplete ? (
-                      <Button
-                        type="primary"
-                        block
-                        onClick={() => {
-                          setNpcTalkPhase('root');
-                          setMainQuestDialogueState(null);
-                          void refreshNpcTalk(npcTalkNpcId);
-                          void refreshTrackedRoomIds();
-                        }}
-                      >
-                        完成对话
-                      </Button>
-                    ) : (
-                      <Button
-                        type="primary"
-                        block
-                        onClick={() => void handleAdvance()}
-                        loading={mainQuestDialogueLoading}
-                      >
-                        继续
-                      </Button>
-                    )}
-
-                    <Button
-                      onClick={() => {
-                        setNpcTalkPhase('root');
-                        setMainQuestDialogueState(null);
-                      }}
-                      disabled={mainQuestDialogueLoading}
-                    >
-                      返回
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {node?.type === 'choice' && node.choices ? (
+                    <>
+                      {node.choices.map((choice) => (
+                        <Button
+                          key={choice.id}
+                          block
+                          onClick={() => void handleChoice(choice.id, choice.text)}
+                          disabled={mainQuestDialogueLoading}
+                        >
+                          {choice.text}
+                        </Button>
+                      ))}
+                    </>
+                  ) : mainQuestDialogueState?.isComplete ? (
+                    <Button type="primary" block onClick={() => void finalizeMainQuestDialogue()}>
+                      完成对话
                     </Button>
-                  </div>
-                );
-              })()
-            ) : null}
-          </div>
+                  ) : (
+                    <Button type="primary" block onClick={() => void handleAdvance()} loading={mainQuestDialogueLoading}>
+                      继续
+                    </Button>
+                  )}
+
+                  <Button onClick={resetMainQuestDialogueFlow} disabled={mainQuestDialogueLoading}>
+                    返回
+                  </Button>
+                </div>
+              );
+            })()
+            : null}
         </div>
-      </Modal>
+      </NpcTalkModal>
       <MapModal
         open={mapModalOpen}
         onClose={() => setMapModalOpen(false)}
