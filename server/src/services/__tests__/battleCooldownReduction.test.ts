@@ -86,3 +86,19 @@ test('累计折扣池攒满后会兑现整回合冷却收益', () => {
   assert.equal(actualCooldowns.reduce((sum, value) => sum + value, 0), 12);
   assert.equal(unit.skillCooldownDiscountBank['skill-a'], undefined);
 });
+
+test('恢复态缺少冷却折扣池时会在施法前自动补齐', () => {
+  const unit = createUnit(0.1);
+  const recoveredUnit = unit as BattleUnit & {
+    skillCooldownDiscountBank?: Record<string, number>;
+  };
+  Reflect.deleteProperty(recoveredUnit, 'skillCooldownDiscountBank');
+
+  const actualCooldown = applySkillCooldownAfterCast(unit, 'skill-a', 2);
+
+  assert.equal(actualCooldown, 2);
+  assert.equal(unit.skillCooldowns['skill-a'], 2);
+  assert.deepEqual(unit.skillCooldownDiscountBank, {
+    'skill-a': 0.2,
+  });
+});

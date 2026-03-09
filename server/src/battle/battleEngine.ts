@@ -23,7 +23,10 @@ import { isFeared, isStunned } from './modules/control.js';
 import { triggerSetBonusEffects } from './modules/setBonus.js';
 import { decayUnitMarksAtRoundStart } from './modules/mark.js';
 import { decayUnitMomentumAtRoundEnd } from './modules/momentum.js';
-import { reduceUnitSkillCooldowns } from './utils/cooldown.js';
+import {
+  ensureBattleStateSkillCooldownState,
+  reduceUnitSkillCooldowns,
+} from './utils/cooldown.js';
 import {
   DEFAULT_PERCENT_BUFF_ATTR_SET,
   normalizeBuffApplyType,
@@ -68,6 +71,7 @@ export class BattleEngine {
   
   constructor(state: BattleState) {
     this.state = state;
+    ensureBattleStateSkillCooldownState(this.state);
   }
   
   /**

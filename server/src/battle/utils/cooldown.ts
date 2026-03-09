@@ -19,10 +19,29 @@
  * 2) 技能冷却最低仍为 1 回合，1 回合基础冷却技能无法再被压到 0，这是当前整回合战斗节奏下的硬边界。
  */
 
-import type { BattleUnit } from "../types.js";
+import type { BattleState, BattleUnit } from "../types.js";
 
 export const MAX_SKILL_COOLDOWN_REDUCTION = 0.5;
 const COOLDOWN_BANK_PRECISION = 1_000_000;
+
+export const ensureUnitSkillCooldownState = (unit: BattleUnit): void => {
+  if (unit.skillCooldowns === undefined) {
+    unit.skillCooldowns = {};
+  }
+  if (unit.skillCooldownDiscountBank === undefined) {
+    unit.skillCooldownDiscountBank = {};
+  }
+};
+
+export const ensureBattleStateSkillCooldownState = (
+  state: BattleState,
+): void => {
+  for (const team of [state.teams.attacker, state.teams.defender]) {
+    for (const unit of team.units) {
+      ensureUnitSkillCooldownState(unit);
+    }
+  }
+};
 
 const roundCooldownBankValue = (value: number): number => {
   return Math.round(value * COOLDOWN_BANK_PRECISION) / COOLDOWN_BANK_PRECISION;
@@ -37,6 +56,7 @@ export const getSkillCooldownRemainingRounds = (
   unit: BattleUnit,
   skillId: string,
 ): number => {
+  ensureUnitSkillCooldownState(unit);
   const cooldown = unit.skillCooldowns[skillId] ?? 0;
   if (!Number.isFinite(cooldown) || cooldown <= 0) return 0;
   return Math.ceil(cooldown);
@@ -58,6 +78,7 @@ export const getSkillCooldownBlockedMessage = (
 };
 
 export const reduceUnitSkillCooldowns = (unit: BattleUnit): void => {
+  ensureUnitSkillCooldownState(unit);
   for (const skillId of Object.keys(unit.skillCooldowns)) {
     const remaining = getSkillCooldownRemainingRounds(unit, skillId);
     if (remaining <= 1) {
@@ -73,6 +94,7 @@ export const applySkillCooldownAfterCast = (
   skillId: string,
   baseCooldown: number,
 ): number => {
+  ensureUnitSkillCooldownState(unit);
   const normalizedBaseCooldown = Math.max(0, Math.floor(baseCooldown));
   if (normalizedBaseCooldown <= 0) {
     delete unit.skillCooldowns[skillId];
