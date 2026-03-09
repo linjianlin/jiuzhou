@@ -490,14 +490,6 @@ const validateCandidate = (
     if (!Array.isArray(layer.passives) || layer.passives.length <= 0) {
       return { success: false, message: 'AI结果层级被动为空', code: 'GENERATOR_INVALID' };
     }
-    for (const passive of layer.passives) {
-      if (!isSupportedTechniquePassiveKey(passive.key)) {
-        return { success: false, message: 'AI结果包含未支持的被动key', code: 'GENERATOR_INVALID' };
-      }
-      if (!Number.isFinite(passive.value)) {
-        return { success: false, message: 'AI结果被动数值非法', code: 'GENERATOR_INVALID' };
-      }
-    }
   }
   if (layerNoSet.size !== expectedMaxLayer) {
     return { success: false, message: 'AI结果层级不完整', code: 'GENERATOR_INVALID' };

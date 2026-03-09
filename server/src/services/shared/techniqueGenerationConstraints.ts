@@ -49,6 +49,11 @@ export type GeneratedTechniqueType = '武技' | '心法' | '法诀' | '身法' |
 export type GeneratedTechniqueQuality = '黄' | '玄' | '地' | '天';
 export type TechniquePassiveMode = 'percent' | 'flat';
 export type TechniquePassivePoolEntry = { key: string; mode: TechniquePassiveMode };
+export type TechniquePassiveValueConstraint = {
+  mode: TechniquePassiveMode;
+  maxPerLayer: number;
+  maxTotal: number;
+};
 
 export const TECHNIQUE_PROMPT_SYSTEM_MESSAGE =
   '你是修仙RPG功法设计器。请严格输出JSON，不要输出额外文本。';
@@ -120,6 +125,70 @@ const TECHNIQUE_PASSIVE_MODE_BY_KEY: Record<string, TechniquePassiveMode> = {
   tu_kangxing: 'percent',
   qixue_huifu: 'flat',
   lingqi_huifu: 'flat',
+};
+
+/**
+ * 功法被动预算共享规则
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：集中维护 AI 功法被动的单层上限与整本同 key 累计上限，供 prompt 约束复用。
+ * 2) 不做什么：不决定被动 key 是否可用，也不替代角色最终属性结算逻辑。
+ *
+ * 输入/输出：
+ * - 输入：功法品质、被动 key。
+ * - 输出：该 key 在当前品质下的数值模式、单层上限与累计上限。
+ *
+ * 数据流/状态流：
+ * 基础预算表 -> `getTechniquePassiveValueConstraint` -> prompt 指南按品质展开到 `passiveValueGuideByKey`。
+ *
+ * 关键边界条件与坑点：
+ * 1) `wugong/fagong/wufang/fafang/max_qixue` 会进入百分比乘区，累计上限必须明显低于旧的 100%+ 区间。
+ * 2) 平铺到 7/9 层时，限制的是“同一个 key 的累计值”，不是所有被动简单相加；否则会误伤多样化搭配。
+ */
+const TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE: Record<
+  TechniquePassiveMode,
+  Record<GeneratedTechniqueQuality, Omit<TechniquePassiveValueConstraint, 'mode'>>
+> = {
+  percent: {
+    黄: { maxPerLayer: 0.03, maxTotal: 0.08 },
+    玄: { maxPerLayer: 0.05, maxTotal: 0.15 },
+    地: { maxPerLayer: 0.08, maxTotal: 0.25 },
+    天: { maxPerLayer: 0.15, maxTotal: 0.55 },
+  },
+  flat: {
+    黄: { maxPerLayer: 5, maxTotal: 8 },
+    玄: { maxPerLayer: 10, maxTotal: 18 },
+    地: { maxPerLayer: 15, maxTotal: 30 },
+    天: { maxPerLayer: 20, maxTotal: 40 },
+  },
+};
+
+export const getTechniquePassiveValueConstraint = (
+  key: string,
+  quality: GeneratedTechniqueQuality,
+): TechniquePassiveValueConstraint | null => {
+  const mode = TECHNIQUE_PASSIVE_MODE_BY_KEY[key];
+  if (mode !== 'percent' && mode !== 'flat') {
+    return null;
+  }
+  const baseConstraint = TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE[mode][quality];
+  return {
+    mode,
+    maxPerLayer: baseConstraint.maxPerLayer,
+    maxTotal: baseConstraint.maxTotal,
+  };
+};
+
+export const buildTechniquePassiveValueGuideByKey = (
+  quality: GeneratedTechniqueQuality,
+): Record<string, TechniquePassiveValueConstraint> => {
+  return TECHNIQUE_PASSIVE_ENTRY_POOL.reduce<Record<string, TechniquePassiveValueConstraint>>((accumulator, entry) => {
+    const constraint = getTechniquePassiveValueConstraint(entry.key, quality);
+    if (constraint !== null) {
+      accumulator[entry.key] = constraint;
+    }
+    return accumulator;
+  }, {});
 };
 
 /**
@@ -287,8 +356,7 @@ export const TECHNIQUE_PROMPT_NUMERIC_RANGES = {
     bonusTargetMaxQixueRate: [0, 1],
   },
   passiveValue: {
-    percentSuggested: [0.01, 1.5],
-    flatSuggested: [1, 5000],
+    rule: '被动值不能套用统一大范围，必须逐 key 遵守 passiveValueGuideByKey 中的 maxPerLayer/maxTotal',
   },
   upgradeDeltaSuggested: {
     cooldown: [-3, 3],
@@ -399,7 +467,7 @@ export const TECHNIQUE_PROMPT_FIELD_SEMANTICS = {
     costSpiritStones: '灵石消耗（整数，范围见 numericRanges.layer.costSpiritStones）',
     costExp: '经验消耗（整数，范围见 numericRanges.layer.costExp）',
     costMaterials: '升级材料数组，本系统固定要求 []',
-    passives: '本层被动数组，key 必须来自 allowedPassiveKeys',
+    passives: '本层被动数组，key 必须来自 allowedPassiveKeys，数值必须遵守 passiveValueGuideByKey 的单层与累计预算',
     unlockSkillIds: '本层解锁技能ID数组（引用 skills[*].id）',
     upgradeSkillIds: '本层强化技能ID数组（引用 skills[*].id）',
     layerDesc: '层描述文案',
@@ -714,7 +782,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_CHECKLIST = [
   'skills[*].upgrades 只能使用 upgradeSchema，禁止 description/effectChanges/effectIndex',
   'upgrades[*].changes 只能包含 upgradeAllowedChangeKeys 中的字段',
   'chance 必须在 0~1 且使用浮点比例表达',
-  'layers.passives[].key 必须来自 allowedPassiveKeys',
+  'layers.passives[].key 必须来自 allowedPassiveKeys，且 value 必须满足 passiveValueGuideByKey 的单层/累计上限',
 ] as const;
 
 export const buildTechniqueGeneratorPromptInput = (params: {
@@ -725,6 +793,7 @@ export const buildTechniqueGeneratorPromptInput = (params: {
   const { quality, maxLayer, effectTypeEnum } = params;
   const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
   const promptBuffConfigRules = buildTechniquePromptBuffConfigRules();
+  const passiveValueGuideByKey = buildTechniquePassiveValueGuideByKey(quality);
   return {
     task: '生成完整功法定义',
     quality,
@@ -760,7 +829,9 @@ export const buildTechniqueGeneratorPromptInput = (params: {
       effectRule: 'effects 不支持 valueFormula；请使用 value/valueType/scaleAttr/scaleRate 表达数值',
       allowedPassiveKeys: [...SUPPORTED_TECHNIQUE_PASSIVE_KEYS],
       passiveKeyMeanings: TECHNIQUE_PASSIVE_KEY_MEANING_MAP,
-      passiveRule: 'layers.passives[].key 可自由从 allowedPassiveKeys 中组合，不受功法类型限制；value 必须为有限数字',
+      passiveValueGuideByKey,
+      passiveRule:
+        'layers.passives[].key 可自由从 allowedPassiveKeys 中组合，不受功法类型限制；每层 value 必须 > 0 且不超过 passiveValueGuideByKey[key].maxPerLayer，同一个 key 在全部 layers 的累计值不能超过 passiveValueGuideByKey[key].maxTotal',
       skillCountRange,
       skillCountRule: `skills.length 必须在${skillCountRange.min}~${skillCountRange.max}之间`,
       noMaterialRule: '生成功法不需要升级材料，layers[].costMaterials 必须始终为空数组',
