@@ -225,9 +225,7 @@ export function buildCharacterInBattleResult(
 
   const teamMemberCount = Math.max(
     1,
-    (activeBattle.state.teams.attacker.units ?? []).filter(
-      (unit) => unit.type === "player",
-    ).length,
+    collectAttackerPlayerCharacterIdsFromBattleState(activeBattle.state).length,
   );
 
   return {
@@ -243,11 +241,8 @@ export function buildCharacterInBattleResult(
   };
 }
 
-export function collectPlayerCharacterIdsFromBattleState(
-  state: BattleState,
-): number[] {
+function collectPlayerCharacterIdsFromUnits(units: BattleUnit[]): number[] {
   const ids = new Set<number>();
-  const units = [...state.teams.attacker.units, ...state.teams.defender.units];
   for (const unit of units) {
     if (unit.type !== "player") continue;
     const characterId = Math.floor(Number(unit.sourceId));
@@ -255,6 +250,21 @@ export function collectPlayerCharacterIdsFromBattleState(
     ids.add(characterId);
   }
   return [...ids];
+}
+
+export function collectAttackerPlayerCharacterIdsFromBattleState(
+  state: BattleState,
+): number[] {
+  return collectPlayerCharacterIdsFromUnits(state.teams.attacker.units);
+}
+
+export function collectPlayerCharacterIdsFromBattleState(
+  state: BattleState,
+): number[] {
+  return collectPlayerCharacterIdsFromUnits([
+    ...state.teams.attacker.units,
+    ...state.teams.defender.units,
+  ]);
 }
 
 export function normalizeBattleParticipantUserIds(raw: unknown): number[] {
@@ -290,9 +300,7 @@ export function listActiveBattleIdsByUserId(userId: number): string[] {
 }
 
 export function getAttackerPlayerCount(state: BattleState): number {
-  return (state.teams?.attacker?.units ?? []).filter(
-    (unit) => unit.type === "player",
-  ).length;
+  return collectAttackerPlayerCharacterIdsFromBattleState(state).length;
 }
 
 export function isCharacterInBattle(characterId: number): boolean {

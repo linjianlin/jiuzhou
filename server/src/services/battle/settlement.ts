@@ -15,6 +15,7 @@
 
 import { BattleEngine } from "../../battle/battleEngine.js";
 import type { MonsterData } from "../../battle/battleFactory.js";
+import type { BattleState } from "../../battle/types.js";
 import { query } from "../../config/database.js";
 import {
   battleDropService,
@@ -23,7 +24,8 @@ import {
 } from "../battleDropService.js";
 import {
   applyCharacterResourceDeltaByCharacterId,
-  getCharacterComputedByUserId,
+  getCharacterComputedBatchByCharacterIds,
+  getCharacterComputedByCharacterId,
   setCharacterResourcesByCharacterId,
 } from "../characterComputedService.js";
 import { getArenaStatus } from "../arenaService.js";
@@ -46,6 +48,11 @@ import {
 import { stopBattleTicker } from "./runtime/ticker.js";
 import { removeBattleFromRedis } from "./runtime/persistence.js";
 import { settleArenaBattleIfNeeded } from "./pvp.js";
+
+type ResolvedSettlementParticipants = {
+  participants: BattleParticipant[];
+  notificationUserIds: number[];
+};
 
 /**
  * 读取当前秘境战斗的可领奖角色集合。
@@ -95,6 +102,49 @@ export async function getBattleMonsters(engine: BattleEngine): Promise<MonsterDa
   return monsters;
 }
 
+const resolveSettlementParticipants = async (
+  state: BattleState,
+  participantUserIds: number[],
+): Promise<ResolvedSettlementParticipants> => {
+  const attackerCharacterIds = [
+    ...new Set(
+      state.teams.attacker.units
+        .filter((unit) => unit.type === "player")
+        .map((unit) => Math.floor(Number(unit.sourceId)))
+        .filter((characterId) => Number.isFinite(characterId) && characterId > 0),
+    ),
+  ];
+  const computedMap = await getCharacterComputedBatchByCharacterIds(attackerCharacterIds);
+  const participants: BattleParticipant[] = [];
+  const notificationUserIdSet = new Set<number>();
+
+  for (const participantUserId of participantUserIds) {
+    const normalizedUserId = Math.floor(Number(participantUserId));
+    if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) continue;
+    notificationUserIdSet.add(normalizedUserId);
+  }
+
+  for (const characterId of attackerCharacterIds) {
+    const computed = computedMap.get(characterId);
+    if (!computed) continue;
+    participants.push({
+      userId: computed.user_id,
+      characterId: computed.id,
+      nickname: computed.nickname,
+      realm: normalizeRealmKeepingUnknown(computed.realm, computed.sub_realm),
+      fuyuan: Number(computed.fuyuan ?? 1),
+    });
+    const normalizedUserId = Math.floor(Number(computed.user_id));
+    if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) continue;
+    notificationUserIdSet.add(normalizedUserId);
+  }
+
+  return {
+    participants,
+    notificationUserIds: [...notificationUserIdSet],
+  };
+};
+
 async function finishBattleCore(
   battleId: string,
   engine: BattleEngine,
@@ -104,22 +154,13 @@ async function finishBattleCore(
   const result = engine.getResult();
 
   const participantUserIds = (battleParticipants.get(battleId) || []).slice();
-  const participantCount = Math.max(1, participantUserIds.length);
+  const { participants, notificationUserIds } = await resolveSettlementParticipants(
+    state,
+    participantUserIds,
+  );
+  const participantCount = Math.max(1, participants.length);
   const isVictory = result.result === "attacker_win";
   const isDungeonBattle = battleId.startsWith("dungeon-battle-");
-
-  const participants: BattleParticipant[] = [];
-  for (const participantUserId of participantUserIds) {
-    const computed = await getCharacterComputedByUserId(participantUserId);
-    if (!computed) continue;
-    participants.push({
-      userId: participantUserId,
-      characterId: computed.id,
-      nickname: computed.nickname,
-      realm: normalizeRealmKeepingUnknown(computed.realm, computed.sub_realm),
-      fuyuan: Number(computed.fuyuan ?? 1),
-    });
-  }
   const rewardEligibleCharacterIdSet = isDungeonBattle
     ? await loadDungeonBattleRewardEligibleCharacterIdSet(battleId)
     : null;
@@ -141,11 +182,11 @@ async function finishBattleCore(
         { isDungeonBattle },
       );
 
-      for (const participantUserId of participantUserIds) {
-        const computed = await getCharacterComputedByUserId(participantUserId);
+      for (const participant of participants) {
+        const computed = await getCharacterComputedByCharacterId(participant.characterId);
         if (!computed) continue;
         const healAmount = Math.floor(computed.max_qixue * 0.3);
-        await setCharacterResourcesByCharacterId(computed.id, {
+        await setCharacterResourcesByCharacterId(participant.characterId, {
           qixue: Math.min(computed.max_qixue, computed.qixue + healAmount),
           lingqi: computed.lingqi,
         });
@@ -171,12 +212,12 @@ async function finishBattleCore(
         console.warn("[battle] 记录击杀怪物事件失败:", error);
       }
     } else if (result.result === "defender_win") {
-      for (const participantUserId of participantUserIds) {
-        const computed = await getCharacterComputedByUserId(participantUserId);
+      for (const participant of participants) {
+        const computed = await getCharacterComputedByCharacterId(participant.characterId);
         if (!computed) continue;
         const loss = Math.floor(computed.max_qixue * 0.1);
         await applyCharacterResourceDeltaByCharacterId(
-          computed.id,
+          participant.characterId,
           { qixue: -loss },
           { minQixue: 1 },
         );
@@ -245,7 +286,7 @@ async function finishBattleCore(
 
   try {
     const gameServer = getGameServer();
-    for (const participantUserId of participantUserIds) {
+    for (const participantUserId of notificationUserIds) {
       if (!Number.isFinite(participantUserId)) continue;
       gameServer.emitToUser(participantUserId, "battle:update", {
         kind: "battle_finished",

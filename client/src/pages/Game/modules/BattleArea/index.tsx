@@ -428,6 +428,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     (state: BattleStateDto | null | undefined, rewards: BattleRewardsDto | null | undefined) => {
       const battleId = state?.battleId;
       if (!battleId) return;
+      if (state.phase === 'finished' && !rewards) return;
       if (announcedBattleDropsIdRef.current === battleId) return;
       const lines = [...buildRewardSummaryLinesFast(state, rewards), ...buildDropLinesFast(state, rewards)];
       if (lines.length === 0) return;
@@ -561,6 +562,9 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         teamMeta?: BattleTeamMeta;
       },
     ): void => {
+      const resolvedBattleId = options?.battleId ?? nextState.battleId;
+      battleIdRef.current = resolvedBattleId;
+      battleStateRef.current = nextState;
       const prevIndex = lastLogIndexRef.current;
       applyLogsToFloats(prevIndex, nextState.logs ?? []);
       lastLogIndexRef.current = nextState.logs?.length ?? prevIndex;
@@ -571,7 +575,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       pushBattleLines(nextLines);
       ensureBattleEndAnnounced(nextState);
       ensureBattleDropsAnnounced(nextState, options?.rewards ?? null);
-      setBattleId(options?.battleId ?? nextState.battleId);
+      setBattleId(resolvedBattleId);
       setBattleState(nextState);
       setStartupStatus('none');
       syncBattleTeamInfo(nextState, options?.teamMeta);
@@ -987,11 +991,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         const rewards = data?.data?.rewards ?? data?.rewards ?? null;
         const next = (data?.data?.state || data?.state) as BattleStateDto | undefined;
         if (next) {
-          const current = battleStateRef.current;
-          if (!isNewerBattleState(next, current)) {
-            ensureBattleDropsAnnounced(next, rewards);
-            return;
-          }
           applyBattleStateSnapshot(next, { rewards });
         }
         return;
