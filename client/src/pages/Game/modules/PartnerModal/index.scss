@@ -348,6 +348,30 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  height: 100%;
+}
+
+.partner-card-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.partner-card-main {
+  min-width: 0;
+}
+
+.partner-card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.partner-card-footer .ant-btn {
+  width: 100%;
 }
 
 .partner-technique-head,

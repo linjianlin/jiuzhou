@@ -476,114 +476,120 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             const skillExpanded = expandedTechniqueSkills[technique.techniqueId] ?? false;
             return (
               <div key={technique.techniqueId} className="partner-technique-card">
-                <div className="partner-technique-head">
-                  <img className="partner-technique-icon" src={resolvePartnerAvatar(technique.icon)} alt={technique.name} />
-                  <div style={{ minWidth: 0 }}>
-                    <div className="partner-technique-name">{technique.name}</div>
-                    <div className="partner-technique-desc">{technique.description || '暂无描述'}</div>
+                <div className="partner-card-body">
+                  <div className="partner-technique-head">
+                    <img className="partner-technique-icon" src={resolvePartnerAvatar(technique.icon)} alt={technique.name} />
+                    <div className="partner-card-main">
+                      <div className="partner-technique-name">{technique.name}</div>
+                      <div className="partner-technique-desc">{technique.description || '暂无描述'}</div>
+                    </div>
                   </div>
-                </div>
-                <div className="partner-tag-row">
-                  <Tag color={technique.isInnate ? 'purple' : 'blue'}>{technique.isInnate ? '天生功法' : '后天功法'}</Tag>
-                  <Tag color="cyan">{formatPartnerTechniqueLayerLabel(technique)}</Tag>
-                  <Tag color="gold">{technique.quality}</Tag>
-                </div>
-                <div className="partner-technique-lines">
-                  {passiveLines.length > 0 ? (
-                    passiveLines.map((line) => (
-                      <span key={line} className="partner-technique-passive-pill">{line}</span>
-                    ))
-                  ) : (
-                    <div>暂无被动加成</div>
-                  )}
-                </div>
-                {hasSkills ? (
-                  <div className="partner-technique-skill-section">
-                    <Button
-                      type="text"
-                      className="partner-technique-skill-toggle"
-                      onClick={() => toggleTechniqueSkills(technique.techniqueId)}
-                    >
-                      {formatPartnerTechniqueSkillToggleLabel(technique, skillExpanded)}
-                    </Button>
-                    {skillExpanded ? (
-                      <div className="partner-technique-skill-list">
-                        {technique.skills.map((skill) => {
-                          const sections = getSkillCardSections(skill);
-                          const compactMetaItems = [
-                            ...sections.metaItems,
-                            ...sections.gridItems,
-                          ];
-                          return (
-                            <div key={skill.id} className="partner-technique-skill-item">
-                              <img
-                                className="partner-technique-skill-icon"
-                                src={resolvePartnerAvatar(skill.icon)}
-                                alt={skill.name}
-                              />
-                              <div className="partner-technique-skill-main">
-                                <div className="partner-technique-skill-name">{skill.name}</div>
-                                {compactMetaItems.length > 0 ? (
-                                  <div className="partner-technique-skill-meta">
-                                    {compactMetaItems.map((item) => (
-                                      <span
-                                        key={`${skill.id}-${item.label}-${item.value}`}
-                                        className="partner-technique-skill-meta-pill"
-                                      >
-                                        <span className="partner-technique-skill-meta-label">
-                                          {item.label}
+                  <div className="partner-tag-row">
+                    <Tag color={technique.isInnate ? 'purple' : 'blue'}>{technique.isInnate ? '天生功法' : '后天功法'}</Tag>
+                    <Tag color="cyan">{formatPartnerTechniqueLayerLabel(technique)}</Tag>
+                    <Tag color="gold">{technique.quality}</Tag>
+                  </div>
+                  <div className="partner-technique-lines">
+                    {passiveLines.length > 0 ? (
+                      passiveLines.map((line) => (
+                        <span key={line} className="partner-technique-passive-pill">{line}</span>
+                      ))
+                    ) : (
+                      <div>暂无被动加成</div>
+                    )}
+                  </div>
+                  {hasSkills ? (
+                    <div className="partner-technique-skill-section">
+                      <Button
+                        type="text"
+                        className="partner-technique-skill-toggle"
+                        onClick={() => toggleTechniqueSkills(technique.techniqueId)}
+                      >
+                        {formatPartnerTechniqueSkillToggleLabel(technique, skillExpanded)}
+                      </Button>
+                      {skillExpanded ? (
+                        <div className="partner-technique-skill-list">
+                          {technique.skills.map((skill) => {
+                            const sections = getSkillCardSections(skill);
+                            const compactMetaItems = [
+                              ...sections.metaItems,
+                              ...sections.gridItems,
+                            ];
+                            return (
+                              <div key={skill.id} className="partner-technique-skill-item">
+                                <img
+                                  className="partner-technique-skill-icon"
+                                  src={resolvePartnerAvatar(skill.icon)}
+                                  alt={skill.name}
+                                />
+                                <div className="partner-technique-skill-main">
+                                  <div className="partner-technique-skill-name">{skill.name}</div>
+                                  {compactMetaItems.length > 0 ? (
+                                    <div className="partner-technique-skill-meta">
+                                      {compactMetaItems.map((item) => (
+                                        <span
+                                          key={`${skill.id}-${item.label}-${item.value}`}
+                                          className="partner-technique-skill-meta-pill"
+                                        >
+                                          <span className="partner-technique-skill-meta-label">
+                                            {item.label}
+                                          </span>
+                                          <span className="partner-technique-skill-meta-value">
+                                            {item.value}
+                                          </span>
                                         </span>
-                                        <span className="partner-technique-skill-meta-value">
-                                          {item.value}
-                                        </span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : null}
-                                <div className="partner-technique-skill-summary">
-                                  {sections.summaryItems.length > 0 ? (
-                                    sections.summaryItems.slice(0, 2).map((item, index) => (
-                                      <div
-                                        key={`${skill.id}-${item.label}-${index}`}
-                                        className={`partner-technique-skill-summary-line${item.isEffect ? ' is-effect' : ''}`}
-                                      >
-                                        {item.value}
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className="partner-technique-skill-summary-line">
-                                      暂无详细信息
+                                      ))}
                                     </div>
-                                  )}
+                                  ) : null}
+                                  <div className="partner-technique-skill-summary">
+                                    {sections.summaryItems.length > 0 ? (
+                                      sections.summaryItems.slice(0, 2).map((item, index) => (
+                                        <div
+                                          key={`${skill.id}-${item.label}-${index}`}
+                                          className={`partner-technique-skill-summary-line${item.isEffect ? ' is-effect' : ''}`}
+                                        >
+                                          {item.value}
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="partner-technique-skill-summary-line">
+                                        暂无详细信息
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {!isMaxLayer ? (
-                  <div className="partner-technique-upgrade">
-                    <div className="partner-technique-upgrade-title">升层消耗</div>
-                    <div className="partner-technique-cost-lines">
-                      {upgradeCostLines.length > 0 ? (
-                        upgradeCostLines.map((line) => <div key={line}>{line}</div>)
+                            );
+                          })}
+                        </div>
                       ) : (
-                        <div>正在读取升层消耗</div>
+                        null
                       )}
                     </div>
-                    <Button
-                      type="primary"
-                      loading={actionKey === `upgrade-${technique.techniqueId}`}
-                      disabled={!upgradeCost}
-                      onClick={() => {
-                        void handleUpgradeTechnique(technique);
-                      }}
-                    >
-                      修炼升层
-                    </Button>
+                  ) : null}
+                </div>
+                {!isMaxLayer ? (
+                  <div className="partner-card-footer">
+                    <div className="partner-technique-upgrade">
+                      <div className="partner-technique-upgrade-title">升层消耗</div>
+                      <div className="partner-technique-cost-lines">
+                        {upgradeCostLines.length > 0 ? (
+                          upgradeCostLines.map((line) => <div key={line}>{line}</div>)
+                        ) : (
+                          <div>正在读取升层消耗</div>
+                        )}
+                      </div>
+                      <Button
+                        type="primary"
+                        loading={actionKey === `upgrade-${technique.techniqueId}`}
+                        disabled={!upgradeCost}
+                        onClick={() => {
+                          void handleUpgradeTechnique(technique);
+                        }}
+                      >
+                        修炼升层
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -607,26 +613,30 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
           <div className="partner-book-grid">
             {(overview?.books ?? []).map((book) => (
               <div key={book.itemInstanceId} className="partner-book-card">
-                <div className="partner-book-head">
-                  <img className="partner-book-icon" src={resolvePartnerAvatar(book.icon)} alt={book.name} />
-                  <div style={{ minWidth: 0 }}>
-                    <div className="partner-book-name">{resolvePartnerBookLabel(book)}</div>
-                    <div className="partner-book-desc">剩余数量：{book.qty}</div>
+                <div className="partner-card-body">
+                  <div className="partner-book-head">
+                    <img className="partner-book-icon" src={resolvePartnerAvatar(book.icon)} alt={book.name} />
+                    <div className="partner-card-main">
+                      <div className="partner-book-name">{resolvePartnerBookLabel(book)}</div>
+                      <div className="partner-book-desc">剩余数量：{book.qty}</div>
+                    </div>
+                  </div>
+                  <div className="partner-tag-row">
+                    <Tag color="gold">{book.quality}</Tag>
+                    <Tag color="blue">功法书</Tag>
                   </div>
                 </div>
-                <div className="partner-tag-row">
-                  <Tag color="gold">{book.quality}</Tag>
-                  <Tag color="blue">功法书</Tag>
+                <div className="partner-card-footer">
+                  <Button
+                    type="primary"
+                    loading={actionKey === `learn-${book.itemInstanceId}`}
+                    onClick={() => {
+                      void handleLearnTechnique(book);
+                    }}
+                  >
+                    学习此书
+                  </Button>
                 </div>
-                <Button
-                  type="primary"
-                  loading={actionKey === `learn-${book.itemInstanceId}`}
-                  onClick={() => {
-                    void handleLearnTechnique(book);
-                  }}
-                >
-                  学习此书
-                </Button>
               </div>
             ))}
           </div>
