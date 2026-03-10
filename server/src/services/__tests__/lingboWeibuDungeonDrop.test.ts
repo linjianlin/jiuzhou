@@ -20,78 +20,19 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-type JsonPrimitive = string | number | boolean | null;
-type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
-type JsonObject = { [key: string]: JsonValue | undefined };
+import {
+  asArray,
+  asObject,
+  asText,
+  buildObjectMap,
+  collectDungeonSeedFileNames,
+  collectMergedPoolItemIds,
+  loadSeed,
+} from './seedTestUtils.js';
 
 const BOOK_ITEM_ID = 'book-lingbo-weibu';
 const TECHNIQUE_ID = 'tech-lingbo-weibu';
 const EXPECTED_SOURCE_HINT = '通脉期普通秘境';
-
-const resolveSeedPath = (filename: string): string => {
-  const candidatePaths = [
-    resolve(process.cwd(), `server/src/data/seeds/${filename}`),
-    resolve(process.cwd(), `src/data/seeds/${filename}`),
-  ];
-  const seedPath = candidatePaths.find((filePath) => existsSync(filePath));
-  assert.ok(seedPath, `未找到种子文件: ${filename}`);
-  return seedPath;
-};
-
-const loadSeed = (filename: string): JsonObject => {
-  const seedPath = resolveSeedPath(filename);
-  return JSON.parse(readFileSync(seedPath, 'utf-8')) as JsonObject;
-};
-
-const asObject = (value: JsonValue | undefined): JsonObject | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as JsonObject;
-};
-
-const asArray = (value: JsonValue | undefined): JsonValue[] => {
-  if (!Array.isArray(value)) return [];
-  return value;
-};
-
-const asText = (value: JsonValue | undefined): string => (typeof value === 'string' ? value.trim() : '');
-
-const collectDungeonSeedFileNames = (): string[] => {
-  const seedDir = resolveSeedPath('item_def.json').replace(/item_def\.json$/, '');
-  return readdirSync(seedDir)
-    .filter((fileName) => /^dungeon_.*\.json$/.test(fileName))
-    .sort();
-};
-
-const collectMergedPoolItemIds = (
-  poolId: string,
-  dropPoolById: Map<string, JsonObject>,
-  commonPoolById: Map<string, JsonObject>,
-): Set<string> => {
-  const mergedItemIds = new Set<string>();
-  const pool = dropPoolById.get(poolId);
-  assert.ok(pool, `缺少掉落池: ${poolId}`);
-
-  for (const commonPoolIdValue of asArray(pool.common_pool_ids)) {
-    const commonPoolId = asText(commonPoolIdValue);
-    if (!commonPoolId) continue;
-    const commonPool = commonPoolById.get(commonPoolId);
-    assert.ok(commonPool, `缺少公共掉落池: ${commonPoolId}`);
-    for (const entry of asArray(commonPool.entries)) {
-      const itemDefId = asText(asObject(entry)?.item_def_id);
-      if (itemDefId) mergedItemIds.add(itemDefId);
-    }
-  }
-
-  for (const entry of asArray(pool.entries)) {
-    const itemDefId = asText(asObject(entry)?.item_def_id);
-    if (itemDefId) mergedItemIds.add(itemDefId);
-  }
-
-  return mergedItemIds;
-};
 
 test('凌波微步应出现在相同境界的普通难度秘境掉落中', () => {
   const itemSeed = loadSeed('item_def.json');
@@ -116,29 +57,9 @@ test('凌波微步应出现在相同境界的普通难度秘境掉落中', () =>
   const obtainHints = asArray(techniqueObject.obtain_hint).map((entry) => asText(entry)).filter(Boolean);
   assert.equal(obtainHints.includes(EXPECTED_SOURCE_HINT), true, `${TECHNIQUE_ID} 缺少获取提示: ${EXPECTED_SOURCE_HINT}`);
 
-  const monsterById = new Map<string, JsonObject>();
-  for (const monsterValue of asArray(monsterSeed.monsters)) {
-    const monster = asObject(monsterValue);
-    const monsterId = asText(monster?.id);
-    if (!monster || !monsterId) continue;
-    monsterById.set(monsterId, monster);
-  }
-
-  const dropPoolById = new Map<string, JsonObject>();
-  for (const poolValue of asArray(dropPoolSeed.pools)) {
-    const pool = asObject(poolValue);
-    const poolId = asText(pool?.id);
-    if (!pool || !poolId) continue;
-    dropPoolById.set(poolId, pool);
-  }
-
-  const commonPoolById = new Map<string, JsonObject>();
-  for (const poolValue of asArray(commonDropPoolSeed.pools)) {
-    const pool = asObject(poolValue);
-    const poolId = asText(pool?.id);
-    if (!pool || !poolId) continue;
-    commonPoolById.set(poolId, pool);
-  }
+  const monsterById = buildObjectMap(asArray(monsterSeed.monsters), 'id');
+  const dropPoolById = buildObjectMap(asArray(dropPoolSeed.pools), 'id');
+  const commonPoolById = buildObjectMap(asArray(commonDropPoolSeed.pools), 'id');
 
   const targetDifficulties: Array<{ dungeonName: string; difficultyId: string; fileName: string; monsterIds: string[] }> = [];
   for (const fileName of collectDungeonSeedFileNames()) {

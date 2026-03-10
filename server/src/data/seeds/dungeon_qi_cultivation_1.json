@@ -165,7 +165,7 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-wolf-king",
+                      "monster_def_id": "monster-dungeon-wolf-king",
                       "count": 1
                     },
                     {
@@ -321,7 +321,7 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-elite-wolf-king",
+                      "monster_def_id": "monster-dungeon-wolf-king",
                       "count": 1
                     }
                   ],

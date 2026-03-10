@@ -123,12 +123,30 @@
       ]
     },
     {
+      "id": "dp-wild-wolf-king",
+      "name": "野外狼王掉落池",
+      "mode": "prob",
+      "entries": [],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-yangqi",
+        "dp-common-monster-elite"
+      ]
+    },
+    {
       "id": "dp-wolf-king",
       "name": "狼王掉落池",
       "mode": "prob",
       "entries": [
         {
           "item_def_id": "book-qingfeng-jian",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-qingmu-jue",
           "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,

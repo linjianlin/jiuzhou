@@ -273,6 +273,52 @@
           "sk-pack-attack": 20
         }
       },
+      "drop_pool_id": "dp-wild-wolf-king",
+      "exp_reward": 80,
+      "silver_reward_min": 20,
+      "silver_reward_max": 50,
+      "enabled": true
+    },
+    {
+      "id": "monster-dungeon-wolf-king",
+      "code": "dungeon_wolf_king",
+      "name": "狼王",
+      "title": "精英",
+      "realm": "炼精化炁·养气期",
+      "level": 8,
+      "avatar": "/assets/monster/wolf_king.png",
+      "kind": "elite",
+      "element": "无",
+      "base_attrs": {
+        "qixue": 500,
+        "max_qixue": 500,
+        "lingqi": 80,
+        "max_lingqi": 80,
+        "wugong": 40,
+        "fagong": 0,
+        "wufang": 22,
+        "fafang": 12,
+        "mingzhong": 0.95,
+        "shanbi": 0.09,
+        "baoji": 0.15,
+        "baoshang": 1.8,
+        "sudu": 8
+      },
+      "attr_variance": 0.03,
+      "attr_multiplier_min": 1.15,
+      "attr_multiplier_max": 1.35,
+      "ai_profile": {
+        "skills": [
+          "sk-bite",
+          "sk-howl",
+          "sk-pack-attack"
+        ],
+        "skill_weights": {
+          "sk-bite": 50,
+          "sk-howl": 30,
+          "sk-pack-attack": 20
+        }
+      },
       "drop_pool_id": "dp-wolf-king",
       "exp_reward": 80,
       "silver_reward_min": 20,
