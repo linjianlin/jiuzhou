@@ -50,7 +50,7 @@ export interface StartServerOptions {
 }
 
 /**
- * 服务启动流水线（连接检查 -> 表初始化 -> 启动恢复 -> 监听端口）
+ * 服务启动流水线（连接检查 -> 数据准备 -> 启动恢复 -> 监听端口）
  */
 export const startServerWithPipeline = async (
   options: StartServerOptions,

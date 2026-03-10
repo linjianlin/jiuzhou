@@ -1,5 +1,4 @@
 import { query } from '../config/database.js';
-import { createInventoryForCharacter } from '../models/inventoryTable.js';
 import { updateSectionProgress } from './mainQuest/index.js';
 import { initCharacterAchievements, updateAchievementProgress } from './achievementService.js';
 import { applyStaminaRecoveryByUserId } from './staminaService.js';
@@ -9,6 +8,7 @@ import {
 } from './autoDisassembleRules.js';
 import { getCharacterComputedByUserId, invalidateCharacterComputedCache } from './characterComputedService.js';
 import { withUnlockedFeatures } from './featureUnlockService.js';
+import { createInventoryForCharacter } from './shared/inventoryPersistence.js';
 
 export interface Character {
   id: number;

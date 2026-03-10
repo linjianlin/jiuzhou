@@ -17,7 +17,7 @@
 # 安装依赖
 pnpm install
 
-# 启动开发服务器
+# 启动开发服务器（server 启动前会自动执行 Prisma db push）
 pnpm dev
 ```
 
@@ -54,6 +54,8 @@ docker service update --with-registry-auth --image ccr.ccs.tencentyun.com/tcb-10
 # 或重新部署整个 stack
 docker stack deploy --with-registry-auth -c docker-stack.yml jiuzhou
 ```
+
+后端容器启动时会先自动执行 Prisma `db push`，再启动应用服务。
 
 **常用管理命令：**
 

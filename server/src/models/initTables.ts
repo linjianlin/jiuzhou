@@ -1,188 +1,31 @@
-import { query } from '../config/database.js';
-import { initCharacterTable } from './characterTable.js';
-import { initItemTables } from './itemTables.js';
-import { initInventoryTable } from './inventoryTable.js';
-import { initSignInTable } from './signInTable.js';
-import { initMailTable } from './mailTable.js';
-import { initMapTable } from './mapTable.js';
-import { initTechniqueTables } from './techniqueTable.js';
-import { initTeamTables } from './teamTable.js';
-import { initMarketTable } from './marketTable.js';
-import { initDungeonTables } from './dungeonTable.js';
-import { initMonthCardTables } from './monthCardTable.js';
-import { initSectTables } from './sectTable.js';
-import { initBattlePassTables } from './battlePassTable.js';
-import { initTaskTables } from './taskTable.js';
-import { initBountyTables } from './bountyTable.js';
-import { initGameTimeTable } from './gameTimeTable.js';
-import { initMainQuestTables } from './mainQuestTable.js';
-import { initArenaTables } from './arenaTable.js';
-import { initAchievementTables } from './achievementTable.js';
-import { ensureMigrationHistoryTable, runDbMigrationOnce } from './migrationHistoryTable.js';
-import { initIdleTables } from './idleTable.js';
-import { initInsightTables } from './insightTable.js';
-import { initTechniqueGenerationTables } from './techniqueGenerationTable.js';
-import { initFeatureUnlockTables } from './featureUnlockTable.js';
-import { initPartnerTables } from './partnerTable.js';
-import { initPartnerRecruitTables } from './partnerRecruitTable.js';
-import { initCharacterRankSnapshotTable } from './characterRankSnapshotTable.js';
-import { backfillCharacterRankSnapshots } from '../services/characterComputedService.js';
-import { loadAllSeeds } from '../services/seedService.js';
+import { backfillCharacterRankSnapshots } from "../services/characterComputedService.js";
+import { loadAllSeeds } from "../services/seedService.js";
 
-// 用户表结构定义
-const userTableSQL = `
-CREATE TABLE IF NOT EXISTS users (
-  id SERIAL PRIMARY KEY,                              -- 用户ID，自增主键
-  username VARCHAR(50) UNIQUE NOT NULL,               -- 用户名，唯一且不能为空
-  password VARCHAR(255) NOT NULL,                     -- 密码，加密存储
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- 创建时间
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- 更新时间
-  last_login TIMESTAMP,                               -- 最后登录时间
-  status SMALLINT DEFAULT 1                           -- 账号状态：1正常 0禁用
-);
-
--- 添加字段注释
-COMMENT ON TABLE users IS '用户账号表';
-COMMENT ON COLUMN users.id IS '用户ID，自增主键';
-COMMENT ON COLUMN users.username IS '用户名，唯一且不能为空';
-COMMENT ON COLUMN users.password IS '密码，加密存储';
-COMMENT ON COLUMN users.created_at IS '创建时间';
-COMMENT ON COLUMN users.updated_at IS '更新时间';
-COMMENT ON COLUMN users.last_login IS '最后登录时间';
-COMMENT ON COLUMN users.status IS '账号状态：1正常 0禁用';
-`;
-
-// 检查并添加缺失字段
-const checkAndAddColumns = async () => {
-  const columnsToCheck = [
-    { name: 'status', type: 'SMALLINT DEFAULT 1', comment: '账号状态：1正常 0禁用' },
-    { name: 'last_login', type: 'TIMESTAMP', comment: '最后登录时间' },
-    { name: 'updated_at', type: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP', comment: '更新时间' },
-    { name: 'session_token', type: 'VARCHAR(255)', comment: '当前会话token，用于单点登录' },
-  ];
-
-  for (const col of columnsToCheck) {
-    // 检查字段是否存在
-    const checkSQL = `
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_name = 'users' AND column_name = $1
-    `;
-    const result = await query(checkSQL, [col.name]);
-      
-    if (result.rows.length === 0) {
-      // 字段不存在，添加字段
-      const addSQL = `ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
-      await query(addSQL);
-        
-      // 添加注释
-      const commentSQL = `COMMENT ON COLUMN users.${col.name} IS '${col.comment}'`;
-      await query(commentSQL);
-        
-      console.log(`已添加缺失字段: ${col.name}`);
-    }
-  }
-};
-
-// 初始化所有表
+/**
+ * 数据准备入口
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：承接服务启动时的“数据准备”职责，包括 seed 加载与一次性数据回填。
+ * 2. 做什么：把数据库结构管理从运行时剥离出去，明确交给 Prisma `db push`。
+ * 3. 不做什么：不再创建表、不再补列、不再执行结构迁移。
+ *
+ * 输入/输出：
+ * - 输入：无，由启动流水线调用。
+ * - 输出：种子数据已加载；需要的一次性数据迁移已执行。
+ *
+ * 数据流/状态流：
+ * - 启动流程 -> `initTables()` -> 加载种子 -> 执行幂等数据回填。
+ *
+ * 关键边界条件与坑点：
+ * 1. 数据库表结构必须先通过 Prisma schema 同步完成，否则这里不会再兜底建表。
+ * 2. `backfillCharacterRankSnapshots` 必须保持幂等，因为现在启动期会直接执行，不再通过迁移历史表去重。
+ */
 export const initTables = async (): Promise<void> => {
-  console.log('\n========== 数据库初始化 ==========');
-    
-  // 创建用户表
-  await query(userTableSQL);
-  console.log('✓ 用户表检测完成');
-    
-  // 检查并补齐缺失字段
-  await checkAndAddColumns();
+  console.log("\n========== 数据准备 ==========");
+  console.log("○ 数据库结构同步已切换为 Prisma schema，请先执行 `pnpm --filter ./server db:sync`");
 
-  // 初始化迁移历史表（供一次性数据迁移登记）
-  await ensureMigrationHistoryTable();
-    
-  // 初始化角色表
-  await initCharacterTable();
-
-  // 初始化角色排行榜快照表
-  await initCharacterRankSnapshotTable();
-    
-  // 初始化签到表
-  await initSignInTable();
-    
-  // 初始化物品系统表
-  await initItemTables();
-    
-  // 初始化背包系统表
-  await initInventoryTable();
-    
-  // 初始化邮件系统表
-  await initMailTable();
-    
-  // 初始化地图表
-  await initMapTable();
-    
-  // 初始化功法系统表
-  await initTechniqueTables();
-
-  // 初始化 AI 生成功法系统表
-  await initTechniqueGenerationTables();
-    
-  // 初始化组队系统表
-  await initTeamTables();
-
-  // 初始化坊市系统表
-  await initMarketTable();
-
-  // 初始化副本秘境系统表
-  await initDungeonTables();
-
-  // 初始化月卡系统表
-  await initMonthCardTables();
-
-  // 初始化宗门系统表
-  await initSectTables();
-
-  // 初始化战令系统表
-  await initBattlePassTables();
-
-  // 初始化任务系统表
-  await initTaskTables();
-
-  // 初始化悬赏系统表
-  await initBountyTables();
-
-  // 初始化游戏时间表
-  await initGameTimeTable();
-
-  // 初始化主线任务系统表
-  await initMainQuestTables();
-
-  // 初始化竞技场系统表
-  await initArenaTables();
-
-  // 初始化成就与称号系统表
-  await initAchievementTables();
-
-  // 初始化离线挂机系统表
-  await initIdleTables();
-
-  // 初始化悟道系统表
-  await initInsightTables();
-
-  // 初始化功能解锁表
-  await initFeatureUnlockTables();
-
-  // 初始化伙伴系统表
-  await initPartnerTables();
-
-  // 初始化 AI 伙伴招募表
-  await initPartnerRecruitTables();
-    
-  // 加载种子数据
   await loadAllSeeds();
+  await backfillCharacterRankSnapshots();
 
-  await runDbMigrationOnce({
-    migrationKey: 'character_rank_snapshot_backfill_v1',
-    description: '为现有角色初始化排行榜快照',
-    execute: backfillCharacterRankSnapshots,
-  });
-    
-  console.log('========== 初始化完成 ==========\n');
+  console.log("========== 数据准备完成 ==========\n");
 };

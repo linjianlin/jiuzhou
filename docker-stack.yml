@@ -57,6 +57,7 @@ services:
       - DB_NAME=jiuzhou
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-postgres}@postgres:5432/jiuzhou
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - JWT_EXPIRES_IN=7d

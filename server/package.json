@@ -4,7 +4,7 @@
   "description": "九州修仙录 - 后端服务",
   "main": "dist/app.js",
   "scripts": {
-    "dev": "node scripts/build-workers.mjs && tsx watch src/app.ts",
+    "dev": "pnpm run db:sync && node scripts/build-workers.mjs && tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
     "test:local": "tsx --test src/services/__tests__/*.test.ts",
@@ -12,9 +12,10 @@
     "test:model:technique": "tsx scripts/test-technique-model.ts",
     "simulate:equipment-cost": "tsx scripts/simulate-equipment-costs.ts",
     "simulate:defense-reduction": "tsx scripts/simulate-defense-reduction.ts",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
+    "db:generate": "node scripts/prismaCli.mjs generate",
+    "db:pull": "node scripts/prismaCli.mjs db pull --schema prisma/schema.prisma",
+    "db:push": "node scripts/prismaCli.mjs db push --schema prisma/schema.prisma",
+    "db:sync": "pnpm run db:push",
     "db:seed": "tsx src/services/seedService.ts"
   },
   "keywords": [
@@ -37,6 +38,7 @@
     "lunar-typescript": "^1.8.0",
     "multer": "^2.0.2",
     "pg": "^8.17.2",
+    "prisma": "^7.3.0",
     "redis": "^5.10.0",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.3"
@@ -50,7 +52,6 @@
     "@types/node": "^25.1.0",
     "@types/pg": "^8.16.0",
     "nodemon": "^3.1.11",
-    "prisma": "^7.3.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -11,4 +5,1235 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model arena_battle {
+  battle_id                                                   String     @id @db.VarChar(128)
+  challenger_character_id                                     Int
+  opponent_character_id                                       Int
+  status                                                      String     @default("running") @db.VarChar(16)
+  result                                                      String?    @db.VarChar(16)
+  delta_score                                                 Int        @default(0)
+  score_before                                                Int?
+  score_after                                                 Int?
+  created_at                                                  DateTime   @default(now()) @db.Timestamptz(6)
+  finished_at                                                 DateTime?  @db.Timestamptz(6)
+  characters_arena_battle_challenger_character_idTocharacters characters @relation("arena_battle_challenger_character_idTocharacters", fields: [challenger_character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  characters_arena_battle_opponent_character_idTocharacters   characters @relation("arena_battle_opponent_character_idTocharacters", fields: [opponent_character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([challenger_character_id, created_at(sort: Desc)], map: "idx_arena_battle_challenger_time")
+  @@index([opponent_character_id, created_at(sort: Desc)], map: "idx_arena_battle_opponent_time")
+  @@index([status, created_at(sort: Desc)], map: "idx_arena_battle_status_time")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model arena_rating {
+  character_id   Int        @id
+  rating         Int        @default(1000)
+  win_count      Int        @default(0)
+  lose_count     Int        @default(0)
+  last_battle_at DateTime?  @db.Timestamptz(6)
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  characters     characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model arena_weekly_settlement {
+  week_start_local_date                                                DateTime    @id @db.Date
+  week_end_local_date                                                  DateTime    @db.Date
+  window_start_at                                                      DateTime    @db.Timestamptz(6)
+  window_end_at                                                        DateTime    @db.Timestamptz(6)
+  champion_character_id                                                Int?
+  runnerup_character_id                                                Int?
+  third_character_id                                                   Int?
+  settled_at                                                           DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at                                                           DateTime    @default(now()) @db.Timestamptz(6)
+  characters_arena_weekly_settlement_champion_character_idTocharacters characters? @relation("arena_weekly_settlement_champion_character_idTocharacters", fields: [champion_character_id], references: [id], onUpdate: NoAction)
+  characters_arena_weekly_settlement_runnerup_character_idTocharacters characters? @relation("arena_weekly_settlement_runnerup_character_idTocharacters", fields: [runnerup_character_id], references: [id], onUpdate: NoAction)
+  characters_arena_weekly_settlement_third_character_idTocharacters    characters? @relation("arena_weekly_settlement_third_character_idTocharacters", fields: [third_character_id], references: [id], onUpdate: NoAction)
+
+  @@index([settled_at(sort: Desc)], map: "idx_arena_weekly_settlement_settled_at")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model battle_pass_claim_record {
+  id           BigInt     @id @default(autoincrement())
+  character_id Int
+  season_id    String     @db.VarChar(64)
+  level        Int
+  track        String     @db.VarChar(16)
+  claimed_at   DateTime   @default(now()) @db.Timestamptz(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, season_id, level, track])
+  @@index([character_id, claimed_at(sort: Desc)], map: "idx_battle_pass_claim_record_character")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model battle_pass_progress {
+  character_id        Int
+  season_id           String     @db.VarChar(64)
+  exp                 BigInt     @default(0)
+  premium_unlocked    Boolean    @default(false)
+  premium_unlocked_at DateTime?  @db.Timestamptz(6)
+  created_at          DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime   @default(now()) @db.Timestamptz(6)
+  characters          characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([character_id, season_id])
+  @@index([season_id], map: "idx_battle_pass_progress_season")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model battle_pass_task_progress {
+  character_id   Int
+  season_id      String     @db.VarChar(64)
+  task_id        String     @db.VarChar(64)
+  progress_value BigInt     @default(0)
+  completed      Boolean    @default(false)
+  completed_at   DateTime?  @db.Timestamptz(6)
+  claimed        Boolean    @default(false)
+  claimed_at     DateTime?  @db.Timestamptz(6)
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  characters     characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([character_id, season_id, task_id])
+  @@index([character_id, season_id, claimed, completed], map: "idx_battle_pass_task_progress_character")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model bounty_claim {
+  id                 BigInt          @id @default(autoincrement())
+  bounty_instance_id BigInt
+  character_id       Int
+  status             String          @default("claimed") @db.VarChar(16)
+  claimed_at         DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
+  bounty_instance    bounty_instance @relation(fields: [bounty_instance_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  characters         characters      @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([bounty_instance_id, character_id])
+  @@index([character_id, claimed_at(sort: Desc)], map: "idx_bounty_claim_character")
+  @@index([bounty_instance_id, claimed_at(sort: Desc)], map: "idx_bounty_claim_instance")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model bounty_instance {
+  id                        BigInt         @id @default(autoincrement())
+  source_type               String         @default("daily") @db.VarChar(16)
+  bounty_def_id             String?        @db.VarChar(64)
+  task_id                   String         @db.VarChar(64)
+  title                     String         @db.VarChar(128)
+  description               String?
+  claim_policy              String         @default("limited") @db.VarChar(16)
+  max_claims                Int            @default(0)
+  claimed_count             Int            @default(0)
+  refresh_date              DateTime?      @db.Date
+  expires_at                DateTime?      @db.Timestamptz(6)
+  published_by_character_id Int?
+  spirit_stones_reward      BigInt         @default(0)
+  silver_reward             BigInt         @default(0)
+  spirit_stones_fee         BigInt         @default(0)
+  silver_fee                BigInt         @default(0)
+  required_items            Json           @default("[]")
+  created_at                DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime       @default(now()) @db.Timestamptz(6)
+  bounty_claim              bounty_claim[]
+  characters                characters?    @relation(fields: [published_by_character_id], references: [id], onUpdate: NoAction)
+
+  @@unique([source_type, refresh_date, bounty_def_id], map: "uq_bounty_instance_daily_def_date")
+  @@index([source_type, refresh_date, id(sort: Desc)], map: "idx_bounty_instance_daily_date")
+  @@index([expires_at], map: "idx_bounty_instance_expires")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_achievement {
+  id             BigInt     @id @default(autoincrement())
+  character_id   Int
+  achievement_id String     @db.VarChar(64)
+  status         String     @default("in_progress") @db.VarChar(32)
+  progress       Int        @default(0)
+  progress_data  Json       @default("{}")
+  completed_at   DateTime?  @db.Timestamptz(6)
+  claimed_at     DateTime?  @db.Timestamptz(6)
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  characters     characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, achievement_id])
+  @@index([character_id, achievement_id], map: "idx_character_achievement_character")
+  @@index([character_id, status, updated_at(sort: Desc)], map: "idx_character_achievement_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_achievement_points {
+  character_id       Int        @id
+  total_points       Int        @default(0)
+  combat_points      Int        @default(0)
+  cultivation_points Int        @default(0)
+  exploration_points Int        @default(0)
+  social_points      Int        @default(0)
+  collection_points  Int        @default(0)
+  claimed_thresholds Json       @default("[]")
+  updated_at         DateTime   @default(now()) @db.Timestamptz(6)
+  characters         characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_feature_unlocks {
+  id              Int        @id @default(autoincrement())
+  character_id    Int
+  feature_code    String     @db.VarChar(64)
+  obtained_from   String     @db.VarChar(64)
+  obtained_ref_id String?    @db.VarChar(64)
+  unlocked_at     DateTime   @default(now()) @db.Timestamptz(6)
+  characters      characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, feature_code], map: "character_feature_unlocks_character_id_feature_code_key")
+  @@index([character_id], map: "idx_character_feature_unlocks_character_id")
+  @@index([feature_code], map: "idx_character_feature_unlocks_feature_code")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_insight_progress {
+  character_id    Int        @id
+  level           BigInt     @default(0)
+  progress_exp    BigInt     @default(0)
+  total_exp_spent BigInt     @default(0)
+  created_at      DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime   @default(now()) @db.Timestamptz(6)
+  characters      characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([level], map: "idx_character_insight_progress_level")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_main_quest_progress {
+  character_id        Int        @id
+  current_chapter_id  String?    @db.VarChar(64)
+  current_section_id  String?    @db.VarChar(64)
+  section_status      String?    @default("not_started") @db.VarChar(16)
+  objectives_progress Json?      @default("{}")
+  dialogue_state      Json?      @default("{}")
+  completed_chapters  Json?      @default("[]")
+  completed_sections  Json?      @default("[]")
+  tracked             Boolean?   @default(true)
+  updated_at          DateTime?  @default(now()) @db.Timestamptz(6)
+  characters          characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_research_points {
+  character_id        Int        @id
+  balance_points      Int        @default(0)
+  total_earned_points BigInt     @default(0)
+  total_spent_points  BigInt     @default(0)
+  updated_at          DateTime   @default(now()) @db.Timestamptz(6)
+  characters          characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_room_resource_state {
+  id             Int        @id @default(autoincrement())
+  character_id   Int
+  map_id         String     @db.VarChar(64)
+  room_id        String     @db.VarChar(64)
+  resource_id    String     @db.VarChar(64)
+  used_count     Int        @default(0)
+  gather_until   DateTime?  @db.Timestamptz(6)
+  cooldown_until DateTime?  @db.Timestamptz(6)
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  characters     characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, map_id, room_id, resource_id])
+  @@index([character_id], map: "idx_crrs_character")
+  @@index([map_id, room_id], map: "idx_crrs_room")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_skill_slot {
+  id           Int        @id @default(autoincrement())
+  character_id Int
+  slot_index   Int
+  skill_id     String     @db.VarChar(64)
+  created_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, skill_id])
+  @@unique([character_id, slot_index])
+  @@index([character_id], map: "idx_char_skill_char")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_partner {
+  id                          Int                         @id @default(autoincrement())
+  character_id                Int
+  partner_def_id              String                      @db.VarChar(64)
+  nickname                    String                      @db.VarChar(64)
+  level                       BigInt                      @default(1)
+  progress_exp                BigInt                      @default(0)
+  growth_max_qixue            Int
+  growth_wugong               Int
+  growth_fagong               Int
+  growth_wufang               Int
+  growth_fafang               Int
+  growth_sudu                 Int
+  is_active                   Boolean                     @default(false)
+  obtained_from               String                      @db.VarChar(64)
+  obtained_ref_id             String?                     @db.VarChar(64)
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                    @default(now()) @db.Timestamptz(6)
+  characters                  characters                  @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  character_partner_technique character_partner_technique[]
+
+  @@index([character_id], map: "idx_character_partner_character_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_partner_technique {
+  id                       Int               @id @default(autoincrement())
+  partner_id               Int
+  technique_id             String            @db.VarChar(64)
+  current_layer            Int               @default(1)
+  is_innate                Boolean           @default(false)
+  learned_from_item_def_id String?           @db.VarChar(64)
+  created_at               DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime          @default(now()) @db.Timestamptz(6)
+  character_partner        character_partner @relation(fields: [partner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([partner_id, technique_id])
+  @@index([partner_id], map: "idx_character_partner_technique_partner_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_task_progress {
+  id           BigInt     @id @default(autoincrement())
+  character_id Int
+  task_id      String     @db.VarChar(64)
+  status       String     @default("ongoing") @db.VarChar(16)
+  progress     Json       @default("{}")
+  tracked      Boolean    @default(false)
+  accepted_at  DateTime   @default(now()) @db.Timestamptz(6)
+  completed_at DateTime?  @db.Timestamptz(6)
+  claimed_at   DateTime?  @db.Timestamptz(6)
+  updated_at   DateTime   @default(now()) @db.Timestamptz(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, task_id])
+  @@index([character_id, status, accepted_at(sort: Desc)], map: "idx_character_task_progress_character_status")
+  @@index([character_id, tracked], map: "idx_character_task_progress_tracked")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_technique {
+  id              Int        @id @default(autoincrement())
+  character_id    Int
+  technique_id    String     @db.VarChar(64)
+  current_layer   Int?       @default(1)
+  slot_type       String?    @db.VarChar(10)
+  slot_index      Int?
+  obtained_from   String?    @db.VarChar(64)
+  obtained_ref_id String?    @db.VarChar(64)
+  acquired_at     DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?  @default(now()) @db.Timestamptz(6)
+  characters      characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, technique_id])
+  @@index([character_id], map: "idx_char_tech_char")
+  @@index([character_id, slot_type], map: "idx_char_tech_slot")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model character_title {
+  id           BigInt     @id @default(autoincrement())
+  character_id Int
+  title_id     String     @db.VarChar(64)
+  is_equipped  Boolean    @default(false)
+  obtained_at  DateTime   @default(now()) @db.Timestamptz(6)
+  expires_at   DateTime?  @db.Timestamptz(6)
+  updated_at   DateTime   @default(now()) @db.Timestamptz(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, title_id])
+  @@index([character_id, is_equipped, expires_at], map: "idx_character_title_active_validity")
+  @@index([character_id, obtained_at(sort: Desc)], map: "idx_character_title_character")
+  @@index([character_id, is_equipped], map: "idx_character_title_equipped")
+}
+
+model character_rank_snapshot {
+  character_id Int        @id
+  nickname     String     @default("") @db.VarChar(50)
+  realm        String     @default("凡人") @db.VarChar(64)
+  realm_rank   Int        @default(0)
+  power        BigInt     @default(0)
+  wugong       BigInt     @default(0)
+  fagong       BigInt     @default(0)
+  wufang       BigInt     @default(0)
+  fafang       BigInt     @default(0)
+  max_qixue    BigInt     @default(0)
+  max_lingqi   BigInt     @default(0)
+  sudu         BigInt     @default(0)
+  updated_at   DateTime   @default(now()) @db.Timestamptz(6)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([realm_rank(sort: Desc), power(sort: Desc), character_id], map: "idx_character_rank_snapshot_realm_power")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model characters {
+  id                                                                                Int                             @id @default(autoincrement())
+  user_id                                                                           Int                             @unique
+  nickname                                                                          String                          @db.VarChar(50)
+  title                                                                             String?                         @default("散修") @db.VarChar(50)
+  gender                                                                            String                          @db.VarChar(10)
+  avatar                                                                            String?                         @db.VarChar(255)
+  spirit_stones                                                                     BigInt?                         @default(0)
+  silver                                                                            BigInt?                         @default(0)
+  stamina                                                                           Int                             @default(100)
+  stamina_recover_at                                                                DateTime                        @default(now()) @db.Timestamptz(6)
+  realm                                                                             String?                         @default("凡人") @db.VarChar(50)
+  sub_realm                                                                         String?                         @db.VarChar(50)
+  exp                                                                               BigInt?                         @default(0)
+  attribute_points                                                                  Int?                            @default(0)
+  jing                                                                              Int?                            @default(0)
+  qi                                                                                Int?                            @default(0)
+  shen                                                                              Int?                            @default(0)
+  attribute_type                                                                    String?                         @default("physical") @db.VarChar(20)
+  attribute_element                                                                 String?                         @default("none") @db.VarChar(10)
+  current_map_id                                                                    String?                         @default("map-qingyun-village") @db.VarChar(64)
+  current_room_id                                                                   String?                         @default("room-village-center") @db.VarChar(64)
+  last_offline_at                                                                   DateTime?                       @db.Timestamptz(6)
+  auto_cast_skills                                                                  Boolean?                        @default(true)
+  auto_disassemble_enabled                                                          Boolean?                        @default(false)
+  auto_disassemble_rules                                                            Json?                           @default("[]")
+  created_at                                                                        DateTime?                       @default(now()) @db.Timestamp(6)
+  updated_at                                                                        DateTime?                       @default(now()) @db.Timestamp(6)
+  arena_battle_arena_battle_challenger_character_idTocharacters                     arena_battle[]                  @relation("arena_battle_challenger_character_idTocharacters")
+  arena_battle_arena_battle_opponent_character_idTocharacters                       arena_battle[]                  @relation("arena_battle_opponent_character_idTocharacters")
+  arena_rating                                                                      arena_rating?
+  arena_weekly_settlement_arena_weekly_settlement_champion_character_idTocharacters arena_weekly_settlement[]       @relation("arena_weekly_settlement_champion_character_idTocharacters")
+  arena_weekly_settlement_arena_weekly_settlement_runnerup_character_idTocharacters arena_weekly_settlement[]       @relation("arena_weekly_settlement_runnerup_character_idTocharacters")
+  arena_weekly_settlement_arena_weekly_settlement_third_character_idTocharacters    arena_weekly_settlement[]       @relation("arena_weekly_settlement_third_character_idTocharacters")
+  battle_pass_claim_record                                                          battle_pass_claim_record[]
+  battle_pass_progress                                                              battle_pass_progress[]
+  battle_pass_task_progress                                                         battle_pass_task_progress[]
+  bounty_claim                                                                      bounty_claim[]
+  bounty_instance                                                                   bounty_instance[]
+  character_achievement                                                             character_achievement[]
+  character_achievement_points                                                      character_achievement_points?
+  character_insight_progress                                                        character_insight_progress?
+  character_main_quest_progress                                                     character_main_quest_progress?
+  character_rank_snapshot                                                           character_rank_snapshot?
+  character_research_points                                                         character_research_points?
+  character_room_resource_state                                                     character_room_resource_state[]
+  character_skill_slot                                                              character_skill_slot[]
+  character_partner                                                                 character_partner[]
+  character_feature_unlocks                                                         character_feature_unlocks[]
+  character_task_progress                                                           character_task_progress[]
+  character_technique                                                               character_technique[]
+  character_title                                                                   character_title[]
+  users                                                                             users                           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dungeon_entry_count                                                               dungeon_entry_count[]
+  dungeon_instance                                                                  dungeon_instance[]
+  dungeon_record                                                                    dungeon_record[]
+  generated_partner_def                                                             generated_partner_def[]
+  generated_technique_def                                                           generated_technique_def[]
+  idle_configs                                                                      idle_configs?
+  idle_sessions                                                                     idle_sessions[]
+  inventory                                                                         inventory?
+  item_use_cooldown                                                                 item_use_cooldown[]
+  item_use_count                                                                    item_use_count[]
+  market_listing_market_listing_buyer_character_idTocharacters                      market_listing[]                @relation("market_listing_buyer_character_idTocharacters")
+  market_listing_market_listing_seller_character_idTocharacters                     market_listing[]                @relation("market_listing_seller_character_idTocharacters")
+  market_trade_record_market_trade_record_buyer_character_idTocharacters            market_trade_record[]           @relation("market_trade_record_buyer_character_idTocharacters")
+  market_trade_record_market_trade_record_seller_character_idTocharacters           market_trade_record[]           @relation("market_trade_record_seller_character_idTocharacters")
+  month_card_claim_record                                                           month_card_claim_record[]
+  month_card_ownership                                                              month_card_ownership[]
+  research_points_ledger                                                            research_points_ledger[]
+  sect_application_sect_application_character_idTocharacters                        sect_application[]              @relation("sect_application_character_idTocharacters")
+  sect_application_sect_application_handled_byTocharacters                          sect_application[]              @relation("sect_application_handled_byTocharacters")
+  sect_def                                                                          sect_def[]
+  sect_log_sect_log_operator_idTocharacters                                         sect_log[]                      @relation("sect_log_operator_idTocharacters")
+  sect_log_sect_log_target_idTocharacters                                           sect_log[]                      @relation("sect_log_target_idTocharacters")
+  sect_member                                                                       sect_member?
+  sect_quest_progress                                                               sect_quest_progress[]
+  partner_recruit_job                                                               partner_recruit_job[]
+  team_applications                                                                 team_applications[]
+  team_invitations_team_invitations_invitee_idTocharacters                          team_invitations[]              @relation("team_invitations_invitee_idTocharacters")
+  team_invitations_team_invitations_inviter_idTocharacters                          team_invitations[]              @relation("team_invitations_inviter_idTocharacters")
+  team_members                                                                      team_members?
+  teams                                                                             teams[]
+  technique_generation_job                                                          technique_generation_job[]
+}
+
+model dungeon_entry_count {
+  id                BigInt     @id @default(autoincrement())
+  character_id      Int
+  dungeon_id        String     @db.VarChar(64)
+  daily_count       Int        @default(0)
+  weekly_count      Int        @default(0)
+  total_count       Int        @default(0)
+  last_daily_reset  DateTime?  @db.Date
+  last_weekly_reset DateTime?  @db.Date
+  characters        characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, dungeon_id])
+  @@index([character_id], map: "idx_dungeon_entry_count_char")
+  @@index([dungeon_id], map: "idx_dungeon_entry_count_dungeon")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model dungeon_instance {
+  id              String           @id @db.VarChar(64)
+  dungeon_id      String           @db.VarChar(64)
+  difficulty_id   String           @db.VarChar(64)
+  creator_id      Int
+  team_id         String?          @db.VarChar(64)
+  status          String           @default("preparing") @db.VarChar(32)
+  current_stage   Int              @default(1)
+  current_wave    Int              @default(1)
+  participants    Json             @default("[]")
+  start_time      DateTime?        @db.Timestamptz(6)
+  end_time        DateTime?        @db.Timestamptz(6)
+  time_spent_sec  Int              @default(0)
+  total_damage    BigInt           @default(0)
+  death_count     Int              @default(0)
+  rewards_claimed Boolean          @default(false)
+  instance_data   Json             @default("{}")
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  characters      characters       @relation(fields: [creator_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teams           teams?           @relation(fields: [team_id], references: [id], onUpdate: NoAction)
+  dungeon_record  dungeon_record[]
+
+  @@index([creator_id, created_at(sort: Desc)], map: "idx_dungeon_instance_creator")
+  @@index([status, created_at(sort: Desc)], map: "idx_dungeon_instance_status")
+  @@index([team_id], map: "idx_dungeon_instance_team")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model dungeon_record {
+  id               BigInt            @id @default(autoincrement())
+  character_id     Int
+  dungeon_id       String            @db.VarChar(64)
+  difficulty_id    String            @db.VarChar(64)
+  instance_id      String?           @db.VarChar(64)
+  result           String            @db.VarChar(32)
+  time_spent_sec   Int               @default(0)
+  damage_dealt     BigInt            @default(0)
+  damage_taken     BigInt            @default(0)
+  healing_done     BigInt            @default(0)
+  death_count      Int               @default(0)
+  score            String?           @db.VarChar(1)
+  rewards          Json              @default("{}")
+  is_first_clear   Boolean           @default(false)
+  completed_at     DateTime          @default(now()) @db.Timestamptz(6)
+  characters       characters        @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  dungeon_instance dungeon_instance? @relation(fields: [instance_id], references: [id], onUpdate: NoAction)
+
+  @@index([character_id, completed_at(sort: Desc)], map: "idx_dungeon_record_char")
+  @@index([dungeon_id, completed_at(sort: Desc)], map: "idx_dungeon_record_dungeon")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model game_time {
+  id              Int      @id @db.SmallInt
+  era_name        String   @db.VarChar(32)
+  base_year       Int
+  game_elapsed_ms BigInt
+  weather         String   @db.VarChar(16)
+  scale           Int      @default(60)
+  last_real_ms    BigInt
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model generated_skill_def {
+  id            String   @id @db.VarChar(64)
+  generation_id String   @db.VarChar(64)
+  source_type   String   @db.VarChar(16)
+  source_id     String   @db.VarChar(64)
+  code          String?  @db.VarChar(64)
+  name          String   @db.VarChar(64)
+  description   String?
+  icon          String?  @db.VarChar(255)
+  cost_lingqi   Int      @default(0)
+  cost_lingqi_rate Decimal @default(0) @db.Decimal(8, 4)
+  cost_qixue    Int      @default(0)
+  cost_qixue_rate Decimal @default(0) @db.Decimal(8, 4)
+  cooldown      Int      @default(0)
+  target_type   String   @db.VarChar(32)
+  target_count  Int      @default(1)
+  damage_type   String?  @db.VarChar(16)
+  element       String   @default("none") @db.VarChar(16)
+  effects       Json     @default("[]")
+  trigger_type  String   @default("active") @db.VarChar(16)
+  conditions    Json?
+  ai_priority   Int      @default(50)
+  ai_conditions Json?
+  upgrades      Json?
+  sort_weight   Int      @default(0)
+  enabled       Boolean  @default(true)
+  version       Int      @default(1)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([generation_id], map: "idx_generated_skill_def_generation_id")
+  @@index([source_type, source_id], map: "idx_generated_skill_def_source")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model generated_partner_def {
+  id                      String                @id @db.VarChar(64)
+  name                    String                @db.VarChar(64)
+  description             String?
+  avatar                  String?               @db.VarChar(255)
+  quality                 String                @db.VarChar(8)
+  attribute_element       String                @db.VarChar(16)
+  role                    String                @db.VarChar(32)
+  max_technique_slots     Int
+  base_attrs              Json
+  level_attr_gains        Json                  @default("{}")
+  innate_technique_ids    String[]              @default([])
+  enabled                 Boolean               @default(true)
+  created_by_character_id Int
+  source_job_id           String                @unique @db.VarChar(64)
+  created_at              DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime              @default(now()) @db.Timestamptz(6)
+  characters              characters            @relation(fields: [created_by_character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  partner_recruit_job     partner_recruit_job[]
+
+  @@index([created_by_character_id, created_at(sort: Desc)], map: "idx_generated_partner_def_creator")
+  @@index([enabled, created_at(sort: Desc)], map: "idx_generated_partner_def_enabled")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model generated_technique_def {
+  id                      String     @id @db.VarChar(64)
+  generation_id           String     @db.VarChar(64)
+  created_by_character_id Int
+  name                    String     @db.VarChar(64)
+  display_name            String?    @db.VarChar(64)
+  normalized_name         String?    @db.VarChar(64)
+  type                    String     @db.VarChar(16)
+  quality                 String     @db.VarChar(4)
+  max_layer               Int
+  required_realm          String     @db.VarChar(64)
+  attribute_type          String     @db.VarChar(16)
+  attribute_element       String     @db.VarChar(16)
+  usage_scope             String     @default("character_only") @db.VarChar(32)
+  tags                    Json       @default("[]")
+  description             String?
+  long_desc               String?
+  icon                    String?    @db.VarChar(255)
+  is_published            Boolean    @default(false)
+  published_at            DateTime?  @db.Timestamptz(6)
+  name_locked             Boolean    @default(false)
+  enabled                 Boolean    @default(true)
+  version                 Int        @default(1)
+  created_at              DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime   @default(now()) @db.Timestamptz(6)
+  custom_name             String?    @db.VarChar(64)
+  normalized_custom_name  String?    @db.VarChar(64)
+  identity_suffix         String?    @db.VarChar(16)
+  characters              characters @relation(fields: [created_by_character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([generation_id], map: "idx_generated_technique_def_generation_id")
+  @@index([is_published, enabled, created_at(sort: Desc)], map: "idx_generated_technique_def_published")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model generated_technique_layer {
+  id                 BigInt   @id @default(autoincrement())
+  generation_id      String   @db.VarChar(64)
+  technique_id       String   @db.VarChar(64)
+  layer              Int
+  cost_spirit_stones Int      @default(0)
+  cost_exp           Int      @default(0)
+  cost_materials     Json     @default("[]")
+  passives           Json     @default("[]")
+  unlock_skill_ids   String[] @default([])
+  upgrade_skill_ids  String[] @default([])
+  required_realm     String?  @db.VarChar(64)
+  required_quest_id  String?  @db.VarChar(64)
+  layer_desc         String?
+  enabled            Boolean  @default(true)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([technique_id, layer])
+  @@index([generation_id], map: "idx_generated_technique_layer_generation_id")
+  @@index([technique_id, layer], map: "idx_generated_technique_layer_technique")
+}
+
+model idle_battle_batches {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id    String        @db.Uuid
+  batch_index   Int
+  result        String        @db.VarChar(20)
+  round_count   Int           @default(0)
+  random_seed   BigInt
+  exp_gained    Int           @default(0)
+  silver_gained Int           @default(0)
+  items_gained  Json          @default("[]")
+  battle_log    Json          @default("[]")
+  monster_ids   String[]      @default([])
+  executed_at   DateTime      @default(now()) @db.Timestamptz(6)
+  idle_sessions idle_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([executed_at], map: "idx_idle_batches_executed_at")
+  @@index([session_id, batch_index], map: "idx_idle_batches_session")
+}
+
+model idle_configs {
+  character_id          Int        @id
+  map_id                String?    @db.VarChar(100)
+  room_id               String?    @db.VarChar(100)
+  max_duration_ms       BigInt     @default(3600000)
+  auto_skill_policy     Json       @default("{\"slots\": []}")
+  target_monster_def_id String?    @db.VarChar(100)
+  updated_at            DateTime   @default(now()) @db.Timestamptz(6)
+  characters            characters @relation(fields: [character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model idle_sessions {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  character_id        Int
+  status              String                @default("active") @db.VarChar(20)
+  map_id              String                @db.VarChar(100)
+  room_id             String                @db.VarChar(100)
+  max_duration_ms     BigInt
+  session_snapshot    Json
+  total_battles       Int                   @default(0)
+  win_count           Int                   @default(0)
+  lose_count          Int                   @default(0)
+  total_exp           Int                   @default(0)
+  total_silver        Int                   @default(0)
+  reward_items        Json                  @default("[]")
+  bag_full_flag       Boolean               @default(false)
+  started_at          DateTime              @default(now()) @db.Timestamptz(6)
+  ended_at            DateTime?             @db.Timestamptz(6)
+  viewed_at           DateTime?             @db.Timestamptz(6)
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  idle_battle_batches idle_battle_batches[]
+  characters          characters            @relation(fields: [character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([character_id, started_at(sort: Desc)], map: "idx_idle_sessions_character_started")
+  @@index([character_id, status], map: "idx_idle_sessions_character_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model inventory {
+  id                     BigInt     @id @default(autoincrement())
+  character_id           Int        @unique
+  bag_capacity           Int        @default(100)
+  warehouse_capacity     Int        @default(1000)
+  bag_expand_count       Int        @default(0)
+  warehouse_expand_count Int        @default(0)
+  created_at             DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime   @default(now()) @db.Timestamptz(6)
+  characters             characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id], map: "idx_inventory_character")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model item_instance {
+  id                      BigInt           @id @default(autoincrement())
+  owner_user_id           BigInt
+  owner_character_id      BigInt?
+  item_def_id             String           @db.VarChar(64)
+  qty                     Int              @default(1)
+  quality                 String?          @db.Char(1)
+  quality_rank            Int?
+  bind_type               String           @default("none") @db.VarChar(16)
+  bind_owner_user_id      BigInt?
+  bind_owner_character_id BigInt?
+  location                String           @default("bag") @db.VarChar(16)
+  location_slot           Int?
+  equipped_slot           String?          @db.VarChar(32)
+  strengthen_level        Int?             @default(0)
+  refine_level            Int?             @default(0)
+  socketed_gems           Json?
+  random_seed             BigInt?
+  affixes                 Json?
+  identified              Boolean          @default(true)
+  affix_gen_version       Int              @default(1)
+  affix_roll_meta         Json?
+  custom_name             String?          @db.VarChar(64)
+  locked                  Boolean          @default(false)
+  expire_at               DateTime?        @db.Timestamptz(6)
+  obtained_from           String?          @db.VarChar(128)
+  obtained_ref_id         String?          @db.VarChar(64)
+  metadata                Json?
+  created_at              DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime         @default(now()) @db.Timestamptz(6)
+  market_listing          market_listing[]
+
+  @@index([item_def_id], map: "idx_item_instance_item_def")
+  @@index([location], map: "idx_item_instance_location")
+  @@index([owner_user_id, owner_character_id], map: "idx_item_instance_owner")
+  @@index([owner_character_id, location, location_slot], map: "idx_item_instance_slot")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model item_use_cooldown {
+  id             BigInt     @id @default(autoincrement())
+  character_id   Int
+  item_def_id    String     @db.VarChar(64)
+  cooldown_until DateTime   @db.Timestamptz(6)
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @default(now()) @db.Timestamptz(6)
+  characters     characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, item_def_id])
+  @@index([character_id], map: "idx_item_use_cooldown_char")
+  @@index([item_def_id], map: "idx_item_use_cooldown_item")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model item_use_count {
+  id               BigInt     @id @default(autoincrement())
+  character_id     Int
+  item_def_id      String     @db.VarChar(64)
+  daily_count      Int        @default(0)
+  total_count      Int        @default(0)
+  last_daily_reset DateTime   @default(dbgenerated("CURRENT_DATE")) @db.Date
+  created_at       DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime   @default(now()) @db.Timestamptz(6)
+  characters       characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, item_def_id])
+  @@index([character_id], map: "idx_item_use_count_char")
+  @@index([item_def_id], map: "idx_item_use_count_item")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model mail {
+  id                     BigInt    @id @default(autoincrement())
+  recipient_user_id      BigInt
+  recipient_character_id BigInt?
+  sender_type            String    @default("system") @db.VarChar(16)
+  sender_user_id         BigInt?
+  sender_character_id    BigInt?
+  sender_name            String    @default("系统") @db.VarChar(64)
+  mail_type              String    @default("normal") @db.VarChar(32)
+  title                  String    @db.VarChar(128)
+  content                String
+  attach_silver          Int       @default(0)
+  attach_spirit_stones   Int       @default(0)
+  attach_items           Json?
+  attach_instance_ids    Json?
+  read_at                DateTime? @db.Timestamptz(6)
+  claimed_at             DateTime? @db.Timestamptz(6)
+  deleted_at             DateTime? @db.Timestamptz(6)
+  expire_at              DateTime? @db.Timestamptz(6)
+  source                 String?   @db.VarChar(64)
+  source_ref_id          String?   @db.VarChar(64)
+  metadata               Json?
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc)], map: "idx_mail_created")
+  @@index([recipient_user_id, recipient_character_id], map: "idx_mail_recipient")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model market_listing {
+  id                                                        BigInt                @id @default(autoincrement())
+  seller_user_id                                            Int
+  seller_character_id                                       Int
+  item_instance_id                                          BigInt?
+  item_def_id                                               String                @db.VarChar(64)
+  qty                                                       Int
+  unit_price_spirit_stones                                  BigInt
+  status                                                    String                @default("active") @db.VarChar(16)
+  buyer_user_id                                             Int?
+  buyer_character_id                                        Int?
+  listed_at                                                 DateTime              @default(now()) @db.Timestamptz(6)
+  sold_at                                                   DateTime?             @db.Timestamptz(6)
+  cancelled_at                                              DateTime?             @db.Timestamptz(6)
+  updated_at                                                DateTime              @default(now()) @db.Timestamptz(6)
+  listing_fee_silver                                        BigInt                @default(0)
+  characters_market_listing_buyer_character_idTocharacters  characters?           @relation("market_listing_buyer_character_idTocharacters", fields: [buyer_character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_market_listing_buyer_user_idTousers                 users?                @relation("market_listing_buyer_user_idTousers", fields: [buyer_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  item_instance                                             item_instance?        @relation(fields: [item_instance_id], references: [id], onUpdate: NoAction)
+  characters_market_listing_seller_character_idTocharacters characters            @relation("market_listing_seller_character_idTocharacters", fields: [seller_character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_market_listing_seller_user_idTousers                users                 @relation("market_listing_seller_user_idTousers", fields: [seller_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  market_trade_record                                       market_trade_record[]
+
+  @@index([buyer_character_id], map: "idx_market_listing_buyer_character")
+  @@index([item_def_id], map: "idx_market_listing_item_def_id")
+  @@index([seller_character_id], map: "idx_market_listing_seller_character")
+  @@index([status, listed_at(sort: Desc)], map: "idx_market_listing_status_listed_at")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model market_trade_record {
+  id                                                             BigInt          @id @default(autoincrement())
+  listing_id                                                     BigInt?
+  buyer_user_id                                                  Int
+  buyer_character_id                                             Int
+  seller_user_id                                                 Int
+  seller_character_id                                            Int
+  item_def_id                                                    String          @db.VarChar(64)
+  qty                                                            Int
+  unit_price_spirit_stones                                       BigInt
+  total_price_spirit_stones                                      BigInt
+  tax_spirit_stones                                              BigInt          @default(0)
+  created_at                                                     DateTime        @default(now()) @db.Timestamptz(6)
+  characters_market_trade_record_buyer_character_idTocharacters  characters      @relation("market_trade_record_buyer_character_idTocharacters", fields: [buyer_character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_market_trade_record_buyer_user_idTousers                 users           @relation("market_trade_record_buyer_user_idTousers", fields: [buyer_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  market_listing                                                 market_listing? @relation(fields: [listing_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  characters_market_trade_record_seller_character_idTocharacters characters      @relation("market_trade_record_seller_character_idTocharacters", fields: [seller_character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_market_trade_record_seller_user_idTousers                users           @relation("market_trade_record_seller_user_idTousers", fields: [seller_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([buyer_character_id, created_at(sort: Desc)], map: "idx_market_trade_record_buyer_time")
+  @@index([item_def_id], map: "idx_market_trade_record_item_def_id")
+  @@index([seller_character_id, created_at(sort: Desc)], map: "idx_market_trade_record_seller_time")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model month_card_claim_record {
+  id                   BigInt     @id @default(autoincrement())
+  character_id         Int
+  month_card_id        String     @db.VarChar(64)
+  claim_date           DateTime   @db.Date
+  reward_spirit_stones Int        @default(0)
+  created_at           DateTime   @default(now()) @db.Timestamptz(6)
+  characters           characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, month_card_id, claim_date])
+  @@index([character_id, claim_date(sort: Desc)], map: "idx_month_card_claim_record_character_date")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model month_card_ownership {
+  id              BigInt     @id @default(autoincrement())
+  character_id    Int
+  month_card_id   String     @db.VarChar(64)
+  start_at        DateTime   @default(now()) @db.Timestamptz(6)
+  expire_at       DateTime   @db.Timestamptz(6)
+  last_claim_date DateTime?  @db.Date
+  created_at      DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime   @default(now()) @db.Timestamptz(6)
+  characters      characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, month_card_id])
+  @@index([character_id], map: "idx_month_card_ownership_character")
+  @@index([expire_at], map: "idx_month_card_ownership_expire")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model partner_recruit_job {
+  id                     String                 @id @db.VarChar(64)
+  character_id           Int
+  status                 String                 @db.VarChar(32)
+  quality_rolled         String                 @db.VarChar(8)
+  spirit_stones_cost     BigInt
+  cooldown_started_at    DateTime               @db.Timestamptz(6)
+  finished_at            DateTime?              @db.Timestamptz(6)
+  viewed_at              DateTime?              @db.Timestamptz(6)
+  error_message          String?
+  preview_partner_def_id String?                @db.VarChar(64)
+  preview_avatar_url     String?                @db.VarChar(255)
+  created_at             DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime               @default(now()) @db.Timestamptz(6)
+  characters             characters             @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  generated_partner_def  generated_partner_def? @relation(fields: [preview_partner_def_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([character_id, created_at(sort: Desc)], map: "idx_partner_recruit_job_character_time")
+  @@index([status, created_at], map: "idx_partner_recruit_job_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model research_points_ledger {
+  id            BigInt     @id @default(autoincrement())
+  character_id  Int
+  change_points Int
+  reason        String     @db.VarChar(32)
+  ref_type      String?    @db.VarChar(32)
+  ref_id        String?    @db.VarChar(64)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+  characters    characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id, created_at(sort: Desc)], map: "idx_research_points_ledger_character_time")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sect_application {
+  id                                                   BigInt      @id @default(autoincrement())
+  sect_id                                              String      @db.VarChar(64)
+  character_id                                         Int
+  message                                              String?
+  status                                               String      @default("pending") @db.VarChar(16)
+  created_at                                           DateTime    @default(now()) @db.Timestamptz(6)
+  handled_at                                           DateTime?   @db.Timestamptz(6)
+  handled_by                                           Int?
+  characters_sect_application_character_idTocharacters characters  @relation("sect_application_character_idTocharacters", fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  characters_sect_application_handled_byTocharacters   characters? @relation("sect_application_handled_byTocharacters", fields: [handled_by], references: [id], onUpdate: NoAction)
+  sect_def                                             sect_def    @relation(fields: [sect_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id, created_at(sort: Desc)], map: "idx_sect_application_character")
+  @@index([sect_id, status, created_at(sort: Desc)], map: "idx_sect_application_sect_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sect_building {
+  id               BigInt    @id @default(autoincrement())
+  sect_id          String    @db.VarChar(64)
+  building_type    String    @db.VarChar(64)
+  level            Int       @default(1)
+  status           String    @default("normal") @db.VarChar(32)
+  upgrade_start_at DateTime? @db.Timestamptz(6)
+  upgrade_end_at   DateTime? @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @db.Timestamptz(6)
+  sect_def         sect_def  @relation(fields: [sect_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([sect_id, building_type])
+  @@index([sect_id], map: "idx_sect_building_sect")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sect_def {
+  id               String             @id @db.VarChar(64)
+  name             String             @unique @db.VarChar(64)
+  leader_id        Int
+  level            Int                @default(1)
+  exp              BigInt             @default(0)
+  funds            BigInt             @default(0)
+  reputation       BigInt             @default(0)
+  build_points     Int                @default(0)
+  announcement     String?
+  description      String?
+  icon             String?            @db.VarChar(256)
+  join_type        String             @default("apply") @db.VarChar(32)
+  join_min_realm   String             @default("凡人") @db.VarChar(64)
+  member_count     Int                @default(1)
+  max_members      Int                @default(20)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  sect_application sect_application[]
+  sect_building    sect_building[]
+  characters       characters         @relation(fields: [leader_id], references: [id], onUpdate: NoAction)
+  sect_log         sect_log[]
+  sect_member      sect_member[]
+
+  @@index([leader_id], map: "idx_sect_def_leader")
+  @@index([name], map: "idx_sect_def_name")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sect_log {
+  id                                          BigInt      @id @default(autoincrement())
+  sect_id                                     String      @db.VarChar(64)
+  log_type                                    String      @db.VarChar(32)
+  operator_id                                 Int?
+  target_id                                   Int?
+  content                                     String?
+  created_at                                  DateTime    @default(now()) @db.Timestamptz(6)
+  characters_sect_log_operator_idTocharacters characters? @relation("sect_log_operator_idTocharacters", fields: [operator_id], references: [id], onUpdate: NoAction)
+  sect_def                                    sect_def    @relation(fields: [sect_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  characters_sect_log_target_idTocharacters   characters? @relation("sect_log_target_idTocharacters", fields: [target_id], references: [id], onUpdate: NoAction)
+
+  @@index([sect_id, created_at(sort: Desc)], map: "idx_sect_log_sect_time")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sect_member {
+  id                  BigInt     @id @default(autoincrement())
+  sect_id             String     @db.VarChar(64)
+  character_id        Int        @unique
+  position            String     @default("disciple") @db.VarChar(32)
+  contribution        BigInt     @default(0)
+  weekly_contribution Int        @default(0)
+  joined_at           DateTime   @default(now()) @db.Timestamptz(6)
+  characters          characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sect_def            sect_def   @relation(fields: [sect_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id], map: "idx_sect_member_char")
+  @@index([sect_id], map: "idx_sect_member_sect")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sect_quest_progress {
+  id           BigInt     @id @default(autoincrement())
+  character_id Int
+  quest_id     String     @db.VarChar(64)
+  progress     Int        @default(0)
+  status       String     @default("in_progress") @db.VarChar(32)
+  accepted_at  DateTime   @default(now()) @db.Timestamptz(6)
+  completed_at DateTime?  @db.Timestamptz(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([character_id, quest_id])
+  @@index([character_id, status, accepted_at(sort: Desc)], map: "idx_sect_quest_progress_character")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sign_in_records {
+  id           Int       @id @default(autoincrement())
+  user_id      Int
+  sign_date    DateTime  @db.Date
+  reward       Int
+  is_holiday   Boolean?  @default(false)
+  holiday_name String?   @db.VarChar(50)
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+  users        users     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([user_id, sign_date])
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model task_def {
+  id              String   @id @db.VarChar(64)
+  category        String   @default("main") @db.VarChar(16)
+  title           String   @db.VarChar(128)
+  realm           String   @default("凡人") @db.VarChar(64)
+  description     String?
+  giver_npc_id    String?  @db.VarChar(64)
+  map_id          String?  @db.VarChar(64)
+  room_id         String?  @db.VarChar(64)
+  objectives      Json     @default("[]")
+  rewards         Json     @default("[]")
+  prereq_task_ids Json     @default("[]")
+  enabled         Boolean  @default(true)
+  sort_weight     Int      @default(0)
+  version         Int      @default(1)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([category, enabled, sort_weight(sort: Desc)], map: "idx_task_def_category_enabled")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model team_applications {
+  id           String     @id @db.VarChar(64)
+  team_id      String     @db.VarChar(64)
+  applicant_id Int
+  message      String?    @db.VarChar(200)
+  status       String?    @default("pending") @db.VarChar(20)
+  created_at   DateTime?  @default(now()) @db.Timestamp(6)
+  handled_at   DateTime?  @db.Timestamp(6)
+  characters   characters @relation(fields: [applicant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teams        teams      @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([team_id, applicant_id, status])
+  @@index([applicant_id], map: "idx_team_applications_applicant_id")
+  @@index([status], map: "idx_team_applications_status")
+  @@index([team_id], map: "idx_team_applications_team_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model team_invitations {
+  id                                                 String     @id @db.VarChar(64)
+  team_id                                            String     @db.VarChar(64)
+  inviter_id                                         Int
+  invitee_id                                         Int
+  message                                            String?    @db.VarChar(200)
+  status                                             String?    @default("pending") @db.VarChar(20)
+  created_at                                         DateTime?  @default(now()) @db.Timestamp(6)
+  handled_at                                         DateTime?  @db.Timestamp(6)
+  characters_team_invitations_invitee_idTocharacters characters @relation("team_invitations_invitee_idTocharacters", fields: [invitee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  characters_team_invitations_inviter_idTocharacters characters @relation("team_invitations_inviter_idTocharacters", fields: [inviter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teams                                              teams      @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([team_id, invitee_id, status])
+  @@index([invitee_id], map: "idx_team_invitations_invitee_id")
+  @@index([status], map: "idx_team_invitations_status")
+  @@index([team_id], map: "idx_team_invitations_team_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model team_members {
+  id           Int        @id @default(autoincrement())
+  team_id      String     @db.VarChar(64)
+  character_id Int        @unique
+  role         String?    @default("member") @db.VarChar(20)
+  joined_at    DateTime?  @default(now()) @db.Timestamp(6)
+  characters   characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teams        teams      @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([team_id, character_id])
+  @@index([character_id], map: "idx_team_members_character_id")
+  @@index([team_id], map: "idx_team_members_team_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model teams {
+  id                  String              @id @db.VarChar(64)
+  name                String              @db.VarChar(50)
+  leader_id           Int
+  goal                String?             @default("组队冒险") @db.VarChar(50)
+  join_min_realm      String?             @default("凡人") @db.VarChar(50)
+  auto_join_enabled   Boolean?            @default(false)
+  auto_join_min_realm String?             @default("凡人") @db.VarChar(50)
+  max_members         Int?                @default(5)
+  current_map_id      String?             @db.VarChar(64)
+  is_public           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamp(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamp(6)
+  dungeon_instance    dungeon_instance[]
+  team_applications   team_applications[]
+  team_invitations    team_invitations[]
+  team_members        team_members[]
+  characters          characters          @relation(fields: [leader_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([current_map_id], map: "idx_teams_current_map_id")
+  @@index([is_public], map: "idx_teams_is_public")
+  @@index([leader_id], map: "idx_teams_leader_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model technique_generation_job {
+  id                     String     @id @db.VarChar(64)
+  character_id           Int
+  week_key               String     @db.VarChar(16)
+  status                 String     @db.VarChar(32)
+  type_rolled            String?    @db.VarChar(16)
+  quality_rolled         String     @db.VarChar(4)
+  cost_points            Int
+  prompt_snapshot        Json?
+  model_name             String?    @db.VarChar(64)
+  attempt_count          Int        @default(0)
+  draft_technique_id     String?    @db.VarChar(64)
+  generated_technique_id String?    @db.VarChar(64)
+  publish_attempts       Int        @default(0)
+  draft_expire_at        DateTime?  @db.Timestamptz(6)
+  viewed_at              DateTime?  @db.Timestamptz(6)
+  failed_viewed_at       DateTime?  @db.Timestamptz(6)
+  finished_at            DateTime?  @db.Timestamptz(6)
+  error_code             String?    @db.VarChar(32)
+  error_message          String?
+  created_at             DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime   @default(now()) @db.Timestamptz(6)
+  characters             characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id, week_key, created_at(sort: Desc)], map: "idx_technique_generation_job_character_week")
+  @@index([status, created_at(sort: Desc)], map: "idx_technique_generation_job_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users {
+  id                                                            Int                   @id @default(autoincrement())
+  username                                                      String                @unique @db.VarChar(50)
+  password                                                      String                @db.VarChar(255)
+  created_at                                                    DateTime?             @default(now()) @db.Timestamp(6)
+  updated_at                                                    DateTime?             @default(now()) @db.Timestamp(6)
+  last_login                                                    DateTime?             @db.Timestamp(6)
+  status                                                        Int?                  @default(1) @db.SmallInt
+  session_token                                                 String?               @db.VarChar(255)
+  characters                                                    characters?
+  market_listing_market_listing_buyer_user_idTousers            market_listing[]      @relation("market_listing_buyer_user_idTousers")
+  market_listing_market_listing_seller_user_idTousers           market_listing[]      @relation("market_listing_seller_user_idTousers")
+  market_trade_record_market_trade_record_buyer_user_idTousers  market_trade_record[] @relation("market_trade_record_buyer_user_idTousers")
+  market_trade_record_market_trade_record_seller_user_idTousers market_trade_record[] @relation("market_trade_record_seller_user_idTousers")
+  sign_in_records                                               sign_in_records[]
 }

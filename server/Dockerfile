@@ -2,7 +2,7 @@
 # 模块作用：
 # 1) 在构建阶段完成 server 编译
 # 2) 在独立阶段安装 server 生产依赖
-# 3) 运行阶段仅复制构建产物与生产依赖，避免携带构建历史层
+# 3) 运行阶段仅复制构建产物、Prisma 同步所需文件与生产依赖，避免携带构建历史层
 #
 # 输入/输出：
 # - 输入：workspace 清单、server 源码、Prisma schema
@@ -43,7 +43,7 @@ RUN pnpm install --frozen-lockfile --filter jiuzhou-server...
 # 再复制服务端源码，避免源码修改导致依赖层失效
 COPY server ./server
 
-# 仅执行 TypeScript 构建，运行镜像不包含未使用的 Prisma 产物
+# 仅执行 TypeScript 构建；数据库结构同步在运行阶段启动前自动执行
 RUN pnpm --filter jiuzhou-server build
 
 # =======================================
@@ -75,8 +75,11 @@ COPY --from=prod-deps /app/server/node_modules ./server/node_modules
 
 WORKDIR /app/server
 
-# 复制构建产物与运行时静态数据
+# 复制构建产物、Prisma 运行时文件与静态数据
 COPY --from=builder /app/server/dist ./dist
+COPY --from=builder /app/server/prisma ./prisma
+COPY --from=builder /app/server/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/server/scripts/prismaCli.mjs ./scripts/prismaCli.mjs
 COPY server/src/data ./src/data
 COPY server/package.json ./package.json
 
@@ -85,4 +88,4 @@ RUN mkdir -p uploads
 
 EXPOSE 6011
 
-CMD ["node", "dist/app.js"]
+CMD ["sh", "-c", "node scripts/prismaCli.mjs db push --schema prisma/schema.prisma && node dist/app.js"]
