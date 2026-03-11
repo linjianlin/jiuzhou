@@ -18,7 +18,6 @@
  * 2) 洞府研修采用统一冷却时间配置，状态接口与创建任务前校验必须复用同一模块，避免前后端展示与服务端拦截不一致。
  */
 import { randomUUID } from 'crypto';
-import type { SkillEffect } from '../battle/types.js';
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { addItemToInventory } from './inventory/index.js';
@@ -31,25 +30,17 @@ import { isCharacterVisibleTechniqueDefinition } from './shared/techniqueUsageSc
 import { broadcastWorldSystemMessage } from './shared/worldChatBroadcast.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
 import {
-  buildTechniqueTextModelPayload,
-  extractTechniqueTextModelContent,
-  parseTechniqueTextModelJsonObject,
-  resolveTechniqueTextModelEndpoint,
-} from './shared/techniqueTextModelShared.js';
-import { resolveTechniqueGenerationRequestFailure } from './shared/techniqueGenerationRequestFailure.js';
-import {
-  buildTechniqueGeneratorPromptInput,
   GENERATED_TECHNIQUE_TYPE_LIST,
-  TECHNIQUE_EFFECT_TYPE_LIST,
-  TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS,
-  TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
-  TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY,
-  isSupportedTechniquePassiveKey,
-  validateTechniqueSkillEffect,
-  validateTechniqueSkillUpgrade,
   type GeneratedTechniqueType,
 } from './shared/techniqueGenerationConstraints.js';
 import type { TechniqueSkillUpgradeEntry } from './shared/techniqueSkillGenerationSpec.js';
+import {
+  TechniqueGenerationExhaustedError,
+  generateTechniqueCandidateWithRetry as generateTechniqueCandidateWithRetryCore,
+  remapTechniqueCandidateSkillIds,
+  validateTechniqueGenerationCandidate,
+  type TechniqueGenerationAttemptFailureStage,
+} from './shared/techniqueGenerationCandidateCore.js';
 import {
   buildTechniqueResearchCooldownState,
   formatTechniqueResearchCooldownRemaining,
@@ -58,6 +49,7 @@ import {
   buildTechniqueResearchUnlockState,
   type TechniqueResearchUnlockState,
 } from './shared/techniqueResearchUnlock.js';
+import { persistGeneratedTechniqueCandidateTx } from './shared/generatedTechniquePersistence.js';
 import { getGeneratedTechniqueDefinitionById } from './generatedTechniqueConfigStore.js';
 
 export type TechniqueGenerationStatus =
@@ -190,35 +182,6 @@ type TechniqueResearchStatusData = {
   resultStatus: TechniqueResearchResultStatus | null;
 };
 
-type TechniqueGenerationAttemptFailureStage =
-  | 'config_missing'
-  | 'request_timeout'
-  | 'request_failed'
-  | 'http_error'
-  | 'empty_response'
-  | 'json_parse_failed'
-  | 'candidate_sanitize_failed'
-  | 'candidate_validate_failed';
-
-type TechniqueGenerationAttemptSuccess = {
-  success: true;
-  candidate: TechniqueGenerationCandidate;
-  modelName: string;
-  promptSnapshot: string;
-};
-
-type TechniqueGenerationAttemptFailure = {
-  success: false;
-  stage: TechniqueGenerationAttemptFailureStage;
-  reason: string;
-  modelName: string;
-  promptSnapshot: string;
-};
-
-type TechniqueGenerationAttemptResult =
-  | TechniqueGenerationAttemptSuccess
-  | TechniqueGenerationAttemptFailure;
-
 class TechniqueGenerationRollbackError extends Error {
   code: string;
 
@@ -229,13 +192,6 @@ class TechniqueGenerationRollbackError extends Error {
   }
 }
 
-class TechniqueGenerationExhaustedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TechniqueGenerationExhaustedError';
-  }
-}
-
 const isTechniqueGenerationRollbackError = (
   error: unknown,
 ): error is TechniqueGenerationRollbackError => {
@@ -243,7 +199,6 @@ const isTechniqueGenerationRollbackError = (
 };
 
 const DRAFT_EXPIRE_HOURS = 24;
-const DEFAULT_REQUIRED_REALM = '凡人';
 const GENERATED_TECHNIQUE_BOOK_ITEM_DEF_ID = 'book-generated-technique';
 const DEFAULT_GENERATED_SKILL_ICON = '/assets/skills/icon_skill_44.png';
 const TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID = 'mat-gongfa-canye';
@@ -262,8 +217,6 @@ const QUALITY_RANDOM_WEIGHT: Array<{ quality: TechniqueQuality; weight: number }
   { quality: '地', weight: 12 },
   { quality: '天', weight: 3 },
 ];
-
-const DAMAGE_EFFECT_TYPE_SET = new Set<string>(TECHNIQUE_EFFECT_TYPE_LIST);
 
 const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
 const asNumber = (raw: unknown, fallback = 0): number => {
@@ -298,35 +251,12 @@ const resolveTechniqueTypeByRandom = (): GeneratedTechniqueType => {
   return GENERATED_TECHNIQUE_TYPE_LIST[index]!;
 };
 
-const toTargetType = (raw: unknown): TechniqueGenerationCandidate['skills'][number]['targetType'] => {
-  const text = asString(raw);
-  if (text === 'self' || text === 'single_enemy' || text === 'single_ally' || text === 'all_enemy' || text === 'all_ally' || text === 'random_enemy' || text === 'random_ally') {
-    return text;
-  }
-  return 'single_enemy';
-};
-
-const toDamageType = (raw: unknown): 'physical' | 'magic' | 'true' | null => {
-  const text = asString(raw);
-  if (text === 'physical' || text === 'magic' || text === 'true') return text;
-  return null;
-};
-
-const clamp = (value: number, min: number, max: number): number => {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
-};
-
 const buildGenerationId = (): string => {
   return `gen-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 };
 
 const buildGeneratedTechniqueId = (): string => {
   return `tech-gen-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`;
-};
-
-const buildGeneratedSkillId = (idx: number): string => {
-  return `skill-gen-${Date.now().toString(36)}-${idx}-${randomUUID().slice(0, 4)}`;
 };
 
 const isUndefinedTableError = (error: unknown): boolean => {
@@ -337,14 +267,6 @@ const isUndefinedTableError = (error: unknown): boolean => {
 const isUniqueViolation = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
   return 'code' in error && (error as { code?: unknown }).code === '23505';
-};
-
-const serializePromptSnapshot = (payload: Record<string, unknown>): string => {
-  try {
-    return JSON.stringify(payload);
-  } catch {
-    return '{}';
-  }
 };
 
 const toIsoString = (raw: unknown): string | null => {
@@ -407,286 +329,20 @@ const buildTechniquePreviewFromRow = (
   };
 };
 
-const sanitizeTechniqueEffect = (raw: Record<string, unknown>): Record<string, unknown> => {
-  const next = { ...raw };
-  for (const field of TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS) {
-    if (field in next) {
-      delete next[field];
-    }
-  }
-  return next;
-};
-
-const normalizeEffects = (raw: unknown): unknown[] => {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
-    .map((entry) => sanitizeTechniqueEffect(entry as Record<string, unknown>))
-    .filter((entry) => DAMAGE_EFFECT_TYPE_SET.has(String((entry as Record<string, unknown>).type || '')));
-};
-
 const validateCandidate = (
   candidate: TechniqueGenerationCandidate,
   expectedTechniqueType: GeneratedTechniqueType,
   expectedQuality: TechniqueQuality,
 ): ServiceResult<null> => {
-  const quality = candidate.technique.quality;
-  if (!candidate.technique.name) {
-    return { success: false, message: 'AI结果功法名称缺失', code: 'GENERATOR_INVALID' };
-  }
-  if (candidate.technique.type !== expectedTechniqueType) {
-    return { success: false, message: 'AI结果功法类型与随机类型不一致', code: 'GENERATOR_INVALID' };
-  }
-  if (quality !== expectedQuality) {
-    return { success: false, message: 'AI结果品质与随机品质不一致', code: 'GENERATOR_INVALID' };
-  }
-
-  const expectedMaxLayer = QUALITY_MAX_LAYER[quality];
-  if (candidate.technique.maxLayer !== expectedMaxLayer) {
-    return { success: false, message: 'AI结果最大层数非法', code: 'GENERATOR_INVALID' };
-  }
-
-  if (candidate.layers.length !== expectedMaxLayer) {
-    return { success: false, message: 'AI结果层级数量非法', code: 'GENERATOR_INVALID' };
-  }
-
-  if (candidate.skills.length <= 0) {
-    return { success: false, message: 'AI结果未生成技能', code: 'GENERATOR_INVALID' };
-  }
-  const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
-  if (candidate.skills.length < skillCountRange.min || candidate.skills.length > skillCountRange.max) {
-    return {
-      success: false,
-      message: `AI结果技能数量非法，${quality}品需${skillCountRange.min}~${skillCountRange.max}个技能`,
-      code: 'GENERATOR_INVALID',
-    };
-  }
-
-  const skillIdSet = new Set(candidate.skills.map((skill) => skill.id));
-  if (skillIdSet.size !== candidate.skills.length) {
-    return { success: false, message: 'AI结果技能ID重复', code: 'GENERATOR_INVALID' };
-  }
-  const layerNoSet = new Set<number>();
-  for (const layer of candidate.layers) {
-    if (layer.layer < 1 || layer.layer > expectedMaxLayer) {
-      return { success: false, message: 'AI结果层级序号非法', code: 'GENERATOR_INVALID' };
-    }
-    if (layerNoSet.has(layer.layer)) {
-      return { success: false, message: 'AI结果层级序号重复', code: 'GENERATOR_INVALID' };
-    }
-    layerNoSet.add(layer.layer);
-    for (const skillId of layer.unlockSkillIds) {
-      if (!skillIdSet.has(skillId)) {
-        return { success: false, message: 'AI结果解锁技能ID不存在', code: 'GENERATOR_INVALID' };
-      }
-    }
-    for (const skillId of layer.upgradeSkillIds) {
-      if (!skillIdSet.has(skillId)) {
-        return { success: false, message: 'AI结果强化技能ID不存在', code: 'GENERATOR_INVALID' };
-      }
-    }
-    if (Array.isArray(layer.costMaterials) && layer.costMaterials.length > 0) {
-      return { success: false, message: 'AI结果层级材料必须为空', code: 'GENERATOR_INVALID' };
-    }
-    if (!Array.isArray(layer.passives) || layer.passives.length <= 0) {
-      return { success: false, message: 'AI结果层级被动为空', code: 'GENERATOR_INVALID' };
-    }
-  }
-  if (layerNoSet.size !== expectedMaxLayer) {
-    return { success: false, message: 'AI结果层级不完整', code: 'GENERATOR_INVALID' };
-  }
-
-  for (const skill of candidate.skills) {
-    if (!skill.id || !skill.name) {
-      return { success: false, message: 'AI结果技能标识缺失', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.sourceType !== 'technique') {
-      return { success: false, message: 'AI结果技能来源非法', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.cooldown < 0 || skill.cooldown > 6) {
-      return { success: false, message: 'AI结果技能冷却越界', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.costLingqi < 0 || skill.costLingqi > 80) {
-      return { success: false, message: 'AI结果技能消耗越界', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.costLingqiRate < 0 || skill.costLingqiRate > 1) {
-      return { success: false, message: 'AI结果技能灵气比例消耗越界', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.costQixue < 0 || skill.costQixue > 120) {
-      return { success: false, message: 'AI结果技能气血消耗越界', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.costQixueRate < 0 || skill.costQixueRate >= 1) {
-      return { success: false, message: 'AI结果技能气血比例消耗越界', code: 'GENERATOR_INVALID' };
-    }
-    if (skill.targetCount < 1 || skill.targetCount > 6) {
-      return { success: false, message: 'AI结果技能目标数量越界', code: 'GENERATOR_INVALID' };
-    }
-    if (!Array.isArray(skill.effects) || skill.effects.length === 0) {
-      return { success: false, message: 'AI结果技能效果为空', code: 'GENERATOR_INVALID' };
-    }
-
-    for (const effect of skill.effects) {
-      if (!effect || typeof effect !== 'object' || Array.isArray(effect)) {
-        return { success: false, message: 'AI结果技能效果结构非法', code: 'GENERATOR_INVALID' };
-      }
-      const effectValidation = validateTechniqueSkillEffect(effect as SkillEffect);
-      if (!effectValidation.success) {
-        return {
-          success: false,
-          message: `AI结果技能效果非法：${effectValidation.reason}`,
-          code: 'GENERATOR_INVALID',
-        };
-      }
-    }
-
-    for (const upgrade of skill.upgrades) {
-      const upgradeValidation = validateTechniqueSkillUpgrade(upgrade, expectedMaxLayer);
-      if (!upgradeValidation.success) {
-        return {
-          success: false,
-          message: `AI结果技能升级配置非法：${upgradeValidation.reason}`,
-          code: 'GENERATOR_INVALID',
-        };
-      }
-    }
-  }
-
-  return { success: true, message: 'ok', data: null };
-};
-
-const sanitizeCandidateFromModel = (
-  raw: unknown,
-  techniqueType: GeneratedTechniqueType,
-  quality: TechniqueQuality,
-): TechniqueGenerationCandidate | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const source = raw as Record<string, unknown>;
-
-  const rawTechnique = source.technique && typeof source.technique === 'object' && !Array.isArray(source.technique)
-    ? (source.technique as Record<string, unknown>)
-    : null;
-  if (!rawTechnique) return null;
-  const maxLayer = QUALITY_MAX_LAYER[quality];
-  const techniqueName = asString(rawTechnique?.name);
-  if (!techniqueName) return null;
-
-  const technique: TechniqueGenerationCandidate['technique'] = {
-    name: techniqueName,
-    type: techniqueType,
-    quality,
-    maxLayer,
-    requiredRealm: asString(rawTechnique?.requiredRealm) || DEFAULT_REQUIRED_REALM,
-    attributeType: asString(rawTechnique?.attributeType) === 'physical' ? 'physical' : 'magic',
-    attributeElement: asString(rawTechnique?.attributeElement) || 'none',
-    tags: Array.isArray(rawTechnique?.tags)
-      ? rawTechnique!.tags!.map((entry) => asString(entry)).filter(Boolean)
-      : [],
-    description: asString(rawTechnique?.description),
-    longDesc: asString(rawTechnique?.longDesc),
-  };
-
-  const rawSkills = Array.isArray(source.skills) ? source.skills : [];
-  const skills: TechniqueGenerationCandidate['skills'] = rawSkills.flatMap((rawSkill, idx) => {
-    if (!rawSkill || typeof rawSkill !== 'object' || Array.isArray(rawSkill)) return [];
-    const row = rawSkill as Record<string, unknown>;
-    const name = asString(row.name);
-    if (!name) return [];
-    const normalizedEffects = normalizeEffects(row.effects);
-    const skill: TechniqueGenerationCandidate['skills'][number] = {
-      id: asString(row.id) || buildGeneratedSkillId(idx + 1),
-      name,
-      description: asString(row.description) || `${name}（AI生成）`,
-      icon: typeof row.icon === 'string' ? row.icon : null,
-      sourceType: 'technique' as const,
-      costLingqi: Math.floor(clamp(asNumber(row.costLingqi, 10), 0, 80)),
-      costLingqiRate: clamp(asNumber(row.costLingqiRate, 0), 0, 1),
-      costQixue: Math.floor(clamp(asNumber(row.costQixue, 0), 0, 120)),
-      costQixueRate: clamp(asNumber(row.costQixueRate, 0), 0, 0.95),
-      cooldown: Math.floor(clamp(asNumber(row.cooldown, 1), 0, 6)),
-      targetType: toTargetType(row.targetType),
-      targetCount: Math.floor(clamp(asNumber(row.targetCount, 1), 1, 6)),
-      damageType: toDamageType(row.damageType),
-      element: asString(row.element) || technique.attributeElement || 'none',
-      effects: normalizedEffects,
-      triggerType: 'active' as const,
-      aiPriority: Math.floor(clamp(asNumber(row.aiPriority, 50), 0, 100)),
-      upgrades: Array.isArray(row.upgrades)
-        ? row.upgrades.flatMap((entry) => {
-            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
-            return [entry as TechniqueSkillUpgradeEntry];
-          })
-        : [],
-    };
-    return [skill];
+  const validate = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType,
+    expectedQuality,
+    expectedMaxLayer: QUALITY_MAX_LAYER[expectedQuality],
   });
-
-  const rawLayers = Array.isArray(source.layers) ? source.layers : [];
-  const orderedLayers = rawLayers
-    .map((rawLayer): TechniqueGenerationCandidate['layers'][number] | null => {
-      if (!rawLayer || typeof rawLayer !== 'object' || Array.isArray(rawLayer)) return null;
-      const row = rawLayer as Record<string, unknown>;
-      const layerNo = Math.floor(clamp(asNumber(row.layer, 0), 1, maxLayer));
-      return {
-        layer: layerNo,
-        costSpiritStones: Math.floor(clamp(asNumber(row.costSpiritStones, 0), 0, 1000000)),
-        costExp: Math.floor(clamp(asNumber(row.costExp, 0), 0, 1000000)),
-        costMaterials: [] as Array<{ itemId: string; qty: number }>,
-        passives: Array.isArray(row.passives)
-          ? row.passives
-              .map((entry) => {
-                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-                const passive = entry as Record<string, unknown>;
-                const key = asString(passive.key);
-                const value = asNumber(passive.value, NaN);
-                if (!isSupportedTechniquePassiveKey(key) || !Number.isFinite(value)) return null;
-                return { key, value };
-              })
-              .filter((entry): entry is { key: string; value: number } => Boolean(entry))
-          : [],
-        unlockSkillIds: Array.isArray(row.unlockSkillIds)
-          ? row.unlockSkillIds.map((entry) => asString(entry)).filter(Boolean)
-          : [],
-        upgradeSkillIds: Array.isArray(row.upgradeSkillIds)
-          ? row.upgradeSkillIds.map((entry) => asString(entry)).filter(Boolean)
-          : [],
-        layerDesc: asString(row.layerDesc) || `第${layerNo}层`,
-      };
-    })
-    .filter((row): row is TechniqueGenerationCandidate['layers'][number] => row !== null)
-    .sort((a, b) => a.layer - b.layer);
-
-  return {
-    technique,
-    skills,
-    layers: orderedLayers,
-  };
-};
-
-const buildTechniqueGenerationAttemptFailure = (params: {
-  stage: TechniqueGenerationAttemptFailureStage;
-  reason: string;
-  modelName: string;
-  promptSnapshot?: string;
-}): TechniqueGenerationAttemptFailure => {
-  return {
-    success: false,
-    stage: params.stage,
-    reason: params.reason,
-    modelName: params.modelName,
-    promptSnapshot: params.promptSnapshot ?? '{}',
-  };
-};
-
-const logTechniqueGenerationAttemptFailure = (params: {
-  generationId: string;
-  characterId: number;
-  quality: TechniqueQuality;
-  attempt: number;
-  stage: TechniqueGenerationAttemptFailureStage;
-  reason: string;
-  modelName: string;
-}): void => {
-  console.error('[TechniqueGeneration] AI功法生成尝试失败:', params);
+  return validate.success
+    ? { success: true, message: 'ok', data: null }
+    : { success: false, message: validate.message, code: validate.code };
 };
 
 const logTechniqueGenerationTaskFailure = (params: {
@@ -701,129 +357,6 @@ const logTechniqueGenerationTaskFailure = (params: {
   console.error('[TechniqueGeneration] AI功法生成任务失败:', params);
 };
 
-const summarizeHttpErrorResponse = (responseText: string): string => {
-  const normalized = responseText.trim().replace(/\s+/g, ' ');
-  if (!normalized) return '';
-  return normalized.slice(0, 300);
-};
-
-const tryCallExternalGenerator = async (
-  techniqueType: GeneratedTechniqueType,
-  quality: TechniqueQuality,
-): Promise<TechniqueGenerationAttemptResult> => {
-  const endpoint = resolveTechniqueTextModelEndpoint(asString(process.env.AI_TECHNIQUE_MODEL_URL));
-  const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
-  const modelName = asString(process.env.AI_TECHNIQUE_MODEL_NAME) || 'gpt-4o-mini';
-  if (!endpoint || !apiKey) {
-    return buildTechniqueGenerationAttemptFailure({
-      stage: 'config_missing',
-      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
-      modelName,
-    });
-  }
-  const promptInput = buildTechniqueGeneratorPromptInput({
-    techniqueType,
-    quality,
-    maxLayer: QUALITY_MAX_LAYER[quality],
-    effectTypeEnum: Array.from(DAMAGE_EFFECT_TYPE_SET),
-  });
-
-  const payload = buildTechniqueTextModelPayload({
-    modelName,
-    systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
-    userMessage: JSON.stringify(promptInput),
-  });
-  const promptSnapshot = serializePromptSnapshot(payload as unknown as Record<string, unknown>);
-
-  const controller = new AbortController();
-  const timeoutMs = 300_000;
-  let didTimeout = false;
-  const timer = setTimeout(() => {
-    didTimeout = true;
-    controller.abort();
-  }, timeoutMs);
-
-  try {
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!resp.ok) {
-      const responseText = await resp.text();
-      const responseSummary = summarizeHttpErrorResponse(responseText);
-      return buildTechniqueGenerationAttemptFailure({
-        stage: 'http_error',
-        reason: responseSummary
-          ? `模型接口返回非成功状态：${resp.status}（endpoint=${endpoint}，body=${responseSummary}）`
-          : `模型接口返回非成功状态：${resp.status}（endpoint=${endpoint}）`,
-        modelName,
-        promptSnapshot,
-      });
-    }
-    const body = (await resp.json()) as Record<string, unknown>;
-    const content = extractTechniqueTextModelContent(
-      ((body.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as {
-        content?: string | Array<{ text?: string | null }> | null;
-      } | undefined)?.content,
-    );
-    if (!content) {
-      return buildTechniqueGenerationAttemptFailure({
-        stage: 'empty_response',
-        reason: '模型返回内容为空',
-        modelName,
-        promptSnapshot,
-      });
-    }
-
-    const parsedResult = parseTechniqueTextModelJsonObject(content);
-    if (!parsedResult.success) {
-      return buildTechniqueGenerationAttemptFailure({
-        stage: 'json_parse_failed',
-        reason: parsedResult.reason === 'empty_content'
-          ? '模型返回内容为空'
-          : '模型返回内容不是合法 JSON 对象',
-        modelName,
-        promptSnapshot,
-      });
-    }
-
-    const candidate = sanitizeCandidateFromModel(parsedResult.data, techniqueType, quality);
-    if (!candidate) {
-      return buildTechniqueGenerationAttemptFailure({
-        stage: 'candidate_sanitize_failed',
-        reason: '模型结果缺少必要字段或结构非法，无法完成清洗',
-        modelName,
-        promptSnapshot,
-      });
-    }
-    return {
-      success: true,
-      candidate,
-      modelName,
-      promptSnapshot,
-    };
-  } catch (error) {
-    const failure = resolveTechniqueGenerationRequestFailure({
-      error,
-      didTimeout,
-      timeoutMs,
-    });
-    return buildTechniqueGenerationAttemptFailure({
-      stage: failure.stage,
-      reason: failure.reason,
-      modelName,
-      promptSnapshot,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
 const generateCandidateWithRetry = async (args: {
   generationId: string;
   characterId: number;
@@ -831,97 +364,19 @@ const generateCandidateWithRetry = async (args: {
   quality: TechniqueQuality;
 }): Promise<{ candidate: TechniqueGenerationCandidate; modelName: string; attemptCount: number; promptSnapshot: string }> => {
   const { generationId, characterId, techniqueType, quality } = args;
-  const maxAttempts = 3;
-  let lastFailure: TechniqueGenerationAttemptFailure | null = null;
-  let attemptCount = 0;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    attemptCount = attempt;
-    const external = await tryCallExternalGenerator(techniqueType, quality);
-    if (!external.success) {
-      lastFailure = external;
-      logTechniqueGenerationAttemptFailure({
-        generationId,
-        characterId,
-        quality,
-        attempt,
-        stage: external.stage,
-        reason: external.reason,
-        modelName: external.modelName,
-      });
-      if (external.stage === 'config_missing') break;
-      continue;
-    }
-    const validate = validateCandidate(external.candidate, techniqueType, quality);
-    if (!validate.success) {
-      lastFailure = buildTechniqueGenerationAttemptFailure({
-        stage: 'candidate_validate_failed',
-        reason: validate.message,
-        modelName: external.modelName,
-        promptSnapshot: external.promptSnapshot,
-      });
-      logTechniqueGenerationAttemptFailure({
-        generationId,
-        characterId,
-        quality,
-        attempt,
-        stage: lastFailure.stage,
-        reason: lastFailure.reason,
-        modelName: lastFailure.modelName,
-      });
-      continue;
-    }
-    return {
-      candidate: external.candidate,
-      modelName: external.modelName,
-      attemptCount: attempt,
-      promptSnapshot: external.promptSnapshot,
-    };
-  }
-
-  const finalReason = lastFailure?.reason ?? '未知原因';
-  logTechniqueGenerationTaskFailure({
+  return generateTechniqueCandidateWithRetryCore({
     generationId,
     characterId,
+    techniqueType,
     quality,
-    attemptCount,
-    reason: finalReason,
-    stage: lastFailure?.stage,
-    modelName: lastFailure?.modelName,
+    maxLayer: QUALITY_MAX_LAYER[quality],
   });
-  throw new TechniqueGenerationExhaustedError(finalReason);
 };
 
 const remapGeneratedSkillIds = (
   candidate: TechniqueGenerationCandidate,
 ): TechniqueGenerationCandidate => {
-  const idMap = new Map<string, string>();
-  const remappedSkills = candidate.skills.map((skill, idx) => {
-    const generatedSkillId = buildGeneratedSkillId(idx + 1);
-    idMap.set(skill.id, generatedSkillId);
-    return {
-      ...skill,
-      id: generatedSkillId,
-    };
-  });
-
-  const remapLayerSkillIds = (ids: string[]): string[] => {
-    return ids
-      .map((id) => idMap.get(id))
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
-  };
-
-  const remappedLayers = candidate.layers.map((layer) => ({
-    ...layer,
-    unlockSkillIds: remapLayerSkillIds(layer.unlockSkillIds),
-    upgradeSkillIds: remapLayerSkillIds(layer.upgradeSkillIds),
-  }));
-
-  return {
-    ...candidate,
-    skills: remappedSkills,
-    layers: remappedLayers,
-  };
+  return remapTechniqueCandidateSkillIds(candidate);
 };
 
 class TechniqueGenerationService {
@@ -1391,167 +846,17 @@ class TechniqueGenerationService {
     }
 
     const draftTechniqueId = buildGeneratedTechniqueId();
-    await query(
-      `
-        INSERT INTO generated_technique_def (
-          id,
-          generation_id,
-          created_by_character_id,
-          name,
-          type,
-          quality,
-          max_layer,
-          required_realm,
-          attribute_type,
-          attribute_element,
-          tags,
-          description,
-          long_desc,
-          icon,
-          is_published,
-          enabled,
-          version,
-          created_at,
-          updated_at
-        ) VALUES (
-          $1, $2, $3,
-          $4, $5, $6, $7,
-          $8, $9, $10,
-          $11::jsonb,
-          $12, $13, $14,
-          false, true, 1, NOW(), NOW()
-        )
-      `,
-      [
-        draftTechniqueId,
-        generationId,
-        characterId,
-        normalizedCandidate.technique.name,
-        normalizedCandidate.technique.type,
-        normalizedCandidate.technique.quality,
-        normalizedCandidate.technique.maxLayer,
-        normalizedCandidate.technique.requiredRealm,
-        normalizedCandidate.technique.attributeType,
-        normalizedCandidate.technique.attributeElement,
-        JSON.stringify(normalizedCandidate.technique.tags),
-        normalizedCandidate.technique.description,
-        normalizedCandidate.technique.longDesc,
-        DEFAULT_GENERATED_SKILL_ICON,
-      ],
-    );
-
-    for (const skill of normalizedCandidate.skills) {
-      await query(
-        `
-          INSERT INTO generated_skill_def (
-            id,
-            generation_id,
-            source_type,
-            source_id,
-            code,
-            name,
-            description,
-            icon,
-            cost_lingqi,
-            cost_lingqi_rate,
-            cost_qixue,
-            cost_qixue_rate,
-            cooldown,
-            target_type,
-            target_count,
-            damage_type,
-            element,
-            effects,
-            trigger_type,
-            ai_priority,
-            upgrades,
-            enabled,
-            version,
-            created_at,
-            updated_at
-          ) VALUES (
-            $1, $2,
-            'technique', $3,
-            $4, $5, $6, $7,
-            $8, $9, $10, $11,
-            $12, $13, $14,
-            $15, $16, $17::jsonb,
-            $18, $19,
-            $20::jsonb,
-            true, 1, NOW(), NOW()
-          )
-        `,
-        [
-          skill.id,
-          generationId,
-          draftTechniqueId,
-          skill.id,
-          skill.name,
-          skill.description,
-          skill.icon,
-          skill.costLingqi,
-          skill.costLingqiRate,
-          skill.costQixue,
-          skill.costQixueRate,
-          skill.cooldown,
-          skill.targetType,
-          skill.targetCount,
-          skill.damageType,
-          skill.element,
-          JSON.stringify(skill.effects),
-          skill.triggerType,
-          skill.aiPriority,
-          JSON.stringify(skill.upgrades),
-        ],
-      );
-    }
-
-    for (const layer of normalizedCandidate.layers) {
-      await query(
-        `
-          INSERT INTO generated_technique_layer (
-            generation_id,
-            technique_id,
-            layer,
-            cost_spirit_stones,
-            cost_exp,
-            cost_materials,
-            passives,
-            unlock_skill_ids,
-            upgrade_skill_ids,
-            required_realm,
-            layer_desc,
-            enabled,
-            created_at,
-            updated_at
-          ) VALUES (
-            $1, $2, $3,
-            $4, $5,
-            $6::jsonb,
-            $7::jsonb,
-            $8::text[],
-            $9::text[],
-            $10,
-            $11,
-            true,
-            NOW(), NOW()
-          )
-        `,
-        [
-          generationId,
-          draftTechniqueId,
-          layer.layer,
-          layer.costSpiritStones,
-          layer.costExp,
-          JSON.stringify(layer.costMaterials),
-          JSON.stringify(layer.passives),
-          layer.unlockSkillIds,
-          layer.upgradeSkillIds,
-          normalizedCandidate.technique.requiredRealm,
-          layer.layerDesc,
-        ],
-      );
-    }
+    await persistGeneratedTechniqueCandidateTx({
+      generationId,
+      techniqueId: draftTechniqueId,
+      createdByCharacterId: characterId,
+      candidate: normalizedCandidate,
+      usageScope: 'character_only',
+      isPublished: false,
+      publishedAt: null,
+      nameLocked: false,
+      techniqueIcon: DEFAULT_GENERATED_SKILL_ICON,
+    });
 
     await query(
       `

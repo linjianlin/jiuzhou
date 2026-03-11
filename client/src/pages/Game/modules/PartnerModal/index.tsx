@@ -32,7 +32,6 @@ import {
   formatPartnerTechniqueSkillToggleLabel,
   formatPartnerTechniqueUpgradeCostLines,
   formatPartnerLearnResult,
-  formatPartnerObtainedFromLabel,
   formatPartnerTechniquePassiveLines,
   getPartnerAttrLabel,
   getPartnerEmptySlotCount,
@@ -458,6 +457,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               tabIndex={0}
               onClick={() => setSelectedPartnerId(partner.id)}
               onKeyDown={(event) => {
+                if (event.currentTarget !== event.target) return;
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 setSelectedPartnerId(partner.id);
@@ -465,14 +465,30 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             >
               <img className="partner-list-thumb" src={resolvePartnerAvatar(partner.avatar)} alt={partner.name} />
               <div className="partner-list-main">
-                <div className="partner-list-name">{partner.nickname || partner.name}</div>
-                <div className="partner-list-desc">
-                  等级 {partner.level} · {formatPartnerElementLabel(partner.element)} · {partner.role}
+                <div className="partner-list-info">
+                  <div className="partner-list-name">{partner.nickname || partner.name}</div>
+                  <div className="partner-list-desc">
+                    等级 {partner.level} · {formatPartnerElementLabel(partner.element)} · {partner.role}
+                  </div>
+                  <div className="partner-tag-row">
+                    <Tag color={partner.isActive ? 'green' : 'default'}>{partner.isActive ? '已出战' : '待命中'}</Tag>
+                    <Tag color="gold">{partner.quality}</Tag>
+                  </div>
                 </div>
-                <div className="partner-tag-row">
-                  <Tag color={partner.isActive ? 'green' : 'default'}>{partner.isActive ? '已出战' : '待命中'}</Tag>
-                  <Tag color="gold">{partner.quality}</Tag>
-                </div>
+                {!partner.isActive ? (
+                  <div className="partner-action-row partner-list-action-row">
+                    <Button
+                      type="primary"
+                      loading={actionKey === `activate-${partner.id}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleActivate(partner.id);
+                      }}
+                    >
+                      设为出战
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
@@ -501,27 +517,11 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               <Tag color="blue">等级 {selectedPartner.level}</Tag>
               <Tag color="gold">{selectedPartner.quality}</Tag>
             </div>
-            <div className="partner-meta">
-              模板：{selectedPartner.name} · 来源：{formatPartnerObtainedFromLabel(selectedPartner.obtainedFrom)}
-            </div>
             <div className="partner-role-line">
               {formatPartnerElementLabel(selectedPartner.element)} · {selectedPartner.role} · 功法槽 {selectedPartner.slotCount}
             </div>
           </div>
         </div>
-        {!selectedPartner.isActive ? (
-          <div className="partner-action-row">
-            <Button
-              type="primary"
-              loading={actionKey === `activate-${selectedPartner.id}`}
-              onClick={() => {
-                void handleActivate(selectedPartner.id);
-              }}
-            >
-              设为出战
-            </Button>
-          </div>
-        ) : null}
       </div>
     );
   };

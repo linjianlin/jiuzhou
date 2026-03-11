@@ -58,13 +58,21 @@ import {
   PARTNER_RECRUIT_SPIRIT_STONES_COST,
   resolvePartnerRecruitQualityByWeight,
   type PartnerRecruitDraft,
-  type PartnerRecruitElement,
-  type PartnerRecruitPassiveKey,
   type PartnerRecruitQuality,
   type PartnerRecruitRole,
   validatePartnerRecruitDraft,
 } from './shared/partnerRecruitRules.js';
 import { generatePartnerRecruitAvatar } from './shared/partnerRecruitAvatarGenerator.js';
+import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
+import {
+  TechniqueGenerationExhaustedError,
+  generateTechniqueCandidateWithRetry,
+  remapTechniqueCandidateSkillIds,
+  validateTechniqueGenerationCandidate,
+} from './shared/techniqueGenerationCandidateCore.js';
+import { persistGeneratedTechniqueCandidateTx } from './shared/generatedTechniquePersistence.js';
+import type { GeneratedTechniqueType } from './shared/techniqueGenerationConstraints.js';
+import type { TechniqueGenerationCandidate } from './techniqueGenerationService.js';
 
 export type ServiceResult<T = unknown> = {
   success: boolean;
@@ -130,34 +138,9 @@ type RecruitTextAttemptSuccess = {
 
 type RecruitTextAttemptResult = RecruitTextAttemptFailure | RecruitTextAttemptSuccess;
 
-type GeneratedTechniqueInsert = {
+type GeneratedRecruitTechniqueDraft = {
   techniqueId: string;
-  name: string;
-  description: string;
-  type: '武技' | '法诀' | '辅修';
-  quality: PartnerRecruitQuality;
-  attributeType: 'physical' | 'magic';
-  attributeElement: string;
-  maxLayer: number;
-  skill: null | {
-    skillId: string;
-    name: string;
-    description: string;
-    icon: string;
-    targetType: 'single_enemy' | 'single_ally' | 'self';
-    damageType: 'physical' | 'magic' | 'none';
-    element: string;
-    costLingqi: number;
-    cooldown: number;
-    aiPriority: number;
-    effects: unknown[];
-  };
-  layers: Array<{
-    layer: number;
-    costSpiritStones: number;
-    costExp: number;
-    passives: Array<{ key: PartnerRecruitPassiveKey; value: number }>;
-  }>;
+  candidate: TechniqueGenerationCandidate;
 };
 
 const PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE = [
@@ -193,169 +176,164 @@ const normalizeGeneratedId = (prefix: string): string => {
 const buildPartnerRecruitGenerationId = (): string => normalizeGeneratedId('partner-recruit');
 const buildGeneratedPartnerDefId = (): string => normalizeGeneratedId('partner-gen');
 const buildGeneratedTechniqueId = (): string => normalizeGeneratedId('tech-partner');
-const buildGeneratedSkillId = (): string => normalizeGeneratedId('skill-partner');
-
-const extractPassiveKeyIncrementByLayer = (
-  totalValue: number,
-  maxLayer: number,
-  layer: number,
-): number => {
-  if (maxLayer <= 0) return totalValue;
-  return Math.max(1, Math.floor((totalValue * layer) / maxLayer));
-};
 
 const resolveRoleCombatStyle = (role: PartnerRecruitRole): {
   attributeType: 'physical' | 'magic';
-  damageType: 'physical' | 'magic';
-  scaleAttr: 'wugong' | 'fagong';
 } => {
   if (role === '剑修' || role === '护卫') {
     return {
       attributeType: 'physical',
-      damageType: 'physical',
-      scaleAttr: 'wugong',
     };
   }
   return {
     attributeType: 'magic',
-    damageType: 'magic',
-    scaleAttr: 'fagong',
   };
 };
 
-const buildAttackSkillEffects = (
+const resolvePartnerRecruitTechniqueType = (
   role: PartnerRecruitRole,
-  element: PartnerRecruitElement,
-  techniqueIndex: number,
-): unknown[] => {
-  const combatStyle = resolveRoleCombatStyle(role);
-  return [
-    {
-      type: 'damage',
-      valueType: 'scale',
-      scaleAttr: combatStyle.scaleAttr,
-      scaleRate: Number((1.05 + techniqueIndex * 0.15).toFixed(2)),
-      element,
-    },
-  ];
-};
-
-const buildSupportSkillEffects = (role: PartnerRecruitRole): unknown[] => {
-  if (role === '药师') {
-    return [
-      {
-        type: 'heal',
-        valueType: 'scale',
-        scaleAttr: 'fagong',
-        scaleRate: 0.95,
-        value: 100,
-      },
-    ];
+  kind: PartnerRecruitDraft['innateTechniques'][number]['kind'],
+): GeneratedTechniqueType => {
+  if (kind === 'attack') {
+    return resolveRoleCombatStyle(role).attributeType === 'physical' ? '武技' : '法诀';
   }
-  return [
-    {
-      type: 'buff',
-      duration: 3,
-      value: 0.18,
-      buffKey: 'buff-zengshang-up',
-      buffKind: 'attr',
-      attrKey: 'zengshang',
-      applyType: 'flat',
-    },
-  ];
+  return '辅修';
 };
 
-const buildGuardSkillEffects = (): unknown[] => {
-  return [
-    {
-      type: 'buff',
-      duration: 3,
-      value: 0.2,
-      buffKey: 'buff-wufang-up',
-      buffKind: 'attr',
-      attrKey: 'wufang',
-      applyType: 'flat',
-    },
-  ];
+const resolvePartnerRecruitDefaultSkillIcon = (
+  kind: PartnerRecruitDraft['innateTechniques'][number]['kind'],
+): string => {
+  if (kind === 'attack') return DEFAULT_ATTACK_SKILL_ICON;
+  if (kind === 'support') return DEFAULT_SUPPORT_SKILL_ICON;
+  return DEFAULT_GUARD_SKILL_ICON;
 };
 
-const buildTechniqueArtifactsFromDraft = (
-  draft: PartnerRecruitDraft,
-): GeneratedTechniqueInsert[] => {
-  const quality = draft.partner.quality;
-  const maxLayer = getPartnerRecruitTechniqueMaxLayer(quality);
-  const roleStyle = resolveRoleCombatStyle(draft.partner.role);
-  return draft.innateTechniques.map((entry, index) => {
-    const techniqueId = buildGeneratedTechniqueId();
-    const skillId = entry.kind === 'guard' && index > 0 ? '' : buildGeneratedSkillId();
-    const skill = entry.kind === 'attack'
-      ? {
-          skillId,
-          name: `${entry.name}诀`,
-          description: entry.description,
-          icon: DEFAULT_ATTACK_SKILL_ICON,
-          targetType: 'single_enemy' as const,
-          damageType: roleStyle.damageType,
-          element: draft.partner.attributeElement,
-          costLingqi: 8 + index * 2,
-          cooldown: 1 + index,
-          aiPriority: 60 + index * 5,
-          effects: buildAttackSkillEffects(draft.partner.role, draft.partner.attributeElement, index),
-        }
-      : entry.kind === 'support'
-        ? {
-            skillId,
-            name: `${entry.name}术`,
-            description: entry.description,
-            icon: DEFAULT_SUPPORT_SKILL_ICON,
-            targetType: draft.partner.role === '药师' ? 'single_ally' as const : 'self' as const,
-            damageType: 'none' as const,
-            element: draft.partner.attributeElement,
-            costLingqi: 10 + index * 2,
-            cooldown: 2,
-            aiPriority: 68,
-            effects: buildSupportSkillEffects(draft.partner.role),
-          }
-        : {
-            skillId: skillId || buildGeneratedSkillId(),
-            name: `${entry.name}印`,
-            description: entry.description,
-            icon: DEFAULT_GUARD_SKILL_ICON,
-            targetType: 'self' as const,
-            damageType: 'none' as const,
-            element: draft.partner.attributeElement,
-            costLingqi: 9,
-            cooldown: 3,
-            aiPriority: 58,
-            effects: buildGuardSkillEffects(),
-          };
-    const techniqueType = entry.kind === 'attack'
-      ? (roleStyle.attributeType === 'physical' ? '武技' : '法诀')
-      : '辅修';
-    return {
-      techniqueId,
-      name: entry.name,
-      description: entry.description,
-      type: techniqueType,
-      quality,
-      attributeType: roleStyle.attributeType,
+const buildPartnerRecruitTechniquePromptContext = (params: {
+  draft: PartnerRecruitDraft;
+  technique: PartnerRecruitDraft['innateTechniques'][number];
+  techniqueIndex: number;
+  techniqueType: GeneratedTechniqueType;
+}): Record<string, unknown> => {
+  const { draft, technique, techniqueIndex, techniqueType } = params;
+  return {
+    partner: {
+      name: draft.partner.name,
+      quality: draft.partner.quality,
+      role: draft.partner.role,
       attributeElement: draft.partner.attributeElement,
+      description: draft.partner.description,
+    },
+    innateTechnique: {
+      slot: techniqueIndex + 1,
+      totalCount: draft.innateTechniques.length,
+      kind: technique.kind,
+      preferredTechniqueType: techniqueType,
+      preferredName: technique.name,
+      preferredDescription: technique.description,
+      preferredPassiveKey: technique.passiveKey,
+      preferredPassiveValue: technique.passiveValue,
+    },
+  };
+};
+
+const adaptTechniqueCandidateForPartner = (params: {
+  draft: PartnerRecruitDraft;
+  candidate: TechniqueGenerationCandidate;
+  techniqueType: GeneratedTechniqueType;
+}): TechniqueGenerationCandidate => {
+  const { draft, candidate, techniqueType } = params;
+  const roleStyle = resolveRoleCombatStyle(draft.partner.role);
+  const attributeType = techniqueType === '武技'
+    ? 'physical'
+    : techniqueType === '法诀'
+      ? 'magic'
+      : roleStyle.attributeType;
+
+  return {
+    ...candidate,
+    technique: {
+      ...candidate.technique,
+      type: techniqueType,
+      requiredRealm: '凡人',
+      attributeType,
+      attributeElement: draft.partner.attributeElement,
+    },
+    skills: candidate.skills.map((skill) => ({
+      ...skill,
+      element: draft.partner.attributeElement,
+      damageType: techniqueType === '武技'
+        ? (skill.damageType ?? 'physical')
+        : techniqueType === '法诀'
+          ? (skill.damageType ?? 'magic')
+          : skill.damageType,
+    })),
+  };
+};
+
+// 伙伴文案草稿只负责“想生成什么”，真正的技能/层级/被动统一复用常规功法 candidate 核心，
+// 这样伙伴招募与洞府研修就不会各维护一套数值与结构校验。
+const generateRecruitTechniqueDrafts = async (params: {
+  characterId: number;
+  generationId: string;
+  draft: PartnerRecruitDraft;
+}): Promise<GeneratedRecruitTechniqueDraft[]> => {
+  const { characterId, generationId, draft } = params;
+  const maxLayer = getPartnerRecruitTechniqueMaxLayer(draft.partner.quality);
+  const generatedTechniques: GeneratedRecruitTechniqueDraft[] = [];
+
+  for (const [index, entry] of draft.innateTechniques.entries()) {
+    const techniqueType = resolvePartnerRecruitTechniqueType(draft.partner.role, entry.kind);
+    const generated = await generateTechniqueCandidateWithRetry({
+      generationId: `${generationId}:innate:${index + 1}`,
+      characterId,
+      techniqueType,
+      quality: draft.partner.quality,
       maxLayer,
-      skill,
-      layers: Array.from({ length: maxLayer }, (_, idx) => {
-        const layer = idx + 1;
-        return {
-          layer,
-          costSpiritStones: 1_500 * layer * (index + 1),
-          costExp: 1_000 * layer * (index + 1),
-          passives: [{
-            key: entry.passiveKey,
-            value: extractPassiveKeyIncrementByLayer(entry.passiveValue, maxLayer, layer),
-          }],
-        };
+      promptContext: buildPartnerRecruitTechniquePromptContext({
+        draft,
+        technique: entry,
+        techniqueIndex: index,
+        techniqueType,
       }),
-    } satisfies GeneratedTechniqueInsert;
-  });
+    });
+    const adaptedCandidate = adaptTechniqueCandidateForPartner({
+      draft,
+      candidate: generated.candidate,
+      techniqueType,
+    });
+    const validateAdapted = validateTechniqueGenerationCandidate({
+      candidate: adaptedCandidate,
+      expectedTechniqueType: techniqueType,
+      expectedQuality: draft.partner.quality,
+      expectedMaxLayer: maxLayer,
+    });
+    if (!validateAdapted.success) {
+      throw new TechniqueGenerationExhaustedError(validateAdapted.message);
+    }
+
+    const execution = await generateTechniqueCandidateWithIcons({
+      quality: draft.partner.quality,
+      candidate: adaptedCandidate,
+      defaultSkillIcon: resolvePartnerRecruitDefaultSkillIcon(entry.kind),
+    });
+    const normalizedCandidate = remapTechniqueCandidateSkillIds(execution.candidate);
+    const validateNormalized = validateTechniqueGenerationCandidate({
+      candidate: normalizedCandidate,
+      expectedTechniqueType: techniqueType,
+      expectedQuality: draft.partner.quality,
+      expectedMaxLayer: maxLayer,
+    });
+    if (!validateNormalized.success) {
+      throw new TechniqueGenerationExhaustedError(validateNormalized.message);
+    }
+
+    generatedTechniques.push({
+      techniqueId: buildGeneratedTechniqueId(),
+      candidate: normalizedCandidate,
+    });
+  }
+
+  return generatedTechniques;
 };
 
 const buildPartnerDefFromDraft = (
@@ -364,7 +342,7 @@ const buildPartnerDefFromDraft = (
   characterId: number,
   draft: PartnerRecruitDraft,
   avatarUrl: string,
-  techniques: GeneratedTechniqueInsert[],
+  techniques: GeneratedRecruitTechniqueDraft[],
 ): PartnerDefConfig => {
   return {
     id: partnerDefId,
@@ -828,14 +806,13 @@ class PartnerRecruitService {
   }
 
   @Transactional
-  @Transactional
   private async persistGeneratedRecruitDraftTx(args: {
     characterId: number;
     generationId: string;
     draft: PartnerRecruitDraft;
     partnerDefId: string;
     avatarUrl: string;
-    techniques: GeneratedTechniqueInsert[];
+    techniques: GeneratedRecruitTechniqueDraft[];
   }): Promise<ServiceResult<{ preview: PartnerRecruitPreviewDto }>> {
     const { characterId, generationId, draft, partnerDefId, avatarUrl, techniques } = args;
     const jobRes = await query(
@@ -856,158 +833,20 @@ class PartnerRecruitService {
     }
 
     for (const technique of techniques) {
-      await query(
-        `
-          INSERT INTO generated_technique_def (
-            id,
-            generation_id,
-            created_by_character_id,
-            name,
-            display_name,
-            normalized_name,
-            type,
-            quality,
-            max_layer,
-            required_realm,
-            attribute_type,
-            attribute_element,
-            usage_scope,
-            tags,
-            description,
-            long_desc,
-            icon,
-            is_published,
-            published_at,
-            name_locked,
-            enabled,
-            version,
-            created_at,
-            updated_at
-          ) VALUES (
-            $1, $2, $3,
-            $4, $5, NULL,
-            $6, $7, $8, '凡人',
-            $9, $10, 'partner_only',
-            '[]'::jsonb,
-            $11, $12, $13,
-            true, NOW(), true, true, 1, NOW(), NOW()
-          )
-        `,
-        [
-          technique.techniqueId,
-          generationId,
-          characterId,
-          technique.name,
-          technique.name,
-          technique.type,
-          technique.quality,
-          technique.maxLayer,
-          technique.attributeType,
-          technique.attributeElement,
-          technique.description,
-          `${technique.description}（伙伴天生功法）`,
-          technique.skill?.icon ?? null,
-        ],
-      );
-
-      if (technique.skill) {
-        await query(
-          `
-            INSERT INTO generated_skill_def (
-              id,
-              generation_id,
-              source_type,
-              source_id,
-              code,
-              name,
-              description,
-              icon,
-              cost_lingqi,
-              cost_lingqi_rate,
-              cost_qixue,
-              cost_qixue_rate,
-              cooldown,
-              target_type,
-              target_count,
-              damage_type,
-              element,
-              effects,
-              trigger_type,
-              ai_priority,
-              upgrades,
-              enabled,
-              version,
-              created_at,
-              updated_at
-            ) VALUES (
-              $1, $2, 'technique', $3, $4, $5, $6, $7,
-              $8, 0, 0, 0, $9, $10, 1, $11, $12, $13::jsonb,
-              'active', $14, '[]'::jsonb, true, 1, NOW(), NOW()
-            )
-          `,
-          [
-            technique.skill.skillId,
-            generationId,
-            technique.techniqueId,
-            technique.skill.skillId,
-            technique.skill.name,
-            technique.skill.description,
-            technique.skill.icon,
-            technique.skill.costLingqi,
-            technique.skill.cooldown,
-            technique.skill.targetType,
-            technique.skill.damageType,
-            technique.skill.element,
-            JSON.stringify(technique.skill.effects),
-            technique.skill.aiPriority,
-          ],
-        );
-      }
-
-      for (const layer of technique.layers) {
-        await query(
-          `
-            INSERT INTO generated_technique_layer (
-              generation_id,
-              technique_id,
-              layer,
-              cost_spirit_stones,
-              cost_exp,
-              cost_materials,
-              passives,
-              unlock_skill_ids,
-              upgrade_skill_ids,
-              required_realm,
-              layer_desc,
-              enabled,
-              created_at,
-              updated_at
-            ) VALUES (
-              $1, $2, $3,
-              $4, $5,
-              '[]'::jsonb,
-              $6::jsonb,
-              $7::text[],
-              '{}'::text[],
-              '凡人',
-              $8,
-              true,
-              NOW(),
-              NOW()
-            )
-          `,
-          [
-            generationId,
-            technique.techniqueId,
-            layer.layer,
-            layer.costSpiritStones,
-            layer.costExp,
-            JSON.stringify(layer.passives),
-            technique.skill && layer.layer === 1 ? [technique.skill.skillId] : [],
-            `第 ${layer.layer} 层`,
-          ],
-        );
-      }
+      await persistGeneratedTechniqueCandidateTx({
+        generationId,
+        techniqueId: technique.techniqueId,
+        createdByCharacterId: characterId,
+        candidate: technique.candidate,
+        usageScope: 'partner_only',
+        isPublished: true,
+        publishedAt: new Date(),
+        nameLocked: true,
+        techniqueIcon: technique.candidate.skills[0]?.icon ?? null,
+        displayName: technique.candidate.technique.name,
+        longDescSuffix: '（伙伴天生功法）',
+        requiredRealm: '凡人',
+      });
     }
 
     const partnerDef = buildPartnerDefFromDraft(partnerDefId, generationId, characterId, draft, avatarUrl, techniques);
@@ -1104,40 +943,50 @@ class PartnerRecruitService {
         continue;
       }
 
-      const partnerDefId = buildGeneratedPartnerDefId();
-      const techniques = buildTechniqueArtifactsFromDraft(result.draft);
-      const avatarUrl = await generatePartnerRecruitAvatar({
-        partnerId: partnerDefId,
-        name: result.draft.partner.name,
-        quality: result.draft.partner.quality,
-        element: result.draft.partner.attributeElement,
-        role: result.draft.partner.role,
-        description: result.draft.partner.description,
-      });
+      try {
+        const partnerDefId = buildGeneratedPartnerDefId();
+        const techniques = await generateRecruitTechniqueDrafts({
+          characterId: args.characterId,
+          generationId: args.generationId,
+          draft: result.draft,
+        });
+        const avatarUrl = await generatePartnerRecruitAvatar({
+          partnerId: partnerDefId,
+          name: result.draft.partner.name,
+          quality: result.draft.partner.quality,
+          element: result.draft.partner.attributeElement,
+          role: result.draft.partner.role,
+          description: result.draft.partner.description,
+        });
 
-      const persist = await this.persistGeneratedRecruitDraftTx({
-        characterId: args.characterId,
-        generationId: args.generationId,
-        draft: result.draft,
-        partnerDefId,
-        avatarUrl,
-        techniques,
-      });
-      if (!persist.success || !persist.data) {
-        lastFailure = persist.message;
+        const persist = await this.persistGeneratedRecruitDraftTx({
+          characterId: args.characterId,
+          generationId: args.generationId,
+          draft: result.draft,
+          partnerDefId,
+          avatarUrl,
+          techniques,
+        });
+        if (!persist.success || !persist.data) {
+          lastFailure = persist.message;
+          lastModelName = result.modelName;
+          continue;
+        }
+
+        return {
+          success: true,
+          message: '伙伴预览生成成功',
+          data: {
+            status: 'generated_draft',
+            preview: persist.data.preview,
+            errorMessage: null,
+          },
+        };
+      } catch (error) {
+        lastFailure = error instanceof Error ? error.message : '伙伴功法生成异常';
         lastModelName = result.modelName;
         continue;
       }
-
-      return {
-        success: true,
-        message: '伙伴预览生成成功',
-        data: {
-          status: 'generated_draft',
-          preview: persist.data.preview,
-          errorMessage: null,
-        },
-      };
     }
 
     const finalReason = lastModelName ? `伙伴生成失败：${lastFailure}（model=${lastModelName}）` : `伙伴生成失败：${lastFailure}`;

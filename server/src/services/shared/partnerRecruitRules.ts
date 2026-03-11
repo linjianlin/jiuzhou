@@ -30,6 +30,10 @@ import {
   PARTNER_INTEGER_ATTR_KEYS,
   normalizePartnerAttrValue,
 } from './partnerRules.js';
+import {
+  getTechniquePassiveValueConstraint,
+  type TechniquePassiveValueConstraint,
+} from './techniqueGenerationConstraints.js';
 
 export type PartnerRecruitQuality = '黄' | '玄' | '地' | '天';
 export type PartnerRecruitElement = 'jin' | 'mu' | 'shui' | 'huo' | 'tu' | 'none';
@@ -172,6 +176,34 @@ const PARTNER_RECRUIT_QUALITY_SCHEMA_NAME_SEGMENT: Record<PartnerRecruitQuality,
   玄: 'xuan',
   地: 'di',
   天: 'tian',
+};
+
+const getPartnerRecruitPassiveValueConstraint = (
+  key: PartnerRecruitPassiveKey,
+  quality: PartnerRecruitQuality,
+): TechniquePassiveValueConstraint | null => {
+  return getTechniquePassiveValueConstraint(key, quality);
+};
+
+const buildPartnerRecruitPassiveValueGuideByKey = (
+  quality: PartnerRecruitQuality,
+): Record<PartnerRecruitPassiveKey, TechniquePassiveValueConstraint> => {
+  return PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS.reduce<Record<PartnerRecruitPassiveKey, TechniquePassiveValueConstraint>>((accumulator, key) => {
+    const constraint = getPartnerRecruitPassiveValueConstraint(key, quality);
+    if (constraint) {
+      accumulator[key] = constraint;
+    }
+    return accumulator;
+  }, {} as Record<PartnerRecruitPassiveKey, TechniquePassiveValueConstraint>);
+};
+
+const getPartnerRecruitPassiveValueMaxTotalUpperBound = (
+  quality: PartnerRecruitQuality,
+): number => {
+  return PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS.reduce((maxValue, key) => {
+    const constraint = getPartnerRecruitPassiveValueConstraint(key, quality);
+    return constraint ? Math.max(maxValue, constraint.maxTotal) : maxValue;
+  }, 0);
 };
 
 const DRAFT_STAT_RANGES_BY_QUALITY: Record<PartnerRecruitQuality, DraftStatRanges> = {
@@ -335,12 +367,14 @@ const isTextLengthInRange = (value: string, range: TextLengthRange): boolean => 
 const buildPartnerRecruitNumberSchema = (
   type: 'integer' | 'number',
   params: {
+    maximum?: number;
     minimum?: number;
     exclusiveMinimum?: number;
   },
 ): TechniqueTextModelJsonSchema => {
   return {
     type,
+    ...(params.maximum === undefined ? {} : { maximum: params.maximum }),
     ...(params.minimum === undefined ? {} : { minimum: params.minimum }),
     ...(params.exclusiveMinimum === undefined ? {} : { exclusiveMinimum: params.exclusiveMinimum }),
   };
@@ -379,6 +413,7 @@ export const buildPartnerRecruitResponseFormat = (
   quality: PartnerRecruitQuality,
 ): TechniqueTextModelResponseFormat => {
   const ranges = DRAFT_STAT_RANGES_BY_QUALITY[quality];
+  const passiveValueMaxTotalUpperBound = getPartnerRecruitPassiveValueMaxTotalUpperBound(quality);
   return buildTechniqueTextModelJsonSchemaResponseFormat({
     name: `partner_recruit_draft_${PARTNER_RECRUIT_QUALITY_SCHEMA_NAME_SEGMENT[quality]}`,
     schema: {
@@ -449,7 +484,10 @@ export const buildPartnerRecruitResponseFormat = (
                 type: 'string',
                 enum: [...PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS],
               },
-              passiveValue: buildPartnerRecruitNumberSchema('number', { exclusiveMinimum: 0 }),
+              passiveValue: buildPartnerRecruitNumberSchema('number', {
+                exclusiveMinimum: 0,
+                maximum: passiveValueMaxTotalUpperBound,
+              }),
             },
           },
         },
@@ -486,6 +524,7 @@ export const getPartnerRecruitExpectedInnateTechniqueCount = (
 export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): Record<string, unknown> => {
   const ranges = DRAFT_STAT_RANGES_BY_QUALITY[quality];
   const percentAttrKeys = PARTNER_RECRUIT_BASE_ATTR_KEYS.filter((key) => !PARTNER_INTEGER_ATTR_KEYS.has(key));
+  const passiveValueGuideByKey = buildPartnerRecruitPassiveValueGuideByKey(quality);
   return {
     worldview: '中国仙侠世界《九州修仙录》',
     quality,
@@ -503,6 +542,7 @@ export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): 
     requiredAttrKeys: [...PARTNER_RECRUIT_BASE_ATTR_KEYS],
     integerAttrKeys: [...PARTNER_INTEGER_ATTR_KEYS],
     percentAttrKeys,
+    passiveValueGuideByKey,
     constraints: [
       '必须返回严格 JSON 对象，禁止额外解释文本',
       '顶层字段必须且只能使用 requiredTopLevelKeys，禁止使用 forbiddenAliasKeys 中的别名字段',
@@ -511,9 +551,9 @@ export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): 
       `每个天生功法名字 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.max} 个中文字符，描述 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.max} 个中文字符`,
       'partner 必须完整包含 partnerRequiredKeys；每个 innateTechniques 项必须完整包含 innateTechniqueRequiredKeys',
       'partner.baseAttrs 与 partner.levelAttrGains 必须完整包含 requiredAttrKeys 中的全部字段，禁止缺项',
+      '每个天生功法 passiveValue 必须 > 0，且不得超过 passiveValueGuideByKey[passiveKey].maxTotal；百分比继续使用小数表示，例如 0.18 表示 18%',
       'integerAttrKeys 中的属性必须使用非负整数；其中 partner.baseAttrs.max_qixue 与 partner.baseAttrs.sudu 必须大于 0，成长值允许为 0',
       'percentAttrKeys 中的属性必须使用非负数字，小数表示百分比，例如 0.18 表示 18%',
-      '当前版本不限制属性数值最大值，但禁止负数、NaN、Infinity',
       '槽位与天生功法数量必须落在给定范围内',
     ],
   };
@@ -570,13 +610,18 @@ export const validatePartnerRecruitDraft = (
     const kind = row.kind;
     const passiveKey = row.passiveKey;
     const passiveValue = asFiniteNumber(row.passiveValue);
+    const passiveConstraint = isPartnerRecruitPassiveKey(passiveKey)
+      ? getPartnerRecruitPassiveValueConstraint(passiveKey, quality)
+      : null;
     if (
       !isTextLengthInRange(techniqueName, PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName) ||
       !isTextLengthInRange(techniqueDescription, PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription) ||
       !isPartnerRecruitTechniqueKind(kind) ||
       !isPartnerRecruitPassiveKey(passiveKey) ||
+      !passiveConstraint ||
       !Number.isFinite(passiveValue) ||
-      passiveValue <= 0
+      passiveValue <= 0 ||
+      passiveValue > passiveConstraint.maxTotal
     ) {
       return [];
     }
