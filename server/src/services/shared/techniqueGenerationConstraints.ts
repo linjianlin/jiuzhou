@@ -155,10 +155,10 @@ const TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE: Record<
   Record<GeneratedTechniqueQuality, Omit<TechniquePassiveValueConstraint, 'mode'>>
 > = {
   percent: {
-    黄: { maxPerLayer: 0.05, maxTotal: 0.10 },
-    玄: { maxPerLayer: 0.10, maxTotal: 0.20 },
-    地: { maxPerLayer: 0.15, maxTotal: 0.30 },
-    天: { maxPerLayer: 0.20, maxTotal: 0.40 },
+    黄: { maxPerLayer: 0.10, maxTotal: 0.20 },
+    玄: { maxPerLayer: 0.20, maxTotal: 0.30 },
+    地: { maxPerLayer: 0.30, maxTotal: 0.40 },
+    天: { maxPerLayer: 0.35, maxTotal: 0.50 },
   },
   flat: {
     黄: { maxPerLayer: 10, maxTotal: 20 },
