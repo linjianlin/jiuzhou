@@ -1,4 +1,4 @@
-import { App, Button, Drawer, Empty, InputNumber, Modal, Progress, Skeleton, Tag } from 'antd';
+import { App, Button, Drawer, Empty, InputNumber, Modal, Progress, Segmented, Skeleton, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activatePartner,
@@ -395,7 +395,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
 
   const handleDiscardRecruit = useCallback(async (generationId: string) => {
     modal.confirm({
-      title: '确认放弃当前伙伴预览？',
+      title: '确认放弃当前伙伴招募？',
       content: '放弃后这次生成结果会立即作废，需要重新开始招募才能获得新的伙伴预览。',
       okText: '确认放弃',
       cancelText: '继续查看',
@@ -404,11 +404,11 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
         setActionKey(`recruit-discard-${generationId}`);
         try {
           const res = await discardPartnerRecruitDraft(generationId);
-          if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '放弃预览失败'));
-          message.success(res.message || '已放弃本次预览');
+          if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '放弃失败'));
+          message.success(res.message || '已放弃本次招募');
           await refreshRecruitStatus();
         } catch (error) {
-          message.error(getUnifiedApiErrorMessage(error as { message?: string }, '放弃预览失败'));
+          message.error(getUnifiedApiErrorMessage(error as { message?: string }, '放弃失败'));
         } finally {
           setActionKey('');
         }
@@ -933,7 +933,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                   void handleDiscardRecruit(recruitPanelView.job.generationId);
                 }}
               >
-                放弃预览
+                放弃
               </Button>
               <Button
                 type="primary"
@@ -986,6 +986,20 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     const panelOptions = recruitEnabled
       ? PARTNER_PANEL_OPTIONS
       : PARTNER_PANEL_OPTIONS.filter((item) => item.value !== 'recruit');
+    const renderPanelMenuLabel = (item: { value: PartnerPanelKey; label: string }) => {
+      return (
+        <span className="partner-menu-label">
+          {item.label}
+          {item.value === 'recruit' && recruitEnabled && recruitIndicator.badgeDot ? (
+            <span className="partner-menu-dot" />
+          ) : null}
+        </span>
+      );
+    };
+    const mobilePanelOptions = panelOptions.map((item) => ({
+      value: item.value,
+      label: renderPanelMenuLabel(item),
+    }));
     const panelContent = (() => {
       if (panel === 'partners') return renderPartnerListPanel();
       if (panel === 'overview') return renderOverviewPanel();
@@ -1002,22 +1016,17 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             <div className="partner-left-name">伙伴</div>
           </div>
           {isMobile ? (
-            <div className="partner-mobile-menu">
-              {panelOptions.map((item) => (
-                <Button
-                  key={item.value}
-                  type={panel === item.value ? 'primary' : 'default'}
-                  className="partner-left-item partner-mobile-menu-item"
-                  onClick={() => setPanel(item.value)}
-                >
-                  <span className="partner-menu-label">
-                    {item.label}
-                    {item.value === 'recruit' && recruitEnabled && recruitIndicator.badgeDot ? (
-                      <span className="partner-menu-dot" />
-                    ) : null}
-                  </span>
-                </Button>
-              ))}
+            <div className="partner-left-segmented-wrap">
+              <Segmented
+                className="partner-left-segmented"
+                value={panel}
+                options={mobilePanelOptions}
+                onChange={(value) => {
+                  if (typeof value !== 'string') return;
+                  if (!panelOptions.some((item) => item.value === value)) return;
+                  setPanel(value as PartnerPanelKey);
+                }}
+              />
             </div>
           ) : (
             <div className="partner-left-list">
@@ -1028,12 +1037,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                   className="partner-left-item"
                   onClick={() => setPanel(item.value)}
                 >
-                  <span className="partner-menu-label">
-                    {item.label}
-                    {item.value === 'recruit' && recruitEnabled && recruitIndicator.badgeDot ? (
-                      <span className="partner-menu-dot" />
-                    ) : null}
-                  </span>
+                  {renderPanelMenuLabel(item)}
                 </Button>
               ))}
             </div>

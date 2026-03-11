@@ -89,18 +89,16 @@
 }
 
 .partner-left-segmented {
-  width: 100%;
-}
+  width: max-content;
 
-.partner-mobile-menu {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.partner-mobile-menu-item {
-  justify-content: center;
-  padding-inline: 4px;
+  .ant-segmented-item-label {
+    min-height: 32px;
+    line-height: 32px;
+    padding-inline: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
 }
 
 .partner-modal-right {
@@ -782,6 +780,16 @@
     overflow: auto;
   }
 
+  .partner-left-segmented-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  .partner-left-segmented {
+    min-width: 100%;
+  }
+
   .partner-overview-head,
   .partner-grid,
   .partner-upgrade-top {
@@ -902,11 +910,6 @@
     padding: 0 0 10px;
   }
 
-  .partner-mobile-menu {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-  }
-
   .partner-quick-actions {
     grid-template-columns: 1fr;
   }
@@ -928,10 +931,11 @@
     padding: 9px;
   }
 
-  .partner-mobile-menu-item {
-    font-size: 11px;
-    height: 32px;
-    padding-inline: 2px;
+  .partner-left-segmented {
+    .ant-segmented-item-label {
+      padding-inline: 10px;
+      font-size: 11px;
+    }
   }
 
   .partner-combat-grid {
@@ -941,11 +945,5 @@
   .partner-technique-head,
   .partner-book-head {
     gap: 8px;
-  }
-}
-
-@media screen and (max-width: 360px) {
-  .partner-mobile-menu {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

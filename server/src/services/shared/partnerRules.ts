@@ -108,13 +108,6 @@ const cloneBaseAttrs = (
   };
 };
 
-export const normalizePartnerAttrValue = (key: string, value: number): number => {
-  if (PARTNER_INTEGER_ATTR_KEYS.has(key)) {
-    return Math.max(0, Math.round(value));
-  }
-  return Math.max(0, Number(value.toFixed(6)));
-};
-
 export const calcPartnerUpgradeExpByTargetLevel = (
   targetLevel: number,
   config: PartnerGrowthConfig,
@@ -234,13 +227,8 @@ export const buildPartnerBattleAttrs = (params: {
     base[key] = normalizeFiniteNumber(base[key]) + normalizeFiniteNumber(value);
   }
 
-  const normalizedEntries = Object.entries(base).map(([key, value]) => [
-    key,
-    normalizePartnerAttrValue(key, value),
-  ]);
-
   return {
-    ...Object.fromEntries(normalizedEntries),
+    ...base,
     element: params.element,
   };
 };

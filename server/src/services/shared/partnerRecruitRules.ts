@@ -18,7 +18,10 @@
  * 1) 草稿校验不允许偷偷兜底成“低质量占位伙伴”，任一关键字段非法都应直接失败退款。
  * 2) 冷却判断与状态接口必须共用同一套纯函数，否则前端倒计时与服务端拦截会在临界秒不一致。
  */
-import type { PartnerBaseAttrConfig } from '../staticConfigLoader.js';
+import {
+  getPartnerDefinitionById,
+  type PartnerBaseAttrConfig,
+} from '../staticConfigLoader.js';
 import {
   buildTechniqueTextModelJsonSchemaResponseFormat,
   type TechniqueTextModelJsonSchema,
@@ -28,7 +31,6 @@ import {
 } from './techniqueTextModelShared.js';
 import {
   PARTNER_INTEGER_ATTR_KEYS,
-  normalizePartnerAttrValue,
 } from './partnerRules.js';
 import {
   getTechniquePassiveValueConstraint,
@@ -37,7 +39,7 @@ import {
 
 export type PartnerRecruitQuality = '黄' | '玄' | '地' | '天';
 export type PartnerRecruitElement = 'jin' | 'mu' | 'shui' | 'huo' | 'tu' | 'none';
-export type PartnerRecruitRole = '护卫' | '剑修' | '术师' | '药师' | '奇辅';
+export type PartnerRecruitCombatStyle = 'physical' | 'magic';
 export type PartnerRecruitTechniqueKind = 'attack' | 'support' | 'guard';
 export type PartnerRecruitPassiveKey =
   | 'max_qixue'
@@ -59,7 +61,8 @@ export type PartnerRecruitDraft = {
     description: string;
     quality: PartnerRecruitQuality;
     attributeElement: PartnerRecruitElement;
-    role: PartnerRecruitRole;
+    role: string;
+    combatStyle: PartnerRecruitCombatStyle;
     maxTechniqueSlots: number;
     baseAttrs: PartnerRecruitBaseAttrs;
     levelAttrGains: PartnerRecruitBaseAttrs;
@@ -71,16 +74,6 @@ export type PartnerRecruitDraft = {
     passiveKey: PartnerRecruitPassiveKey;
     passiveValue: number;
   }>;
-};
-
-type AttrRange = {
-  min: number;
-  max: number;
-};
-
-type DraftStatRanges = {
-  techniqueSlots: AttrRange;
-  innateTechniqueCount: AttrRange;
 };
 
 type TextLengthRange = {
@@ -96,6 +89,7 @@ const DAY_SECONDS = 24 * HOUR_SECONDS;
 const PARTNER_RECRUIT_TEXT_LENGTH_LIMITS = {
   partnerName: { min: 2, max: 6 },
   partnerDescription: { min: 35, max: 90 },
+  partnerRole: { min: 2, max: 6 },
   techniqueName: { min: 2, max: 6 },
   techniqueDescription: { min: 18, max: 60 },
 } as const satisfies Record<string, TextLengthRange>;
@@ -104,7 +98,7 @@ export const PARTNER_RECRUIT_SPIRIT_STONES_COST = 50_000;
 export const PARTNER_RECRUIT_COOLDOWN_HOURS = 12;
 export const PARTNER_RECRUIT_PREVIEW_EXPIRE_HOURS = 24;
 export const PARTNER_RECRUIT_ALLOWED_ELEMENTS: readonly PartnerRecruitElement[] = ['jin', 'mu', 'shui', 'huo', 'tu', 'none'] as const;
-export const PARTNER_RECRUIT_ALLOWED_ROLES: readonly PartnerRecruitRole[] = ['护卫', '剑修', '术师', '药师', '奇辅'] as const;
+export const PARTNER_RECRUIT_ALLOWED_COMBAT_STYLES: readonly PartnerRecruitCombatStyle[] = ['physical', 'magic'] as const;
 export const PARTNER_RECRUIT_ALLOWED_TECHNIQUE_KINDS: readonly PartnerRecruitTechniqueKind[] = ['attack', 'support', 'guard'] as const;
 export const PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS: readonly PartnerRecruitPassiveKey[] = [
   'max_qixue',
@@ -159,6 +153,7 @@ const PARTNER_RECRUIT_PARTNER_REQUIRED_KEYS = [
   'quality',
   'attributeElement',
   'role',
+  'combatStyle',
   'maxTechniqueSlots',
   'baseAttrs',
   'levelAttrGains',
@@ -171,6 +166,7 @@ const PARTNER_RECRUIT_INNATE_TECHNIQUE_REQUIRED_KEYS = [
   'passiveValue',
 ] as const;
 const PARTNER_RECRUIT_FORBIDDEN_ALIAS_KEYS = ['element', 'slots', 'techniques'] as const;
+const PARTNER_RECRUIT_INNATE_TECHNIQUE_COUNT = 1;
 const PARTNER_RECRUIT_QUALITY_SCHEMA_NAME_SEGMENT: Record<PartnerRecruitQuality, string> = {
   黄: 'huang',
   玄: 'xuan',
@@ -206,25 +202,6 @@ const getPartnerRecruitPassiveValueMaxTotalUpperBound = (
   }, 0);
 };
 
-const DRAFT_STAT_RANGES_BY_QUALITY: Record<PartnerRecruitQuality, DraftStatRanges> = {
-  黄: {
-    techniqueSlots: { min: 2, max: 2 },
-    innateTechniqueCount: { min: 1, max: 1 },
-  },
-  玄: {
-    techniqueSlots: { min: 2, max: 3 },
-    innateTechniqueCount: { min: 1, max: 1 },
-  },
-  地: {
-    techniqueSlots: { min: 3, max: 3 },
-    innateTechniqueCount: { min: 2, max: 2 },
-  },
-  天: {
-    techniqueSlots: { min: 3, max: 4 },
-    innateTechniqueCount: { min: 2, max: 2 },
-  },
-};
-
 const QUALITY_ROLL_TABLE: ReadonlyArray<{ quality: PartnerRecruitQuality; weight: number }> = [
   { quality: '黄', weight: 55 },
   { quality: '玄', weight: 28 },
@@ -252,8 +229,8 @@ const isPartnerRecruitElement = (raw: unknown): raw is PartnerRecruitElement => 
   return PARTNER_RECRUIT_ALLOWED_ELEMENTS.includes(raw as PartnerRecruitElement);
 };
 
-const isPartnerRecruitRole = (raw: unknown): raw is PartnerRecruitRole => {
-  return PARTNER_RECRUIT_ALLOWED_ROLES.includes(raw as PartnerRecruitRole);
+const isPartnerRecruitCombatStyle = (raw: unknown): raw is PartnerRecruitCombatStyle => {
+  return PARTNER_RECRUIT_ALLOWED_COMBAT_STYLES.includes(raw as PartnerRecruitCombatStyle);
 };
 
 const isPartnerRecruitTechniqueKind = (raw: unknown): raw is PartnerRecruitTechniqueKind => {
@@ -297,18 +274,22 @@ const createEmptyPartnerRecruitBaseAttrs = (): PartnerRecruitBaseAttrs => ({
 const normalizeStrictBaseAttrValue = (
   row: Record<string, unknown>,
   key: keyof PartnerRecruitBaseAttrs,
-  requirePositiveCoreAttrs: boolean,
+  params: {
+    attrSource: 'baseAttrs' | 'levelAttrGains';
+    requirePositiveCoreAttrs: boolean;
+  },
 ): number | null => {
   if (!(key in row)) return null;
   const value = asFiniteNumber(row[key]);
   if (!Number.isFinite(value) || value < 0) return null;
-  if (PARTNER_INTEGER_ATTR_KEYS.has(key) && !Number.isInteger(value)) {
+  const shouldRequireInteger = params.attrSource === 'baseAttrs' && PARTNER_INTEGER_ATTR_KEYS.has(key);
+  if (shouldRequireInteger && !Number.isInteger(value)) {
     return null;
   }
-  if (requirePositiveCoreAttrs && PARTNER_RECRUIT_STRICT_POSITIVE_ATTR_KEYS.has(key) && value <= 0) {
+  if (params.requirePositiveCoreAttrs && PARTNER_RECRUIT_STRICT_POSITIVE_ATTR_KEYS.has(key) && value <= 0) {
     return null;
   }
-  return normalizePartnerAttrValue(key, value);
+  return value;
 };
 
 export const fillPartnerRecruitBaseAttrs = (
@@ -319,41 +300,44 @@ export const fillPartnerRecruitBaseAttrs = (
   for (const key of PARTNER_RECRUIT_BASE_ATTR_KEYS) {
     const value = asFiniteNumber(raw[key]);
     if (!Number.isFinite(value) || value < 0) continue;
-    baseAttrs[key] = normalizePartnerAttrValue(key, value);
+    baseAttrs[key] = value;
   }
   return baseAttrs;
 };
 
 const normalizeBaseAttrs = (
   raw: unknown,
-  requirePositiveCoreAttrs: boolean,
+  params: {
+    attrSource: 'baseAttrs' | 'levelAttrGains';
+    requirePositiveCoreAttrs: boolean;
+  },
 ): PartnerRecruitBaseAttrs | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
   const baseAttrs = createEmptyPartnerRecruitBaseAttrs();
   for (const key of PARTNER_RECRUIT_BASE_ATTR_KEYS) {
-    const value = normalizeStrictBaseAttrValue(row, key, requirePositiveCoreAttrs);
+    const value = normalizeStrictBaseAttrValue(row, key, params);
     if (value === null) return null;
     baseAttrs[key] = value;
   }
   return baseAttrs;
 };
 
-const isAttrInRange = (value: number, range: AttrRange): boolean => {
-  return Number.isInteger(value) && value >= range.min && value <= range.max;
-};
-
 const validateBaseAttrs = (
   attrs: PartnerRecruitBaseAttrs,
-  requirePositiveCoreAttrs: boolean,
+  params: {
+    attrSource: 'baseAttrs' | 'levelAttrGains';
+    requirePositiveCoreAttrs: boolean;
+  },
 ): boolean => {
   return PARTNER_RECRUIT_BASE_ATTR_KEYS.every((key) => {
     const value = attrs[key];
     if (!Number.isFinite(value) || value < 0) return false;
-    if (PARTNER_INTEGER_ATTR_KEYS.has(key) && !Number.isInteger(value)) {
+    const shouldRequireInteger = params.attrSource === 'baseAttrs' && PARTNER_INTEGER_ATTR_KEYS.has(key);
+    if (shouldRequireInteger && !Number.isInteger(value)) {
       return false;
     }
-    if (requirePositiveCoreAttrs && PARTNER_RECRUIT_STRICT_POSITIVE_ATTR_KEYS.has(key) && value <= 0) {
+    if (params.requirePositiveCoreAttrs && PARTNER_RECRUIT_STRICT_POSITIVE_ATTR_KEYS.has(key) && value <= 0) {
       return false;
     }
     return true;
@@ -382,22 +366,29 @@ const buildPartnerRecruitNumberSchema = (
 
 const buildPartnerRecruitAttrJsonSchema = (
   key: keyof PartnerRecruitBaseAttrs,
-  requirePositiveCoreAttrs: boolean,
+  params: {
+    attrSource: 'baseAttrs' | 'levelAttrGains';
+    requirePositiveCoreAttrs: boolean;
+  },
 ): TechniqueTextModelJsonSchema => {
-  const minimum = requirePositiveCoreAttrs && PARTNER_RECRUIT_STRICT_POSITIVE_ATTR_KEYS.has(key) ? 1 : 0;
-  if (PARTNER_INTEGER_ATTR_KEYS.has(key)) {
+  const minimum = params.requirePositiveCoreAttrs && PARTNER_RECRUIT_STRICT_POSITIVE_ATTR_KEYS.has(key) ? 1 : 0;
+  const useIntegerSchema = params.attrSource === 'baseAttrs' && PARTNER_INTEGER_ATTR_KEYS.has(key);
+  if (useIntegerSchema) {
     return buildPartnerRecruitNumberSchema('integer', { minimum });
   }
   return buildPartnerRecruitNumberSchema('number', { minimum });
 };
 
 const buildPartnerRecruitBaseAttrsJsonSchema = (
-  requirePositiveCoreAttrs: boolean,
+  params: {
+    attrSource: 'baseAttrs' | 'levelAttrGains';
+    requirePositiveCoreAttrs: boolean;
+  },
 ): TechniqueTextModelJsonSchemaObject => {
   const properties = Object.fromEntries(
     PARTNER_RECRUIT_BASE_ATTR_KEYS.map((key) => [
       key,
-      buildPartnerRecruitAttrJsonSchema(key, requirePositiveCoreAttrs),
+      buildPartnerRecruitAttrJsonSchema(key, params),
     ]),
   ) as TechniqueTextModelJsonSchemaProperties;
 
@@ -412,7 +403,6 @@ const buildPartnerRecruitBaseAttrsJsonSchema = (
 export const buildPartnerRecruitResponseFormat = (
   quality: PartnerRecruitQuality,
 ): TechniqueTextModelResponseFormat => {
-  const ranges = DRAFT_STAT_RANGES_BY_QUALITY[quality];
   const passiveValueMaxTotalUpperBound = getPartnerRecruitPassiveValueMaxTotalUpperBound(quality);
   return buildTechniqueTextModelJsonSchemaResponseFormat({
     name: `partner_recruit_draft_${PARTNER_RECRUIT_QUALITY_SCHEMA_NAME_SEGMENT[quality]}`,
@@ -446,21 +436,31 @@ export const buildPartnerRecruitResponseFormat = (
             },
             role: {
               type: 'string',
-              enum: [...PARTNER_RECRUIT_ALLOWED_ROLES],
+              minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.min,
+              maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.max,
+            },
+            combatStyle: {
+              type: 'string',
+              enum: [...PARTNER_RECRUIT_ALLOWED_COMBAT_STYLES],
             },
             maxTechniqueSlots: {
               type: 'integer',
-              minimum: ranges.techniqueSlots.min,
-              maximum: ranges.techniqueSlots.max,
+              minimum: 1,
             },
-            baseAttrs: buildPartnerRecruitBaseAttrsJsonSchema(true),
-            levelAttrGains: buildPartnerRecruitBaseAttrsJsonSchema(false),
+            baseAttrs: buildPartnerRecruitBaseAttrsJsonSchema({
+              attrSource: 'baseAttrs',
+              requirePositiveCoreAttrs: true,
+            }),
+            levelAttrGains: buildPartnerRecruitBaseAttrsJsonSchema({
+              attrSource: 'levelAttrGains',
+              requirePositiveCoreAttrs: false,
+            }),
           },
         },
         innateTechniques: {
           type: 'array',
-          minItems: ranges.innateTechniqueCount.min,
-          maxItems: ranges.innateTechniqueCount.max,
+          minItems: PARTNER_RECRUIT_INNATE_TECHNIQUE_COUNT,
+          maxItems: PARTNER_RECRUIT_INNATE_TECHNIQUE_COUNT,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -515,26 +515,40 @@ export const getPartnerRecruitTechniqueMaxLayer = (
   return 6;
 };
 
-export const getPartnerRecruitExpectedInnateTechniqueCount = (
-  quality: PartnerRecruitQuality,
-): number => {
-  return quality === '地' || quality === '天' ? 2 : 1;
+const PARTNER_RECRUIT_REFERENCE_PARTNER_ID = 'partner-qingmu-xiaoou';
+
+const buildPartnerRecruitReferenceExample = (): Record<string, unknown> | null => {
+  const definition = getPartnerDefinitionById(PARTNER_RECRUIT_REFERENCE_PARTNER_ID);
+  if (!definition) return null;
+  return {
+    partner: {
+      name: definition.name,
+      description: definition.description ?? '',
+      quality: definition.quality ?? '黄',
+      attributeElement: definition.attribute_element ?? 'none',
+      role: definition.role ?? '伙伴',
+      combatStyle: 'physical',
+      maxTechniqueSlots: Math.max(1, Number(definition.max_technique_slots) || 1),
+      baseAttrs: fillPartnerRecruitBaseAttrs(definition.base_attrs),
+      levelAttrGains: fillPartnerRecruitBaseAttrs(definition.level_attr_gains),
+    },
+    innateTechniqueIds: [...definition.innate_technique_ids],
+  };
 };
 
 export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): Record<string, unknown> => {
-  const ranges = DRAFT_STAT_RANGES_BY_QUALITY[quality];
   const percentAttrKeys = PARTNER_RECRUIT_BASE_ATTR_KEYS.filter((key) => !PARTNER_INTEGER_ATTR_KEYS.has(key));
   const passiveValueGuideByKey = buildPartnerRecruitPassiveValueGuideByKey(quality);
+  const referencePartnerExample = buildPartnerRecruitReferenceExample();
   return {
     worldview: '中国仙侠世界《九州修仙录》',
     quality,
     allowedElements: [...PARTNER_RECRUIT_ALLOWED_ELEMENTS],
-    allowedRoles: [...PARTNER_RECRUIT_ALLOWED_ROLES],
+    allowedCombatStyles: [...PARTNER_RECRUIT_ALLOWED_COMBAT_STYLES],
     allowedTechniqueKinds: [...PARTNER_RECRUIT_ALLOWED_TECHNIQUE_KINDS],
     allowedPassiveKeys: [...PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS],
-    techniqueCount: getPartnerRecruitExpectedInnateTechniqueCount(quality),
+    techniqueCount: PARTNER_RECRUIT_INNATE_TECHNIQUE_COUNT,
     techniqueMaxLayer: getPartnerRecruitTechniqueMaxLayer(quality),
-    techniqueSlotRange: ranges.techniqueSlots,
     requiredTopLevelKeys: [...PARTNER_RECRUIT_TOP_LEVEL_REQUIRED_KEYS],
     partnerRequiredKeys: [...PARTNER_RECRUIT_PARTNER_REQUIRED_KEYS],
     innateTechniqueRequiredKeys: [...PARTNER_RECRUIT_INNATE_TECHNIQUE_REQUIRED_KEYS],
@@ -542,19 +556,24 @@ export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): 
     requiredAttrKeys: [...PARTNER_RECRUIT_BASE_ATTR_KEYS],
     integerAttrKeys: [...PARTNER_INTEGER_ATTR_KEYS],
     percentAttrKeys,
+    referencePartnerExample,
     passiveValueGuideByKey,
     constraints: [
       '必须返回严格 JSON 对象，禁止额外解释文本',
       '顶层字段必须且只能使用 requiredTopLevelKeys，禁止使用 forbiddenAliasKeys 中的别名字段',
       `伙伴名字 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.max} 个中文字符，不得包含标点或空格`,
       `伙伴描述 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.max} 个中文字符`,
+      `伙伴角色 role 为自由发挥的中文职业称谓，长度 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.max} 个中文字符`,
+      'partner.combatStyle 必须严格从 allowedCombatStyles 中选择，用于决定攻击型天生功法走武技还是法诀；physical 表示偏武道，magic 表示偏术法',
       `每个天生功法名字 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.max} 个中文字符，描述 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.max} 个中文字符`,
+      `innateTechniques 必须且只能生成 ${PARTNER_RECRUIT_INNATE_TECHNIQUE_COUNT} 门天生功法，禁止多生成`,
       'partner 必须完整包含 partnerRequiredKeys；每个 innateTechniques 项必须完整包含 innateTechniqueRequiredKeys',
       'partner.baseAttrs 与 partner.levelAttrGains 必须完整包含 requiredAttrKeys 中的全部字段，禁止缺项',
       '每个天生功法 passiveValue 必须 > 0，且不得超过 passiveValueGuideByKey[passiveKey].maxTotal；百分比继续使用小数表示，例如 0.18 表示 18%',
-      'integerAttrKeys 中的属性必须使用非负整数；其中 partner.baseAttrs.max_qixue 与 partner.baseAttrs.sudu 必须大于 0，成长值允许为 0',
+      'partner.baseAttrs 中 integerAttrKeys 的属性必须使用非负整数；partner.levelAttrGains 的全部属性都使用非负数字，允许按参考模板写小数成长',
       'percentAttrKeys 中的属性必须使用非负数字，小数表示百分比，例如 0.18 表示 18%',
-      '槽位与天生功法数量必须落在给定范围内',
+      '品质高低顺序固定为 黄 < 玄 < 地 < 天；referencePartnerExample 中青木小偶的 quality=黄，表示它是最低品质参考模板，最终强度与风格仍必须以当前 quality 字段为准',
+      'referencePartnerExample 是现有伙伴模板示例，只用于参考数值量级、字段完整度与成长写法，禁止照抄名字、描述或功法列表',
     ],
   };
 };
@@ -569,8 +588,9 @@ export const validatePartnerRecruitDraft = (
   const partner = partnerRaw as Record<string, unknown>;
   const quality = partner.quality;
   const attributeElement = partner.attributeElement;
-  const role = partner.role;
-  if (!isPartnerRecruitQuality(quality) || !isPartnerRecruitElement(attributeElement) || !isPartnerRecruitRole(role)) {
+  const role = asString(partner.role);
+  const combatStyle = partner.combatStyle;
+  if (!isPartnerRecruitQuality(quality) || !isPartnerRecruitElement(attributeElement) || !isPartnerRecruitCombatStyle(combatStyle)) {
     return null;
   }
 
@@ -578,27 +598,39 @@ export const validatePartnerRecruitDraft = (
   const description = asString(partner.description);
   if (
     !isTextLengthInRange(name, PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName) ||
-    !isTextLengthInRange(description, PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription)
+    !isTextLengthInRange(description, PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription) ||
+    !isTextLengthInRange(role, PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole)
   ) {
     return null;
   }
 
-  const baseAttrs = normalizeBaseAttrs(partner.baseAttrs, true);
-  const levelAttrGains = normalizeBaseAttrs(partner.levelAttrGains, false);
+  const baseAttrs = normalizeBaseAttrs(partner.baseAttrs, {
+    attrSource: 'baseAttrs',
+    requirePositiveCoreAttrs: true,
+  });
+  const levelAttrGains = normalizeBaseAttrs(partner.levelAttrGains, {
+    attrSource: 'levelAttrGains',
+    requirePositiveCoreAttrs: false,
+  });
   if (!baseAttrs || !levelAttrGains) return null;
 
-  const ranges = DRAFT_STAT_RANGES_BY_QUALITY[quality];
   const maxTechniqueSlots = asInt(partner.maxTechniqueSlots);
-  if (!validateBaseAttrs(baseAttrs, true) || !validateBaseAttrs(levelAttrGains, false)) {
+  if (!validateBaseAttrs(baseAttrs, {
+    attrSource: 'baseAttrs',
+    requirePositiveCoreAttrs: true,
+  }) || !validateBaseAttrs(levelAttrGains, {
+    attrSource: 'levelAttrGains',
+    requirePositiveCoreAttrs: false,
+  })) {
     return null;
   }
-  if (!isAttrInRange(maxTechniqueSlots, ranges.techniqueSlots)) {
+  if (!Number.isInteger(maxTechniqueSlots) || maxTechniqueSlots < 1) {
     return null;
   }
 
   const innateTechniquesRaw = Array.isArray(data.innateTechniques) ? data.innateTechniques : null;
   if (!innateTechniquesRaw) return null;
-  if (!isAttrInRange(innateTechniquesRaw.length, ranges.innateTechniqueCount)) {
+  if (innateTechniquesRaw.length !== PARTNER_RECRUIT_INNATE_TECHNIQUE_COUNT) {
     return null;
   }
 
@@ -644,6 +676,7 @@ export const validatePartnerRecruitDraft = (
       quality,
       attributeElement,
       role,
+      combatStyle,
       maxTechniqueSlots,
       baseAttrs,
       levelAttrGains,

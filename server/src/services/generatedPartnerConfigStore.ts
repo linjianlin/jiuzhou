@@ -32,6 +32,10 @@ const asNumber = (raw: unknown, fallback = 0): number => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+const asNonNegativeNumber = (raw: unknown, fallback = 0): number => {
+  return Math.max(0, asNumber(raw, fallback));
+};
+
 const asStringArray = (raw: unknown): string[] => {
   if (Array.isArray(raw)) {
     return raw
@@ -56,36 +60,36 @@ const asStringArray = (raw: unknown): string[] => {
 const asPartnerBaseAttrs = (raw: unknown): PartnerBaseAttrConfig | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
-  const maxQixue = Math.max(1, Math.floor(asNumber(row.max_qixue, 0)));
+  const maxQixue = asNonNegativeNumber(row.max_qixue, 0);
   if (maxQixue <= 0) return null;
   return {
     max_qixue: maxQixue,
-    max_lingqi: Math.max(0, Math.floor(asNumber(row.max_lingqi, 0))),
-    wugong: Math.floor(asNumber(row.wugong, 0)),
-    fagong: Math.floor(asNumber(row.fagong, 0)),
-    wufang: Math.floor(asNumber(row.wufang, 0)),
-    fafang: Math.floor(asNumber(row.fafang, 0)),
-    sudu: Math.max(1, Math.floor(asNumber(row.sudu, 0))),
-    mingzhong: Math.floor(asNumber(row.mingzhong, 0)),
-    shanbi: Math.floor(asNumber(row.shanbi, 0)),
-    zhaojia: Math.floor(asNumber(row.zhaojia, 0)),
-    baoji: Math.floor(asNumber(row.baoji, 0)),
-    baoshang: Math.floor(asNumber(row.baoshang, 0)),
-    jianbaoshang: Math.floor(asNumber(row.jianbaoshang, 0)),
-    kangbao: Math.floor(asNumber(row.kangbao, 0)),
-    zengshang: Math.floor(asNumber(row.zengshang, 0)),
-    zhiliao: Math.floor(asNumber(row.zhiliao, 0)),
-    jianliao: Math.floor(asNumber(row.jianliao, 0)),
-    xixue: Math.floor(asNumber(row.xixue, 0)),
-    lengque: Math.floor(asNumber(row.lengque, 0)),
-    kongzhi_kangxing: Math.floor(asNumber(row.kongzhi_kangxing, 0)),
-    jin_kangxing: Math.floor(asNumber(row.jin_kangxing, 0)),
-    mu_kangxing: Math.floor(asNumber(row.mu_kangxing, 0)),
-    shui_kangxing: Math.floor(asNumber(row.shui_kangxing, 0)),
-    huo_kangxing: Math.floor(asNumber(row.huo_kangxing, 0)),
-    tu_kangxing: Math.floor(asNumber(row.tu_kangxing, 0)),
-    qixue_huifu: Math.floor(asNumber(row.qixue_huifu, 0)),
-    lingqi_huifu: Math.floor(asNumber(row.lingqi_huifu, 0)),
+    max_lingqi: asNonNegativeNumber(row.max_lingqi, 0),
+    wugong: asNonNegativeNumber(row.wugong, 0),
+    fagong: asNonNegativeNumber(row.fagong, 0),
+    wufang: asNonNegativeNumber(row.wufang, 0),
+    fafang: asNonNegativeNumber(row.fafang, 0),
+    sudu: asNonNegativeNumber(row.sudu, 0),
+    mingzhong: asNonNegativeNumber(row.mingzhong, 0),
+    shanbi: asNonNegativeNumber(row.shanbi, 0),
+    zhaojia: asNonNegativeNumber(row.zhaojia, 0),
+    baoji: asNonNegativeNumber(row.baoji, 0),
+    baoshang: asNonNegativeNumber(row.baoshang, 0),
+    jianbaoshang: asNonNegativeNumber(row.jianbaoshang, 0),
+    kangbao: asNonNegativeNumber(row.kangbao, 0),
+    zengshang: asNonNegativeNumber(row.zengshang, 0),
+    zhiliao: asNonNegativeNumber(row.zhiliao, 0),
+    jianliao: asNonNegativeNumber(row.jianliao, 0),
+    xixue: asNonNegativeNumber(row.xixue, 0),
+    lengque: asNonNegativeNumber(row.lengque, 0),
+    kongzhi_kangxing: asNonNegativeNumber(row.kongzhi_kangxing, 0),
+    jin_kangxing: asNonNegativeNumber(row.jin_kangxing, 0),
+    mu_kangxing: asNonNegativeNumber(row.mu_kangxing, 0),
+    shui_kangxing: asNonNegativeNumber(row.shui_kangxing, 0),
+    huo_kangxing: asNonNegativeNumber(row.huo_kangxing, 0),
+    tu_kangxing: asNonNegativeNumber(row.tu_kangxing, 0),
+    qixue_huifu: asNonNegativeNumber(row.qixue_huifu, 0),
+    lingqi_huifu: asNonNegativeNumber(row.lingqi_huifu, 0),
   };
 };
 

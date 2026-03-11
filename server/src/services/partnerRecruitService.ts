@@ -52,14 +52,13 @@ import {
   buildPartnerRecruitResponseFormat,
   fillPartnerRecruitBaseAttrs,
   formatPartnerRecruitCooldownRemaining,
-  getPartnerRecruitExpectedInnateTechniqueCount,
   getPartnerRecruitTechniqueMaxLayer,
   isPartnerRecruitPreviewExpired,
   PARTNER_RECRUIT_SPIRIT_STONES_COST,
   resolvePartnerRecruitQualityByWeight,
+  type PartnerRecruitCombatStyle,
   type PartnerRecruitDraft,
   type PartnerRecruitQuality,
-  type PartnerRecruitRole,
   validatePartnerRecruitDraft,
 } from './shared/partnerRecruitRules.js';
 import { generatePartnerRecruitAvatar } from './shared/partnerRecruitAvatarGenerator.js';
@@ -177,10 +176,10 @@ const buildPartnerRecruitGenerationId = (): string => normalizeGeneratedId('part
 const buildGeneratedPartnerDefId = (): string => normalizeGeneratedId('partner-gen');
 const buildGeneratedTechniqueId = (): string => normalizeGeneratedId('tech-partner');
 
-const resolveRoleCombatStyle = (role: PartnerRecruitRole): {
+const resolveCombatStyleAttributeType = (combatStyle: PartnerRecruitCombatStyle): {
   attributeType: 'physical' | 'magic';
 } => {
-  if (role === '剑修' || role === '护卫') {
+  if (combatStyle === 'physical') {
     return {
       attributeType: 'physical',
     };
@@ -191,11 +190,11 @@ const resolveRoleCombatStyle = (role: PartnerRecruitRole): {
 };
 
 const resolvePartnerRecruitTechniqueType = (
-  role: PartnerRecruitRole,
+  combatStyle: PartnerRecruitCombatStyle,
   kind: PartnerRecruitDraft['innateTechniques'][number]['kind'],
 ): GeneratedTechniqueType => {
   if (kind === 'attack') {
-    return resolveRoleCombatStyle(role).attributeType === 'physical' ? '武技' : '法诀';
+    return resolveCombatStyleAttributeType(combatStyle).attributeType === 'physical' ? '武技' : '法诀';
   }
   return '辅修';
 };
@@ -220,6 +219,7 @@ const buildPartnerRecruitTechniquePromptContext = (params: {
       name: draft.partner.name,
       quality: draft.partner.quality,
       role: draft.partner.role,
+      combatStyle: draft.partner.combatStyle,
       attributeElement: draft.partner.attributeElement,
       description: draft.partner.description,
     },
@@ -242,12 +242,12 @@ const adaptTechniqueCandidateForPartner = (params: {
   techniqueType: GeneratedTechniqueType;
 }): TechniqueGenerationCandidate => {
   const { draft, candidate, techniqueType } = params;
-  const roleStyle = resolveRoleCombatStyle(draft.partner.role);
+  const combatStyle = resolveCombatStyleAttributeType(draft.partner.combatStyle);
   const attributeType = techniqueType === '武技'
     ? 'physical'
     : techniqueType === '法诀'
       ? 'magic'
-      : roleStyle.attributeType;
+      : combatStyle.attributeType;
 
   return {
     ...candidate,
@@ -282,7 +282,7 @@ const generateRecruitTechniqueDrafts = async (params: {
   const generatedTechniques: GeneratedRecruitTechniqueDraft[] = [];
 
   for (const [index, entry] of draft.innateTechniques.entries()) {
-    const techniqueType = resolvePartnerRecruitTechniqueType(draft.partner.role, entry.kind);
+    const techniqueType = resolvePartnerRecruitTechniqueType(draft.partner.combatStyle, entry.kind);
     const generated = await generateTechniqueCandidateWithRetry({
       generationId: `${generationId}:innate:${index + 1}`,
       characterId,
@@ -487,13 +487,6 @@ const tryCallPartnerRecruitTextModel = async (
       return {
         success: false,
         reason: '伙伴生成模型返回的品质与本次抽取品质不一致',
-        modelName,
-      };
-    }
-    if (draft.innateTechniques.length !== getPartnerRecruitExpectedInnateTechniqueCount(quality)) {
-      return {
-        success: false,
-        reason: '伙伴生成模型返回的天生功法数量与品质要求不一致',
         modelName,
       };
     }
