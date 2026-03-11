@@ -547,6 +547,86 @@
   font-weight: 900;
 }
 
+.market-buy-dialog {
+  .ant-modal-content {
+    border-radius: 16px;
+  }
+}
+
+.market-buy-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.market-buy-dialog__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.market-buy-dialog__icon {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  border: 1px solid var(--border-color-soft);
+  background: var(--panel-bg);
+  padding: 6px;
+
+  @include qualityTag.quality-surface-state(var(--panel-bg), 10%);
+}
+
+.market-buy-dialog__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.market-buy-dialog__name {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--text-color);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.market-buy-dialog__seller {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+.market-buy-dialog__grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: center;
+}
+
+.market-buy-dialog__label {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--text-tertiary);
+}
+
+.market-buy-dialog__value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-color);
+}
+
+.market-buy-dialog__value--price {
+  font-size: 14px;
+}
+
+.market-buy-dialog__input {
+  width: 100%;
+}
+
 .market-empty {
   padding: 18px 0;
   text-align: center;

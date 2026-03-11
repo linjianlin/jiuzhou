@@ -852,6 +852,7 @@ model market_listing {
   item_instance_id                                          BigInt?
   item_def_id                                               String                @db.VarChar(64)
   qty                                                       Int
+  original_qty                                              Int                   @default(0)
   unit_price_spirit_stones                                  BigInt
   status                                                    String                @default("active") @db.VarChar(16)
   buyer_user_id                                             Int?

@@ -95,8 +95,8 @@ export const cancelMarketListing = (listingId: number): Promise<{ success: boole
   return api.post('/market/cancel', { listingId });
 };
 
-export const buyMarketListing = (listingId: number): Promise<{ success: boolean; message: string }> => {
-  return api.post('/market/buy', { listingId });
+export const buyMarketListing = (listingId: number, qty: number = 1): Promise<{ success: boolean; message: string }> => {
+  return api.post('/market/buy', { listingId, qty });
 };
 
 export const getMarketTradeRecords = (params?: {

@@ -22,6 +22,12 @@ import {
   normalizeMarketCategoryFilter,
   resolveMarketItemCategory,
 } from "./shared/marketItemCategory.js";
+import {
+  calculateMarketListingFeeSilver,
+  calculateMarketListingRefundFee,
+  calculateMarketTradeTotalPrice,
+  normalizeMarketBuyQuantity,
+} from "./shared/marketListingPurchaseShared.js";
 import { resolveGeneratedTechniqueBookDisplay } from "./shared/generatedTechniqueBookView.js";
 import { mailService } from "./mailService.js";
 
@@ -87,17 +93,61 @@ const parseNonNegativeInt = (v: unknown): number | null => {
 const parseMaybeString = (v: unknown): string =>
   (typeof v === "string" ? v : "").trim();
 
-const MARKET_LISTING_FEE_SILVER_PER_SPIRIT_STONE = 5n;
-
 const getTaxAmount = (totalPrice: bigint, taxRate: number): bigint => {
   if (!Number.isFinite(taxRate) || taxRate <= 0) return 0n;
   const rate = Math.max(0, Math.min(100, taxRate));
   return (totalPrice * BigInt(Math.floor(rate * 100))) / 10000n;
 };
 
-const getListingFeeSilver = (totalPriceSpiritStones: bigint): bigint => {
-  if (totalPriceSpiritStones <= 0n) return 0n;
-  return totalPriceSpiritStones * MARKET_LISTING_FEE_SILVER_PER_SPIRIT_STONE;
+/**
+ * 复用 item_instance 拆堆复制逻辑，避免“部分上架”和“部分购买”各写一份插入 SQL。
+ */
+const cloneItemInstanceWithQty = async (params: {
+  sourceItemInstanceId: number;
+  ownerUserId: number;
+  ownerCharacterId: number;
+  qty: number;
+  location: "auction" | "mail";
+}): Promise<number> => {
+  const insertResult = await query(
+    `
+      INSERT INTO item_instance (
+        owner_user_id, owner_character_id, item_def_id, qty,
+        bind_type, bind_owner_user_id, bind_owner_character_id,
+        location, location_slot, equipped_slot,
+        strengthen_level, refine_level,
+        socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
+        custom_name, locked, expire_at,
+        obtained_from, obtained_ref_id, metadata,
+        created_at, updated_at
+      )
+      SELECT
+        $1, $2, item_def_id, $3,
+        bind_type, bind_owner_user_id, bind_owner_character_id,
+        $4, NULL, NULL,
+        strengthen_level, refine_level,
+        socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
+        custom_name, locked, expire_at,
+        obtained_from, obtained_ref_id, metadata,
+        NOW(), NOW()
+      FROM item_instance
+      WHERE id = $5
+      RETURNING id
+    `,
+    [
+      params.ownerUserId,
+      params.ownerCharacterId,
+      params.qty,
+      params.location,
+      params.sourceItemInstanceId,
+    ],
+  );
+
+  const nextItemInstanceId = Number(insertResult.rows[0]?.id);
+  if (!Number.isInteger(nextItemInstanceId) || nextItemInstanceId <= 0) {
+    throw new Error("复制坊市物品实例失败");
+  }
+  return nextItemInstanceId;
 };
 
 const toListingDto = (
@@ -481,8 +531,12 @@ class MarketService {
     if (qty === null) return { success: false, message: "qty参数错误" };
     if (unitPrice === null)
       return { success: false, message: "unitPriceSpiritStones参数错误" };
-    const totalPriceSpiritStones = BigInt(unitPrice) * BigInt(qty);
-    const listingFeeSilver = getListingFeeSilver(totalPriceSpiritStones);
+    const totalPriceSpiritStones = calculateMarketTradeTotalPrice(
+      BigInt(unitPrice),
+      qty,
+    );
+    const listingFeeSilver =
+      calculateMarketListingFeeSilver(totalPriceSpiritStones);
 
     await lockCharacterInventoryMutex(params.characterId);
 
@@ -576,35 +630,13 @@ class MarketService {
         [qty, itemInstanceId],
       );
 
-      const insertResult = await query(
-        `
-          INSERT INTO item_instance (
-            owner_user_id, owner_character_id, item_def_id, qty,
-            bind_type, bind_owner_user_id, bind_owner_character_id,
-            location, location_slot, equipped_slot,
-            strengthen_level, refine_level,
-            socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
-            custom_name, locked, expire_at,
-            obtained_from, obtained_ref_id, metadata,
-            created_at, updated_at
-          )
-          SELECT
-            owner_user_id, owner_character_id, item_def_id, $1,
-            bind_type, bind_owner_user_id, bind_owner_character_id,
-            'auction', NULL, NULL,
-            strengthen_level, refine_level,
-            socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
-            custom_name, locked, expire_at,
-            obtained_from, obtained_ref_id, metadata,
-            NOW(), NOW()
-          FROM item_instance
-          WHERE id = $2
-          RETURNING id
-        `,
-        [qty, itemInstanceId],
-      );
-
-      listingItemInstanceId = Number(insertResult.rows[0]?.id);
+      listingItemInstanceId = await cloneItemInstanceWithQty({
+        sourceItemInstanceId: itemInstanceId,
+        ownerUserId: params.userId,
+        ownerCharacterId: params.characterId,
+        qty,
+        location: "auction",
+      });
     } else {
       await query(
         `UPDATE item_instance SET location = 'auction', location_slot = NULL, equipped_slot = NULL, updated_at = NOW() WHERE id = $1`,
@@ -616,12 +648,12 @@ class MarketService {
         INSERT INTO market_listing (
           seller_user_id, seller_character_id,
           item_instance_id, item_def_id,
-          qty, unit_price_spirit_stones, listing_fee_silver,
+          qty, original_qty, unit_price_spirit_stones, listing_fee_silver,
           status
         ) VALUES (
           $1, $2,
           $3, $4,
-          $5, $6, $7,
+          $5, $6, $7, $8,
           'active'
         )
         RETURNING id
@@ -631,6 +663,7 @@ class MarketService {
         params.characterId,
         listingItemInstanceId,
         itemDefId,
+        qty,
         qty,
         unitPrice,
         listingFeeSilver.toString(),
@@ -657,7 +690,14 @@ class MarketService {
 
     const listingResult = await query(
       `
-        SELECT id, seller_character_id, item_instance_id, qty, status, listing_fee_silver
+        SELECT
+          id,
+          seller_character_id,
+          item_instance_id,
+          qty,
+          original_qty,
+          status,
+          listing_fee_silver
         FROM market_listing
         WHERE id = $1
         FOR UPDATE
@@ -677,6 +717,13 @@ class MarketService {
       return { success: false, message: "该上架记录不可下架" };
     }
     const listingFeeSilver = BigInt(listing.listing_fee_silver ?? 0);
+    const originalQty = Number(listing.original_qty);
+    const remainingQty = Number(listing.qty);
+    const refundFeeSilver = calculateMarketListingRefundFee(
+      listingFeeSilver,
+      originalQty,
+      remainingQty,
+    );
 
     const itemInstanceId = Number(listing.item_instance_id);
     const itemResult = await query(
@@ -727,16 +774,16 @@ class MarketService {
       [listingId],
     );
 
-    if (listingFeeSilver > 0n) {
+    if (refundFeeSilver > 0n) {
       await query(
         `UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`,
-        [listingFeeSilver.toString(), params.characterId],
+        [refundFeeSilver.toString(), params.characterId],
       );
     }
 
     return {
       success: true,
-      message: `下架成功，已退还${listingFeeSilver.toString()}银两手续费`,
+      message: `下架成功，已退还${refundFeeSilver.toString()}银两手续费`,
     };
   }
 
@@ -745,10 +792,13 @@ class MarketService {
     buyerUserId: number;
     buyerCharacterId: number;
     listingId: number;
+    qty: number;
   }): Promise<{ success: boolean; message: string }> {
     const listingId = parsePositiveInt(params.listingId);
     if (listingId === null)
       return { success: false, message: "listingId参数错误" };
+    const requestedQty = parsePositiveInt(params.qty);
+    if (requestedQty === null) return { success: false, message: "qty参数错误" };
 
     const listingOwnerResult = await query(
       `
@@ -815,9 +865,14 @@ class MarketService {
 
     const itemInstanceId = Number(listing.item_instance_id);
     const itemDefId = String(listing.item_def_id);
-    const qty = Number(listing.qty);
+    const listingQty = Number(listing.qty);
+    const buyQty = normalizeMarketBuyQuantity(requestedQty, listingQty);
+    if (buyQty === null) {
+      return { success: false, message: "购买数量不合法，请刷新后重试" };
+    }
     const unitPrice = BigInt(listing.unit_price_spirit_stones);
-    const totalPrice = unitPrice * BigInt(qty);
+    const totalPrice = calculateMarketTradeTotalPrice(unitPrice, buyQty);
+    const isPartialPurchase = buyQty < listingQty;
 
     const itemRowResult = await query(
       `SELECT id, owner_character_id, location, qty FROM item_instance WHERE id = $1 FOR UPDATE`,
@@ -830,7 +885,7 @@ class MarketService {
     if (String(itemRow.location) !== "auction") {
       return { success: false, message: "物品不在坊市中" };
     }
-    if (Number(itemRow.qty) !== qty) {
+    if (Number(itemRow.qty) !== listingQty) {
       return { success: false, message: "物品数量异常，请刷新后重试" };
     }
     if (Number(itemRow.owner_character_id) !== sellerCharacterId) {
@@ -869,33 +924,57 @@ class MarketService {
       [sellerGain.toString(), sellerCharacterId],
     );
 
-    await query(
-      `
-        UPDATE item_instance
-        SET owner_user_id = $1,
-            owner_character_id = $2,
-            -- 坊市成交后先进入邮件附件池，不直接写入背包，避免背包容量成为交易阻断点。
-            location = 'mail',
-            location_slot = NULL,
-            equipped_slot = NULL,
-            updated_at = NOW()
-        WHERE id = $3
-      `,
-      [params.buyerUserId, params.buyerCharacterId, itemInstanceId],
-    );
+    let deliveredItemInstanceId = itemInstanceId;
+    if (isPartialPurchase) {
+      await query(
+        `UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2`,
+        [buyQty, itemInstanceId],
+      );
+      deliveredItemInstanceId = await cloneItemInstanceWithQty({
+        sourceItemInstanceId: itemInstanceId,
+        ownerUserId: params.buyerUserId,
+        ownerCharacterId: params.buyerCharacterId,
+        qty: buyQty,
+        location: "mail",
+      });
+      await query(
+        `
+          UPDATE market_listing
+          SET qty = qty - $1,
+              updated_at = NOW()
+          WHERE id = $2
+        `,
+        [buyQty, listingId],
+      );
+    } else {
+      await query(
+        `
+          UPDATE item_instance
+          SET owner_user_id = $1,
+              owner_character_id = $2,
+              -- 坊市成交后先进入邮件附件池，不直接写入背包，避免背包容量成为交易阻断点。
+              location = 'mail',
+              location_slot = NULL,
+              equipped_slot = NULL,
+              updated_at = NOW()
+          WHERE id = $3
+        `,
+        [params.buyerUserId, params.buyerCharacterId, itemInstanceId],
+      );
 
-    await query(
-      `
-        UPDATE market_listing
-        SET status = 'sold',
-            buyer_user_id = $1,
-            buyer_character_id = $2,
-            sold_at = NOW(),
-            updated_at = NOW()
-        WHERE id = $3
-      `,
-      [params.buyerUserId, params.buyerCharacterId, listingId],
-    );
+      await query(
+        `
+          UPDATE market_listing
+          SET status = 'sold',
+              buyer_user_id = $1,
+              buyer_character_id = $2,
+              sold_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $3
+        `,
+        [params.buyerUserId, params.buyerCharacterId, listingId],
+      );
+    }
 
     await query(
       `
@@ -926,7 +1005,7 @@ class MarketService {
         sellerUserId,
         sellerCharacterId,
         itemDefId,
-        qty,
+        buyQty,
         unitPrice.toString(),
         totalPrice.toString(),
         taxAmount.toString(),
@@ -949,10 +1028,10 @@ class MarketService {
         {
           item_def_id: itemDefId,
           item_name: itemName,
-          qty,
+          qty: buyQty,
         },
       ],
-      attachInstanceIds: [itemInstanceId],
+      attachInstanceIds: [deliveredItemInstanceId],
       expireDays: 30,
       source: "market",
       sourceRefId: String(listingId),

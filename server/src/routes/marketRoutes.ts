@@ -96,8 +96,13 @@ router.post('/buy', requireCharacter, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const { listingId } = req.body as { listingId?: unknown };
-    const result = await marketService.buyMarketListing({ buyerUserId: userId, buyerCharacterId: characterId, listingId: Number(listingId) });
+    const { listingId, qty } = req.body as { listingId?: unknown; qty?: unknown };
+    const result = await marketService.buyMarketListing({
+      buyerUserId: userId,
+      buyerCharacterId: characterId,
+      listingId: Number(listingId),
+      qty: Number(qty),
+    });
     return sendResult(res, result);
 }));
 

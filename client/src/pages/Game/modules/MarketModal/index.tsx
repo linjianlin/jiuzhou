@@ -22,11 +22,16 @@ import { getLearnableTechniqueId } from '../../shared/learnableTechnique';
 import MarketItemTooltipContent, {
   ITEM_TOOLTIP_CLASS_NAMES,
 } from '../../shared/MarketItemTooltipContent';
+import MarketBuyDialog from './MarketBuyDialog';
 import MarketEquipmentSummary from './MarketEquipmentSummary';
 import {
   buildMarketEquipmentSummary,
   type MarketEquipmentSummaryItem,
 } from './marketEquipmentSummary';
+import {
+  buildMarketBuySummary,
+  shouldPromptMarketBuyQuantity,
+} from './marketBuyShared';
 import {
   buildBagItem,
   buildEquipmentDetailLines,
@@ -418,6 +423,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   const [recordsTotal, setRecordsTotal] = useState(0);
   const [marketTooltipPlacement, setMarketTooltipPlacement] = useState<MarketTooltipPlacement>('right');
   const [mobileListingPreview, setMobileListingPreview] = useState<MobileListingPreview | null>(null);
+  const [buyDialogListing, setBuyDialogListing] = useState<ListingItem | null>(null);
   const resolveMarketTooltipPlacement = useCallback((event: React.MouseEvent<HTMLElement>) => {
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
     if (!viewportHeight) return;
@@ -600,6 +606,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     setListQty('1');
     setMobileFilterOpen(false);
     setMobileListingPreview(null);
+    setBuyDialogListing(null);
   };
 
   const menuItems = useMemo(
@@ -679,18 +686,37 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   );
 
   const buyListing = useCallback(
-    async (row: ListingItem) => {
+    async (row: ListingItem, requestedQty: number = 1) => {
       if (characterId !== null && row.sellerCharacterId === characterId) return;
+      const summary = buildMarketBuySummary({
+        listingQty: row.qty,
+        draftQty: requestedQty,
+        unitPrice: row.unitPrice,
+      });
       try {
-        const res = await buyMarketListing(row.id);
+        const res = await buyMarketListing(row.id, summary.buyQty);
         if (!res.success) throw new Error(res.message || '购买失败');
         messageRef.current.success('购买成功');
+        setBuyDialogListing(null);
+        setMobileListingPreview(null);
         await Promise.all([refreshMarket(marketPage), refreshBag(), refreshMy(myPage), refreshRecords(recordPage)]);
       } catch (error: unknown) {
         void 0;
       }
     },
     [characterId, marketPage, myPage, recordPage, refreshBag, refreshMarket, refreshMy, refreshRecords],
+  );
+
+  const startBuyListing = useCallback(
+    (row: ListingItem) => {
+      if (characterId !== null && row.sellerCharacterId === characterId) return;
+      if (!shouldPromptMarketBuyQuantity(row.qty)) {
+        void buyListing(row, 1);
+        return;
+      }
+      setBuyDialogListing(row);
+    },
+    [buyListing, characterId],
   );
 
   const unlistMyItem = useCallback(
@@ -896,7 +922,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                         disabled={characterId !== null && row.sellerCharacterId === characterId}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void buyListing(row);
+                          startBuyListing(row);
                         }}
                       >
                         购买
@@ -969,7 +995,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                       type="primary"
                       size="small"
                       disabled={characterId !== null && row.sellerCharacterId === characterId}
-                      onClick={() => buyListing(row)}
+                      onClick={() => startBuyListing(row)}
                     >
                       购买
                     </Button>
@@ -1543,7 +1569,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                     block
                     disabled={characterId !== null && mobilePreviewListing.sellerCharacterId === characterId}
                     onClick={() => {
-                      void buyListing(mobilePreviewListing);
+                      startBuyListing(mobilePreviewListing);
                     }}
                   >
                     购买
@@ -1554,6 +1580,16 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
           ) : null}
         </Drawer>
       ) : null}
+
+      <MarketBuyDialog
+        open={buyDialogListing !== null}
+        listing={buyDialogListing}
+        onCancel={() => setBuyDialogListing(null)}
+        onConfirm={(qty) => {
+          if (!buyDialogListing) return;
+          void buyListing(buyDialogListing, qty);
+        }}
+      />
     </Modal>
   );
 };
