@@ -23,6 +23,7 @@ import type {
   PartnerBookDto,
   PartnerComputedAttrsDto,
   PartnerDetailDto,
+  PartnerOverviewDto,
   PartnerPassiveAttrsDto,
   PartnerTechniqueDto,
   PartnerTechniqueUpgradeCostDto,
@@ -125,6 +126,22 @@ export const formatPartnerObtainedFromLabel = (obtainedFrom: string | null): str
 
 export const resolvePartnerAvatar = (avatar: string | null): string => {
   return resolveIconUrl(avatar, DEFAULT_ICON);
+};
+
+export const resolvePartnerActionLabel = (isActive: boolean): string => {
+  return isActive ? '下阵' : '设为出战';
+};
+
+export const resolvePartnerNextSelectedId = (
+  overview: PartnerOverviewDto | null,
+  selectedPartnerId: number | null,
+): number | null => {
+  if (!overview) return null;
+  const partnerIds = overview.partners.map((partner) => partner.id);
+  if (selectedPartnerId !== null && partnerIds.includes(selectedPartnerId)) {
+    return selectedPartnerId;
+  }
+  return overview.activePartnerId ?? overview.partners[0]?.id ?? null;
 };
 
 export const getPartnerEmptySlotCount = (partner: PartnerDetailDto): number => {

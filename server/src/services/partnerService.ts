@@ -49,7 +49,7 @@ import {
   type PartnerGrowthValues,
   type PartnerLearnedTechniqueState,
 } from './shared/partnerRules.js';
-import { activateCharacterPartnerExclusively } from './shared/partnerActivation.js';
+import { setCharacterPartnerActivation } from './shared/partnerActivation.js';
 import { resolveTechniqueBookLearning } from './shared/techniqueBookRules.js';
 import {
   getItemMetaMap,
@@ -862,7 +862,7 @@ const buildPartnerRewardDto = (
  *
  * 关键边界条件与坑点：
  * 1) 插入前必须校验所有天生功法都能在统一功法入口读到，否则战斗构建会在运行时爆炸。
- * 2) `is_active` 只在角色当前没有出战伙伴时自动置真，避免后获得伙伴抢占现有出战位。
+ * 2) 新获得伙伴默认保持未出战，把“是否携带伙伴战斗”的决定完全交给玩家显式控制。
  */
 const createPartnerInstanceFromDefinition = async (params: {
   characterId: number;
@@ -872,15 +872,6 @@ const createPartnerInstanceFromDefinition = async (params: {
   nickname?: string;
 }): Promise<CreatePartnerInstanceResult> => {
   const { characterId, definition, obtainedFrom, obtainedRefId, nickname } = params;
-  const hasActivePartnerRes = await query(
-    `
-      SELECT 1
-      FROM character_partner
-      WHERE character_id = $1 AND is_active = TRUE
-      LIMIT 1
-    `,
-    [characterId],
-  );
   const growthValues = Object.fromEntries(
     PARTNER_GROWTH_KEYS.map((key) => [key, 1000]),
   ) as PartnerGrowthValues;
@@ -893,7 +884,7 @@ const createPartnerInstanceFromDefinition = async (params: {
     }
   }
 
-  const activated = hasActivePartnerRes.rows.length <= 0;
+  const activated = false;
   const insertResult = await query(
     `
       INSERT INTO character_partner (
@@ -1002,7 +993,7 @@ class PartnerService {
       if (!targetPartner) return { success: false, message: '伙伴不存在' };
 
       if (!targetPartner.is_active) {
-        await activateCharacterPartnerExclusively({
+        await setCharacterPartnerActivation({
           characterId,
           partnerId,
           execute: query,
@@ -1036,6 +1027,38 @@ class PartnerService {
     } catch (error) {
       const reason = error instanceof Error ? error.message : '未知错误';
       return { success: false, message: `伙伴切换失败：${reason}` };
+    }
+  }
+
+  @Transactional
+  async dismiss(
+    characterId: number,
+  ): Promise<PartnerResult<{ activePartnerId: null }>> {
+    try {
+      const unlockState = await assertPartnerSystemUnlocked(characterId);
+      if (!unlockState.success) {
+        return { success: false, message: unlockState.message };
+      }
+
+      const character = await loadCharacterPartnerContext(characterId, true);
+      if (!character) return { success: false, message: '角色不存在' };
+
+      await setCharacterPartnerActivation({
+        characterId,
+        partnerId: null,
+        execute: query,
+      });
+
+      return {
+        success: true,
+        message: '出战伙伴已下阵',
+        data: {
+          activePartnerId: null,
+        },
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '未知错误';
+      return { success: false, message: `伙伴下阵失败：${reason}` };
     }
   }
 

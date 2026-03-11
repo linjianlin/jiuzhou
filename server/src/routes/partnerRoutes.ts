@@ -134,6 +134,12 @@ router.post('/activate', asyncHandler(async (req, res) => {
   return sendResult(res, result);
 }));
 
+router.post('/dismiss', asyncHandler(async (req, res) => {
+  const characterId = req.characterId!;
+  const result = await partnerService.dismiss(characterId);
+  return sendResult(res, result);
+}));
+
 router.post('/inject-exp', asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const characterId = req.characterId!;

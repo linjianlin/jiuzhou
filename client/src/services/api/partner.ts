@@ -210,6 +210,14 @@ export interface PartnerActivateResponse {
   };
 }
 
+export interface PartnerDismissResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    activePartnerId: null;
+  };
+}
+
 export interface PartnerInjectExpResponse {
   success: boolean;
   message: string;
@@ -290,6 +298,10 @@ export const getPartnerOverview = (): Promise<PartnerOverviewResponse> => {
 
 export const activatePartner = (partnerId: number): Promise<PartnerActivateResponse> => {
   return api.post('/partner/activate', { partnerId });
+};
+
+export const dismissPartner = (): Promise<PartnerDismissResponse> => {
+  return api.post('/partner/dismiss');
 };
 
 export const injectPartnerExp = (

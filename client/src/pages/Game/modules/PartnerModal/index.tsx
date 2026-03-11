@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activatePartner,
   confirmPartnerRecruitDraft,
+  dismissPartner,
   discardPartnerRecruitDraft,
   generatePartnerRecruitDraft,
   getPartnerOverview,
@@ -38,8 +39,10 @@ import {
   getPartnerVisibleBaseAttrs,
   getPartnerVisibleCombatAttrs,
   PARTNER_PANEL_OPTIONS,
+  resolvePartnerActionLabel,
   resolvePartnerAvatar,
   resolvePartnerBookLabel,
+  resolvePartnerNextSelectedId,
   type PartnerPanelKey,
 } from './partnerShared';
 import {
@@ -147,14 +150,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   }, [open, refreshOverview, refreshRecruitStatus]);
 
   useEffect(() => {
-    if (!overview) {
-      setSelectedPartnerId(null);
-      return;
-    }
-    const partnerIds = overview.partners.map((partner) => partner.id);
-    if (selectedPartnerId && partnerIds.includes(selectedPartnerId)) return;
-    const nextSelectedPartnerId = overview.activePartnerId ?? overview.partners[0]?.id ?? null;
-    setSelectedPartnerId(nextSelectedPartnerId);
+    setSelectedPartnerId(resolvePartnerNextSelectedId(overview, selectedPartnerId));
   }, [overview, selectedPartnerId]);
 
   useEffect(() => {
@@ -289,6 +285,21 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       gameSocket.refreshCharacter();
     } catch (error) {
       message.error(getUnifiedApiErrorMessage(error as { message?: string }, '切换出战失败'));
+    } finally {
+      setActionKey('');
+    }
+  }, [message, refreshOverview]);
+
+  const handleDismiss = useCallback(async (partnerId: number) => {
+    setActionKey(`dismiss-${partnerId}`);
+    try {
+      const res = await dismissPartner();
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '伙伴下阵失败'));
+      message.success(res.message || '已将伙伴下阵');
+      await refreshOverview();
+      gameSocket.refreshCharacter();
+    } catch (error) {
+      message.error(getUnifiedApiErrorMessage(error as { message?: string }, '伙伴下阵失败'));
     } finally {
       setActionKey('');
     }
@@ -463,20 +474,22 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                     <Tag color="gold">{partner.quality}</Tag>
                   </div>
                 </div>
-                {!partner.isActive ? (
-                  <div className="partner-action-row partner-list-action-row">
-                    <Button
-                      type="primary"
-                      loading={actionKey === `activate-${partner.id}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleActivate(partner.id);
-                      }}
-                    >
-                      设为出战
-                    </Button>
-                  </div>
-                ) : null}
+                <div className="partner-action-row partner-list-action-row">
+                  <Button
+                    type={partner.isActive ? 'default' : 'primary'}
+                    loading={actionKey === `${partner.isActive ? 'dismiss' : 'activate'}-${partner.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (partner.isActive) {
+                        void handleDismiss(partner.id);
+                        return;
+                      }
+                      void handleActivate(partner.id);
+                    }}
+                  >
+                    {resolvePartnerActionLabel(partner.isActive)}
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
