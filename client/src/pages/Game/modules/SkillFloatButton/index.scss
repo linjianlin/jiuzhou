@@ -212,10 +212,6 @@ body.theme-dark .skill-fab-tooltip-chip.is-unusable {
   gap: 10px;
 }
 
-.skill-fab-panel-scroll-shell {
-  display: flex;
-}
-
 .skill-fab-panel.is-right {
   left: calc(100% + 10px);
 }
@@ -368,43 +364,53 @@ body.theme-dark .skill-fab-tooltip-chip.is-unusable {
     max-width: calc(100vw - 16px);
   }
 
-  .skill-fab-panel.is-mobile .skill-fab-panel-scroll-shell {
-    max-width: calc(100vw - 16px);
-    padding: 4px 4px 6px;
-    box-sizing: border-box;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    touch-action: pan-x;
+  .skill-fab-panel.is-mobile {
+    top: auto;
+    bottom: calc(100% + 10px);
+    right: 0;
+    left: auto;
+    transform: translate(var(--skill-fab-shift-x, 0px), var(--skill-fab-shift-y, 0px));
+    width: min(216px, calc(100vw - 20px));
+    padding: 8px;
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    background: color-mix(in srgb, var(--panel-bg) 94%, var(--app-bg));
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  }
+
+  .skill-fab-panel.is-mobile .skill-fab-panel-rail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    max-height: min(46vh, 264px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
 
-  .skill-fab-panel.is-mobile .skill-fab-panel-scroll-shell::-webkit-scrollbar {
+  .skill-fab-panel.is-mobile .skill-fab-panel-rail::-webkit-scrollbar {
     display: none;
   }
 
-  .skill-fab-panel.is-mobile .skill-fab-panel-rail {
-    max-width: max-content;
-    gap: 6px;
-    padding: 0 2px;
-    scroll-snap-type: x proximity;
-  }
-
   .skill-fab-panel.is-mobile .skill-fab-panel-rail > * {
-    scroll-snap-align: start;
+    width: 100%;
   }
 
   .skill-fab-tile {
-    width: 52px;
-    height: 52px;
-    border-radius: 10px;
-    gap: 3px;
-    padding: 4px;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    width: 100%;
+    height: 60px;
+    border-radius: 12px;
+    gap: 4px;
+    padding: 6px 4px;
+    box-shadow: none;
+    background: var(--panel-bg-soft);
   }
 
   .skill-fab-action.is-on {
-    box-shadow: 0 2px 8px rgba(22, 119, 255, 0.14);
+    box-shadow: none;
+    background: color-mix(in srgb, var(--primary-color) 10%, var(--panel-bg-soft));
   }
 
   .skill-fab-tile-icon {
