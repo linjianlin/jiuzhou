@@ -38,6 +38,10 @@ import { convertRatingToPercent, getEffectiveLevelByRealm, resolveRatingBaseAttr
 import { buildInsightPctBonusByLevel } from './shared/insightRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { calcCharacterStaminaMaxByInsightLevel } from './shared/staminaRules.js';
+import {
+  TECHNIQUE_PASSIVE_PERCENT_MULTIPLY_KEYS,
+  splitTechniquePassiveAttrs,
+} from './shared/techniquePassiveAttrs.js';
 import { CHARACTER_BASE_COLUMNS_SQL } from './shared/sqlFragments.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -210,36 +214,6 @@ const RATIO_ATTR_KEYS = new Set<CharacterAttrKey>([
   'shui_kangxing',
   'huo_kangxing',
   'tu_kangxing',
-]);
-
-const TECHNIQUE_PASSIVE_PERCENT_ADDITIVE_KEYS = new Set<string>([
-  'mingzhong',
-  'shanbi',
-  'zhaojia',
-  'baoji',
-  'baoshang',
-  'jianbaoshang',
-  'kangbao',
-  'zengshang',
-  'zhiliao',
-  'jianliao',
-  'xixue',
-  'lengque',
-  'shuxing_shuzhi',
-  'kongzhi_kangxing',
-  'jin_kangxing',
-  'mu_kangxing',
-  'shui_kangxing',
-  'huo_kangxing',
-  'tu_kangxing',
-]);
-
-const TECHNIQUE_PASSIVE_PERCENT_MULTIPLY_KEYS = new Set<string>([
-  'wugong',
-  'fagong',
-  'wufang',
-  'fafang',
-  'max_qixue',
 ]);
 
 const VALID_TITLE_EFFECT_KEYS = new Set<CharacterAttrKey>([
@@ -490,20 +464,28 @@ const applyTechniquePassiveAttrs = (
   passives: Record<string, number>,
   pctModifiers: Record<string, number>,
 ): void => {
-  for (const [key, value] of Object.entries(passives)) {
+  const splitPassives = splitTechniquePassiveAttrs(passives);
+
+  for (const [key, value] of Object.entries(splitPassives.percentAdditive)) {
     if (!Number.isFinite(value) || value === 0) continue;
     if (!(key in stats)) continue;
-
     const statKey = key as keyof CharacterComputedStats;
     const base = stats[statKey];
-    if (TECHNIQUE_PASSIVE_PERCENT_ADDITIVE_KEYS.has(key)) {
-      stats[statKey] = Math.max(0, roundRatio(base + value));
-      continue;
-    }
-    if (TECHNIQUE_PASSIVE_PERCENT_MULTIPLY_KEYS.has(key)) {
-      pctModifiers[statKey] = (pctModifiers[statKey] || 0) + value;
-      continue;
-    }
+    stats[statKey] = Math.max(0, roundRatio(base + value));
+  }
+
+  for (const [key, value] of Object.entries(splitPassives.percentMultiply)) {
+    if (!Number.isFinite(value) || value === 0) continue;
+    if (!(key in stats)) continue;
+    const statKey = key as keyof CharacterComputedStats;
+    pctModifiers[statKey] = (pctModifiers[statKey] || 0) + value;
+  }
+
+  for (const [key, value] of Object.entries(splitPassives.flatAdditive)) {
+    if (!Number.isFinite(value) || value === 0) continue;
+    if (!(key in stats)) continue;
+    const statKey = key as keyof CharacterComputedStats;
+    const base = stats[statKey];
     stats[statKey] = Math.max(0, Math.round(base + value));
   }
 };

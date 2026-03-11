@@ -21,6 +21,7 @@ import type {
   PartnerGrowthConfig,
   PartnerTechniquePassiveConfig,
 } from '../staticConfigLoader.js';
+import { splitTechniquePassiveAttrs } from './techniquePassiveAttrs.js';
 
 export const PARTNER_GROWTH_KEYS = [
   'max_qixue',
@@ -223,8 +224,19 @@ export const buildPartnerBattleAttrs = (params: {
     base[key] = baseValue + gainedLevels * levelGain;
   }
 
-  for (const [key, value] of Object.entries(passiveAttrs)) {
+  const splitPassives = splitTechniquePassiveAttrs(passiveAttrs);
+
+  for (const [key, value] of Object.entries(splitPassives.flatAdditive)) {
     base[key] = normalizeFiniteNumber(base[key]) + normalizeFiniteNumber(value);
+  }
+
+  for (const [key, value] of Object.entries(splitPassives.percentAdditive)) {
+    base[key] = normalizeFiniteNumber(base[key]) + normalizeFiniteNumber(value);
+  }
+
+  for (const [key, value] of Object.entries(splitPassives.percentMultiply)) {
+    const baseValue = normalizeFiniteNumber(base[key]);
+    base[key] = Math.max(0, baseValue * (1 + normalizeFiniteNumber(value)));
   }
 
   return {

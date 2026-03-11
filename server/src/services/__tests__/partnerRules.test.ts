@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildPartnerBattleAttrs,
   calcPartnerUpgradeExpByTargetLevel,
   resolvePartnerInjectPlan,
 } from '../shared/partnerRules.js';
@@ -47,4 +48,53 @@ test('resolvePartnerInjectPlan: 经验不足时仅累加当前级进度', () => 
   assert.equal(plan.afterProgressExp, 30);
   assert.equal(plan.gainedLevels, 0);
   assert.equal(plan.remainingCharacterExp, 0);
+});
+
+test('buildPartnerBattleAttrs: 功法百分比被动应体现在伙伴面板主属性上', () => {
+  const attrs = buildPartnerBattleAttrs({
+    baseAttrs: {
+      max_qixue: 220,
+      max_lingqi: 60,
+      wugong: 60,
+      fagong: 40,
+      wufang: 25,
+      fafang: 30,
+      sudu: 2,
+      mingzhong: 0.9,
+      shanbi: 0,
+      zhaojia: 0.1,
+      baoji: 0.05,
+      baoshang: 1.5,
+      jianbaoshang: 0,
+      kangbao: 0.02,
+      zengshang: 0,
+      zhiliao: 0,
+      jianliao: 0,
+      xixue: 0,
+      lengque: 0,
+      kongzhi_kangxing: 0,
+      jin_kangxing: 0,
+      mu_kangxing: 0,
+      shui_kangxing: 0,
+      huo_kangxing: 0,
+      tu_kangxing: 0,
+      qixue_huifu: 2,
+      lingqi_huifu: 1,
+    },
+    level: 1,
+    passiveAttrs: {
+      max_qixue: 0.1,
+      wugong: 0.2,
+      wufang: 0.4,
+      baoji: 0.05,
+      sudu: 3,
+    },
+    element: 'mu',
+  });
+
+  assert.equal(attrs.max_qixue, 242);
+  assert.equal(attrs.wugong, 72);
+  assert.equal(attrs.wufang, 35);
+  assert.equal(attrs.baoji, 0.1);
+  assert.equal(attrs.sudu, 5);
 });
