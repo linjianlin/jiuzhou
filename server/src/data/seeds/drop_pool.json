@@ -66,13 +66,6 @@
           "qty_min": 1,
           "qty_max": 2,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "book-tiebu-quan",
-          "chance": 0.12,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -108,9 +101,41 @@
           "qty_min": 1,
           "qty_max": 2,
           "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-ordinary"
+      ]
+    },
+    {
+      "id": "dp-dungeon-stone-golem",
+      "name": "秘境石傀儡掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-002",
+          "chance": 0.5,
+          "qty_min": 1,
+          "qty_max": 3,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-007",
+          "chance": 0.2,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
         },
         {
           "item_def_id": "book-houtu-gong",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-shuiyun-zhang",
           "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
@@ -138,6 +163,20 @@
       "name": "狼王掉落池",
       "mode": "prob",
       "entries": [
+        {
+          "item_def_id": "book-tiebu-quan",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-jingang-quan",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
         {
           "item_def_id": "book-qingfeng-jian",
           "chance": 0.12,
@@ -245,13 +284,6 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "book-jingang-quan",
-          "chance": 0.12,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -290,13 +322,6 @@
           "chance": 0.08,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "book-shuiyun-zhang",
-          "chance": 0.12,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         }
       ],

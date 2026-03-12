@@ -174,7 +174,8 @@
       "description": "刚猛拳法，兼具攻防",
       "obtain_type": "drop",
       "obtain_hint": [
-        "野外掉落"
+        "苍狼巢穴",
+        "养气期秘境"
       ],
       "sort_weight": 17
     },
@@ -197,8 +198,8 @@
       "description": "刚猛拳法，附带金属性破甲效果",
       "obtain_type": "drop",
       "obtain_hint": [
-        "矿洞",
-        "金属性怪物掉落"
+        "苍狼巢穴",
+        "养气期秘境"
       ],
       "sort_weight": 25
     },
@@ -268,8 +269,8 @@
       "description": "土属性心法，大幅提升防御与护盾",
       "obtain_type": "drop",
       "obtain_hint": [
-        "黄土高原",
-        "土属性怪物掉落"
+        "石窟矿洞",
+        "养气期秘境"
       ],
       "sort_weight": 28
     },
@@ -315,8 +316,8 @@
       "description": "水属性掌法，以柔克刚",
       "obtain_type": "drop",
       "obtain_hint": [
-        "水域",
-        "水属性怪物掉落"
+        "石窟矿洞",
+        "养气期秘境"
       ],
       "sort_weight": 30
     },

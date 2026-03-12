@@ -165,7 +165,7 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-stone-golem",
+                      "monster_def_id": "monster-dungeon-stone-golem",
                       "count": 1
                     }
                   ],
@@ -320,7 +320,7 @@
                   "spawn_delay_sec": 0,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-stone-golem",
+                      "monster_def_id": "monster-dungeon-stone-golem",
                       "count": 1
                     }
                   ],
@@ -331,7 +331,7 @@
                   "spawn_delay_sec": 4,
                   "monsters": [
                     {
-                      "monster_def_id": "monster-stone-golem",
+                      "monster_def_id": "monster-dungeon-stone-golem",
                       "count": 2
                     }
                   ],

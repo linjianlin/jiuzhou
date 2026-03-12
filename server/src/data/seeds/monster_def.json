@@ -234,6 +234,45 @@
       "enabled": true
     },
     {
+      "id": "monster-dungeon-stone-golem",
+      "code": "dungeon_stone_golem",
+      "name": "矿脉石傀",
+      "title": "秘境守卫",
+      "realm": "凡人",
+      "level": 6,
+      "avatar": "/assets/monster/stone_golem.png",
+      "kind": "normal",
+      "element": "土",
+      "base_attrs": {
+        "qixue": 340,
+        "max_qixue": 340,
+        "lingqi": 20,
+        "max_lingqi": 20,
+        "wugong": 24,
+        "fagong": 0,
+        "wufang": 20,
+        "fafang": 14,
+        "mingzhong": 0.86,
+        "shanbi": 0.025,
+        "baoji": 0.05,
+        "baoshang": 1.4,
+        "sudu": 2
+      },
+      "attr_variance": 0.05,
+      "attr_multiplier_min": 1.1,
+      "attr_multiplier_max": 1.3,
+      "ai_profile": {
+        "skills": [
+          "sk-stone-smash"
+        ]
+      },
+      "drop_pool_id": "dp-dungeon-stone-golem",
+      "exp_reward": 25,
+      "silver_reward_min": 6,
+      "silver_reward_max": 15,
+      "enabled": true
+    },
+    {
       "id": "monster-elite-wolf-king",
       "code": "elite_wolf_king",
       "name": "狼王",
