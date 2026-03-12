@@ -41,12 +41,15 @@ import {
 import {
   DUNGEON_REWARD_ELIGIBLE_CHARACTER_IDS_FIELD,
   buildDungeonRewardEligibleCharacterIds,
+  hasDungeonRewardEligibleCharacterIdsField,
   selectDungeonRewardEligibleParticipants,
 } from './shared/rewardEligibility.js';
+import { loadDungeonBenefitPolicyMap } from './shared/benefitPolicy.js';
 import { buildMonsterDefIdsFromWave, getStageAndWave } from './shared/stageData.js';
 import { rollDungeonRewardBundle, mergeDungeonRewardBundle } from './shared/rewards.js';
 import { asObject, asNumber, asString, countPlayerDeaths } from './shared/typeUtils.js';
 import type {
+  DungeonInstanceParticipant,
   DungeonInstanceStatus,
   DungeonInstanceRow,
   DungeonRewardBundle,
@@ -95,7 +98,6 @@ export const startDungeonInstance = async (
     const staminaCost = dungeonDef.stamina_cost;
 
     const participants = parseParticipants(inst.participants);
-    const rewardEligibleCharacterIds = buildDungeonRewardEligibleCharacterIds(participants);
     const participantNicknameMap = await getParticipantNicknameMap(participants);
     if (participants.length < minPlayers) {
       return { success: false, message: `人数不足，需要至少${minPlayers}人` };
@@ -103,6 +105,29 @@ export const startDungeonInstance = async (
     if (participants.length > maxPlayers) {
       return { success: false, message: `人数超限，最多${maxPlayers}人` };
     }
+
+    const participantCharacterIds = [...new Set(
+      participants
+        .map((participant) => Math.floor(Number(participant.characterId)))
+        .filter((characterId) => Number.isFinite(characterId) && characterId > 0),
+    )];
+    const participantBenefitPolicyMap = await loadDungeonBenefitPolicyMap(participantCharacterIds);
+    const staminaConsumingParticipants: DungeonInstanceParticipant[] = [];
+    const rewardEligibleParticipantsAtStart: DungeonInstanceParticipant[] = [];
+    for (const participant of participants) {
+      const benefitPolicy = participantBenefitPolicyMap.get(participant.characterId);
+      const participantLabel = buildParticipantLabel(participant, participantNicknameMap);
+      if (!benefitPolicy) {
+        return { success: false, message: `${participantLabel}秘境设置缺失` };
+      }
+      if (!benefitPolicy.skipStaminaCost) {
+        staminaConsumingParticipants.push(participant);
+      }
+      if (benefitPolicy.rewardEligible) {
+        rewardEligibleParticipantsAtStart.push(participant);
+      }
+    }
+    const rewardEligibleCharacterIds = buildDungeonRewardEligibleCharacterIds(rewardEligibleParticipantsAtStart);
 
     for (const p of participants) {
       const touch = await touchEntryCount(p.characterId, inst.dungeon_id, dailyLimit, weeklyLimit);
@@ -113,7 +138,7 @@ export const startDungeonInstance = async (
 
     const participantStaminaMaxMap = new Map<number, number>();
     if (staminaCost > 0) {
-      for (const p of participants) {
+      for (const p of staminaConsumingParticipants) {
         const participantLabel = buildParticipantLabel(p, participantNicknameMap);
         const staminaState = await applyStaminaRecoveryTx(p.characterId);
         if (!staminaState) {
@@ -146,7 +171,7 @@ export const startDungeonInstance = async (
       }
 
       if (staminaCost > 0) {
-        for (const p of participants) {
+        for (const p of staminaConsumingParticipants) {
           const participantLabel = buildParticipantLabel(p, participantNicknameMap);
           const staminaMaxRaw = participantStaminaMaxMap.get(p.characterId);
           const staminaMax = Math.floor(Number(staminaMaxRaw) || 0);
@@ -222,7 +247,11 @@ export const nextDungeonInstance = async (
 
     const dataObj = asObject(inst.instance_data) ?? {};
     const rewardEligibleParticipants = selectDungeonRewardEligibleParticipants(participants, dataObj);
-    if (participants.length > 0 && rewardEligibleParticipants.length === 0) {
+    if (
+      participants.length > 0 &&
+      rewardEligibleParticipants.length === 0 &&
+      !hasDungeonRewardEligibleCharacterIdsField(dataObj)
+    ) {
       console.warn(
         `[dungeon] 实例可领奖名单为空，结算奖励将跳过（instanceId=${instanceId}, participants=${participants.length})`,
       );
@@ -537,8 +566,8 @@ export const nextDungeonInstance = async (
           }
         }
 
-      // 任务次数按“开战参与者”统计：体力在开战时已按 participants 扣除，避免资格快照异常导致任务不累计。
-      const taskEventCharacterIds = buildDungeonRewardEligibleCharacterIds(participants);
+      // 任务次数按“可领奖参与者”统计，确保免体力模式不会吃到额外收益。
+      const taskEventCharacterIds = buildDungeonRewardEligibleCharacterIds(rewardEligibleParticipants);
       for (const characterId of taskEventCharacterIds) {
         await recordDungeonClearEvent(characterId, inst.dungeon_id, 1, inst.difficulty_id);
       }

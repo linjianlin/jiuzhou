@@ -141,6 +141,13 @@
   flex-wrap: wrap;
 }
 
+.map-modal-hero-tip {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 245, 204, 0.96);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
 .map-modal-detail {
   flex: 1;
   min-height: 0;

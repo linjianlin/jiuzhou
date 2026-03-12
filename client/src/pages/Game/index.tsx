@@ -2427,6 +2427,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         open={mapModalOpen}
         onClose={() => setMapModalOpen(false)}
         initialCategory={mapModalCategory}
+        dungeonNoStaminaCostEnabled={character?.dungeonNoStaminaCost === true}
         onEnter={({ mapId, roomId }) => {
           if (viewMode === 'battle') {
             messageRef.current.error('战斗中不能移动');

@@ -65,6 +65,7 @@ export interface CharacterData {
   avatar: string | null;
   autoCastSkills: boolean;
   autoDisassembleEnabled: boolean;
+  dungeonNoStaminaCost: boolean;
   spiritStones: number;
   silver: number;
   stamina: number;

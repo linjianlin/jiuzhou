@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   getCharacterInfo,
   updateCharacterAutoDisassemble,
+  updateCharacterDungeonNoStaminaCost,
   type AutoDisassembleRuleDto,
   type AutoDisassembleRulesDto,
 } from '../../../../services/api';
@@ -194,6 +195,8 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   useGameItemTaxonomy(open);
   const [activeKey, setActiveKey] = useState<SettingKey>('base');
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
+  const [dungeonNoStaminaCostEnabled, setDungeonNoStaminaCostEnabled] = useState(false);
+  const [dungeonNoStaminaCostSaving, setDungeonNoStaminaCostSaving] = useState(false);
   const [autoDisassembleEnabled, setAutoDisassembleEnabled] = useState(false);
   const [autoDisassembleRules, setAutoDisassembleRules] = useState<AutoDisassembleRuleDraft[]>([
     createAutoDisassembleRuleDraft(1),
@@ -237,6 +240,27 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
     emitThemeModeChange(nextMode);
   };
 
+  const saveDungeonNoStaminaCost = async (nextEnabled: boolean, rollback: () => void) => {
+    setDungeonNoStaminaCostSaving(true);
+    try {
+      const res = await updateCharacterDungeonNoStaminaCost(nextEnabled);
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '设置保存失败'));
+      message.success('秘境免体力设置已保存');
+    } catch (error) {
+      rollback();
+      message.error(getUnifiedApiErrorMessage(error, '秘境免体力设置保存失败'));
+    } finally {
+      setDungeonNoStaminaCostSaving(false);
+    }
+  };
+
+  const handleDungeonNoStaminaCostEnabledChange = (next: boolean) => {
+    if (autoDisassembleLoading || dungeonNoStaminaCostSaving) return;
+    const prevEnabled = dungeonNoStaminaCostEnabled;
+    setDungeonNoStaminaCostEnabled(next);
+    void saveDungeonNoStaminaCost(next, () => setDungeonNoStaminaCostEnabled(prevEnabled));
+  };
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -248,6 +272,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
         const res = await getCharacterInfo();
         if (!res.success || !res.data?.character || cancelled) return;
         const character = res.data.character;
+        setDungeonNoStaminaCostEnabled(Boolean(character.dungeon_no_stamina_cost));
         setAutoDisassembleEnabled(Boolean(character.auto_disassemble_enabled));
 
         const rawRules = normalizeAutoDisassembleRuleDraftContentList(character.auto_disassemble_rules);
@@ -371,6 +396,19 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
               <div className="setting-row">
                 <Typography.Text>暗黑主题</Typography.Text>
                 <Switch checked={themeMode === 'dark'} onChange={toggleDarkTheme} />
+              </div>
+              <div className="setting-row">
+                <div className="setting-row-main">
+                  <Typography.Text>秘境免体力模式</Typography.Text>
+                  <Typography.Text type="secondary" className="setting-row-description">
+                    开启后进入秘境不会消耗体力，但无论单人还是组队，都不会获得任何收益。
+                  </Typography.Text>
+                </div>
+                <Switch
+                  checked={dungeonNoStaminaCostEnabled}
+                  loading={autoDisassembleLoading || dungeonNoStaminaCostSaving}
+                  onChange={handleDungeonNoStaminaCostEnabledChange}
+                />
               </div>
             </Space>
           ) : null}

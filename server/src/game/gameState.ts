@@ -12,6 +12,7 @@ export interface CharacterAttributes {
   avatar: string | null;
   autoCastSkills: boolean;
   autoDisassembleEnabled: boolean;
+  dungeonNoStaminaCost: boolean;
   spiritStones: number;
   silver: number;
   stamina: number;
@@ -71,6 +72,7 @@ export const dbToCharacterAttributes = (dbRow: Record<string, unknown>): Charact
   avatar: dbRow.avatar as string | null,
   autoCastSkills: dbRow.auto_cast_skills == null ? true : Boolean(dbRow.auto_cast_skills),
   autoDisassembleEnabled: dbRow.auto_disassemble_enabled == null ? false : Boolean(dbRow.auto_disassemble_enabled),
+  dungeonNoStaminaCost: dbRow.dungeon_no_stamina_cost === true,
   spiritStones: Number(dbRow.spirit_stones) || 0,
   silver: Number(dbRow.silver) || 0,
   stamina: Number(dbRow.stamina) || 0,

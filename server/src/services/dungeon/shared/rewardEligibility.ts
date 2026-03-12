@@ -55,6 +55,15 @@ export const parseDungeonRewardEligibleCharacterIdSet = (
   return eligibleCharacterIds;
 };
 
+/** 判断 instance_data 是否显式写入了可领奖名单字段。 */
+export const hasDungeonRewardEligibleCharacterIdsField = (
+  instanceData: unknown,
+): boolean => {
+  const dataObject = asObject(instanceData);
+  if (!dataObject) return false;
+  return Object.prototype.hasOwnProperty.call(dataObject, DUNGEON_REWARD_ELIGIBLE_CHARACTER_IDS_FIELD);
+};
+
 /** 基于 instance_data 中固化的名单筛选可领奖参与者（保持原顺序，按角色去重）。 */
 export const selectDungeonRewardEligibleParticipants = (
   participants: DungeonInstanceParticipant[],

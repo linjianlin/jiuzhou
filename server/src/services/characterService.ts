@@ -20,6 +20,7 @@ export interface Character {
   auto_cast_skills: boolean;
   auto_disassemble_enabled: boolean;
   auto_disassemble_rules: AutoDisassembleRuleSet[] | null;
+  dungeon_no_stamina_cost: boolean;
   spirit_stones: number;
   silver: number;
   stamina: number;
@@ -279,4 +280,23 @@ export const updateCharacterAutoDisassembleSettings = async (
     console.error('更新自动分解设置失败:', error);
     return { success: false, message: '更新设置失败' };
   }
+};
+
+export const updateCharacterDungeonNoStaminaCostSetting = async (
+  userId: number,
+  enabled: boolean,
+): Promise<{ success: boolean; message: string }> => {
+  const sql = `
+    UPDATE characters
+    SET dungeon_no_stamina_cost = $1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = $2
+  `;
+  const result = await query(sql, [Boolean(enabled), userId]);
+
+  if (result.rowCount === 0) {
+    return { success: false, message: '角色不存在' };
+  }
+
+  return { success: true, message: '设置已保存' };
 };

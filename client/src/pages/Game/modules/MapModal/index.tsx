@@ -76,11 +76,19 @@ interface MapModalProps {
   open: boolean;
   onClose: () => void;
   initialCategory?: MapCategory;
+  dungeonNoStaminaCostEnabled?: boolean;
   onEnter?: (target: { mapId: string; roomId: string }) => void;
   onEnterDungeon?: (target: { dungeonId: string; rank: number }) => void;
 }
 
-const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onEnter, onEnterDungeon }) => {
+const MapModal: React.FC<MapModalProps> = ({
+  open,
+  onClose,
+  initialCategory,
+  dungeonNoStaminaCostEnabled = false,
+  onEnter,
+  onEnterDungeon,
+}) => {
   const [category, setCategory] = useState<MapCategory>(initialCategory ?? 'world');
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState<string>('');
@@ -481,6 +489,11 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
     const weekly = entry.weekly_limit > 0 ? `${entry.weekly_remaining}/${entry.weekly_limit}` : '不限';
     return `剩余次数 今日:${daily} 本周:${weekly}`;
   }, [mergedActiveMap]);
+  const dungeonNoStaminaCostTip = useMemo(() => {
+    if (!mergedActiveMap || mergedActiveMap.category !== 'dungeon') return '';
+    if (!dungeonNoStaminaCostEnabled) return '';
+    return '当前已开启秘境免体力模式：进入后不消耗体力，但不会获得任何收益。';
+  }, [dungeonNoStaminaCostEnabled, mergedActiveMap]);
   const shouldShowNpcSection = useMemo(() => {
     if (!mergedActiveMap) return false;
     return (detailLoading && !activeDetail) || mergedActiveMap.npcs.length > 0;
@@ -627,6 +640,7 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
                     ) : null}
                     {mergedActiveMap.category === 'dungeon' && dungeonEntryText ? <Tag color="orange">{dungeonEntryText}</Tag> : null}
                   </div>
+                  {dungeonNoStaminaCostTip ? <div className="map-modal-hero-tip">{dungeonNoStaminaCostTip}</div> : null}
                 </div>
               </div>
 

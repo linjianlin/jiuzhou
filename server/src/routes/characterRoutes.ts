@@ -7,6 +7,7 @@ import {
   getCharacter,
   updateCharacterAutoCastSkills,
   updateCharacterAutoDisassembleSettings,
+  updateCharacterDungeonNoStaminaCostSetting,
   updateCharacterPosition,
 } from '../domains/character/index.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
@@ -96,6 +97,19 @@ router.post('/updateAutoDisassemble', requireAuth, asyncHandler(async (req, res)
   }
 
   const result = await updateCharacterAutoDisassembleSettings(userId, enabled, parsedRules);
+
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
+  }
+
+  return sendResult(res, result);
+}));
+
+router.post('/updateDungeonNoStaminaCost', requireAuth, asyncHandler(async (req, res) => {
+  const userId = req.userId!;
+  const enabled = Boolean((req.body as { enabled?: unknown })?.enabled);
+
+  const result = await updateCharacterDungeonNoStaminaCostSetting(userId, enabled);
 
   if (result.success) {
     await safePushCharacterUpdate(userId);

@@ -96,6 +96,21 @@
   background: var(--panel-bg-soft);
 }
 
+.setting-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 12px;
+}
+
+.setting-row-description {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .setting-row-column {
   flex-direction: column;
   align-items: flex-start;

@@ -56,6 +56,7 @@ interface CharacterBaseRow {
   auto_cast_skills: boolean;
   auto_disassemble_enabled: boolean;
   auto_disassemble_rules: unknown;
+  dungeon_no_stamina_cost: boolean;
   spirit_stones: number;
   silver: number;
   stamina: number;

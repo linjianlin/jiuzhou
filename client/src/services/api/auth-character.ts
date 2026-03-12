@@ -27,6 +27,7 @@ export interface CharacterResponse {
       auto_cast_skills?: boolean;
       auto_disassemble_enabled?: boolean;
       auto_disassemble_rules?: AutoDisassembleRulesDto | null;
+      dungeon_no_stamina_cost?: boolean;
       spirit_stones: number;
       silver: number;
       qixue: number;
@@ -124,4 +125,10 @@ export const updateCharacterAutoDisassemble = (
     enabled,
     ...(rules ? { rules } : {}),
   });
+};
+
+export const updateCharacterDungeonNoStaminaCost = (
+  enabled: boolean,
+): Promise<{ success: boolean; message: string }> => {
+  return api.post('/character/updateDungeonNoStaminaCost', { enabled });
 };

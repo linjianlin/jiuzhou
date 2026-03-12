@@ -412,6 +412,7 @@ model characters {
   auto_cast_skills                                                                  Boolean?                        @default(true)
   auto_disassemble_enabled                                                          Boolean?                        @default(false)
   auto_disassemble_rules                                                            Json?                           @default("[]")
+  dungeon_no_stamina_cost                                                           Boolean?                        @default(false)
   created_at                                                                        DateTime?                       @default(now()) @db.Timestamp(6)
   updated_at                                                                        DateTime?                       @default(now()) @db.Timestamp(6)
   arena_battle_arena_battle_challenger_character_idTocharacters                     arena_battle[]                  @relation("arena_battle_challenger_character_idTocharacters")
