@@ -27,6 +27,7 @@ import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { buildTechniqueResearchJobState } from './shared/techniqueResearchJobShared.js';
 import { normalizeTechniqueName, validateTechniqueCustomName, getTechniqueNameRulesView } from './shared/techniqueNameRules.js';
 import { isCharacterVisibleTechniqueDefinition } from './shared/techniqueUsageScope.js';
+import { getCharacterNicknameById } from './shared/characterNickname.js';
 import { broadcastWorldSystemMessage } from './shared/worldChatBroadcast.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
 import {
@@ -390,20 +391,7 @@ class TechniqueGenerationService {
       return;
     }
 
-    const characterRes = await query(
-      `
-        SELECT nickname
-        FROM characters
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [characterId],
-    );
-    if (characterRes.rows.length === 0) {
-      return;
-    }
-
-    const nickname = asString((characterRes.rows[0] as Record<string, unknown>).nickname);
+    const nickname = await getCharacterNicknameById(characterId);
     if (!nickname) {
       return;
     }

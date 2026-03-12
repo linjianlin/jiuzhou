@@ -4,18 +4,18 @@
  * 作用（做什么 / 不做什么）：
  * 1) 做什么：提供伙伴招募状态查询、任务创建、异步生成落库、结果确认、放弃与已读标记。
  * 2) 做什么：把动态伙伴定义、伙伴专属生成功法与招募任务状态机收口到单一服务，避免伙伴系统走双轨实现。
- * 3) 不做什么：不解析 HTTP 参数、不直接推送 WebSocket，也不在这里维护 worker 队列。
+ * 3) 不做什么：不解析 HTTP 参数，也不在这里维护 worker 队列；全服播报仅在确认获得天级伙伴后通过共享广播模块触发。
  *
  * 输入/输出：
  * - 输入：characterId、generationId。
  * - 输出：统一 ServiceResult，以及伙伴招募状态 DTO / 确认结果 DTO。
  *
  * 数据流/状态流：
- * route -> partnerRecruitService.create -> runner.enqueue -> worker -> processPendingRecruitJob -> preview -> confirm/discard。
+ * route -> partnerRecruitService.create -> runner.enqueue -> worker -> processPendingRecruitJob -> preview -> confirm/discard -> 天级确认后触发世界系统广播。
  *
  * 关键边界条件与坑点：
  * 1) 失败路径必须退款并把任务写成终结态，不能让任务卡在 pending，也不能吞掉头像/模型失败。
- * 2) 伙伴预览只生成动态定义，不直接创建实例；只有 confirm 才真正写入 `character_partner`。
+ * 2) 伙伴预览只生成动态定义，不直接创建实例；只有 confirm 才真正写入 `character_partner`，且广播必须放在事务提交后触发。
  */
 import { randomUUID } from 'crypto';
 import { query } from '../config/database.js';
@@ -36,6 +36,7 @@ import { partnerService } from './partnerService.js';
 import {
   parseTechniqueTextModelJsonObject,
 } from './shared/techniqueTextModelShared.js';
+import { getCharacterNicknameById } from './shared/characterNickname.js';
 import { resolveTechniqueGenerationRequestFailure } from './shared/techniqueGenerationRequestFailure.js';
 import {
   buildPartnerRecruitJobState,
@@ -72,6 +73,7 @@ import {
 } from './shared/partnerRecruitUnlock.js';
 import { generatePartnerRecruitAvatar } from './shared/partnerRecruitAvatarGenerator.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
+import { broadcastWorldSystemMessage } from './shared/worldChatBroadcast.js';
 import { callConfiguredTextModel } from './ai/openAITextClient.js';
 import {
   TechniqueGenerationExhaustedError,
@@ -467,6 +469,27 @@ const buildRecruitPreviewByPartnerDefId = (
 };
 
 class PartnerRecruitService {
+  private async broadcastHeavenPartnerRecruit(
+    characterId: number,
+    partnerDefId: string,
+    partnerName: string,
+  ): Promise<void> {
+    const definition = getPartnerDefinitionById(partnerDefId);
+    if (!definition || definition.quality !== '天') {
+      return;
+    }
+
+    const nickname = await getCharacterNicknameById(characterId);
+    if (!nickname) {
+      return;
+    }
+
+    broadcastWorldSystemMessage({
+      senderTitle: '天机传音',
+      content: `【伙伴招募】${nickname}招募到天级伙伴【${partnerName}】，灵契共鸣，声传九州！`,
+    });
+  }
+
   private async getPartnerRecruitUnlockStateTx(
     characterId: number,
     lockRow: boolean,
@@ -1014,8 +1037,20 @@ class PartnerRecruitService {
     };
   }
 
-  @Transactional
   async confirmRecruitDraft(characterId: number, generationId: string): Promise<ServiceResult<PartnerRecruitConfirmResponse>> {
+    const result = await this.confirmRecruitDraftTx(characterId, generationId);
+    if (result.success && result.data) {
+      await this.broadcastHeavenPartnerRecruit(
+        characterId,
+        result.data.partnerDefId,
+        result.data.partnerName,
+      );
+    }
+    return result;
+  }
+
+  @Transactional
+  private async confirmRecruitDraftTx(characterId: number, generationId: string): Promise<ServiceResult<PartnerRecruitConfirmResponse>> {
     const unlockState = await this.assertPartnerRecruitUnlocked(characterId, true);
     if (!unlockState.success) {
       return { success: false, message: unlockState.message, code: unlockState.code };
