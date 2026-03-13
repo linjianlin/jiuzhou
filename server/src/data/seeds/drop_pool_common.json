@@ -13,6 +13,7 @@
           "chance_add_by_monster_realm": 0.04,
           "qty_min": 1,
           "qty_max": 1,
+          "qty_min_add_by_monster_realm": 0.5,
           "qty_max_add_by_monster_realm": 1,
           "show_in_ui": true
         },
