@@ -2041,7 +2041,7 @@
       "stack_max": 9999,
       "bind_type": "none",
       "tradeable": true,
-      "icon": "/assets/items/youming_gu.png",
+      "icon": "/assets/items/youming_gu.webp",
       "description": "幽冥生灵遗留的骨质碎片，可用于打造高阶防具与护具。",
       "long_desc": "经阴煞浸染的骨片坚韧异常，炼化后可形成稳定防护层，是炼己期坦系装备常用底材。",
       "tags": [
