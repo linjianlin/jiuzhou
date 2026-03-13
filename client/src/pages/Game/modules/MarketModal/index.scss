@@ -72,6 +72,10 @@
   display: none;
 }
 
+.market-mobile-asset-switch-wrap {
+  display: none;
+}
+
 .market-left-segmented {
   width: max-content;
 
@@ -1275,6 +1279,11 @@
 
   .market-left-name {
     font-size: 13px;
+  }
+
+  .market-mobile-asset-switch-wrap {
+    display: block;
+    padding: 0 12px 10px;
   }
 
   .market-left-list {

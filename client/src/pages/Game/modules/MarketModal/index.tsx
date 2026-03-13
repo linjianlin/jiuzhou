@@ -1135,6 +1135,23 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     [assetType, refreshBag, refreshMarket, refreshMy, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords, refreshRecords],
   );
 
+  const handleAssetTypeChange = useCallback(
+    (nextAssetType: MarketAssetType) => {
+      setAssetType(nextAssetType);
+      setPanel('market');
+      setMarketPage(1);
+      setMyPage(1);
+      setRecordPage(1);
+      setMobileFilterOpen(false);
+      if (nextAssetType === 'item') {
+        void refreshMarket(1);
+      } else {
+        void refreshPartnerMarket(1);
+      }
+    },
+    [refreshMarket, refreshPartnerMarket],
+  );
+
   const buyListing = useCallback(
     async (row: ListingItem, requestedQty: number = 1) => {
       if (characterId !== null && row.sellerCharacterId === characterId) return;
@@ -1455,29 +1472,23 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     );
   };
 
+  const renderAssetSwitch = (className: string) => (
+    <Segmented
+      className={className}
+      value={assetType}
+      options={assetOptions}
+      onChange={(value) => {
+        if (value !== 'item' && value !== 'partner') return;
+        handleAssetTypeChange(value);
+      }}
+    />
+  );
+
   const renderPaneHeader = (title: string) => (
     <div className="market-pane-top">
       <div className="market-pane-head-row">
         <div className="market-title">{title}</div>
-        <Segmented
-          className="market-asset-switch"
-          value={assetType}
-          options={assetOptions}
-          onChange={(value) => {
-            if (value !== 'item' && value !== 'partner') return;
-            setAssetType(value);
-            setPanel('market');
-            setMarketPage(1);
-            setMyPage(1);
-            setRecordPage(1);
-            setMobileFilterOpen(false);
-            if (value === 'item') {
-              void refreshMarket(1);
-            } else {
-              void refreshPartnerMarket(1);
-            }
-          }}
-        />
+        {renderAssetSwitch('market-asset-switch')}
       </div>
     </div>
   );
@@ -2498,18 +2509,23 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             <div className="market-left-name">坊市</div>
           </div>
           {isMobile ? (
-            <div className="market-left-segmented-wrap">
-              <Segmented
-                className="market-left-segmented"
-                value={panel}
-                options={menuOptions}
-                onChange={(value) => {
-                  if (typeof value !== 'string') return;
-                  if (!menuKeys.includes(value as MarketPanel)) return;
-                  handlePanelChange(value as MarketPanel);
-                }}
-              />
-            </div>
+            <>
+              <div className="market-mobile-asset-switch-wrap">
+                {renderAssetSwitch('market-asset-switch market-asset-switch--mobile')}
+              </div>
+              <div className="market-left-segmented-wrap">
+                <Segmented
+                  className="market-left-segmented"
+                  value={panel}
+                  options={menuOptions}
+                  onChange={(value) => {
+                    if (typeof value !== 'string') return;
+                    if (!menuKeys.includes(value as MarketPanel)) return;
+                    handlePanelChange(value as MarketPanel);
+                  }}
+                />
+              </div>
+            </>
           ) : (
             <div className="market-left-list">
               {menuItems.map((it) => (
