@@ -1200,7 +1200,7 @@ class TechniqueGenerationService {
       return { success: false, message: '草稿已过期，请重新领悟', code: 'GENERATION_EXPIRED' };
     }
 
-    const nameCheck = validateTechniqueCustomName(customName);
+    const nameCheck = await validateTechniqueCustomName(customName);
     if (!nameCheck.success) {
       return { success: false, message: nameCheck.message, code: nameCheck.code };
     }

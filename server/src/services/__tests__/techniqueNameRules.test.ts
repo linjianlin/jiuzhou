@@ -26,8 +26,8 @@ test('名称规范化应处理空白与英文大小写', () => {
   assert.equal(normalizeTechniqueName('  A\u3000B   C  '), 'a b c');
 });
 
-test('合法名称应通过校验并自动添加前缀', () => {
-  const result = validateTechniqueCustomName('太虚剑诀');
+test('合法名称应通过校验并自动添加前缀', async () => {
+  const result = await validateTechniqueCustomName('太虚剑诀');
   const prefix = getTechniqueNameRulesView().fixedPrefix;
   assert.equal(result.success, true);
   if (!result.success) return;
@@ -35,30 +35,30 @@ test('合法名称应通过校验并自动添加前缀', () => {
   assert.equal(result.displayName, `${prefix}太虚剑诀`);
 });
 
-test('长度越界应返回 NAME_INVALID', () => {
-  const shortName = validateTechniqueCustomName('剑');
+test('长度越界应返回 NAME_INVALID', async () => {
+  const shortName = await validateTechniqueCustomName('剑');
   assert.equal(shortName.success, false);
   if (!shortName.success) {
     assert.equal(shortName.code, 'NAME_INVALID');
   }
 
-  const longName = validateTechniqueCustomName('一二三四五六七八九十一二三四五');
+  const longName = await validateTechniqueCustomName('一二三四五六七八九十一二三四五');
   assert.equal(longName.success, false);
   if (!longName.success) {
     assert.equal(longName.code, 'NAME_INVALID');
   }
 });
 
-test('非法字符应返回 NAME_INVALID', () => {
-  const result = validateTechniqueCustomName('天雷剑诀1');
+test('非法字符应返回 NAME_INVALID', async () => {
+  const result = await validateTechniqueCustomName('天雷剑诀1');
   assert.equal(result.success, false);
   if (!result.success) {
     assert.equal(result.code, 'NAME_INVALID');
   }
 });
 
-test('敏感词应返回 NAME_SENSITIVE', () => {
-  const result = validateTechniqueCustomName('管理员');
+test('敏感词应返回 NAME_SENSITIVE', async () => {
+  const result = await validateTechniqueCustomName('管理员');
   assert.equal(result.success, false);
   if (!result.success) {
     assert.equal(result.code, 'NAME_SENSITIVE');

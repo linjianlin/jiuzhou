@@ -1,11 +1,14 @@
-import { getTechniqueNameSensitiveWords } from '../techniqueNameSensitiveWords.js';
+import { guardSensitiveText } from '../sensitiveWordService.js';
 
 const TECHNIQUE_NAME_ALLOWED_PATTERN = /^[\u4e00-\u9fa5]+$/;
 const TECHNIQUE_NAME_MIN_LENGTH = 2;
 const TECHNIQUE_NAME_MAX_LENGTH = 14;
 const TECHNIQUE_NAME_FIXED_PREFIX = '『研』';
 
-export type TechniqueNameValidationErrorCode = 'NAME_INVALID' | 'NAME_SENSITIVE';
+export type TechniqueNameValidationErrorCode =
+  | 'NAME_INVALID'
+  | 'NAME_SENSITIVE'
+  | 'NAME_CHECK_UNAVAILABLE';
 
 export type TechniqueNameValidationResult =
   | { success: true; normalizedName: string; displayName: string }
@@ -47,17 +50,9 @@ const normalizeDisplayName = (rawName: string): string => {
   return collapseSpaces(withHalfWidthSpace);
 };
 
-const containsSensitiveWord = (normalizedLowerName: string): boolean => {
-  const words = getTechniqueNameSensitiveWords();
-  if (words.size === 0) return false;
-  for (const word of words.values()) {
-    if (!word) continue;
-    if (normalizedLowerName.includes(word)) return true;
-  }
-  return false;
-};
-
-export const validateTechniqueCustomName = (rawName: string): TechniqueNameValidationResult => {
+export const validateTechniqueCustomName = async (
+  rawName: string,
+): Promise<TechniqueNameValidationResult> => {
   const rawDisplayName = normalizeDisplayName(rawName);
   if (!rawDisplayName) {
     return { success: false, code: 'NAME_INVALID', message: '名称不能为空' };
@@ -82,8 +77,20 @@ export const validateTechniqueCustomName = (rawName: string): TechniqueNameValid
 
   const displayName = `${TECHNIQUE_NAME_FIXED_PREFIX}${rawDisplayName}`;
   const normalizedName = normalizeTechniqueName(displayName);
-  if (containsSensitiveWord(normalizedName)) {
-    return { success: false, code: 'NAME_SENSITIVE', message: '名称包含敏感词，请重填' };
+  const sensitiveGuard = await guardSensitiveText(
+    rawDisplayName,
+    '名称包含违禁词，请重新输入',
+    '敏感词检测服务暂不可用，请稍后重试',
+  );
+  if (!sensitiveGuard.success) {
+    return {
+      success: false,
+      code:
+        sensitiveGuard.code === 'CONTENT_SENSITIVE'
+          ? 'NAME_SENSITIVE'
+          : 'NAME_CHECK_UNAVAILABLE',
+      message: sensitiveGuard.message,
+    };
   }
 
   return { success: true, normalizedName, displayName };

@@ -16,6 +16,7 @@ import {
 import { withUnlockedFeatures } from "../services/featureUnlockService.js";
 import { getRemainingCooldown } from "../services/battle/cooldownManager.js";
 import { syncBattleStateOnReconnect } from "../services/battle/index.js";
+import { detectSensitiveWords } from "../services/sensitiveWordService.js";
 import { AsyncShutdownGate } from "../utils/asyncShutdownGate.js";
 
 // 玩家会话
@@ -228,12 +229,28 @@ class GameServer {
             return;
           }
 
+          let chatContent = content;
+          try {
+            const sensitiveResult = await detectSensitiveWords(content);
+            if (sensitiveResult.matched) {
+              if (sensitiveResult.source !== "remote") {
+                socket.emit("chat:error", { message: "消息包含敏感词，请重新发送" });
+                return;
+              }
+              chatContent = sensitiveResult.sanitizedContent;
+            }
+          } catch (error) {
+            console.error("聊天敏感词检测失败:", error);
+            socket.emit("chat:error", { message: "敏感词检测服务暂不可用，请稍后重试" });
+            return;
+          }
+
           const now = Date.now();
           const message = {
             id: randomUUID(),
             clientId,
             channel,
-            content,
+            content: chatContent,
             timestamp: now,
             senderUserId: session.userId,
             senderCharacterId: session.character.id,

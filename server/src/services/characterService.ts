@@ -9,6 +9,7 @@ import {
 import { getCharacterComputedByUserId, invalidateCharacterComputedCache } from './characterComputedService.js';
 import { withUnlockedFeatures } from './featureUnlockService.js';
 import { createInventoryForCharacter } from './shared/inventoryPersistence.js';
+import { guardSensitiveText } from './sensitiveWordService.js';
 
 export interface Character {
   id: number;
@@ -119,6 +120,15 @@ export const createCharacter = async (
   const existCheck = await query('SELECT id FROM characters WHERE user_id = $1', [userId]);
   if (existCheck.rows.length > 0) {
     return { success: false, message: '已存在角色，无法重复创建' };
+  }
+
+  const sensitiveGuard = await guardSensitiveText(
+    nickname,
+    '道号包含敏感词，请重新输入',
+    '敏感词检测服务暂不可用，请稍后重试',
+  );
+  if (!sensitiveGuard.success) {
+    return { success: false, message: sensitiveGuard.message };
   }
 
   // 检查昵称是否已被使用
