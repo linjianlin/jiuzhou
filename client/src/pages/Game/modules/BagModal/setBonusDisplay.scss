@@ -29,7 +29,7 @@
   color: var(--text-color);
   font-weight: 800;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid color-mix(in srgb, var(--primary-color) 30%, var(--border-color-soft));
   background: color-mix(in srgb, var(--primary-color) 10%, transparent);
 }
@@ -64,7 +64,7 @@
 
 .set-bonus-stage-state {
   flex-shrink: 0;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   padding: 0 6px;
   font-weight: 700;
 }

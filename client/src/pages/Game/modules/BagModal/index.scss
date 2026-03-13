@@ -220,7 +220,7 @@
     align-items: baseline;
     gap: 3px;
     padding: 3px 10px;
-    border-radius: 999px;
+    border-radius: var(--app-tag-radius);
     background: var(--panel-bg);
     border: 1px solid var(--border-color-soft);
     font-size: 12px;

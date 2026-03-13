@@ -73,7 +73,7 @@
   margin-left: auto;
   height: 20px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--item-tooltip-chip-border);
   background: var(--item-tooltip-chip-bg);
   display: inline-flex;
@@ -90,7 +90,7 @@
 }
 
 .item-tooltip-tag {
-  @include appTag.chip-base(var(--item-tooltip-chip-bg), 6px);
+  @include appTag.chip-base(var(--item-tooltip-chip-bg));
   height: 22px;
   padding: 0 10px;
   color: var(--item-tooltip-title);

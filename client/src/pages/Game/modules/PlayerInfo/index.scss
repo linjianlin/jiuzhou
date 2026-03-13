@@ -88,7 +88,7 @@
   color: #fff;
   background: linear-gradient(135deg, var(--danger-color), var(--warning-color));
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--app-tag-radius);
   letter-spacing: 0.5px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
@@ -114,7 +114,7 @@
   height: 20px;
   padding: 0 8px;
   border: 1px solid var(--primary-color);
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   background: var(--primary-bg-soft);
   font-size: 11px;
   font-weight: 700;

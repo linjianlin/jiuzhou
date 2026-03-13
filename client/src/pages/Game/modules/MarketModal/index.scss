@@ -422,7 +422,7 @@
   align-items: center;
   min-height: 24px;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
   color: var(--text-secondary);
@@ -715,7 +715,7 @@
 
 .market-buy-dialog__chip {
   padding: 5px 9px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
   color: var(--text-secondary);
@@ -1012,7 +1012,7 @@
   color: var(--primary-color);
   background: color-mix(in srgb, var(--primary-color) 12%, transparent);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--app-tag-radius);
 }
 
 .market-partner-technique-desc {
@@ -1748,7 +1748,7 @@
 }
 
 .market-list-sheet-tag {
-  @include appTag.chip-base(var(--market-sheet-tag-base-bg), 4px);
+  @include appTag.chip-base(var(--market-sheet-tag-base-bg));
   display: inline-flex;
   align-items: center;
   padding: 2px 7px;

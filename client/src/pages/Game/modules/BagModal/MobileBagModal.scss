@@ -420,7 +420,7 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   font-size: 10px;
   font-weight: 700;
   line-height: 1.6;
@@ -574,7 +574,7 @@
 
 .mbag-sheet-effect-chip {
   padding: 5px 8px;
-  border-radius: 7px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--border-color);
   background: var(--panel-bg);
   font-size: 11px;
@@ -810,7 +810,7 @@
   font-size: 12px;
   font-weight: 700;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   padding: 0 10px;
 
   &.is-active {

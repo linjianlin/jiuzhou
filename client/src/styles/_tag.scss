@@ -8,7 +8,7 @@
  * 2. 业务模块若需要紧凑版标签，只应覆写尺寸与宽度，不应再复制底色、描边与高光皮肤。
  */
 
-@mixin chip-base($base-bg: var(--panel-bg), $radius: 6px) {
+@mixin chip-base($base-bg: var(--panel-bg), $radius: var(--app-tag-radius, 6px)) {
   border: 1px solid color-mix(in srgb, var(--text-color) 10%, var(--border-color-soft));
   border-radius: $radius;
   background: linear-gradient(
@@ -36,7 +36,7 @@
   color: color-mix(in srgb, $accent-color $text-alpha, var(--text-color));
 }
 
-@mixin ant-tag-base($base-bg: var(--panel-bg), $radius: 6px) {
+@mixin ant-tag-base($base-bg: var(--panel-bg), $radius: var(--app-tag-radius, 6px)) {
   @include chip-base($base-bg, $radius);
   color: var(--text-color);
   font-weight: 700;

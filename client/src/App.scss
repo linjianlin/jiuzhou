@@ -12,12 +12,13 @@
 
 body {
   --app-tag-base-bg: var(--panel-bg);
+  --app-tag-radius: 4px;
 }
 
 body .ant-tag.ant-tag-filled,
 body .ant-tag.ant-tag-outlined,
 body .ant-tag.ant-tag-solid {
-  @include appTag.ant-tag-base(var(--app-tag-base-bg), 6px);
+  @include appTag.ant-tag-base(var(--app-tag-base-bg));
 }
 
 body .ant-tag.ant-tag-default.ant-tag-filled,

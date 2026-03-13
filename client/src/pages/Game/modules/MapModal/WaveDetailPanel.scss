@@ -67,7 +67,7 @@
 }
 
 .map-modal-wave-stage-index {
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--primary-color);
   background: var(--primary-bg-soft);
   color: var(--primary-color);
@@ -90,7 +90,7 @@
 
 .map-modal-wave-stage-count {
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--border-color);
   background: var(--panel-bg);
   color: var(--text-tertiary);
@@ -156,7 +156,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   border: 1px solid var(--border-color);
   background: var(--panel-bg-soft);
   padding: 4px 9px;

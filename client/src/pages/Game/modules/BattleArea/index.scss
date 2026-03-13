@@ -155,7 +155,7 @@
   flex: 0 0 auto;
   height: 18px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--app-tag-radius);
   background: var(--panel-bg);
   border: 1px solid var(--border-color);
   font-size: 11px;
