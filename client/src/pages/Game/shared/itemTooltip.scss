@@ -1,6 +1,7 @@
 @use './tooltipSurfaceShared';
 @use './itemQualityTag' as qualityTag;
 @use './techniqueSkillSection' as techniqueSkill;
+@use '../../../styles/tag' as appTag;
 
 @include techniqueSkill.technique-skill-section();
 
@@ -35,6 +36,7 @@
   --technique-skill-surface: var(--item-tooltip-section-bg);
   --technique-skill-card-bg: var(--item-tooltip-bg);
   --technique-skill-accent: color-mix(in srgb, var(--item-tooltip-title) 78%, #1677ff);
+  --app-tag-base-bg: var(--item-tooltip-chip-bg);
 
   display: flex;
   flex-direction: column;
@@ -89,11 +91,9 @@
 }
 
 .item-tooltip-tag {
+  @include appTag.chip-base(var(--item-tooltip-chip-bg), 6px);
   height: 22px;
   padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--item-tooltip-chip-border);
-  background: var(--item-tooltip-chip-bg);
   color: var(--item-tooltip-title);
   font-weight: 800;
   font-size: 12px;

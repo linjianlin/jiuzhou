@@ -1,0 +1,79 @@
+/**
+ * 作用：统一项目内 Ant Tag 与通用品质标签的渐变、描边和小圆角视觉，减少各模块重复定义。
+ * 不做什么：不负责标签布局间距与业务文案。
+ * 输入/输出：输入为基础底色、强调色和圆角；输出为可供全局 `.ant-tag` 与业务模块 class 复用的 mixin。
+ * 数据流/状态流：App 全局样式消费 Ant Tag 基础皮肤；业务模块只在需要语义色或自定义 span 标签时复用本文件的 mixin。
+ * 关键边界条件与坑点：
+ * 1. 全局皮肤必须依赖现有主题变量混色，保证浅色与深色主题下都保持可读，不引入单主题偏色。
+ * 2. 业务模块若需要紧凑版标签，只应覆写尺寸与宽度，不应再复制底色、描边与高光皮肤。
+ */
+
+@mixin chip-base($base-bg: var(--panel-bg), $radius: 6px) {
+  border: 1px solid color-mix(in srgb, var(--text-color) 10%, var(--border-color-soft));
+  border-radius: $radius;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #fff 8%, $base-bg) 0%,
+    color-mix(in srgb, var(--text-color) 5%, $base-bg) 100%
+  );
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-color) 5%, transparent);
+}
+
+@mixin chip-accent(
+  $accent-color,
+  $base-bg: var(--panel-bg),
+  $top-alpha: 18%,
+  $bottom-alpha: 10%,
+  $border-alpha: 34%,
+  $text-alpha: 86%
+) {
+  border-color: color-mix(in srgb, $accent-color $border-alpha, var(--border-color-soft));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, $accent-color $top-alpha, $base-bg) 0%,
+    color-mix(in srgb, $accent-color $bottom-alpha, $base-bg) 100%
+  );
+  color: color-mix(in srgb, $accent-color $text-alpha, var(--text-color));
+}
+
+@mixin ant-tag-base($base-bg: var(--panel-bg), $radius: 6px) {
+  @include chip-base($base-bg, $radius);
+  color: var(--text-color);
+  font-weight: 700;
+}
+
+@mixin quality-chip($base-bg: var(--panel-bg)) {
+  &.item-quality--huang {
+    @include chip-accent(var(--rarity-huang), $base-bg, 20%, 12%, 40%, 92%);
+  }
+
+  &.item-quality--xuan {
+    @include chip-accent(var(--rarity-xuan), $base-bg, 20%, 12%, 38%, 92%);
+  }
+
+  &.item-quality--di {
+    @include chip-accent(var(--rarity-di), $base-bg, 22%, 14%, 40%, 92%);
+  }
+
+  &.item-quality--tian {
+    @include chip-accent(var(--rarity-tian), $base-bg, 20%, 12%, 38%, 92%);
+  }
+}
+
+@mixin quality-chip-q($base-bg: var(--panel-bg-soft)) {
+  &.q-huang {
+    @include chip-accent(var(--rarity-huang), $base-bg, 20%, 12%, 40%, 92%);
+  }
+
+  &.q-xuan {
+    @include chip-accent(var(--rarity-xuan), $base-bg, 20%, 12%, 38%, 92%);
+  }
+
+  &.q-di {
+    @include chip-accent(var(--rarity-di), $base-bg, 22%, 14%, 40%, 92%);
+  }
+
+  &.q-tian {
+    @include chip-accent(var(--rarity-tian), $base-bg, 20%, 12%, 38%, 92%);
+  }
+}

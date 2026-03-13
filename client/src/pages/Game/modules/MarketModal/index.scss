@@ -1,6 +1,7 @@
 @use '../../shared/tooltipSurfaceShared';
 @use '../../shared/itemQualityTag' as qualityTag;
 @use '../../shared/modalShellLayout' as modalShell;
+@use '../../../../styles/tag' as appTag;
 
 .market-modal {
   .ant-modal-content {
@@ -320,26 +321,35 @@
 
 .market-tag.ant-tag {
   margin: 0;
-  border: 1px solid var(--text-color);
-  background: var(--panel-bg);
   color: var(--text-color);
   font-weight: 900;
 }
 
 .market-tag-quality.ant-tag {
-  @include qualityTag.quality-tag-chip(var(--panel-bg));
+  @include appTag.quality-chip(var(--app-tag-base-bg, var(--panel-bg)));
 }
 
 .market-tag-mine.ant-tag {
   border-style: dashed;
+  @include appTag.chip-accent(var(--primary-color), var(--app-tag-base-bg, var(--panel-bg)), 16%, 8%, 30%, 80%);
 }
 
 .market-tag-record.ant-tag.buy {
   border-style: solid;
+  @include appTag.chip-accent(var(--primary-color), var(--app-tag-base-bg, var(--panel-bg)), 18%, 10%, 32%, 82%);
 }
 
 .market-tag-record.ant-tag.sell {
   border-style: dotted;
+  @include appTag.chip-accent(var(--warning-color), var(--app-tag-base-bg, var(--panel-bg)), 18%, 10%, 32%, 84%);
+}
+
+.market-tag-state.ant-tag.market-tag-state--active {
+  @include appTag.chip-accent(var(--success-color), var(--app-tag-base-bg, var(--panel-bg)), 18%, 10%, 34%, 84%);
+}
+
+.market-tag-state.ant-tag.market-tag-state--listed {
+  @include appTag.chip-accent(var(--warning-color), var(--app-tag-base-bg, var(--panel-bg)), 18%, 10%, 34%, 84%);
 }
 
 .market-actions {
@@ -355,6 +365,7 @@
 }
 
 .market-mobile-card {
+  --app-tag-base-bg: var(--panel-bg-soft);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--panel-bg-soft);
@@ -1621,6 +1632,7 @@
 }
 
 .market-list-sheet {
+  --market-sheet-tag-base-bg: var(--panel-bg-soft);
   position: fixed;
   left: 0;
   right: 0;
@@ -1738,48 +1750,37 @@
 }
 
 .market-list-sheet-tag {
+  @include appTag.chip-base(var(--market-sheet-tag-base-bg), 4px);
   display: inline-flex;
   align-items: center;
   padding: 2px 7px;
-  border-radius: 6px;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 700;
   line-height: 1.3;
 
   &.market-list-sheet-tag--cat {
-    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
-    color: var(--text-color);
+    @include appTag.chip-accent(var(--primary-color), var(--market-sheet-tag-base-bg), 18%, 10%, 32%, 78%);
   }
 
   &.market-list-sheet-tag--quality {
-    background: var(--panel-bg-soft);
-    color: var(--text-secondary);
-
-    &.item-quality--huang {
-      color: var(--rarity-huang);
-    }
-
-    &.item-quality--xuan {
-      color: var(--rarity-xuan);
-    }
-
-    &.item-quality--di {
-      color: var(--rarity-di);
-    }
-
-    &.item-quality--tian {
-      color: var(--rarity-tian);
-    }
+    @include appTag.quality-chip(var(--market-sheet-tag-base-bg));
   }
 
   &.market-list-sheet-tag--locked {
-    background: color-mix(in srgb, var(--danger-color) 12%, transparent);
-    color: var(--danger-color);
+    @include appTag.chip-accent(var(--danger-color), var(--market-sheet-tag-base-bg), 18%, 10%, 34%, 86%);
+  }
+
+  &.market-list-sheet-tag--active {
+    @include appTag.chip-accent(var(--success-color), var(--market-sheet-tag-base-bg), 18%, 10%, 34%, 84%);
+  }
+
+  &.market-list-sheet-tag--listed {
+    @include appTag.chip-accent(var(--warning-color), var(--market-sheet-tag-base-bg), 18%, 10%, 34%, 84%);
   }
 
   &.market-list-sheet-tag--bind {
-    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
-    color: var(--warning-color);
+    @include appTag.chip-accent(var(--warning-color), var(--market-sheet-tag-base-bg), 16%, 9%, 32%, 84%);
   }
 }
 

@@ -1,33 +1,11 @@
+@use '../../../styles/tag' as appTag;
+
 /**
  * 作用：统一品质标签（黄/玄/地/天）的视觉规则，供多个 tooltip/面板复用。
  */
 
 @mixin quality-tag-chip($base-bg: var(--panel-bg-soft)) {
-  border: 1px solid var(--border-color-soft);
-
-  &.item-quality--huang {
-    background: color-mix(in srgb, var(--rarity-huang) 15%, $base-bg);
-    border-color: var(--rarity-huang-border-soft);
-    color: var(--rarity-huang);
-  }
-
-  &.item-quality--xuan {
-    background: color-mix(in srgb, var(--rarity-xuan) 15%, $base-bg);
-    border-color: var(--rarity-xuan-border-soft);
-    color: var(--rarity-xuan);
-  }
-
-  &.item-quality--di {
-    background: color-mix(in srgb, var(--rarity-di) 20%, $base-bg);
-    border-color: var(--rarity-di-border-soft);
-    color: var(--rarity-di);
-  }
-
-  &.item-quality--tian {
-    background: color-mix(in srgb, var(--rarity-tian) 15%, $base-bg);
-    border-color: var(--rarity-tian-border-soft);
-    color: var(--rarity-tian);
-  }
+  @include appTag.quality-chip($base-bg);
 }
 
 @mixin quality-surface-state($base-bg: var(--panel-bg-soft), $alpha: 10%) {

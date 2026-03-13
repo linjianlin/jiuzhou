@@ -1,6 +1,7 @@
 import { App, Button, Drawer, Input, Modal, Pagination, Segmented, Select, Table, Tag, Tooltip } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
 import { resolveIconUrl, DEFAULT_ICON as coin01 } from '../../shared/resolveIcon';
 import {
   buyPartnerMarketListing,
@@ -85,6 +86,25 @@ type MobileListingPreview = {
   source: MobileListingPreviewSource;
   listingId: number;
 };
+
+interface MarketPartnerStatusTagData {
+  isActive: boolean;
+  tradeStatus: string;
+}
+
+const renderMarketPartnerStatusTags = ({ isActive, tradeStatus }: MarketPartnerStatusTagData): ReactElement => (
+  <>
+    {isActive ? <Tag className="market-tag market-tag-state market-tag-state--active">当前出战</Tag> : null}
+    {tradeStatus === 'market_listed' ? <Tag className="market-tag market-tag-state market-tag-state--listed">坊市中</Tag> : null}
+  </>
+);
+
+const renderMarketPartnerSheetStatusTags = ({ isActive, tradeStatus }: MarketPartnerStatusTagData): ReactElement => (
+  <>
+    {isActive ? <span className="market-list-sheet-tag market-list-sheet-tag--active">当前出战</span> : null}
+    {tradeStatus === 'market_listed' ? <span className="market-list-sheet-tag market-list-sheet-tag--listed">坊市中</span> : null}
+  </>
+);
 
 /* ─── 移动端 Bottom Sheet 组件 ─── */
 
@@ -283,8 +303,7 @@ const PartnerListSheet: React.FC<PartnerListSheetProps> = ({
                 <span className="market-list-sheet-tag">{formatPartnerElementLabel(partner.element)}</span>
                 <span className="market-list-sheet-tag">{partner.role}</span>
                 <span className="market-list-sheet-tag">等级 {partner.level}</span>
-                {partner.isActive ? <span className="market-list-sheet-tag market-list-sheet-tag--locked">当前出战</span> : null}
-                {partner.tradeStatus === 'market_listed' ? <span className="market-list-sheet-tag market-list-sheet-tag--locked">坊市中</span> : null}
+                {renderMarketPartnerSheetStatusTags(partner)}
               </div>
               <div className="market-list-sheet-qty">{partner.name}</div>
             </div>
@@ -2158,8 +2177,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                   <Tag className={`market-tag market-tag-quality ${getQualityClassName(partner.quality)}`}>{partner.quality}</Tag>
                   <Tag className="market-tag">{formatPartnerElementLabel(partner.element)}</Tag>
                   <Tag className="market-tag">{partner.role}</Tag>
-                  {partner.isActive ? <Tag color="green">当前出战</Tag> : null}
-                  {partner.tradeStatus === 'market_listed' ? <Tag color="gold">坊市中</Tag> : null}
+                  {renderMarketPartnerStatusTags(partner)}
                 </div>
               </div>
             </div>
@@ -2214,8 +2232,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                             <Tag className="market-tag">{formatPartnerElementLabel(selectedPartner.element)}</Tag>
                             <Tag className="market-tag">{selectedPartner.role}</Tag>
                             <Tag className="market-tag">等级 {selectedPartner.level}</Tag>
-                            {selectedPartner.isActive ? <Tag color="green">当前出战</Tag> : null}
-                            {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="gold">坊市中</Tag> : null}
+                            {renderMarketPartnerStatusTags(selectedPartner)}
                           </div>
                         </div>
                       </div>

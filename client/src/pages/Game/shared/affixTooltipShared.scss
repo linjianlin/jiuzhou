@@ -7,31 +7,25 @@
   --affix-tier-tag-text: #7a562c;
   --affix-tier-tag-border: rgba(171, 126, 69, 0.55);
   --affix-tier-tag-bg: linear-gradient(135deg, rgba(245, 233, 204, 0.88), rgba(228, 208, 165, 0.78));
-  --affix-roll-neutral-bg: linear-gradient(135deg, rgba(210, 217, 225, 0.28), rgba(193, 202, 212, 0.2));
-  --affix-roll-neutral-border: rgba(147, 162, 178, 0.42);
-  --affix-roll-alpha-strong: 0.18;
-  --affix-roll-alpha-soft: 0.08;
-  --affix-roll-ring-alpha: 0.24;
+  --affix-tier-tag-shadow: rgba(120, 83, 39, 0.14);
 }
 
 body.theme-dark {
   --affix-tier-tag-text: #e6cb98;
   --affix-tier-tag-border: rgba(205, 161, 90, 0.5);
   --affix-tier-tag-bg: linear-gradient(135deg, rgba(87, 70, 39, 0.48), rgba(66, 52, 30, 0.42));
-  --affix-roll-neutral-bg: linear-gradient(135deg, rgba(129, 142, 157, 0.22), rgba(104, 116, 128, 0.16));
-  --affix-roll-neutral-border: rgba(166, 182, 199, 0.34);
-  --affix-roll-alpha-strong: 0.32;
-  --affix-roll-alpha-soft: 0.14;
-  --affix-roll-ring-alpha: 0.36;
+  --affix-tier-tag-shadow: rgba(0, 0, 0, 0.22);
 }
 
 .affix-tooltip-lines {
+  --app-tag-base-bg: var(--game-tooltip-surface-chip-bg, var(--panel-bg-soft));
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .affix-tooltip-row {
+  --app-tag-base-bg: var(--game-tooltip-surface-chip-bg, var(--panel-bg-soft));
   display: grid;
   grid-template-columns: auto 60px minmax(0, 1fr);
   align-items: center;
@@ -52,28 +46,45 @@ body.theme-dark {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent),
+    0 1px 2px color-mix(in srgb, var(--text-color) 6%, transparent);
 }
 
-.affix-tooltip-tier-tag {
+.affix-tooltip-row .ant-tag.affix-tooltip-tier-tag {
   min-width: 32px;
   color: var(--affix-tier-tag-text);
   border-color: var(--affix-tier-tag-border);
   background: var(--affix-tier-tag-bg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 1px 4px rgba(120, 83, 39, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 1px 4px var(--affix-tier-tag-shadow);
 }
 
-.affix-tooltip-roll-tag {
+.affix-tooltip-row .ant-tag.affix-tooltip-roll-tag {
   width: 60px;
   text-align: center;
-  border-color: var(--affix-roll-neutral-border);
-  background: var(--affix-roll-neutral-bg);
-}
 
-.affix-tooltip-roll-tag.is-colored {
-  background: linear-gradient(135deg,
-      rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-alpha-strong)),
-      rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-alpha-soft)));
-  box-shadow: inset 0 0 0 1px rgb(var(--affix-roll-rgb, 126 190 228) / var(--affix-roll-ring-alpha));
+  &:not([style*='--affix-roll-color']) {
+    color: var(--text-secondary);
+    border-color: color-mix(in srgb, var(--text-color) 12%, var(--border-color-soft));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, #fff 10%, var(--app-tag-base-bg)) 0%,
+      color-mix(in srgb, var(--text-color) 6%, var(--app-tag-base-bg)) 100%
+    );
+  }
+
+  &[style*='--affix-roll-color'] {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--affix-roll-color) 16%, var(--app-tag-base-bg)) 0%,
+      color-mix(in srgb, var(--affix-roll-color) 7%, var(--app-tag-base-bg)) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent),
+      0 1px 2px color-mix(in srgb, var(--affix-roll-color) 10%, transparent);
+  }
 }
 
 .affix-tooltip-text {

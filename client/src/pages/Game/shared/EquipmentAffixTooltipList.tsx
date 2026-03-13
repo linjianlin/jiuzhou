@@ -62,24 +62,17 @@ export const EquipmentAffixTagRow: React.FC<EquipmentAffixTagRowProps> = ({
   textClassName = 'affix-tooltip-text',
 }) => {
   const rollColor = getAffixRollColor(rollPercent);
-  const match = rollColor?.match(/rgb\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)\s*\)/i);
-  const rollRgb = match ? `${match[1]} ${match[2]} ${match[3]}` : null;
   const rollTagStyle: CSSProperties | undefined = rollColor
-    ? rollRgb
-      ? ({
-          color: rollColor,
-          borderColor: rollColor,
-          ['--affix-roll-rgb' as string]: rollRgb,
-        } as CSSProperties)
-      : {
-          color: rollColor,
-          borderColor: rollColor,
-        }
+    ? {
+        color: rollColor,
+        borderColor: rollColor,
+        ['--affix-roll-color' as string]: rollColor,
+      }
     : undefined;
   return (
     <div className={className}>
       <Tag className="affix-tooltip-tag affix-tooltip-tier-tag">{tierText}</Tag>
-      <Tag className={`affix-tooltip-tag affix-tooltip-roll-tag${rollRgb ? ' is-colored' : ''}`} style={rollTagStyle}>
+      <Tag className="affix-tooltip-tag affix-tooltip-roll-tag" style={rollTagStyle}>
         {formatAffixRollPercent(rollPercent)}
       </Tag>
       <span className={textClassName}>{bodyText}</span>

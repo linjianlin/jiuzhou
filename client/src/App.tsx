@@ -6,6 +6,7 @@ import { verifySession, checkCharacter, API_ERROR_TOAST_EVENT, type ApiErrorToas
 import { gameSocket } from './services/gameSocket';
 import { THEME_EVENT_NAME, getStoredThemeMode, persistThemeMode, type ThemeMode } from './constants/theme';
 import './App.css';
+import './App.scss';
 
 // 懒加载 Game 组件，减少首屏加载体积
 const Game = lazy(() => import('./pages/Game'));

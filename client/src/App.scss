@@ -1,0 +1,93 @@
+@use './styles/tag' as appTag;
+
+/**
+ * 作用：统一项目内普通 Ant Tag 的默认皮肤，让多数页面直接使用 `<Tag>` 时保持一致质感。
+ * 不做什么：不处理业务模块自己的间距排版。
+ * 输入/输出：输入为全局主题变量与 Ant Tag 颜色 class；输出为普通 Tag 的中性底色和预设语义色映射。
+ * 数据流/状态流：App 根样式提供默认 Tag 基底，各业务模块可通过 `--app-tag-base-bg` 或更具体 class 继续覆写。
+ * 关键边界条件与坑点：
+ * 1. Ant Design 6 的 Tag 使用 `filled/outlined/solid` 变体类名，选择器必须覆盖这些类才能稳定压过组件默认样式。
+ * 2. 语义色只做颜色映射，尺寸与宽度仍由各业务模块自己控制，避免全局皮肤误伤布局。
+ */
+
+body {
+  --app-tag-base-bg: var(--panel-bg);
+}
+
+body .ant-tag.ant-tag-filled,
+body .ant-tag.ant-tag-outlined,
+body .ant-tag.ant-tag-solid {
+  @include appTag.ant-tag-base(var(--app-tag-base-bg), 6px);
+}
+
+body .ant-tag.ant-tag-default.ant-tag-filled,
+body .ant-tag.ant-tag-default.ant-tag-outlined,
+body .ant-tag.ant-tag-default.ant-tag-solid {
+  color: var(--text-secondary);
+}
+
+body .ant-tag.ant-tag-blue.ant-tag-filled,
+body .ant-tag.ant-tag-blue.ant-tag-outlined,
+body .ant-tag.ant-tag-blue.ant-tag-solid,
+body .ant-tag.ant-tag-cyan.ant-tag-filled,
+body .ant-tag.ant-tag-cyan.ant-tag-outlined,
+body .ant-tag.ant-tag-cyan.ant-tag-solid,
+body .ant-tag.ant-tag-geekblue.ant-tag-filled,
+body .ant-tag.ant-tag-geekblue.ant-tag-outlined,
+body .ant-tag.ant-tag-geekblue.ant-tag-solid,
+body .ant-tag.ant-tag-processing.ant-tag-filled,
+body .ant-tag.ant-tag-processing.ant-tag-outlined,
+body .ant-tag.ant-tag-processing.ant-tag-solid {
+  @include appTag.chip-accent(var(--primary-color), var(--app-tag-base-bg), 18%, 10%, 32%, 84%);
+}
+
+body .ant-tag.ant-tag-green.ant-tag-filled,
+body .ant-tag.ant-tag-green.ant-tag-outlined,
+body .ant-tag.ant-tag-green.ant-tag-solid,
+body .ant-tag.ant-tag-lime.ant-tag-filled,
+body .ant-tag.ant-tag-lime.ant-tag-outlined,
+body .ant-tag.ant-tag-lime.ant-tag-solid,
+body .ant-tag.ant-tag-success.ant-tag-filled,
+body .ant-tag.ant-tag-success.ant-tag-outlined,
+body .ant-tag.ant-tag-success.ant-tag-solid {
+  @include appTag.chip-accent(var(--success-color), var(--app-tag-base-bg), 18%, 10%, 34%, 84%);
+}
+
+body .ant-tag.ant-tag-gold.ant-tag-filled,
+body .ant-tag.ant-tag-gold.ant-tag-outlined,
+body .ant-tag.ant-tag-gold.ant-tag-solid,
+body .ant-tag.ant-tag-orange.ant-tag-filled,
+body .ant-tag.ant-tag-orange.ant-tag-outlined,
+body .ant-tag.ant-tag-orange.ant-tag-solid,
+body .ant-tag.ant-tag-yellow.ant-tag-filled,
+body .ant-tag.ant-tag-yellow.ant-tag-outlined,
+body .ant-tag.ant-tag-yellow.ant-tag-solid,
+body .ant-tag.ant-tag-warning.ant-tag-filled,
+body .ant-tag.ant-tag-warning.ant-tag-outlined,
+body .ant-tag.ant-tag-warning.ant-tag-solid {
+  @include appTag.chip-accent(var(--warning-color), var(--app-tag-base-bg), 18%, 10%, 34%, 84%);
+}
+
+body .ant-tag.ant-tag-purple.ant-tag-filled,
+body .ant-tag.ant-tag-purple.ant-tag-outlined,
+body .ant-tag.ant-tag-purple.ant-tag-solid,
+body .ant-tag.ant-tag-magenta.ant-tag-filled,
+body .ant-tag.ant-tag-magenta.ant-tag-outlined,
+body .ant-tag.ant-tag-magenta.ant-tag-solid,
+body .ant-tag.ant-tag-pink.ant-tag-filled,
+body .ant-tag.ant-tag-pink.ant-tag-outlined,
+body .ant-tag.ant-tag-pink.ant-tag-solid {
+  @include appTag.chip-accent(var(--rarity-xuan), var(--app-tag-base-bg), 18%, 10%, 34%, 84%);
+}
+
+body .ant-tag.ant-tag-red.ant-tag-filled,
+body .ant-tag.ant-tag-red.ant-tag-outlined,
+body .ant-tag.ant-tag-red.ant-tag-solid,
+body .ant-tag.ant-tag-volcano.ant-tag-filled,
+body .ant-tag.ant-tag-volcano.ant-tag-outlined,
+body .ant-tag.ant-tag-volcano.ant-tag-solid,
+body .ant-tag.ant-tag-error.ant-tag-filled,
+body .ant-tag.ant-tag-error.ant-tag-outlined,
+body .ant-tag.ant-tag-error.ant-tag-solid {
+  @include appTag.chip-accent(var(--danger-color), var(--app-tag-base-bg), 18%, 10%, 34%, 86%);
+}
