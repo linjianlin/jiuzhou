@@ -1099,30 +1099,26 @@
   justify-content: flex-end;
 }
 
-.market-partner-sell-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.market-partner-mobile-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.market-partner-mobile-title {
-  margin-bottom: 0;
-}
-
 .market-partner-list {
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-right: 4px;
-  margin-right: -4px;
+  gap: 8px;
+}
+
+.market-partner-list--desktop {
+  padding: 12px;
+  margin: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.market-partner-list--mobile {
+  padding: 12px;
+  margin: 0;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .market-partner-sell-card {
@@ -1285,32 +1281,9 @@
     gap: 10px;
   }
 
-  .market-partner-sell-layout,
-  .market-partner-mobile-section,
-  .market-partner-mobile-section .market-partner-list,
-  .market-partner-action-bar,
-  .market-partner-action-bar__main,
-  .market-partner-action-bar__form {
-    min-height: auto;
-  }
-
-  .market-partner-mobile-section .market-partner-list {
-    overflow: visible;
-    padding-right: 0;
-    margin-right: 0;
-  }
-
-  .market-list-detail {
-    width: 100%;
-  }
-
-  .market-partner-action-bar {
-    grid-template-columns: 1fr;
-    padding: 12px;
-  }
-
-  .market-bag {
-    flex: 0 0 auto;
+  .market-partner-avatar--detail {
+    width: 56px;
+    height: 56px;
   }
 
   .market-bag-grid {

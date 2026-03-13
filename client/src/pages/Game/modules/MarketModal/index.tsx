@@ -235,6 +235,113 @@ const ListSheet: React.FC<ListSheetProps> = ({
   );
 };
 
+interface PartnerListSheetProps {
+  partner: PartnerDetailDto | null;
+  listPrice: string;
+  listingFeeText: string;
+  canList: boolean;
+  onClose: () => void;
+  onPriceChange: (v: string) => void;
+  onList: () => void;
+}
+
+const PartnerListSheet: React.FC<PartnerListSheetProps> = ({
+  partner,
+  listPrice,
+  listingFeeText,
+  canList,
+  onClose,
+  onPriceChange,
+  onList,
+}) => {
+  if (!partner) return null;
+
+  return (
+    <>
+      <div className="market-list-sheet-mask" onClick={onClose} />
+      <div className="market-list-sheet">
+        <div className="market-list-sheet-handle">
+          <div className="market-list-sheet-bar" />
+        </div>
+
+        {/* 头部 */}
+        <div className="market-list-sheet-head">
+          <div className="market-list-sheet-icon-box">
+            <img className="market-list-sheet-icon-img" style={{ borderRadius: '12px', width: '100%', height: '100%' }} src={resolvePartnerAvatar(partner.avatar)} alt={partner.name} />
+          </div>
+          <div className="market-list-sheet-meta">
+            <div className="market-list-sheet-name">
+              {partner.nickname || partner.name}
+            </div>
+            <div className="market-list-sheet-tags">
+              <span className={`market-list-sheet-tag market-list-sheet-tag--quality ${getQualityClassName(partner.quality)}`}>
+                {partner.quality}
+              </span>
+              <span className="market-list-sheet-tag">{formatPartnerElementLabel(partner.element)}</span>
+              <span className="market-list-sheet-tag">{partner.role}</span>
+              <span className="market-list-sheet-tag">等级 {partner.level}</span>
+              {partner.isActive ? <span className="market-list-sheet-tag market-list-sheet-tag--locked">当前出战</span> : null}
+              {partner.tradeStatus === 'market_listed' ? <span className="market-list-sheet-tag market-list-sheet-tag--locked">坊市中</span> : null}
+            </div>
+            <div className="market-list-sheet-qty">{partner.name}</div>
+          </div>
+        </div>
+
+        {/* 详情 */}
+        <div className="market-list-sheet-body">
+          <div className="market-list-sheet-section">
+            <div className="market-list-sheet-section-title">核心属性</div>
+            <div className="market-list-sheet-effect-list">
+              {buildPartnerCombatPreview(partner).map((line) => (
+                <div key={line} className="market-list-sheet-effect-chip">{line}</div>
+              ))}
+            </div>
+          </div>
+          <div className="market-list-sheet-section">
+            <div className="market-list-sheet-section-title">功法</div>
+            <div className="market-list-sheet-section-text">{buildPartnerTechniquePreview(partner)}</div>
+          </div>
+
+          {partner.isActive ? (
+            <div className="market-list-sheet-locked-tip">出战中的伙伴不可上架，请先下阵。</div>
+          ) : null}
+          {partner.tradeStatus === 'market_listed' ? (
+            <div className="market-list-sheet-locked-tip">该伙伴已在坊市挂单中，无法重复上架。</div>
+          ) : null}
+        </div>
+
+        {/* 上架表单 */}
+        <div className="market-list-sheet-form">
+          <div className="market-list-sheet-row">
+            <span className="market-list-sheet-label">一口价（灵石）</span>
+            <input
+              className="market-list-sheet-input"
+              value={listPrice}
+              onChange={(e) => onPriceChange(e.target.value)}
+              inputMode="numeric"
+              placeholder="请输入伙伴售价"
+            />
+          </div>
+          <div className="market-list-sheet-row">
+            <span className="market-list-sheet-label">手续费（银两）</span>
+            <span className="market-list-sheet-value">{listingFeeText}</span>
+          </div>
+          <div className="market-list-sheet-fee-tip">未卖出下架会退还手续费</div>
+          <div className="market-list-sheet-actions">
+            <button
+              className="market-list-sheet-btn is-primary"
+              disabled={!canList}
+              onClick={onList}
+            >
+              确认上架
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
 type ListingItem = {
   id: number;
   itemInstanceId: number;
@@ -2018,14 +2125,18 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
 
   const renderPartnerListItem = () => {
     const price = parseMaybeNumber(partnerListPrice);
+    const safePrice = price ? Math.floor(price) : null;
     const canList =
       !!selectedPartner &&
       !selectedPartner.isActive &&
       selectedPartner.tradeStatus === 'none' &&
-      !!price &&
-      price > 0;
+      !!safePrice &&
+      safePrice > 0;
+    const listingFeeSilver = safePrice ? safePrice * MARKET_LISTING_FEE_SILVER_PER_SPIRIT_STONE : null;
+    const listingFeeText = listingFeeSilver === null ? '--' : `${listingFeeSilver.toLocaleString()} 银两`;
+
     const selectionList = (
-      <div className="market-partner-list">
+      <div className={`market-partner-list ${isMobile ? 'market-partner-list--mobile' : 'market-partner-list--desktop'}`}>
         {partnerOverviewLoading && partnerOverview.length === 0 ? <div className="market-empty">加载中...</div> : null}
         {partnerOverview.map((partner) => (
           <div
@@ -2059,72 +2170,105 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
         {!partnerOverviewLoading && partnerOverview.length === 0 ? <div className="market-empty">暂无伙伴</div> : null}
       </div>
     );
-    const actionBar = (
-      <div className="market-partner-action-bar">
-        <div className="market-partner-action-bar__main">
-          <div className="market-partner-action-bar__title">
-            {selectedPartner ? `当前选择：${selectedPartner.nickname || selectedPartner.name}` : '请选择一个伙伴'}
+
+    if (isMobile) {
+      return (
+        <div className="market-pane">
+          <div className="market-pane-body market-pane-body--mobile-list">
+            {selectionList}
           </div>
-          {selectedPartner ? (
-            <div className="market-item-tags">
-              <Tag className="market-tag">{selectedPartner.quality}</Tag>
-              <Tag className="market-tag">{formatPartnerElementLabel(selectedPartner.element)}</Tag>
-              <Tag className="market-tag">{selectedPartner.role}</Tag>
-              <Tag className="market-tag">等级 {selectedPartner.level}</Tag>
-              {selectedPartner.isActive ? <Tag color="green">当前出战</Tag> : null}
-              {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="gold">坊市中</Tag> : null}
-            </div>
-          ) : null}
-          {selectedPartner?.isActive ? (
-            <div className="market-list-locked-tip">出战中的伙伴不可上架，请先下阵。</div>
-          ) : null}
-          {selectedPartner?.tradeStatus === 'market_listed' ? (
-            <div className="market-list-locked-tip">该伙伴已在坊市挂单中，无法重复上架。</div>
-          ) : null}
-        </div>
-        <div className="market-partner-action-bar__form">
-          <div className="market-list-row">
-            <div className="market-list-k">一口价（灵石）</div>
-            <Input
-              value={partnerListPrice}
-              onChange={(e) => setPartnerListPrice(e.target.value)}
-              inputMode="numeric"
-              placeholder="请输入伙伴售价"
+          {selectedPartner && (
+            <PartnerListSheet
+              partner={selectedPartner}
+              listPrice={partnerListPrice}
+              listingFeeText={listingFeeText}
+              canList={canList}
+              onClose={() => setSelectedPartnerId(null)}
+              onPriceChange={setPartnerListPrice}
+              onList={() => void doListPartner()}
             />
-          </div>
-          <div className="market-list-row">
-            <div className="market-list-k">手续费（银两）</div>
-            <div className="market-list-v">
-              {price && price > 0 ? `${(Math.floor(price) * MARKET_LISTING_FEE_SILVER_PER_SPIRIT_STONE).toLocaleString()} 银两` : '--'}
-            </div>
-          </div>
-          <div className="market-list-fee-tip">未卖出下架会退还手续费</div>
-          <div className="market-list-actions">
-            <Button
-              type="primary"
-              disabled={!canList}
-              loading={partnerListingActionLoading}
-              onClick={() => {
-                void doListPartner();
-              }}
-            >
-              确认上架
-            </Button>
-          </div>
+          )}
         </div>
-      </div>
-    );
+      );
+    }
 
     return (
       <div className="market-pane">
-        {renderPaneHeader('伙伴上架')}
+        <div className="market-pane-top">
+          <div className="market-title">伙伴上架</div>
+        </div>
         <div className="market-pane-body">
-          <div className="market-pane-scroll">
-            <div className="market-partner-sell-layout">
-              {actionBar}
-              <div className="market-partner-mobile-section">
-                <div className="market-list-detail-title market-partner-mobile-title">选择伙伴</div>
-                {selectionList}
+          <div className="market-list-shell">
+            <div className="market-bag">
+              {selectionList}
+            </div>
+            <div className="market-list-detail">
+              <div className="market-list-detail-card">
+                {selectedPartner ? (
+                  <>
+                    <div className="market-list-detail-head">
+                      <img className={`market-list-detail-icon market-partner-avatar--detail`} src={resolvePartnerAvatar(selectedPartner.avatar)} alt={selectedPartner.name} />
+                      <div className="market-list-detail-meta">
+                        <div className="market-list-detail-name">{selectedPartner.nickname || selectedPartner.name}</div>
+                        <div className="market-list-detail-tags">
+                          <Tag className={`market-tag market-tag-quality ${getQualityClassName(selectedPartner.quality)}`}>{selectedPartner.quality}</Tag>
+                          <Tag className="market-tag">{formatPartnerElementLabel(selectedPartner.element)}</Tag>
+                          <Tag className="market-tag">{selectedPartner.role}</Tag>
+                          <Tag className="market-tag">等级 {selectedPartner.level}</Tag>
+                          {selectedPartner.isActive ? <Tag color="green">当前出战</Tag> : null}
+                          {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="gold">坊市中</Tag> : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="market-list-detail-scroll">
+                      <div className="market-list-detail-section">
+                        <div className="market-list-detail-title">基本信息</div>
+                        <div className="market-list-detail-text">原型：{selectedPartner.name}</div>
+                      </div>
+                      <div className="market-list-detail-section">
+                        <div className="market-list-detail-title">核心属性</div>
+                        <div className="market-list-detail-lines">
+                          {buildPartnerCombatPreview(selectedPartner).map((line) => (
+                            <div key={line} className="market-list-detail-line">{line}</div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="market-list-detail-section">
+                        <div className="market-list-detail-title">功法</div>
+                        <div className="market-list-detail-text">{buildPartnerTechniquePreview(selectedPartner)}</div>
+                      </div>
+
+                      {selectedPartner.isActive ? (
+                        <div className="market-list-locked-tip">出战中的伙伴不可上架，请先下阵。</div>
+                      ) : null}
+                      {selectedPartner.tradeStatus === 'market_listed' ? (
+                        <div className="market-list-locked-tip">该伙伴已在坊市挂单中，无法重复上架。</div>
+                      ) : null}
+                    </div>
+
+                    <div className="market-list-form">
+                      <div className="market-list-row">
+                        <div className="market-list-k">一口价（灵石）</div>
+                        <Input value={partnerListPrice} onChange={(e) => setPartnerListPrice(e.target.value)} inputMode="numeric" placeholder="请输入伙伴售价" />
+                      </div>
+                      <div className="market-list-row">
+                        <div className="market-list-k">手续费（银两）</div>
+                        <div className="market-list-v">{listingFeeText}</div>
+                      </div>
+                      <div className="market-list-fee-tip">未卖出下架会退还手续费</div>
+                      <div className="market-list-actions">
+                        <Button type="primary" disabled={!canList} loading={partnerListingActionLoading} onClick={() => void doListPartner()}>
+                          确认上架
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="market-list-empty">
+                    请在左侧选择要上架的伙伴
+                  </div>
+                )}
               </div>
             </div>
           </div>
