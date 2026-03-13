@@ -53,6 +53,32 @@ type OpenAIImageSize =
 type OpenAIImageResponseFormat = 'b64_json' | 'url';
 
 const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
+const DATA_URL_BASE64_PREFIX_REGEXP = /^data:[^;,]+;base64,/i;
+
+/**
+ * 规范化模型返回的 base64 图片内容
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：统一剥离 OpenAI 兼容接口可能返回的 Data URL 前缀，输出可直接解码的纯 base64。
+ * 2) 做什么：让技能图标与伙伴头像共用同一份图片解码规则，避免业务层各自补解析逻辑。
+ * 3) 不做什么：不校验图片格式真伪、不负责把 base64 转成 Buffer。
+ *
+ * 输入/输出：
+ * - 输入：模型响应中的 `b64_json` / `b64_image` 字符串。
+ * - 输出：可直接传给 `Buffer.from(..., 'base64')` 的纯 base64；空值返回空字符串。
+ *
+ * 数据流/状态流：
+ * provider 原始响应 -> normalizeGeneratedImageBase64 -> 标准图片资源 `{ b64, url }` -> 业务层解码落盘。
+ *
+ * 关键边界条件与坑点：
+ * 1) 第三方 OpenAI 兼容服务可能把 `b64_json` 包成 `data:image/png;base64,...`，如果不在共享层剥离，所有调用方都会静默解码失败。
+ * 2) 这里只做单一职责的字符串归一化，不在这里引入图片下载或容错分支，避免职责继续扩散。
+ */
+export const normalizeGeneratedImageBase64 = (raw: string): string => {
+  const value = asString(raw);
+  if (!value) return '';
+  return value.replace(DATA_URL_BASE64_PREFIX_REGEXP, '').trim();
+};
 
 const toOpenAIImageSize = (size: string): OpenAIImageSize => {
   if (
@@ -139,8 +165,12 @@ export const generateConfiguredImageAsset = async (
       normalizeSizeForDashScope(config.size),
     );
     const body = await fetchJsonWithTimeout(config.endpoint, payload, config.apiKey, config.timeoutMs);
+    const asset = readDashScopeImageGenerationResult(body);
     return {
-      asset: readDashScopeImageGenerationResult(body),
+      asset: {
+        ...asset,
+        b64: normalizeGeneratedImageBase64(asset.b64),
+      },
       timeoutMs: config.timeoutMs,
       provider: config.provider,
       modelName: config.modelName,
@@ -162,7 +192,7 @@ export const generateConfiguredImageAsset = async (
 
   return {
     asset: {
-      b64: asString(image?.b64_json),
+      b64: normalizeGeneratedImageBase64(asString(image?.b64_json)),
       url: asString(image?.url),
     },
     timeoutMs: config.timeoutMs,

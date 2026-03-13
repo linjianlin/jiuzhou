@@ -152,30 +152,53 @@ export const generateTechniqueSkillIcon = async (input: TechniqueSkillImageInput
   if (!cfg) return null;
 
   const prompt = buildTechniqueSkillImagePrompt(input);
-  debugLog('provider=', cfg.provider, 'endpoint=', cfg.endpoint, 'model=', cfg.modelName);
+  debugLog(
+    'provider=',
+    cfg.provider,
+    'endpoint=',
+    cfg.endpoint,
+    'model=',
+    cfg.modelName,
+    'skillId=',
+    input.skillId,
+  );
 
   try {
     const generated = await generateConfiguredImageAsset(prompt);
-    if (!generated) return null;
+    if (!generated) {
+      debugLog('skip: image config missing');
+      return null;
+    }
 
     if (generated.asset.b64) {
       const localPath = await saveB64ImageToLocal(generated.asset.b64, input.skillId);
-      if (localPath) return localPath;
+      if (localPath) {
+        debugLog('saved from b64:', localPath);
+        return localPath;
+      }
+      debugLog('b64 returned but local save failed');
     }
 
     if (generated.asset.url) {
       try {
         const buffer = await downloadImageBuffer(generated.asset.url, generated.timeoutMs);
         const localPath = await saveImageBufferToLocal(buffer, input.skillId);
-        if (localPath) return localPath;
-      } catch {
+        if (localPath) {
+          debugLog('saved from url:', localPath);
+          return localPath;
+        }
+        debugLog('url returned but local save failed, fallback remote url');
+      } catch (error) {
+        debugLog('download url failed, fallback remote url:', error instanceof Error ? error.message : String(error));
         return generated.asset.url;
       }
       return generated.asset.url;
     }
 
+    debugLog('empty image asset returned');
     return null;
-  } catch {
+  } catch (error) {
+    debugLog('generate failed:', error instanceof Error ? error.message : String(error));
     return null;
   }
 };
