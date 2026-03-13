@@ -6,12 +6,10 @@ import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../
 import {
   claimTaskReward,
   getBountyTaskOverview,
-  getDungeonWeeklyTargets,
   getTaskOverview,
   setTaskTracked,
   submitTaskToNpc,
   submitBountyMaterials,
-  type DungeonWeeklyTargetDto,
 } from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
 import { getRealmRankFromLiteral as getRealmRank } from '../../shared/realm';
@@ -104,9 +102,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
   const [loading, setLoading] = useState(false);
   const [submittingTaskId, setSubmittingTaskId] = useState<string>('');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [weeklyTargets, setWeeklyTargets] = useState<DungeonWeeklyTargetDto[]>([]);
-  const [weeklySummary, setWeeklySummary] = useState<{ totalClears: number; targetClears: number } | null>(null);
-  const [weeklyPeriod, setWeeklyPeriod] = useState<{ weekStart: string; weekEnd: string } | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const lastExpireRefreshAtRef = useRef<number>(0);
 
@@ -170,7 +165,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [res, bountyRes, weeklyRes] = await Promise.all([getTaskOverview(), getBountyTaskOverview(), getDungeonWeeklyTargets()]);
+      const [res, bountyRes] = await Promise.all([getTaskOverview(), getBountyTaskOverview()]);
       if (!res.data) throw new Error('加载任务失败');
 
       const mapped: TaskItem[] = (res.data.tasks || [])
@@ -278,22 +273,9 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
       const bountyTaskIds = new Set(mappedBounty.map((x) => x.id));
       const mappedNoOverlap = mapped.filter((t) => !bountyTaskIds.has(t.id));
       setTasks([...mappedNoOverlap, ...mappedBounty]);
-
-      if (weeklyRes?.success && weeklyRes.data) {
-        setWeeklyTargets(Array.isArray(weeklyRes.data.targets) ? weeklyRes.data.targets : []);
-        setWeeklySummary(weeklyRes.data.summary || null);
-        setWeeklyPeriod(weeklyRes.data.period || null);
-      } else {
-        setWeeklyTargets([]);
-        setWeeklySummary(null);
-        setWeeklyPeriod(null);
-      }
     } catch (e: unknown) {
       void 0;
       setTasks([]);
-      setWeeklyTargets([]);
-      setWeeklySummary(null);
-      setWeeklyPeriod(null);
     } finally {
       setLoading(false);
     }
@@ -358,13 +340,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
   }, [activeId, filtered]);
 
   const activeTask = useMemo(() => filtered.find((t) => t.id === safeActiveId) ?? null, [filtered, safeActiveId]);
-  const weeklyPeriodText = useMemo(() => {
-    if (!weeklyPeriod) return '';
-    const start = weeklyPeriod.weekStart ? weeklyPeriod.weekStart.slice(0, 10) : '';
-    const end = weeklyPeriod.weekEnd ? weeklyPeriod.weekEnd.slice(0, 10) : '';
-    if (!start && !end) return '';
-    return `${start || '--'} ~ ${end || '--'}`;
-  }, [weeklyPeriod]);
   const isMobileTaskPane = isMobile && category !== 'main';
   const handleCategoryChange = useCallback((nextCategory: TaskCategory) => {
     setCategory(nextCategory);
@@ -585,36 +560,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
                       </div>
                     </div>
                     <div className="task-detail-desc">{activeTask.desc}</div>
-                    {activeTask.category === 'event' ? (
-                      <div className="task-weekly-card">
-                        <div className="task-weekly-header">
-                          <div className="task-weekly-title">秘境周目标</div>
-                          {weeklySummary ? (
-                            <Tag color="blue">
-                              本周通关 {weeklySummary.totalClears} / 目标 {weeklySummary.targetClears}
-                            </Tag>
-                          ) : null}
-                        </div>
-                        {weeklyPeriodText ? <div className="task-weekly-period">周期：{weeklyPeriodText}</div> : null}
-                        <div className="task-weekly-targets">
-                          {weeklyTargets.length > 0 ? (
-                            weeklyTargets.map((target) => (
-                              <div className="task-weekly-target" key={target.id}>
-                                <div className="task-weekly-target-main">
-                                  <div className="task-weekly-target-name">{target.title}</div>
-                                  <div className="task-weekly-target-desc">{target.description}</div>
-                                </div>
-                                <div className={`task-weekly-target-progress ${target.done ? 'is-done' : ''}`}>
-                                  {target.current}/{target.target}
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="task-empty">暂无周目标</div>
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
                     <div className="task-section-title">目标</div>
                     <div className="task-objectives">
                       {activeTask.objectives.map((o) => (
