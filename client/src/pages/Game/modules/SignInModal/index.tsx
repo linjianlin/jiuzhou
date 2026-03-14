@@ -1,15 +1,15 @@
-import React from 'react';
-import { App, Button, Calendar, Modal, Radio, Select, Tag, Typography } from 'antd';
-import type { CalendarProps } from 'antd';
-import { createStyles } from 'antd-style';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { App, Button, Modal, Typography, Space } from 'antd';
+import { LeftOutlined, RightOutlined, CheckCircleFilled, CloseCircleOutlined } from '@ant-design/icons';
 import { clsx } from 'clsx';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import localeData from 'dayjs/plugin/localeData';
-import type { Dayjs } from 'dayjs';
 import { HolidayUtil, Lunar } from 'lunar-typescript';
 import { doSignIn, getSignInOverview, type SignInRecordDto } from '../../../../services/api';
 import { gameSocket } from '../../../../services/gameSocket';
 import './index.scss';
+
+dayjs.extend(localeData);
 
 interface SignInModalProps {
   open: boolean;
@@ -17,267 +17,126 @@ interface SignInModalProps {
   onSigned?: () => void;
 }
 
-type OriginNodeElement = React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-
 type SignInStore = Record<string, SignInRecordDto>;
 
-dayjs.extend(localeData);
-
-const useStyle = createStyles(({ token, css, cx }) => {
-  const lunar = css`
-    color: ${token.colorTextTertiary};
-    font-size: ${token.fontSizeSM}px;
-  `;
-  const weekend = css`
-    color: ${token.colorError};
-    &.gray {
-      opacity: 0.4;
-    }
-  `;
-  return {
-    wrapper: css`
-      width: 100%;
-      max-width: 450px;
-      border: 1px solid ${token.colorBorderSecondary};
-      border-radius: ${token.borderRadiusOuter};
-      padding: 5px;
-
-      @media (max-width: 520px) {
-        max-width: 100%;
-        border: none;
-        padding: 0;
-      }
-    `,
-    dateCell: css`
-      position: relative;
-      &:before {
-        content: '';
-        position: absolute;
-        inset-inline-start: 0;
-        inset-inline-end: 0;
-        top: 0;
-        bottom: 0;
-        margin: auto;
-        max-width: 40px;
-        max-height: 40px;
-        background: transparent;
-        transition: background-color 300ms;
-        border-radius: ${token.borderRadiusOuter}px;
-        border: 1px solid transparent;
-        box-sizing: border-box;
-      }
-      &:hover:before {
-        background: ${token.colorFillTertiary};
-      }
-    `,
-    today: css`
-      &:before {
-        border: 1px solid ${token.colorPrimary};
-      }
-    `,
-    text: css`
-      position: relative;
-      z-index: 1;
-    `,
-    lunar,
-    signed: css`
-      &:before {
-        background: ${token.colorSuccessBg};
-        border: 1px solid ${token.colorSuccessBorder};
-      }
-      &:hover:before {
-        background: ${token.colorSuccessBg};
-      }
-    `,
-    current: css`
-      color: ${token.colorTextLightSolid};
-      &:before {
-        background: ${token.colorPrimary};
-      }
-      &:hover:before {
-        background: ${token.colorPrimary};
-        opacity: 0.8;
-      }
-      .${cx(lunar)} {
-        color: ${token.colorTextLightSolid};
-        opacity: 0.9;
-      }
-      .${cx(weekend)} {
-        color: ${token.colorTextLightSolid};
-      }
-    `,
-    monthCell: css`
-      width: 120px;
-      color: ${token.colorTextBase};
-      border-radius: ${token.borderRadiusOuter}px;
-      padding: 5px 0;
-      &:hover {
-        background: ${token.colorFillTertiary};
-      }
-    `,
-    monthCellCurrent: css`
-      color: ${token.colorTextLightSolid};
-      background: ${token.colorPrimary};
-      &:hover {
-        background: ${token.colorPrimary};
-        opacity: 0.8;
-      }
-    `,
-    weekend,
-  };
-});
+const { Title } = Typography;
 
 const SignInModal: React.FC<SignInModalProps> = ({ open, onClose, onSigned }) => {
   const { message } = App.useApp();
-  const { styles } = useStyle({ test: true });
 
-  const [selectDate, setSelectDate] = React.useState<Dayjs>(() => dayjs());
-  const [panelDateDate, setPanelDate] = React.useState<Dayjs>(() => dayjs());
+  const [viewDate, setViewDate] = useState<Dayjs>(() => dayjs());
+  const [loading, setLoading] = useState(false);
+  const [overviewMonth, setOverviewMonth] = useState<string>(() => dayjs().format('YYYY-MM'));
+  const [signInStore, setSignInStore] = useState<SignInStore>({});
+  const [monthSignedCount, setMonthSignedCount] = useState(0);
+  const [streakDays, setStreakDays] = useState(0);
+  const [signedToday, setSignedToday] = useState(false);
+  const [todayKey, setTodayKey] = useState(() => dayjs().format('YYYY-MM-DD'));
 
-  const [loading, setLoading] = React.useState(false);
-  const [overviewMonth, setOverviewMonth] = React.useState<string>(() => dayjs().format('YYYY-MM'));
-  const [signInStore, setSignInStore] = React.useState<SignInStore>({});
-  const [monthSignedCount, setMonthSignedCount] = React.useState(0);
-  const [streakDays, setStreakDays] = React.useState(0);
-  const [signedToday, setSignedToday] = React.useState(false);
-  const [todayKey, setTodayKey] = React.useState(() => dayjs().format('YYYY-MM-DD'));
+  const refreshOverview = useCallback(async (month: string) => {
+    setLoading(true);
+    try {
+      const res = await getSignInOverview(month);
+      if (!res.success || !res.data) return;
+      setOverviewMonth(res.data.month);
+      setSignInStore(res.data.records || {});
+      setMonthSignedCount(res.data.monthSignedCount || 0);
+      setStreakDays(res.data.streakDays || 0);
+      setSignedToday(Boolean(res.data.signedToday));
+      setTodayKey(res.data.today || dayjs().format('YYYY-MM-DD'));
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const refreshOverview = React.useCallback(
-    async (month: string) => {
-      setLoading(true);
-      try {
-        const res = await getSignInOverview(month);
-        if (!res.success || !res.data) {
-          void 0;
-          return;
-        }
-        setOverviewMonth(res.data.month);
-        setSignInStore(res.data.records || {});
-        setMonthSignedCount(res.data.monthSignedCount || 0);
-        setStreakDays(res.data.streakDays || 0);
-        setSignedToday(Boolean(res.data.signedToday));
-        setTodayKey(res.data.today || dayjs().format('YYYY-MM-DD'));
-      } catch {
-        void 0;
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
-
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) return;
     const now = dayjs();
-    setSelectDate(now);
-    setPanelDate(now);
+    setViewDate(now);
     refreshOverview(now.format('YYYY-MM'));
   }, [open, refreshOverview]);
 
-  const selectedKey = selectDate.format('YYYY-MM-DD');
-  const isTodaySelected = selectedKey === todayKey;
-
   const handleSignIn = async () => {
-    if (!isTodaySelected) {
-      message.warning('请选择今日日期进行签到');
-      return;
-    }
     if (signedToday) {
-      message.info('今日已签到');
+      message.info('仙友，今日道法已修');
       return;
     }
     setLoading(true);
     try {
       const res = await doSignIn();
-      if (!res.success || !res.data) {
-        void 0;
-        return;
-      }
-      message.success(`签到成功，获得灵石 +${res.data.reward}`);
+      if (!res.success || !res.data) return;
+      message.success(`修道有成，获得灵石 +${res.data.reward}`);
       await refreshOverview(overviewMonth);
       gameSocket.refreshCharacter();
       onSigned?.();
     } catch {
-      void 0;
+      // ignore
     } finally {
       setLoading(false);
     }
   };
 
-  const onPanelChange = (value: Dayjs) => {
-    setPanelDate(value);
-    refreshOverview(value.format('YYYY-MM'));
+  const changeMonth = (offset: number) => {
+    const next = viewDate.clone().add(offset, 'month');
+    setViewDate(next);
+    refreshOverview(next.format('YYYY-MM'));
   };
 
-  const onDateChange: CalendarProps<Dayjs>['onSelect'] = (value, selectInfo) => {
-    if (selectInfo.source === 'date') {
-      setSelectDate(value);
-    }
-  };
+  const isCurrentMonth = viewDate.isSame(dayjs(), 'month');
 
-  const cellRender: CalendarProps<Dayjs>['fullCellRender'] = (date, info) => {
-    const d = Lunar.fromDate(date.toDate());
-    const lunar = d.getDayInChinese();
-    const solarTerm = d.getJieQi();
-    const isWeekend = date.day() === 6 || date.day() === 0;
-    const h = HolidayUtil.getHoliday(date.get('year'), date.get('month') + 1, date.get('date'));
+  // 抛弃星期，而是根据当月天数排列流线平铺
+  const daysInMonth = viewDate.daysInMonth();
+  const daysArray = useMemo(() => {
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  }, [daysInMonth]);
+
+  const renderCell = (dayNum: number) => {
+    const dDate = viewDate.clone().date(dayNum);
+    const dateKey = dDate.format('YYYY-MM-DD');
+    const isToday = dateKey === todayKey;
+    const isPast = dDate.isBefore(dayjs(), 'day');
+    const signed = !!signInStore[dateKey];
+
+    // 调用 lunar-typescript 计算农历与节气
+    const lunarDate = Lunar.fromDate(dDate.toDate());
+    const lunarDay = lunarDate.getDayInChinese();
+    const solarTerm = lunarDate.getJieQi();
+    const h = HolidayUtil.getHoliday(dDate.year(), dDate.month() + 1, dDate.date());
     const displayHoliday = h?.getTarget() === h?.getDay() ? h?.getName() : undefined;
-    if (info.type === 'date') {
-      const signed = !!signInStore[date.format('YYYY-MM-DD')];
-      const isCurrent = selectDate.isSame(date, 'date');
-      return React.cloneElement(info.originNode as OriginNodeElement, {
-        ...(info.originNode as OriginNodeElement).props,
-        className: clsx(styles.dateCell, {
-          [styles.signed]: signed && !isCurrent,
-          [styles.current]: isCurrent,
-          [styles.today]: date.isSame(dayjs(), 'date'),
-        }),
-        children: (
-          <div className={styles.text}>
-            <span
-              className={clsx({
-                [styles.weekend]: isWeekend,
-                gray: !panelDateDate.isSame(date, 'month'),
-              })}
-            >
-              {date.get('date')}
-            </span>
-            {info.type === 'date' && (
-              <div className={styles.lunar}>
-                {displayHoliday || solarTerm || lunar}
-              </div>
-            )}
-          </div>
-        ),
-      });
-    }
+    const subText = displayHoliday || solarTerm || lunarDay;
 
-    if (info.type === 'month') {
-      // Due to the fact that a solar month is part of the lunar month X and part of the lunar month X+1,
-      // when rendering a month, always take X as the lunar month of the month
-      const d2 = Lunar.fromDate(new Date(date.get('year'), date.get('month')));
-      const month = d2.getMonthInChinese();
-      return (
-        <div
-          className={clsx(styles.monthCell, {
-            [styles.monthCellCurrent]: selectDate.isSame(date, 'month'),
-          })}
-        >
-          {date.get('month') + 1}月（{month}月）
+    return (
+      <div 
+        key={dayNum} 
+        className={clsx('signin-cell', {
+          'is-signed': signed,
+          'is-today': isToday,
+          'is-past': isPast && !signed,
+          'is-future': !isPast && !isToday
+        })}
+      >
+        {isToday && !signed && <div className="today-badge">今日当修</div>}
+        <div className="signin-cell-header">
+          <span className="day-number">第{dayNum}天</span>
+          <span className="lunar-text">{subText}</span>
         </div>
-      );
-    }
-  };
-
-  const getYearLabel = (year: number) => {
-    const d = Lunar.fromDate(new Date(year + 1, 0));
-    return `${d.getYearInChinese()}年（${d.getYearInGanZhi()}${d.getYearShengXiao()}年）`;
-  };
-
-  const getMonthLabel = (month: number, value: Dayjs) => {
-    const d = Lunar.fromDate(new Date(value.year(), month));
-    const lunar = d.getMonthInChinese();
-    return `${month + 1}月（${lunar}月）`;
+        <div className="signin-cell-content">
+          {signed ? (
+            <div className="status-signed">
+              <CheckCircleFilled className="status-icon success" />
+              <span>已修行</span>
+            </div>
+          ) : (
+            <div className="status-unsigned">
+              {isPast ? <CloseCircleOutlined className="status-icon error" /> : null}
+              <span>{isPast ? '未修行' : '未签'}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -285,98 +144,53 @@ const SignInModal: React.FC<SignInModalProps> = ({ open, onClose, onSigned }) =>
       open={open}
       onCancel={onClose}
       footer={null}
-      title="签到"
+      title={
+        <Space className="signin-modal-title">
+          <span>灵台方寸 · 问道签到</span>
+        </Space>
+      }
       centered
-      width="95vw"
-      style={{ maxWidth: 520 }}
-      className="signin-modal"
+      width={680}
+      className="xianxia-signin-modal"
       destroyOnHidden
       maskClosable
     >
-      <div className={clsx(styles.wrapper, 'signin-wrapper')}>
-        <div className="signin-calendar">
-          <Calendar
-            fullCellRender={cellRender}
-            fullscreen={false}
-            onPanelChange={onPanelChange}
-            onSelect={onDateChange}
-            headerRender={({ value, type, onChange, onTypeChange }) => {
-              const start = 0;
-              const end = 12;
-              const monthOptions = [];
+      <div className="signin-wrapper">
+        <div className="signin-stats-header">
+          <div className="stat-item">
+            <span className="stat-label">连续修行</span>
+            <span className="stat-value highlight">{streakDays}</span>
+            <span className="stat-unit">天</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">本月已修行</span>
+            <span className="stat-value">{monthSignedCount}</span>
+            <span className="stat-unit">天</span>
+          </div>
+        </div>
 
-              let current = value.clone();
-              const localeData = value.localeData();
-              const months = [];
-              for (let i = 0; i < 12; i++) {
-                current = current.month(i);
-                months.push(localeData.monthsShort(current));
-              }
+        <div className="signin-month-controller">
+          <Button type="text" icon={<LeftOutlined />} onClick={() => changeMonth(-1)} />
+          <Title level={5} className="month-display" style={{ margin: 0 }}>
+            {viewDate.format('YYYY年 MM月')}
+          </Title>
+          <Button type="text" icon={<RightOutlined />} onClick={() => changeMonth(1)} disabled={isCurrentMonth} />
+        </div>
 
-              for (let i = start; i < end; i++) {
-                monthOptions.push({
-                  label: getMonthLabel(i, value),
-                  value: i,
-                });
-              }
-
-              const year = value.year();
-              const month = value.month();
-              const options = [];
-              for (let i = year - 10; i < year + 10; i += 1) {
-                options.push({
-                  label: getYearLabel(i),
-                  value: i,
-                });
-              }
-              return (
-                <div className="signin-header">
-                  <Select
-                    size="small"
-                    popupMatchSelectWidth={false}
-                    className="signin-year-select"
-                    value={year}
-                    options={options}
-                    onChange={(newYear) => {
-                      const now = value.clone().year(newYear);
-                      onChange(now);
-                    }}
-                  />
-                  <Select
-                    size="small"
-                    popupMatchSelectWidth={false}
-                    className="signin-month-select"
-                    value={month}
-                    options={monthOptions}
-                    onChange={(newMonth) => {
-                      const now = value.clone().month(newMonth);
-                      onChange(now);
-                    }}
-                  />
-                  <Radio.Group size="small" onChange={(e) => onTypeChange(e.target.value)} value={type}>
-                    <Radio.Button value="month">月</Radio.Button>
-                    <Radio.Button value="year">年</Radio.Button>
-                  </Radio.Group>
-                </div>
-              );
-            }}
-          />
+        <div className="signin-grid">
+          {daysArray.map((day) => renderCell(day))}
         </div>
 
         <div className="signin-footer">
-          <div className="signin-footer-info">
-            <div className="signin-footer-date">
-              <Typography.Text type="secondary" className="signin-footer-label">已选：</Typography.Text>
-              <Typography.Text className="signin-footer-value">{selectedKey}</Typography.Text>
-            </div>
-            <div className="signin-footer-tags">
-              <Tag color={signedToday ? 'success' : 'default'}>{signedToday ? '今日已签到' : '今日未签到'}</Tag>
-              <Tag color="processing">本月已签 {monthSignedCount} 天</Tag>
-              <Tag color="purple" className="signin-streak-tag">连续 {streakDays} 天</Tag>
-            </div>
-          </div>
-          <Button type="primary" block loading={loading} disabled={!isTodaySelected || signedToday} onClick={handleSignIn}>
-            {signedToday ? '今日已签到' : '签到'}
+          <Button 
+            type="primary" 
+            size="large" 
+            className="btn-xianxia-signin"
+            loading={loading} 
+            disabled={signedToday || !isCurrentMonth} 
+            onClick={handleSignIn}
+          >
+            {signedToday ? '今日道体已满，明日再修' : '凝神聚气 · 开始修行'}
           </Button>
         </div>
       </div>

@@ -175,7 +175,7 @@ class SignInService {
   async doSignIn(userId: number): Promise<DoSignInResult> {
     const todayKey = buildDateKey(new Date());
     const holidayInfo = getHolidayInfo(new Date());
-    const reward = holidayInfo.isHoliday ? 50 : 10;
+    const reward = 1500;
 
     const characterCheck = await query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
     if (characterCheck.rows.length === 0) {
