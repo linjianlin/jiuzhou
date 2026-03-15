@@ -1,4 +1,5 @@
 import { App, Button, Input, Modal } from 'antd';
+import { MobileOutlined, MessageOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import {
   bindPhoneNumber,
@@ -187,6 +188,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
               value={phoneNumber}
               onChange={(event) => setPhoneNumber(event.target.value)}
               placeholder="请输入大陆手机号"
+              prefix={<MobileOutlined />}
               inputMode="numeric"
               maxLength={20}
               disabled={binding}
@@ -217,6 +219,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
                 value={verificationCode}
                 onChange={(event) => setVerificationCode(event.target.value)}
                 placeholder="请输入 6 位验证码"
+                prefix={<MessageOutlined />}
                 inputMode="numeric"
                 maxLength={6}
                 disabled={binding}
