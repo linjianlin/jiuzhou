@@ -17,8 +17,7 @@
  * 1. 验证失败后必须刷新图片验证码，因为服务端验证码是一性消费，不能沿用旧 `captchaId` 重试。
  * 2. 关闭弹窗时要清空输入值和验证码状态，避免下次打开时残留上一次的输入内容。
  */
-import { SafetyCertificateOutlined } from '@ant-design/icons';
-import { App, Input, Modal } from 'antd';
+import { App, Modal } from 'antd';
 import { useEffect, useState } from 'react';
 
 import {
@@ -26,6 +25,7 @@ import {
   verifyMarketPurchaseCaptcha,
 } from '../../../../services/api';
 import { getUnifiedApiErrorMessage } from '../../../../services/api/error';
+import CaptchaChallengeInput from '../../../shared/CaptchaChallengeInput';
 import { useCaptchaChallenge } from '../../../shared/useCaptchaChallenge';
 
 interface MarketCaptchaDialogProps {
@@ -107,39 +107,19 @@ export default function MarketCaptchaDialog({
         <div className="market-captcha-dialog__tip">
           检测到坊市访问行为异常，请完成一次图片验证码验证后继续购买。
         </div>
-        <div className="market-captcha-dialog__row">
-          <Input
-            value={captchaCode}
-            maxLength={4}
-            autoComplete="off"
-            prefix={<SafetyCertificateOutlined />}
-            placeholder="输入图片验证码"
-            onChange={(event) => {
-              setCaptchaCode(event.target.value.trim().toUpperCase());
-            }}
-          />
-          <button
-            type="button"
-            className="market-captcha-dialog__image-button"
-            disabled={loading || submitting}
-            onClick={() => {
-              void refreshCaptcha();
-            }}
-            aria-label="刷新坊市验证码"
-          >
-            {captcha ? (
-              <img
-                className="market-captcha-dialog__image"
-                src={captcha.imageData}
-                alt="坊市验证码"
-              />
-            ) : (
-              <span className="market-captcha-dialog__placeholder">
-                {loading ? '加载中...' : '点击重试'}
-              </span>
-            )}
-          </button>
-        </div>
+        <CaptchaChallengeInput
+          value={captchaCode}
+          captcha={captcha}
+          loading={loading}
+          disabled={submitting}
+          inputPlaceholder="输入图片验证码"
+          imageAlt="坊市验证码"
+          refreshAriaLabel="刷新坊市验证码"
+          onChange={setCaptchaCode}
+          onRefresh={() => {
+            void refreshCaptcha();
+          }}
+        />
       </div>
     </Modal>
   );

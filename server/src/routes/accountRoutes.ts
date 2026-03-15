@@ -3,13 +3,21 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { BusinessError } from '../middleware/BusinessError.js';
 import { sendSuccess } from '../middleware/response.js';
+import { verifyCaptcha } from '../services/captchaService.js';
 import {
   bindPhoneNumber,
   getPhoneBindingStatus,
   sendPhoneBindingCode,
 } from '../services/marketPhoneBindingService.js';
+import { parseCaptchaVerifyPayload } from '../shared/captchaVerifyPayload.js';
 
 const router = Router();
+
+type PhoneBindingSendCodePayload = {
+  phoneNumber?: string;
+  captchaId?: string;
+  captchaCode?: string;
+};
 
 router.get('/phone-binding/status', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
@@ -19,12 +27,15 @@ router.get('/phone-binding/status', requireAuth, asyncHandler(async (req, res) =
 
 router.post('/phone-binding/send-code', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
-  const { phoneNumber } = req.body as { phoneNumber?: string };
+  const payload = (req.body ?? {}) as PhoneBindingSendCodePayload;
+  const { phoneNumber } = payload;
 
   if (!phoneNumber || !phoneNumber.trim()) {
     throw new BusinessError('手机号不能为空');
   }
 
+  const { captchaId, captchaCode } = parseCaptchaVerifyPayload(payload);
+  await verifyCaptcha(captchaId, captchaCode);
   const result = await sendPhoneBindingCode(userId, phoneNumber);
   return sendSuccess(res, result);
 }));

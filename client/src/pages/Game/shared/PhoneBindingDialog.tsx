@@ -2,16 +2,19 @@ import { App, Button, Input, Modal } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import {
   bindPhoneNumber,
+  getCaptcha,
   getUnifiedApiErrorMessage,
   sendPhoneBindingCode,
 } from '../../../services/api';
+import CaptchaChallengeInput from '../../shared/CaptchaChallengeInput';
+import { useCaptchaChallenge } from '../../shared/useCaptchaChallenge';
 import { invalidatePhoneBindingStatus } from './usePhoneBindingStatus';
 
 /**
  * 手机号绑定弹窗
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：统一承接手机号输入、验证码发送和验证码提交绑定交互，供玩家信息入口和坊市拦截复用。
+ * 1. 做什么：统一承接手机号输入、图片验证码校验、短信验证码发送和最终绑定交互，供玩家信息入口和坊市拦截复用。
  * 2. 做什么：绑定成功后统一失效手机号状态缓存，避免多个入口分别维护同步逻辑。
  * 3. 不做什么：不读取手机号绑定状态，也不决定哪个业务场景必须弹出本弹窗。
  *
@@ -20,10 +23,10 @@ import { invalidatePhoneBindingStatus } from './usePhoneBindingStatus';
  * - 输出：手机号绑定交互 UI；成功后触发 `onSuccess`。
  *
  * 数据流/状态流：
- * 打开弹窗 -> 输入手机号 -> 发送验证码 -> 输入验证码 -> 提交绑定 -> 失效共享状态缓存 -> 调用方刷新。
+ * 打开弹窗 -> 拉取图片验证码 -> 输入手机号与图片验证码 -> 发送短信验证码 -> 输入短信验证码 -> 提交绑定 -> 失效共享状态缓存 -> 调用方刷新。
  *
  * 关键边界条件与坑点：
- * 1. 发送验证码和提交绑定都必须走同一手机号输入值，不能让调用方在外层再拼一套表单状态。
+ * 1. 图片验证码只在“发送短信验证码”时校验，但它是服务端一次性消费资源，所以每次发送尝试后都必须刷新，不能复用旧 `captchaId`。
  * 2. 倒计时只表示当前前端会话的发送节流，真正的限制以后端 Redis 为准，不能因为本地重开弹窗就绕过服务端校验。
  */
 
@@ -47,13 +50,24 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
   const { message } = App.useApp();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
+  const [captchaCode, setCaptchaCode] = useState('');
   const [sendingCode, setSendingCode] = useState(false);
   const [binding, setBinding] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const { captcha, loading: captchaLoading, refreshCaptcha } = useCaptchaChallenge({
+    enabled: open,
+    refreshNonce: open ? 1 : 0,
+    loadCaptcha: getCaptcha,
+    fallbackMessage: '图片验证码加载失败',
+    onLoadError: (errorMessage) => {
+      message.error(errorMessage);
+    },
+  });
 
   useEffect(() => {
     if (!open) {
       setVerificationCode('');
+      setCaptchaCode('');
       setSendingCode(false);
       setBinding(false);
       setCountdown(0);
@@ -69,8 +83,16 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
   }, [countdown]);
 
   const sendCodeDisabled = useMemo(() => {
-    return sendingCode || binding || countdown > 0 || !phoneNumber.trim();
-  }, [binding, countdown, phoneNumber, sendingCode]);
+    return (
+      sendingCode
+      || binding
+      || countdown > 0
+      || captchaLoading
+      || !captcha
+      || !phoneNumber.trim()
+      || captchaCode.trim().length !== 4
+    );
+  }, [binding, captcha, captchaCode, captchaLoading, countdown, phoneNumber, sendingCode]);
 
   const confirmDisabled = useMemo(() => {
     return binding || sendingCode || !phoneNumber.trim() || !verificationCode.trim();
@@ -81,16 +103,36 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
       message.warning('请输入手机号');
       return;
     }
+    if (!captcha) {
+      message.warning('图片验证码加载中，请稍后重试');
+      return;
+    }
+    if (captchaCode.trim().length !== 4) {
+      message.warning('请输入图片验证码');
+      return;
+    }
 
     setSendingCode(true);
     try {
-      const response = await sendPhoneBindingCode(phoneNumber.trim(), SILENT_REQUEST_CONFIG);
-      const cooldownSeconds = response.data?.cooldownSeconds ?? 60;
+      const response = await sendPhoneBindingCode(
+        phoneNumber.trim(),
+        {
+          captchaId: captcha.captchaId,
+          captchaCode,
+        },
+        SILENT_REQUEST_CONFIG,
+      );
+      const cooldownSeconds = response.data?.cooldownSeconds;
+      if (typeof cooldownSeconds !== 'number') {
+        throw new Error('发送验证码响应缺少冷却时间');
+      }
       setCountdown(cooldownSeconds);
       message.success('验证码已发送');
     } catch (error) {
       message.error(getUnifiedApiErrorMessage(error, '发送验证码失败'));
     } finally {
+      setCaptchaCode('');
+      await refreshCaptcha();
       setSendingCode(false);
     }
   };
@@ -151,6 +193,22 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
             inputMode="numeric"
             maxLength={20}
             disabled={binding}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-color)' }}>图片验证码</div>
+          <CaptchaChallengeInput
+            value={captchaCode}
+            captcha={captcha}
+            loading={captchaLoading}
+            disabled={binding || sendingCode}
+            inputPlaceholder="请输入图片验证码"
+            imageAlt="手机号绑定图片验证码"
+            refreshAriaLabel="刷新手机号绑定图片验证码"
+            onChange={setCaptchaCode}
+            onRefresh={() => {
+              void refreshCaptcha();
+            }}
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

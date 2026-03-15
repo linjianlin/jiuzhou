@@ -1,5 +1,6 @@
 import type { AxiosRequestConfig } from 'axios';
 import api from './core';
+import type { CaptchaVerifyPayload } from './auth-character';
 
 export interface PhoneBindingStatusDto {
   enabled: boolean;
@@ -19,6 +20,10 @@ export interface SendPhoneBindingCodeResponse {
   };
 }
 
+export interface SendPhoneBindingCodePayload extends CaptchaVerifyPayload {
+  phoneNumber: string;
+}
+
 export interface BindPhoneNumberResponse {
   success: boolean;
   data?: {
@@ -34,9 +39,15 @@ export const getPhoneBindingStatus = (
 
 export const sendPhoneBindingCode = (
   phoneNumber: string,
+  captcha: CaptchaVerifyPayload,
   requestConfig?: AxiosRequestConfig,
 ): Promise<SendPhoneBindingCodeResponse> => {
-  return api.post('/account/phone-binding/send-code', { phoneNumber }, requestConfig);
+  const payload: SendPhoneBindingCodePayload = {
+    phoneNumber,
+    captchaId: captcha.captchaId,
+    captchaCode: captcha.captchaCode,
+  };
+  return api.post('/account/phone-binding/send-code', payload, requestConfig);
 };
 
 export const bindPhoneNumber = (
