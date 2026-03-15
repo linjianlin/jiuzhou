@@ -2226,7 +2226,7 @@
       "stack_max": 9999,
       "bind_type": "none",
       "tradeable": true,
-      "icon": "/assets/items/xinmo_jinghua.png",
+      "icon": "/assets/items/taiyuan_jingpo.webp",
       "description": "胎息潮反复淬炼后形成的晶魄，可稳固结胎前后的功法运转。",
       "long_desc": "晶魄内封存了高度有序的胎元波动，适合作为高层功法与突破仪式的稳定媒介。",
       "tags": [
