@@ -6,6 +6,10 @@ import {
   verifyAliyunSmsVerificationCode,
 } from './aliyunSmsVerificationService.js';
 import { MARKET_PHONE_BINDING_CONFIG } from './marketPhoneBindingConfig.js';
+import {
+  assertPhoneBindingSendLimitAvailable,
+  recordPhoneBindingSendSuccess,
+} from './shared/phoneBindingSendLimit.js';
 import { maskPhoneNumber, normalizeMainlandPhoneNumber } from './shared/phoneNumber.js';
 
 /**
@@ -124,7 +128,16 @@ export const sendPhoneBindingCode = async (
     throw new BusinessError(`验证码发送过于频繁，请${cooldownTtl}秒后重试`);
   }
 
+  const requestTime = new Date();
+  const sendLimitConfig = {
+    hourlyLimit: MARKET_PHONE_BINDING_CONFIG.sendHourlyLimit,
+    dailyLimit: MARKET_PHONE_BINDING_CONFIG.sendDailyLimit,
+  };
+
+  await assertPhoneBindingSendLimitAvailable(userId, sendLimitConfig, requestTime);
+
   await sendAliyunSmsVerificationCode(phoneNumber);
+  await recordPhoneBindingSendSuccess(userId, sendLimitConfig, requestTime);
 
   await redis.set(
     cooldownKey,

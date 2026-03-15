@@ -28,10 +28,14 @@ export type MarketPhoneBindingConfig = {
   templateCode: string;
   codeExpireSeconds: number;
   sendCooldownSeconds: number;
+  sendHourlyLimit: number;
+  sendDailyLimit: number;
 };
 
 const DEFAULT_CODE_EXPIRE_SECONDS = 300;
 const DEFAULT_SEND_COOLDOWN_SECONDS = 60;
+const DEFAULT_SEND_HOURLY_LIMIT = 5;
+const DEFAULT_SEND_DAILY_LIMIT = 10;
 
 const asString = (raw: string | undefined): string => (typeof raw === 'string' ? raw.trim() : '');
 
@@ -59,6 +63,14 @@ export const readMarketPhoneBindingConfig = (): MarketPhoneBindingConfig => {
     process.env.MARKET_PHONE_BINDING_SEND_COOLDOWN_SECONDS,
     DEFAULT_SEND_COOLDOWN_SECONDS,
   );
+  const sendHourlyLimit = asPositiveInt(
+    process.env.MARKET_PHONE_BINDING_SEND_HOURLY_LIMIT,
+    DEFAULT_SEND_HOURLY_LIMIT,
+  );
+  const sendDailyLimit = asPositiveInt(
+    process.env.MARKET_PHONE_BINDING_SEND_DAILY_LIMIT,
+    DEFAULT_SEND_DAILY_LIMIT,
+  );
 
   if (!enabled) {
     return {
@@ -67,6 +79,8 @@ export const readMarketPhoneBindingConfig = (): MarketPhoneBindingConfig => {
       templateCode,
       codeExpireSeconds,
       sendCooldownSeconds,
+      sendHourlyLimit,
+      sendDailyLimit,
     };
   }
 
@@ -84,6 +98,8 @@ export const readMarketPhoneBindingConfig = (): MarketPhoneBindingConfig => {
     templateCode,
     codeExpireSeconds,
     sendCooldownSeconds,
+    sendHourlyLimit,
+    sendDailyLimit,
   };
 };
 
