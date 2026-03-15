@@ -2690,7 +2690,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
           setPhoneBindingDialogOpen(false);
         }}
         title="进入坊市前请先绑定手机号"
-        description="物品坊市与伙伴坊市均要求已绑定手机号后方可访问。"
       />
     </>
   );

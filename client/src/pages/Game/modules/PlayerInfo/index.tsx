@@ -490,7 +490,6 @@ const PlayerInfo: React.FC = () => {
         onSuccess={async () => {
           await refreshPhoneBindingStatus();
         }}
-        description="绑定手机号后，可使用物品坊市与伙伴坊市。"
       />
     </div>
   );
