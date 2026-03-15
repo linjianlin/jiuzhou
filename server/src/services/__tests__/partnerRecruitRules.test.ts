@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   type PartnerRecruitDraft,
+  buildPartnerRecruitPromptNoiseHash,
   buildPartnerRecruitPromptInput,
   fillPartnerRecruitBaseAttrs,
   validatePartnerRecruitDraft,
@@ -185,6 +186,24 @@ test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供
   );
   assert.equal(
     PARTNER_RECRUIT_FORM_RULES.every((rule) => promptInput.constraints?.includes(rule) === true),
+    true,
+  );
+});
+
+test('buildPartnerRecruitPromptInput: 应支持注入随机扰动 hash 且禁止显式输出', () => {
+  const promptNoiseHash = buildPartnerRecruitPromptNoiseHash(20260315);
+  const promptInput = buildPartnerRecruitPromptInput('黄', {
+    promptNoiseHash,
+  }) as {
+    promptNoiseHash?: string;
+    constraints?: string[];
+  };
+
+  assert.equal(promptInput.promptNoiseHash, promptNoiseHash);
+  assert.equal(
+    promptInput.constraints?.includes(
+      '如果提供了 promptNoiseHash，它仅作为本次创作扰动码：只需隐式影响命名、描述意象、措辞节奏与功法文风，禁止解释、复述、拆解、计算或显式输出该字符串，也不要生成数字、字母、符号或密码感内容',
+    ),
     true,
   );
 });

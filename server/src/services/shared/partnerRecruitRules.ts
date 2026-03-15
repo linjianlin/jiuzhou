@@ -18,6 +18,7 @@
  * 1) 草稿校验不允许偷偷兜底成“低质量占位伙伴”，任一关键字段非法都应直接失败退款。
  * 2) 冷却判断与状态接口必须共用同一套纯函数，否则前端倒计时与服务端拦截会在临界秒不一致。
  */
+import { createHash } from 'crypto';
 import {
   getPartnerDefinitionById,
   type PartnerBaseAttrConfig,
@@ -86,6 +87,10 @@ export type PartnerRecruitDraft = {
 type TextLengthRange = {
   min: number;
   max: number;
+};
+
+export type PartnerRecruitPromptInputOptions = {
+  promptNoiseHash?: string;
 };
 
 const SECOND_MS = 1_000;
@@ -524,6 +529,20 @@ export const getPartnerRecruitTechniqueMaxLayer = (
 
 const PARTNER_RECRUIT_REFERENCE_PARTNER_ID = 'partner-qingmu-xiaoou';
 
+const normalizePartnerRecruitPromptNoiseHash = (raw: string | undefined): string | null => {
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.trim().toLowerCase();
+  if (!/^[0-9a-f]{8,64}$/.test(normalized)) return null;
+  return normalized;
+};
+
+export const buildPartnerRecruitPromptNoiseHash = (seed: number): string => {
+  return createHash('sha256')
+    .update(`partner-recruit:${seed}`)
+    .digest('hex')
+    .slice(0, 16);
+};
+
 const buildPartnerRecruitReferenceExample = (): Record<string, unknown> | null => {
   const definition = getPartnerDefinitionById(PARTNER_RECRUIT_REFERENCE_PARTNER_ID);
   if (!definition) return null;
@@ -543,10 +562,15 @@ const buildPartnerRecruitReferenceExample = (): Record<string, unknown> | null =
   };
 };
 
-export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): Record<string, unknown> => {
+export const buildPartnerRecruitPromptInput = (
+  quality: PartnerRecruitQuality,
+  options: PartnerRecruitPromptInputOptions = {},
+): Record<string, unknown> => {
   const percentAttrKeys = PARTNER_RECRUIT_BASE_ATTR_KEYS.filter((key) => !PARTNER_INTEGER_ATTR_KEYS.has(key));
   const passiveValueGuideByKey = buildPartnerRecruitPassiveValueGuideByKey(quality);
   const referencePartnerExample = buildPartnerRecruitReferenceExample();
+  const promptNoiseHash = normalizePartnerRecruitPromptNoiseHash(options.promptNoiseHash);
+
   return {
     worldview: '中国仙侠世界《九州修仙录》',
     quality,
@@ -565,6 +589,7 @@ export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): 
     percentAttrKeys,
     referencePartnerExample,
     passiveValueGuideByKey,
+    promptNoiseHash,
     constraints: [
       '必须返回严格 JSON 对象，禁止额外解释文本',
       '顶层字段必须且只能使用 requiredTopLevelKeys，禁止使用 forbiddenAliasKeys 中的别名字段',
@@ -582,6 +607,7 @@ export const buildPartnerRecruitPromptInput = (quality: PartnerRecruitQuality): 
       'percentAttrKeys 中的属性必须使用非负数字，小数表示百分比，例如 0.18 表示 18%',
       '品质高低顺序固定为 黄 < 玄 < 地 < 天；referencePartnerExample 中青木小偶的 quality=黄，表示它是最低品质参考模板，最终强度与风格仍必须以当前 quality 字段为准',
       'referencePartnerExample 是现有伙伴模板示例，只用于参考数值量级、字段完整度与成长写法，禁止照抄名字、描述或功法列表',
+      '如果提供了 promptNoiseHash，它仅作为本次创作扰动码：只需隐式影响命名、描述意象、措辞节奏与功法文风，禁止解释、复述、拆解、计算或显式输出该字符串，也不要生成数字、字母、符号或密码感内容',
     ],
   };
 };

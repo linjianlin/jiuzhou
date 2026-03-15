@@ -34,6 +34,7 @@ import {
 } from './staticConfigLoader.js';
 import { partnerService } from './partnerService.js';
 import {
+  generateTechniqueTextModelSeed,
   parseTechniqueTextModelJsonObject,
 } from './shared/techniqueTextModelShared.js';
 import { getCharacterNicknameById } from './shared/characterNickname.js';
@@ -50,6 +51,7 @@ import {
 } from './shared/partnerRecruitStatus.js';
 import {
   buildPartnerRecruitCooldownState,
+  buildPartnerRecruitPromptNoiseHash,
   buildPartnerRecruitPreviewExpireAt,
   buildPartnerRecruitPromptInput,
   buildPartnerRecruitResponseFormat,
@@ -399,16 +401,55 @@ const buildPreviewFromPartnerDefinition = (
   };
 };
 
+/**
+ * 伙伴招募文本模型请求构造
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：集中构造伙伴招募文本模型请求，把显式 seed 与基于 seed 派生的 prompt 扰动 hash 绑在一起，避免 service 内联拼接再次分叉。
+ * 2) 不做什么：不请求模型、不解析响应，也不负责草稿校验。
+ *
+ * 输入/输出：
+ * - 输入：伙伴品质、可选固定 seed（测试用）。
+ * - 输出：可直接传给 `callConfiguredTextModel` 的请求参数，以及便于调试的 `promptNoiseHash`。
+ *
+ * 数据流/状态流：
+ * 品质/seed -> promptNoiseHash -> buildPartnerRecruitPromptInput -> 文本模型调用。
+ *
+ * 关键边界条件与坑点：
+ * 1) promptNoiseHash 必须与 seed 同源，否则“请求看起来有扰动，实际 seed 不是同一次”会让排查失真。
+ * 2) 这里只做隐式 prompt 扰动，禁止在这里偷偷塞入伙伴骨架或额外业务约束，避免超出用户当前要求。
+ */
+export const buildPartnerRecruitTextModelRequest = (
+  quality: PartnerRecruitQuality,
+  seed = generateTechniqueTextModelSeed(),
+): {
+  responseFormat: ReturnType<typeof buildPartnerRecruitResponseFormat>;
+  systemMessage: string;
+  userMessage: string;
+  seed: number;
+  timeoutMs: number;
+  promptNoiseHash: string;
+} => {
+  const promptNoiseHash = buildPartnerRecruitPromptNoiseHash(seed);
+  const timeoutMs = 300_000;
+
+  return {
+    responseFormat: buildPartnerRecruitResponseFormat(quality),
+    systemMessage: PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE,
+    userMessage: JSON.stringify(buildPartnerRecruitPromptInput(quality, {
+      promptNoiseHash,
+    })),
+    seed,
+    timeoutMs,
+    promptNoiseHash,
+  };
+};
+
 const tryCallPartnerRecruitTextModel = async (
   quality: PartnerRecruitQuality,
 ): Promise<RecruitTextAttemptResult> => {
-  const timeoutMs = 300_000;
-  const external = await callConfiguredTextModel({
-    responseFormat: buildPartnerRecruitResponseFormat(quality),
-    systemMessage: PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE,
-    userMessage: JSON.stringify(buildPartnerRecruitPromptInput(quality)),
-    timeoutMs,
-  });
+  const request = buildPartnerRecruitTextModelRequest(quality);
+  const external = await callConfiguredTextModel(request);
   if (!external) {
     return {
       success: false,
@@ -451,7 +492,7 @@ const tryCallPartnerRecruitTextModel = async (
     const failure = resolveTechniqueGenerationRequestFailure({
       error,
       didTimeout: false,
-      timeoutMs,
+      timeoutMs: request.timeoutMs,
     });
     return {
       success: false,
