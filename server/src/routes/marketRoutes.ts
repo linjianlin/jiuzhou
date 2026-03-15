@@ -17,7 +17,9 @@ import {
 } from '../services/shared/marketRiskQuerySignature.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { sendResult, sendSuccess } from '../middleware/response.js';
-import { parseCaptchaVerifyPayload } from '../shared/captchaVerifyPayload.js';
+import { isTencentCaptchaProvider } from '../config/captchaConfig.js';
+import { BusinessError } from '../middleware/BusinessError.js';
+import { verifyCaptchaByProvider } from '../shared/verifyCaptchaByProvider.js';
 
 const router = Router();
 
@@ -60,33 +62,23 @@ const parseQueryNumber = (v: unknown): number | undefined => {
 type MarketCaptchaPayload = {
   captchaId?: string;
   captchaCode?: string;
+  ticket?: string;
+  randstr?: string;
 };
 
 router.get('/listings', ...marketAuthGuards, marketListingsQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const category = typeof req.query.category === 'string' ? req.query.category : undefined;
-    const quality = typeof req.query.quality === 'string' ? req.query.quality : undefined;
-    const queryText = typeof req.query.query === 'string' ? req.query.query : undefined;
-    const sort = typeof req.query.sort === 'string' ? (req.query.sort as MarketSort) : undefined;
-    const minPrice = parseQueryNumber(req.query.minPrice);
-    const maxPrice = parseQueryNumber(req.query.maxPrice);
-    const page = parseQueryNumber(req.query.page);
-    const pageSize = parseQueryNumber(req.query.pageSize);
-    await recordMarketRiskQueryAccess({
-      userId,
-      signature: buildItemMarketRiskQuerySignature({
-        category,
-        quality,
-        query: queryText,
-        sort,
-        minPrice,
-        maxPrice,
-        page,
-        pageSize,
-      }),
-    });
-
-    const result = await marketService.getMarketListings({
+  const userId = req.userId!;
+  const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+  const quality = typeof req.query.quality === 'string' ? req.query.quality : undefined;
+  const queryText = typeof req.query.query === 'string' ? req.query.query : undefined;
+  const sort = typeof req.query.sort === 'string' ? (req.query.sort as MarketSort) : undefined;
+  const minPrice = parseQueryNumber(req.query.minPrice);
+  const maxPrice = parseQueryNumber(req.query.maxPrice);
+  const page = parseQueryNumber(req.query.page);
+  const pageSize = parseQueryNumber(req.query.pageSize);
+  await recordMarketRiskQueryAccess({
+    userId,
+    signature: buildItemMarketRiskQuerySignature({
       category,
       quality,
       query: queryText,
@@ -95,208 +87,222 @@ router.get('/listings', ...marketAuthGuards, marketListingsQpsLimit, asyncHandle
       maxPrice,
       page,
       pageSize,
-    });
+    }),
+  });
 
-    return sendResult(res, result);
+  const result = await marketService.getMarketListings({
+    category,
+    quality,
+    query: queryText,
+    sort,
+    minPrice,
+    maxPrice,
+    page,
+    pageSize,
+  });
+
+  return sendResult(res, result);
 }));
 
 router.get('/captcha', ...marketCharacterGuards, asyncHandler(async (_req, res) => {
-    const result = await createMarketPurchaseCaptchaChallenge();
-    return sendSuccess(res, result);
+  if (isTencentCaptchaProvider) {
+    throw new BusinessError('当前验证码模式不支持此操作');
+  }
+  const result = await createMarketPurchaseCaptchaChallenge();
+  return sendSuccess(res, result);
 }));
 
 router.post('/captcha/verify', ...marketCharacterGuards, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
-    const payload = (req.body ?? {}) as MarketCaptchaPayload;
-    const { captchaId, captchaCode } = parseCaptchaVerifyPayload(payload);
-    const result = await verifyMarketPurchaseCaptcha({
-      userId,
-      characterId,
-      captchaId,
-      captchaCode,
-    });
-    return sendSuccess(res, result);
+  const userId = req.userId!;
+  const characterId = req.characterId!;
+  const payload = (req.body ?? {}) as MarketCaptchaPayload;
+  const result = await verifyMarketPurchaseCaptcha({
+    userId,
+    characterId,
+    payload,
+    userIp: req.ip ?? '',
+  });
+  return sendSuccess(res, result);
 }));
 
 router.get('/my-listings', ...marketCharacterGuards, marketMyListingsQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
+  const userId = req.userId!;
+  const characterId = req.characterId!;
 
-    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const page = parseQueryNumber(req.query.page);
-    const pageSize = parseQueryNumber(req.query.pageSize);
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const page = parseQueryNumber(req.query.page);
+  const pageSize = parseQueryNumber(req.query.pageSize);
 
-    const result = await marketService.getMyMarketListings({ characterId, status, page, pageSize });
-    return sendResult(res, result);
+  const result = await marketService.getMyMarketListings({ characterId, status, page, pageSize });
+  return sendResult(res, result);
 }));
 
 router.get('/records', ...marketCharacterGuards, marketRecordsQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
+  const userId = req.userId!;
+  const characterId = req.characterId!;
 
-    const page = parseQueryNumber(req.query.page);
-    const pageSize = parseQueryNumber(req.query.pageSize);
-    const result = await marketService.getMarketTradeRecords({ characterId, page, pageSize });
-    return sendResult(res, result);
+  const page = parseQueryNumber(req.query.page);
+  const pageSize = parseQueryNumber(req.query.pageSize);
+  const result = await marketService.getMarketTradeRecords({ characterId, page, pageSize });
+  return sendResult(res, result);
 }));
 
 router.post('/list', ...marketCharacterGuards, marketListMutationQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
+  const userId = req.userId!;
+  const characterId = req.characterId!;
 
-    const { itemInstanceId, qty, unitPriceSpiritStones } = req.body as {
-      itemInstanceId?: unknown;
-      qty?: unknown;
-      unitPriceSpiritStones?: unknown;
-    };
+  const { itemInstanceId, qty, unitPriceSpiritStones } = req.body as {
+    itemInstanceId?: unknown;
+    qty?: unknown;
+    unitPriceSpiritStones?: unknown;
+  };
 
-    const result = await marketService.createMarketListing({
-      userId,
-      characterId,
-      itemInstanceId: Number(itemInstanceId),
-      qty: Number(qty),
-      unitPriceSpiritStones: Number(unitPriceSpiritStones),
-    });
+  const result = await marketService.createMarketListing({
+    userId,
+    characterId,
+    itemInstanceId: Number(itemInstanceId),
+    qty: Number(qty),
+    unitPriceSpiritStones: Number(unitPriceSpiritStones),
+  });
 
-    return sendResult(res, result);
+  return sendResult(res, result);
 }));
 
 router.post('/cancel', ...marketCharacterGuards, marketCancelMutationQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
+  const userId = req.userId!;
+  const characterId = req.characterId!;
 
-    const { listingId } = req.body as { listingId?: unknown };
-    const result = await marketService.cancelMarketListing({ userId, characterId, listingId: Number(listingId) });
-    return sendResult(res, result);
+  const { listingId } = req.body as { listingId?: unknown };
+  const result = await marketService.cancelMarketListing({ userId, characterId, listingId: Number(listingId) });
+  return sendResult(res, result);
 }));
 
 router.post('/buy', ...marketCharacterGuards, marketBuyMutationQpsLimit, requireMarketPurchaseCaptcha, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
+  const userId = req.userId!;
+  const characterId = req.characterId!;
 
-    const { listingId, qty } = req.body as { listingId?: unknown; qty?: unknown };
-    const result = await marketService.buyMarketListing({
-      buyerUserId: userId,
-      buyerCharacterId: characterId,
-      listingId: Number(listingId),
-      qty: Number(qty),
-    });
-    return sendResult(res, result);
+  const { listingId, qty } = req.body as { listingId?: unknown; qty?: unknown };
+  const result = await marketService.buyMarketListing({
+    buyerUserId: userId,
+    buyerCharacterId: characterId,
+    listingId: Number(listingId),
+    qty: Number(qty),
+  });
+  return sendResult(res, result);
 }));
 
 router.get('/partner-listings', ...marketAuthGuards, partnerMarketListingsQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const quality = typeof req.query.quality === 'string' ? req.query.quality : undefined;
-    const element = typeof req.query.element === 'string' ? req.query.element : undefined;
-    const queryText = typeof req.query.query === 'string' ? req.query.query : undefined;
-    const sort = typeof req.query.sort === 'string' ? (req.query.sort as PartnerMarketSort) : undefined;
-    const page = parseQueryNumber(req.query.page);
-    const pageSize = parseQueryNumber(req.query.pageSize);
-    await recordMarketRiskQueryAccess({
-      userId,
-      signature: buildPartnerMarketRiskQuerySignature({
-        quality,
-        element,
-        query: queryText,
-        sort,
-        page,
-        pageSize,
-      }),
-    });
-
-    const result = await partnerMarketService.getPartnerListings({
+  const userId = req.userId!;
+  const quality = typeof req.query.quality === 'string' ? req.query.quality : undefined;
+  const element = typeof req.query.element === 'string' ? req.query.element : undefined;
+  const queryText = typeof req.query.query === 'string' ? req.query.query : undefined;
+  const sort = typeof req.query.sort === 'string' ? (req.query.sort as PartnerMarketSort) : undefined;
+  const page = parseQueryNumber(req.query.page);
+  const pageSize = parseQueryNumber(req.query.pageSize);
+  await recordMarketRiskQueryAccess({
+    userId,
+    signature: buildPartnerMarketRiskQuerySignature({
       quality,
       element,
       query: queryText,
       sort,
       page,
       pageSize,
-    });
-    return sendResult(res, result);
+    }),
+  });
+
+  const result = await partnerMarketService.getPartnerListings({
+    quality,
+    element,
+    query: queryText,
+    sort,
+    page,
+    pageSize,
+  });
+  return sendResult(res, result);
 }));
 
 router.get('/partner-my-listings', ...marketCharacterGuards, partnerMarketMyListingsQpsLimit, asyncHandler(async (req, res) => {
-    const characterId = req.characterId!;
-    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-    const page = parseQueryNumber(req.query.page);
-    const pageSize = parseQueryNumber(req.query.pageSize);
+  const characterId = req.characterId!;
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const page = parseQueryNumber(req.query.page);
+  const pageSize = parseQueryNumber(req.query.pageSize);
 
-    const result = await partnerMarketService.getMyPartnerListings({
-      characterId,
-      status,
-      page,
-      pageSize,
-    });
-    return sendResult(res, result);
+  const result = await partnerMarketService.getMyPartnerListings({
+    characterId,
+    status,
+    page,
+    pageSize,
+  });
+  return sendResult(res, result);
 }));
 
 router.get('/partner-records', ...marketCharacterGuards, partnerMarketRecordsQpsLimit, asyncHandler(async (req, res) => {
-    const characterId = req.characterId!;
-    const page = parseQueryNumber(req.query.page);
-    const pageSize = parseQueryNumber(req.query.pageSize);
+  const characterId = req.characterId!;
+  const page = parseQueryNumber(req.query.page);
+  const pageSize = parseQueryNumber(req.query.pageSize);
 
-    const result = await partnerMarketService.getPartnerTradeRecords({
-      characterId,
-      page,
-      pageSize,
-    });
-    return sendResult(res, result);
+  const result = await partnerMarketService.getPartnerTradeRecords({
+    characterId,
+    page,
+    pageSize,
+  });
+  return sendResult(res, result);
 }));
 
 router.post('/partner/list', ...marketCharacterGuards, partnerMarketListMutationQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
-    const { partnerId, unitPriceSpiritStones } = req.body as {
-      partnerId?: unknown;
-      unitPriceSpiritStones?: unknown;
-    };
+  const userId = req.userId!;
+  const characterId = req.characterId!;
+  const { partnerId, unitPriceSpiritStones } = req.body as {
+    partnerId?: unknown;
+    unitPriceSpiritStones?: unknown;
+  };
 
-    const result = await partnerMarketService.createPartnerListing({
-      userId,
-      characterId,
-      partnerId: Number(partnerId),
-      unitPriceSpiritStones: Number(unitPriceSpiritStones),
-    });
-    if (result.success) {
-      await safePushCharacterUpdate(userId);
-    }
-    return sendResult(res, result);
+  const result = await partnerMarketService.createPartnerListing({
+    userId,
+    characterId,
+    partnerId: Number(partnerId),
+    unitPriceSpiritStones: Number(unitPriceSpiritStones),
+  });
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
+  }
+  return sendResult(res, result);
 }));
 
 router.post('/partner/cancel', ...marketCharacterGuards, partnerMarketCancelMutationQpsLimit, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
-    const { listingId } = req.body as { listingId?: unknown };
+  const userId = req.userId!;
+  const characterId = req.characterId!;
+  const { listingId } = req.body as { listingId?: unknown };
 
-    const result = await partnerMarketService.cancelPartnerListing({
-      characterId,
-      listingId: Number(listingId),
-    });
-    if (result.success) {
-      await safePushCharacterUpdate(userId);
-    }
-    return sendResult(res, result);
+  const result = await partnerMarketService.cancelPartnerListing({
+    characterId,
+    listingId: Number(listingId),
+  });
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
+  }
+  return sendResult(res, result);
 }));
 
 router.post('/partner/buy', ...marketCharacterGuards, partnerMarketBuyMutationQpsLimit, requireMarketPurchaseCaptcha, asyncHandler(async (req, res) => {
-    const userId = req.userId!;
-    const characterId = req.characterId!;
-    const { listingId } = req.body as { listingId?: unknown };
+  const userId = req.userId!;
+  const characterId = req.characterId!;
+  const { listingId } = req.body as { listingId?: unknown };
 
-    const result = await partnerMarketService.buyPartnerListing({
-      buyerUserId: userId,
-      buyerCharacterId: characterId,
-      listingId: Number(listingId),
-    });
-    if (result.success) {
-      await safePushCharacterUpdate(userId);
-      const sellerUserId = result.data?.sellerUserId ?? null;
-      if (sellerUserId !== null && sellerUserId !== userId) {
-        await safePushCharacterUpdate(sellerUserId);
-      }
+  const result = await partnerMarketService.buyPartnerListing({
+    buyerUserId: userId,
+    buyerCharacterId: characterId,
+    listingId: Number(listingId),
+  });
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
+    const sellerUserId = result.data?.sellerUserId ?? null;
+    if (sellerUserId !== null && sellerUserId !== userId) {
+      await safePushCharacterUpdate(sellerUserId);
     }
-    return sendResult(res, result);
+  }
+  return sendResult(res, result);
 }));
 
 export default router;

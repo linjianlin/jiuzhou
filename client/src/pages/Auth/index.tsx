@@ -7,25 +7,33 @@ import {
   checkCharacter,
   login as apiLogin,
   register as apiRegister,
-  type CaptchaVerifyPayload,
+  type UnifiedCaptchaPayload,
 } from '../../services/api';
 import { IMG_LOGO as logo } from '../Game/shared/imageAssets';
-import AuthCaptchaField from './components/AuthCaptchaField';
+import AuthCaptchaField, { type AuthCaptchaFieldHandle } from './components/AuthCaptchaField';
 import './index.scss';
 
 interface AuthProps {
   onLoginSuccess: () => void;
 }
 
-type LoginFormValues = CaptchaVerifyPayload & {
+type LoginFormValues = {
   username: string;
   password: string;
+  captchaId?: string;
+  captchaCode?: string;
+  ticket?: string;
+  randstr?: string;
 };
 
-type RegisterFormValues = CaptchaVerifyPayload & {
+type RegisterFormValues = {
   username: string;
   password: string;
   confirmPassword: string;
+  captchaId?: string;
+  captchaCode?: string;
+  ticket?: string;
+  randstr?: string;
 };
 
 const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
@@ -40,6 +48,8 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
   const [registerCaptchaRefreshNonce, setRegisterCaptchaRefreshNonce] = useState(0);
   const loginCardRef = useRef<HTMLDivElement>(null);
   const registerCardRef = useRef<HTMLDivElement>(null);
+  const loginCaptchaRef = useRef<AuthCaptchaFieldHandle>(null);
+  const registerCaptchaRef = useRef<AuthCaptchaFieldHandle>(null);
 
   useLayoutEffect(() => {
     const update = () => {
@@ -71,11 +81,11 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
     setRegisterCaptchaRefreshNonce((value) => value + 1);
   };
 
-  const syncLoginCaptcha = (values: CaptchaVerifyPayload) => {
+  const syncLoginCaptcha = (values: UnifiedCaptchaPayload) => {
     loginForm.setFieldsValue(values);
   };
 
-  const syncRegisterCaptcha = (values: CaptchaVerifyPayload) => {
+  const syncRegisterCaptcha = (values: UnifiedCaptchaPayload) => {
     registerForm.setFieldsValue(values);
   };
 
@@ -90,13 +100,21 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
   };
 
   const handleLogin = async (values: LoginFormValues) => {
+    // beforeSubmit: tencent 模式返回 { ticket, randstr }，local 模式返回 null（用表单已有值）
+    const captchaOverride = await loginCaptchaRef.current?.beforeSubmit();
+    // tencent 模式下 null 表示用户取消
+    if (loginCaptchaRef.current?.isTencent && !captchaOverride) return;
+
     setLoading(true);
     try {
       const result = await apiLogin({
         username: values.username,
         password: values.password,
-        captchaId: values.captchaId,
-        captchaCode: values.captchaCode,
+        // local 模式用表单值，tencent 模式用 beforeSubmit 返回的载荷
+        ...(captchaOverride ?? {
+          captchaId: values.captchaId,
+          captchaCode: values.captchaCode,
+        }),
       });
 
       if (!result.data) {
@@ -125,13 +143,18 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
   };
 
   const handleRegister = async (values: RegisterFormValues) => {
+    const captchaOverride = await registerCaptchaRef.current?.beforeSubmit();
+    if (registerCaptchaRef.current?.isTencent && !captchaOverride) return;
+
     setLoading(true);
     try {
       await apiRegister({
         username: values.username,
         password: values.password,
-        captchaId: values.captchaId,
-        captchaCode: values.captchaCode,
+        ...(captchaOverride ?? {
+          captchaId: values.captchaId,
+          captchaCode: values.captchaCode,
+        }),
       });
 
       message.success('注册成功，请登录');
@@ -173,6 +196,7 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
             </Form.Item>
 
             <AuthCaptchaField
+              ref={loginCaptchaRef}
               onChange={syncLoginCaptcha}
               refreshNonce={loginCaptchaRefreshNonce}
             />
@@ -224,6 +248,7 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
             </Form.Item>
 
             <AuthCaptchaField
+              ref={registerCaptchaRef}
               onChange={syncRegisterCaptcha}
               refreshNonce={registerCaptchaRefreshNonce}
             />

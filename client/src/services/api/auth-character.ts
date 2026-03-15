@@ -13,9 +13,22 @@ export interface CaptchaVerifyPayload {
   captchaCode: string;
 }
 
-export interface AuthRequestPayload extends CaptchaVerifyPayload {
+/** 天御验证码票据载荷，与 CaptchaVerifyPayload 互斥使用 */
+export interface TencentCaptchaVerifyPayload {
+  ticket: string;
+  randstr: string;
+}
+
+/** 统一验证码提交载荷：local 模式用 captchaId/captchaCode，tencent 模式用 ticket/randstr */
+export type UnifiedCaptchaPayload = CaptchaVerifyPayload | TencentCaptchaVerifyPayload;
+
+export interface AuthRequestPayload {
   username: string;
   password: string;
+  captchaId?: string;
+  captchaCode?: string;
+  ticket?: string;
+  randstr?: string;
 }
 
 export interface AuthResponse {

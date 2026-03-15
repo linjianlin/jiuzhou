@@ -1,3 +1,23 @@
+/**
+ * 手机号绑定弹窗（支持 local 图片验证码和天御验证码双模式）
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一承接手机号输入、验证码校验、短信验证码发送和最终绑定交互，供玩家信息入口和坊市拦截复用。
+ * 2. 做什么：根据 captchaConfig.provider 自动切换图片验证码或天御弹窗模式，绑定成功后统一失效手机号状态缓存。
+ * 3. 不做什么：不读取手机号绑定状态，也不决定哪个业务场景必须弹出本弹窗。
+ *
+ * 输入/输出：
+ * - 输入：弹窗开关、关闭回调、成功回调，以及场景化文案。
+ * - 输出：手机号绑定交互 UI；成功后触发 `onSuccess`。
+ *
+ * 数据流/状态流：
+ * - local 模式：打开弹窗 -> 拉取图片验证码 -> 输入手机号与图片验证码 -> 发送短信验证码 -> 输入短信验证码 -> 提交绑定
+ * - tencent 模式：打开弹窗 -> 输入手机号 -> 点击发送验证码时触发天御弹窗 -> 天御通过后发送短信验证码 -> 输入短信验证码 -> 提交绑定
+ *
+ * 关键边界条件与坑点：
+ * 1. local 模式下图片验证码是服务端一次性消费资源，每次发送尝试后都必须刷新。
+ * 2. tencent 模式下天御验证码在"发送短信验证码"按钮点击时触发，不需要图片验证码输入框。
+ */
 import { App, Button, Input, Modal } from 'antd';
 import { MobileOutlined, MessageOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
@@ -7,30 +27,13 @@ import {
   getUnifiedApiErrorMessage,
   sendPhoneBindingCode,
 } from '../../../services/api';
+import type { UnifiedCaptchaPayload } from '../../../services/api/auth-character';
 import CaptchaChallengeInput from '../../shared/CaptchaChallengeInput';
 import { useCaptchaChallenge } from '../../shared/useCaptchaChallenge';
+import { useCaptchaConfig } from '../../shared/useCaptchaConfig';
+import { useTencentCaptcha } from '../../shared/useTencentCaptcha';
 import { invalidatePhoneBindingStatus } from './usePhoneBindingStatus';
 import './PhoneBindingDialog.scss';
-
-/**
- * 手机号绑定弹窗
- *
- * 作用（做什么 / 不做什么）：
- * 1. 做什么：统一承接手机号输入、图片验证码校验、短信验证码发送和最终绑定交互，供玩家信息入口和坊市拦截复用。
- * 2. 做什么：绑定成功后统一失效手机号状态缓存，避免多个入口分别维护同步逻辑。
- * 3. 不做什么：不读取手机号绑定状态，也不决定哪个业务场景必须弹出本弹窗。
- *
- * 输入/输出：
- * - 输入：弹窗开关、关闭回调、成功回调，以及场景化文案。
- * - 输出：手机号绑定交互 UI；成功后触发 `onSuccess`。
- *
- * 数据流/状态流：
- * 打开弹窗 -> 拉取图片验证码 -> 输入手机号与图片验证码 -> 发送短信验证码 -> 输入短信验证码 -> 提交绑定 -> 失效共享状态缓存 -> 调用方刷新。
- *
- * 关键边界条件与坑点：
- * 1. 图片验证码只在“发送短信验证码”时校验，但它是服务端一次性消费资源，所以每次发送尝试后都必须刷新，不能复用旧 `captchaId`。
- * 2. 倒计时只表示当前前端会话的发送节流，真正的限制以后端 Redis 为准，不能因为本地重开弹窗就绕过服务端校验。
- */
 
 const SILENT_REQUEST_CONFIG = { meta: { autoErrorToast: false } } as const;
 
@@ -50,14 +53,16 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
   description = '绑定手机号后，可继续使用坊市相关功能。每个手机号只能绑定一个账号，请务必填写真实手机号，后续可能会进行随机安全验证。',
 }) => {
   const { message } = App.useApp();
+  const { config, isTencent, loading: configLoading } = useCaptchaConfig();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [captchaCode, setCaptchaCode] = useState('');
   const [sendingCode, setSendingCode] = useState(false);
   const [binding, setBinding] = useState(false);
   const [countdown, setCountdown] = useState(0);
+
   const { captcha, loading: captchaLoading, refreshCaptcha } = useCaptchaChallenge({
-    enabled: open,
+    enabled: open && !isTencent && !configLoading,
     refreshNonce: open ? 1 : 0,
     loadCaptcha: getCaptcha,
     fallbackMessage: '图片验证码加载失败',
@@ -65,6 +70,8 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
       message.error(errorMessage);
     },
   });
+
+  const { triggerCaptcha } = useTencentCaptcha(config.tencentAppId ?? 0);
 
   useEffect(() => {
     if (!open) {
@@ -84,7 +91,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
     return () => window.clearTimeout(timer);
   }, [countdown]);
 
-  const sendCodeDisabled = useMemo(() => {
+  const sendCodeDisabledLocal = useMemo(() => {
     return (
       sendingCode
       || binding
@@ -96,11 +103,40 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
     );
   }, [binding, captcha, captchaCode, captchaLoading, countdown, phoneNumber, sendingCode]);
 
+  const sendCodeDisabledTencent = useMemo(() => {
+    return sendingCode || binding || countdown > 0 || !phoneNumber.trim();
+  }, [binding, countdown, phoneNumber, sendingCode]);
+
   const confirmDisabled = useMemo(() => {
     return binding || sendingCode || !phoneNumber.trim() || !verificationCode.trim();
   }, [binding, phoneNumber, sendingCode, verificationCode]);
 
-  const handleSendCode = async (): Promise<void> => {
+  const doSendCode = async (captchaPayload: UnifiedCaptchaPayload): Promise<void> => {
+    setSendingCode(true);
+    try {
+      const response = await sendPhoneBindingCode(
+        phoneNumber.trim(),
+        captchaPayload,
+        SILENT_REQUEST_CONFIG,
+      );
+      const cooldownSeconds = response.data?.cooldownSeconds;
+      if (typeof cooldownSeconds !== 'number') {
+        throw new Error('发送验证码响应缺少冷却时间');
+      }
+      setCountdown(cooldownSeconds);
+      message.success('验证码已发送');
+    } catch (error) {
+      message.error(getUnifiedApiErrorMessage(error, '发送验证码失败'));
+    } finally {
+      if (!isTencent) {
+        setCaptchaCode('');
+        await refreshCaptcha();
+      }
+      setSendingCode(false);
+    }
+  };
+
+  const handleSendCodeLocal = async (): Promise<void> => {
     if (!phoneNumber.trim()) {
       message.warning('请输入手机号');
       return;
@@ -113,29 +149,22 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
       message.warning('请输入图片验证码');
       return;
     }
+    await doSendCode({ captchaId: captcha.captchaId, captchaCode });
+  };
 
-    setSendingCode(true);
+  const handleSendCodeTencent = async (): Promise<void> => {
+    if (!phoneNumber.trim()) {
+      message.warning('请输入手机号');
+      return;
+    }
     try {
-      const response = await sendPhoneBindingCode(
-        phoneNumber.trim(),
-        {
-          captchaId: captcha.captchaId,
-          captchaCode,
-        },
-        SILENT_REQUEST_CONFIG,
-      );
-      const cooldownSeconds = response.data?.cooldownSeconds;
-      if (typeof cooldownSeconds !== 'number') {
-        throw new Error('发送验证码响应缺少冷却时间');
-      }
-      setCountdown(cooldownSeconds);
-      message.success('验证码已发送');
+      const ticket = await triggerCaptcha();
+      await doSendCode({ ticket: ticket.ticket, randstr: ticket.randstr });
     } catch (error) {
-      message.error(getUnifiedApiErrorMessage(error, '发送验证码失败'));
-    } finally {
-      setCaptchaCode('');
-      await refreshCaptcha();
-      setSendingCode(false);
+      const err = error as Error;
+      if (err.message !== '用户取消验证') {
+        message.error(err.message);
+      }
     }
   };
 
@@ -195,22 +224,22 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
             />
           </div>
 
-          <div className="phone-binding__field">
-            <span className="phone-binding__label">图片验证码</span>
-            <CaptchaChallengeInput
-              value={captchaCode}
-              captcha={captcha}
-              loading={captchaLoading}
-              disabled={binding || sendingCode}
-              inputPlaceholder="请输入图片验证码"
-              imageAlt="手机号绑定图片验证码"
-              refreshAriaLabel="刷新手机号绑定图片验证码"
-              onChange={setCaptchaCode}
-              onRefresh={() => {
-                void refreshCaptcha();
-              }}
-            />
-          </div>
+          {!isTencent && (
+            <div className="phone-binding__field">
+              <span className="phone-binding__label">图片验证码</span>
+              <CaptchaChallengeInput
+                value={captchaCode}
+                captcha={captcha}
+                loading={captchaLoading}
+                disabled={binding || sendingCode}
+                inputPlaceholder="请输入图片验证码"
+                imageAlt="手机号绑定图片验证码"
+                refreshAriaLabel="刷新手机号绑定图片验证码"
+                onChange={setCaptchaCode}
+                onRefresh={() => { void refreshCaptcha(); }}
+              />
+            </div>
+          )}
 
           <div className="phone-binding__field">
             <span className="phone-binding__label">短信验证码</span>
@@ -227,10 +256,10 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
               <Button
                 className="phone-binding__send-btn"
                 onClick={() => {
-                  void handleSendCode();
+                  void (isTencent ? handleSendCodeTencent() : handleSendCodeLocal());
                 }}
                 loading={sendingCode}
-                disabled={sendCodeDisabled}
+                disabled={isTencent ? sendCodeDisabledTencent : sendCodeDisabledLocal}
               >
                 {countdown > 0 ? `${countdown}s` : '发送验证码'}
               </Button>
@@ -249,9 +278,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
             type="primary"
             loading={binding}
             disabled={confirmDisabled}
-            onClick={() => {
-              void handleBindPhoneNumber();
-            }}
+            onClick={() => { void handleBindPhoneNumber(); }}
           >
             确认绑定
           </Button>

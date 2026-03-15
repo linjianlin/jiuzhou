@@ -3,13 +3,12 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { BusinessError } from '../middleware/BusinessError.js';
 import { sendSuccess } from '../middleware/response.js';
-import { verifyCaptcha } from '../services/captchaService.js';
 import {
   bindPhoneNumber,
   getPhoneBindingStatus,
   sendPhoneBindingCode,
 } from '../services/marketPhoneBindingService.js';
-import { parseCaptchaVerifyPayload } from '../shared/captchaVerifyPayload.js';
+import { verifyCaptchaByProvider } from '../shared/verifyCaptchaByProvider.js';
 
 const router = Router();
 
@@ -17,6 +16,8 @@ type PhoneBindingSendCodePayload = {
   phoneNumber?: string;
   captchaId?: string;
   captchaCode?: string;
+  ticket?: string;
+  randstr?: string;
 };
 
 router.get('/phone-binding/status', requireAuth, asyncHandler(async (req, res) => {
@@ -34,8 +35,7 @@ router.post('/phone-binding/send-code', requireAuth, asyncHandler(async (req, re
     throw new BusinessError('手机号不能为空');
   }
 
-  const { captchaId, captchaCode } = parseCaptchaVerifyPayload(payload);
-  await verifyCaptcha(captchaId, captchaCode);
+  await verifyCaptchaByProvider({ body: payload, userIp: req.ip ?? '' });
   const result = await sendPhoneBindingCode(userId, phoneNumber);
   return sendSuccess(res, result);
 }));

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { register, login, verifyTokenAndSession } from '../services/authService.js';
-import { createCaptcha, verifyCaptcha } from '../services/captchaService.js';
+import { createCaptcha } from '../services/captchaService.js';
+import { isTencentCaptchaProvider } from '../config/captchaConfig.js';
 import { sendSuccess, sendResult } from '../middleware/response.js';
 import { BusinessError } from '../middleware/BusinessError.js';
-import { parseCaptchaVerifyPayload } from '../shared/captchaVerifyPayload.js';
+import { verifyCaptchaByProvider } from '../shared/verifyCaptchaByProvider.js';
 
 const router = Router();
 
@@ -13,10 +14,15 @@ type AuthPayload = {
   password?: string;
   captchaId?: string;
   captchaCode?: string;
+  ticket?: string;
+  randstr?: string;
 };
 
-// 获取图片验证码
+// 获取图片验证码（仅 local 模式有效；tencent 模式下前端不需要此端点）
 router.get('/captcha', asyncHandler(async (_req, res) => {
+  if (isTencentCaptchaProvider) {
+    throw new BusinessError('当前验证码模式不支持此操作');
+  }
   const result = await createCaptcha();
   sendSuccess(res, result);
 }));
@@ -26,9 +32,7 @@ router.post('/register', asyncHandler(async (req, res) => {
   const payload = (req.body ?? {}) as AuthPayload;
   const username = payload.username?.trim() ?? '';
   const password = payload.password ?? '';
-  const { captchaId, captchaCode } = parseCaptchaVerifyPayload(payload);
 
-  // 参数验证
   if (!username || !password) {
     throw new BusinessError('用户名和密码不能为空');
   }
@@ -41,7 +45,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     throw new BusinessError('密码长度至少6位');
   }
 
-  await verifyCaptcha(captchaId, captchaCode);
+  await verifyCaptchaByProvider({ body: payload, userIp: req.ip ?? '' });
   const result = await register(username, password);
   sendResult(res, result);
 }));
@@ -51,14 +55,12 @@ router.post('/login', asyncHandler(async (req, res) => {
   const payload = (req.body ?? {}) as AuthPayload;
   const username = payload.username?.trim() ?? '';
   const password = payload.password ?? '';
-  const { captchaId, captchaCode } = parseCaptchaVerifyPayload(payload);
 
-  // 参数验证
   if (!username || !password) {
     throw new BusinessError('用户名和密码不能为空');
   }
 
-  await verifyCaptcha(captchaId, captchaCode);
+  await verifyCaptchaByProvider({ body: payload, userIp: req.ip ?? '' });
   const result = await login(username, password);
   sendResult(res, result);
 }));

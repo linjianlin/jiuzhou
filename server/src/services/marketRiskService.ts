@@ -24,13 +24,17 @@ import { createHash, randomUUID } from 'node:crypto';
 import { redis } from '../config/redis.js';
 import {
   createCaptcha,
-  verifyCaptcha,
   type CaptchaChallenge,
 } from './captchaService.js';
 import {
   assessMarketPurchaseRisk,
   type MarketPurchaseRiskAssessment,
 } from './shared/marketRiskRules.js';
+import { verifyCaptchaByProvider } from '../shared/verifyCaptchaByProvider.js';
+import type {
+  CaptchaVerifyPayloadLike,
+  TencentCaptchaVerifyPayloadLike,
+} from '../shared/captchaVerifyPayload.js';
 
 const MARKET_RISK_QUERY_SHORT_WINDOW_MS = 60_000;
 const MARKET_RISK_QUERY_LONG_WINDOW_MS = 300_000;
@@ -89,8 +93,8 @@ export interface RecordMarketRiskQueryAccessInput {
 export interface VerifyMarketPurchaseCaptchaInput {
   userId: number;
   characterId: number;
-  captchaId: string;
-  captchaCode: string;
+  payload: CaptchaVerifyPayloadLike & TencentCaptchaVerifyPayloadLike;
+  userIp: string;
 }
 
 export interface MarketPurchaseCaptchaVerifyResult {
@@ -160,10 +164,10 @@ export const getMarketPurchaseRiskAssessment = async (params: {
     ),
     lastSignatureEventsKey
       ? redis.zcount(
-          lastSignatureEventsKey,
-          nowMs - MARKET_RISK_QUERY_SHORT_WINDOW_MS,
-          nowMs,
-        )
+        lastSignatureEventsKey,
+        nowMs - MARKET_RISK_QUERY_SHORT_WINDOW_MS,
+        nowMs,
+      )
       : Promise.resolve(0),
     redis.zrange(
       queryEventsKey,
@@ -199,7 +203,11 @@ export const createMarketPurchaseCaptchaChallenge =
 export const verifyMarketPurchaseCaptcha = async (
   input: VerifyMarketPurchaseCaptchaInput,
 ): Promise<MarketPurchaseCaptchaVerifyResult> => {
-  await verifyCaptcha(input.captchaId, input.captchaCode, 'market-risk');
+  await verifyCaptchaByProvider({
+    body: input.payload,
+    userIp: input.userIp,
+    scene: 'market-risk',
+  });
   const passExpiresAt = Date.now() + MARKET_RISK_PURCHASE_PASS_TTL_MS;
   await redis.set(
     buildPurchasePassKey(input.userId, input.characterId),

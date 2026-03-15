@@ -2,7 +2,7 @@ import type { AxiosRequestConfig } from 'axios';
 import api from './core';
 import type {
   CaptchaResponse,
-  CaptchaVerifyPayload,
+  UnifiedCaptchaPayload,
 } from './auth-character';
 import type { PartnerDisplayDto } from './partner';
 
@@ -210,7 +210,7 @@ export const getMarketPurchaseCaptcha = (): Promise<CaptchaResponse> => {
 };
 
 export const verifyMarketPurchaseCaptcha = (
-  payload: CaptchaVerifyPayload,
+  payload: UnifiedCaptchaPayload,
 ): Promise<MarketPurchaseCaptchaVerifyResponse> => {
   return api.post('/market/captcha/verify', payload, SILENT_REQUEST_CONFIG);
 };
