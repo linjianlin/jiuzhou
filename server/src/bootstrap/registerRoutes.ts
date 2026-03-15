@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { errorHandler } from '../middleware/errorHandler.js';
 import authRoutes from '../routes/authRoutes.js';
+import accountRoutes from '../routes/accountRoutes.js';
 import characterRoutes from '../routes/characterRoutes.js';
 import uploadRoutes from '../routes/uploadRoutes.js';
 import attributeRoutes from '../routes/attributeRoutes.js';
@@ -37,6 +38,7 @@ import partnerRoutes from '../routes/partnerRoutes.js';
  */
 export const registerRoutes = (app: Express): void => {
   app.use('/api/auth', authRoutes);
+  app.use('/api/account', accountRoutes);
   app.use('/api/character', characterRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/attribute', attributeRoutes);

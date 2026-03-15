@@ -273,7 +273,30 @@
   padding: 1px 6px;
   border-radius: 4px;
 }
+
+.attr-section-sub-value--safe {
+  color: var(--success-color);
+  background: rgba(82, 196, 26, 0.12);
+}
 /* SCSS_APPEND_4 */
+
+.player-phone-binding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.player-phone-binding-tip {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.player-phone-binding-tip--error {
+  color: var(--danger-color);
+}
 
 /* 基础属性（精气神）行 */
 .base-rows {
@@ -493,5 +516,13 @@
   .player-attrs {
     grid-template-columns: 1fr;
     gap: 1px 0;
+  }
+
+  .player-phone-binding-row {
+    align-items: stretch;
+  }
+
+  .player-phone-binding-row .ant-btn {
+    width: 100%;
   }
 }

@@ -30,6 +30,7 @@ import type {
 import { gameSocket, type CharacterData } from '../../../../services/gameSocket';
 import { useIsMobile } from '../../shared/responsive';
 import { getElementToneClassName } from '../../shared/elementTheme';
+import PhoneBindingDialog from '../../shared/PhoneBindingDialog';
 import { getItemQualityClassName, getItemQualityTagClassName, normalizeItemQualityName } from '../../shared/itemQuality';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { ITEM_CATEGORY_ALL_OPTION, ITEM_CATEGORY_LABELS, ITEM_CATEGORY_OPTIONS } from '../../shared/itemTaxonomy';
@@ -71,6 +72,7 @@ import {
 import { EquipmentDetailAttrList } from '../BagModal/EquipmentDetailAttrList';
 import { SetBonusDisplay } from '../BagModal/SetBonusDisplay';
 import type { SocketedGemEntry } from '../../shared/socketedGemDisplay';
+import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
 import './index.scss';
 
 type MarketPanel = 'market' | 'my' | 'list' | 'records';
@@ -582,7 +584,16 @@ interface MarketModalProps {
 
 const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '我' }) => {
   const { message } = App.useApp();
-  useGameItemTaxonomy(open);
+  const [phoneBindingDialogOpen, setPhoneBindingDialogOpen] = useState(false);
+  const [marketAccessGranted, setMarketAccessGranted] = useState(false);
+  const {
+    status: phoneBindingStatus,
+    loading: phoneBindingStatusLoading,
+    errorMessage: phoneBindingStatusErrorMessage,
+    refresh: refreshPhoneBindingStatus,
+  } = usePhoneBindingStatus(open);
+  const marketModalOpen = open && marketAccessGranted;
+  useGameItemTaxonomy(marketModalOpen);
   const messageRef = useRef(message);
   useEffect(() => {
     messageRef.current = message;
@@ -656,6 +667,35 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   const [previewPartnerListing, setPreviewPartnerListing] = useState<PartnerListingItem | null>(null);
   const [partnerListPrice, setPartnerListPrice] = useState('');
   const [partnerListingActionLoading, setPartnerListingActionLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setPhoneBindingDialogOpen(false);
+      setMarketAccessGranted(false);
+      return;
+    }
+    if (phoneBindingStatusLoading) {
+      return;
+    }
+    if (phoneBindingStatusErrorMessage) {
+      messageRef.current.error(phoneBindingStatusErrorMessage);
+      onClose();
+      return;
+    }
+    if (!phoneBindingStatus) {
+      return;
+    }
+
+    if (!phoneBindingStatus.enabled || phoneBindingStatus.isBound) {
+      setPhoneBindingDialogOpen(false);
+      setMarketAccessGranted(true);
+      return;
+    }
+
+    setMarketAccessGranted(false);
+    setPhoneBindingDialogOpen(true);
+  }, [onClose, open, phoneBindingStatus, phoneBindingStatusErrorMessage, phoneBindingStatusLoading]);
+
   const resolveMarketTooltipPlacement = useCallback((event: React.MouseEvent<HTMLElement>) => {
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
     if (!viewportHeight) return;
@@ -1033,19 +1073,19 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   );
 
   useEffect(() => {
-    if (!open || assetType !== 'item') return;
+    if (!marketModalOpen || assetType !== 'item') return;
     setMarketPage(1);
     void refreshMarket(1);
-  }, [assetType, category, debouncedQuery, maxPrice, minPrice, open, quality, refreshMarket, sort]);
+  }, [assetType, category, debouncedQuery, marketModalOpen, maxPrice, minPrice, quality, refreshMarket, sort]);
 
   useEffect(() => {
-    if (!open || assetType !== 'partner') return;
+    if (!marketModalOpen || assetType !== 'partner') return;
     setMarketPage(1);
     void refreshPartnerMarket(1);
-  }, [assetType, debouncedPartnerQuery, open, partnerElement, partnerQuality, partnerSort, refreshPartnerMarket]);
+  }, [assetType, debouncedPartnerQuery, marketModalOpen, partnerElement, partnerQuality, partnerSort, refreshPartnerMarket]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!marketModalOpen) return;
     if (panel === 'market') {
       if (assetType === 'item') {
         void refreshMarket(marketPage);
@@ -1075,7 +1115,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     } else {
       void refreshPartnerRecords(recordPage);
     }
-  }, [assetType, marketPage, myPage, open, panel, recordPage, refreshBag, refreshMarket, refreshMy, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords, refreshRecords]);
+  }, [assetType, marketModalOpen, marketPage, myPage, panel, recordPage, refreshBag, refreshMarket, refreshMy, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords, refreshRecords]);
 
   useEffect(() => {
     if (!isMobile) setMobileFilterOpen(false);
@@ -1088,7 +1128,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   }, [mobileListingPreview, mobilePreviewListing]);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!marketModalOpen) return undefined;
     const handler = () => {
       if (assetType !== 'partner') return;
       if (panel === 'market') void refreshPartnerMarket(marketPage);
@@ -1098,7 +1138,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     };
     window.addEventListener(PARTNER_CHANGED_EVENT, handler);
     return () => window.removeEventListener(PARTNER_CHANGED_EVENT, handler);
-  }, [assetType, marketPage, myPage, open, panel, recordPage, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords]);
+  }, [assetType, marketModalOpen, marketPage, myPage, panel, recordPage, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords]);
 
   const handlePanelChange = useCallback(
     (nextPanel: MarketPanel) => {
@@ -2488,151 +2528,171 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   };
 
   return (
-    <Modal
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      title={null}
-      centered
-      width={1120}
-      className="market-modal"
-      wrapClassName="market-modal-wrap"
-      destroyOnHidden
-      maskClosable
-      afterOpenChange={(visible) => {
-        if (!visible) return;
-        resetAll();
-        void refreshMarket(1);
-      }}
-    >
-      <div className="market-modal-shell">
-        <div className="market-left">
-          <div className="market-left-title">
-            <img className="market-left-icon" src={coin01} alt="坊市" />
-            <div className="market-left-name">坊市</div>
-          </div>
-          {isMobile ? (
-            <>
-              <div className="market-mobile-asset-switch-wrap">
-                {renderAssetSwitch('market-asset-switch market-asset-switch--mobile')}
-              </div>
-              <div className="market-left-segmented-wrap">
-                <Segmented
-                  className="market-left-segmented"
-                  value={panel}
-                  options={menuOptions}
-                  onChange={(value) => {
-                    if (typeof value !== 'string') return;
-                    if (!menuKeys.includes(value as MarketPanel)) return;
-                    handlePanelChange(value as MarketPanel);
-                  }}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="market-left-list">
-              {menuItems.map((it) => (
-                <Button
-                  key={it.key}
-                  type={panel === it.key ? 'primary' : 'default'}
-                  className="market-left-item"
-                  onClick={() => handlePanelChange(it.key)}
-                >
-                  {it.label}
-                </Button>
-              ))}
+    <>
+      <Modal
+        open={marketModalOpen}
+        onCancel={onClose}
+        footer={null}
+        title={null}
+        centered
+        width={1120}
+        className="market-modal"
+        wrapClassName="market-modal-wrap"
+        destroyOnHidden
+        maskClosable
+        afterOpenChange={(visible) => {
+          if (!visible) return;
+          resetAll();
+          void refreshMarket(1);
+        }}
+      >
+        <div className="market-modal-shell">
+          <div className="market-left">
+            <div className="market-left-title">
+              <img className="market-left-icon" src={coin01} alt="坊市" />
+              <div className="market-left-name">坊市</div>
             </div>
-          )}
+            {isMobile ? (
+              <>
+                <div className="market-mobile-asset-switch-wrap">
+                  {renderAssetSwitch('market-asset-switch market-asset-switch--mobile')}
+                </div>
+                <div className="market-left-segmented-wrap">
+                  <Segmented
+                    className="market-left-segmented"
+                    value={panel}
+                    options={menuOptions}
+                    onChange={(value) => {
+                      if (typeof value !== 'string') return;
+                      if (!menuKeys.includes(value as MarketPanel)) return;
+                      handlePanelChange(value as MarketPanel);
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="market-left-list">
+                {menuItems.map((it) => (
+                  <Button
+                    key={it.key}
+                    type={panel === it.key ? 'primary' : 'default'}
+                    className="market-left-item"
+                    onClick={() => handlePanelChange(it.key)}
+                  >
+                    {it.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="market-right">{panelContent()}</div>
         </div>
-        <div className="market-right">{panelContent()}</div>
-      </div>
 
-      {isMobile && assetType === 'item' ? (
-        <Drawer
-          placement="bottom"
-          open={Boolean(mobilePreviewListing)}
-          onClose={() => setMobileListingPreview(null)}
-          height="56dvh"
-          className="market-mobile-preview-drawer"
-          styles={{
-            header: { display: 'none' },
-            body: { padding: '10px 12px 12px' },
-          }}
-        >
-          {mobilePreviewListing ? (
-            <div className="market-mobile-preview">
-              <div className="market-mobile-preview-content">
-                <div className="market-mobile-preview-surface">
-                  <MarketItemTooltipContent item={mobilePreviewListing} />
+        {isMobile && assetType === 'item' ? (
+          <Drawer
+            placement="bottom"
+            open={Boolean(mobilePreviewListing)}
+            onClose={() => setMobileListingPreview(null)}
+            height="56dvh"
+            className="market-mobile-preview-drawer"
+            styles={{
+              header: { display: 'none' },
+              body: { padding: '10px 12px 12px' },
+            }}
+          >
+            {mobilePreviewListing ? (
+              <div className="market-mobile-preview">
+                <div className="market-mobile-preview-content">
+                  <div className="market-mobile-preview-surface">
+                    <MarketItemTooltipContent item={mobilePreviewListing} />
+                  </div>
+                </div>
+                <div className="market-mobile-preview-actions">
+                  {mobileListingPreview?.source === 'my' ? (
+                    <Button
+                      block
+                      onClick={() => {
+                        void unlistMyItem(mobilePreviewListing);
+                      }}
+                    >
+                      下架
+                    </Button>
+                  ) : (
+                    <Button
+                      type="primary"
+                      block
+                      disabled={characterId !== null && mobilePreviewListing.sellerCharacterId === characterId}
+                      onClick={() => {
+                        startBuyListing(mobilePreviewListing);
+                      }}
+                    >
+                      购买
+                    </Button>
+                  )}
                 </div>
               </div>
-              <div className="market-mobile-preview-actions">
-                {mobileListingPreview?.source === 'my' ? (
-                  <Button
-                    block
-                    onClick={() => {
-                      void unlistMyItem(mobilePreviewListing);
-                    }}
-                  >
-                    下架
-                  </Button>
-                ) : (
-                  <Button
-                    type="primary"
-                    block
-                    disabled={characterId !== null && mobilePreviewListing.sellerCharacterId === characterId}
-                    onClick={() => {
-                      startBuyListing(mobilePreviewListing);
-                    }}
-                  >
-                    购买
-                  </Button>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </Drawer>
-      ) : null}
+            ) : null}
+          </Drawer>
+        ) : null}
 
-      {assetType === 'item' ? (
-        <MarketBuyDialog
-          open={buyDialogListing !== null}
-          listing={buyDialogListing}
-          onCancel={() => setBuyDialogListing(null)}
-          onConfirm={(qty) => {
-            if (!buyDialogListing) return;
-            void buyListing(buyDialogListing, qty);
-          }}
-        />
-      ) : null}
-      {previewPartnerListing && (
-        isMobile ? (
-          <MarketPartnerPreviewSheet
-            partner={previewPartnerListing.partner}
-            unitPrice={previewPartnerListing.unitPrice}
-            sellerCharacterId={previewPartnerListing.sellerCharacterId}
-            myCharacterId={characterId}
-            onClose={() => setPreviewPartnerListing(null)}
-            onBuy={() => {
-              void buyPartnerListing(previewPartnerListing);
-              setPreviewPartnerListing(null);
+        {assetType === 'item' ? (
+          <MarketBuyDialog
+            open={buyDialogListing !== null}
+            listing={buyDialogListing}
+            onCancel={() => setBuyDialogListing(null)}
+            onConfirm={(qty) => {
+              if (!buyDialogListing) return;
+              void buyListing(buyDialogListing, qty);
             }}
           />
-        ) : (
-          <MarketPartnerBuyModal
-            partner={previewPartnerListing.partner}
-            unitPrice={previewPartnerListing.unitPrice}
-            sellerCharacterId={previewPartnerListing.sellerCharacterId}
-            myCharacterId={characterId}
-            onClose={() => setPreviewPartnerListing(null)}
-            onBuy={() => {
-              void buyPartnerListing(previewPartnerListing);
-              setPreviewPartnerListing(null);
-            }}
-          />
-        )
-      )}
-    </Modal>
+        ) : null}
+        {previewPartnerListing && (
+          isMobile ? (
+            <MarketPartnerPreviewSheet
+              partner={previewPartnerListing.partner}
+              unitPrice={previewPartnerListing.unitPrice}
+              sellerCharacterId={previewPartnerListing.sellerCharacterId}
+              myCharacterId={characterId}
+              onClose={() => setPreviewPartnerListing(null)}
+              onBuy={() => {
+                void buyPartnerListing(previewPartnerListing);
+                setPreviewPartnerListing(null);
+              }}
+            />
+          ) : (
+            <MarketPartnerBuyModal
+              partner={previewPartnerListing.partner}
+              unitPrice={previewPartnerListing.unitPrice}
+              sellerCharacterId={previewPartnerListing.sellerCharacterId}
+              myCharacterId={characterId}
+              onClose={() => setPreviewPartnerListing(null)}
+              onBuy={() => {
+                void buyPartnerListing(previewPartnerListing);
+                setPreviewPartnerListing(null);
+              }}
+            />
+          )
+        )}
+      </Modal>
+
+      <PhoneBindingDialog
+        open={phoneBindingDialogOpen}
+        onClose={() => {
+          setPhoneBindingDialogOpen(false);
+          onClose();
+        }}
+        onSuccess={async () => {
+          const nextStatus = await refreshPhoneBindingStatus();
+          if (nextStatus.enabled && !nextStatus.isBound) {
+            throw new Error('手机号绑定状态未更新');
+          }
+          setMarketAccessGranted(true);
+          setPhoneBindingDialogOpen(false);
+        }}
+        title="进入坊市前请先绑定手机号"
+        description="物品坊市与伙伴坊市均要求已绑定手机号后方可访问。"
+      />
+    </>
   );
 };
 

@@ -5,6 +5,7 @@ export * from './api/rank-sect';
 export * from './api/welfare';
 export * from './api/task-achievement';
 export * from './api/profile';
+export * from './api/phoneBinding';
 export * from './api/world';
 export * from './api/bounty';
 export * from './api/inventory';

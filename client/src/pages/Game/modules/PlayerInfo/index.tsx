@@ -14,7 +14,9 @@ import {
 } from '../../../../services/api';
 import { CHARACTER_PRIMARY_ATTR_META_LIST } from '../../shared/characterPrimaryAttrMeta';
 import { formatPercent, formatRecovery } from '../../shared/formatAttr';
+import PhoneBindingDialog from '../../shared/PhoneBindingDialog';
 import PlayerName from '../../shared/PlayerName';
+import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
 import './index.scss';
 
 const CHARACTER_REFRESH_INTERVAL_MS = 30_000;
@@ -27,6 +29,13 @@ const PlayerInfo: React.FC = () => {
   const [realmOverview, setRealmOverview] = useState<RealmOverviewDto | null>(null);
   const [uploading, setUploading] = useState(false);
   const [processingPoint, setProcessingPoint] = useState<string | null>(null);
+  const [phoneBindingDialogOpen, setPhoneBindingDialogOpen] = useState(false);
+  const {
+    status: phoneBindingStatus,
+    loading: phoneBindingStatusLoading,
+    errorMessage: phoneBindingStatusErrorMessage,
+    refresh: refreshPhoneBindingStatus,
+  } = usePhoneBindingStatus(true);
 
   useEffect(() => {
     messageRef.current = message;
@@ -246,6 +255,12 @@ const PlayerInfo: React.FC = () => {
     { label: '灵气恢复', value: formatRecovery(character.lingqiHuifu) },
     { label: '福源', value: character.fuyuan },
   ];
+  const phoneBindingEnabled = phoneBindingStatus?.enabled === true;
+  const phoneBindingBound = phoneBindingStatus?.isBound === true;
+  const shouldShowPhoneBindingSection = phoneBindingStatusLoading
+    || Boolean(phoneBindingStatusErrorMessage)
+    || !phoneBindingEnabled
+    || !phoneBindingBound;
 
   return (
     <div className="player-info">
@@ -354,6 +369,42 @@ const PlayerInfo: React.FC = () => {
         </div>
       </div>
 
+      {shouldShowPhoneBindingSection ? (
+        <div className="attr-section">
+          <div className="attr-section-header">
+            <div className="attr-section-title">账号安全</div>
+          </div>
+          {phoneBindingStatusLoading ? (
+            <div className="player-phone-binding-tip">手机号状态读取中...</div>
+          ) : phoneBindingStatusErrorMessage ? (
+            <div className="player-phone-binding-row">
+              <div className="player-phone-binding-tip player-phone-binding-tip--error">{phoneBindingStatusErrorMessage}</div>
+              <Button
+                size="small"
+                onClick={() => {
+                  void refreshPhoneBindingStatus();
+                }}
+              >
+                重新加载
+              </Button>
+            </div>
+          ) : phoneBindingEnabled ? (
+            <div className="player-phone-binding-row">
+              <div className="player-phone-binding-tip">绑定手机号后可使用物品坊市与伙伴坊市。</div>
+              <Button
+                type="primary"
+                size="small"
+                onClick={() => setPhoneBindingDialogOpen(true)}
+              >
+                立即绑定
+              </Button>
+            </div>
+          ) : (
+            <div className="player-phone-binding-tip">当前服务器未开启坊市手机号绑定。</div>
+          )}
+        </div>
+      ) : null}
+
       <div className="attr-section">
         <div className="attr-section-header">
           <div className="attr-section-title">基础属性</div>
@@ -432,6 +483,15 @@ const PlayerInfo: React.FC = () => {
           ))}
         </div>
       </div>
+
+      <PhoneBindingDialog
+        open={phoneBindingDialogOpen}
+        onClose={() => setPhoneBindingDialogOpen(false)}
+        onSuccess={async () => {
+          await refreshPhoneBindingStatus();
+        }}
+        description="绑定手机号后，可使用物品坊市与伙伴坊市。"
+      />
     </div>
   );
 };

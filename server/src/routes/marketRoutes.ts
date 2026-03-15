@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth, requireCharacter } from '../middleware/auth.js';
 import { createQpsLimitMiddleware } from '../middleware/qpsLimit.js';
+import { requireMarketPhoneBinding } from '../middleware/requireMarketPhoneBinding.js';
 import { marketService, type MarketSort } from '../services/marketService.js';
 import { partnerMarketService, type PartnerMarketSort } from '../services/partnerMarketService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
@@ -34,6 +35,8 @@ const partnerMarketRecordsQpsLimit = createMarketQpsLimit('partner-records', MAR
 const partnerMarketListMutationQpsLimit = createMarketQpsLimit('partner-list', MARKET_MUTATION_QPS_LIMIT);
 const partnerMarketCancelMutationQpsLimit = createMarketQpsLimit('partner-cancel', MARKET_MUTATION_QPS_LIMIT);
 const partnerMarketBuyMutationQpsLimit = createMarketQpsLimit('partner-buy', MARKET_MUTATION_QPS_LIMIT);
+const marketAuthGuards = [requireAuth, requireMarketPhoneBinding];
+const marketCharacterGuards = [requireCharacter, requireMarketPhoneBinding];
 
 const parseQueryNumber = (v: unknown): number | undefined => {
   if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
@@ -43,7 +46,7 @@ const parseQueryNumber = (v: unknown): number | undefined => {
   return n;
 };
 
-router.get('/listings', requireAuth, marketListingsQpsLimit, asyncHandler(async (req, res) => {
+router.get('/listings', ...marketAuthGuards, marketListingsQpsLimit, asyncHandler(async (req, res) => {
     const category = typeof req.query.category === 'string' ? req.query.category : undefined;
     const quality = typeof req.query.quality === 'string' ? req.query.quality : undefined;
     const queryText = typeof req.query.query === 'string' ? req.query.query : undefined;
@@ -67,7 +70,7 @@ router.get('/listings', requireAuth, marketListingsQpsLimit, asyncHandler(async 
     return sendResult(res, result);
 }));
 
-router.get('/my-listings', requireCharacter, marketMyListingsQpsLimit, asyncHandler(async (req, res) => {
+router.get('/my-listings', ...marketCharacterGuards, marketMyListingsQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -79,7 +82,7 @@ router.get('/my-listings', requireCharacter, marketMyListingsQpsLimit, asyncHand
     return sendResult(res, result);
 }));
 
-router.get('/records', requireCharacter, marketRecordsQpsLimit, asyncHandler(async (req, res) => {
+router.get('/records', ...marketCharacterGuards, marketRecordsQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -89,7 +92,7 @@ router.get('/records', requireCharacter, marketRecordsQpsLimit, asyncHandler(asy
     return sendResult(res, result);
 }));
 
-router.post('/list', requireCharacter, marketListMutationQpsLimit, asyncHandler(async (req, res) => {
+router.post('/list', ...marketCharacterGuards, marketListMutationQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -110,7 +113,7 @@ router.post('/list', requireCharacter, marketListMutationQpsLimit, asyncHandler(
     return sendResult(res, result);
 }));
 
-router.post('/cancel', requireCharacter, marketCancelMutationQpsLimit, asyncHandler(async (req, res) => {
+router.post('/cancel', ...marketCharacterGuards, marketCancelMutationQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -119,7 +122,7 @@ router.post('/cancel', requireCharacter, marketCancelMutationQpsLimit, asyncHand
     return sendResult(res, result);
 }));
 
-router.post('/buy', requireCharacter, marketBuyMutationQpsLimit, asyncHandler(async (req, res) => {
+router.post('/buy', ...marketCharacterGuards, marketBuyMutationQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -133,7 +136,7 @@ router.post('/buy', requireCharacter, marketBuyMutationQpsLimit, asyncHandler(as
     return sendResult(res, result);
 }));
 
-router.get('/partner-listings', requireAuth, partnerMarketListingsQpsLimit, asyncHandler(async (req, res) => {
+router.get('/partner-listings', ...marketAuthGuards, partnerMarketListingsQpsLimit, asyncHandler(async (req, res) => {
     const quality = typeof req.query.quality === 'string' ? req.query.quality : undefined;
     const element = typeof req.query.element === 'string' ? req.query.element : undefined;
     const queryText = typeof req.query.query === 'string' ? req.query.query : undefined;
@@ -152,7 +155,7 @@ router.get('/partner-listings', requireAuth, partnerMarketListingsQpsLimit, asyn
     return sendResult(res, result);
 }));
 
-router.get('/partner-my-listings', requireCharacter, partnerMarketMyListingsQpsLimit, asyncHandler(async (req, res) => {
+router.get('/partner-my-listings', ...marketCharacterGuards, partnerMarketMyListingsQpsLimit, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const page = parseQueryNumber(req.query.page);
@@ -167,7 +170,7 @@ router.get('/partner-my-listings', requireCharacter, partnerMarketMyListingsQpsL
     return sendResult(res, result);
 }));
 
-router.get('/partner-records', requireCharacter, partnerMarketRecordsQpsLimit, asyncHandler(async (req, res) => {
+router.get('/partner-records', ...marketCharacterGuards, partnerMarketRecordsQpsLimit, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
     const page = parseQueryNumber(req.query.page);
     const pageSize = parseQueryNumber(req.query.pageSize);
@@ -180,7 +183,7 @@ router.get('/partner-records', requireCharacter, partnerMarketRecordsQpsLimit, a
     return sendResult(res, result);
 }));
 
-router.post('/partner/list', requireCharacter, partnerMarketListMutationQpsLimit, asyncHandler(async (req, res) => {
+router.post('/partner/list', ...marketCharacterGuards, partnerMarketListMutationQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
     const { partnerId, unitPriceSpiritStones } = req.body as {
@@ -200,7 +203,7 @@ router.post('/partner/list', requireCharacter, partnerMarketListMutationQpsLimit
     return sendResult(res, result);
 }));
 
-router.post('/partner/cancel', requireCharacter, partnerMarketCancelMutationQpsLimit, asyncHandler(async (req, res) => {
+router.post('/partner/cancel', ...marketCharacterGuards, partnerMarketCancelMutationQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
     const { listingId } = req.body as { listingId?: unknown };
@@ -215,7 +218,7 @@ router.post('/partner/cancel', requireCharacter, partnerMarketCancelMutationQpsL
     return sendResult(res, result);
 }));
 
-router.post('/partner/buy', requireCharacter, partnerMarketBuyMutationQpsLimit, asyncHandler(async (req, res) => {
+router.post('/partner/buy', ...marketCharacterGuards, partnerMarketBuyMutationQpsLimit, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
     const { listingId } = req.body as { listingId?: unknown };
