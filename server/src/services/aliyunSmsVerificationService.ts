@@ -4,6 +4,7 @@ import * as Util from '@alicloud/tea-util';
 import CredentialPackage from '@alicloud/credentials';
 import { BusinessError } from '../middleware/BusinessError.js';
 import { MARKET_PHONE_BINDING_CONFIG } from './marketPhoneBindingConfig.js';
+import { resolveAliyunSmsVerificationBusinessError } from './shared/aliyunSmsVerificationError.js';
 import {
   createAliyunCheckSmsVerifyCodeRequest,
   createAliyunSendSmsVerifyCodeRequest,
@@ -145,14 +146,24 @@ export const verifyAliyunSmsVerificationCode = async (
   const client = getClient();
   const request = createAliyunCheckSmsVerifyCodeRequest(phoneNumber, verificationCode);
   const runtime = new Util.RuntimeOptions({});
-  const response = await client.checkSmsVerifyCodeWithOptions(request, runtime);
+  try {
+    const response = await client.checkSmsVerifyCodeWithOptions(request, runtime);
 
-  assertAliyunSuccess(
-    response.body?.code,
-    response.body?.success,
-    response.body?.message,
-    '短信验证码校验',
-  );
+    assertAliyunSuccess(
+      response.body?.code,
+      response.body?.success,
+      response.body?.message,
+      '短信验证码校验',
+    );
 
-  return response.body?.model?.verifyResult === 'PASS';
+    return response.body?.model?.verifyResult === 'PASS';
+  } catch (error) {
+    const businessError = resolveAliyunSmsVerificationBusinessError(
+      error as Error & { code?: string; data?: { Code?: string; Message?: string } },
+    );
+    if (businessError) {
+      throw businessError;
+    }
+    throw error;
+  }
 };
