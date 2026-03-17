@@ -36,4 +36,20 @@ describe('skillEffectFormatter', () => {
       '施加增益：受击反震（反震本次实际受击伤害 30%），持续3回合',
     ]);
   });
+
+  it('应将 mirror_crack 印记格式化为包含追击语义的中文文案', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'mark',
+        operation: 'apply',
+        markId: 'mirror_crack',
+        maxStacks: 5,
+        duration: 2,
+      },
+    ]);
+
+    expect(lines).toEqual([
+      '施加镜裂印（每次+1层，上限5层，持续2回合；存在期间会放大后续镜律追击）',
+    ]);
+  });
 });

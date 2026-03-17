@@ -39,12 +39,14 @@ const VOID_EROSION_MARK_ID = "void_erosion";
 const EMBER_BRAND_MARK_ID = "ember_brand";
 const SOUL_SHACKLE_MARK_ID = "soul_shackle";
 const MOON_ECHO_MARK_ID = "moon_echo";
+const MIRROR_CRACK_MARK_ID = "mirror_crack";
 
 const MARK_NAME_MAP: Record<string, string> = {
   [VOID_EROSION_MARK_ID]: "虚蚀印记",
   [EMBER_BRAND_MARK_ID]: "灼痕",
   [SOUL_SHACKLE_MARK_ID]: "蚀心锁",
   [MOON_ECHO_MARK_ID]: "月痕印记",
+  [MIRROR_CRACK_MARK_ID]: "镜裂印",
 };
 
 const APPLY_TRAIT_TEXT_BY_ID: Record<string, string> = {
@@ -52,6 +54,7 @@ const APPLY_TRAIT_TEXT_BY_ID: Record<string, string> = {
   [EMBER_BRAND_MARK_ID]: "被消耗时附加灼烧与余烬潜爆",
   [SOUL_SHACKLE_MARK_ID]: "压低受疗与回灵效率，消耗时抽取灵气",
   [MOON_ECHO_MARK_ID]: "被消耗时返还灵气并强化下一次技能",
+  [MIRROR_CRACK_MARK_ID]: "存在期间会放大后续镜律追击",
 };
 
 const CONSUME_TRAIT_TEXT_BY_ID: Record<string, string> = {
