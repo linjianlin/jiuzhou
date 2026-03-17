@@ -8,7 +8,7 @@
  *
  * 输入/输出：
  * - 输入：初始未领取总数、AbortSignal、可选进度回调。
- * - 输出：批量领取执行结果（完成 / 停止 / 失败）与已成功领取数量。
+ * - 输出：批量领取执行结果（完成 / 停止 / 失败）、已成功领取数量，以及角色货币是否必须回源刷新的精确信号。
  *
  * 数据流/状态流：
  * MailModal -> 本模块按页拉取邮件 -> 逐封调用领取接口 -> 回调进度 -> 返回批处理结果 -> MailModal 刷新列表与提示文案。
@@ -21,6 +21,12 @@
 import type { AxiosRequestConfig } from 'axios';
 import { claimMailAttachments, getMailList, type MailDto } from '../../../../services/api';
 import { getUnifiedApiErrorMessage } from '../../../../services/api/error';
+import {
+  collectMailClaimCurrencyDelta,
+  EMPTY_MAIL_CLAIM_CURRENCY_DELTA,
+  mergeMailClaimCurrencyDelta,
+  type MailClaimCurrencyDelta,
+} from './mailCharacterCurrency';
 
 const MAIL_BATCH_PAGE_SIZE = 100;
 const SILENT_BATCH_REQUEST_META = { autoErrorToast: false } as const;
@@ -34,6 +40,8 @@ type MailBatchClaimProgress = {
 type MailBatchClaimBaseResult = {
   claimedCount: number;
   processedCount: number;
+  currencyDelta: MailClaimCurrencyDelta;
+  shouldRefreshCharacter: boolean;
 };
 
 export type MailBatchClaimResult =
@@ -79,13 +87,21 @@ export const runMailBatchClaim = async (
   let processedCount = 0;
   let page = 1;
   let totalPages = 1;
+  let currencyDelta = EMPTY_MAIL_CLAIM_CURRENCY_DELTA;
+  let claimRequestInFlight = false;
 
   emitProgress(args, processedCount, claimedCount);
 
   try {
     while (page <= totalPages) {
       if (args.signal.aborted) {
-        return { status: 'stopped', claimedCount, processedCount };
+        return {
+          status: 'stopped',
+          claimedCount,
+          processedCount,
+          currencyDelta,
+          shouldRefreshCharacter: false,
+        };
       }
 
       const listRes = await getMailList(page, MAIL_BATCH_PAGE_SIZE, requestConfig);
@@ -95,6 +111,8 @@ export const runMailBatchClaim = async (
           status: 'failed',
           claimedCount,
           processedCount,
+          currencyDelta,
+          shouldRefreshCharacter: false,
           errorMessage: '加载邮件列表失败',
         };
       }
@@ -106,12 +124,24 @@ export const runMailBatchClaim = async (
           continue;
         }
         if (args.signal.aborted) {
-          return { status: 'stopped', claimedCount, processedCount };
+          return {
+            status: 'stopped',
+            claimedCount,
+            processedCount,
+            currencyDelta,
+            shouldRefreshCharacter: false,
+          };
         }
 
-        await claimMailAttachments(mail.id, args.autoDisassemble, requestConfig);
+        claimRequestInFlight = true;
+        const claimRes = await claimMailAttachments(mail.id, args.autoDisassemble, requestConfig);
+        claimRequestInFlight = false;
         claimedCount += 1;
         processedCount += 1;
+        currencyDelta = mergeMailClaimCurrencyDelta(
+          currencyDelta,
+          collectMailClaimCurrencyDelta(claimRes.rewards),
+        );
         emitProgress(args, processedCount, claimedCount);
       }
 
@@ -121,16 +151,33 @@ export const runMailBatchClaim = async (
       page += 1;
     }
 
-    return { status: 'completed', claimedCount, processedCount };
+    return {
+      status: 'completed',
+      claimedCount,
+      processedCount,
+      currencyDelta,
+      shouldRefreshCharacter: false,
+    };
   } catch (error) {
+    const shouldRefreshCharacter = args.signal.aborted && claimRequestInFlight;
+    claimRequestInFlight = false;
+
     if (args.signal.aborted) {
-      return { status: 'stopped', claimedCount, processedCount };
+      return {
+        status: 'stopped',
+        claimedCount,
+        processedCount,
+        currencyDelta,
+        shouldRefreshCharacter,
+      };
     }
 
     return {
       status: 'failed',
       claimedCount,
       processedCount,
+      currencyDelta,
+      shouldRefreshCharacter: false,
       errorMessage: getUnifiedApiErrorMessage(error, '领取失败'),
     };
   }

@@ -35,6 +35,12 @@ import { useIsMobile } from "../../shared/responsive";
 import { formatGrantedRewardTexts } from "../../shared/grantedRewardText";
 import { formatDateTimeToMinute } from "../../shared/time";
 import { runMailBatchClaim } from "./mailBatchClaim";
+import {
+  buildMailClaimCharacterCurrencyPatch,
+  collectMailClaimCurrencyDelta,
+  type MailClaimCurrencyDelta,
+} from "./mailCharacterCurrency";
+import gameSocket from "../../../../services/gameSocket";
 import "./index.scss";
 
 interface MailModalProps {
@@ -128,6 +134,18 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
   const readMails = useMemo(() => mails.filter(isMailRead), [mails]);
   const readMailCount = readMails.length;
 
+  const syncClaimedCurrencyToCharacter = useCallback(
+    (delta: MailClaimCurrencyDelta) => {
+      const patch = buildMailClaimCharacterCurrencyPatch(
+        gameSocket.getCharacter(),
+        delta,
+      );
+      if (!patch) return;
+      gameSocket.updateCharacterLocal(patch);
+    },
+    [],
+  );
+
   // 打开邮件（标记已读）
   const openMail = async (id: number) => {
     setActiveId(id);
@@ -170,6 +188,9 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
     try {
       const res = await claimMailAttachments(id, claimAutoDisassemble);
       if (res.success) {
+        syncClaimedCurrencyToCharacter(
+          collectMailClaimCurrencyDelta(res.rewards),
+        );
         setMails((prev) =>
           prev.map((m) =>
             m.id === id
@@ -198,7 +219,7 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
     }
   };
 
-  const claimAll = async () => {
+  const claimAll = useCallback(async () => {
     if (unclaimedCount === 0) {
       message.info("没有可领取的附件");
       return;
@@ -218,6 +239,12 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
         },
       });
       await loadMails();
+      if (result.shouldRefreshCharacter) {
+        // 停止时最后一封领取可能已在服务端成功，但响应被 abort 截断，此时必须回源刷新角色金额。
+        gameSocket.refreshCharacter();
+      } else {
+        syncClaimedCurrencyToCharacter(result.currencyDelta);
+      }
 
       if (result.status === "completed") {
         if (result.claimedCount === 0) {
@@ -252,7 +279,7 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
       setClaiming(false);
       claimAbortControllerRef.current = null;
     }
-  };
+  }, [claimAutoDisassemble, loadMails, message, syncClaimedCurrencyToCharacter, unclaimedCount]);
 
   const stopClaimAll = () => {
     claimAbortControllerRef.current?.abort();
