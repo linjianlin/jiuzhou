@@ -39,4 +39,15 @@ describe('formatTaskRewardsToText', () => {
 
     expect(text).toBe('银两 +1,200，物品「《归虚诀》秘卷」×1');
   });
+
+  it('应忽略数量非法或非正数的物品奖励，避免展示错误数量', () => {
+    const text = formatTaskRewardsToText([
+      { type: 'item', itemDefId: 'mat-a', itemName: '甲', qty: 0 },
+      { type: 'item', itemDefId: 'mat-b', itemName: '乙', qty: -3 },
+      { type: 'item', itemDefId: 'mat-c', itemName: '丙', qty: Number.NaN },
+      { type: 'item', itemDefId: 'mat-d', itemName: '丁', qty: 2 },
+    ]);
+
+    expect(text).toBe('物品「丁」×2');
+  });
 });

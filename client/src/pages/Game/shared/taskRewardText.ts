@@ -41,7 +41,8 @@ export const formatTaskRewardsToText = (
     if (reward.type !== 'item') continue;
     const itemDefId = String(reward.itemDefId || '').trim();
     const itemName = String(reward.itemName || '').trim();
-    const qty = Math.max(1, Math.floor(Number(reward.qty) || 1));
+    const qty = Math.floor(Number(reward.qty));
+    if (!Number.isFinite(qty) || qty <= 0) continue;
     const name = itemName || itemDefId;
     if (!name) continue;
     parts.push(`物品「${name}」×${qty.toLocaleString()}`);

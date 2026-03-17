@@ -6,7 +6,7 @@
 1. `server/src/workers/idleBattleWorker.ts` - Worker 线程实现
 2. `server/src/workers/workerPool.ts` - Worker 池管理
 3. `server/src/services/idle/idleBattleExecutorWorker.ts` - 主线程协调器（Worker 版本）
-4. `server/src/bootstrap/workerIntegration.example.ts` - 启动集成示例
+4. `server/src/bootstrap/workerIntegration.ts` - 启动集成示例
 5. `docs/worker-migration-guide.md` - 完整迁移文档
 
 ### 需要修改的文件
