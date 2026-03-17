@@ -32,6 +32,10 @@ import {
   runAutoRerollUntilMatch,
   type AutoRerollMatchMode,
 } from './autoReroll';
+import {
+  AUTO_REROLL_FEATURE_DISABLED_MESSAGE,
+  AUTO_REROLL_FEATURE_ENABLED,
+} from './autoRerollFeature';
 import { useAffixPoolPreview } from './useAffixPoolPreview';
 
 type AutoRerollMessageApi = {
@@ -97,6 +101,7 @@ export const useAutoRerollController = ({
   const [autoRerollMatchMode, setAutoRerollMatchMode] = useState<AutoRerollMatchMode>('all');
   const [autoRerollMaxAttempts, setAutoRerollMaxAttempts] = useState(50);
   const [autoRerollSubmitting, setAutoRerollSubmitting] = useState(false);
+  const autoRerollFeatureEnabled = enabled && AUTO_REROLL_FEATURE_ENABLED;
 
   const {
     poolPreviewOpen,
@@ -108,8 +113,8 @@ export const useAutoRerollController = ({
     closePoolPreview,
   } = useAffixPoolPreview({
     itemId: item?.id ?? null,
-    enabled,
-    autoLoad: enabled,
+    enabled: autoRerollFeatureEnabled,
+    autoLoad: autoRerollFeatureEnabled,
   });
 
   useEffect(() => {
@@ -129,7 +134,7 @@ export const useAutoRerollController = ({
   }, [autoRerollTargetKeys]);
 
   const autoRerollDisabled =
-    !enabled ||
+    !autoRerollFeatureEnabled ||
     autoRerollSubmitting ||
     !poolPreviewReady ||
     !rerollState ||
@@ -140,6 +145,10 @@ export const useAutoRerollController = ({
   const handleAutoReroll = useCallback(async () => {
     if (!item || item.category !== 'equipment' || !item.equip) return;
     if (!rerollState || rerollState.affixes.length <= 0) return;
+    if (!AUTO_REROLL_FEATURE_ENABLED) {
+      messageApi.warning(AUTO_REROLL_FEATURE_DISABLED_MESSAGE);
+      return;
+    }
 
     if (!poolPreviewReady) {
       if (poolPreviewLoading) {

@@ -74,6 +74,7 @@ import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './use
 import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { useAutoRerollController } from './useAutoRerollController';
 import { AutoRerollConfigModal } from './AutoRerollConfigModal';
+import { AUTO_REROLL_FEATURE_ENABLED } from './autoRerollFeature';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import { TechniqueSkillSection } from '../../shared/TechniqueSkillSection';
 import { useCharacterRenameCardFlow } from '../../shared/useCharacterRenameCardFlow';
@@ -1117,24 +1118,26 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
                 <div className="mbag-sheet-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>消耗</span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-                    <a
-                      href="#"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        if (!item.locked && !autoRerollSubmitting && !submitting) {
-                          setAutoRerollConfigOpen(true);
-                        }
-                      }}
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 'normal',
-                        color: (item.locked || autoRerollSubmitting || submitting) ? 'var(--text-tertiary)' : 'var(--primary-color)',
-                        cursor: (item.locked || autoRerollSubmitting || submitting) ? 'not-allowed' : 'pointer',
-                        textDecoration: 'none'
-                      }}
-                    >
-                      ⚙ {autoRerollSubmitting ? '洗炼中...' : '自动洗炼'}
-                    </a>
+                    {AUTO_REROLL_FEATURE_ENABLED ? (
+                      <a
+                        href="#"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          if (!item.locked && !autoRerollSubmitting && !submitting) {
+                            setAutoRerollConfigOpen(true);
+                          }
+                        }}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 'normal',
+                          color: (item.locked || autoRerollSubmitting || submitting) ? 'var(--text-tertiary)' : 'var(--primary-color)',
+                          cursor: (item.locked || autoRerollSubmitting || submitting) ? 'not-allowed' : 'pointer',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        ⚙ {autoRerollSubmitting ? '洗炼中...' : '自动洗炼'}
+                      </a>
+                    ) : null}
                     <a
                       href="#"
                       onMouseDown={(e) => {
@@ -1273,23 +1276,25 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
         affixes={poolPreviewReady && poolPreviewData ? poolPreviewData.affixes : []}
       />
 
-      <AutoRerollConfigModal
-        open={autoRerollConfigOpen}
-        onClose={() => setAutoRerollConfigOpen(false)}
-        targetKeys={autoRerollTargetKeys}
-        onTargetKeysChange={setAutoRerollTargetKeys}
-        matchMode={autoRerollMatchMode}
-        onMatchModeChange={setAutoRerollMatchMode}
-        maxAttempts={autoRerollMaxAttempts}
-        onMaxAttemptsChange={setAutoRerollMaxAttempts}
-        options={autoRerollOptions}
-        disabled={autoRerollDisabled}
-        loading={poolPreviewLoading}
-        submitting={autoRerollSubmitting}
-        poolReady={poolPreviewReady}
-        poolErrorMessage={poolPreviewErrorMessage}
-        onStart={() => void handleAutoReroll()}
-      />
+      {AUTO_REROLL_FEATURE_ENABLED ? (
+        <AutoRerollConfigModal
+          open={autoRerollConfigOpen}
+          onClose={() => setAutoRerollConfigOpen(false)}
+          targetKeys={autoRerollTargetKeys}
+          onTargetKeysChange={setAutoRerollTargetKeys}
+          matchMode={autoRerollMatchMode}
+          onMatchModeChange={setAutoRerollMatchMode}
+          maxAttempts={autoRerollMaxAttempts}
+          onMaxAttemptsChange={setAutoRerollMaxAttempts}
+          options={autoRerollOptions}
+          disabled={autoRerollDisabled}
+          loading={poolPreviewLoading}
+          submitting={autoRerollSubmitting}
+          poolReady={poolPreviewReady}
+          poolErrorMessage={poolPreviewErrorMessage}
+          onStart={() => void handleAutoReroll()}
+        />
+      ) : null}
     </>
   );
 };

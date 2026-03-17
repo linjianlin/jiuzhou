@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import MobileBagModal from './MobileBagModal';
 import { AffixPoolPreviewModal } from './AffixPoolPreviewModal';
 import { AutoRerollConfigModal } from './AutoRerollConfigModal';
+import { AUTO_REROLL_FEATURE_ENABLED } from './autoRerollFeature';
 
 import { gameSocket } from '../../../../services/gameSocket';
 import {
@@ -1700,24 +1701,26 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                   <div className="bag-growth-cost-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>消耗</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-                      <a
-                        href="#"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          if (!activeItem?.locked && !autoRerollSubmitting && !rerollSubmitting) {
-                            setAutoRerollConfigOpen(true);
-                          }
-                        }}
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 'normal',
-                          color: (activeItem?.locked || autoRerollSubmitting || rerollSubmitting) ? 'var(--text-tertiary)' : 'var(--primary-color)',
-                          cursor: (activeItem?.locked || autoRerollSubmitting || rerollSubmitting) ? 'not-allowed' : 'pointer',
-                          textDecoration: 'none'
-                        }}
-                      >
-                        ⚙ {autoRerollSubmitting ? '自动洗炼中...' : '自动洗炼'}
-                      </a>
+                      {AUTO_REROLL_FEATURE_ENABLED ? (
+                        <a
+                          href="#"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            if (!activeItem?.locked && !autoRerollSubmitting && !rerollSubmitting) {
+                              setAutoRerollConfigOpen(true);
+                            }
+                          }}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 'normal',
+                            color: (activeItem?.locked || autoRerollSubmitting || rerollSubmitting) ? 'var(--text-tertiary)' : 'var(--primary-color)',
+                            cursor: (activeItem?.locked || autoRerollSubmitting || rerollSubmitting) ? 'not-allowed' : 'pointer',
+                            textDecoration: 'none'
+                          }}
+                        >
+                          ⚙ {autoRerollSubmitting ? '自动洗炼中...' : '自动洗炼'}
+                        </a>
+                      ) : null}
                       <a
                         href="#"
                         onMouseDown={(e) => {
@@ -1825,23 +1828,25 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
         affixes={poolPreviewReady && poolPreviewData ? poolPreviewData.affixes : []}
       />
 
-      <AutoRerollConfigModal
-        open={autoRerollConfigOpen}
-        onClose={() => setAutoRerollConfigOpen(false)}
-        targetKeys={autoRerollTargetKeys}
-        onTargetKeysChange={setAutoRerollTargetKeys}
-        matchMode={autoRerollMatchMode}
-        onMatchModeChange={setAutoRerollMatchMode}
-        maxAttempts={autoRerollMaxAttempts}
-        onMaxAttemptsChange={setAutoRerollMaxAttempts}
-        options={autoRerollOptions}
-        disabled={autoRerollDisabled}
-        loading={poolPreviewLoading}
-        submitting={autoRerollSubmitting}
-        poolReady={poolPreviewReady}
-        poolErrorMessage={poolPreviewErrorMessage}
-        onStart={() => void handleAutoReroll()}
-      />
+      {AUTO_REROLL_FEATURE_ENABLED ? (
+        <AutoRerollConfigModal
+          open={autoRerollConfigOpen}
+          onClose={() => setAutoRerollConfigOpen(false)}
+          targetKeys={autoRerollTargetKeys}
+          onTargetKeysChange={setAutoRerollTargetKeys}
+          matchMode={autoRerollMatchMode}
+          onMatchModeChange={setAutoRerollMatchMode}
+          maxAttempts={autoRerollMaxAttempts}
+          onMaxAttemptsChange={setAutoRerollMaxAttempts}
+          options={autoRerollOptions}
+          disabled={autoRerollDisabled}
+          loading={poolPreviewLoading}
+          submitting={autoRerollSubmitting}
+          poolReady={poolPreviewReady}
+          poolErrorMessage={poolPreviewErrorMessage}
+          onStart={() => void handleAutoReroll()}
+        />
+      ) : null}
 
       <Modal
         open={batchOpen}
