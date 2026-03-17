@@ -646,6 +646,41 @@
   font-weight: 700;
 }
 
+.mbag-auto-reroll-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mbag-auto-reroll-select {
+  width: 100%;
+  min-height: 84px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg);
+  color: var(--text-color);
+  padding: 6px 8px;
+}
+
+.mbag-auto-reroll-attempts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+
+  input {
+    width: 110px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--panel-bg);
+    color: var(--text-color);
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+}
+
 
 
 /* 操作按钮行 */

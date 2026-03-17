@@ -355,6 +355,34 @@
     white-space: nowrap;
   }
 
+  .bag-reroll-auto-card {
+    padding: 10px 12px;
+    border: 1px solid var(--border-color-soft);
+    border-radius: 10px;
+    background: var(--panel-bg-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bag-reroll-auto-title {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 700;
+  }
+
+  .bag-reroll-auto-controls {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) 170px;
+  }
+
+  @media (max-width: 760px) {
+    .bag-reroll-auto-controls {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   @media (max-width: 640px) {
     .bag-reroll-overview-row {
       grid-template-columns: minmax(0, 1fr);

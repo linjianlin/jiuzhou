@@ -74,6 +74,11 @@ import { formatDisassembleSuccessMessage } from './disassembleRewardText';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
+import {
+  buildAutoRerollTargetOptions,
+  getAffordableAutoRerollTimes,
+  hasMatchedAutoRerollTargets,
+} from './autoReroll';
 import { TechniqueSkillSection } from '../../shared/TechniqueSkillSection';
 import { useCharacterRenameCardFlow } from '../../shared/useCharacterRenameCardFlow';
 import './MobileBagModal.scss';
@@ -641,6 +646,7 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   const { message } = App.useApp();
   const [mode, setMode] = useState<GrowthMode>(initialMode);
   const [submitting, setSubmitting] = useState(false);
+  const [autoRerollSubmitting, setAutoRerollSubmitting] = useState(false);
   const [rerollLockIndexes, setRerollLockIndexes] = useState<number[]>([]);
   const [rerollCostTable, setRerollCostTable] = useState<{
     rerollScrollItemDefId: string;
@@ -649,6 +655,8 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   const [poolPreviewOpen, setPoolPreviewOpen] = useState(false);
   const [poolPreviewLoading, setPoolPreviewLoading] = useState(false);
   const [poolPreviewData, setPoolPreviewData] = useState<AffixPoolPreviewResponse['data'] | null>(null);
+  const [autoRerollTargetKeys, setAutoRerollTargetKeys] = useState<string[]>([]);
+  const [autoRerollMaxAttempts, setAutoRerollMaxAttempts] = useState(50);
   const [socketSlot, setSocketSlot] = useState<number | undefined>(undefined);
   const [selectedGemItemId, setSelectedGemItemId] = useState<number | undefined>(undefined);
 
@@ -701,6 +709,8 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   useEffect(() => {
     setSocketSlot(undefined);
     setSelectedGemItemId(undefined);
+    setAutoRerollTargetKeys([]);
+    setAutoRerollSubmitting(false);
   }, [item.id]);
 
   const rerollState = useMemo(() => {
@@ -867,6 +877,79 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
       setSubmitting(false);
     }
   }, [item.id, message, onDone, rerollState]);
+
+  const autoRerollOptions = useMemo(
+    () => buildAutoRerollTargetOptions(poolPreviewData?.affixes ?? [], rerollState?.affixes ?? []),
+    [poolPreviewData?.affixes, rerollState?.affixes],
+  );
+
+  const handleAutoReroll = useCallback(async () => {
+    if (!rerollState || rerollState.affixes.length <= 0) return;
+    const targetKeys = autoRerollTargetKeys.filter((key) => key.trim().length > 0);
+    if (targetKeys.length <= 0) {
+      message.warning('请先设置目标词条');
+      return;
+    }
+    if (hasMatchedAutoRerollTargets(rerollState.affixes, targetKeys)) {
+      message.success('当前词条已满足目标，无需自动洗炼');
+      return;
+    }
+    if (item.locked) {
+      message.warning('物品已锁定，无法自动洗炼');
+      return;
+    }
+
+    const lockIndexes = normalizeAffixLockIndexes(
+      rerollState.lockIndexes,
+      rerollState.affixes.length,
+    ).slice(0, rerollState.maxLockCount);
+    const maxTimes = getAffordableAutoRerollTimes({
+      rerollScrollOwned: rerollState.rerollScrollOwned,
+      rerollScrollCost: rerollState.rerollScrollQty,
+      spiritStoneOwned: playerSpiritStones,
+      spiritStoneCost: rerollState.spiritStoneCost,
+      silverOwned: playerSilver,
+      silverCost: rerollState.silverCost,
+      maxAttempts: autoRerollMaxAttempts,
+    });
+    if (maxTimes <= 0) {
+      message.warning('资源不足或最大次数为 0，无法开始自动洗炼');
+      return;
+    }
+
+    setAutoRerollSubmitting(true);
+    let attempt = 0;
+    let matched = false;
+    try {
+      while (attempt < maxTimes) {
+        const res = await rerollInventoryAffixes({
+          itemId: item.id,
+          lockIndexes,
+        });
+        if (!res.success) {
+          message.warning(res.message || '自动洗炼中断');
+          break;
+        }
+        attempt += 1;
+        const latestAffixes = res.data?.affixes ?? [];
+        if (hasMatchedAutoRerollTargets(latestAffixes, targetKeys)) {
+          matched = true;
+          break;
+        }
+      }
+      await onDone();
+      window.dispatchEvent(new Event('inventory:changed'));
+      if (matched) {
+        message.success(`自动洗炼完成，已命中目标词条（第${attempt}次）`);
+      } else if (attempt >= maxTimes) {
+        message.warning(`自动洗炼结束，达到最大尝试次数（${maxTimes}次）`);
+      }
+    } catch {
+      void 0;
+    } finally {
+      setAutoRerollSubmitting(false);
+    }
+  }, [autoRerollMaxAttempts, autoRerollTargetKeys, item.id, item.locked, message, onDone, playerSilver, playerSpiritStones, rerollState]);
 
   const handleOpenPoolPreview = useCallback(async () => {
     if (!item?.id || poolPreviewLoading) return;
@@ -1166,6 +1249,54 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
                   })}
                 </div>
               </div>
+
+              <div className="mbag-sheet-section">
+                <div className="mbag-sheet-section-title">自动洗炼</div>
+                <div className="mbag-auto-reroll-controls">
+                  <select
+                    className="mbag-auto-reroll-select"
+                    multiple
+                    value={autoRerollTargetKeys}
+                    onChange={(event) => {
+                      const values = Array.from(event.currentTarget.selectedOptions).map((option) => option.value);
+                      setAutoRerollTargetKeys(values);
+                    }}
+                    disabled={submitting || autoRerollSubmitting || item.locked}
+                  >
+                    {autoRerollOptions.map((option) => (
+                      <option key={option.key} value={option.key}>{option.label}</option>
+                    ))}
+                  </select>
+                  <label className="mbag-auto-reroll-attempts">
+                    <span>最大次数</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={2000}
+                      value={autoRerollMaxAttempts}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (!Number.isFinite(value)) return;
+                        setAutoRerollMaxAttempts(Math.max(1, Math.min(2000, Math.floor(value))));
+                      }}
+                      disabled={submitting || autoRerollSubmitting || item.locked}
+                    />
+                  </label>
+                  <button
+                    className="mbag-sheet-act-btn is-primary"
+                    disabled={
+                      submitting ||
+                      autoRerollSubmitting ||
+                      item.locked ||
+                      autoRerollTargetKeys.length <= 0 ||
+                      rerollState.affixes.length <= 0
+                    }
+                    onClick={() => void handleAutoReroll()}
+                  >
+                    {autoRerollSubmitting ? '自动洗炼中...' : '开启自动洗炼'}
+                  </button>
+                </div>
+              </div>
             </>
           ) : null}
 
@@ -1187,7 +1318,7 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
           <button
             className="mbag-sheet-act-btn is-primary"
             disabled={
-              submitting || item.locked ||
+              submitting || autoRerollSubmitting || item.locked ||
               (mode === 'enhance' && enhanceState
                 ? enhanceState.owned < enhanceState.materialQty ||
                 playerSilver < enhanceState.silverCost || playerSpiritStones < enhanceState.spiritStoneCost
