@@ -195,6 +195,7 @@
 }
 
 .realm-req-main {
+  flex: 1;
   min-width: 0;
 }
 
@@ -203,12 +204,19 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
 }
 
 .realm-req-title {
   font-size: 13px;
   font-weight: 800;
   color: var(--text-color);
+  flex: 1;
+  min-width: 0;
+}
+
+.realm-req-tag {
+  flex: 0 0 auto;
 }
 
 .realm-req-detail {
