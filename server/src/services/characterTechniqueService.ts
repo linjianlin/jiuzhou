@@ -12,6 +12,7 @@ import { shouldValidateTechniqueLearnRealm } from './shared/techniqueLearnRule.j
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
 import { getItemDefinitionById } from './staticConfigLoader.js';
 import {
+  getAllTechniqueLayersStatic,
   getItemMetaMap,
   getTechniqueLayerByTechniqueAndLayerStatic,
   getTechniqueLayersByTechniqueIdStatic,
@@ -28,6 +29,10 @@ import {
   loadCharacterAvailableSkillEntries,
   listCharacterAvailableSkillIdSet,
 } from './shared/characterAvailableSkills.js';
+import {
+  buildCharacterBattleSkillEntries,
+  canEquipBattleSkillToSlot,
+} from './shared/characterBattleSkillLoadout.js';
 
 // ============================================
 // 类型定义
@@ -771,6 +776,11 @@ class CharacterTechniqueService {
     }
 
     // 检查技能是否已装备在其他槽位
+    const skillDef = getSkillDefMap().get(skillId);
+    if (!skillDef || !canEquipBattleSkillToSlot(skillDef.trigger_type)) {
+      return { success: false, message: '被动技能不能装备到技能栏' };
+    }
+
     const existResult = await query(
       'SELECT slot_index FROM character_skill_slot WHERE character_id = $1 AND skill_id = $2',
       [characterId, skillId]
@@ -864,77 +874,44 @@ class CharacterTechniqueService {
   // ============================================
   async getBattleSkills(
     characterId: number
-  ): Promise<ServiceResult<{ skillId: string; upgradeLevel: number }[]>> {
-    const slotResult = await query(
-      'SELECT skill_id FROM character_skill_slot WHERE character_id = $1 ORDER BY slot_index',
-      [characterId]
-    );
+  ): Promise<ServiceResult<{ skillId: string; upgradeLevel: number; triggerType: 'active' | 'passive' }[]>> {
+    const [slotResult, techniqueRows] = await Promise.all([
+      query(
+        'SELECT skill_id FROM character_skill_slot WHERE character_id = $1 ORDER BY slot_index',
+        [characterId]
+      ),
+      query(
+        `
+          SELECT technique_id, current_layer, slot_type
+          FROM character_technique ct
+          WHERE ct.character_id = $1
+            AND ct.slot_type IS NOT NULL
+        `,
+        [characterId],
+      ),
+    ]);
 
-    if (slotResult.rows.length === 0) {
-      return { success: true, message: '无装备技能', data: [] };
-    }
-
-    const rawOrderedSkillIds = slotResult.rows
+    const slottedSkills = slotResult.rows
       .map((row) => (typeof row.skill_id === 'string' ? row.skill_id.trim() : ''))
       .filter((skillId): skillId is string => skillId.length > 0);
 
-    const availableSkillIds = await listCharacterAvailableSkillIdSet(characterId);
-    const orderedSkillIds = rawOrderedSkillIds.filter((skillId) => availableSkillIds.has(skillId));
+    const equippedTechniques = (techniqueRows.rows as Array<Record<string, unknown>>)
+      .map((row) => ({
+        techniqueId: typeof row.technique_id === 'string' ? row.technique_id.trim() : '',
+        currentLayer: Math.max(0, Math.floor(Number(row.current_layer ?? 0) || 0)),
+      }))
+      .filter((row) => row.techniqueId.length > 0 && row.currentLayer > 0);
 
-    if (orderedSkillIds.length === 0) {
-      return { success: true, message: '无装备技能', data: [] };
-    }
+    const skills = buildCharacterBattleSkillEntries({
+      equippedTechniques,
+      slottedSkills,
+      skillDefs: getSkillDefMap(),
+      layerRows: getAllTechniqueLayersStatic(),
+    });
 
-    const uniqueSkillIds = [...new Set(orderedSkillIds)];
-    const skillMap = getSkillDefMap();
-    const techniqueRows = await query(
-      `
-        SELECT technique_id, current_layer
-        FROM character_technique ct
-        WHERE ct.character_id = $1
-      `,
-      [characterId],
-    );
-
-    const upgradedSkillCountByTechniqueAndSkill = new Map<string, number>();
-    for (const row of techniqueRows.rows as Array<Record<string, unknown>>) {
-      const techniqueId = typeof row.technique_id === 'string' ? row.technique_id : '';
-      if (!techniqueId) continue;
-      const currentLayer = Math.max(0, Math.floor(Number(row.current_layer ?? 0) || 0));
-      if (currentLayer <= 0) continue;
-      const layerRows = getTechniqueLayersByTechniqueIdStatic(techniqueId).filter((entry) => entry.layer <= currentLayer);
-      for (const layerRow of layerRows) {
-        for (const upgradedSkillId of layerRow.upgradeSkillIds) {
-          const key = `${techniqueId}:${upgradedSkillId}`;
-          upgradedSkillCountByTechniqueAndSkill.set(key, (upgradedSkillCountByTechniqueAndSkill.get(key) ?? 0) + 1);
-        }
-      }
-    }
-
-    const upgradeLevelBySkillId = new Map<string, number>();
-    for (const skillId of uniqueSkillIds) {
-      const skillDef = skillMap.get(skillId);
-      if (!skillDef) continue;
-      if (skillDef.source_type !== 'technique' || typeof skillDef.source_id !== 'string' || !skillDef.source_id) {
-        upgradeLevelBySkillId.set(skillId, 0);
-        continue;
-      }
-      const key = `${skillDef.source_id}:${skillId}`;
-      const upgradeLevel = upgradedSkillCountByTechniqueAndSkill.get(key) ?? 0;
-      upgradeLevelBySkillId.set(skillId, upgradeLevel);
-    }
-
-    const skills = orderedSkillIds.map((skillId) => ({
-      skillId,
-      upgradeLevel: upgradeLevelBySkillId.get(skillId) ?? 0,
-    }));
-
-    return { success: true, message: '获取成功', data: skills };
+    return { success: true, message: '获取战斗技能成功', data: skills };
   }
 
-  // ============================================
-  // 14. 获取完整的角色功法状态（用于前端展示）（纯读，不加 @Transactional）
-  // ============================================
   async getCharacterTechniqueStatus(
     characterId: number
   ): Promise<ServiceResult<{

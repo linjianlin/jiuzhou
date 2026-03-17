@@ -54,6 +54,11 @@ import {
   getTechniqueStructuredBuffCatalog,
   validateTechniqueStructuredBuffEffect,
 } from './techniqueStructuredBuffCatalog.js';
+import {
+  TECHNIQUE_PASSIVE_KEY_MEANING_MAP,
+  TECHNIQUE_PASSIVE_KEYS,
+  TECHNIQUE_PASSIVE_MODE_BY_KEY,
+} from './characterAttrRegistry.js';
 
 export const GENERATED_TECHNIQUE_TYPE_LIST = ['武技', '心法', '法诀', '身法', '辅修'] as const;
 export type GeneratedTechniqueType = (typeof GENERATED_TECHNIQUE_TYPE_LIST)[number];
@@ -92,68 +97,9 @@ export const isGeneratedTechniqueType = (raw: unknown): raw is GeneratedTechniqu
   return typeof raw === 'string' && GENERATED_TECHNIQUE_TYPE_LIST.includes(raw as GeneratedTechniqueType);
 };
 
-export const TECHNIQUE_PASSIVE_KEY_MEANING_MAP: Record<string, string> = {
-  wugong: '物理攻击（百分比加成）',
-  fagong: '法术攻击（百分比加成）',
-  wufang: '物理防御（百分比加成）',
-  fafang: '法术防御（百分比加成）',
-  max_qixue: '最大气血（百分比加成）',
-  max_lingqi: '最大灵气（固定值加成）',
-  mingzhong: '命中率（加算百分比）',
-  shanbi: '闪避率（加算百分比）',
-  zhaojia: '招架率（加算百分比）',
-  baoji: '暴击率（加算百分比）',
-  baoshang: '暴击伤害倍率（加算百分比）',
-  jianbaoshang: '暴击伤害减免（加算百分比）',
-  kangbao: '抗暴率（加算百分比）',
-  zengshang: '增伤（加算百分比）',
-  zhiliao: '治疗加成（加算百分比）',
-  jianliao: '受疗减免（加算百分比）',
-  xixue: '吸血比例（加算百分比）',
-  lengque: '冷却缩减（加算百分比）',
-  sudu: '速度（固定值加成）',
-  kongzhi_kangxing: '控制抗性（加算百分比）',
-  jin_kangxing: '金系抗性（加算百分比）',
-  mu_kangxing: '木系抗性（加算百分比）',
-  shui_kangxing: '水系抗性（加算百分比）',
-  huo_kangxing: '火系抗性（加算百分比）',
-  tu_kangxing: '土系抗性（加算百分比）',
-  qixue_huifu: '每回合气血恢复（固定值加成）',
-  lingqi_huifu: '每回合灵气恢复（固定值加成）',
-};
-
-export const SUPPORTED_TECHNIQUE_PASSIVE_KEYS = Object.freeze(Object.keys(TECHNIQUE_PASSIVE_KEY_MEANING_MAP));
+export const SUPPORTED_TECHNIQUE_PASSIVE_KEYS = TECHNIQUE_PASSIVE_KEYS;
 export const SUPPORTED_TECHNIQUE_PASSIVE_KEY_SET = new Set<string>(SUPPORTED_TECHNIQUE_PASSIVE_KEYS);
-
-const TECHNIQUE_PASSIVE_MODE_BY_KEY: Record<string, TechniquePassiveMode> = {
-  wugong: 'percent',
-  fagong: 'percent',
-  wufang: 'percent',
-  fafang: 'percent',
-  max_qixue: 'percent',
-  max_lingqi: 'flat',
-  mingzhong: 'percent',
-  shanbi: 'percent',
-  zhaojia: 'percent',
-  baoji: 'percent',
-  baoshang: 'percent',
-  jianbaoshang: 'percent',
-  kangbao: 'percent',
-  zengshang: 'percent',
-  zhiliao: 'percent',
-  jianliao: 'percent',
-  xixue: 'percent',
-  lengque: 'percent',
-  sudu: 'flat',
-  kongzhi_kangxing: 'percent',
-  jin_kangxing: 'percent',
-  mu_kangxing: 'percent',
-  shui_kangxing: 'percent',
-  huo_kangxing: 'percent',
-  tu_kangxing: 'percent',
-  qixue_huifu: 'flat',
-  lingqi_huifu: 'flat',
-};
+export { TECHNIQUE_PASSIVE_KEY_MEANING_MAP };
 
 /**
  * 功法被动预算共享规则
@@ -196,12 +142,13 @@ export const getTechniquePassiveValueConstraint = (
   quality: GeneratedTechniqueQuality,
 ): TechniquePassiveValueConstraint | null => {
   const mode = TECHNIQUE_PASSIVE_MODE_BY_KEY[key];
-  if (mode !== 'percent' && mode !== 'flat') {
+  if (mode !== 'percent' && mode !== 'flat' && mode !== 'multiply') {
     return null;
   }
-  const baseConstraint = TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE[mode][quality];
+  const normalizedMode: TechniquePassiveMode = mode === 'multiply' ? 'percent' : mode;
+  const baseConstraint = TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE[normalizedMode][quality];
   return {
-    mode,
+    mode: normalizedMode,
     maxPerLayer: baseConstraint.maxPerLayer,
     maxTotal: baseConstraint.maxTotal,
   };
@@ -240,7 +187,7 @@ export const buildTechniquePassiveValueGuideByKey = (
 export const TECHNIQUE_PASSIVE_ENTRY_POOL = Object.freeze(
   SUPPORTED_TECHNIQUE_PASSIVE_KEYS.map((key) => ({
     key,
-    mode: TECHNIQUE_PASSIVE_MODE_BY_KEY[key],
+    mode: TECHNIQUE_PASSIVE_MODE_BY_KEY[key] === 'multiply' ? 'percent' : TECHNIQUE_PASSIVE_MODE_BY_KEY[key],
   })),
 );
 
@@ -507,7 +454,7 @@ export const TECHNIQUE_PROMPT_FIELD_SEMANTICS = {
     damageType: '伤害类型 physical/magic/true/null',
     element: '技能元素，必须在 elementEnum 中',
     effects: '技能效果数组，按 effectSchemaByType 生成',
-    triggerType: '触发类型，固定 active',
+    triggerType: 'trigger type: normal skills use active, aura passives use passive',
     aiPriority: 'AI 施放优先级，范围见 numericRanges.skill.aiPriority，越高越优先',
     upgrades: '高层强化配置数组；可为空数组；必须符合 upgradeSchema',
   },
@@ -1058,7 +1005,7 @@ export const buildTechniqueGenerationResponseFormat = (params: {
                 },
                 minItems: 1,
               },
-              triggerType: { type: 'string', enum: ['active'] },
+              triggerType: { type: 'string', enum: ['active', 'passive'] },
               aiPriority: { type: 'integer', minimum: 0, maximum: 100 },
               // upgrades 内部结构由 prompt 约束 + 后端 validate 保证；只要求每个 upgrade 有 layer 字段，其余字段自由输出
               upgrades: {

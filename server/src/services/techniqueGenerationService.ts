@@ -105,7 +105,7 @@ export type TechniqueGenerationCandidate = {
     damageType: 'physical' | 'magic' | 'true' | null;
     element: string;
     effects: unknown[];
-    triggerType: 'active';
+    triggerType: 'active' | 'passive';
     aiPriority: number;
     upgrades: TechniqueSkillUpgradeEntry[];
   }>;
