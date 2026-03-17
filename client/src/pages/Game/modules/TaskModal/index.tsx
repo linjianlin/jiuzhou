@@ -46,9 +46,10 @@ interface TaskModalProps {
   open: boolean;
   onClose: () => void;
   onTrackedChange?: () => void;
+  onTaskCompletedChange?: () => void;
 }
 
-const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange }) => {
+const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange, onTaskCompletedChange }) => {
   const { message } = App.useApp();
   const taskCategoryKeys = useMemo(() => TASK_CATEGORY_KEYS, []);
   const taskCategoryOptions = useMemo(
@@ -326,10 +327,11 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
       const rewardText = formatTaskRewardsToText(res.data?.rewards);
       appendSystemChat(`【任务】领取奖励：${task.title}${rewardText ? `（${rewardText}）` : ''}`);
       await refreshCategory(task.category);
+      onTaskCompletedChange?.();
     } catch {
       void 0;
     }
-  }, [appendSystemChat, message, refreshCategory]);
+  }, [appendSystemChat, message, onTaskCompletedChange, refreshCategory]);
 
   const completeTask = useCallback(async (task: TaskItem | null) => {
     if (!task?.id) return;
@@ -351,16 +353,18 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
         message.success('完成成功');
         appendSystemChat(`【任务】已完成并领取奖励：${task.title}${rewardText ? `（${rewardText}）` : ''}`);
         await refreshCategory(task.category);
+        onTaskCompletedChange?.();
         return;
       }
 
       message.success('完成成功');
       appendSystemChat(`【任务】已完成：${task.title}`);
       await refreshCategory(task.category);
+      onTaskCompletedChange?.();
     } catch {
       void 0;
     }
-  }, [appendSystemChat, message, refreshCategory]);
+  }, [appendSystemChat, message, onTaskCompletedChange, refreshCategory]);
 
   const submitMaterials = useCallback(
     async (task: TaskItem | null) => {

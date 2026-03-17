@@ -96,6 +96,7 @@ import {
   shouldRestoreDungeonBattleContext,
 } from './shared/dungeonBattleReconnect';
 import { useRealtimeMemberPresence } from './shared/useRealtimeMemberPresence';
+import { countCompletableTasks } from './shared/taskIndicator';
 
 interface GameProps {
   onLogout?: () => void;
@@ -675,6 +676,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [rankModalOpen, setRankModalOpen] = useState(false);
   const [achievementModalOpen, setAchievementModalOpen] = useState(false);
   const [achievementClaimableCount, setAchievementClaimableCount] = useState(0);
+  const [taskCompletableCount, setTaskCompletableCount] = useState(0);
   const [realmModalOpen, setRealmModalOpen] = useState(false);
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [showSignInDot, setShowSignInDot] = useState(false);
@@ -1635,6 +1637,26 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     return () => window.clearTimeout(t);
   }, [refreshAchievementIndicator]);
 
+  const refreshTaskIndicator = useCallback(async () => {
+    try {
+      const res = await getTaskOverview();
+      if (!res.success || !res.data) {
+        setTaskCompletableCount(0);
+        return;
+      }
+      setTaskCompletableCount(countCompletableTasks(res.data.tasks || []));
+    } catch {
+      setTaskCompletableCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void refreshTaskIndicator();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [refreshTaskIndicator]);
+
   const spiritStones = character?.spiritStones || 0;
   const silver = character?.silver || 0;
   const playerName = character?.nickname || '我';
@@ -1669,6 +1691,12 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         tooltip: `有${achievementClaimableCount}个成就奖励可领取`,
       };
     }
+    if (taskCompletableCount > 0) {
+      out.task = {
+        badgeCount: taskCompletableCount,
+        tooltip: `有${taskCompletableCount}个任务可完成`,
+      };
+    }
     if (techniqueIndicatorStatus) {
       out.technique = {
         badgeDot: true,
@@ -1676,7 +1704,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       };
     }
     return Object.keys(out).length > 0 ? out : undefined;
-  }, [achievementClaimableCount, isTeamLeader, sectMyApplicationCount, sectPendingApplicationCount, teamApplicationUnread, techniqueIndicatorStatus]);
+  }, [achievementClaimableCount, isTeamLeader, sectMyApplicationCount, sectPendingApplicationCount, taskCompletableCount, teamApplicationUnread, techniqueIndicatorStatus]);
 
   const functionItemStates = useMemo(
     () => ({
@@ -1996,7 +2024,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                 if (key === 'life') {
                   messageRef.current.info('百业玩法开发中，敬请期待');
                 }
-                if (key === 'task') setTaskModalOpen(true);
+                if (key === 'task') {
+                  setTaskModalOpen(true);
+                  void refreshTaskIndicator();
+                }
                 if (key === 'sect') setSectModalOpen(true);
                 if (key === 'market') setMarketModalOpen(true);
                 if (key === 'team') setTeamModalOpen(true);
@@ -2456,6 +2487,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
               await refreshTrackedRoomIds();
               window.dispatchEvent(new Event('room:objects:changed'));
             })();
+          }}
+          onTaskCompletedChange={() => {
+            void refreshTaskIndicator();
           }}
         />
       )}
