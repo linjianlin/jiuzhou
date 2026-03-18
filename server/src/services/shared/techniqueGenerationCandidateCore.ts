@@ -117,6 +117,19 @@ const toDamageType = (raw: unknown): 'physical' | 'magic' | 'true' | null => {
   return null;
 };
 
+const toTriggerType = (raw: unknown, effects: unknown[]): 'active' | 'passive' => {
+  const text = asString(raw);
+  if (text === 'passive') return 'passive';
+  const hasAuraEffect = effects.some((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const effect = entry as Record<string, unknown>;
+    const effectType = asString(effect.type);
+    if (effectType !== 'buff' && effectType !== 'debuff') return false;
+    return asString(effect.buffKind) === 'aura';
+  });
+  return hasAuraEffect ? 'passive' : 'active';
+};
+
 const sanitizeTechniqueEffect = (raw: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...raw };
   for (const field of TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS) {
@@ -172,6 +185,7 @@ const sanitizeCandidateFromModel = (
     const row = rawSkill as Record<string, unknown>;
     const name = asString(row.name);
     if (!name) return [];
+    const effects = normalizeEffects(row.effects);
     return [{
       id: asString(row.id) || buildGeneratedSkillId(idx + 1),
       name,
@@ -187,8 +201,8 @@ const sanitizeCandidateFromModel = (
       targetCount: Math.floor(clamp(asNumber(row.targetCount, 1), 1, 6)),
       damageType: toDamageType(row.damageType),
       element: asString(row.element) || technique.attributeElement || 'none',
-      effects: normalizeEffects(row.effects),
-      triggerType: 'active',
+      effects,
+      triggerType: toTriggerType(row.triggerType, effects),
       aiPriority: Math.floor(clamp(asNumber(row.aiPriority, 50), 0, 100)),
       upgrades: Array.isArray(row.upgrades)
         ? row.upgrades.flatMap((entry) => {
@@ -383,9 +397,17 @@ export const validateTechniqueGenerationCandidate = (params: {
       return { success: false, message: 'AI结果技能效果为空', code: 'GENERATOR_INVALID' };
     }
 
+    let hasAuraEffect = false;
+
     for (const effect of skill.effects) {
       if (!effect || typeof effect !== 'object' || Array.isArray(effect)) {
         return { success: false, message: 'AI结果技能效果结构非法', code: 'GENERATOR_INVALID' };
+      }
+      const effectRow = effect as SkillEffect;
+      const effectType = typeof effectRow.type === 'string' ? effectRow.type.trim() : '';
+      const buffKind = typeof effectRow.buffKind === 'string' ? effectRow.buffKind.trim() : '';
+      if ((effectType === 'buff' || effectType === 'debuff') && buffKind === 'aura') {
+        hasAuraEffect = true;
       }
       const effectValidation = validateTechniqueSkillEffect(effect as SkillEffect);
       if (!effectValidation.success) {
@@ -394,6 +416,18 @@ export const validateTechniqueGenerationCandidate = (params: {
           message: `AI结果技能效果非法：${effectValidation.reason}`,
           code: 'GENERATOR_INVALID',
         };
+      }
+    }
+
+    if (hasAuraEffect) {
+      if (skill.triggerType !== 'passive') {
+        return { success: false, message: 'AI generated aura skill must use passive triggerType', code: 'GENERATOR_INVALID' };
+      }
+      if (skill.costLingqi !== 0 || skill.costLingqiRate !== 0 || skill.costQixue !== 0 || skill.costQixueRate !== 0 || skill.cooldown !== 0) {
+        return { success: false, message: 'AI generated aura skill must have zero cost and cooldown', code: 'GENERATOR_INVALID' };
+      }
+      if (skill.targetType !== 'self') {
+        return { success: false, message: 'AI generated aura skill must target self', code: 'GENERATOR_INVALID' };
       }
     }
 

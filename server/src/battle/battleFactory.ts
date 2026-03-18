@@ -204,6 +204,7 @@ export interface SkillData {
   damage_type: string;
   element: string;
   effects: SkillEffect[];
+  trigger_type?: 'active' | 'passive';
   ai_priority: number;
 }
 
@@ -537,7 +538,7 @@ function convertSkillData(data: SkillData): BattleSkill {
     damageType: data.damage_type as any,
     element: data.element || 'none',
     effects: data.effects || [],
-    triggerType: 'active',
+    triggerType: data.trigger_type === 'passive' ? 'passive' : 'active',
     aiPriority: data.ai_priority || 50,
   };
 }

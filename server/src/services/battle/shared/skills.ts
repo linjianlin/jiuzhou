@@ -36,6 +36,7 @@ import {
   toText,
   uniqueStringIds,
 } from "./helpers.js";
+import { normalizeBattleSkillTriggerType } from "../../shared/characterBattleSkillLoadout.js";
 
 // ------ 常量 ------
 
@@ -91,6 +92,7 @@ export function toBattleSkillData(row: SkillDefConfig): SkillData {
     damage_type: String(row.damage_type || "none"),
     element: String(row.element || "none"),
     effects: cloneSkillEffectList(row.effects),
+    trigger_type: normalizeBattleSkillTriggerType(row.trigger_type),
     ai_priority: Math.max(0, Math.floor(Number(row.ai_priority ?? 50) || 50)),
   };
 }
@@ -113,7 +115,7 @@ export function toBattleSkill(skill: SkillData): BattleSkill {
     damageType: normalizeSkillDamageType(skill.damage_type),
     element: String(skill.element || "none"),
     effects: skill.effects.map((effect) => ({ ...effect })),
-    triggerType: "active",
+    triggerType: normalizeBattleSkillTriggerType(skill.trigger_type),
     aiPriority: Math.max(0, Math.floor(skill.ai_priority || 0)),
   };
 }
@@ -271,6 +273,7 @@ export async function getCharacterBattleSkillData(
     .map((s) => ({
       skillId: String(s?.skillId ?? "").trim(),
       upgradeLevel: Math.max(0, Math.floor(toNumber(s?.upgradeLevel) ?? 0)),
+      triggerType: normalizeBattleSkillTriggerType(s?.triggerType),
     }))
     .filter((x) => x.skillId.length > 0);
 
@@ -329,6 +332,7 @@ export async function getCharacterBattleSkillData(
       damage_type: String(row.damage_type || "none"),
       element: String(row.element || "none"),
       effects: skillData.effects,
+      trigger_type: slot.triggerType,
       ai_priority: skillData.ai_priority,
     });
   }
