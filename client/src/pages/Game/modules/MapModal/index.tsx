@@ -117,6 +117,10 @@ const MapModal: React.FC<MapModalProps> = ({
 
   useEffect(() => {
     if (open) return;
+    // 关闭时同步清理当前打开周期的列表与选中态，避免下次打开先用旧列表触发一轮详情请求。
+    setMapEntries([]);
+    setActiveId('');
+    setListLoading(false);
     setDetailById({});
     setDetailLoading(false);
   }, [open]);
