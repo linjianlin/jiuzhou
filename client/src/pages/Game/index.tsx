@@ -2382,7 +2382,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                 }
                 if (key === 'task') {
                   setTaskModalOpen(true);
-                  void refreshTaskIndicator();
                 }
                 if (key === 'sect') setSectModalOpen(true);
                 if (key === 'market') setMarketModalOpen(true);
