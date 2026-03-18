@@ -28,8 +28,6 @@ import type {
 } from "../../../battle/types.js";
 import type { MonsterData, SkillData } from "../../../battle/battleFactory.js";
 import {
-  getMonsterDefinitions,
-  getSkillDefinitions,
   type MonsterAIProfileConfig,
   type MonsterDefConfig,
   type MonsterPhaseTriggerConfig,
@@ -48,6 +46,10 @@ import {
   cloneBattleSkill,
   cloneSkillEffectList,
 } from "./skills.js";
+import {
+  getEnabledBattleMonsterDefinitionMap,
+  getEnabledBattleSkillDefinitionMap,
+} from "./staticDefinitionIndex.js";
 import {
   normalizeBuffApplyType,
   normalizeBuffAttrKey,
@@ -73,6 +75,12 @@ type MonsterRuntimeResolveResult =
   | { success: true; entry: MonsterRuntimeCacheEntry }
   | { success: false; error: string };
 
+type MonsterRuntimeResolverContext = {
+  monsterDefMap: ReadonlyMap<string, MonsterDefConfig>;
+  skillDefMap: ReadonlyMap<string, SkillDefConfig>;
+  cache: Map<string, MonsterRuntimeCacheEntry>;
+};
+
 export type OrderedMonstersResolveResult =
   | {
       success: true;
@@ -80,6 +88,8 @@ export type OrderedMonstersResolveResult =
       monsterSkillsMap: Record<string, SkillData[]>;
     }
   | { success: false; error: string };
+
+let monsterRuntimeResolverContext: MonsterRuntimeResolverContext | null = null;
 
 // ------ 怪物属性归一化 ------
 
@@ -246,8 +256,8 @@ export function parsePhaseEffects(
 
 export function resolveMonsterRuntime(
   monsterId: string,
-  monsterDefMap: Map<string, MonsterDefConfig>,
-  skillDefMap: Map<string, SkillDefConfig>,
+  monsterDefMap: ReadonlyMap<string, MonsterDefConfig>,
+  skillDefMap: ReadonlyMap<string, SkillDefConfig>,
   cache: Map<string, MonsterRuntimeCacheEntry>,
   resolvingPath: Set<string>,
 ): MonsterRuntimeResolveResult {
@@ -446,18 +456,11 @@ export function resolveOrderedMonsters(
     return { success: false, error: "请指定战斗目标" };
   }
 
-  const monsterDefMap = new Map(
-    getMonsterDefinitions()
-      .filter((entry) => entry.enabled !== false)
-      .map((entry) => [entry.id, entry] as const),
-  );
-  const skillDefMap = new Map(
-    getSkillDefinitions()
-      .filter((entry) => entry.enabled !== false)
-      .map((entry) => [entry.id, entry] as const),
-  );
-
-  const cache = new Map<string, MonsterRuntimeCacheEntry>();
+  const {
+    monsterDefMap,
+    skillDefMap,
+    cache,
+  } = getMonsterRuntimeResolverContext();
   const monsters: MonsterData[] = [];
   const monsterSkillsMap: Record<string, SkillData[]> = {};
   for (const id of ids) {
@@ -479,4 +482,26 @@ export function resolveOrderedMonsters(
   }
 
   return { success: true, monsters, monsterSkillsMap };
+}
+
+function getMonsterRuntimeResolverContext(): MonsterRuntimeResolverContext {
+  const monsterDefMap = getEnabledBattleMonsterDefinitionMap();
+  const skillDefMap = getEnabledBattleSkillDefinitionMap();
+  const currentContext = monsterRuntimeResolverContext;
+
+  if (
+    currentContext &&
+    currentContext.monsterDefMap === monsterDefMap &&
+    currentContext.skillDefMap === skillDefMap
+  ) {
+    return currentContext;
+  }
+
+  const nextContext: MonsterRuntimeResolverContext = {
+    monsterDefMap,
+    skillDefMap,
+    cache: new Map<string, MonsterRuntimeCacheEntry>(),
+  };
+  monsterRuntimeResolverContext = nextContext;
+  return nextContext;
 }

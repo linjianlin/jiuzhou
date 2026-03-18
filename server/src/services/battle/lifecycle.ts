@@ -33,9 +33,12 @@ import {
 } from "./runtime/ticker.js";
 import {
   REDIS_BATTLE_KEY_PREFIX,
+  REDIS_BATTLE_STATIC_PREFIX,
   REDIS_BATTLE_PARTICIPANTS_PREFIX,
   removeBattleFromRedis,
+  restoreBattleStateFromRedisSnapshot,
   resolveRecoveredBattleParticipants,
+  shouldPersistBattleToRedis,
 } from "./runtime/persistence.js";
 
 const FINISHED_BATTLE_TTL_MS = 2 * 60 * 1000;
@@ -45,25 +48,34 @@ export async function recoverBattlesFromRedis(): Promise<number> {
   let recoveredCount = 0;
   try {
     const keys = await redis.keys(`${REDIS_BATTLE_KEY_PREFIX}*`);
-    if (keys.length === 0) {
+    const battleStateKeys = keys.filter((key) => {
+      if (key.startsWith(REDIS_BATTLE_STATIC_PREFIX)) return false;
+      const battleId = key.replace(REDIS_BATTLE_KEY_PREFIX, "");
+      return shouldPersistBattleToRedis(battleId);
+    });
+    if (battleStateKeys.length === 0) {
       console.log("✓ 没有需要恢复的战斗");
       return 0;
     }
 
-    for (const key of keys) {
+    for (const key of battleStateKeys) {
       const battleId = key.replace(REDIS_BATTLE_KEY_PREFIX, "");
       try {
-        const [stateJson, participantsJson] = await Promise.all([
+        const [stateJson, staticStateJson, participantsJson] = await Promise.all([
           redis.get(key),
+          redis.get(`${REDIS_BATTLE_STATIC_PREFIX}${battleId}`),
           redis.get(`${REDIS_BATTLE_PARTICIPANTS_PREFIX}${battleId}`),
         ]);
 
-        if (!stateJson) {
+        if (!stateJson || !staticStateJson) {
           await removeBattleFromRedis(battleId);
           continue;
         }
 
-        const state = JSON.parse(stateJson) as BattleState;
+        const state = restoreBattleStateFromRedisSnapshot(
+          stateJson,
+          staticStateJson,
+        );
 
         if (state.phase === "finished") {
           await removeBattleFromRedis(battleId);

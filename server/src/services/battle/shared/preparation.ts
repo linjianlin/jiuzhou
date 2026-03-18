@@ -23,7 +23,7 @@ import type { CharacterData, SkillData } from "../../../battle/battleFactory.js"
 import type { PoolClient } from "pg";
 import { getGameServer } from "../../../game/gameServer.js";
 import {
-  getCharacterComputedByCharacterId,
+  getCharacterComputedBatchByCharacterIds,
   recoverBattleStartResourcesByUserIds,
 } from "../../characterComputedService.js";
 import { idleSessionService } from "../../idle/idleSessionService.js";
@@ -144,7 +144,7 @@ export async function getTeamMembersData(
   isInTeam: boolean;
   isLeader: boolean;
   teamId: string | null;
-  members: Array<{ data: CharacterData; skills: SkillData[] }>;
+  members: TeamBattleMember[];
 }> {
   const memberResult = await query(
     `SELECT tm.team_id, tm.role FROM team_members tm
@@ -167,20 +167,23 @@ export async function getTeamMembersData(
     [teamId, characterId],
   );
 
-  const members = await Promise.all(
-    teamMembersResult.rows.map(async (row) => {
-      const memberCharacterId = Number((row as Record<string, unknown>)?.character_id);
-      if (!Number.isFinite(memberCharacterId) || memberCharacterId <= 0) {
-        return null;
-      }
-      const base = await getCharacterComputedByCharacterId(memberCharacterId);
+  const orderedMemberCharacterIds = teamMembersResult.rows
+    .map((row) => normalizeCharacterId((row as Record<string, number>).character_id))
+    .filter((memberCharacterId) => memberCharacterId > 0);
+
+  const computedMemberMap = await getCharacterComputedBatchByCharacterIds(
+    orderedMemberCharacterIds,
+  );
+  const members: Array<TeamBattleMember | null> = await Promise.all(
+    orderedMemberCharacterIds.map(async (memberCharacterId) => {
+      const base = computedMemberMap.get(memberCharacterId);
       if (!base) return null;
-      const data = await attachSetBonusEffectsToCharacterData(
-        memberCharacterId,
-        base as CharacterData,
-      );
-      const skills = await getCharacterBattleSkillData(memberCharacterId);
-      return { data, skills };
+      const [data, skills] = await Promise.all([
+        attachSetBonusEffectsToCharacterData(memberCharacterId, base),
+        getCharacterBattleSkillData(memberCharacterId),
+      ]);
+      const teamMember: TeamBattleMember = { data, skills };
+      return teamMember;
     }),
   );
 
@@ -188,9 +191,7 @@ export async function getTeamMembersData(
     isInTeam: true,
     isLeader,
     teamId,
-    members: members.filter(
-      (x): x is { data: CharacterData; skills: SkillData[] } => x !== null,
-    ),
+    members: members.filter((member): member is TeamBattleMember => member !== null),
   };
 }
 

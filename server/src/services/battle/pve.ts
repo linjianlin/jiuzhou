@@ -94,7 +94,15 @@ export async function startPVEBattle(
       return { success: false, message: "角色位置异常，无法战斗" };
     }
 
-    const room = await getRoomInMap(mapId, roomId);
+    const roomPromise = getRoomInMap(mapId, roomId);
+    const playerSkillsPromise = getCharacterBattleSkillData(characterId);
+    const preparedTeamPromise = prepareTeamBattleParticipants(
+      userId,
+      character.id,
+      { ignoreMemberCooldown: false },
+    );
+
+    const room = await roomPromise;
     if (!room) {
       return { success: false, message: "当前房间不存在，无法战斗" };
     }
@@ -112,16 +120,19 @@ export async function startPVEBattle(
       }
     }
 
-    const playerSkills = await getCharacterBattleSkillData(characterId);
-
-    const preparedTeam = await prepareTeamBattleParticipants(
-      userId,
-      character.id,
-      { ignoreMemberCooldown: false },
-    );
+    const [playerSkills, preparedTeam] = await Promise.all([
+      playerSkillsPromise,
+      preparedTeamPromise,
+    ]);
     if (!preparedTeam.success) return preparedTeam.result;
     const { validTeamMembers, participantUserIds } = preparedTeam;
 
+    const partnerMemberPromise =
+      partnerService.buildConfiguredPartnerBattleMember({
+        characterId,
+        userId,
+        enabled: validTeamMembers.length <= 0,
+      });
     await syncBattleStartResourcesForUsers(participantUserIds, {
       context: "同步战前资源（普通战斗）",
     });
@@ -158,11 +169,7 @@ export async function startPVEBattle(
 
     const battleId = `battle-${userId}-${Date.now()}`;
 
-    const partnerMember = await partnerService.buildConfiguredPartnerBattleMember({
-      characterId,
-      userId,
-      enabled: validTeamMembers.length <= 0,
-    });
+    const partnerMember = await partnerMemberPromise;
 
     const battleState = createPVEBattle(
       battleId,
@@ -244,16 +251,23 @@ export async function startDungeonPVEBattle(
       return { success: false, message: "请指定战斗目标" };
     }
 
-    const playerSkills = await getCharacterBattleSkillData(characterId);
-
-    const preparedTeam = await prepareTeamBattleParticipants(
-      userId,
-      character.id,
-      { ignoreMemberCooldown: Boolean(options?.skipCooldown) },
-    );
+    const [playerSkills, preparedTeam] = await Promise.all([
+      getCharacterBattleSkillData(characterId),
+      prepareTeamBattleParticipants(
+        userId,
+        character.id,
+        { ignoreMemberCooldown: Boolean(options?.skipCooldown) },
+      ),
+    ]);
     if (!preparedTeam.success) return preparedTeam.result;
     const { validTeamMembers, participantUserIds } = preparedTeam;
 
+    const partnerMemberPromise =
+      partnerService.buildConfiguredPartnerBattleMember({
+        characterId,
+        userId,
+        enabled: validTeamMembers.length <= 0,
+      });
     await syncBattleStartResourcesForUsers(participantUserIds, {
       queryExecutor: options?.resourceSyncClient,
       context: "同步战前资源（秘境战斗）",
@@ -274,11 +288,7 @@ export async function startDungeonPVEBattle(
     const monsterSkillsMap = monsterResolveResult.monsterSkillsMap;
 
     const battleId = `dungeon-battle-${userId}-${Date.now()}`;
-    const partnerMember = await partnerService.buildConfiguredPartnerBattleMember({
-      characterId,
-      userId,
-      enabled: validTeamMembers.length <= 0,
-    });
+    const partnerMember = await partnerMemberPromise;
 
     const battleState = createPVEBattle(
       battleId,

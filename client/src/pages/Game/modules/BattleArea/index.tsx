@@ -276,6 +276,28 @@ const isTransientBattleActionError = (msg: unknown): boolean => {
   return text.includes('目标不是有效的') || text.includes('行动回合') || text.includes('冷却中');
 };
 
+const isBattleMissingError = (msg: unknown): boolean => {
+  const text = String(msg ?? '').trim();
+  return text === '战斗不存在' || text === '战斗不存在或已结束';
+};
+
+const canAutoRestartMissingLocalBattle = (params: {
+  allowLocalStart: boolean;
+  externalBattleId: string | null;
+  allowAutoNext: boolean;
+  finishedBattleAdvanceMode: ReturnType<typeof resolveFinishedBattleAdvanceMode>;
+  monsterIds: string[];
+  lastKnownBattleState: BattleStateDto | null;
+}): boolean => {
+  if (!params.allowLocalStart) return false;
+  if (params.externalBattleId) return false;
+  if (!params.allowAutoNext) return false;
+  if (params.finishedBattleAdvanceMode !== 'use_local_retry') return false;
+  if (params.monsterIds.length <= 0) return false;
+  return params.lastKnownBattleState?.phase === 'finished'
+    && params.lastKnownBattleState.result === 'attacker_win';
+};
+
 const canAdoptIncomingStartedBattle = (
   currentBattleId: string | null,
   currentBattleState: BattleStateDto | null,
@@ -396,6 +418,70 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     setIsTeamBattle(false);
     setTeamMemberCount(1);
   }, [clearAutoNextTimer, clearFloatTimers]);
+
+  const resetBattleRuntimeState = useCallback((endedBattleId?: string | null) => {
+    const normalizedEndedBattleId =
+      typeof endedBattleId === 'string' && endedBattleId.length > 0
+        ? endedBattleId
+        : null;
+    clearAutoNextTimer();
+    setWaitingForCooldown(false);
+    setBattleId(null);
+    setBattleState(null);
+    setResult('idle');
+    setStartupStatus('none');
+    setIsTeamBattle(false);
+    setTeamMemberCount(1);
+    setNexting(false);
+    battleIdRef.current = null;
+    battleStateRef.current = null;
+    nextingRef.current = false;
+    lastLogIndexRef.current = 0;
+    lastChatLogIndexRef.current = 0;
+    announcedBattleIdRef.current = null;
+    announcedBattleEndIdRef.current = normalizedEndedBattleId;
+    announcedBattleDropsIdRef.current = normalizedEndedBattleId;
+    announcedAutoNextBattleIdRef.current = normalizedEndedBattleId;
+  }, [clearAutoNextTimer]);
+
+  const handleMissingBattle = useCallback((messageText?: string): void => {
+    const currentBattleId = battleIdRef.current;
+    const shouldAutoRestartLocalBattle = canAutoRestartMissingLocalBattle({
+      allowLocalStart,
+      externalBattleId: resolvedExternalBattleId,
+      allowAutoNext: resolvedAllowAutoNext,
+      finishedBattleAdvanceMode,
+      monsterIds: lastMonsterIdsRef.current,
+      lastKnownBattleState: battleStateRef.current,
+    });
+
+    if (currentBattleId && messageText) {
+      onAppendBattleLinesRef.current?.([`【斗法中断】${messageText}`]);
+    }
+
+    resetBattlePresentationState();
+    resetBattleRuntimeState(currentBattleId);
+
+    if (shouldAutoRestartLocalBattle) {
+      message.info('当前战斗已失效，正在重新接敌');
+      void startBattleRef.current(lastMonsterIdsRef.current, {
+        retryOnCooldown: true,
+        silentCooldown: true,
+      });
+      return;
+    }
+
+    onEscape?.();
+  }, [
+    allowLocalStart,
+    finishedBattleAdvanceMode,
+    message,
+    onEscape,
+    resetBattlePresentationState,
+    resetBattleRuntimeState,
+    resolvedAllowAutoNext,
+    resolvedExternalBattleId,
+  ]);
 
   const getRemainingBattleCooldownMs = useCallback((): number => {
     const nextAvailableAt = nextBattleAvailableAtRef.current;
@@ -853,6 +939,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     void (async () => {
       const res = await getBattleState(resolvedExternalBattleId);
       if (!res?.success || !res.data?.state) {
+        if (isBattleMissingError(res?.message)) {
+          handleMissingBattle(res.message);
+          return;
+        }
         setStartupStatus('none');
         return;
       }
@@ -863,6 +953,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     })();
   }, [
     applyBattleStateSnapshot,
+    handleMissingBattle,
     resetBattlePresentationState,
     resolvedExternalBattleId,
   ]);
@@ -957,7 +1048,12 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     pollInFlightRef.current = true;
     try {
       const res = await getBattleState(id);
-      if (!res?.success || !res.data?.state) return;
+      if (!res?.success || !res.data?.state) {
+        if (isBattleMissingError(res?.message)) {
+          handleMissingBattle(res.message);
+        }
+        return;
+      }
       const next = res.data.state;
       const current = battleStateRef.current;
       if (!isNewerBattleState(next, current)) return;
@@ -967,7 +1063,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     } finally {
       pollInFlightRef.current = false;
     }
-  }, [applyBattleStateSnapshot]);
+  }, [applyBattleStateSnapshot, handleMissingBattle]);
 
   useEffect(() => {
     if (!battleId) return;
@@ -1134,22 +1230,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       announcedBattleEndIdRef.current = id;
       pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.escaped]);
     }
-    clearAutoNextTimer();
-    setWaitingForCooldown(false);
-    setBattleId(null);
-    setBattleState(null);
-    setResult('idle');
-    setStartupStatus('none');
-    setIsTeamBattle(false);
-    setTeamMemberCount(1);
-    lastLogIndexRef.current = 0;
-    lastChatLogIndexRef.current = 0;
-    announcedBattleIdRef.current = null;
-    announcedBattleEndIdRef.current = id ?? null;
-    announcedBattleDropsIdRef.current = id ?? null;
-    announcedAutoNextBattleIdRef.current = id ?? null;
+    resetBattlePresentationState();
+    resetBattleRuntimeState(id);
     onEscape?.();
-  }, [clearAutoNextTimer, onEscape, pushBattleLines]);
+  }, [onEscape, pushBattleLines, resetBattlePresentationState, resetBattleRuntimeState]);
 
   const handleNext = useCallback(async () => {
     if (!onNext) return;
@@ -1203,6 +1287,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       const actualSkillId = skillId === 'basic_attack' ? 'skill-normal-attack' : skillId;
       const res = await battleAction(id, actualSkillId, targets, SILENT_BATTLE_ACTION_REQUEST_CONFIG).catch((error) => {
         const errorText = getUnifiedApiErrorMessage(error, '行动失败');
+        if (isBattleMissingError(errorText)) {
+          handleMissingBattle(errorText);
+          return null;
+        }
         if (isTransientBattleActionError(errorText)) {
           void pollBattleState();
         }
@@ -1213,6 +1301,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       }
 
       if (!res?.success || !res.data?.state) {
+        if (isBattleMissingError(res?.message)) {
+          handleMissingBattle(res.message);
+          return false;
+        }
         if (isTransientBattleActionError(res?.message)) {
           // 自动战斗/组队并发时可能命中旧回合或旧目标，静默刷新状态即可。
           void pollBattleState();
@@ -1246,6 +1338,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     },
     [
       applyBattleStateSnapshot,
+      handleMissingBattle,
       message,
       pollBattleState,
       selectedAllyId,

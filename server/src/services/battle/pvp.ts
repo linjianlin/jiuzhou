@@ -14,7 +14,6 @@
 
 import {
   createPVPBattle,
-  type CharacterData,
 } from "../../battle/battleFactory.js";
 import { BattleEngine } from "../../battle/battleEngine.js";
 import { query } from "../../config/database.js";
@@ -122,21 +121,19 @@ export async function startPVPBattle(
       }
     }
 
-    const challenger = await attachSetBonusEffectsToCharacterData(
-      challengerCharacterId,
-      challengerBase as CharacterData,
-    );
-    const opponent = await attachSetBonusEffectsToCharacterData(
-      oppId,
-      opponentBase as CharacterData,
-    );
+    const [
+      challenger,
+      opponent,
+      challengerSkills,
+      opponentSkills,
+    ] = await Promise.all([
+      attachSetBonusEffectsToCharacterData(challengerCharacterId, challengerBase),
+      attachSetBonusEffectsToCharacterData(oppId, opponentBase),
+      getCharacterBattleSkillData(challengerCharacterId),
+      getCharacterBattleSkillData(oppId),
+    ]);
     const recoveredChallenger = withBattleStartResources(challenger);
     const recoveredOpponent = withBattleStartResources(opponent);
-
-    const challengerSkills = await getCharacterBattleSkillData(
-      challengerCharacterId,
-    );
-    const opponentSkills = await getCharacterBattleSkillData(oppId);
 
     await syncBattleStartResourcesForUsers(
       isArenaBattle ? [userId] : [userId, opponentUserId],

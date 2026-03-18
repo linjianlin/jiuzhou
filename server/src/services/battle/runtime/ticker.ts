@@ -37,7 +37,7 @@ import {
   getUserIdByCharacterId,
   stripStaticFieldsFromState,
 } from "./state.js";
-import { saveBattleToRedis } from "./persistence.js";
+import { saveBattleToRedis, shouldPersistBattleToRedis } from "./persistence.js";
 
 // ------ 常量 ------
 
@@ -115,7 +115,7 @@ export function emitBattleUpdate(battleId: string, payload: Record<string, unkno
       gameServer.emitToUser(userId, "battle:update", patched);
     }
     const engine = activeBattles.get(battleId);
-    if (engine) {
+    if (engine && shouldPersistBattleToRedis(battleId)) {
       const kind = typeof payload?.kind === "string" ? payload.kind : "";
       const now = Date.now();
       const lastSavedAt = battleLastRedisSavedAt.get(battleId) ?? 0;
@@ -126,7 +126,7 @@ export function emitBattleUpdate(battleId: string, payload: Record<string, unkno
         now - lastSavedAt >= BATTLE_REDIS_SAVE_INTERVAL_MS;
       if (shouldSave) {
         battleLastRedisSavedAt.set(battleId, now);
-        void saveBattleToRedis(battleId, engine, participants);
+        saveBattleToRedis(battleId, engine, participants);
       }
     }
   } catch (error) {

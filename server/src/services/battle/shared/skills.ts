@@ -29,13 +29,13 @@ import {
   toBattleSkillFromSkillData,
 } from "../../../battle/utils/skillConversion.js";
 import type { SkillDefConfig } from "../../staticConfigLoader.js";
-import { getSkillDefinitions } from "../../staticConfigLoader.js";
 import { characterTechniqueService } from "../../characterTechniqueService.js";
 import {
   buildEffectiveTechniqueSkillData,
 } from "../../shared/techniqueSkillProgression.js";
 import { resolveSkillTriggerType } from "../../../shared/skillTriggerType.js";
 import { toNumber, uniqueStringIds } from "./helpers.js";
+import { getEnabledBattleSkillDefinitionMap } from "./staticDefinitionIndex.js";
 
 export {
   applySkillUpgradeChanges,
@@ -44,28 +44,35 @@ export {
 
 // ------ 基础转换 ------
 
+const buildSkillDataFromEffectiveDefinition = (
+  row: SkillDefConfig,
+  effective: ReturnType<typeof buildEffectiveTechniqueSkillData>,
+): SkillData => ({
+  id: String(row.id),
+  name: String(row.name || row.id),
+  cost_lingqi: effective.cost_lingqi,
+  cost_lingqi_rate: effective.cost_lingqi_rate,
+  cost_qixue: effective.cost_qixue,
+  cost_qixue_rate: effective.cost_qixue_rate,
+  cooldown: effective.cooldown,
+  target_type: String(row.target_type || "single_enemy"),
+  target_count: effective.target_count,
+  damage_type: String(row.damage_type || "none"),
+  element: String(row.element || "none"),
+  effects: effective.effects,
+  trigger_type: resolveSkillTriggerType({
+    triggerType: row.trigger_type,
+    effects: effective.effects,
+  }),
+  ai_priority: effective.ai_priority,
+});
+
 /** 静态配置行 -> 战斗用 SkillData */
 export function toBattleSkillData(row: SkillDefConfig): SkillData {
-  const effective = buildEffectiveTechniqueSkillData(row);
-  return {
-    id: String(row.id),
-    name: String(row.name || row.id),
-    cost_lingqi: effective.cost_lingqi,
-    cost_lingqi_rate: effective.cost_lingqi_rate,
-    cost_qixue: effective.cost_qixue,
-    cost_qixue_rate: effective.cost_qixue_rate,
-    cooldown: effective.cooldown,
-    target_type: String(row.target_type || "single_enemy"),
-    target_count: effective.target_count,
-    damage_type: String(row.damage_type || "none"),
-    element: String(row.element || "none"),
-    effects: effective.effects,
-    trigger_type: resolveSkillTriggerType({
-      triggerType: row.trigger_type,
-      effects: effective.effects,
-    }),
-    ai_priority: effective.ai_priority,
-  };
+  return buildSkillDataFromEffectiveDefinition(
+    row,
+    buildEffectiveTechniqueSkillData(row),
+  );
 }
 
 /** SkillData -> 战斗引擎 BattleSkill */
@@ -111,15 +118,13 @@ export async function getCharacterBattleSkillData(
   if (orderedSkillIds.length === 0) return [];
 
   const uniqIds = uniqueStringIds(orderedSkillIds);
-  const idSet = new Set(uniqIds);
-  const byId = new Map<
-    string,
-    ReturnType<typeof getSkillDefinitions>[number]
-  >();
-  for (const row of getSkillDefinitions()) {
-    if (row.enabled === false) continue;
-    if (!idSet.has(row.id)) continue;
-    byId.set(row.id, row);
+  const skillDefinitionById = getEnabledBattleSkillDefinitionMap();
+  const byId = new Map<string, SkillDefConfig>();
+  for (const skillId of uniqIds) {
+    const definition = skillDefinitionById.get(skillId);
+    if (definition) {
+      byId.set(skillId, definition);
+    }
   }
 
   const skills: SkillData[] = [];
@@ -127,27 +132,12 @@ export async function getCharacterBattleSkillData(
     const row = byId.get(slot.skillId);
     if (!row) continue;
 
-    const skillData = buildEffectiveTechniqueSkillData(row, slot.upgradeLevel);
-
-    skills.push({
-      id: String(row.id),
-      name: String(row.name || row.id),
-      cost_lingqi: skillData.cost_lingqi,
-      cost_lingqi_rate: skillData.cost_lingqi_rate,
-      cost_qixue: skillData.cost_qixue,
-      cost_qixue_rate: skillData.cost_qixue_rate,
-      cooldown: skillData.cooldown,
-      target_type: String(row.target_type || "single_enemy"),
-      target_count: skillData.target_count,
-      damage_type: String(row.damage_type || "none"),
-      element: String(row.element || "none"),
-      effects: skillData.effects,
-      trigger_type: resolveSkillTriggerType({
-        triggerType: row.trigger_type,
-        effects: skillData.effects,
-      }),
-      ai_priority: skillData.ai_priority,
-    });
+    skills.push(
+      buildSkillDataFromEffectiveDefinition(
+        row,
+        buildEffectiveTechniqueSkillData(row, slot.upgradeLevel),
+      ),
+    );
   }
 
   return skills;

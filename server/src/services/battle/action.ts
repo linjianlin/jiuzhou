@@ -26,7 +26,6 @@ import {
   finishedBattleResults,
   BATTLE_START_COOLDOWN_MS,
   collectPlayerCharacterIdsFromBattleState,
-  getUserIdByCharacterId,
   removeBattleCharacterIndex,
   removeBattleParticipantIndex,
   setBattleStartCooldownByCharacterIds,
@@ -65,20 +64,6 @@ export async function playerAction(
     }
     if (currentUnit.type !== "player" || state.currentTeam !== "attacker") {
       return { success: false, message: "当前不是玩家行动回合" };
-    }
-    const characterId = Number(currentUnit.sourceId);
-    const ownerUserId = await getUserIdByCharacterId(characterId);
-    if (!ownerUserId) {
-      return { success: false, message: "角色归属异常，无法行动" };
-    }
-    const allowedUserIds =
-      participants.length > 0
-        ? participants
-        : Number.isFinite(state.teams.attacker.odwnerId)
-          ? [state.teams.attacker.odwnerId as number]
-          : [];
-    if (!allowedUserIds.includes(ownerUserId)) {
-      return { success: false, message: "无权操作此战斗" };
     }
 
     const result = engine.playerAction(userId, skillId, targetIds);
