@@ -193,7 +193,7 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 80
+          "amount": 2000
         },
         {
           "type": "item",
@@ -232,11 +232,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 150
+          "amount": 3750
         },
         {
           "type": "spirit_stones",
-          "amount": 10
+          "amount": 250
         },
         {
           "type": "item",
@@ -277,11 +277,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 220
+          "amount": 5500
         },
         {
           "type": "spirit_stones",
-          "amount": 15
+          "amount": 375
         },
         {
           "type": "item",
@@ -332,11 +332,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 320
+          "amount": 8000
         },
         {
           "type": "spirit_stones",
-          "amount": 20
+          "amount": 500
         },
         {
           "type": "item",
@@ -385,7 +385,7 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 420
+          "amount": 10500
         },
         {
           "type": "spirit_stones",
@@ -533,7 +533,7 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 420
+          "amount": 10500
         },
         {
           "type": "item",
@@ -568,7 +568,7 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 430
+          "amount": 10750
         },
         {
           "type": "item",
@@ -603,7 +603,7 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 440
+          "amount": 11000
         },
         {
           "type": "item",
@@ -638,11 +638,11 @@
       "rewards": [
         {
           "type": "spirit_stones",
-          "amount": 48
+          "amount": 1200
         },
         {
           "type": "silver",
-          "amount": 380
+          "amount": 9500
         },
         {
           "type": "item",
@@ -678,11 +678,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 420
+          "amount": 10500
         },
         {
           "type": "spirit_stones",
-          "amount": 52
+          "amount": 1300
         },
         {
           "type": "item",
@@ -909,11 +909,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 620
+          "amount": 15500
         },
         {
           "type": "spirit_stones",
-          "amount": 58
+          "amount": 1450
         },
         {
           "type": "item",
@@ -948,11 +948,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 640
+          "amount": 16000
         },
         {
           "type": "spirit_stones",
-          "amount": 60
+          "amount": 1500
         },
         {
           "type": "item",
@@ -987,11 +987,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 600
+          "amount": 15000
         },
         {
           "type": "spirit_stones",
-          "amount": 56
+          "amount": 1400
         },
         {
           "type": "item",
@@ -1026,11 +1026,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 680
+          "amount": 17000
         },
         {
           "type": "spirit_stones",
-          "amount": 66
+          "amount": 1650
         },
         {
           "type": "item",
@@ -1065,11 +1065,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 700
+          "amount": 17500
         },
         {
           "type": "spirit_stones",
-          "amount": 68
+          "amount": 1700
         },
         {
           "type": "item",
@@ -1247,11 +1247,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 860
+          "amount": 21500
         },
         {
           "type": "spirit_stones",
-          "amount": 84
+          "amount": 2100
         },
         {
           "type": "item",
@@ -1286,11 +1286,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 880
+          "amount": 22000
         },
         {
           "type": "spirit_stones",
-          "amount": 86
+          "amount": 2150
         },
         {
           "type": "item",
@@ -1325,11 +1325,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 920
+          "amount": 23000
         },
         {
           "type": "spirit_stones",
-          "amount": 92
+          "amount": 2300
         },
         {
           "type": "item",
@@ -1462,11 +1462,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 980
+          "amount": 24500
         },
         {
           "type": "spirit_stones",
-          "amount": 96
+          "amount": 2400
         },
         {
           "type": "item",
@@ -1501,11 +1501,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 1000
+          "amount": 25000
         },
         {
           "type": "spirit_stones",
-          "amount": 98
+          "amount": 2450
         },
         {
           "type": "item",
@@ -1540,11 +1540,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 1080
+          "amount": 27000
         },
         {
           "type": "spirit_stones",
-          "amount": 108
+          "amount": 2700
         },
         {
           "type": "item",
@@ -1579,11 +1579,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 1040
+          "amount": 26000
         },
         {
           "type": "spirit_stones",
-          "amount": 104
+          "amount": 2600
         },
         {
           "type": "item",
@@ -1619,11 +1619,11 @@
       "rewards": [
         {
           "type": "silver",
-          "amount": 1120
+          "amount": 28000
         },
         {
           "type": "spirit_stones",
-          "amount": 112
+          "amount": 2800
         },
         {
           "type": "item",
