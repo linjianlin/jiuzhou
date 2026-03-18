@@ -19,6 +19,10 @@
  */
 import { query } from '../../config/database.js';
 import {
+  isManualSkillTriggerType,
+  normalizeExplicitSkillTriggerType,
+} from '../../shared/skillTriggerType.js';
+import {
   normalizeInteger,
   normalizeText,
   type PartnerEffectiveSkillEntry,
@@ -75,6 +79,16 @@ const sortByPriority = <T extends { priority: number; naturalOrder: number }>(en
   return [...entries].sort((left, right) => left.priority - right.priority || left.naturalOrder - right.naturalOrder);
 };
 
+const filterManualSkillPolicyEntries = (
+  availableSkills: PartnerEffectiveSkillEntry[],
+): PartnerEffectiveSkillEntry[] => {
+  return availableSkills.filter((skill) => (
+    isManualSkillTriggerType(
+      normalizeExplicitSkillTriggerType(skill.trigger_type),
+    )
+  ));
+};
+
 export const loadPartnerSkillPolicyRows = async (
   partnerId: number,
   forUpdate: boolean,
@@ -99,6 +113,7 @@ const buildMergedEntries = (params: {
   availableSkills: PartnerEffectiveSkillEntry[];
   persistedRows: PartnerSkillPolicyRow[];
 }): Array<PartnerSkillPolicyEntryDto & { naturalOrder: number }> => {
+  const availableSkills = filterManualSkillPolicyEntries(params.availableSkills);
   const persistedRowMap = new Map<string, PartnerSkillPolicyRow>();
   for (const row of params.persistedRows) {
     const skillId = normalizeText(row.skill_id);
@@ -111,7 +126,7 @@ const buildMergedEntries = (params: {
   const disabledConfigured: Array<PartnerSkillPolicyEntryDto & { naturalOrder: number }> = [];
   const defaultEnabled: Array<PartnerSkillPolicyEntryDto & { naturalOrder: number }> = [];
 
-  params.availableSkills.forEach((skill, naturalOrder) => {
+  availableSkills.forEach((skill, naturalOrder) => {
     const persistedRow = persistedRowMap.get(skill.skillId) ?? null;
     const persistedPriority = persistedRow ? normalizeInteger(persistedRow.priority, 1) : naturalOrder + 1;
     const baseEntry = {
@@ -199,8 +214,9 @@ export const normalizePartnerSkillPolicySlotsForSave = (params: {
   availableSkills: PartnerEffectiveSkillEntry[];
   slots: PartnerSkillPolicySlotDto[];
 }): PartnerSkillPolicyValidationResult => {
-  const availableSkillIds = new Set(params.availableSkills.map((skill) => skill.skillId));
-  if (params.slots.length !== params.availableSkills.length) {
+  const availableSkills = filterManualSkillPolicyEntries(params.availableSkills);
+  const availableSkillIds = new Set(availableSkills.map((skill) => skill.skillId));
+  if (params.slots.length !== availableSkills.length) {
     return { success: false, message: '技能策略必须覆盖伙伴当前全部可配置技能' };
   }
 

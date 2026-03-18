@@ -40,6 +40,7 @@ const createAvailableSkills = (): PartnerEffectiveSkillEntry[] => [
     damage_type: 'spell',
     element: '木',
     effects: [{ type: 'damage', ratio: 1.2 }],
+    trigger_type: 'active',
     sourceTechniqueId: 'tech-a',
     sourceTechniqueName: '青木诀',
     sourceTechniqueQuality: '黄',
@@ -53,6 +54,7 @@ const createAvailableSkills = (): PartnerEffectiveSkillEntry[] => [
     target_type: 'single_enemy',
     damage_type: 'physical',
     effects: [{ type: 'debuff_defense', value: 15 }],
+    trigger_type: 'active',
     sourceTechniqueId: 'tech-a',
     sourceTechniqueName: '青木诀',
     sourceTechniqueQuality: '黄',
@@ -66,6 +68,7 @@ const createAvailableSkills = (): PartnerEffectiveSkillEntry[] => [
     cooldown: 2,
     target_type: 'self',
     effects: [{ type: 'shield', value: 80 }],
+    trigger_type: 'active',
     sourceTechniqueId: 'tech-b',
     sourceTechniqueName: '藤灵诀',
     sourceTechniqueQuality: '玄',
@@ -130,6 +133,34 @@ test('buildPartnerBattleSkillPolicy: 应返回完整顺序，供战斗层统一�
     { skillId: 'skill-c', priority: 2, enabled: true },
     { skillId: 'skill-a', priority: 3, enabled: false },
   ]);
+});
+
+test('buildPartnerSkillPolicyDto: passive 技能不应进入伙伴手动策略列表', () => {
+  const result = buildPartnerSkillPolicyDto({
+    partnerId: 9,
+    availableSkills: [
+      ...createAvailableSkills(),
+      {
+        skillId: 'skill-passive-aura',
+        skillName: '护体灵光',
+        skillIcon: '/passive.png',
+        skillDescription: '进场自动展开光环',
+        cooldown: 0,
+        target_type: 'self',
+        effects: [{ type: 'buff', buffKind: 'aura' }],
+        trigger_type: 'passive',
+        sourceTechniqueId: 'tech-c',
+        sourceTechniqueName: '护体诀',
+        sourceTechniqueQuality: '玄',
+      },
+    ],
+    persistedRows: createPersistedRows(),
+  });
+
+  assert.deepEqual(
+    result.entries.map((entry) => entry.skillId),
+    ['skill-b', 'skill-c', 'skill-a'],
+  );
 });
 
 test('normalizePartnerSkillPolicySlotsForSave: 应拒绝缺失技能的完整覆盖提交', () => {

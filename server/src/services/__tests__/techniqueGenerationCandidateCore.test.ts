@@ -139,3 +139,179 @@ test('sanitizeTechniqueGenerationCandidateFromModel: 应兼容 snake_case 层级
   applySkillUpgradeChanges(battleSkillData, skill.upgrades[0]!.changes as Record<string, unknown>);
   assert.equal(battleSkillData.cooldown, 2);
 });
+
+test('sanitizeTechniqueGenerationCandidateFromModel: 光环技能应统一归一成 passive，避免进入主动轮转', () => {
+  const raw = {
+    technique: {
+      name: '镜月天书',
+      required_realm: '凡人',
+      attribute_type: 'magic',
+      attribute_element: 'shui',
+      description: '测试光环功法',
+      long_desc: '测试光环功法长描述',
+      tags: ['测试', '光环'],
+    },
+    skills: [
+      {
+        id: 'skill-aura-wrong-active',
+        name: '镜月常明',
+        description: '展开镜月光环',
+        cooldown: 0,
+        target_type: 'self',
+        target_count: 1,
+        element: 'shui',
+        triggerType: 'active',
+        ai_priority: 35,
+        effects: [
+          {
+            type: 'buff',
+            buffKind: 'aura',
+            auraTarget: 'self',
+            auraEffects: [
+              {
+                type: 'buff',
+                buffKind: 'attr',
+                attrKey: 'fagong',
+                applyType: 'flat',
+                value: 20,
+                duration: 1,
+              },
+            ],
+            duration: 1,
+          },
+        ],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        cost_spirit_stones: 100,
+        cost_exp: 50,
+        passives: [{ key: 'fagong', value: 12 }],
+        unlock_skill_ids: ['skill-aura-wrong-active'],
+        upgrade_skill_ids: [],
+        layer_desc: '入门',
+      },
+      {
+        layer: 2,
+        cost_spirit_stones: 200,
+        cost_exp: 100,
+        passives: [{ key: 'fagong', value: 18 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '精进',
+      },
+      {
+        layer: 3,
+        cost_spirit_stones: 300,
+        cost_exp: 150,
+        passives: [{ key: 'fagong', value: 24 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '武技', '黄', 3);
+  assert.ok(candidate);
+
+  const skill = candidate.skills[0];
+  assert.equal(skill.triggerType, 'passive');
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '武技',
+    expectedQuality: '黄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, { success: true });
+});
+
+test('validateTechniqueGenerationCandidate: 被动技能必须满足自目标且零消耗零冷却', () => {
+  const raw = {
+    technique: {
+      name: '玄光护体诀',
+      required_realm: '凡人',
+      attribute_type: 'magic',
+      attribute_element: 'jin',
+      description: '测试被动技能约束',
+      long_desc: '测试被动技能约束长描述',
+      tags: ['测试', '被动'],
+    },
+    skills: [
+      {
+        id: 'skill-passive-invalid-shape',
+        name: '玄光护体',
+        description: '错误配置的被动技能',
+        cost_lingqi: 12,
+        cooldown: 1,
+        target_type: 'all_ally',
+        target_count: 1,
+        triggerType: 'passive',
+        ai_priority: 20,
+        effects: [
+          {
+            type: 'buff',
+            buffKind: 'aura',
+            auraTarget: 'self',
+            auraEffects: [
+              {
+                type: 'buff',
+                buffKind: 'attr',
+                attrKey: 'wufang',
+                applyType: 'flat',
+                value: 15,
+                duration: 1,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        cost_spirit_stones: 100,
+        cost_exp: 50,
+        passives: [{ key: 'wufang', value: 12 }],
+        unlock_skill_ids: ['skill-passive-invalid-shape'],
+        upgrade_skill_ids: [],
+        layer_desc: '入门',
+      },
+      {
+        layer: 2,
+        cost_spirit_stones: 200,
+        cost_exp: 100,
+        passives: [{ key: 'wufang', value: 18 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '精进',
+      },
+      {
+        layer: 3,
+        cost_spirit_stones: 300,
+        cost_exp: 150,
+        passives: [{ key: 'wufang', value: 24 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '武技', '黄', 3);
+  assert.ok(candidate);
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '武技',
+    expectedQuality: '黄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, {
+    success: false,
+    message: 'AI结果被动技能配置非法：被动技能 targetType 必须为 self',
+    code: 'GENERATOR_INVALID',
+  });
+});

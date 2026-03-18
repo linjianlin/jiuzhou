@@ -20,10 +20,18 @@
  */
 
 import { query } from '../../config/database.js';
+import {
+  isManualSkillTriggerType,
+  resolveSkillTriggerType,
+} from '../../shared/skillTriggerType.js';
 import { getSkillDefinitions, getTechniqueDefinitions, type SkillDefConfig } from '../staticConfigLoader.js';
 import { buildEffectiveTechniqueSkillData } from './techniqueSkillProgression.js';
 import { isCharacterVisibleTechniqueDefinition } from './techniqueUsageScope.js';
-import { getTechniqueLayersByTechniqueIdsStatic } from './techniqueUpgradeRules.js';
+import {
+  buildTechniqueSkillUpgradeCountMap,
+  getTechniqueLayersByTechniqueIdsStatic,
+  type TechniqueLayerStaticRow,
+} from './techniqueUpgradeRules.js';
 
 type EquippedTechniqueLite = {
   techniqueId: string;
@@ -115,7 +123,22 @@ export const loadCharacterAvailableSkillEntries = async (
   const skillMap = getEnabledSkillDefMap();
   const maxLayerByTechnique = new Map(equipped.map((entry) => [entry.techniqueId, entry.currentLayer] as const));
   const unlockedByTechnique = new Map<string, Set<string>>();
-  const upgradeCountByTechniqueAndSkill = new Map<string, number>();
+  const layerRowsByTechnique = new Map<string, TechniqueLayerStaticRow[]>();
+  for (const row of layerRows) {
+    const rows = layerRowsByTechnique.get(row.techniqueId) ?? [];
+    rows.push(row);
+    layerRowsByTechnique.set(row.techniqueId, rows);
+  }
+  const upgradeCountByTechnique = new Map<string, Map<string, number>>();
+  for (const equippedEntry of equipped) {
+    upgradeCountByTechnique.set(
+      equippedEntry.techniqueId,
+      buildTechniqueSkillUpgradeCountMap(
+        layerRowsByTechnique.get(equippedEntry.techniqueId) ?? [],
+        equippedEntry.currentLayer,
+      ),
+    );
+  }
 
   for (const row of layerRows) {
     const techniqueId = row.techniqueId;
@@ -126,10 +149,6 @@ export const loadCharacterAvailableSkillEntries = async (
     const unlockedSet = unlockedByTechnique.get(techniqueId) ?? new Set<string>();
     for (const skillId of unlockedSkillIds) {
       unlockedSet.add(skillId);
-    }
-    for (const skillId of row.upgradeSkillIds) {
-      const key = `${techniqueId}:${skillId}`;
-      upgradeCountByTechniqueAndSkill.set(key, (upgradeCountByTechniqueAndSkill.get(key) ?? 0) + 1);
     }
     unlockedByTechnique.set(techniqueId, unlockedSet);
   }
@@ -146,8 +165,13 @@ export const loadCharacterAvailableSkillEntries = async (
       const dedupKey = `${equippedEntry.techniqueId}:${skillId}`;
       if (dedup.has(dedupKey)) continue;
       dedup.add(dedupKey);
-      const upgradeLevel = upgradeCountByTechniqueAndSkill.get(dedupKey) ?? 0;
+      const upgradeLevel = upgradeCountByTechnique.get(equippedEntry.techniqueId)?.get(skillId) ?? 0;
       const effectiveSkill = buildEffectiveTechniqueSkillData(skillDef, upgradeLevel);
+      const resolvedTriggerType = resolveSkillTriggerType({
+        triggerType: skillDef.trigger_type,
+        effects: effectiveSkill.effects,
+      });
+      if (!isManualSkillTriggerType(resolvedTriggerType)) continue;
       entries.push({
         skillId,
         techniqueId: equippedEntry.techniqueId,

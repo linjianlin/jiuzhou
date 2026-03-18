@@ -26,7 +26,6 @@ import type {
 } from "../../../battle/types.js";
 import type { SkillData } from "../../../battle/battleFactory.js";
 import {
-  normalizeSkillTriggerType,
   toBattleSkillFromSkillData,
 } from "../../../battle/utils/skillConversion.js";
 import type { SkillDefConfig } from "../../staticConfigLoader.js";
@@ -35,6 +34,7 @@ import { characterTechniqueService } from "../../characterTechniqueService.js";
 import {
   buildEffectiveTechniqueSkillData,
 } from "../../shared/techniqueSkillProgression.js";
+import { resolveSkillTriggerType } from "../../../shared/skillTriggerType.js";
 import { toNumber, uniqueStringIds } from "./helpers.js";
 
 export {
@@ -60,7 +60,10 @@ export function toBattleSkillData(row: SkillDefConfig): SkillData {
     damage_type: String(row.damage_type || "none"),
     element: String(row.element || "none"),
     effects: effective.effects,
-    trigger_type: normalizeSkillTriggerType(row.trigger_type),
+    trigger_type: resolveSkillTriggerType({
+      triggerType: row.trigger_type,
+      effects: effective.effects,
+    }),
     ai_priority: effective.ai_priority,
   };
 }
@@ -139,7 +142,10 @@ export async function getCharacterBattleSkillData(
       damage_type: String(row.damage_type || "none"),
       element: String(row.element || "none"),
       effects: skillData.effects,
-      trigger_type: normalizeSkillTriggerType(row.trigger_type),
+      trigger_type: resolveSkillTriggerType({
+        triggerType: row.trigger_type,
+        effects: skillData.effects,
+      }),
       ai_priority: skillData.ai_priority,
     });
   }

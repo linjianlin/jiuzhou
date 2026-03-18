@@ -20,6 +20,7 @@
 import { randomUUID } from 'crypto';
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
+import type { SkillTriggerType } from '../shared/skillTriggerType.js';
 import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { getItemDefinitionById, getTechniqueDefinitions, refreshGeneratedTechniqueSnapshots } from './staticConfigLoader.js';
@@ -105,7 +106,7 @@ export type TechniqueGenerationCandidate = {
     damageType: 'physical' | 'magic' | 'true' | null;
     element: string;
     effects: unknown[];
-    triggerType: 'active';
+    triggerType: SkillTriggerType;
     aiPriority: number;
     upgrades: TechniqueSkillUpgradeEntry[];
   }>;

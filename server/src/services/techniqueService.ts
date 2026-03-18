@@ -1,4 +1,5 @@
 import { getItemDefinitionsByIds, getSkillDefinitions, getTechniqueDefinitions, getTechniqueLayerDefinitions } from './staticConfigLoader.js';
+import { resolveSkillTriggerType } from '../shared/skillTriggerType.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { isCharacterVisibleTechniqueDefinition } from './shared/techniqueUsageScope.js';
 
@@ -215,7 +216,12 @@ export const getSkillsByTechniqueId = async (techniqueId: string): Promise<Skill
       damage_type: entry.damage_type ?? null,
       element: entry.element ?? 'none',
       effects: Array.isArray(entry.effects) ? entry.effects : [],
-      trigger_type: entry.trigger_type ?? 'active',
+      trigger_type: resolveSkillTriggerType({
+        triggerType: entry.trigger_type,
+        effects: Array.isArray(entry.effects)
+          ? (entry.effects as Array<{ type?: string; buffKind?: string }>)
+          : [],
+      }),
       conditions: entry.conditions ?? null,
       ai_priority: Number(entry.ai_priority ?? 50),
       ai_conditions: entry.ai_conditions ?? null,

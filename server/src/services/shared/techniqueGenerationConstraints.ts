@@ -32,6 +32,7 @@ import {
   TECHNIQUE_SKILL_FATE_SWAP_MODE_LIST,
   TECHNIQUE_SKILL_AURA_TARGET_LIST,
   TECHNIQUE_SKILL_AURA_SUB_EFFECT_TYPE_LIST,
+  TECHNIQUE_SKILL_TRIGGER_TYPE_LIST,
   TECHNIQUE_SKILL_MARK_CONSUME_MODE_LIST,
   TECHNIQUE_SKILL_MARK_ID_LIST,
   TECHNIQUE_SKILL_MARK_OPERATION_LIST,
@@ -454,7 +455,7 @@ export const TECHNIQUE_PROMPT_FIELD_SEMANTICS = {
     damageType: '伤害类型 physical/magic/true/null',
     element: '技能元素，必须在 elementEnum 中',
     effects: '技能效果数组，按 effectSchemaByType 生成',
-    triggerType: '触发类型，固定 active',
+    triggerType: '触发类型，active 或 passive；当 effects 含光环（buffKind=aura）时必须为 passive',
     aiPriority: 'AI 施放优先级，范围见 numericRanges.skill.aiPriority，越高越优先',
     upgrades: '高层强化配置数组；可为空数组；必须符合 upgradeSchema',
   },
@@ -1005,7 +1006,7 @@ export const buildTechniqueGenerationResponseFormat = (params: {
                 },
                 minItems: 1,
               },
-              triggerType: { type: 'string', enum: ['active'] },
+              triggerType: { type: 'string', enum: [...TECHNIQUE_SKILL_TRIGGER_TYPE_LIST] },
               aiPriority: { type: 'integer', minimum: 0, maximum: 100 },
               // upgrades 内部结构由 prompt 约束 + 后端 validate 保证；只要求每个 upgrade 有 layer 字段，其余字段自由输出
               upgrades: {

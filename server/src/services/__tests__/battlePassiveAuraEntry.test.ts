@@ -105,3 +105,38 @@ test('被动光环在进入战斗时立即生效，且不会进入主动技能�
     ['skill-normal-attack', ACTIVE_SKILL.id],
   );
 });
+
+test('光环技能即使被错误写成 active，进入战斗时也应强制按 passive 处理', () => {
+  const player = createCharacterData(1);
+  const monster = createMonsterData('passive-aura-monster-active-input');
+  const wrongTriggerAuraSkill: SkillData = {
+    ...PASSIVE_AURA_SKILL,
+    id: 'skill-passive-aura-wrong-active',
+    trigger_type: 'active',
+  };
+
+  const state = createPVEBattle(
+    'battle-passive-aura-wrong-active',
+    player,
+    [ACTIVE_SKILL, wrongTriggerAuraSkill],
+    [monster],
+    { [monster.id]: [] },
+  );
+
+  const attacker = state.teams.attacker.units[0];
+  assert.ok(attacker, '应成功创建攻击方单位');
+
+  const auraSkill = attacker.skills.find((skill) => skill.id === wrongTriggerAuraSkill.id);
+  assert.equal(auraSkill?.triggerType, 'passive');
+
+  const engine = new BattleEngine(state);
+  engine.startBattle();
+
+  assert.equal(attacker.currentAttrs.wugong, attacker.baseAttrs.wugong + 25);
+
+  const availableSkillIds = getAvailableSkills(attacker).map((skill) => skill.id);
+  assert.deepEqual(
+    availableSkillIds,
+    ['skill-normal-attack', ACTIVE_SKILL.id],
+  );
+});

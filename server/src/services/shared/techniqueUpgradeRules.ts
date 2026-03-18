@@ -81,6 +81,15 @@ export const scaleTechniqueBaseCostByQuality = (
   return normalizedBaseCost * normalizedMultiplier;
 };
 
+const normalizeInteger = (
+  value: number | string | bigint | null | undefined,
+  minimum: number = 0,
+): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return minimum;
+  return Math.max(minimum, Math.floor(parsed));
+};
+
 export const getTechniqueLayerStaticRows = (): TechniqueLayerStaticRow[] => {
   const rows: TechniqueLayerStaticRow[] = [];
   for (const entry of getTechniqueLayerDefinitions()) {
@@ -155,6 +164,29 @@ export const getTechniqueLayersByTechniqueIdsStatic = (
   return normalizedTechniqueIds.flatMap((techniqueId) =>
     getTechniqueLayersByTechniqueIdStatic(techniqueId),
   );
+};
+
+export const buildTechniqueSkillUpgradeCountMap = (
+  layerRows: readonly TechniqueLayerStaticRow[],
+  currentLayerRaw: number | string | bigint | null | undefined,
+): Map<string, number> => {
+  const currentLayer = Math.max(0, normalizeInteger(currentLayerRaw, 0));
+  const upgradeCountBySkillId = new Map<string, number>();
+  if (currentLayer <= 0) return upgradeCountBySkillId;
+
+  for (const row of layerRows) {
+    if (row.layer <= 0 || row.layer > currentLayer) continue;
+    for (const skillId of row.upgradeSkillIds) {
+      const normalizedSkillId = String(skillId || '').trim();
+      if (!normalizedSkillId) continue;
+      upgradeCountBySkillId.set(
+        normalizedSkillId,
+        (upgradeCountBySkillId.get(normalizedSkillId) ?? 0) + 1,
+      );
+    }
+  }
+
+  return upgradeCountBySkillId;
 };
 
 export const getTechniqueLayerByTechniqueAndLayerStatic = (

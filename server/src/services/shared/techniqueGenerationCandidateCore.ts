@@ -38,6 +38,10 @@ import {
   validateTechniqueSkillUpgrade,
   type GeneratedTechniqueType,
 } from './techniqueGenerationConstraints.js';
+import {
+  resolveSkillTriggerType,
+  validatePassiveSkillConfig,
+} from '../../shared/skillTriggerType.js';
 import type { TechniqueSkillUpgradeEntry } from './techniqueSkillGenerationSpec.js';
 import type {
   TechniqueGenerationCandidate,
@@ -139,12 +143,12 @@ const sanitizeTechniqueEffect = (raw: Record<string, unknown>): Record<string, u
   return next;
 };
 
-const normalizeEffects = (raw: unknown): unknown[] => {
+const normalizeEffects = (raw: unknown): Array<Record<string, unknown>> => {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
     .map((entry) => sanitizeTechniqueEffect(entry as Record<string, unknown>))
-    .filter((entry) => DAMAGE_EFFECT_TYPE_SET.has(String((entry as Record<string, unknown>).type || '')));
+    .filter((entry) => DAMAGE_EFFECT_TYPE_SET.has(String(entry.type || '')));
 };
 
 const normalizeTechniqueLayerSkillIds = (
@@ -213,6 +217,11 @@ export const sanitizeTechniqueGenerationCandidateFromModel = (
     const row = rawSkill as Record<string, unknown>;
     const name = asString(row.name);
     if (!name) return [];
+    const effects = normalizeEffects(row.effects);
+    const auraInspectableEffects = effects.map((effect) => ({
+      type: typeof effect.type === 'string' ? effect.type : undefined,
+      buffKind: typeof effect.buffKind === 'string' ? effect.buffKind : undefined,
+    }));
     return [{
       id: asString(row.id) || buildGeneratedSkillId(idx + 1),
       name,
@@ -228,8 +237,11 @@ export const sanitizeTechniqueGenerationCandidateFromModel = (
       targetCount: Math.floor(clamp(asNumber(readAliasedField(row, 'targetCount', 'target_count'), 1), 1, 6)),
       damageType: toDamageType(readAliasedField(row, 'damageType', 'damage_type')),
       element: asString(row.element) || technique.attributeElement || 'none',
-      effects: normalizeEffects(row.effects),
-      triggerType: 'active',
+      effects,
+      triggerType: resolveSkillTriggerType({
+        triggerType: asString(readAliasedField(row, 'triggerType', 'trigger_type')) || undefined,
+        effects: auraInspectableEffects,
+      }),
       aiPriority: Math.floor(clamp(asNumber(readAliasedField(row, 'aiPriority', 'ai_priority'), 50), 0, 100)),
       upgrades: Array.isArray(row.upgrades)
         ? row.upgrades.flatMap((entry) => {
@@ -403,6 +415,25 @@ export const validateTechniqueGenerationCandidate = (params: {
     }
     if (skill.sourceType !== 'technique') {
       return { success: false, message: 'AI结果技能来源非法', code: 'GENERATOR_INVALID' };
+    }
+    if (skill.triggerType !== 'active' && skill.triggerType !== 'passive') {
+      return { success: false, message: 'AI结果技能触发类型非法', code: 'GENERATOR_INVALID' };
+    }
+    const passiveSkillValidation = validatePassiveSkillConfig({
+      triggerType: skill.triggerType,
+      targetType: skill.targetType,
+      cooldown: skill.cooldown,
+      costLingqi: skill.costLingqi,
+      costLingqiRate: skill.costLingqiRate,
+      costQixue: skill.costQixue,
+      costQixueRate: skill.costQixueRate,
+    });
+    if (!passiveSkillValidation.success) {
+      return {
+        success: false,
+        message: `AI结果被动技能配置非法：${passiveSkillValidation.reason}`,
+        code: 'GENERATOR_INVALID',
+      };
     }
     if (skill.cooldown < 0 || skill.cooldown > 6) {
       return { success: false, message: 'AI结果技能冷却越界', code: 'GENERATOR_INVALID' };

@@ -18,6 +18,8 @@
  * 2. 天生功法和后天功法必须走同一套有效功法合并规则，否则伙伴总览与坊市展示会出现技能层级不一致。
  */
 import { query } from '../../config/database.js';
+import type { SkillTriggerType } from '../../shared/skillTriggerType.js';
+import { resolveSkillTriggerType } from '../../shared/skillTriggerType.js';
 import {
   getPartnerDefinitionById,
   getPartnerGrowthConfig,
@@ -26,7 +28,11 @@ import {
   type PartnerDefConfig,
   type TechniqueDefConfig,
 } from '../staticConfigLoader.js';
-import { getTechniqueLayersByTechniqueIdStatic } from './techniqueUpgradeRules.js';
+import { buildEffectiveTechniqueSkillData } from './techniqueSkillProgression.js';
+import {
+  buildTechniqueSkillUpgradeCountMap,
+  getTechniqueLayersByTechniqueIdStatic,
+} from './techniqueUpgradeRules.js';
 import {
   buildPartnerBattleAttrs,
   calcPartnerUpgradeExpByTargetLevel,
@@ -128,6 +134,7 @@ export interface PartnerTechniqueSkillDto {
   damage_type?: string | null;
   element?: string;
   effects?: object[];
+  trigger_type?: SkillTriggerType;
 }
 
 export interface PartnerTechniqueDto {
@@ -159,6 +166,7 @@ export interface PartnerEffectiveSkillEntry {
   damage_type?: string | null;
   element?: string;
   effects?: object[];
+  trigger_type?: SkillTriggerType;
   sourceTechniqueId: string;
   sourceTechniqueName: string;
   sourceTechniqueQuality: string;
@@ -408,27 +416,41 @@ const buildPartnerTechniqueSkills = (
   meta: PartnerTechniqueStaticMeta,
 ): PartnerTechniqueSkillDto[] => {
   const skillDefinitionMap = getEnabledSkillDefinitionMap();
+  const upgradeCountBySkillId = buildTechniqueSkillUpgradeCountMap(
+    getTechniqueLayersByTechniqueIdStatic(meta.definition.id),
+    meta.currentLayer,
+  );
   return meta.skillIds
     .map((skillId) => skillDefinitionMap.get(skillId))
     .filter((skillDef): skillDef is NonNullable<typeof skillDef> => Boolean(skillDef))
-    .map((skillDef) => ({
-      id: skillDef.id,
-      name: normalizeText(skillDef.name) || skillDef.id,
-      icon: normalizeText(skillDef.icon) || '',
-      description: normalizeText(skillDef.description) || undefined,
-      cost_lingqi: typeof skillDef.cost_lingqi === 'number' ? skillDef.cost_lingqi : undefined,
-      cost_lingqi_rate: typeof skillDef.cost_lingqi_rate === 'number' ? skillDef.cost_lingqi_rate : undefined,
-      cost_qixue: typeof skillDef.cost_qixue === 'number' ? skillDef.cost_qixue : undefined,
-      cost_qixue_rate: typeof skillDef.cost_qixue_rate === 'number' ? skillDef.cost_qixue_rate : undefined,
-      cooldown: typeof skillDef.cooldown === 'number' ? skillDef.cooldown : undefined,
-      target_type: normalizeText(skillDef.target_type) || undefined,
-      target_count: typeof skillDef.target_count === 'number' ? skillDef.target_count : undefined,
-      damage_type: normalizeText(skillDef.damage_type) || null,
-      element: normalizeText(skillDef.element) || undefined,
-      effects: Array.isArray(skillDef.effects)
-        ? skillDef.effects.filter((effect): effect is object => typeof effect === 'object' && effect !== null)
-        : undefined,
-    }));
+    .map((skillDef) => {
+      const effectiveSkill = buildEffectiveTechniqueSkillData(
+        skillDef,
+        upgradeCountBySkillId.get(skillDef.id) ?? 0,
+      );
+      const triggerType = resolveSkillTriggerType({
+        triggerType: skillDef.trigger_type,
+        effects: effectiveSkill.effects,
+      });
+
+      return {
+        id: skillDef.id,
+        name: normalizeText(skillDef.name) || skillDef.id,
+        icon: normalizeText(skillDef.icon) || '',
+        description: normalizeText(skillDef.description) || undefined,
+        cost_lingqi: effectiveSkill.cost_lingqi,
+        cost_lingqi_rate: effectiveSkill.cost_lingqi_rate,
+        cost_qixue: effectiveSkill.cost_qixue,
+        cost_qixue_rate: effectiveSkill.cost_qixue_rate,
+        cooldown: effectiveSkill.cooldown,
+        target_type: normalizeText(skillDef.target_type) || undefined,
+        target_count: effectiveSkill.target_count,
+        damage_type: normalizeText(skillDef.damage_type) || null,
+        element: normalizeText(skillDef.element) || undefined,
+        effects: effectiveSkill.effects,
+        trigger_type: triggerType,
+      };
+    });
 };
 
 export const toPartnerComputedAttrsDto = (
@@ -623,6 +645,7 @@ export const buildPartnerEffectiveSkillEntries = (
         damage_type: skill.damage_type,
         element: skill.element,
         effects: skill.effects,
+        trigger_type: skill.trigger_type,
         sourceTechniqueId,
         sourceTechniqueName,
         sourceTechniqueQuality,

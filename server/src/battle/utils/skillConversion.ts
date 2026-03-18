@@ -19,6 +19,10 @@
  */
 
 import type { BattleSkill, SkillEffect } from '../types.js';
+import {
+  normalizeExplicitSkillTriggerType,
+  resolveSkillTriggerType,
+} from '../../shared/skillTriggerType.js';
 
 export type BattleSkillDataInput = {
   id: string;
@@ -47,13 +51,6 @@ const SKILL_TARGET_TYPE_SET = new Set<BattleSkill['targetType']>([
   'random_ally',
 ]);
 
-const SKILL_TRIGGER_TYPE_SET = new Set<BattleSkill['triggerType']>([
-  'active',
-  'passive',
-  'counter',
-  'chase',
-]);
-
 const toText = (value: string | null | undefined): string => {
   if (typeof value !== 'string') return '';
   return value.trim();
@@ -75,10 +72,7 @@ export function normalizeSkillDamageType(raw: string): BattleSkill['damageType']
 }
 
 export function normalizeSkillTriggerType(raw: string | null | undefined): BattleSkill['triggerType'] {
-  const triggerType = toText(raw);
-  return SKILL_TRIGGER_TYPE_SET.has(triggerType as BattleSkill['triggerType'])
-    ? (triggerType as BattleSkill['triggerType'])
-    : 'active';
+  return normalizeExplicitSkillTriggerType(raw);
 }
 
 export function toBattleSkillFromSkillData(skill: BattleSkillDataInput): BattleSkill {
@@ -98,7 +92,10 @@ export function toBattleSkillFromSkillData(skill: BattleSkillDataInput): BattleS
     damageType: normalizeSkillDamageType(skill.damage_type),
     element: toText(skill.element) || 'none',
     effects: skill.effects.map((effect) => ({ ...effect })),
-    triggerType: normalizeSkillTriggerType(skill.trigger_type),
+    triggerType: resolveSkillTriggerType({
+      triggerType: skill.trigger_type,
+      effects: skill.effects,
+    }),
     aiPriority: Math.max(0, Math.floor(skill.ai_priority || 0)),
   };
 }

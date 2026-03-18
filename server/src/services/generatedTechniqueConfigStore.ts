@@ -7,6 +7,7 @@
  * 3) 允许服务在发布后主动刷新缓存，避免重启可见性延迟。
  */
 import { query } from '../config/database.js';
+import { resolveSkillTriggerType } from '../shared/skillTriggerType.js';
 import { normalizeTechniqueUsageScope, type TechniqueUsageScope } from './shared/techniqueUsageScope.js';
 
 export type GeneratedTechniqueDefLite = {
@@ -234,6 +235,7 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
     generatedSkillDefsCache = (skillRes.rows as Array<Record<string, unknown>>).flatMap((row) => {
       const id = asString(row.id);
       if (!id) return [];
+      const effects = asJsonArray<{ type?: string; buffKind?: string }>(row.effects);
       const skill: GeneratedSkillDefLite = {
         id,
         code: asString(row.code) || undefined,
@@ -251,8 +253,11 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
         target_count: Math.max(1, Math.floor(asNumber(row.target_count, 1))),
         damage_type: asString(row.damage_type) || null,
         element: asString(row.element) || 'none',
-        effects: asJsonArray<unknown>(row.effects),
-        trigger_type: asString(row.trigger_type) || 'active',
+        effects,
+        trigger_type: resolveSkillTriggerType({
+          triggerType: asString(row.trigger_type) || undefined,
+          effects,
+        }),
         conditions: row.conditions ?? null,
         ai_priority: Math.max(0, Math.floor(asNumber(row.ai_priority, 50))),
         ai_conditions: row.ai_conditions ?? null,

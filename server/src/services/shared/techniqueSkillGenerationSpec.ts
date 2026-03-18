@@ -73,6 +73,7 @@ export const TECHNIQUE_SKILL_TARGET_TYPE_LIST = [
   'random_enemy',
   'random_ally',
 ] as const;
+export const TECHNIQUE_SKILL_TRIGGER_TYPE_LIST = ['active', 'passive'] as const;
 
 export const TECHNIQUE_SKILL_VALUE_TYPE_LIST = ['flat', 'percent', 'scale', 'combined'] as const;
 export const TECHNIQUE_SKILL_RESOURCE_TYPE_LIST = ['lingqi', 'qixue'] as const;
