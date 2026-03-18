@@ -20,6 +20,7 @@ export {
   getBattleSessionDetailByBattleId,
   markBattleSessionAbandoned,
   markBattleSessionFinished,
+  removeBattleSessionParticipantUser,
   startDungeonBattleSession,
   startPVEBattleSession,
   startPVPBattleSession,

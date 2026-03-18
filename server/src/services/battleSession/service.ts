@@ -432,6 +432,54 @@ export const markBattleSessionAbandoned = (
   return updated ? toBattleSessionSnapshot(updated) : null;
 };
 
+/**
+ * 从 battle session 中移除单个参与用户，但不影响仍留在战斗中的其他参与者。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把“队员退队/被踢/被队伍战斗剔除”后的 session 参与者收缩收口到单一入口，避免 teamHooks、battleSession 各自维护 participantUserIds。
+ * 2. 做什么：若目标用户恰好是 session owner，则直接把整条 session 标记为 abandoned，避免 owner 脱离后还残留一条无主会话。
+ * 3. 不做什么：不改 battle runtime 的 activeBattles/battleParticipants，也不负责 socket 推送。
+ *
+ * 输入/输出：
+ * - 输入：battleId、要移除的 userId。
+ * - 输出：更新后的 session 快照；查不到 session 时返回 null。
+ *
+ * 数据流/状态流：
+ * teamHooks / 其他退出链路 -> 本函数更新 session.participantUserIds
+ * -> 后续 `/battle-session/current` 访问权限与刷新恢复统一读取新快照。
+ *
+ * 关键边界条件与坑点：
+ * 1. owner 被移除时不能只删 participantUserIds，否则 session.ownerUserId 仍可访问旧会话，必须直接 abandoned。
+ * 2. participantUserIds 需要保留 owner，避免普通成员退出时把 owner 一并误删。
+ */
+export const removeBattleSessionParticipantUser = (
+  battleId: string,
+  userId: number,
+): BattleSessionSnapshot | null => {
+  const snapshot = getBattleSessionSnapshotByBattleId(battleId);
+  if (!snapshot) return null;
+
+  const session = getBattleSessionRecord(snapshot.sessionId);
+  if (!session) return null;
+
+  if (session.ownerUserId === userId) {
+    return markBattleSessionAbandoned(battleId);
+  }
+
+  if (!session.participantUserIds.includes(userId)) {
+    return toBattleSessionSnapshot(session);
+  }
+
+  const nextParticipantUserIds = normalizeParticipantUserIds(
+    session.participantUserIds.filter((participantUserId) => participantUserId !== userId),
+    session.ownerUserId,
+  );
+  const updated = updateBattleSessionRecord(session.sessionId, {
+    participantUserIds: nextParticipantUserIds,
+  });
+  return updated ? toBattleSessionSnapshot(updated) : null;
+};
+
 export const getAttachedBattleSessionSnapshot = (
   battleId: string,
 ): BattleSessionSnapshot | null => {

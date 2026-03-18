@@ -26,6 +26,7 @@ import {
   finishedBattleResults,
   BATTLE_START_COOLDOWN_MS,
   collectPlayerCharacterIdsFromBattleState,
+  normalizeBattleParticipantUserIds,
   removeBattleCharacterIndex,
   removeBattleParticipantIndex,
   setBattleStartCooldownByCharacterIds,
@@ -35,7 +36,10 @@ import { removeBattleFromRedis } from "./runtime/persistence.js";
 import { buildBattleAbandonedRealtimePayload } from "./runtime/realtime.js";
 import { finishBattle, getBattleMonsters } from "./settlement.js";
 import { settleArenaBattleIfNeeded } from "./pvp.js";
-import { markBattleSessionAbandoned } from "../battleSession/index.js";
+import {
+  getAttachedBattleSessionSnapshot,
+  markBattleSessionAbandoned,
+} from "../battleSession/index.js";
 
 export async function playerAction(
   userId: number,
@@ -111,7 +115,12 @@ export async function abandonBattle(
   }
 
   const state = engine.getState();
-  const participants = (battleParticipants.get(battleId) || []).slice();
+  const attachedSession = getAttachedBattleSessionSnapshot(battleId);
+  const participants = normalizeBattleParticipantUserIds([
+    ...(battleParticipants.get(battleId) || []),
+    ...(attachedSession?.participantUserIds ?? []),
+    state.teams.attacker.odwnerId,
+  ]);
   const participantCharacterIds: number[] = [];
 
   if (participants.length > 1 && state.teams.attacker.odwnerId !== userId) {

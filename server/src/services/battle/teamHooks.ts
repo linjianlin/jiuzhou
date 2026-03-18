@@ -32,7 +32,10 @@ import {
   buildBattleRealtimePayload,
   buildBattleSnapshotState,
 } from "./runtime/realtime.js";
-import { getAttachedBattleSessionSnapshot } from "../battleSession/index.js";
+import {
+  getAttachedBattleSessionSnapshot,
+  removeBattleSessionParticipantUser,
+} from "../battleSession/index.js";
 
 /**
  * 同步移除离队玩家的参战资格与攻击方玩家单位，避免 participants 与 battle state 脱节。
@@ -61,6 +64,7 @@ async function removeUserFromTeamBattle(
   const participants = battleParticipants.get(battleId) || [];
   const nextParticipants = participants.filter((id) => id !== userId);
   setBattleParticipantsForBattle(battleId, nextParticipants);
+  removeBattleSessionParticipantUser(battleId, userId);
 }
 
 export async function onUserJoinTeam(userId: number): Promise<void> {
@@ -88,9 +92,15 @@ export async function onUserLeaveTeam(userId: number): Promise<void> {
     const engine = activeBattles.get(battleId);
     if (!engine) continue;
     const state = engine.getState();
-    const playerCount = getAttackerPlayerCount(state);
     if (state.battleType !== "pve") continue;
-    if (playerCount <= 1) continue;
+    if (state.teams.attacker.odwnerId === userId) {
+      try {
+        await abandonBattle(userId, battleId);
+      } catch (error) {
+        console.warn(`[battle] onUserLeaveTeam 队长退出战斗失败: ${battleId}`, error);
+      }
+      continue;
+    }
     await removeUserFromTeamBattle(userId, battleId);
     try {
       const gameServer = getGameServer();
