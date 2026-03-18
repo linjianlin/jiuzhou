@@ -229,7 +229,7 @@ export function simulateIdleBattle(
     };
   }
   const replaySnapshot = createIdleBattleReplaySnapshot(initialState, session);
-  const engine = new BattleEngine(initialState);
+  const engine = new BattleEngine(initialState, () => {});
   const playerSelector = resolveIdleBattlePlayerSelector(replaySnapshot);
   engine.autoExecute(playerSelector);
 

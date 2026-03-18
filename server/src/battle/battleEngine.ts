@@ -3,18 +3,19 @@
  * 真回合制：一方全部行动完毕后，另一方再行动
  */
 
-import type { 
-  BattleState, 
-  BattleUnit, 
+import type {
+  BattleState,
+  BattleUnit,
   RoundLog,
   ActionLog,
   AttrModifier,
   MonsterAIPhaseTrigger,
   SkillEffect,
   TargetResult,
+  BattleLogEntry,
 } from './types.js';
 import { BATTLE_CONSTANTS } from './types.js';
-import { appendBattleLog, appendBattleLogs } from './logStream.js';
+import { appendBattleLog } from './logStream.js';
 import { validateBattleState, validateSkillUse, validatePlayerAction } from './utils/validation.js';
 import { addBuff, processRoundStartEffects, processRoundEndBuffs } from './modules/buff.js';
 import { executeSkill, getNormalAttack } from './modules/skill.js';
@@ -66,11 +67,15 @@ function buildPhaseAttrModifiers(effect: BuffOrDebuffEffect): AttrModifier[] {
   return [{ attr, value: finalValue, mode }];
 }
 
+export type BattleLogAppender = (log: BattleLogEntry) => void;
+
 export class BattleEngine {
   private state: BattleState;
-  
-  constructor(state: BattleState) {
+  private logAppender: BattleLogAppender;
+
+  constructor(state: BattleState, logAppender?: BattleLogAppender) {
     this.state = state;
+    this.logAppender = logAppender ?? ((log) => appendBattleLog(this.state, log));
     ensureBattleStateSkillCooldownState(this.state);
   }
   
@@ -229,7 +234,7 @@ export class BattleEngine {
     this.state.phase = 'roundStart';
     
     // 记录回合开始日志
-    appendBattleLog(this.state, {
+    this.logAppender({
       type: 'round_start',
       round: this.state.roundCount,
     } as RoundLog);
@@ -251,10 +256,10 @@ export class BattleEngine {
       
       // DOT/HOT结算
       const effectLogs = processRoundStartEffects(this.state, unit);
-      appendBattleLogs(this.state, effectLogs);
+      effectLogs.forEach(log => this.logAppender(log));
 
       const setLogs = triggerSetBonusEffects(this.state, 'on_turn_start', unit);
-      appendBattleLogs(this.state, setLogs);
+      setLogs.forEach(log => this.logAppender(log));
       
       // 气血/灵气恢复（只有属性值才恢复，没有基础恢复）
       this.recoverResources(unit);
@@ -358,7 +363,7 @@ export class BattleEngine {
 
     // 检查是否被控制
     if (isStunned(currentUnit) || isFeared(currentUnit)) {
-      appendBattleLog(this.state, {
+      this.logAppender({
         type: 'action',
         round: this.state.roundCount,
         actorId: currentUnit.id,
@@ -583,7 +588,7 @@ export class BattleEngine {
       skillName,
       targets,
     };
-    appendBattleLog(this.state, log);
+    this.logAppender(log);
   }
   
   /**
@@ -728,12 +733,12 @@ export class BattleEngine {
       if (!unit.isAlive) continue;
       
       const buffLogs = processRoundEndBuffs(this.state, unit);
-      appendBattleLogs(this.state, buffLogs);
+      buffLogs.forEach(log => this.logAppender(log));
       decayUnitMomentumAtRoundEnd(unit);
     }
-    
+
     // 记录回合结束日志
-    appendBattleLog(this.state, {
+    this.logAppender({
       type: 'round_end',
       round: this.state.roundCount,
     } as RoundLog);
