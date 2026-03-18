@@ -2790,22 +2790,24 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
         />
       </Modal>
 
-      <PhoneBindingDialog
-        open={phoneBindingDialogOpen}
-        onClose={() => {
-          setPhoneBindingDialogOpen(false);
-          onClose();
-        }}
-        onSuccess={async () => {
-          const nextStatus = await refreshPhoneBindingStatus();
-          if (nextStatus.enabled && !nextStatus.isBound) {
-            throw new Error('手机号绑定状态未更新');
-          }
-          setMarketAccessGranted(true);
-          setPhoneBindingDialogOpen(false);
-        }}
-        title="进入坊市前请先绑定手机号"
-      />
+      {phoneBindingDialogOpen ? (
+        <PhoneBindingDialog
+          open={phoneBindingDialogOpen}
+          onClose={() => {
+            setPhoneBindingDialogOpen(false);
+            onClose();
+          }}
+          onSuccess={async () => {
+            const nextStatus = await refreshPhoneBindingStatus();
+            if (nextStatus.enabled && !nextStatus.isBound) {
+              throw new Error('手机号绑定状态未更新');
+            }
+            setMarketAccessGranted(true);
+            setPhoneBindingDialogOpen(false);
+          }}
+          title="进入坊市前请先绑定手机号"
+        />
+      ) : null}
     </>
   );
 };

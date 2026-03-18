@@ -33,12 +33,13 @@ const PlayerInfo: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [processingPoint, setProcessingPoint] = useState<string | null>(null);
   const [phoneBindingDialogOpen, setPhoneBindingDialogOpen] = useState(false);
+  const [shouldLoadPhoneBindingStatus, setShouldLoadPhoneBindingStatus] = useState(false);
   const {
     status: phoneBindingStatus,
     loading: phoneBindingStatusLoading,
     errorMessage: phoneBindingStatusErrorMessage,
     refresh: refreshPhoneBindingStatus,
-  } = usePhoneBindingStatus(true);
+  } = usePhoneBindingStatus(shouldLoadPhoneBindingStatus);
 
   useEffect(() => {
     messageRef.current = message;
@@ -102,7 +103,12 @@ const PlayerInfo: React.FC = () => {
     setRealmOverview(null);
   }, [character?.realm]);
 
+  const ensurePhoneBindingStatusLoaded = useCallback(() => {
+    setShouldLoadPhoneBindingStatus(true);
+  }, []);
+
   useDeferredGameRequest(Boolean(character?.realm), refreshRealmOverview, PLAYER_INFO_AUX_REQUEST_DELAY_MS);
+  useDeferredGameRequest(true, ensurePhoneBindingStatusLoaded, PLAYER_INFO_AUX_REQUEST_DELAY_MS);
 
   const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 
@@ -275,10 +281,12 @@ const PlayerInfo: React.FC = () => {
   ];
   const phoneBindingEnabled = phoneBindingStatus?.enabled === true;
   const phoneBindingBound = phoneBindingStatus?.isBound === true;
-  const shouldShowPhoneBindingSection = phoneBindingStatusLoading
+  const shouldShowPhoneBindingSection = shouldLoadPhoneBindingStatus && (
+    phoneBindingStatusLoading
     || Boolean(phoneBindingStatusErrorMessage)
     || !phoneBindingEnabled
-    || !phoneBindingBound;
+    || !phoneBindingBound
+  );
 
   return (
     <div className="player-info">
@@ -412,7 +420,10 @@ const PlayerInfo: React.FC = () => {
               <Button
                 type="primary"
                 size="small"
-                onClick={() => setPhoneBindingDialogOpen(true)}
+                onClick={() => {
+                  ensurePhoneBindingStatusLoaded();
+                  setPhoneBindingDialogOpen(true);
+                }}
               >
                 立即绑定
               </Button>
@@ -502,13 +513,15 @@ const PlayerInfo: React.FC = () => {
         </div>
       </div>
 
-      <PhoneBindingDialog
-        open={phoneBindingDialogOpen}
-        onClose={() => setPhoneBindingDialogOpen(false)}
-        onSuccess={async () => {
-          await refreshPhoneBindingStatus();
-        }}
-      />
+      {phoneBindingDialogOpen ? (
+        <PhoneBindingDialog
+          open={phoneBindingDialogOpen}
+          onClose={() => setPhoneBindingDialogOpen(false)}
+          onSuccess={async () => {
+            await refreshPhoneBindingStatus();
+          }}
+        />
+      ) : null}
     </div>
   );
 };
