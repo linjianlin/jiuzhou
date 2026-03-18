@@ -196,6 +196,7 @@ export function replayIdleBattleLogs(
 ): BattleLogEntry[] {
   if (!replaySnapshot) return [];
   const replayState = structuredClone(replaySnapshot.initialState);
+  if (!replayState) return [];
   replayState.battleId = randomUUID();
   const engine = new BattleEngine(replayState);
   const playerSelector = resolveIdleBattlePlayerSelector(replaySnapshot);
