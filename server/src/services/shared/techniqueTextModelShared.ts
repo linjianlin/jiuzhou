@@ -152,6 +152,7 @@ export const TEXT_MODEL_PROMPT_NOISE_CONSTRAINT =
   '如果提供了 promptNoiseHash，它仅作为本次创作扰动码：只需隐式影响命名、描述意象、措辞节奏与功法文风，禁止解释、复述、拆解、计算或显式输出该字符串，也不要生成数字、字母、符号或密码感内容';
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
+const THINK_TAG_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>/gi;
 
 const isJsonObject = (value: TechniqueModelJsonValue): value is TechniqueModelJsonObject => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -164,6 +165,11 @@ const tryParseJsonObject = (text: string): TechniqueModelJsonObject | null => {
   } catch {
     return null;
   }
+};
+
+// 统一在共享解析层剥离模型思维链，避免功法生成、伙伴招募、云游事件各自重复处理 `<think>` 包裹内容。
+const stripTechniqueModelThinkBlocks = (content: string): string => {
+  return content.replace(THINK_TAG_BLOCK_PATTERN, '').trim();
 };
 
 type EmbeddedTechniqueJsonObjectCandidate = {
@@ -337,7 +343,7 @@ export const parseTechniqueTextModelJsonObject = (
   content: string,
   options: TechniqueTextModelJsonParseOptions = {},
 ): TechniqueModelJsonParseResult => {
-  const trimmed = content.trim();
+  const trimmed = stripTechniqueModelThinkBlocks(content);
   if (!trimmed) {
     return { success: false, reason: 'empty_content' };
   }

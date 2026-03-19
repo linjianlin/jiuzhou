@@ -32,6 +32,7 @@ import {
   buildTechniqueGenerationResponseFormat,
   TECHNIQUE_EFFECT_TYPE_LIST,
   TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS,
+  TECHNIQUE_PROMPT_EFFECT_COMMON_FIELDS,
   TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
   TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY,
   isSupportedTechniquePassiveKey,
@@ -74,6 +75,7 @@ type TechniqueGenerationAttemptFailure = {
   reason: string;
   modelName: string;
   promptSnapshot: string;
+  rawContent?: string;
 };
 
 type TechniqueGenerationAttemptSuccess = {
@@ -267,6 +269,7 @@ const normalizeTechniqueLayerSkillIds = (
 };
 
 const DUPLICATE_EFFECT_FAILURE_TOKEN = '不允许包含重复 effect';
+const UPGRADE_UNSUPPORTED_FIELD_REASON_PATTERN = /upgrades\.changes 包含未支持字段：([A-Za-z0-9_]+)/;
 
 const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] => {
   const rules = [
@@ -278,6 +281,16 @@ const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] 
       '同一技能的 effects 数组内，任意两个 effect 对象都不能完全相同。',
       '如果已经存在 restore_lingqi/heal/shield/resource 等效果，不要再复制一条字段与数值完全一致的 effect。',
       '如果只是想增强同一效果，请直接提高该 effect 的 value、baseValue、scaleRate 或 duration，不要新增重复对象。',
+    );
+  }
+
+  const unsupportedFieldMatch = reason.match(UPGRADE_UNSUPPORTED_FIELD_REASON_PATTERN);
+  const unsupportedField = unsupportedFieldMatch?.[1];
+  if (unsupportedField && unsupportedField in TECHNIQUE_PROMPT_EFFECT_COMMON_FIELDS) {
+    rules.push(
+      `upgrades.changes 不能直接写 ${unsupportedField}；它属于单个 effect 的内部字段，不属于升级改动顶层键。`,
+      `如果要修改已有效果中的 ${unsupportedField}，必须改写 changes.effects，提供完整 effects 数组；不要返回 changes.${unsupportedField}。`,
+      '如果只是新增一个效果，请使用 changes.addEffect，并把该 effect 的全部字段写在 addEffect 对象内部。',
     );
   }
 
@@ -545,6 +558,7 @@ const buildTechniqueGenerationAttemptFailure = (params: {
   reason: string;
   modelName: string;
   promptSnapshot?: string;
+  rawContent?: string;
 }): TechniqueGenerationAttemptFailure => {
   return {
     success: false,
@@ -552,6 +566,7 @@ const buildTechniqueGenerationAttemptFailure = (params: {
     reason: params.reason,
     modelName: params.modelName,
     promptSnapshot: params.promptSnapshot ?? '{}',
+    rawContent: params.rawContent,
   };
 };
 
@@ -563,8 +578,18 @@ const logTechniqueGenerationAttemptFailure = (params: {
   stage: TechniqueGenerationAttemptFailureStage;
   reason: string;
   modelName: string;
+  rawContent?: string;
 }): void => {
   console.error('[TechniqueGeneration] AI功法生成尝试失败:', params);
+  if (process.env.NODE_ENV === 'production' || !params.rawContent) return;
+  console.error('[TechniqueGeneration] AI功法生成原始输出:', {
+    generationId: params.generationId,
+    characterId: params.characterId,
+    attempt: params.attempt,
+    stage: params.stage,
+    modelName: params.modelName,
+    rawContent: params.rawContent,
+  });
 };
 
 const logTechniqueGenerationTaskFailure = (params: {
@@ -797,6 +822,7 @@ const tryCallExternalGenerator = async (params: {
         reason: parsed.reason === 'empty_content' ? '模型返回内容为空' : '模型返回内容不是合法 JSON 对象',
         modelName,
         promptSnapshot,
+        rawContent: content,
       });
     }
 
@@ -812,6 +838,7 @@ const tryCallExternalGenerator = async (params: {
         reason: sanitizeResult.reason,
         modelName,
         promptSnapshot,
+        rawContent: content,
       });
     }
 
@@ -832,6 +859,7 @@ const tryCallExternalGenerator = async (params: {
       reason: failure.reason,
       modelName,
       promptSnapshot,
+      rawContent: content,
     });
   }
 };
@@ -935,6 +963,7 @@ export const generateTechniqueCandidateWithRetry = async (params: {
         stage: external.stage,
         reason: external.reason,
         modelName: external.modelName,
+        rawContent: external.rawContent,
       });
       if (external.stage === 'config_missing') break;
       continue;

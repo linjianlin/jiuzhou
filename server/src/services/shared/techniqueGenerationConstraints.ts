@@ -219,6 +219,7 @@ export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   'effects 不支持 valueFormula，严禁返回该字段',
   'skills[*].upgrades 只允许使用 { layer, changes } 结构，不要返回 description/effectChanges/effectIndex',
   'upgrades[*].changes 仅允许 target_count/cooldown/cost_lingqi/cost_lingqi_rate/cost_qixue/cost_qixue_rate/ai_priority/effects/addEffect',
+  'value/valueType/baseValue/scaleAttr/scaleRate/duration/chance 等 effect 内字段不得直接放在 upgrades[*].changes 顶层，只能写进 changes.effects[*] 或 changes.addEffect',
   '如果要调整效果，只能使用 changes.effects 全量替换，或 changes.addEffect 追加',
   '功法类型不会限制被动 key 搭配，layers.passives 可自由从 allowedPassiveKeys 中组合',
   '禁止输出 null/undefined 与空字符串占位；无意义的可选字段直接省略',
@@ -375,8 +376,8 @@ export const TECHNIQUE_PROMPT_UPGRADE_SCHEMA = {
     cost_qixue: '气血消耗增量（可正可负，建议范围见 numericRanges.upgradeDeltaSuggested.cost_qixue）',
     cost_qixue_rate: '气血比例消耗增量（可正可负，0.1=10%，建议范围见 numericRanges.upgradeDeltaSuggested.cost_qixue_rate）',
     ai_priority: 'AI优先级增量（可正可负，建议范围见 numericRanges.upgradeDeltaSuggested.ai_priority）',
-    effects: '完整 effects 新数组（整包替换，不支持按索引局部改）',
-    addEffect: '追加一个 effect 对象（用于在现有效果末尾新增）',
+    effects: '完整 effects 新数组（整包替换，不支持按索引局部改；若要改 scaleRate/value/duration 等 effect 字段，必须放在这里）',
+    addEffect: '追加一个 effect 对象（用于在现有效果末尾新增；effect 内字段也只能放在该对象里）',
   },
   examples: {
     valid: [
@@ -412,6 +413,12 @@ export const TECHNIQUE_PROMPT_UPGRADE_SCHEMA = {
         layer: 3,
         description: '错误示例，upgrades 不允许 description',
         effectChanges: [{ effectIndex: 0, scaleRate: 1.8 }],
+      },
+      {
+        layer: 4,
+        changes: {
+          scaleRate: 1.8,
+        },
       },
     ],
   },
@@ -816,6 +823,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_CHECKLIST = [
   'buff/debuff 必须使用结构化 Buff 字段，不得使用 buffId，且 buffKey/attrKey 必须命中预定义允许列表',
   'skills[*].upgrades 只能使用 upgradeGuide 约定结构，禁止 description/effectChanges/effectIndex',
   'upgrades[*].changes 只能包含 upgradeAllowedChangeKeys 中的字段',
+  'scaleRate/value/baseValue/valueType/scaleAttr/duration/chance 等 effect 字段不得直接出现在 upgrades[*].changes 顶层',
   'chance 必须在 0~1 且使用浮点比例表达',
   '仅 random_enemy/random_ally 允许 targetCount > 1；self/single_*/all_* 的 targetCount 必须为 1',
   'layers.passives[].key 必须来自 allowedPassiveKeys，且 value 必须满足 passiveValueGuideByKey 的单层/累计上限',
@@ -906,7 +914,7 @@ export const buildTechniqueGeneratorPromptInput = (params: {
       upgradeUnsupportedFields: [...TECHNIQUE_PROMPT_UPGRADE_UNSUPPORTED_FIELDS],
       upgradeGuide: TECHNIQUE_PROMPT_UPGRADE_SCHEMA,
       upgradeRule:
-        'upgrades 每项必须是 {layer,changes}。changes 只允许 target_count/cooldown/cost_lingqi/cost_lingqi_rate/cost_qixue/cost_qixue_rate/ai_priority/effects/addEffect。严禁 effectChanges/effectIndex/description。',
+        'upgrades 每项必须是 {layer,changes}。changes 只允许 target_count/cooldown/cost_lingqi/cost_lingqi_rate/cost_qixue/cost_qixue_rate/ai_priority/effects/addEffect。严禁 effectChanges/effectIndex/description，也严禁把 scaleRate/value/baseValue/valueType/scaleAttr/duration/chance 这类 effect 字段直接写在 changes 顶层。',
       outputChecklist: [...TECHNIQUE_PROMPT_OUTPUT_CHECKLIST],
     },
     outputShape: TECHNIQUE_PROMPT_OUTPUT_SHAPE,
