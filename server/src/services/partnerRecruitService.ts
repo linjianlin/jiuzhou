@@ -581,7 +581,9 @@ const tryCallPartnerRecruitTextModel = async (
   const { content, modelName } = external;
 
   try {
-    const parsed = parseTechniqueTextModelJsonObject(content);
+    const parsed = parseTechniqueTextModelJsonObject(content, {
+      preferredTopLevelKeys: ['partner', 'innateTechniques'],
+    });
     if (!parsed.success) {
       return {
         success: false,

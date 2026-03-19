@@ -199,6 +199,7 @@ export const TECHNIQUE_DAMAGE_EFFECT_FORBIDDEN_SCALE_ATTR_OPTIONS = ['sudu'] as 
 export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   '仅输出单个 JSON 对象，不要输出代码块与解释文本',
   '所有字段必须使用 camelCase，禁止 snake_case 与中文 key',
+  '顶层必须直接返回 technique/skills/layers，禁止额外包裹 candidate/data/result/payload 等中间键',
   '若 extraContext.techniqueRetryGuidance 存在，必须优先修正 previousFailureReason 指出的错误，再满足其余设计约束与业务规则',
   'skills 必须为数组，长度必须满足 skillCountRange',
   'layers 必须与 maxLayer 一致，按 layer 从小到大给出',
@@ -804,6 +805,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_SHAPE = {
 export const TECHNIQUE_PROMPT_OUTPUT_CHECKLIST = [
   '输出必须是单个 JSON 对象，且可被 JSON.parse 直接解析',
   '必须只返回 technique/skills/layers 三个顶层字段',
+  '禁止返回 candidate/data/result/payload 等包裹层',
   'technique.requiredRealm 必须在 realmEnum 中',
   'skills.length 必须命中对应品质的 skillCountRange',
   'layers.length 必须等于 maxLayer，且 layer 从 1 递增到 maxLayer',

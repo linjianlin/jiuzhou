@@ -96,8 +96,19 @@ type TechniqueGenerationRetryGuidance = {
   correctionRules: string[];
 };
 
+type TechniqueCandidateSanitizeResult =
+  | {
+      success: true;
+      candidate: TechniqueGenerationCandidate;
+    }
+  | {
+      success: false;
+      reason: string;
+    };
+
 const DEFAULT_REQUIRED_REALM = '凡人';
 const DAMAGE_EFFECT_TYPE_SET = new Set<string>(TECHNIQUE_EFFECT_TYPE_LIST);
+const TECHNIQUE_CANDIDATE_WRAPPER_KEYS = ['candidate', 'data', 'result', 'payload'] as const;
 
 const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
 
@@ -121,6 +132,58 @@ const readAliasedField = (
 const clamp = (value: number, min: number, max: number): number => {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+};
+
+const isTechniquePlainObject = (raw: unknown): raw is Record<string, unknown> => {
+  return typeof raw === 'object' && raw !== null && !Array.isArray(raw);
+};
+
+const summarizeTechniqueObjectKeys = (row: Record<string, unknown>): string => {
+  const keys = Object.keys(row).slice(0, 8);
+  return keys.length > 0 ? keys.join(', ') : '(空对象)';
+};
+
+const resolveTechniqueCandidateSourceObject = (
+  raw: unknown,
+): {
+  source: Record<string, unknown> | null;
+  wrapperKey: string | null;
+  failureReason: string | null;
+} => {
+  if (!isTechniquePlainObject(raw)) {
+    return {
+      source: null,
+      wrapperKey: null,
+      failureReason: '模型结果顶层不是 JSON 对象',
+    };
+  }
+
+  const directTechnique = raw.technique;
+  if (isTechniquePlainObject(directTechnique)) {
+    return {
+      source: raw,
+      wrapperKey: null,
+      failureReason: null,
+    };
+  }
+
+  for (const wrapperKey of TECHNIQUE_CANDIDATE_WRAPPER_KEYS) {
+    const nested = raw[wrapperKey];
+    if (!isTechniquePlainObject(nested)) continue;
+    const nestedTechnique = nested.technique;
+    if (!isTechniquePlainObject(nestedTechnique)) continue;
+    return {
+      source: null,
+      wrapperKey,
+      failureReason: `模型结果被额外包裹在顶层键 ${wrapperKey} 中，顶层必须直接返回 technique/skills/layers`,
+    };
+  }
+
+  return {
+    source: null,
+    wrapperKey: null,
+    failureReason: `模型结果缺少 technique 对象，当前顶层键：${summarizeTechniqueObjectKeys(raw)}`,
+  };
 };
 
 const buildGeneratedSkillId = (idx: number): string => {
@@ -311,15 +374,65 @@ export const sanitizeTechniqueGenerationCandidateFromModel = (
   quality: TechniqueQuality,
   maxLayer: number,
 ): TechniqueGenerationCandidate | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const source = raw as Record<string, unknown>;
+  const result = sanitizeTechniqueGenerationCandidateFromModelDetailed(
+    raw,
+    techniqueType,
+    quality,
+    maxLayer,
+  );
+  return result.success ? result.candidate : null;
+};
 
-  const rawTechnique = source.technique && typeof source.technique === 'object' && !Array.isArray(source.technique)
-    ? (source.technique as Record<string, unknown>)
+/**
+ * 统一清洗 AI 返回的功法 candidate，并输出可用于重试提示的失败原因。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：在保留标准 candidate 清洗逻辑的同时，把顶层结构错误收敛成明确失败原因，供重试提示与日志复用。
+ * 2) 做什么：明确指出“多包一层 candidate/data/result/payload”这类当前模型常见偏移，避免所有结构问题都退化成同一句泛化报错。
+ * 3) 不做什么：不额外兼容包裹结构，不偷偷改写模型结果，只负责给出单一入口的结构诊断。
+ *
+ * 输入/输出：
+ * - 输入：模型原始 JSON、目标功法类型、品质、最大层数。
+ * - 输出：`{ success, candidate | reason }`。
+ *
+ * 数据流/状态流：
+ * 文本模型输出 -> 本函数做顶层结构诊断与字段归一化 -> validateTechniqueGenerationCandidate / 重试 guidance / 日志。
+ *
+ * 关键边界条件与坑点：
+ * 1) 这里必须明确拒绝 candidate/data/result/payload 包裹层，而不是默默兼容；否则 prompt 协议会继续漂移。
+ * 2) 失败原因需要稳定、具体，才能在下一轮重试提示中精确告诉模型“哪里错了”，避免重复撞同一个 sanitize 失败。
+ */
+export const sanitizeTechniqueGenerationCandidateFromModelDetailed = (
+  raw: unknown,
+  techniqueType: GeneratedTechniqueType,
+  quality: TechniqueQuality,
+  maxLayer: number,
+): TechniqueCandidateSanitizeResult => {
+  const sourceResult = resolveTechniqueCandidateSourceObject(raw);
+  if (!sourceResult.source) {
+    return {
+      success: false,
+      reason: sourceResult.failureReason ?? '模型结果顶层结构非法',
+    };
+  }
+  const source = sourceResult.source;
+
+  const rawTechnique = isTechniquePlainObject(source.technique)
+    ? source.technique
     : null;
-  if (!rawTechnique) return null;
+  if (!rawTechnique) {
+    return {
+      success: false,
+      reason: '模型结果缺少 technique 对象',
+    };
+  }
   const techniqueName = asString(rawTechnique.name);
-  if (!techniqueName) return null;
+  if (!techniqueName) {
+    return {
+      success: false,
+      reason: '模型结果缺少 technique.name',
+    };
+  }
 
   const technique: TechniqueGenerationCandidate['technique'] = {
     name: techniqueName,
@@ -418,9 +531,12 @@ export const sanitizeTechniqueGenerationCandidateFromModel = (
     .sort((a, b) => a.layer - b.layer);
 
   return {
-    technique,
-    skills,
-    layers: orderedLayers,
+    success: true,
+    candidate: {
+      technique,
+      skills,
+      layers: orderedLayers,
+    },
   };
 };
 
@@ -672,7 +788,9 @@ const tryCallExternalGenerator = async (params: {
       });
     }
 
-    const parsed = parseTechniqueTextModelJsonObject(content);
+    const parsed = parseTechniqueTextModelJsonObject(content, {
+      preferredTopLevelKeys: ['technique', 'skills', 'layers'],
+    });
     if (!parsed.success) {
       return buildTechniqueGenerationAttemptFailure({
         stage: 'json_parse_failed',
@@ -682,11 +800,16 @@ const tryCallExternalGenerator = async (params: {
       });
     }
 
-    const candidate = sanitizeTechniqueGenerationCandidateFromModel(parsed.data, techniqueType, quality, maxLayer);
-    if (!candidate) {
+    const sanitizeResult = sanitizeTechniqueGenerationCandidateFromModelDetailed(
+      parsed.data,
+      techniqueType,
+      quality,
+      maxLayer,
+    );
+    if (!sanitizeResult.success) {
       return buildTechniqueGenerationAttemptFailure({
         stage: 'candidate_sanitize_failed',
-        reason: '模型结果缺少必要字段或结构非法，无法完成清洗',
+        reason: sanitizeResult.reason,
         modelName,
         promptSnapshot,
       });
@@ -694,7 +817,7 @@ const tryCallExternalGenerator = async (params: {
 
     return {
       success: true,
-      candidate,
+      candidate: sanitizeResult.candidate,
       modelName,
       promptSnapshot,
     };

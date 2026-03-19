@@ -170,3 +170,23 @@ test('前置说明含有无效花括号时仍应提取后续合法 JSON 对象',
   if (!result.success) return;
   assert.equal(result.data.technique && typeof result.data.technique === 'object', true);
 });
+
+test('存在多个嵌入对象时应优先提取命中期望顶层键的完整结果', () => {
+  const result = parseTechniqueTextModelJsonObject(
+    [
+      '先给一个错误示例：',
+      '{"id":"skill-a","name":"碎星斩","description":"这是单个技能对象"}',
+      '最终结果：',
+      '{"technique":{"name":"太虚剑诀"},"skills":[{"id":"skill-a","name":"碎星斩"}],"layers":[{"layer":1}]}',
+    ].join('\n'),
+    {
+      preferredTopLevelKeys: ['technique', 'skills', 'layers'],
+    },
+  );
+
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.data.technique && typeof result.data.technique === 'object', true);
+  assert.equal(Array.isArray(result.data.skills), true);
+  assert.equal(Array.isArray(result.data.layers), true);
+});

@@ -140,6 +140,10 @@ export type TechniqueModelJsonParseResult =
       reason: 'empty_content' | 'invalid_json_object';
     };
 
+export type TechniqueTextModelJsonParseOptions = {
+  preferredTopLevelKeys?: string[];
+};
+
 export const TECHNIQUE_TEXT_MODEL_TEMPERATURE = 1.0;
 export const TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE = 0.4;
 export const TECHNIQUE_TEXT_MODEL_SEED_MIN = 1;
@@ -162,7 +166,40 @@ const tryParseJsonObject = (text: string): TechniqueModelJsonObject | null => {
   }
 };
 
-const extractEmbeddedJsonObject = (text: string): TechniqueModelJsonObject | null => {
+type EmbeddedTechniqueJsonObjectCandidate = {
+  data: TechniqueModelJsonObject;
+  matchCount: number;
+  textLength: number;
+  endIndex: number;
+};
+
+const countPreferredTopLevelKeyMatches = (
+  row: TechniqueModelJsonObject,
+  preferredTopLevelKeys: readonly string[],
+): number => {
+  if (preferredTopLevelKeys.length <= 0) return 0;
+  return preferredTopLevelKeys.reduce((count, key) => count + (key in row ? 1 : 0), 0);
+};
+
+const pickBetterEmbeddedTechniqueCandidate = (
+  current: EmbeddedTechniqueJsonObjectCandidate | null,
+  next: EmbeddedTechniqueJsonObjectCandidate,
+): EmbeddedTechniqueJsonObjectCandidate => {
+  if (!current) return next;
+  if (next.matchCount !== current.matchCount) {
+    return next.matchCount > current.matchCount ? next : current;
+  }
+  if (next.textLength !== current.textLength) {
+    return next.textLength > current.textLength ? next : current;
+  }
+  return next.endIndex > current.endIndex ? next : current;
+};
+
+const extractEmbeddedJsonObject = (
+  text: string,
+  preferredTopLevelKeys: readonly string[],
+): TechniqueModelJsonObject | null => {
+  let bestCandidate: EmbeddedTechniqueJsonObjectCandidate | null = null;
   let candidateStart = -1;
   let depth = 0;
   let inString = false;
@@ -208,15 +245,20 @@ const extractEmbeddedJsonObject = (text: string): TechniqueModelJsonObject | nul
       continue;
     }
 
-    const candidate = text.slice(candidateStart, index + 1);
-    const parsed = tryParseJsonObject(candidate);
+    const candidateText = text.slice(candidateStart, index + 1);
+    const parsed = tryParseJsonObject(candidateText);
     if (parsed) {
-      return parsed;
+      bestCandidate = pickBetterEmbeddedTechniqueCandidate(bestCandidate, {
+        data: parsed,
+        matchCount: countPreferredTopLevelKeyMatches(parsed, preferredTopLevelKeys),
+        textLength: candidateText.length,
+        endIndex: index,
+      });
     }
     candidateStart = -1;
   }
 
-  return null;
+  return bestCandidate?.data ?? null;
 };
 
 export const resolveTechniqueTextModelEndpoint = (rawEndpoint: string): string => {
@@ -293,13 +335,39 @@ export const extractTechniqueTextModelContent = (
 
 export const parseTechniqueTextModelJsonObject = (
   content: string,
+  options: TechniqueTextModelJsonParseOptions = {},
 ): TechniqueModelJsonParseResult => {
   const trimmed = content.trim();
   if (!trimmed) {
     return { success: false, reason: 'empty_content' };
   }
+  const preferredTopLevelKeys = (options.preferredTopLevelKeys ?? [])
+    .filter((key) => typeof key === 'string')
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0);
 
   const directObject = tryParseJsonObject(trimmed);
+  if (
+    directObject &&
+    (
+      preferredTopLevelKeys.length <= 0 ||
+      countPreferredTopLevelKeyMatches(directObject, preferredTopLevelKeys) > 0
+    )
+  ) {
+    return {
+      success: true,
+      data: directObject,
+    };
+  }
+
+  const extractedObject = extractEmbeddedJsonObject(trimmed, preferredTopLevelKeys);
+  if (extractedObject) {
+    return {
+      success: true,
+      data: extractedObject,
+    };
+  }
+
   if (directObject) {
     return {
       success: true,
@@ -307,13 +375,5 @@ export const parseTechniqueTextModelJsonObject = (
     };
   }
 
-  const extractedObject = extractEmbeddedJsonObject(trimmed);
-  if (!extractedObject) {
-    return { success: false, reason: 'invalid_json_object' };
-  }
-
-  return {
-    success: true,
-    data: extractedObject,
-  };
+  return { success: false, reason: 'invalid_json_object' };
 };

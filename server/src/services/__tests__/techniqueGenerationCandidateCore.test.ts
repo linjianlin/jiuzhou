@@ -25,6 +25,7 @@ import type { SkillEffect } from '../../battle/types.js';
 import { buildTechniqueGenerationResponseFormat } from '../shared/techniqueGenerationConstraints.js';
 import {
   sanitizeTechniqueGenerationCandidateFromModel,
+  sanitizeTechniqueGenerationCandidateFromModelDetailed,
   validateTechniqueGenerationCandidate,
 } from '../shared/techniqueGenerationCandidateCore.js';
 
@@ -148,6 +149,23 @@ test('sanitizeTechniqueGenerationCandidateFromModel: 应兼容 snake_case 层级
   };
   applySkillUpgradeChanges(battleSkillData, skill.upgrades[0]!.changes as Record<string, unknown>);
   assert.equal(battleSkillData.cooldown, 2);
+});
+
+test('sanitizeTechniqueGenerationCandidateFromModelDetailed: 应明确指出顶层 candidate 包裹层非法', () => {
+  const result = sanitizeTechniqueGenerationCandidateFromModelDetailed({
+    candidate: {
+      technique: {
+        name: '照渊真诀',
+      },
+      skills: [],
+      layers: [],
+    },
+  }, '武技', '黄', 3);
+
+  assert.deepEqual(result, {
+    success: false,
+    reason: '模型结果被额外包裹在顶层键 candidate 中，顶层必须直接返回 technique/skills/layers',
+  });
 });
 
 test('sanitizeTechniqueGenerationCandidateFromModel: 光环技能应统一归一成 passive，避免进入主动轮转', () => {
