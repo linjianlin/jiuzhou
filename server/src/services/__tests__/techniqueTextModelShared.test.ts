@@ -24,6 +24,7 @@ import {
   buildTechniqueTextModelJsonSchemaResponseFormat,
   extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
+  TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE,
   TECHNIQUE_TEXT_MODEL_SEED_MAX,
   TECHNIQUE_TEXT_MODEL_SEED_MIN,
   TECHNIQUE_TEXT_MODEL_TEMPERATURE,
@@ -85,6 +86,17 @@ test('显式传入 seed 时应保留调用方提供的值', () => {
   });
 
   assert.equal(payload.seed, 20260308);
+});
+
+test('显式传入 temperature 时应覆盖默认值', () => {
+  const payload = buildTechniqueTextModelPayload({
+    modelName: 'gpt-4o-mini',
+    systemMessage: 'system prompt',
+    userMessage: '{"quality":"玄"}',
+    temperature: TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE,
+  });
+
+  assert.equal(payload.temperature, TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE);
 });
 
 test('同一 scope 与 seed 应派生稳定的 promptNoiseHash', () => {

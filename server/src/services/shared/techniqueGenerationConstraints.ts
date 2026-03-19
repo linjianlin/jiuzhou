@@ -18,7 +18,6 @@
  * 3) 结构化 Buff 的允许列表来自静态预定义数据，若直接手写会与运行时支持集合漂移。
  */
 import {
-  buildTechniqueTextModelJsonSchemaResponseFormat,
   normalizeTextModelPromptNoiseHash,
   TEXT_MODEL_PROMPT_NOISE_CONSTRAINT,
   type TechniqueTextModelResponseFormat,
@@ -32,6 +31,7 @@ import {
   TECHNIQUE_SKILL_FATE_SWAP_MODE_LIST,
   TECHNIQUE_SKILL_AURA_TARGET_LIST,
   TECHNIQUE_SKILL_AURA_SUB_EFFECT_TYPE_LIST,
+  TECHNIQUE_SKILL_EFFECT_MAX_COUNT,
   TECHNIQUE_SKILL_TRIGGER_TYPE_LIST,
   TECHNIQUE_SKILL_MARK_CONSUME_MODE_LIST,
   TECHNIQUE_SKILL_MARK_ID_LIST,
@@ -65,21 +65,6 @@ import {
 export const GENERATED_TECHNIQUE_TYPE_LIST = ['武技', '心法', '法诀', '身法', '辅修'] as const;
 export type GeneratedTechniqueType = (typeof GENERATED_TECHNIQUE_TYPE_LIST)[number];
 export type GeneratedTechniqueQuality = '黄' | '玄' | '地' | '天';
-
-/** OpenAI response_format.name 只允许 [a-zA-Z0-9_-]，中文需映射为 ASCII */
-const TECHNIQUE_TYPE_ASCII: Record<GeneratedTechniqueType, string> = {
-  武技: 'wuji',
-  心法: 'xinfa',
-  法诀: 'fajue',
-  身法: 'shenfa',
-  辅修: 'fuxiu',
-};
-const TECHNIQUE_QUALITY_ASCII: Record<GeneratedTechniqueQuality, string> = {
-  黄: 'huang',
-  玄: 'xuan',
-  地: 'di',
-  天: 'tian',
-};
 export type TechniquePassiveMode = 'percent' | 'flat';
 export type TechniquePassivePoolEntry = { key: string; mode: TechniquePassiveMode };
 export type TechniquePassiveValueConstraint = {
@@ -214,12 +199,14 @@ export const TECHNIQUE_DAMAGE_EFFECT_FORBIDDEN_SCALE_ATTR_OPTIONS = ['sudu'] as 
 export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   '仅输出单个 JSON 对象，不要输出代码块与解释文本',
   '所有字段必须使用 camelCase，禁止 snake_case 与中文 key',
+  '若 extraContext.techniqueRetryGuidance 存在，必须优先修正 previousFailureReason 指出的错误，再满足其余设计约束与业务规则',
   'skills 必须为数组，长度必须满足 skillCountRange',
   'layers 必须与 maxLayer 一致，按 layer 从小到大给出',
   '生成功法不需要升级材料，layers[*].costMaterials 必须是 []',
   'skill.id 仅作占位，后端会重写；但在本次输出内仍需保持 skills/layers 引用一致',
   '所有枚举字段必须使用给定枚举值，严禁自造枚举（例如 controlType/markId/targetType）',
-  'effects 中每个对象必须满足所属 effect.type 的 required 字段',
+  'effects 中每个对象必须补齐所属 effect.type 的关键字段',
+  `skills[*].effects 与 upgrades[*].changes.effects 最多只能包含 ${TECHNIQUE_SKILL_EFFECT_MAX_COUNT} 个 effect，且不允许完全重复的 effect`,
   'chance 统一使用 0~1 浮点概率（0.1=10%），禁止使用 10/60 这类百分数整数',
   'valueType=combined 时必须同时提供 baseValue 与 scaleRate',
   'valueType=scale 时必须提供 scaleAttr 与 scaleRate',
@@ -233,7 +220,8 @@ export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   'upgrades[*].changes 仅允许 target_count/cooldown/cost_lingqi/cost_lingqi_rate/cost_qixue/cost_qixue_rate/ai_priority/effects/addEffect',
   '如果要调整效果，只能使用 changes.effects 全量替换，或 changes.addEffect 追加',
   '功法类型不会限制被动 key 搭配，layers.passives 可自由从 allowedPassiveKeys 中组合',
-  '禁止输出 null/undefined 字段；可省略可选字段，不要输出空字符串占位',
+  '禁止输出 null/undefined 与空字符串占位；无意义的可选字段直接省略',
+  '当 triggerType=passive 时，技能必须为自目标常驻被动：targetType=self、targetCount=1、cooldown=0、costLingqi=0、costLingqiRate=0、costQixue=0、costQixueRate=0',
   'buffKind=aura 时必须提供 auraTarget 和 auraEffects，auraEffects 中每个子效果遵循对应 type 的标准校验规则，子效果不允许嵌套光环',
   'buffKind=aura 的光环效果只能用于 triggerType=passive 的被动技能，costLingqi/costQixue/cooldown 必须为 0，进场自动生效，永久存在',
 ] as const;
@@ -316,6 +304,7 @@ const buildTechniquePromptBuffConfigRules = () => {
         notes: [
           '光环效果：进场自动生效，永久存在直到施法者死亡，不可驱散',
           '光环不需要 duration（运行时强制永久），只能用于 triggerType=passive 的被动技能',
+          'auraEffects 子效果也不需要 duration；子效果持续时间由宿主光环统一维持',
           'auraTarget 必须在 auraTargetEnum 中（all_ally/all_enemy/self）',
           'auraEffects 必须是非空数组，长度 ≤ 4',
           '子效果 type 必须在 auraSubEffectTypeEnum 中（damage/heal/buff/debuff/resource/restore_lingqi）',
@@ -455,10 +444,10 @@ export const TECHNIQUE_PROMPT_FIELD_SEMANTICS = {
     targetCount: '目标数量（整数，范围见 numericRanges.skill.targetCount）；仅 random_enemy/random_ally 允许 > 1，其余 targetType 必须为 1',
     damageType: '伤害类型 physical/magic/true/null',
     element: '技能元素，必须在 elementEnum 中',
-    effects: '技能效果数组，按 effectSchemaByType 生成',
+    effects: '技能效果数组，按 effectGuideByType 设计',
     triggerType: '触发类型，active 或 passive；当 effects 含光环（buffKind=aura）时必须为 passive',
     aiPriority: 'AI 施放优先级，范围见 numericRanges.skill.aiPriority，越高越优先',
-    upgrades: '高层强化配置数组；可为空数组；必须符合 upgradeSchema',
+    upgrades: '高层强化配置数组；可为空数组；必须符合 upgradeGuide',
   },
   layer: {
     layer: '层号，从 1 开始递增，范围见 numericRanges.layer.layer',
@@ -557,6 +546,7 @@ export const TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE = {
       'duration/stacks 建议为正整数（见 numericRanges.effect.duration / stacks）',
       'buffKind=aura 时必须提供 auraTarget（all_ally/all_enemy/self）和 auraEffects（子效果数组，长度 ≤ 4）',
       'buffKind=aura 时不需要 duration，光环永久存在直到施法者死亡',
+      'auraEffects 子效果不需要 duration；光环每回合自动续上子效果',
     ],
     defaultTemplate: {
       type: 'buff',
@@ -580,6 +570,7 @@ export const TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE = {
       'applyType 如有填写，必须在 allowedBuffConfigRules.applyTypeEnum 中',
       'buffKind=aura 时必须提供 auraTarget（all_ally/all_enemy/self）和 auraEffects（子效果数组，长度 ≤ 4）',
       'buffKind=aura 时不需要 duration，光环永久存在直到施法者死亡',
+      'auraEffects 子效果不需要 duration；光环每回合自动续上子效果',
     ],
     defaultTemplate: {
       type: 'debuff',
@@ -748,7 +739,7 @@ export const TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE = {
   },
 } as const;
 
-export const TECHNIQUE_PROMPT_OUTPUT_SCHEMA = {
+export const TECHNIQUE_PROMPT_OUTPUT_SHAPE = {
   technique: {
     name: 'string(必须为中文字符串，建议 2~8 字)',
     type: 'enum',
@@ -776,7 +767,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_SCHEMA = {
       targetCount: 'number',
       damageType: 'physical|magic|true|null',
       element: 'string',
-      effects: 'SkillEffect[]（严格按 effectSchemaByType）',
+      effects: 'SkillEffect[]（严格按 effectGuideByType 设计）',
       aiPriority: 'number',
       upgrades: [
         {
@@ -821,7 +812,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_CHECKLIST = [
   '任何 effect 不得出现 valueFormula 字段',
   'controlType 必须在 controlTypeEnum；markId 必须在 allowedMarkIds',
   'buff/debuff 必须使用结构化 Buff 字段，不得使用 buffId，且 buffKey/attrKey 必须命中预定义允许列表',
-  'skills[*].upgrades 只能使用 upgradeSchema，禁止 description/effectChanges/effectIndex',
+  'skills[*].upgrades 只能使用 upgradeGuide 约定结构，禁止 description/effectChanges/effectIndex',
   'upgrades[*].changes 只能包含 upgradeAllowedChangeKeys 中的字段',
   'chance 必须在 0~1 且使用浮点比例表达',
   '仅 random_enemy/random_ally 允许 targetCount > 1；self/single_*/all_* 的 targetCount 必须为 1',
@@ -835,6 +826,10 @@ export const buildTechniqueGeneratorPromptInput = (params: {
   maxLayer: number;
   effectTypeEnum: readonly string[];
   promptNoiseHash?: string;
+  retryGuidance?: {
+    previousFailureReason: string;
+    correctionRules: string[];
+  };
 }) => {
   const { techniqueType, quality, maxLayer, effectTypeEnum } = params;
   const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
@@ -847,6 +842,14 @@ export const buildTechniqueGeneratorPromptInput = (params: {
     quality,
     maxLayer,
     promptNoiseHash,
+    ...(params.retryGuidance
+      ? {
+          retryGuidance: {
+            previousFailureReason: params.retryGuidance.previousFailureReason,
+            correctionRules: [...params.retryGuidance.correctionRules],
+          },
+        }
+      : {}),
     constraints: {
       generalRules: [...TECHNIQUE_PROMPT_GENERAL_RULES, TEXT_MODEL_PROMPT_NOISE_CONSTRAINT],
       fieldSemantics: TECHNIQUE_PROMPT_FIELD_SEMANTICS,
@@ -878,7 +881,7 @@ export const buildTechniqueGeneratorPromptInput = (params: {
       damageForbiddenScaleAttrEnum: [...TECHNIQUE_DAMAGE_EFFECT_FORBIDDEN_SCALE_ATTR_OPTIONS],
       numericRanges: TECHNIQUE_PROMPT_NUMERIC_RANGES,
       effectCommonFields: TECHNIQUE_PROMPT_EFFECT_COMMON_FIELDS,
-      effectSchemaByType: TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE,
+      effectGuideByType: TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE,
       effectUnsupportedFields: [...TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS],
       effectRule: 'effects 不支持 valueFormula；请使用 value/valueType/scaleAttr/scaleRate 表达数值',
       allowedPassiveKeys: [...SUPPORTED_TECHNIQUE_PASSIVE_KEYS],
@@ -899,12 +902,12 @@ export const buildTechniqueGeneratorPromptInput = (params: {
       targetCountRule: '仅 random_enemy/random_ally 允许 targetCount > 1；self/single_*/all_* 的 targetCount 必须为 1',
       upgradeAllowedChangeKeys: [...TECHNIQUE_PROMPT_UPGRADE_ALLOWED_CHANGE_KEYS],
       upgradeUnsupportedFields: [...TECHNIQUE_PROMPT_UPGRADE_UNSUPPORTED_FIELDS],
-      upgradeSchema: TECHNIQUE_PROMPT_UPGRADE_SCHEMA,
+      upgradeGuide: TECHNIQUE_PROMPT_UPGRADE_SCHEMA,
       upgradeRule:
         'upgrades 每项必须是 {layer,changes}。changes 只允许 target_count/cooldown/cost_lingqi/cost_lingqi_rate/cost_qixue/cost_qixue_rate/ai_priority/effects/addEffect。严禁 effectChanges/effectIndex/description。',
       outputChecklist: [...TECHNIQUE_PROMPT_OUTPUT_CHECKLIST],
     },
-    outputSchema: TECHNIQUE_PROMPT_OUTPUT_SCHEMA,
+    outputShape: TECHNIQUE_PROMPT_OUTPUT_SHAPE,
   };
 };
 
@@ -923,159 +926,22 @@ export const isSupportedTechniquePassiveKey = (raw: unknown): boolean => {
 };
 
 /**
- * 构建功法生成的结构化输出 JSON Schema（responseFormat）
+ * 构建功法生成 response_format
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：为 Anthropic / OpenAI 的结构化输出提供顶层 technique/skills/layers 的 JSON Schema 约束，保证模型输出是可解析的 JSON 对象。
- * 2) 不做什么：不约束 effects/upgrades 内部结构（太灵活，由 prompt 约束 + 后端 sanitize/validate 保证）。
+ * 1) 做什么：统一返回 `json_object`，让模型把注意力放在数值与机制设计，而不是 strict schema 占位。
+ * 2) 不做什么：不替代运行时技能校验；effect/upgrades 的合法性仍以后端 validate 为准。
  *
  * 输入/输出：
- * - 输入：功法品质（决定 skillCountRange）、功法类型、最大层数。
+ * - 输入：功法品质、功法类型、最大层数。
  * - 输出：`TechniqueTextModelResponseFormat`，可直接传入 `callConfiguredTextModel`。
  *
  * 关键边界条件与坑点：
- * 1) effects 和 upgrades 用 `type: 'object'` 不加 `additionalProperties: false`，因为 effect 有 9+ 种 type 各自字段不同，严格 schema 会导致合法输出被拒。
- * 2) damageType 允许 null（无伤害技能），schema 中用 nullable 表达。
+ * 1) 功法生成链已经有 sanitize/validate/retry，结构问题不需要再靠 strict schema 重复兜一层。
+ * 2) 这里只调整功法生成；伙伴招募等其他链路仍可继续使用 json_schema。
  */
-export const buildTechniqueGenerationResponseFormat = (params: {
+export const buildTechniqueGenerationResponseFormat = (_params: {
   techniqueType: GeneratedTechniqueType;
   quality: GeneratedTechniqueQuality;
   maxLayer: number;
-}): TechniqueTextModelResponseFormat => {
-  const { techniqueType, quality, maxLayer } = params;
-  const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
-  return buildTechniqueTextModelJsonSchemaResponseFormat({
-    name: `technique_generation_${TECHNIQUE_QUALITY_ASCII[quality]}_${TECHNIQUE_TYPE_ASCII[techniqueType]}`,
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['technique', 'skills', 'layers'],
-      properties: {
-        technique: {
-          type: 'object',
-          additionalProperties: false,
-          required: [
-            'name', 'type', 'quality', 'maxLayer', 'requiredRealm',
-            'attributeType', 'attributeElement', 'tags', 'description', 'longDesc',
-          ],
-          properties: {
-            name: { type: 'string', minLength: 1 },
-            type: { type: 'string', enum: [techniqueType] },
-            quality: { type: 'string', enum: [quality] },
-            maxLayer: { type: 'integer', minimum: maxLayer, maximum: maxLayer },
-            requiredRealm: { type: 'string', minLength: 1 },
-            attributeType: { type: 'string', enum: ['physical', 'magic'] },
-            attributeElement: { type: 'string', minLength: 1 },
-            tags: { type: 'array', items: { type: 'string' } },
-            description: { type: 'string', minLength: 1 },
-            longDesc: { type: 'string', minLength: 1 },
-          },
-        },
-        skills: {
-          type: 'array',
-          minItems: skillCountRange.min,
-          maxItems: skillCountRange.max,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'id', 'name', 'description', 'sourceType', 'costLingqi',
-              'costLingqiRate', 'costQixue', 'costQixueRate', 'cooldown',
-              'targetType', 'targetCount', 'element', 'effects', 'triggerType', 'aiPriority',
-            ],
-            properties: {
-              id: { type: 'string', minLength: 1 },
-              name: { type: 'string', minLength: 1 },
-              description: { type: 'string', minLength: 1 },
-              icon: { type: 'string' },
-              sourceType: { type: 'string', enum: ['technique'] },
-              costLingqi: { type: 'integer', minimum: 0, maximum: 80 },
-              costLingqiRate: { type: 'number', minimum: 0, maximum: 1 },
-              costQixue: { type: 'integer', minimum: 0, maximum: 120 },
-              costQixueRate: { type: 'number', minimum: 0, exclusiveMaximum: 1 },
-              cooldown: { type: 'integer', minimum: 0, maximum: 6 },
-              targetType: {
-                type: 'string',
-                enum: ['self', 'single_enemy', 'single_ally', 'all_enemy', 'all_ally', 'random_enemy', 'random_ally'],
-              },
-              targetCount: { type: 'integer', minimum: 1, maximum: 6 },
-              damageType: { type: 'string', enum: ['physical', 'magic', 'true'] },
-              element: { type: 'string', minLength: 1 },
-              // effects 内部结构由 prompt 约束 + 后端 sanitize/validate 保证；只要求每个 effect 有 type 字段，其余字段自由输出
-              effects: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  additionalProperties: true,
-                  required: ['type'],
-                  properties: {
-                    type: { type: 'string', minLength: 1 },
-                  },
-                },
-                minItems: 1,
-              },
-              triggerType: { type: 'string', enum: [...TECHNIQUE_SKILL_TRIGGER_TYPE_LIST] },
-              aiPriority: { type: 'integer', minimum: 0, maximum: 100 },
-              // upgrades 内部结构由 prompt 约束 + 后端 validate 保证；只要求每个 upgrade 有 layer 字段，其余字段自由输出
-              upgrades: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  additionalProperties: true,
-                  required: ['layer'],
-                  properties: {
-                    layer: { type: 'integer', minimum: 1 },
-                  },
-                },
-              },
-            },
-          },
-        },
-        layers: {
-          type: 'array',
-          minItems: maxLayer,
-          maxItems: maxLayer,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['layer', 'costSpiritStones', 'costExp', 'costMaterials', 'passives', 'unlockSkillIds', 'upgradeSkillIds', 'layerDesc'],
-            properties: {
-              layer: { type: 'integer', minimum: 1, maximum: maxLayer },
-              costSpiritStones: { type: 'integer', minimum: 0 },
-              costExp: { type: 'integer', minimum: 0 },
-              costMaterials: {
-                type: 'array',
-                maxItems: 0,
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['itemId', 'qty'],
-                  properties: {
-                    itemId: { type: 'string' },
-                    qty: { type: 'integer' },
-                  },
-                },
-              },
-              passives: {
-                type: 'array',
-                minItems: 1,
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['key', 'value'],
-                  properties: {
-                    key: { type: 'string', minLength: 1 },
-                    value: { type: 'number', exclusiveMinimum: 0 },
-                  },
-                },
-              },
-              unlockSkillIds: { type: 'array', items: { type: 'string' } },
-              upgradeSkillIds: { type: 'array', items: { type: 'string' } },
-              layerDesc: { type: 'string', minLength: 1 },
-            },
-          },
-        },
-      },
-    },
-  });
-};
+}): TechniqueTextModelResponseFormat => ({ type: 'json_object' });

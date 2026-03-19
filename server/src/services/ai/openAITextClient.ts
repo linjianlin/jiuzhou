@@ -53,6 +53,7 @@ export const callConfiguredTextModel = async (params: {
   systemMessage: string;
   userMessage: string;
   seed?: number;
+  temperature?: number;
   timeoutMs: number;
 }): Promise<OpenAITextModelCallResult | null> => {
   const config = readTextModelConfig();
@@ -64,6 +65,7 @@ export const callConfiguredTextModel = async (params: {
       responseFormat: params.responseFormat,
       systemMessage: params.systemMessage,
       userMessage: params.userMessage,
+      temperature: params.temperature,
       timeoutMs: params.timeoutMs,
     });
   }
@@ -74,6 +76,7 @@ export const callConfiguredTextModel = async (params: {
     systemMessage: params.systemMessage,
     userMessage: params.userMessage,
     seed: params.seed,
+    temperature: params.temperature,
   });
   const client = new OpenAI({
     apiKey: config.apiKey,

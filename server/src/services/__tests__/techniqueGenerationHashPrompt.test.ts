@@ -19,8 +19,14 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildTechniqueGenerationTextModelRequest } from '../shared/techniqueGenerationCandidateCore.js';
-import { buildTextModelPromptNoiseHash } from '../shared/techniqueTextModelShared.js';
+import {
+  buildTechniqueGenerationRetryPromptContext,
+  buildTechniqueGenerationTextModelRequest,
+} from '../shared/techniqueGenerationCandidateCore.js';
+import {
+  buildTextModelPromptNoiseHash,
+  TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE,
+} from '../shared/techniqueTextModelShared.js';
 
 test('buildTechniqueGenerationTextModelRequest: 应显式传入 seed 并在 prompt 中注入对应扰动 hash', () => {
   const seed = 20260315;
@@ -41,4 +47,63 @@ test('buildTechniqueGenerationTextModelRequest: 应显式传入 seed 并在 prom
   assert.equal(request.seed, seed);
   assert.equal(parsedUserMessage.promptNoiseHash, buildTextModelPromptNoiseHash('technique-generation', seed));
   assert.equal(parsedUserMessage.extraContext?.source, 'unit-test');
+});
+
+test('buildTechniqueGenerationRetryPromptContext: 应保留原语境并注入重复 effect 纠偏约束', () => {
+  const promptContext = buildTechniqueGenerationRetryPromptContext({
+    promptContext: { source: 'unit-test' },
+    previousFailureReason: 'AI结果技能效果非法：skill.effects 不允许包含重复 effect',
+  });
+
+  assert.equal(promptContext?.source, 'unit-test');
+
+  type RetryPromptContext = {
+    previousFailureReason?: string;
+    correctionRules?: string[];
+  };
+
+  const retryGuidance = promptContext?.techniqueRetryGuidance as RetryPromptContext | undefined;
+  assert.equal(retryGuidance?.previousFailureReason, 'AI结果技能效果非法：skill.effects 不允许包含重复 effect');
+  assert.equal(
+    retryGuidance?.correctionRules?.includes('同一技能的 effects 数组内，任意两个 effect 对象都不能完全相同。'),
+    true,
+  );
+  assert.equal(
+    retryGuidance?.correctionRules?.includes('如果只是想增强同一效果，请直接提高该 effect 的 value、baseValue、scaleRate 或 duration，不要新增重复对象。'),
+    true,
+  );
+});
+
+test('buildTechniqueGenerationTextModelRequest: 重试语境存在时应把纠偏规则提升到主提示并降低 temperature', () => {
+  const retryPromptContext = buildTechniqueGenerationRetryPromptContext({
+    promptContext: { source: 'unit-test' },
+    previousFailureReason: 'AI结果技能效果非法：skill.effects 不允许包含重复 effect',
+  });
+  const request = buildTechniqueGenerationTextModelRequest({
+    techniqueType: '辅修',
+    quality: '玄',
+    maxLayer: 5,
+    seed: 20260319,
+    promptContext: retryPromptContext,
+  });
+  const parsedUserMessage = JSON.parse(request.userMessage) as {
+    retryGuidance?: {
+      previousFailureReason?: string;
+      correctionRules?: string[];
+    };
+    extraContext?: {
+      source?: string;
+      techniqueRetryGuidance?: {
+        previousFailureReason?: string;
+      };
+    };
+  };
+
+  assert.equal(request.temperature, TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE);
+  assert.equal(parsedUserMessage.retryGuidance?.previousFailureReason, 'AI结果技能效果非法：skill.effects 不允许包含重复 effect');
+  assert.equal(parsedUserMessage.extraContext?.source, 'unit-test');
+  assert.equal(
+    parsedUserMessage.extraContext?.techniqueRetryGuidance?.previousFailureReason,
+    'AI结果技能效果非法：skill.effects 不允许包含重复 effect',
+  );
 });

@@ -106,6 +106,32 @@ test('升级项应支持 addEffect 追加控制效果', () => {
 
   assert.deepEqual(validation, { success: true });
 });
+
+test('光环子效果不应再声明 duration', () => {
+  const validation = validateTechniqueSkillEffect({
+    type: 'buff',
+    buffKind: 'aura',
+    buffKey: 'buff-aura',
+    auraTarget: 'self',
+    auraEffects: [
+      {
+        type: 'buff',
+        buffKind: 'attr',
+        buffKey: 'buff-shanbi-up',
+        attrKey: 'shanbi',
+        applyType: 'percent',
+        value: 0.2,
+        duration: 2,
+      },
+    ],
+  });
+
+  assert.deepEqual(validation, {
+    success: false,
+    reason: 'auraEffects 子效果不允许声明 duration，光环效果持续时间由宿主光环统一决定',
+  });
+});
+
 test('升级项中的旧式 effectChanges 字段应被拒绝', () => {
   const validation = validateTechniqueSkillUpgrade(
     {

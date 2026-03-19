@@ -6,6 +6,7 @@ import { translateKnownBuffKeyName } from "../shared/buffNameMap";
 type SkillEffectContext = {
   damageType?: string | null | undefined;
   element?: string | null | undefined;
+  targetType?: string | null | undefined;
 };
 
 const DAMAGE_TYPE_LABEL: Record<string, string> = {
@@ -315,6 +316,16 @@ const AURA_TARGET_LABEL: Record<string, string> = {
   self: '自身',
 };
 
+const RESOURCE_EFFECT_TARGET_LABEL: Record<string, string> = {
+  self: '自身',
+  single_enemy: '目标',
+  all_enemy: '敌方全体',
+  single_ally: '友方目标',
+  all_ally: '友方全体',
+  random_enemy: '随机敌方目标',
+  random_ally: '随机友方目标',
+};
+
 /**
  * 格式化光环子效果描述
  *
@@ -341,11 +352,11 @@ const formatAuraDetail = (effect: Record<string, unknown>): string => {
     } else if (subType === 'heal') {
       subLines.push(formatHealEffect(subEffect));
     } else if (subType === 'buff') {
-      subLines.push(formatBuffEffect(subEffect, 'buff'));
+      subLines.push(formatBuffEffect(subEffect, 'buff', { ignoreDuration: true }));
     } else if (subType === 'debuff') {
-      subLines.push(formatBuffEffect(subEffect, 'debuff'));
+      subLines.push(formatBuffEffect(subEffect, 'debuff', { ignoreDuration: true }));
     } else if (subType === 'resource') {
-      subLines.push(formatResourceEffect(subEffect));
+      subLines.push(formatResourceEffect(subEffect, { targetType: auraTarget }));
     } else if (subType === 'restore_lingqi') {
       subLines.push(formatRestoreLingqiEffect(subEffect));
     }
@@ -448,7 +459,11 @@ const formatBuffDetail = (
   return [baseValueText, extraValueText].filter((part) => part.length > 0).join(' + ');
 };
 
-const formatBuffEffect = (effect: Record<string, unknown>, effectType: 'buff' | 'debuff'): string => {
+const formatBuffEffect = (
+  effect: Record<string, unknown>,
+  effectType: 'buff' | 'debuff',
+  options: { ignoreDuration?: boolean } = {},
+): string => {
   const applyType = normalizeBuffApplyType(effect.applyType);
   const buffKind = normalizeBuffKind(effect.buffKind);
   const { name, attr, buffKey } = formatBuffName(effect, effectType);
@@ -458,7 +473,7 @@ const formatBuffEffect = (effect: Record<string, unknown>, effectType: 'buff' | 
   let text = `${effectType === 'buff' ? '施加增益' : '施加减益'}：${name}`;
   if (valueText) text += `（${valueText}）`;
   // 光环永久存在，不显示外层 duration
-  if (duration > 0 && buffKind !== 'aura') text += `，持续${duration}回合`;
+  if (duration > 0 && buffKind !== 'aura' && !options.ignoreDuration) text += `，持续${duration}回合`;
   return text;
 };
 
@@ -505,13 +520,17 @@ const formatDispelEffect = (effect: Record<string, unknown>): string => {
   return `驱散${dispelType}`;
 };
 
-const formatResourceEffect = (effect: Record<string, unknown>): string => {
+const formatResourceEffect = (
+  effect: Record<string, unknown>,
+  context: SkillEffectContext = {},
+): string => {
   const resourceTypeRaw = toText(effect.resourceType);
   const resourceType = RESOURCE_TYPE_LABEL[resourceTypeRaw] || resourceTypeRaw || '资源';
   const value = toNumber(effect.value);
-  if (value === null || value === 0) return `调整${resourceType}`;
+  const targetLabel = RESOURCE_EFFECT_TARGET_LABEL[toText(context.targetType)] || '目标';
+  if (value === null || value === 0) return `调整${targetLabel}${resourceType}`;
   const sign = value > 0 ? '+' : '-';
-  return `调整${resourceType} ${sign}${Math.abs(Math.floor(value))}`;
+  return `调整${targetLabel}${resourceType} ${sign}${Math.abs(Math.floor(value))}`;
 };
 
 const formatMomentumEffect = (effect: Record<string, unknown>): string => {
@@ -620,7 +639,7 @@ export const formatSkillEffectLines = (effectsRaw: unknown, context: SkillEffect
       continue;
     }
     if (type === 'resource') {
-      lines.push(formatResourceEffect(effect));
+      lines.push(formatResourceEffect(effect, context));
       continue;
     }
     if (type === 'momentum') {

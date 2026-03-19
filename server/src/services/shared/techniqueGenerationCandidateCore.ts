@@ -24,6 +24,7 @@ import {
   buildTextModelPromptNoiseHash,
   generateTechniqueTextModelSeed,
   parseTechniqueTextModelJsonObject,
+  TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE,
 } from './techniqueTextModelShared.js';
 import { resolveTechniqueGenerationRequestFailure } from './techniqueGenerationRequestFailure.js';
 import {
@@ -44,6 +45,7 @@ import {
   validatePassiveSkillConfig,
 } from '../../shared/skillTriggerType.js';
 import type { TechniqueSkillUpgradeEntry } from './techniqueSkillGenerationSpec.js';
+import { validateTechniqueSkillEffectList } from './techniqueSkillGenerationSpec.js';
 import type {
   TechniqueGenerationCandidate,
   TechniqueQuality,
@@ -88,6 +90,11 @@ type TechniqueGenerationAttemptResult =
 type CandidateValidationResult =
   | { success: true }
   | { success: false; message: string; code: 'GENERATOR_INVALID' };
+
+type TechniqueGenerationRetryGuidance = {
+  previousFailureReason: string;
+  correctionRules: string[];
+};
 
 const DEFAULT_REQUIRED_REALM = '凡人';
 const DAMAGE_EFFECT_TYPE_SET = new Set<string>(TECHNIQUE_EFFECT_TYPE_LIST);
@@ -134,14 +141,48 @@ const toDamageType = (raw: unknown): 'physical' | 'magic' | 'true' | null => {
   return null;
 };
 
+const stripNullishTechniqueJsonValue = (raw: unknown): unknown => {
+  if (raw === null || raw === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(raw)) {
+    return raw
+      .map((entry) => stripNullishTechniqueJsonValue(entry))
+      .filter((entry) => entry !== undefined);
+  }
+  if (typeof raw !== 'object') {
+    return raw;
+  }
+
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const sanitizedValue = stripNullishTechniqueJsonValue(value);
+    if (sanitizedValue !== undefined) {
+      next[key] = sanitizedValue;
+    }
+  }
+  return next;
+};
+
 const sanitizeTechniqueEffect = (raw: Record<string, unknown>): Record<string, unknown> => {
-  const next = { ...raw };
+  const nextRaw = stripNullishTechniqueJsonValue(raw);
+  const next = (nextRaw && typeof nextRaw === 'object' && !Array.isArray(nextRaw))
+    ? { ...(nextRaw as Record<string, unknown>) }
+    : {};
   for (const field of TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS) {
     if (field in next) {
       delete next[field];
     }
   }
   return next;
+};
+
+const sanitizeTechniqueUpgrade = (raw: Record<string, unknown>): TechniqueSkillUpgradeEntry => {
+  const sanitized = stripNullishTechniqueJsonValue(raw);
+  if (!sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
+    return {};
+  }
+  return sanitized as TechniqueSkillUpgradeEntry;
 };
 
 const normalizeEffects = (raw: unknown): Array<Record<string, unknown>> => {
@@ -160,6 +201,89 @@ const normalizeTechniqueLayerSkillIds = (
   return raw
     .map((entry) => asString(entry))
     .filter((id) => sanitizedSkillIdSet.has(id));
+};
+
+const DUPLICATE_EFFECT_FAILURE_TOKEN = '不允许包含重复 effect';
+
+const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] => {
+  const rules = [
+    '本次为重试生成，必须先修正 previousFailureReason 对应的问题，再输出完整 JSON。',
+  ];
+
+  if (reason.includes(DUPLICATE_EFFECT_FAILURE_TOKEN)) {
+    rules.push(
+      '同一技能的 effects 数组内，任意两个 effect 对象都不能完全相同。',
+      '如果已经存在 restore_lingqi/heal/shield/resource 等效果，不要再复制一条字段与数值完全一致的 effect。',
+      '如果只是想增强同一效果，请直接提高该 effect 的 value、baseValue、scaleRate 或 duration，不要新增重复对象。',
+    );
+  }
+
+  return rules;
+};
+
+/**
+ * 构建重试阶段的附加提示语境。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：把上一轮失败原因收敛成统一的 `techniqueRetryGuidance`，供后续重试直接复用。
+ * 2) 做什么：保留调用方已有的 promptContext，避免伙伴招募等上游语境在重试时被覆盖。
+ * 3) 不做什么：不改写原始失败原因，不吞掉任何业务错误，也不在这里做结果修复。
+ *
+ * 输入/输出：
+ * - 输入：调用方原始 promptContext，以及上一轮失败原因。
+ * - 输出：追加了 `techniqueRetryGuidance` 的 promptContext；若当前是首轮生成则原样返回。
+ *
+ * 数据流/状态流：
+ * generateTechniqueCandidateWithRetry -> 本函数补充 retry guidance -> buildTechniqueGenerationTextModelRequest -> 模型下一轮重试。
+ *
+ * 关键边界条件与坑点：
+ * 1) `techniqueRetryGuidance` 是共享 prompt 协议，字段名必须稳定；否则 prompt 规则里声明的读取路径会失效。
+ * 2) 重试提示只能“加约束”，不能在这里偷偷改 candidate 数据；否则会把生成问题伪装成服务端兜底。
+ */
+export const buildTechniqueGenerationRetryPromptContext = (params: {
+  promptContext?: Record<string, unknown>;
+  previousFailureReason?: string | null;
+}): Record<string, unknown> | undefined => {
+  const { promptContext, previousFailureReason } = params;
+  if (!previousFailureReason) {
+    return promptContext;
+  }
+
+  const retryGuidance: TechniqueGenerationRetryGuidance = {
+    previousFailureReason,
+    correctionRules: buildTechniqueGenerationRetryCorrectionRules(previousFailureReason),
+  };
+
+  return {
+    ...(promptContext ?? {}),
+    techniqueRetryGuidance: retryGuidance,
+  };
+};
+
+const readTechniqueGenerationRetryGuidance = (
+  promptContext?: Record<string, unknown>,
+): TechniqueGenerationRetryGuidance | undefined => {
+  const raw = promptContext?.techniqueRetryGuidance;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const row = raw as Record<string, unknown>;
+  if (typeof row.previousFailureReason !== 'string' || !row.previousFailureReason.trim()) {
+    return undefined;
+  }
+  if (!Array.isArray(row.correctionRules)) {
+    return undefined;
+  }
+  const correctionRules = row.correctionRules
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    .map((entry) => entry.trim());
+  if (correctionRules.length <= 0) {
+    return undefined;
+  }
+  return {
+    previousFailureReason: row.previousFailureReason.trim(),
+    correctionRules,
+  };
 };
 
 /**
@@ -247,7 +371,7 @@ export const sanitizeTechniqueGenerationCandidateFromModel = (
       upgrades: Array.isArray(row.upgrades)
         ? row.upgrades.flatMap((entry) => {
             if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
-            return [entry as TechniqueSkillUpgradeEntry];
+            return [sanitizeTechniqueUpgrade(entry as Record<string, unknown>)];
           })
         : [],
     }];
@@ -466,22 +590,13 @@ export const validateTechniqueGenerationCandidate = (params: {
         code: 'GENERATOR_INVALID',
       };
     }
-    if (!Array.isArray(skill.effects) || skill.effects.length === 0) {
-      return { success: false, message: 'AI结果技能效果为空', code: 'GENERATOR_INVALID' };
-    }
-
-    for (const effect of skill.effects) {
-      if (!effect || typeof effect !== 'object' || Array.isArray(effect)) {
-        return { success: false, message: 'AI结果技能效果结构非法', code: 'GENERATOR_INVALID' };
-      }
-      const effectValidation = validateTechniqueSkillEffect(effect as SkillEffect);
-      if (!effectValidation.success) {
-        return {
-          success: false,
-          message: `AI结果技能效果非法：${effectValidation.reason}`,
-          code: 'GENERATOR_INVALID',
-        };
-      }
+    const effectListValidation = validateTechniqueSkillEffectList(skill.effects, 'skill.effects');
+    if (!effectListValidation.success) {
+      return {
+        success: false,
+        message: `AI结果技能效果非法：${effectListValidation.reason}`,
+        code: 'GENERATOR_INVALID',
+      };
     }
 
     for (const upgrade of skill.upgrades) {
@@ -627,18 +742,21 @@ export const buildTechniqueGenerationTextModelRequest = (params: {
   systemMessage: string;
   userMessage: string;
   seed: number;
+  temperature?: number;
   timeoutMs: number;
   promptNoiseHash: string;
 } => {
   const seed = params.seed ?? generateTechniqueTextModelSeed();
   const promptNoiseHash = buildTextModelPromptNoiseHash('technique-generation', seed);
   const timeoutMs = 300_000;
+  const retryGuidance = readTechniqueGenerationRetryGuidance(params.promptContext);
   const promptInput = buildTechniqueGeneratorPromptInput({
     techniqueType: params.techniqueType,
     quality: params.quality,
     maxLayer: params.maxLayer,
     effectTypeEnum: Array.from(DAMAGE_EFFECT_TYPE_SET),
     promptNoiseHash,
+    retryGuidance,
   });
   const userMessagePayload = params.promptContext
     ? { ...promptInput, extraContext: params.promptContext }
@@ -653,6 +771,7 @@ export const buildTechniqueGenerationTextModelRequest = (params: {
     systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
     userMessage: JSON.stringify(userMessagePayload),
     seed,
+    temperature: retryGuidance ? TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE : undefined,
     timeoutMs,
     promptNoiseHash,
   };
@@ -673,11 +792,15 @@ export const generateTechniqueCandidateWithRetry = async (params: {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     attemptCount = attempt;
+    const attemptPromptContext = buildTechniqueGenerationRetryPromptContext({
+      promptContext,
+      previousFailureReason: lastFailure?.reason ?? null,
+    });
     const external = await tryCallExternalGenerator({
       techniqueType,
       quality,
       maxLayer,
-      promptContext,
+      promptContext: attemptPromptContext,
     });
     if (!external.success) {
       lastFailure = external;

@@ -47,7 +47,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const LOCAL_IMAGE_PREFIX = '/uploads/techniques';
-export const TECHNIQUE_SKILL_IMAGE_CONCURRENCY = 3;
+export const TECHNIQUE_SKILL_IMAGE_CONCURRENCY = 5;
 export const TECHNIQUE_SKILL_IMAGE_OUTPUT_MAX_EDGE = 256;
 export const TECHNIQUE_SKILL_IMAGE_OUTPUT_WEBP_QUALITY = 82;
 

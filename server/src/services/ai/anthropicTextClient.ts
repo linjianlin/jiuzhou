@@ -69,6 +69,7 @@ export const callAnthropicTextModel = async (
     responseFormat?: TechniqueTextModelResponseFormat;
     systemMessage: string;
     userMessage: string;
+    temperature?: number;
     timeoutMs: number;
   },
 ): Promise<OpenAITextModelCallResult> => {
@@ -81,7 +82,7 @@ export const callAnthropicTextModel = async (
   const requestBody: Anthropic.Messages.MessageCreateParamsNonStreaming = {
     model: config.modelName,
     max_tokens: ANTHROPIC_MAX_TOKENS,
-    temperature: TECHNIQUE_TEXT_MODEL_TEMPERATURE,
+    temperature: params.temperature ?? TECHNIQUE_TEXT_MODEL_TEMPERATURE,
     system: params.systemMessage,
     thinking: { type:"enabled", budget_tokens: 64000 },
     messages: [

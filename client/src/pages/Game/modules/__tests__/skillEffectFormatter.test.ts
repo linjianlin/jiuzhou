@@ -52,4 +52,46 @@ describe('skillEffectFormatter', () => {
       '施加镜裂印（每次+1层，上限5层，持续2回合；存在期间会放大后续镜律追击）',
     ]);
   });
+
+  it('应将资源效果按技能目标类型格式化为明确的灵气调整文案', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'resource',
+        resourceType: 'lingqi',
+        value: 10,
+      },
+    ], {
+      targetType: 'self',
+    });
+
+    expect(lines).toEqual([
+      '调整自身灵气 +10',
+    ]);
+  });
+
+  it('光环子效果展示时不应再带持续回合文案', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'buff',
+        buffKind: 'aura',
+        buffKey: 'buff-aura',
+        auraTarget: 'self',
+        auraEffects: [
+          {
+            type: 'buff',
+            buffKind: 'attr',
+            buffKey: 'buff-shanbi-up',
+            attrKey: 'shanbi',
+            applyType: 'percent',
+            value: 0.2,
+            duration: 2,
+          },
+        ],
+      },
+    ]);
+
+    expect(lines).toEqual([
+      '施加增益：增益光环（光环·自身：施加增益：闪避提升（幅度 20%））',
+    ]);
+  });
 });

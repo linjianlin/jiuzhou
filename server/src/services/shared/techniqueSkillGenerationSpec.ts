@@ -45,6 +45,8 @@ export type TechniqueSkillGenerationValidationResult =
   | { success: true }
   | { success: false; reason: string };
 
+export const TECHNIQUE_SKILL_EFFECT_MAX_COUNT = 4;
+
 export const TECHNIQUE_SKILL_EFFECT_TYPE_LIST = [
   'damage',
   'heal',
@@ -312,7 +314,7 @@ const validateValueExpression = (effect: SkillEffect): TechniqueSkillGenerationV
  *
  * 坑点：
  * 1) auraEffects 中的子效果不允许 buffKind='aura'（禁止嵌套光环）。
- * 2) 每个子效果递归调用 validateTechniqueSkillEffect 校验。
+ * 2) 光环本体永久存在，子效果不允许再声明 duration；每个子效果递归调用 validateTechniqueSkillEffect 校验。
  */
 const validateAuraEffect = (
   effect: SkillEffect,
@@ -343,9 +345,60 @@ const validateAuraEffect = (
     if ((subType === 'buff' || subType === 'debuff') && typeof subEffect.buffKind === 'string' && subEffect.buffKind.trim() === 'aura') {
       return { success: false, reason: 'auraEffects 子效果不允许嵌套光环（buffKind=aura）' };
     }
+    if (subEffect.duration !== undefined) {
+      return { success: false, reason: 'auraEffects 子效果不允许声明 duration，光环效果持续时间由宿主光环统一决定' };
+    }
     const subValidation = validateTechniqueSkillEffect(subEffect);
     if (!subValidation.success) {
       return { success: false, reason: `auraEffects 子效果校验失败: ${subValidation.reason}` };
+    }
+  }
+
+  return { success: true };
+};
+
+const buildTechniqueJsonValueSignature = (value: TechniqueJsonValue | undefined): string => {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => buildTechniqueJsonValueSignature(entry)).join(',')}]`;
+  }
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${buildTechniqueJsonValueSignature(value[key])}`).join(',')}}`;
+};
+
+export const validateTechniqueSkillEffectList = (
+  effectsRaw: unknown,
+  fieldName: string,
+): TechniqueSkillGenerationValidationResult => {
+  if (!Array.isArray(effectsRaw) || effectsRaw.length <= 0) {
+    return { success: false, reason: `${fieldName} 必须是非空数组` };
+  }
+  if (effectsRaw.length > TECHNIQUE_SKILL_EFFECT_MAX_COUNT) {
+    return { success: false, reason: `${fieldName} 最多只能包含 ${TECHNIQUE_SKILL_EFFECT_MAX_COUNT} 个 effect` };
+  }
+
+  const effectSignatureSet = new Set<string>();
+  for (const entry of effectsRaw) {
+    if (!isJsonObject(entry)) {
+      return { success: false, reason: `${fieldName} 只能包含对象 effect` };
+    }
+    if (!isSkillEffectObject(entry)) {
+      return { success: false, reason: `${fieldName} 缺少合法 type` };
+    }
+    const signature = buildTechniqueJsonValueSignature(entry);
+    if (effectSignatureSet.has(signature)) {
+      return { success: false, reason: `${fieldName} 不允许包含重复 effect` };
+    }
+    effectSignatureSet.add(signature);
+
+    const effectValidation = validateTechniqueSkillEffect(entry);
+    if (!effectValidation.success) {
+      return { success: false, reason: `${fieldName} 非法：${effectValidation.reason}` };
     }
   }
 
@@ -626,20 +679,12 @@ export const validateTechniqueSkillUpgrade = (
   if (!aiPriorityValidation.success) return aiPriorityValidation;
 
   if (changes.effects !== undefined) {
-    if (!Array.isArray(changes.effects) || changes.effects.length <= 0) {
-      return { success: false, reason: 'upgrades.changes.effects 必须是非空数组' };
-    }
-    for (const entry of changes.effects) {
-      if (!isJsonObject(entry)) {
-        return { success: false, reason: 'upgrades.changes.effects 只能包含对象 effect' };
-      }
-      if (!isSkillEffectObject(entry)) {
-        return { success: false, reason: 'upgrades.changes.effects 缺少合法 type' };
-      }
-      const effectValidation = validateTechniqueSkillEffect(entry);
-      if (!effectValidation.success) {
-        return { success: false, reason: `upgrades.changes.effects 非法：${effectValidation.reason}` };
-      }
+    const effectListValidation = validateTechniqueSkillEffectList(
+      changes.effects,
+      'upgrades.changes.effects',
+    );
+    if (!effectListValidation.success) {
+      return effectListValidation;
     }
   }
 

@@ -22,10 +22,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applySkillUpgradeChanges } from '../battle/shared/skills.js';
 import type { SkillEffect } from '../../battle/types.js';
+import { buildTechniqueGenerationResponseFormat } from '../shared/techniqueGenerationConstraints.js';
 import {
   sanitizeTechniqueGenerationCandidateFromModel,
   validateTechniqueGenerationCandidate,
 } from '../shared/techniqueGenerationCandidateCore.js';
+
+test('buildTechniqueGenerationResponseFormat: 功法生成应回退为 json_object 输出模式', () => {
+  const responseFormat = buildTechniqueGenerationResponseFormat({
+    techniqueType: '辅修',
+    quality: '玄',
+    maxLayer: 5,
+  });
+  assert.deepEqual(responseFormat, { type: 'json_object' });
+});
 
 test('sanitizeTechniqueGenerationCandidateFromModel: 应兼容 snake_case 层级与技能字段，并让冷却升级继续可用', () => {
   const raw = {
@@ -228,6 +238,144 @@ test('sanitizeTechniqueGenerationCandidateFromModel: 光环技能应统一归一
   assert.deepEqual(validation, { success: true });
 });
 
+test('sanitizeTechniqueGenerationCandidateFromModel: 应移除 strict schema 强制输出的 null 占位字段', () => {
+  const raw = {
+    technique: {
+      name: '澄明护心经',
+      requiredRealm: '凡人',
+      attributeType: 'magic',
+      attributeElement: 'shui',
+      description: '测试 null 占位清洗',
+      longDesc: '测试 null 占位清洗长描述',
+      tags: ['测试'],
+    },
+    skills: [
+      {
+        id: 'skill-null-shield',
+        name: '澄心镜光',
+        description: '生成护盾并附带升级占位',
+        icon: null,
+        sourceType: 'technique',
+        costLingqi: 20,
+        costLingqiRate: 0,
+        costQixue: 0,
+        costQixueRate: 0,
+        cooldown: 1,
+        targetType: 'self',
+        targetCount: 1,
+        damageType: null,
+        element: 'shui',
+        effects: [
+          {
+            type: 'shield',
+            value: null,
+            valueType: 'scale',
+            baseValue: null,
+            scaleAttr: 'max_qixue',
+            scaleRate: 0.3,
+            buffKind: null,
+            buffKey: null,
+            attrKey: null,
+            applyType: null,
+            duration: 2,
+            chance: null,
+            element: null,
+            damageType: null,
+            target: null,
+            resourceType: null,
+            count: null,
+            stacks: null,
+            controlType: null,
+            markId: null,
+            operation: null,
+            maxStacks: null,
+            consumeMode: null,
+            consumeStacks: null,
+            perStackRate: null,
+            resultType: null,
+            momentumId: null,
+            gainStacks: null,
+            bonusType: null,
+            swapMode: null,
+            hit_count: null,
+            bonusTargetMaxQixueRate: null,
+            auraTarget: null,
+            auraEffects: null,
+          },
+        ],
+        triggerType: 'active',
+        aiPriority: 60,
+        upgrades: [
+          {
+            layer: 2,
+            changes: {
+              target_count: null,
+              cooldown: 1,
+              cost_lingqi: null,
+              cost_lingqi_rate: null,
+              cost_qixue: null,
+              cost_qixue_rate: null,
+              ai_priority: null,
+              effects: null,
+              addEffect: null,
+            },
+          },
+        ],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        costSpiritStones: 100,
+        costExp: 50,
+        costMaterials: [],
+        passives: [{ key: 'fagong', value: 12 }],
+        unlockSkillIds: ['skill-null-shield'],
+        upgradeSkillIds: [],
+        layerDesc: '入门',
+      },
+      {
+        layer: 2,
+        costSpiritStones: 200,
+        costExp: 100,
+        costMaterials: [],
+        passives: [{ key: 'fagong', value: 18 }],
+        unlockSkillIds: [],
+        upgradeSkillIds: ['skill-null-shield'],
+        layerDesc: '精进',
+      },
+      {
+        layer: 3,
+        costSpiritStones: 300,
+        costExp: 150,
+        costMaterials: [],
+        passives: [{ key: 'fagong', value: 24 }],
+        unlockSkillIds: [],
+        upgradeSkillIds: [],
+        layerDesc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '辅修', '黄', 3);
+  assert.ok(candidate);
+
+  const skill = candidate.skills[0];
+  assert.equal('value' in (skill.effects[0] as Record<string, unknown>), false);
+  assert.equal('baseValue' in (skill.effects[0] as Record<string, unknown>), false);
+  assert.equal('auraEffects' in (skill.effects[0] as Record<string, unknown>), false);
+  assert.equal('target_count' in (skill.upgrades[0].changes as Record<string, unknown>), false);
+  assert.equal('effects' in (skill.upgrades[0].changes as Record<string, unknown>), false);
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '辅修',
+    expectedQuality: '黄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, { success: true });
+});
+
 test('validateTechniqueGenerationCandidate: 被动技能必须满足自目标且零消耗零冷却', () => {
   const raw = {
     technique: {
@@ -312,6 +460,87 @@ test('validateTechniqueGenerationCandidate: 被动技能必须满足自目标且
   assert.deepEqual(validation, {
     success: false,
     message: 'AI结果被动技能配置非法：被动技能 targetType 必须为 self',
+    code: 'GENERATOR_INVALID',
+  });
+});
+
+test('validateTechniqueGenerationCandidate: 基础技能效果不应包含重复 effect', () => {
+  const raw = {
+    technique: {
+      name: '回潮引灵诀',
+      required_realm: '凡人',
+      attribute_type: 'magic',
+      attribute_element: 'shui',
+      description: '测试重复效果拦截',
+      long_desc: '测试重复效果拦截长描述',
+      tags: ['测试', '重复'],
+    },
+    skills: [
+      {
+        id: 'skill-duplicate-effects',
+        name: '回潮引灵',
+        description: '错误地重复附带相同回灵效果',
+        cost_lingqi: 18,
+        cooldown: 1,
+        target_type: 'self',
+        target_count: 1,
+        triggerType: 'active',
+        ai_priority: 30,
+        effects: [
+          {
+            type: 'restore_lingqi',
+            value: 6,
+          },
+          {
+            type: 'restore_lingqi',
+            value: 6,
+          },
+        ],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        cost_spirit_stones: 100,
+        cost_exp: 50,
+        passives: [{ key: 'fagong', value: 12 }],
+        unlock_skill_ids: ['skill-duplicate-effects'],
+        upgrade_skill_ids: [],
+        layer_desc: '入门',
+      },
+      {
+        layer: 2,
+        cost_spirit_stones: 200,
+        cost_exp: 100,
+        passives: [{ key: 'fagong', value: 18 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '精进',
+      },
+      {
+        layer: 3,
+        cost_spirit_stones: 300,
+        cost_exp: 150,
+        passives: [{ key: 'fagong', value: 24 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '武技', '黄', 3);
+  assert.ok(candidate);
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '武技',
+    expectedQuality: '黄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, {
+    success: false,
+    message: 'AI结果技能效果非法：skill.effects 不允许包含重复 effect',
     code: 'GENERATOR_INVALID',
   });
 });

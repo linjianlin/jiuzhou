@@ -140,6 +140,7 @@ export const getSkillDetailItems = (skill: TechniqueSkillDetailLike): SkillDetai
   const effectLines = formatSkillEffectLines(skill.effects, {
     damageType: skill.damage_type,
     element: skill.element,
+    targetType: skill.target_type,
   });
   effectLines.forEach((line, idx) => {
     items.push({ label: `效果${idx + 1}`, value: line, isEffect: true });

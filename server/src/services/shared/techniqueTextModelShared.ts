@@ -67,6 +67,10 @@ type TechniqueTextModelJsonSchemaBoolean = TechniqueTextModelJsonSchemaBase & {
   type: 'boolean';
 };
 
+type TechniqueTextModelJsonSchemaNull = TechniqueTextModelJsonSchemaBase & {
+  type: 'null';
+};
+
 type TechniqueTextModelJsonSchemaArray = TechniqueTextModelJsonSchemaBase & {
   type: 'array';
   items: TechniqueTextModelJsonSchema;
@@ -91,6 +95,7 @@ export type TechniqueTextModelJsonSchema =
   | TechniqueTextModelJsonSchemaArray
   | TechniqueTextModelJsonSchemaBoolean
   | TechniqueTextModelJsonSchemaComposite
+  | TechniqueTextModelJsonSchemaNull
   | TechniqueTextModelJsonSchemaNumber
   | TechniqueTextModelJsonSchemaObject
   | TechniqueTextModelJsonSchemaString;
@@ -136,6 +141,7 @@ export type TechniqueModelJsonParseResult =
     };
 
 export const TECHNIQUE_TEXT_MODEL_TEMPERATURE = 1.0;
+export const TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE = 0.4;
 export const TECHNIQUE_TEXT_MODEL_SEED_MIN = 1;
 export const TECHNIQUE_TEXT_MODEL_SEED_MAX = 2_147_483_647;
 export const TEXT_MODEL_PROMPT_NOISE_CONSTRAINT =
@@ -256,11 +262,12 @@ export const buildTechniqueTextModelPayload = (params: {
   systemMessage: string;
   userMessage: string;
   seed?: number;
+  temperature?: number;
 }): TechniqueTextModelRequestPayload => ({
   model: params.modelName,
   response_format: params.responseFormat,
   seed: params.seed ?? generateTechniqueTextModelSeed(),
-  temperature: TECHNIQUE_TEXT_MODEL_TEMPERATURE,
+  temperature: params.temperature ?? TECHNIQUE_TEXT_MODEL_TEMPERATURE,
   messages: [
     {
       role: 'system',
