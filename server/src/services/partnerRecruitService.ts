@@ -88,7 +88,10 @@ import {
   buildPartnerRecruitUnlockState,
   type PartnerRecruitUnlockState,
 } from './shared/partnerRecruitUnlock.js';
-import { generatePartnerRecruitAvatar } from './shared/partnerRecruitAvatarGenerator.js';
+import {
+  generatePartnerRecruitAvatar,
+  type PartnerRecruitAvatarInput,
+} from './shared/partnerRecruitAvatarGenerator.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
 import { broadcastWorldSystemMessage } from './shared/worldChatBroadcast.js';
 import { callConfiguredTextModel } from './ai/openAITextClient.js';
@@ -147,7 +150,7 @@ type RecruitTextAttemptSuccess = {
 
 type RecruitTextAttemptResult = RecruitTextAttemptFailure | RecruitTextAttemptSuccess;
 
-type GeneratedRecruitTechniqueDraft = {
+export type GeneratedRecruitTechniqueDraft = {
   techniqueId: string;
   candidate: TechniqueGenerationCandidate;
 };
@@ -256,6 +259,18 @@ const buildPartnerRecruitTechniquePromptContext = (params: {
   };
 };
 
+const buildPartnerRecruitAvatarInput = (
+  partnerDefId: string,
+  draft: PartnerRecruitDraft,
+): PartnerRecruitAvatarInput => ({
+  partnerId: partnerDefId,
+  name: draft.partner.name,
+  quality: draft.partner.quality,
+  element: draft.partner.attributeElement,
+  role: draft.partner.role,
+  description: draft.partner.description,
+});
+
 const adaptTechniqueCandidateForPartner = (params: {
   draft: PartnerRecruitDraft;
   candidate: TechniqueGenerationCandidate;
@@ -354,6 +369,62 @@ const generateRecruitTechniqueDrafts = async (params: {
   }
 
   return generatedTechniques;
+};
+
+/**
+ * 伙伴视觉资源并发执行入口
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：把伙伴头像生成与伙伴天生功法链路放到同一入口并发发起，避免 service 主流程里再次写出串行等待。
+ * 2) 做什么：集中维护头像入参与依赖注入，让单测只验证“是否并发启动”，不必触碰数据库与真实模型。
+ * 3) 不做什么：不负责数据库落库、不改动功法生成细节，也不在这里吞掉任一子任务异常。
+ *
+ * 输入/输出：
+ * - 输入：角色 ID、招募任务 ID、伙伴草稿、伙伴定义 ID，以及可选的头像/功法生成依赖。
+ * - 输出：`{ techniques, avatarUrl }`，供后续事务统一落库。
+ *
+ * 数据流/状态流：
+ * partner draft -> buildPartnerRecruitAvatarInput / generateRecruitTechniqueDrafts -> Promise.all 并发执行 -> processPendingRecruitJob 落库。
+ *
+ * 关键边界条件与坑点：
+ * 1) 这里只做并发编排，不做失败兜底；任一子任务失败都必须原样抛回上层，保持整单退款语义单一。
+ * 2) 技能图标并发仍由 `generateTechniqueSkillIconMap` 自己控速，这里只额外并发 1 条伙伴头像链路，避免把并发控制散落到多个调用点。
+ */
+export const executePartnerRecruitVisualGeneration = async (
+  params: {
+    characterId: number;
+    generationId: string;
+    draft: PartnerRecruitDraft;
+    partnerDefId: string;
+  },
+  deps: {
+    generateTechniques: (args: {
+      characterId: number;
+      generationId: string;
+      draft: PartnerRecruitDraft;
+    }) => Promise<GeneratedRecruitTechniqueDraft[]>;
+    generateAvatar: (input: PartnerRecruitAvatarInput) => Promise<string>;
+  } = {
+    generateTechniques: generateRecruitTechniqueDrafts,
+    generateAvatar: generatePartnerRecruitAvatar,
+  },
+): Promise<{
+  techniques: GeneratedRecruitTechniqueDraft[];
+  avatarUrl: string;
+}> => {
+  const [techniques, avatarUrl] = await Promise.all([
+    deps.generateTechniques({
+      characterId: params.characterId,
+      generationId: params.generationId,
+      draft: params.draft,
+    }),
+    deps.generateAvatar(buildPartnerRecruitAvatarInput(params.partnerDefId, params.draft)),
+  ]);
+
+  return {
+    techniques,
+    avatarUrl,
+  };
 };
 
 const buildPartnerDefFromDraft = (
@@ -1272,18 +1343,11 @@ class PartnerRecruitService {
 
       try {
         const partnerDefId = buildGeneratedPartnerDefId();
-        const techniques = await generateRecruitTechniqueDrafts({
+        const { techniques, avatarUrl } = await executePartnerRecruitVisualGeneration({
           characterId: args.characterId,
           generationId: args.generationId,
           draft: result.draft,
-        });
-        const avatarUrl = await generatePartnerRecruitAvatar({
-          partnerId: partnerDefId,
-          name: result.draft.partner.name,
-          quality: result.draft.partner.quality,
-          element: result.draft.partner.attributeElement,
-          role: result.draft.partner.role,
-          description: result.draft.partner.description,
+          partnerDefId,
         });
 
         const persist = await this.persistGeneratedRecruitDraftTx({
