@@ -14,6 +14,7 @@ export type {
 
 export {
   advanceBattleSession,
+  canReceiveBattleSessionRealtime,
   cleanupUserWaitingTransitionSessions,
   getAttachedBattleSessionSnapshot,
   getCurrentBattleSessionDetail,

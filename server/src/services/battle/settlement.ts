@@ -54,7 +54,10 @@ import {
 import { stopBattleTicker } from "./runtime/ticker.js";
 import { removeBattleFromRedis } from "./runtime/persistence.js";
 import { settleArenaBattleIfNeeded } from "./pvp.js";
-import { markBattleSessionFinished } from "../battleSession/index.js";
+import {
+  canReceiveBattleSessionRealtime,
+  markBattleSessionFinished,
+} from "../battleSession/index.js";
 import {
   buildBattleFinishedRealtimePayload,
 } from "./runtime/realtime.js";
@@ -326,6 +329,13 @@ async function finishBattleCore(
     });
     for (const participantUserId of notificationUserIds) {
       if (!Number.isFinite(participantUserId)) continue;
+      if (!canReceiveBattleSessionRealtime({
+        battleId,
+        userId: participantUserId,
+        fallbackUserIds: notificationUserIds,
+      })) {
+        continue;
+      }
       if (finishedRealtimePayload) {
         gameServer.emitToUser(
           participantUserId,

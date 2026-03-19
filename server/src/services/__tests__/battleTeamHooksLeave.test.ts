@@ -25,6 +25,7 @@ import { BattleEngine } from '../../battle/battleEngine.js';
 import * as characterComputedService from '../characterComputedService.js';
 import * as gameServerModule from '../../game/gameServer.js';
 import {
+  canReceiveBattleSessionRealtime,
   getCurrentBattleSessionDetail,
 } from '../battleSession/service.js';
 import {
@@ -110,6 +111,16 @@ test('onUserLeaveTeam: 离队成员应同步移出参战名单与攻击方单位
   }
   assert.equal(leaderSession.data.session?.currentBattleId, battleId);
   assert.deepEqual(leaderSession.data.session?.participantUserIds, [1]);
+  assert.equal(canReceiveBattleSessionRealtime({
+    battleId,
+    userId: 1,
+    fallbackUserIds: [1, 2],
+  }), true);
+  assert.equal(canReceiveBattleSessionRealtime({
+    battleId,
+    userId: 2,
+    fallbackUserIds: [1, 2],
+  }), false);
 });
 
 test('onUserLeaveTeam: 队长离开队伍战斗时应整场放弃，并让队员一并退出当前会话', async (t) => {

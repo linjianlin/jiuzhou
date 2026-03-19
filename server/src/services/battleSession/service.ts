@@ -155,6 +155,16 @@ const ensureSessionAccess = (
   return session.participantUserIds.includes(userId);
 };
 
+const normalizeSessionAudienceUserIds = (userIds: number[]): number[] => {
+  const ids = new Set<number>();
+  for (const raw of userIds) {
+    const userId = Math.floor(Number(raw));
+    if (!Number.isFinite(userId) || userId <= 0) continue;
+    ids.add(userId);
+  }
+  return [...ids];
+};
+
 const getBattleStateResult = (battleRes: BattleResult): BattleSessionResult => {
   const resultRaw = battleRes.data?.result;
   if (resultRaw === 'attacker_win' || resultRaw === 'defender_win' || resultRaw === 'draw') {
@@ -484,6 +494,48 @@ export const getAttachedBattleSessionSnapshot = (
   battleId: string,
 ): BattleSessionSnapshot | null => {
   return getBattleSessionSnapshotByBattleId(battleId);
+};
+
+/**
+ * 判断指定用户是否仍应接收 battleId 对应的 BattleSession realtime。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把“战斗结算/重放/补发时谁还能收到 session 相关推送”收口到服务端单一权限入口，避免 settlement、teamHooks、重连同步各自重复判断。
+ * 2. 做什么：优先以当前 BattleSession 访问权限为准，确保队员退队后，即使旧 battle 的完成消息晚到，也不会再收到该战斗的 finished 推送。
+ * 3. 不做什么：不修改 session/battle 运行时状态，也不负责真正发 socket。
+ *
+ * 输入/输出：
+ * - 输入：battleId、userId、fallbackUserIds。
+ * - 输出：该 userId 是否仍可接收这场 battle 的 session 相关推送。
+ *
+ * 数据流/状态流：
+ * settlement / 其他主动补发逻辑 -> 本函数读取 battleSession snapshot
+ * -> 有 session 时按 owner/participant 权限判断；无 session 时退回调用方传入的原始通知名单。
+ *
+ * 关键边界条件与坑点：
+ * 1. 退队与战斗结算可能并发，不能只信 settlement 开头拍下来的 battleParticipants 快照，必须在真正推送前再次读取最新 session。
+ * 2. battle 可能没有挂 session（例如旧链路或异常清理后的短暂窗口），这时只能严格退回 fallback 名单，不能擅自扩大通知范围。
+ */
+export const canReceiveBattleSessionRealtime = (params: {
+  battleId: string;
+  userId: number;
+  fallbackUserIds: number[];
+}): boolean => {
+  const normalizedUserId = Math.floor(Number(params.userId));
+  if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
+    return false;
+  }
+
+  const session = getBattleSessionSnapshotByBattleId(params.battleId);
+  if (!session) {
+    return normalizeSessionAudienceUserIds(params.fallbackUserIds).includes(normalizedUserId);
+  }
+
+  if (session.ownerUserId === normalizedUserId) {
+    return true;
+  }
+
+  return session.participantUserIds.includes(normalizedUserId);
 };
 
 /**
