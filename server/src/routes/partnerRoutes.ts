@@ -22,6 +22,9 @@ import { requireCharacter } from '../middleware/auth.js';
 import { sendResult } from '../middleware/response.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { itemService } from '../services/itemService.js';
+import { enqueuePartnerFusionJob } from '../services/partnerFusionJobRunner.js';
+import { notifyPartnerFusionStatus } from '../services/partnerFusionPush.js';
+import { partnerFusionService } from '../services/partnerFusionService.js';
 import { enqueuePartnerRecruitJob } from '../services/partnerRecruitJobRunner.js';
 import { notifyPartnerRecruitStatus } from '../services/partnerRecruitPush.js';
 import { partnerRecruitService } from '../services/partnerRecruitService.js';
@@ -55,6 +58,15 @@ const parsePartnerSkillPolicySlots = (
     });
   }
   return slots;
+};
+
+const parsePartnerIdList = (value: unknown): number[] | null => {
+  if (!Array.isArray(value)) return null;
+  const partnerIds = value.map((entry) => parsePositiveInt(entry));
+  if (partnerIds.some((entry) => !entry)) {
+    return null;
+  }
+  return partnerIds as number[];
 };
 
 router.get('/overview', asyncHandler(async (req, res) => {
@@ -183,6 +195,74 @@ router.post('/recruit/mark-result-viewed', asyncHandler(async (req, res) => {
   const result = await partnerRecruitService.markResultViewed(characterId);
   if (result.success) {
     await notifyPartnerRecruitStatus(characterId, req.userId);
+  }
+  return sendResult(res, result);
+}));
+
+router.get('/fusion/status', asyncHandler(async (req, res) => {
+  const characterId = req.characterId!;
+  const result = await partnerFusionService.getFusionStatus(characterId);
+  return sendResult(res, result);
+}));
+
+router.post('/fusion/start', asyncHandler(async (req, res) => {
+  const userId = req.userId!;
+  const characterId = req.characterId!;
+  const partnerIds = parsePartnerIdList(req.body?.partnerIds);
+  if (!partnerIds) {
+    return sendResult(res, { success: false, message: 'partnerIds 参数无效' });
+  }
+
+  const result = await partnerFusionService.startFusion(characterId, partnerIds);
+  if (!result.success || !result.data) {
+    return sendResult(res, result);
+  }
+
+  try {
+    await enqueuePartnerFusionJob({
+      fusionId: result.data.fusionId,
+      characterId,
+      userId,
+    });
+    await notifyPartnerFusionStatus(characterId, userId);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '未知异常';
+    await partnerFusionService.forceFailPendingFusionJob(
+      characterId,
+      result.data.fusionId,
+      `三魂归契任务投递失败：${reason}`,
+    );
+    await notifyPartnerFusionStatus(characterId, userId);
+    return sendResult(res, {
+      success: false,
+      message: '三魂归契启动失败，请稍后重试',
+    });
+  }
+
+  return sendResult(res, result);
+}));
+
+router.post('/fusion/:fusionId/confirm', asyncHandler(async (req, res) => {
+  const userId = req.userId!;
+  const characterId = req.characterId!;
+  const fusionId = parseNonEmptyText(getSingleParam(req.params?.fusionId));
+  if (!fusionId) {
+    return sendResult(res, { success: false, message: 'fusionId 参数无效' });
+  }
+
+  const result = await partnerFusionService.confirmFusionPreview(characterId, fusionId);
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
+    await notifyPartnerFusionStatus(characterId, userId);
+  }
+  return sendResult(res, result);
+}));
+
+router.post('/fusion/mark-result-viewed', asyncHandler(async (req, res) => {
+  const characterId = req.characterId!;
+  const result = await partnerFusionService.markResultViewed(characterId);
+  if (result.success) {
+    await notifyPartnerFusionStatus(characterId, req.userId);
   }
   return sendResult(res, result);
 }));

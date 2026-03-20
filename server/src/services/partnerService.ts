@@ -70,6 +70,10 @@ import {
 } from './shared/partnerView.js';
 import { loadPartnerMarketTradeStateMap, loadActivePartnerMarketListing } from './shared/partnerMarketState.js';
 import {
+  loadActivePartnerFusionMaterial,
+  loadPartnerFusionLockStateMap,
+} from './shared/partnerFusionState.js';
+import {
   buildPartnerSkillPolicyDto,
   normalizePartnerSkillPolicySlotsForSave,
   type PartnerSkillPolicyDto,
@@ -232,9 +236,13 @@ const buildPartnerDetailWithTradeState = async (params: {
   techniqueRows: PartnerTechniqueRow[];
 }): Promise<PartnerDetailDto> => {
   const tradeStateMap = await loadPartnerMarketTradeStateMap([params.row.id]);
+  const fusionStateMap = await loadPartnerFusionLockStateMap([params.row.id]);
   return attachPartnerTradeState(
     buildPartnerDisplay(params),
-    tradeStateMap.get(params.row.id),
+    {
+      tradeState: tradeStateMap.get(params.row.id),
+      fusionState: fusionStateMap.get(params.row.id),
+    },
   );
 };
 
@@ -310,6 +318,16 @@ const assertPartnerSystemUnlocked = async (
     return { success: false, message: '伙伴系统尚未解锁' };
   }
   return { success: true, message: 'ok' };
+};
+
+const getPartnerFusionBlockedMessage = async (
+  partnerId: number,
+  forUpdate: boolean,
+  actionLabel: string,
+): Promise<string | null> => {
+  const fusionState = await loadActivePartnerFusionMaterial(partnerId, forUpdate);
+  if (!fusionState) return null;
+  return `归契中的伙伴不可${actionLabel}`;
 };
 
 const buildPartnerTechniqueUpgradeCost = async (params: {
@@ -472,10 +490,14 @@ class PartnerService {
       const tradeStateMap = await loadPartnerMarketTradeStateMap(
         rows.map((row) => row.id),
       );
+      const fusionStateMap = await loadPartnerFusionLockStateMap(
+        rows.map((row) => row.id),
+      );
       const partners = buildPartnerDetails({
         rows,
         techniqueMap,
         tradeStateMap,
+        fusionStateMap,
       });
       const books = await loadPartnerBooks(characterId);
 
@@ -559,6 +581,10 @@ class PartnerService {
 
       const partnerRow = await loadSinglePartnerRow(characterId, partnerId, true);
       if (!partnerRow) return { success: false, message: '伙伴不存在' };
+      const fusionBlockedMessage = await getPartnerFusionBlockedMessage(partnerId, true, '保存技能策略');
+      if (fusionBlockedMessage) {
+        return { success: false, message: fusionBlockedMessage };
+      }
       const partnerDef = getPartnerDefinitionById(partnerRow.partner_def_id);
       if (!partnerDef) {
         throw new Error(`伙伴模板不存在: ${partnerRow.partner_def_id}`);
@@ -647,6 +673,10 @@ class PartnerService {
       if (!targetPartner) return { success: false, message: '伙伴不存在' };
       if (await loadActivePartnerMarketListing(partnerId, true)) {
         return { success: false, message: '已在坊市挂单的伙伴不可出战' };
+      }
+      const fusionBlockedMessage = await getPartnerFusionBlockedMessage(partnerId, true, '出战');
+      if (fusionBlockedMessage) {
+        return { success: false, message: fusionBlockedMessage };
       }
 
       if (!targetPartner.is_active) {
@@ -745,6 +775,10 @@ class PartnerService {
       if (!partnerRow) return { success: false, message: '伙伴不存在' };
       if (await loadActivePartnerMarketListing(partnerId, true)) {
         return { success: false, message: '已在坊市挂单的伙伴不可灌注' };
+      }
+      const fusionBlockedMessage = await getPartnerFusionBlockedMessage(partnerId, true, '灌注');
+      if (fusionBlockedMessage) {
+        return { success: false, message: fusionBlockedMessage };
       }
 
       const injectPlan = resolvePartnerInjectPlan({
@@ -888,6 +922,10 @@ class PartnerService {
       if (!partnerRow) return { success: false, message: '伙伴不存在' };
       if (await loadActivePartnerMarketListing(partnerId, true)) {
         return { success: false, message: '已在坊市挂单的伙伴不可修炼功法' };
+      }
+      const fusionBlockedMessage = await getPartnerFusionBlockedMessage(partnerId, true, '修炼功法');
+      if (fusionBlockedMessage) {
+        return { success: false, message: fusionBlockedMessage };
       }
       const partnerDef = getPartnerDefinitionById(partnerRow.partner_def_id);
       if (!partnerDef) {
@@ -1071,6 +1109,10 @@ class PartnerService {
       if (!partnerRow) return { success: false, message: '伙伴不存在' };
       if (await loadActivePartnerMarketListing(params.partnerId, true)) {
         return { success: false, message: '已在坊市挂单的伙伴不可学习功法' };
+      }
+      const fusionBlockedMessage = await getPartnerFusionBlockedMessage(params.partnerId, true, '学习功法');
+      if (fusionBlockedMessage) {
+        return { success: false, message: fusionBlockedMessage };
       }
 
       const partnerDef = getPartnerDefinitionById(partnerRow.partner_def_id);

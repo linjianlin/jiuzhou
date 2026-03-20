@@ -545,6 +545,8 @@ model characters {
   sect_member                                                                       sect_member?
   sect_quest_progress                                                               sect_quest_progress[]
   partner_recruit_job                                                               partner_recruit_job[]
+  partner_fusion_job                                                                partner_fusion_job[]
+  partner_fusion_job_material                                                       partner_fusion_job_material[]
   team_applications                                                                 team_applications[]
   team_invitations_team_invitations_invitee_idTocharacters                          team_invitations[]              @relation("team_invitations_invitee_idTocharacters")
   team_invitations_team_invitations_inviter_idTocharacters                          team_invitations[]              @relation("team_invitations_inviter_idTocharacters")
@@ -688,6 +690,7 @@ model generated_partner_def {
   updated_at              DateTime              @default(now()) @db.Timestamptz(6)
   characters              characters            @relation(fields: [created_by_character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   partner_recruit_job     partner_recruit_job[]
+  partner_fusion_job      partner_fusion_job[]
 
   @@index([created_by_character_id, created_at(sort: Desc)], map: "idx_generated_partner_def_creator")
   @@index([enabled, created_at(sort: Desc)], map: "idx_generated_partner_def_enabled")
@@ -1160,6 +1163,45 @@ model partner_recruit_job {
 
   @@index([character_id, created_at(sort: Desc)], map: "idx_partner_recruit_job_character_time")
   @@index([status, created_at], map: "idx_partner_recruit_job_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model partner_fusion_job {
+  id                     String                 @id @db.VarChar(64)
+  character_id           Int
+  status                 String                 @db.VarChar(32)
+  source_quality         String                 @db.VarChar(8)
+  result_quality         String?                @db.VarChar(8)
+  preview_partner_def_id String?                @db.VarChar(64)
+  error_message          String?
+  viewed_at              DateTime?              @db.Timestamptz(6)
+  finished_at            DateTime?              @db.Timestamptz(6)
+  created_at             DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime               @default(now()) @db.Timestamptz(6)
+  characters             characters             @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  generated_partner_def  generated_partner_def? @relation(fields: [preview_partner_def_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  materials              partner_fusion_job_material[]
+
+  @@index([character_id, created_at(sort: Desc)], map: "idx_partner_fusion_job_character_time")
+  @@index([status, created_at], map: "idx_partner_fusion_job_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model partner_fusion_job_material {
+  id              BigInt             @id @default(autoincrement())
+  fusion_job_id   String             @db.VarChar(64)
+  partner_id      Int
+  character_id    Int
+  material_order  Int
+  partner_snapshot Json
+  created_at      DateTime           @default(now()) @db.Timestamptz(6)
+  characters      characters         @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  fusion_job      partner_fusion_job @relation(fields: [fusion_job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([fusion_job_id, partner_id])
+  @@unique([fusion_job_id, material_order])
+  @@index([partner_id], map: "idx_partner_fusion_job_material_partner")
+  @@index([character_id, created_at(sort: Desc)], map: "idx_partner_fusion_job_material_character")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

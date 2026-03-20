@@ -27,26 +27,24 @@ import {
 import {
   getItemDefinitionById,
   getPartnerDefinitionById,
-  getSkillDefinitions,
-  getTechniqueDefinitions,
-  refreshGeneratedPartnerSnapshots,
-  refreshGeneratedTechniqueSnapshots,
-  type PartnerDefConfig,
 } from './staticConfigLoader.js';
 import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { partnerService } from './partnerService.js';
 import {
-  generateTechniqueTextModelSeed,
-  parseTechniqueTextModelJsonObject,
-} from './shared/techniqueTextModelShared.js';
-import { getCharacterNicknameById } from './shared/characterNickname.js';
-import { resolveTechniqueGenerationRequestFailure } from './shared/techniqueGenerationRequestFailure.js';
-import {
   buildPartnerRecruitJobState,
   type PartnerRecruitJobStatus,
   type PartnerRecruitPreviewDto,
 } from './shared/partnerRecruitJobShared.js';
+import {
+  buildGeneratedPartnerDefId,
+  buildGeneratedPartnerPreviewByPartnerDefId,
+  buildGeneratedPartnerTextModelRequest,
+  executeGeneratedPartnerVisualGeneration,
+  persistGeneratedPartnerPreviewTx,
+  tryCallGeneratedPartnerTextModel,
+  type GeneratedPartnerTechniqueDraft,
+} from './shared/partnerGeneratedPreview.js';
 import {
   buildPartnerRecruitStatusDto,
   type PartnerRecruitJobDto,
@@ -54,33 +52,21 @@ import {
 } from './shared/partnerRecruitStatus.js';
 import {
   buildPartnerRecruitCooldownState,
-  buildPartnerRecruitPromptNoiseHash,
   buildPartnerRecruitPreviewExpireAt,
-  buildPartnerRecruitPromptInput,
-  buildPartnerRecruitResponseFormat,
-  fillPartnerRecruitBaseAttrs,
   formatPartnerRecruitCooldownRemaining,
-  getPartnerRecruitTechniqueMaxLayer,
   isPartnerRecruitPreviewExpired,
   PARTNER_RECRUIT_COOLDOWN_APPLY_JOB_STATUSES,
   PARTNER_RECRUIT_SPIRIT_STONES_COST,
   resolvePartnerRecruitQualityByWeight,
-  type PartnerRecruitCombatStyle,
   type PartnerRecruitDraft,
   type PartnerRecruitQuality,
-  validatePartnerRecruitDraft,
 } from './shared/partnerRecruitRules.js';
 import { getActiveMonthCardCooldownReductionRate } from './shared/monthCardBenefits.js';
 import {
-  PARTNER_RECRUIT_FORM_RULES,
-} from './shared/partnerRecruitCreativeDirection.js';
-import {
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN,
-  guardPartnerRecruitRequestedBaseModel,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_MAX_LENGTH,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID,
-  resolvePartnerRecruitBaseModel,
   shouldPartnerRecruitBypassCooldownWithCustomBaseModel,
   shouldPartnerRecruitUseCustomBaseModelToken,
   validatePartnerRecruitRequestedBaseModelSelection,
@@ -89,24 +75,9 @@ import {
   buildPartnerRecruitUnlockState,
   type PartnerRecruitUnlockState,
 } from './shared/partnerRecruitUnlock.js';
-import {
-  generatePartnerRecruitAvatar,
-  type PartnerRecruitAvatarInput,
-} from './shared/partnerRecruitAvatarGenerator.js';
-import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
-import { broadcastWorldSystemMessage } from './shared/worldChatBroadcast.js';
-import { callConfiguredTextModel } from './ai/openAITextClient.js';
-import {
-  TechniqueGenerationExhaustedError,
-  generateTechniqueCandidateWithRetry,
-  remapTechniqueCandidateSkillIds,
-  validateTechniqueGenerationCandidate,
-} from './shared/techniqueGenerationCandidateCore.js';
-import { persistGeneratedTechniqueCandidateTx } from './shared/generatedTechniquePersistence.js';
-import type { GeneratedTechniqueType } from './shared/techniqueGenerationConstraints.js';
-import type { TechniqueGenerationCandidate } from './techniqueGenerationService.js';
+import { broadcastHeavenPartnerAcquired } from './shared/partnerWorldBroadcast.js';
 
-export type ServiceResult<T = unknown> = {
+export type ServiceResult<T = undefined> = {
   success: boolean;
   message: string;
   data?: T;
@@ -137,38 +108,6 @@ type RecruitJobRow = {
   previewPartnerDefId: string | null;
 };
 
-type RecruitTextAttemptFailure = {
-  success: false;
-  reason: string;
-  modelName: string;
-};
-
-type RecruitTextAttemptSuccess = {
-  success: true;
-  draft: PartnerRecruitDraft;
-  modelName: string;
-};
-
-type RecruitTextAttemptResult = RecruitTextAttemptFailure | RecruitTextAttemptSuccess;
-
-export type GeneratedRecruitTechniqueDraft = {
-  techniqueId: string;
-  candidate: TechniqueGenerationCandidate;
-};
-
-const PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE = [
-  '你是《九州修仙录》的伙伴创作引擎。',
-  '你必须返回严格 JSON，不得输出 markdown、解释、注释。',
-  '你要生成一个可招募的仙侠伙伴草稿，字段必须完整且满足输入约束。',
-  '字段名必须与输入约束和 response schema 完全一致，不得自创别名。',
-  '不要生成现代词汇、科幻词汇、英文名、阿拉伯数字名。',
-  ...PARTNER_RECRUIT_FORM_RULES,
-].join('\n');
-
-const DEFAULT_ATTACK_SKILL_ICON = '/assets/skills/icon_skill_38.png';
-const DEFAULT_SUPPORT_SKILL_ICON = '/assets/skills/icon_skill_36.png';
-const DEFAULT_GUARD_SKILL_ICON = '/assets/skills/icon_skill_14.png';
-
 const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
 
 const asNumber = (raw: unknown, fallback = 0): number => {
@@ -192,9 +131,6 @@ const normalizeGeneratedId = (prefix: string): string => {
 };
 
 const buildPartnerRecruitGenerationId = (): string => normalizeGeneratedId('partner-recruit');
-const buildGeneratedPartnerDefId = (): string => normalizeGeneratedId('partner-gen');
-const buildGeneratedTechniqueId = (): string => normalizeGeneratedId('tech-partner');
-
 const getPartnerRecruitCustomBaseModelTokenName = (): string => {
   const itemDef = getItemDefinitionById(PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID);
   const itemName = asString(itemDef?.name);
@@ -204,439 +140,9 @@ const getPartnerRecruitCustomBaseModelTokenName = (): string => {
   return itemName;
 };
 
-const resolveCombatStyleAttributeType = (combatStyle: PartnerRecruitCombatStyle): {
-  attributeType: 'physical' | 'magic';
-} => {
-  if (combatStyle === 'physical') {
-    return {
-      attributeType: 'physical',
-    };
-  }
-  return {
-    attributeType: 'magic',
-  };
-};
-
-const resolvePartnerRecruitTechniqueType = (
-  combatStyle: PartnerRecruitCombatStyle,
-  kind: PartnerRecruitDraft['innateTechniques'][number]['kind'],
-): GeneratedTechniqueType => {
-  if (kind === 'attack') {
-    return resolveCombatStyleAttributeType(combatStyle).attributeType === 'physical' ? '武技' : '法诀';
-  }
-  return '辅修';
-};
-
-const resolvePartnerRecruitDefaultSkillIcon = (
-  kind: PartnerRecruitDraft['innateTechniques'][number]['kind'],
-): string => {
-  if (kind === 'attack') return DEFAULT_ATTACK_SKILL_ICON;
-  if (kind === 'support') return DEFAULT_SUPPORT_SKILL_ICON;
-  return DEFAULT_GUARD_SKILL_ICON;
-};
-
-const buildPartnerRecruitTechniquePromptContext = (params: {
-  draft: PartnerRecruitDraft;
-  technique: PartnerRecruitDraft['innateTechniques'][number];
-  techniqueIndex: number;
-  techniqueType: GeneratedTechniqueType;
-}): Record<string, unknown> => {
-  const { draft, technique, techniqueIndex, techniqueType } = params;
-  return {
-    partner: {
-      name: draft.partner.name,
-      quality: draft.partner.quality,
-      role: draft.partner.role,
-      combatStyle: draft.partner.combatStyle,
-      attributeElement: draft.partner.attributeElement,
-      description: draft.partner.description,
-    },
-    innateTechnique: {
-      slot: techniqueIndex + 1,
-      totalCount: draft.innateTechniques.length,
-      kind: technique.kind,
-      preferredTechniqueType: techniqueType,
-      preferredName: technique.name,
-      preferredDescription: technique.description,
-      preferredPassiveKey: technique.passiveKey,
-      preferredPassiveValue: technique.passiveValue,
-    },
-  };
-};
-
-const buildPartnerRecruitAvatarInput = (
-  partnerDefId: string,
-  draft: PartnerRecruitDraft,
-): PartnerRecruitAvatarInput => ({
-  partnerId: partnerDefId,
-  name: draft.partner.name,
-  quality: draft.partner.quality,
-  element: draft.partner.attributeElement,
-  role: draft.partner.role,
-  description: draft.partner.description,
-});
-
-const adaptTechniqueCandidateForPartner = (params: {
-  draft: PartnerRecruitDraft;
-  candidate: TechniqueGenerationCandidate;
-  techniqueType: GeneratedTechniqueType;
-}): TechniqueGenerationCandidate => {
-  const { draft, candidate, techniqueType } = params;
-  const combatStyle = resolveCombatStyleAttributeType(draft.partner.combatStyle);
-  const attributeType = techniqueType === '武技'
-    ? 'physical'
-    : techniqueType === '法诀'
-      ? 'magic'
-      : combatStyle.attributeType;
-
-  return {
-    ...candidate,
-    technique: {
-      ...candidate.technique,
-      type: techniqueType,
-      requiredRealm: '凡人',
-      attributeType,
-      attributeElement: draft.partner.attributeElement,
-    },
-    skills: candidate.skills.map((skill) => ({
-      ...skill,
-      element: draft.partner.attributeElement,
-      damageType: techniqueType === '武技'
-        ? (skill.damageType ?? 'physical')
-        : techniqueType === '法诀'
-          ? (skill.damageType ?? 'magic')
-          : skill.damageType,
-    })),
-  };
-};
-
-// 伙伴文案草稿只负责“想生成什么”，真正的技能/层级/被动统一复用常规功法 candidate 核心，
-// 这样伙伴招募与洞府研修就不会各维护一套数值与结构校验。
-const generateRecruitTechniqueDrafts = async (params: {
-  characterId: number;
-  generationId: string;
-  draft: PartnerRecruitDraft;
-}): Promise<GeneratedRecruitTechniqueDraft[]> => {
-  const { characterId, generationId, draft } = params;
-  const maxLayer = getPartnerRecruitTechniqueMaxLayer(draft.partner.quality);
-  const generatedTechniques: GeneratedRecruitTechniqueDraft[] = [];
-
-  for (const [index, entry] of draft.innateTechniques.entries()) {
-    const techniqueType = resolvePartnerRecruitTechniqueType(draft.partner.combatStyle, entry.kind);
-    const generated = await generateTechniqueCandidateWithRetry({
-      generationId: `${generationId}:innate:${index + 1}`,
-      characterId,
-      techniqueType,
-      quality: draft.partner.quality,
-      maxLayer,
-      promptContext: buildPartnerRecruitTechniquePromptContext({
-        draft,
-        technique: entry,
-        techniqueIndex: index,
-        techniqueType,
-      }),
-    });
-    const adaptedCandidate = adaptTechniqueCandidateForPartner({
-      draft,
-      candidate: generated.candidate,
-      techniqueType,
-    });
-    const validateAdapted = validateTechniqueGenerationCandidate({
-      candidate: adaptedCandidate,
-      expectedTechniqueType: techniqueType,
-      expectedQuality: draft.partner.quality,
-      expectedMaxLayer: maxLayer,
-    });
-    if (!validateAdapted.success) {
-      throw new TechniqueGenerationExhaustedError(validateAdapted.message);
-    }
-
-    const execution = await generateTechniqueCandidateWithIcons({
-      quality: draft.partner.quality,
-      candidate: adaptedCandidate,
-      defaultSkillIcon: resolvePartnerRecruitDefaultSkillIcon(entry.kind),
-    });
-    const normalizedCandidate = remapTechniqueCandidateSkillIds(execution.candidate);
-    const validateNormalized = validateTechniqueGenerationCandidate({
-      candidate: normalizedCandidate,
-      expectedTechniqueType: techniqueType,
-      expectedQuality: draft.partner.quality,
-      expectedMaxLayer: maxLayer,
-    });
-    if (!validateNormalized.success) {
-      throw new TechniqueGenerationExhaustedError(validateNormalized.message);
-    }
-
-    generatedTechniques.push({
-      techniqueId: buildGeneratedTechniqueId(),
-      candidate: normalizedCandidate,
-    });
-  }
-
-  return generatedTechniques;
-};
-
-/**
- * 伙伴视觉资源并发执行入口
- *
- * 作用（做什么 / 不做什么）：
- * 1) 做什么：把伙伴头像生成与伙伴天生功法链路放到同一入口并发发起，避免 service 主流程里再次写出串行等待。
- * 2) 做什么：集中维护头像入参与依赖注入，让单测只验证“是否并发启动”，不必触碰数据库与真实模型。
- * 3) 不做什么：不负责数据库落库、不改动功法生成细节，也不在这里吞掉任一子任务异常。
- *
- * 输入/输出：
- * - 输入：角色 ID、招募任务 ID、伙伴草稿、伙伴定义 ID，以及可选的头像/功法生成依赖。
- * - 输出：`{ techniques, avatarUrl }`，供后续事务统一落库。
- *
- * 数据流/状态流：
- * partner draft -> buildPartnerRecruitAvatarInput / generateRecruitTechniqueDrafts -> Promise.all 并发执行 -> processPendingRecruitJob 落库。
- *
- * 关键边界条件与坑点：
- * 1) 这里只做并发编排，不做失败兜底；任一子任务失败都必须原样抛回上层，保持整单退款语义单一。
- * 2) 技能图标并发仍由 `generateTechniqueSkillIconMap` 自己控速，这里只额外并发 1 条伙伴头像链路，避免把并发控制散落到多个调用点。
- */
-export const executePartnerRecruitVisualGeneration = async (
-  params: {
-    characterId: number;
-    generationId: string;
-    draft: PartnerRecruitDraft;
-    partnerDefId: string;
-  },
-  deps: {
-    generateTechniques: (args: {
-      characterId: number;
-      generationId: string;
-      draft: PartnerRecruitDraft;
-    }) => Promise<GeneratedRecruitTechniqueDraft[]>;
-    generateAvatar: (input: PartnerRecruitAvatarInput) => Promise<string>;
-  } = {
-    generateTechniques: generateRecruitTechniqueDrafts,
-    generateAvatar: generatePartnerRecruitAvatar,
-  },
-): Promise<{
-  techniques: GeneratedRecruitTechniqueDraft[];
-  avatarUrl: string;
-}> => {
-  const [techniques, avatarUrl] = await Promise.all([
-    deps.generateTechniques({
-      characterId: params.characterId,
-      generationId: params.generationId,
-      draft: params.draft,
-    }),
-    deps.generateAvatar(buildPartnerRecruitAvatarInput(params.partnerDefId, params.draft)),
-  ]);
-
-  return {
-    techniques,
-    avatarUrl,
-  };
-};
-
-const buildPartnerDefFromDraft = (
-  partnerDefId: string,
-  generationId: string,
-  characterId: number,
-  draft: PartnerRecruitDraft,
-  avatarUrl: string,
-  techniques: GeneratedRecruitTechniqueDraft[],
-): PartnerDefConfig => {
-  return {
-    id: partnerDefId,
-    name: draft.partner.name,
-    description: draft.partner.description,
-    avatar: avatarUrl,
-    quality: draft.partner.quality,
-    attribute_element: draft.partner.attributeElement,
-    role: draft.partner.role,
-    max_technique_slots: draft.partner.maxTechniqueSlots,
-    innate_technique_ids: techniques.map((entry) => entry.techniqueId),
-    base_attrs: draft.partner.baseAttrs,
-    level_attr_gains: draft.partner.levelAttrGains,
-    enabled: true,
-    sort_weight: 1000,
-    created_by_character_id: characterId,
-    source_job_id: generationId,
-  };
-};
-
-const buildPreviewFromPartnerDefinition = (
-  definition: PartnerDefConfig,
-): PartnerRecruitPreviewDto => {
-  const skillDefinitions = getSkillDefinitions().filter((entry) => entry.enabled !== false);
-  const techniqueDefinitions = getTechniqueDefinitions().filter((entry) => entry.enabled !== false);
-  const techniqueMap = new Map(techniqueDefinitions.map((entry) => [entry.id, entry] as const));
-  const skillsByTechniqueId = new Map<string, string[]>();
-  for (const skill of skillDefinitions) {
-    if (skill.source_type !== 'technique') continue;
-    const sourceId = asString(skill.source_id);
-    if (!sourceId) continue;
-    const list = skillsByTechniqueId.get(sourceId) ?? [];
-    const name = asString(skill.name);
-    if (name) list.push(name);
-    skillsByTechniqueId.set(sourceId, list);
-  }
-
-  return {
-    partnerDefId: definition.id,
-    name: definition.name,
-    description: definition.description ?? '',
-    avatar: definition.avatar ?? null,
-    quality: definition.quality ?? '黄',
-    element: definition.attribute_element ?? 'none',
-    role: definition.role ?? '伙伴',
-    slotCount: Math.max(1, Number(definition.max_technique_slots) || 1),
-    baseAttrs: fillPartnerRecruitBaseAttrs(definition.base_attrs),
-    levelAttrGains: fillPartnerRecruitBaseAttrs(definition.level_attr_gains),
-    innateTechniques: definition.innate_technique_ids.map((techniqueId) => {
-      const technique = techniqueMap.get(techniqueId);
-      return {
-        techniqueId,
-        name: asString(technique?.name) || techniqueId,
-        description: asString(technique?.description),
-        quality: asString(technique?.quality) || definition.quality || '黄',
-        icon: asString(technique?.icon) || null,
-        skillNames: [...new Set(skillsByTechniqueId.get(techniqueId) ?? [])],
-      };
-    }),
-  };
-};
-
-/**
- * 伙伴招募文本模型请求构造
- *
- * 作用（做什么 / 不做什么）：
- * 1) 做什么：集中构造伙伴招募文本模型请求，把显式 seed 与基于 seed 派生的 prompt 扰动 hash 绑在一起，避免 service 内联拼接再次分叉。
- * 2) 不做什么：不请求模型、不解析响应，也不负责草稿校验。
- *
- * 输入/输出：
- * - 输入：伙伴品质、可选固定 seed（测试用）。
- * - 输出：可直接传给 `callConfiguredTextModel` 的请求参数，以及便于调试的 `promptNoiseHash/baseModel`。
- *
- * 数据流/状态流：
- * 品质/seed -> promptNoiseHash -> buildPartnerRecruitPromptInput -> 文本模型调用。
- *
- * 关键边界条件与坑点：
- * 1) promptNoiseHash 必须与 seed 同源，否则“请求看起来有扰动，实际 seed 不是同一次”会让排查失真。
- * 2) 基础类型必须与 seed 绑定，保证同一次招募请求里的创作约束可复现，而不是每次重试又随机成另一种主体。
- */
-export const buildPartnerRecruitTextModelRequest = (params: {
-  quality: PartnerRecruitQuality;
-  seed?: number;
-  requestedBaseModel?: string | null;
-}): {
-  responseFormat: ReturnType<typeof buildPartnerRecruitResponseFormat>;
-  systemMessage: string;
-  userMessage: string;
-  seed: number;
-  timeoutMs: number;
-  promptNoiseHash: string;
-  requestedBaseModel: string | null;
-  baseModel: string;
-} => {
-  const seed = params.seed ?? generateTechniqueTextModelSeed();
-  const promptNoiseHash = buildPartnerRecruitPromptNoiseHash(seed);
-  const baseModelSelection = resolvePartnerRecruitBaseModel({
-    seed,
-    requestedBaseModel: params.requestedBaseModel,
-  });
-  const timeoutMs = 300_000;
-
-  return {
-    responseFormat: buildPartnerRecruitResponseFormat(params.quality),
-    systemMessage: PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE,
-    userMessage: JSON.stringify(buildPartnerRecruitPromptInput(params.quality, {
-      baseModel: baseModelSelection.baseModel,
-      promptNoiseHash,
-    })),
-    seed,
-    timeoutMs,
-    promptNoiseHash,
-    requestedBaseModel: baseModelSelection.requestedBaseModel,
-    baseModel: baseModelSelection.baseModel,
-  };
-};
-
-const tryCallPartnerRecruitTextModel = async (
-  params: {
-    quality: PartnerRecruitQuality;
-    requestedBaseModel?: string | null;
-  },
-): Promise<RecruitTextAttemptResult> => {
-    const requestedBaseModelValidation = await guardPartnerRecruitRequestedBaseModel(params.requestedBaseModel);
-    if (!requestedBaseModelValidation.success) {
-      return {
-        success: false,
-      reason: requestedBaseModelValidation.message,
-      modelName: 'gpt-4o-mini',
-    };
-  }
-
-  const request = buildPartnerRecruitTextModelRequest({
-    ...params,
-    requestedBaseModel: requestedBaseModelValidation.value,
-  });
-  const external = await callConfiguredTextModel(request);
-  if (!external) {
-    return {
-      success: false,
-      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
-      modelName: 'gpt-4o-mini',
-    };
-  }
-  const { content, modelName } = external;
-
-  try {
-    const parsed = parseTechniqueTextModelJsonObject(content, {
-      preferredTopLevelKeys: ['partner', 'innateTechniques'],
-    });
-    if (!parsed.success) {
-      return {
-        success: false,
-        reason: parsed.reason === 'empty_content' ? '伙伴生成模型返回空内容' : '伙伴生成模型未返回合法 JSON',
-        modelName,
-      };
-    }
-    const draft = validatePartnerRecruitDraft(parsed.data);
-    if (!draft) {
-      return {
-        success: false,
-        reason: '伙伴生成模型返回结构非法或超出约束',
-        modelName,
-      };
-    }
-    if (draft.partner.quality !== params.quality) {
-      return {
-        success: false,
-        reason: '伙伴生成模型返回的品质与本次抽取品质不一致',
-        modelName,
-      };
-    }
-    return {
-      success: true,
-      draft,
-      modelName,
-    };
-  } catch (error) {
-    const failure = resolveTechniqueGenerationRequestFailure({
-      error,
-      didTimeout: false,
-      timeoutMs: request.timeoutMs,
-    });
-    return {
-      success: false,
-      reason: failure.reason,
-      modelName,
-    };
-  }
-};
-
-const buildRecruitPreviewByPartnerDefId = (
-  partnerDefId: string,
-): PartnerRecruitPreviewDto | null => {
-  const definition = getPartnerDefinitionById(partnerDefId);
-  if (!definition) return null;
-  return buildPreviewFromPartnerDefinition(definition);
-};
+export type GeneratedRecruitTechniqueDraft = GeneratedPartnerTechniqueDraft;
+export const executePartnerRecruitVisualGeneration = executeGeneratedPartnerVisualGeneration;
+export const buildPartnerRecruitTextModelRequest = buildGeneratedPartnerTextModelRequest;
 
 class PartnerRecruitService {
   private async broadcastHeavenPartnerRecruit(
@@ -644,19 +150,11 @@ class PartnerRecruitService {
     partnerDefId: string,
     partnerName: string,
   ): Promise<void> {
-    const definition = getPartnerDefinitionById(partnerDefId);
-    if (!definition || definition.quality !== '天') {
-      return;
-    }
-
-    const nickname = await getCharacterNicknameById(characterId);
-    if (!nickname) {
-      return;
-    }
-
-    broadcastWorldSystemMessage({
-      senderTitle: '天机传音',
-      content: `【伙伴招募】『${nickname}』招募到天级伙伴【${partnerName}】，灵契共鸣，声传九州！`,
+    await broadcastHeavenPartnerAcquired({
+      characterId,
+      partnerDefId,
+      partnerName,
+      sourceLabel: '伙伴招募',
     });
   }
 
@@ -921,7 +419,7 @@ class PartnerRecruitService {
       cooldownReductionRate,
     });
     const preview = latestJob?.previewPartnerDefId
-      ? buildRecruitPreviewByPartnerDefId(latestJob.previewPartnerDefId)
+      ? buildGeneratedPartnerPreviewByPartnerDefId(latestJob.previewPartnerDefId)
       : null;
     const jobState = buildPartnerRecruitJobState(latestJob
       ? {
@@ -1201,67 +699,14 @@ class PartnerRecruitService {
       return { success: false, message: '招募任务状态异常', code: 'RECRUIT_JOB_STATE_INVALID' };
     }
 
-    for (const technique of techniques) {
-      await persistGeneratedTechniqueCandidateTx({
-        generationId,
-        techniqueId: technique.techniqueId,
-        createdByCharacterId: characterId,
-        candidate: technique.candidate,
-        usageScope: 'partner_only',
-        isPublished: true,
-        publishedAt: new Date(),
-        nameLocked: true,
-        techniqueIcon: technique.candidate.skills[0]?.icon ?? null,
-        displayName: technique.candidate.technique.name,
-        longDescSuffix: '（伙伴天生功法）',
-        requiredRealm: '凡人',
-      });
-    }
-
-    const partnerDef = buildPartnerDefFromDraft(partnerDefId, generationId, characterId, draft, avatarUrl, techniques);
-    await query(
-      `
-        INSERT INTO generated_partner_def (
-          id,
-          name,
-          description,
-          avatar,
-          quality,
-          attribute_element,
-          role,
-          max_technique_slots,
-          base_attrs,
-          level_attr_gains,
-          innate_technique_ids,
-          enabled,
-          created_by_character_id,
-          source_job_id,
-          created_at,
-          updated_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9::jsonb,
-          $10::jsonb,
-          $11::text[],
-          true, $12, $13, NOW(), NOW()
-        )
-      `,
-      [
-        partnerDef.id,
-        partnerDef.name,
-        partnerDef.description ?? null,
-        partnerDef.avatar ?? null,
-        partnerDef.quality,
-        partnerDef.attribute_element,
-        partnerDef.role,
-        partnerDef.max_technique_slots,
-        JSON.stringify(partnerDef.base_attrs),
-        JSON.stringify(partnerDef.level_attr_gains ?? {}),
-        partnerDef.innate_technique_ids,
-        characterId,
-        generationId,
-      ],
-    );
+    const persist = await persistGeneratedPartnerPreviewTx({
+      characterId,
+      generationId,
+      draft,
+      partnerDefId,
+      avatarUrl,
+      techniques,
+    });
 
     await query(
       `
@@ -1278,19 +723,11 @@ class PartnerRecruitService {
       [generationId, characterId, partnerDefId, avatarUrl],
     );
 
-    await refreshGeneratedTechniqueSnapshots();
-    await refreshGeneratedPartnerSnapshots();
-
-    const preview = buildRecruitPreviewByPartnerDefId(partnerDefId);
-    if (!preview) {
-      return { success: false, message: '生成成功但预览构建失败', code: 'RECRUIT_PREVIEW_BUILD_FAILED' };
-    }
-
     return {
       success: true,
       message: '伙伴预览已生成',
       data: {
-        preview,
+        preview: persist.preview,
       },
     };
   }
@@ -1341,7 +778,7 @@ class PartnerRecruitService {
     let lastModelName = '';
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const result = await tryCallPartnerRecruitTextModel({
+      const result = await tryCallGeneratedPartnerTextModel({
         quality: args.quality,
         requestedBaseModel,
       });

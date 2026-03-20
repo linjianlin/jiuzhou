@@ -3,19 +3,24 @@ import { App, Button, Drawer, Empty, Input, InputNumber, Modal, Progress, Segmen
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   activatePartner,
+  confirmPartnerFusionPreview,
   confirmPartnerRecruitDraft,
   dismissPartner,
   discardPartnerRecruitDraft,
   generatePartnerRecruitDraft,
+  getPartnerFusionStatus,
   getPartnerOverview,
   getPartnerRecruitStatus,
   getPartnerSkillPolicy,
   getPartnerTechniqueUpgradeCost,
   injectPartnerExp,
   learnPartnerTechnique,
+  markPartnerFusionResultViewed,
   markPartnerRecruitResultViewed,
+  startPartnerFusion,
   type PartnerBookDto,
   type PartnerDetailDto,
+  type PartnerFusionStatusDto,
   type PartnerOverviewDto,
   type PartnerRecruitPreviewDto,
   type PartnerRecruitStatusDto,
@@ -66,6 +71,15 @@ import {
   resolvePartnerRecruitPanelView,
   resolvePartnerRecruitSubmitState,
 } from './partnerRecruitShared';
+import {
+  buildPartnerFusionIndicator,
+  groupPartnersByFusionQuality,
+  resolvePartnerFusionMaterialDisabledReason,
+  resolvePartnerFusionPanelView,
+  resolvePartnerFusionRateLines,
+  resolvePartnerFusionSelectedQuality,
+  togglePartnerFusionMaterialSelection,
+} from './partnerFusionShared';
 import './index.scss';
 
 interface PartnerModalProps {
@@ -107,6 +121,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   const [panel, setPanel] = useState<PartnerPanelKey>('overview');
   const [overview, setOverview] = useState<PartnerOverviewDto | null>(null);
   const [recruitStatus, setRecruitStatus] = useState<PartnerRecruitStatusDto | null>(null);
+  const [fusionStatus, setFusionStatus] = useState<PartnerFusionStatusDto | null>(null);
   const [skillPolicy, setSkillPolicy] = useState<PartnerSkillPolicyDto | null>(null);
   const [skillPolicyDraftEntries, setSkillPolicyDraftEntries] = useState<PartnerSkillPolicyEntryDto[]>([]);
   const [skillPolicyLoading, setSkillPolicyLoading] = useState(false);
@@ -117,12 +132,18 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   const [techniqueResultText, setTechniqueResultText] = useState('');
   const [customBaseModelEnabled, setCustomBaseModelEnabled] = useState(false);
   const [recruitBaseModelInput, setRecruitBaseModelInput] = useState('');
+  const [selectedFusionMaterialIds, setSelectedFusionMaterialIds] = useState<number[]>([]);
   const [techniqueUpgradeCosts, setTechniqueUpgradeCosts] = useState<Record<string, PartnerTechniqueUpgradeCostDto | null>>({});
   const [expandedTechniqueSkills, setExpandedTechniqueSkills] = useState<Record<string, boolean>>({});
   const markingRecruitViewedRef = useRef(false);
+  const markingFusionViewedRef = useRef(false);
 
   const applyRecruitStatus = useCallback((status: PartnerRecruitStatusDto | null) => {
     setRecruitStatus(status);
+  }, []);
+
+  const applyFusionStatus = useCallback((status: PartnerFusionStatusDto | null) => {
+    setFusionStatus(status);
   }, []);
 
   const refreshOverview = useCallback(async () => {
@@ -156,6 +177,21 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     }
   }, [applyRecruitStatus, open]);
 
+  const refreshFusionStatus = useCallback(async (mode: RecruitStatusRefreshMode = 'background') => {
+    if (!open) return;
+    try {
+      const res = await getPartnerFusionStatus();
+      if (!res.success || !res.data) {
+        throw new Error(getUnifiedApiErrorMessage(res, '获取三魂归契状态失败'));
+      }
+      applyFusionStatus(res.data);
+    } catch {
+      if (mode === 'initial') {
+        applyFusionStatus(null);
+      }
+    }
+  }, [applyFusionStatus, open]);
+
   const refreshSkillPolicy = useCallback(async (partnerId: number) => {
     if (!open) return;
     setSkillPolicyLoading(true);
@@ -179,6 +215,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       setPanel('overview');
       setOverview(null);
       setRecruitStatus(null);
+      setFusionStatus(null);
       setSkillPolicy(null);
       setSkillPolicyDraftEntries([]);
       setSkillPolicyLoading(false);
@@ -189,6 +226,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       setTechniqueResultText('');
       setCustomBaseModelEnabled(false);
       setRecruitBaseModelInput('');
+      setSelectedFusionMaterialIds([]);
       setTechniqueUpgradeCosts({});
       setExpandedTechniqueSkills({});
       setActionKey('');
@@ -197,12 +235,18 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     void Promise.all([
       refreshOverview(),
       refreshRecruitStatus('initial'),
+      refreshFusionStatus('initial'),
     ]);
-  }, [open, refreshOverview, refreshRecruitStatus]);
+  }, [open, refreshFusionStatus, refreshOverview, refreshRecruitStatus]);
 
   useEffect(() => {
     setSelectedPartnerId(resolvePartnerNextSelectedId(overview, selectedPartnerId));
   }, [overview, selectedPartnerId]);
+
+  useEffect(() => {
+    setSelectedFusionMaterialIds((currentIds) => currentIds.filter((partnerId) =>
+      overview?.partners.some((partner) => partner.id === partnerId) ?? false));
+  }, [overview]);
 
   useEffect(() => {
     setTechniqueResultText('');
@@ -227,7 +271,8 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     if (!overview || selectedPartnerId === null) return null;
     return overview.partners.find((partner) => partner.id === selectedPartnerId) ?? null;
   }, [overview, selectedPartnerId]);
-  const selectedPartnerListed = selectedPartner?.tradeStatus === 'market_listed';
+  const selectedPartnerActionLocked = selectedPartner?.tradeStatus === 'market_listed'
+    || selectedPartner?.fusionStatus === 'fusion_locked';
   const skillPolicyChanged = useMemo(() => {
     if (!skillPolicy) return false;
     const baseEntries = skillPolicy.entries;
@@ -251,7 +296,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   }, [open, panel, refreshSkillPolicy, selectedPartner]);
 
   const recruitIndicator = useMemo(() => buildPartnerRecruitIndicator(recruitStatus), [recruitStatus]);
+  const fusionIndicator = useMemo(() => buildPartnerFusionIndicator(fusionStatus), [fusionStatus]);
   const recruitPanelView = useMemo(() => resolvePartnerRecruitPanelView(recruitStatus), [recruitStatus]);
+  const fusionPanelView = useMemo(() => resolvePartnerFusionPanelView(fusionStatus), [fusionStatus]);
   const recruitActionState = useMemo(
     () => resolvePartnerRecruitActionState(recruitStatus, customBaseModelEnabled),
     [customBaseModelEnabled, recruitStatus],
@@ -269,6 +316,14 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   const hasCustomBaseModelToken = hasPartnerRecruitCustomBaseModelToken(recruitStatus);
   const customBaseModelTokenEnough = recruitSubmitState.customBaseModelTokenEnough;
   const canSubmitRecruit = recruitSubmitState.canSubmit;
+  const fusionSelectedQuality = useMemo(
+    () => resolvePartnerFusionSelectedQuality(overview?.partners ?? [], selectedFusionMaterialIds),
+    [overview?.partners, selectedFusionMaterialIds],
+  );
+  const fusionRateLines = useMemo(
+    () => (fusionSelectedQuality ? resolvePartnerFusionRateLines(fusionSelectedQuality) : []),
+    [fusionSelectedQuality],
+  );
 
   useEffect(() => {
     if (!hasCustomBaseModelToken && customBaseModelEnabled) {
@@ -309,6 +364,11 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
       applyRecruitStatus(payload.status);
     });
+    const unsubscribeFusionStatus = gameSocket.onPartnerFusionStatusUpdate((payload) => {
+      const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
+      if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
+      applyFusionStatus(payload.status);
+    });
     const unsubscribe = gameSocket.onPartnerRecruitResult((payload) => {
       const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
       if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
@@ -318,11 +378,22 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
         message.warning(payload.errorMessage || payload.message);
       }
     });
+    const unsubscribeFusion = gameSocket.onPartnerFusionResult((payload) => {
+      const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
+      if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
+      if (payload.status === 'generated_preview') {
+        message.success(payload.message);
+      } else {
+        message.warning(payload.errorMessage || payload.message);
+      }
+    });
     return () => {
       unsubscribeStatus();
+      unsubscribeFusionStatus();
       unsubscribe();
+      unsubscribeFusion();
     };
-  }, [applyRecruitStatus, message, open]);
+  }, [applyFusionStatus, applyRecruitStatus, message, open]);
 
   useEffect(() => {
     if (!open || panel !== 'recruit' || !recruitStatus?.hasUnreadResult || markingRecruitViewedRef.current) {
@@ -340,6 +411,23 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       }
     })();
   }, [open, panel, recruitStatus?.hasUnreadResult, refreshRecruitStatus]);
+
+  useEffect(() => {
+    if (!open || panel !== 'fusion' || !fusionStatus?.hasUnreadResult || markingFusionViewedRef.current) {
+      return;
+    }
+    markingFusionViewedRef.current = true;
+    void (async () => {
+      try {
+        await markPartnerFusionResultViewed();
+        await refreshFusionStatus();
+      } catch {
+        void 0;
+      } finally {
+        markingFusionViewedRef.current = false;
+      }
+    })();
+  }, [fusionStatus?.hasUnreadResult, open, panel, refreshFusionStatus]);
 
   useEffect(() => {
     if (!open || panel !== 'technique' || !selectedPartner) {
@@ -564,6 +652,47 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     }
   }, [canSubmitRecruit, customBaseModelEnabled, message, recruitBaseModelInputTrimmed, refreshRecruitStatus]);
 
+  const handleToggleFusionMaterial = useCallback((partnerId: number) => {
+    setSelectedFusionMaterialIds((currentIds) => togglePartnerFusionMaterialSelection(currentIds, partnerId));
+  }, []);
+
+  const handleStartFusion = useCallback(async () => {
+    if (selectedFusionMaterialIds.length !== 3) {
+      message.warning('请先选择3个同品级伙伴');
+      return;
+    }
+    setActionKey('fusion-start');
+    try {
+      const res = await startPartnerFusion(selectedFusionMaterialIds);
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '开始三魂归契失败'));
+      message.success(res.message || '三魂归契已开始');
+      setSelectedFusionMaterialIds([]);
+      await Promise.all([refreshFusionStatus(), refreshOverview()]);
+      dispatchPartnerChangedEvent();
+      gameSocket.refreshCharacter();
+    } catch {
+      void 0;
+    } finally {
+      setActionKey('');
+    }
+  }, [message, refreshFusionStatus, refreshOverview, selectedFusionMaterialIds]);
+
+  const handleConfirmFusion = useCallback(async (fusionId: string) => {
+    setActionKey(`fusion-confirm-${fusionId}`);
+    try {
+      const res = await confirmPartnerFusionPreview(fusionId);
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '确认三魂归契失败'));
+      message.success(res.message || '已确认收下归契伙伴');
+      await Promise.all([refreshFusionStatus(), refreshOverview()]);
+      dispatchPartnerChangedEvent();
+      gameSocket.refreshCharacter();
+    } catch {
+      void 0;
+    } finally {
+      setActionKey('');
+    }
+  }, [message, refreshFusionStatus, refreshOverview]);
+
   const handleConfirmRecruit = useCallback(async (generationId: string) => {
     setActionKey(`recruit-confirm-${generationId}`);
     try {
@@ -661,13 +790,14 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                     <Tag color={partner.isActive ? 'green' : 'default'}>{partner.isActive ? '已出战' : '待命中'}</Tag>
                     <Tag className={getItemQualityTagClassName(partner.quality)}>{partner.quality}</Tag>
                     {partner.tradeStatus === 'market_listed' ? <Tag color="orange">坊市中</Tag> : null}
+                    {partner.fusionStatus === 'fusion_locked' ? <Tag color="magenta">归契中</Tag> : null}
                   </div>
                 </div>
                 <div className="partner-action-row partner-list-action-row">
                   <Button
                     type={partner.isActive ? 'default' : 'primary'}
                     loading={actionKey === `${partner.isActive ? 'dismiss' : 'activate'}-${partner.id}`}
-                    disabled={partner.tradeStatus === 'market_listed'}
+                    disabled={partner.tradeStatus === 'market_listed' || partner.fusionStatus === 'fusion_locked'}
                     onClick={(event) => {
                       event.stopPropagation();
                       if (partner.isActive) {
@@ -708,6 +838,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               <Tag color="blue">等级 {selectedPartner.level}</Tag>
               <Tag className={getItemQualityTagClassName(selectedPartner.quality)}>{selectedPartner.quality}</Tag>
               {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="orange">坊市中</Tag> : null}
+              {selectedPartner.fusionStatus === 'fusion_locked' ? <Tag color="magenta">归契中</Tag> : null}
             </div>
             <div className="partner-tag-row">
               <Tag className={getElementToneClassName(selectedPartner.element)}>{formatPartnerElementLabel(selectedPartner.element)}</Tag>
@@ -716,6 +847,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             </div>
             {selectedPartner.tradeStatus === 'market_listed' ? (
               <div className="partner-meta partner-meta--warning">已在坊市挂单，无法出战、灌注或修炼功法。</div>
+            ) : null}
+            {selectedPartner.fusionStatus === 'fusion_locked' ? (
+              <div className="partner-meta partner-meta--warning">已被三魂归契占用，当前不可出战、培养或继续参与其他归契。</div>
             ) : null}
           </div>
         </div>
@@ -793,7 +927,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             <Button
               type="primary"
               loading={actionKey === `inject-${selectedPartner.id}`}
-              disabled={characterExp <= 0 || selectedPartnerListed}
+              disabled={characterExp <= 0 || selectedPartnerActionLocked}
               onClick={() => {
                 void handleInjectExp();
               }}
@@ -933,7 +1067,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                       <Button
                         type="primary"
                         loading={actionKey === `upgrade-${technique.techniqueId}`}
-                        disabled={!upgradeCost || selectedPartnerListed}
+                        disabled={!upgradeCost || selectedPartnerActionLocked}
                         onClick={() => {
                           void handleUpgradeTechnique(technique);
                         }}
@@ -981,7 +1115,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                   <Button
                     type="primary"
                     loading={actionKey === `learn-${book.itemInstanceId}`}
-                    disabled={selectedPartnerListed}
+                    disabled={selectedPartnerActionLocked}
                     onClick={() => {
                       void handleLearnTechnique(book);
                     }}
@@ -999,10 +1133,13 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     );
   };
 
-  const renderRecruitPreview = (preview: PartnerRecruitPreviewDto) => {
+  const renderRecruitPreview = (
+    preview: PartnerRecruitPreviewDto,
+    options?: { flat?: boolean },
+  ) => {
     const visibleBaseAttrs = getPartnerVisibleBaseAttrs(preview.baseAttrs, preview.levelAttrGains);
     return (
-      <div className="partner-recruit-preview-card">
+      <div className={`partner-recruit-preview-card${options?.flat ? ' is-flat' : ''}`}>
         <div className="partner-current-top">
           <img className="partner-avatar" src={resolvePartnerAvatar(preview.avatar)} alt={preview.name} />
           <div className="partner-current-main">
@@ -1236,6 +1373,173 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     );
   };
 
+  const renderFusionPanel = () => {
+    const partners = overview?.partners ?? [];
+    const groupedPartners = groupPartnersByFusionQuality(partners, fusionSelectedQuality);
+    const canStartFusion = selectedFusionMaterialIds.length === 3
+      && fusionPanelView.kind !== 'pending'
+      && fusionPanelView.kind !== 'preview';
+
+    return (
+      <div className="partner-pane-card partner-fusion-panel">
+        <div className="partner-section-title">
+          <span>三魂归契</span>
+          <div className="partner-tag-row">
+            {fusionSelectedQuality ? <Tag className={getItemQualityTagClassName(fusionSelectedQuality)}>{fusionSelectedQuality}</Tag> : null}
+            <Tag color="blue">已选 {selectedFusionMaterialIds.length} / 3</Tag>
+          </div>
+        </div>
+
+        <div className="partner-fusion-summary">
+          <div className="partner-fusion-summary-line">
+            选择 3 个同品级伙伴进行三魂归契，先生成预览，确认后才会真正入队；发起后素材会立即进入“归契中”状态。
+          </div>
+          <div className="partner-fusion-rate-row">
+            {fusionRateLines.length > 0 ? (
+              fusionRateLines.map((line) => (
+                <Tag key={line} color="default">{line}</Tag>
+              ))
+            ) : (
+              <span className="partner-meta">先选择任意一个素材伙伴后，可查看该品级的归契概率。</span>
+            )}
+          </div>
+        </div>
+
+        {fusionPanelView.kind === 'pending' ? (
+          <div className="partner-fusion-section partner-fusion-status">
+            <div className="partner-section-title">归契进行中</div>
+            <div className="partner-meta">灵契正在重铸中，请稍候片刻。任务编号：{fusionPanelView.job.fusionId}</div>
+            <div className="partner-meta">素材伙伴：{fusionPanelView.job.materialPartnerIds.length} / 3 已锁定</div>
+            <Button loading disabled>
+              正在归契中
+            </Button>
+          </div>
+        ) : null}
+
+        {fusionPanelView.kind === 'preview' ? (
+          <div className="partner-fusion-section partner-fusion-status">
+            <div className="partner-section-title">
+              <span>归契结果</span>
+              {fusionPanelView.job.resultQuality ? (
+                <Tag className={getItemQualityTagClassName(fusionPanelView.job.resultQuality)}>
+                  结果品级 {fusionPanelView.job.resultQuality}
+                </Tag>
+              ) : null}
+            </div>
+            {renderRecruitPreview(fusionPanelView.preview, { flat: true })}
+            <div className="partner-action-row partner-recruit-action-row partner-fusion-result-action-row">
+              <Button
+                type="primary"
+                loading={actionKey === `fusion-confirm-${fusionPanelView.job.fusionId}`}
+                onClick={() => {
+                  void handleConfirmFusion(fusionPanelView.job.fusionId);
+                }}
+              >
+                确认归契
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {fusionPanelView.kind === 'failed' ? (
+          <div className="partner-fusion-section partner-fusion-status">
+            <div className="partner-section-title">归契结果</div>
+            <div className="partner-meta">{fusionPanelView.errorMessage}</div>
+            <div className="partner-meta">失败后素材伙伴会自动解除占用，可重新选择发起新的三魂归契。</div>
+          </div>
+        ) : null}
+
+        {fusionPanelView.kind !== 'pending' && fusionPanelView.kind !== 'preview' ? (
+          <div className="partner-fusion-section">
+            <div className="partner-section-title">
+              <span>素材选择</span>
+            </div>
+            {groupedPartners.length > 0 ? (
+              <div className="partner-fusion-quality-groups">
+                {groupedPartners.map((group) => (
+                  <div key={group.quality} className="partner-fusion-quality-group">
+                    <div className="partner-fusion-quality-head">
+                      <Tag className={getItemQualityTagClassName(group.quality)}>{group.quality}</Tag>
+                      <span className="partner-meta">可作为归契素材的伙伴</span>
+                    </div>
+                    <div className="partner-fusion-material-grid">
+                      {group.partners.map((partner) => {
+                        const isSelected = selectedFusionMaterialIds.includes(partner.id);
+                        const disabledReason = isSelected
+                          ? null
+                          : resolvePartnerFusionMaterialDisabledReason(
+                            partner,
+                            fusionSelectedQuality,
+                            selectedFusionMaterialIds.length,
+                          );
+                        const shouldShowDisabledReason = disabledReason
+                          && !isSelected
+                          && disabledReason !== '出战中'
+                          && disabledReason !== '坊市中'
+                          && disabledReason !== '归契中';
+                        return (
+                          <button
+                            key={partner.id}
+                            type="button"
+                            className={`partner-fusion-material-card${isSelected ? ' is-selected' : ''}${disabledReason ? ' is-disabled' : ''}`}
+                            disabled={Boolean(disabledReason) && !isSelected}
+                            onClick={() => handleToggleFusionMaterial(partner.id)}
+                          >
+                            <img
+                              className="partner-fusion-material-avatar"
+                              src={resolvePartnerAvatar(partner.avatar)}
+                              alt={partner.name}
+                            />
+                            <div className="partner-fusion-material-main">
+                              <div className="partner-fusion-material-name">{partner.nickname || partner.name}</div>
+                              <div className="partner-fusion-material-meta">
+                                等级 {partner.level} · {partner.role}
+                              </div>
+                              <div className="partner-tag-row">
+                                <Tag className={getItemQualityTagClassName(partner.quality)}>{partner.quality}</Tag>
+                                {partner.fusionStatus === 'fusion_locked' ? <Tag color="magenta">归契中</Tag> : null}
+                                {shouldShowDisabledReason ? <Tag color="default">{disabledReason}</Tag> : null}
+                                {isSelected ? <Tag color="blue">已选中</Tag> : null}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="partner-empty">当前暂无可参与三魂归契的伙伴</div>
+            )}
+          </div>
+        ) : null}
+
+        {fusionPanelView.kind !== 'pending' && fusionPanelView.kind !== 'preview' ? (
+          <>
+            <div className="partner-action-row partner-recruit-action-row">
+              <Button
+                type="primary"
+                loading={actionKey === 'fusion-start'}
+                disabled={!canStartFusion}
+                onClick={() => {
+                  void handleStartFusion();
+                }}
+              >
+                开始归契
+              </Button>
+            </div>
+            {!canStartFusion ? (
+              <div className="partner-meta">
+                请选择 3 个同品级且未出战、未上架、未归契中的伙伴。
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderSkillPolicyPanel = () => {
     if (!selectedPartner) return <div className="partner-empty">暂无伙伴数据</div>;
 
@@ -1278,8 +1582,8 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               {entries.map((entry, index) => (
                 <div
                   key={entry.skillId}
-                  className={`partner-skill-policy-item${entry.enabled ? '' : ' is-disabled'}${allowMove && !selectedPartnerListed && !isMobile ? ' is-sortable' : ''}${draggingSkillId === entry.skillId ? ' is-dragging' : ''}${dragOverSkillId === entry.skillId ? ' is-drag-over' : ''}`}
-                  draggable={allowMove && !selectedPartnerListed && !isMobile}
+                  className={`partner-skill-policy-item${entry.enabled ? '' : ' is-disabled'}${allowMove && !selectedPartnerActionLocked && !isMobile ? ' is-sortable' : ''}${draggingSkillId === entry.skillId ? ' is-dragging' : ''}${dragOverSkillId === entry.skillId ? ' is-drag-over' : ''}`}
+                  draggable={allowMove && !selectedPartnerActionLocked && !isMobile}
                   onDragStart={(event) => handleSkillPolicyDragStart(event, entry.skillId)}
                   onDragOver={(event) => handleSkillPolicyDragOver(event, entry.skillId)}
                   onDrop={(event) => handleSkillPolicyDrop(event, entry.skillId)}
@@ -1339,14 +1643,14 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                           '上移',
                           <ArrowUpOutlined />,
                           () => handleMoveSkillPolicyEntry(entry.skillId, 'up'),
-                          selectedPartnerListed || index <= 0,
+                          selectedPartnerActionLocked || index <= 0,
                         )}
                         {renderSkillPolicyIconButton(
                           `${entry.skillId}-down`,
                           '下移',
                           <ArrowDownOutlined />,
                           () => handleMoveSkillPolicyEntry(entry.skillId, 'down'),
-                          selectedPartnerListed || index >= entries.length - 1,
+                          selectedPartnerActionLocked || index >= entries.length - 1,
                         )}
                       </>
                     ) : null}
@@ -1355,7 +1659,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                       entry.enabled ? '禁用自动释放' : '重新启用',
                       entry.enabled ? <StopOutlined /> : <CheckCircleOutlined />,
                       () => handleToggleSkillPolicy(entry.skillId),
-                      selectedPartnerListed,
+                      selectedPartnerActionLocked,
                       entry.enabled,
                     )}
                   </div>
@@ -1389,7 +1693,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             type="primary"
             className="partner-skill-policy-save-btn"
             loading={actionKey === `skill-policy-${selectedPartner.id}`}
-            disabled={!skillPolicyChanged || skillPolicyLoading || selectedPartnerListed}
+            disabled={!skillPolicyChanged || skillPolicyLoading || selectedPartnerActionLocked}
             onClick={() => {
               void handleSaveSkillPolicy();
             }}
@@ -1407,7 +1711,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       return (
         <span className="partner-menu-label">
           {item.label}
-          {item.value === 'recruit' && recruitIndicator.badgeDot ? (
+          {(item.value === 'recruit' && recruitIndicator.badgeDot) || (item.value === 'fusion' && fusionIndicator.badgeDot) ? (
             <span className="partner-menu-dot" />
           ) : null}
         </span>
@@ -1423,6 +1727,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
       if (panel === 'upgrade') return renderUpgradePanel();
       if (panel === 'technique') return renderTechniquePanel();
       if (panel === 'skill_policy') return renderSkillPolicyPanel();
+      if (panel === 'fusion') return renderFusionPanel();
       return renderRecruitPanel();
     })();
 

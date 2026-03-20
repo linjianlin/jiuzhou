@@ -39,6 +39,7 @@ import {
   mergePartnerTechniquePassives,
   type PartnerGrowthValues,
 } from './partnerRules.js';
+import type { PartnerFusionLockState, PartnerFusionLockStatus } from './partnerFusionState.js';
 
 export type PartnerTradeStatus = 'none' | 'market_listed';
 
@@ -197,6 +198,8 @@ export interface PartnerDisplayDto {
 export interface PartnerDetailDto extends PartnerDisplayDto {
   tradeStatus: PartnerTradeStatus;
   marketListingId: number | null;
+  fusionStatus: PartnerFusionLockStatus;
+  fusionJobId: string | null;
 }
 
 export type PartnerTechniqueStaticMeta = {
@@ -724,12 +727,17 @@ export const buildPartnerDisplay = (params: {
 
 export const attachPartnerTradeState = (
   partner: PartnerDisplayDto,
-  tradeState?: { tradeStatus: PartnerTradeStatus; marketListingId: number | null },
+  runtimeState?: {
+    tradeState?: { tradeStatus: PartnerTradeStatus; marketListingId: number | null };
+    fusionState?: PartnerFusionLockState;
+  },
 ): PartnerDetailDto => {
   return {
     ...partner,
-    tradeStatus: tradeState?.tradeStatus ?? 'none',
-    marketListingId: tradeState?.marketListingId ?? null,
+    tradeStatus: runtimeState?.tradeState?.tradeStatus ?? 'none',
+    marketListingId: runtimeState?.tradeState?.marketListingId ?? null,
+    fusionStatus: runtimeState?.fusionState?.fusionStatus ?? 'none',
+    fusionJobId: runtimeState?.fusionState?.fusionJobId ?? null,
   };
 };
 
@@ -737,6 +745,7 @@ export const buildPartnerDetails = (params: {
   rows: PartnerRow[];
   techniqueMap: Map<number, PartnerTechniqueRow[]>;
   tradeStateMap?: Map<number, { tradeStatus: PartnerTradeStatus; marketListingId: number | null }>;
+  fusionStateMap?: Map<number, PartnerFusionLockState>;
 }): PartnerDetailDto[] => {
   return params.rows.map((row) => {
     const definition = getPartnerDefinitionById(row.partner_def_id);
@@ -751,7 +760,10 @@ export const buildPartnerDetails = (params: {
     });
     return attachPartnerTradeState(
       partner,
-      params.tradeStateMap?.get(row.id),
+      {
+        tradeState: params.tradeStateMap?.get(row.id),
+        fusionState: params.fusionStateMap?.get(row.id),
+      },
     );
   });
 };

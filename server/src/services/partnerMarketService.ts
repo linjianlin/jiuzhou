@@ -41,6 +41,7 @@ import {
 } from './shared/marketListingPurchaseShared.js';
 import { parsePositiveInt } from './shared/httpParam.js';
 import { loadActivePartnerMarketListing } from './shared/partnerMarketState.js';
+import { loadActivePartnerFusionMaterial } from './shared/partnerFusionState.js';
 import { getPartnerDefinitionById } from './staticConfigLoader.js';
 
 export type PartnerMarketSort = 'timeDesc' | 'priceAsc' | 'priceDesc' | 'levelDesc';
@@ -480,6 +481,9 @@ class PartnerMarketService {
     if (partnerRow.is_active) {
       return { success: false, message: '出战中的伙伴不可上架' };
     }
+    if (await loadActivePartnerFusionMaterial(partnerId, true)) {
+      return { success: false, message: '归契中的伙伴不可上架' };
+    }
     const activeListing = await loadActivePartnerMarketListing(partnerId, true);
     if (activeListing) {
       return { success: false, message: '该伙伴已在坊市挂单中' };
@@ -720,6 +724,9 @@ class PartnerMarketService {
     }
     if (partnerRow.is_active) {
       return { success: false, message: '出战中的伙伴不可交易' };
+    }
+    if (await loadActivePartnerFusionMaterial(partnerId, true)) {
+      return { success: false, message: '归契中的伙伴不可交易' };
     }
 
     const totalPrice = calculateMarketTradeTotalPrice(

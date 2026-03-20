@@ -48,6 +48,7 @@ export type PartnerBaseAttrsDto = Omit<PartnerComputedAttrsDto, 'qixue' | 'lingq
 export type PartnerPassiveAttrsDto = Record<string, number>;
 
 export type PartnerTradeStatus = 'none' | 'market_listed';
+export type PartnerFusionStatus = 'none' | 'fusion_locked';
 
 export type PartnerTechniqueSkillDto = {
   id: string;
@@ -130,6 +131,8 @@ export type PartnerDisplayDto = {
 export type PartnerDetailDto = PartnerDisplayDto & {
   tradeStatus: PartnerTradeStatus;
   marketListingId: number | null;
+  fusionStatus: PartnerFusionStatus;
+  fusionJobId: string | null;
 };
 
 export type PartnerRecruitPreviewTechniqueDto = {
@@ -196,6 +199,43 @@ export type PartnerRecruitStatusDto = {
 
 export type PartnerRecruitConfirmResponseDto = {
   generationId: string;
+  partnerId: number;
+  partnerDefId: string;
+  partnerName: string;
+  partnerAvatar: string | null;
+  activated: boolean;
+};
+
+export type PartnerFusionPreviewDto = PartnerRecruitPreviewDto;
+
+export type PartnerFusionJobStatusDto =
+  | 'pending'
+  | 'generated_preview'
+  | 'accepted'
+  | 'failed';
+
+export type PartnerFusionJobDto = {
+  fusionId: string;
+  status: PartnerFusionJobStatusDto;
+  startedAt: string;
+  finishedAt: string | null;
+  errorMessage: string | null;
+  sourceQuality: string;
+  resultQuality: string | null;
+  materialPartnerIds: number[];
+  preview: PartnerFusionPreviewDto | null;
+};
+
+export type PartnerFusionStatusDto = {
+  featureCode: CharacterFeatureCode;
+  unlocked: true;
+  currentJob: PartnerFusionJobDto | null;
+  hasUnreadResult: boolean;
+  resultStatus: 'generated_preview' | 'failed' | null;
+};
+
+export type PartnerFusionConfirmResponseDto = {
+  fusionId: string;
   partnerId: number;
   partnerDefId: string;
   partnerName: string;
@@ -341,6 +381,36 @@ export interface PartnerRecruitViewedResponse {
   };
 }
 
+export interface PartnerFusionStatusResponse {
+  success: boolean;
+  message: string;
+  data?: PartnerFusionStatusDto;
+}
+
+export interface PartnerFusionStartResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    fusionId: string;
+    sourceQuality: string;
+    resultQuality: string;
+  };
+}
+
+export interface PartnerFusionConfirmResponse {
+  success: boolean;
+  message: string;
+  data?: PartnerFusionConfirmResponseDto;
+}
+
+export interface PartnerFusionViewedResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    fusionId: string | null;
+  };
+}
+
 export interface PartnerSkillPolicyResponse {
   success: boolean;
   message: string;
@@ -440,4 +510,22 @@ export const discardPartnerRecruitDraft = (
 
 export const markPartnerRecruitResultViewed = (): Promise<PartnerRecruitViewedResponse> => {
   return api.post('/partner/recruit/mark-result-viewed');
+};
+
+export const getPartnerFusionStatus = (): Promise<PartnerFusionStatusResponse> => {
+  return api.get('/partner/fusion/status');
+};
+
+export const startPartnerFusion = (partnerIds: number[]): Promise<PartnerFusionStartResponse> => {
+  return api.post('/partner/fusion/start', { partnerIds });
+};
+
+export const confirmPartnerFusionPreview = (
+  fusionId: string,
+): Promise<PartnerFusionConfirmResponse> => {
+  return api.post(`/partner/fusion/${fusionId}/confirm`);
+};
+
+export const markPartnerFusionResultViewed = (): Promise<PartnerFusionViewedResponse> => {
+  return api.post('/partner/fusion/mark-result-viewed');
 };

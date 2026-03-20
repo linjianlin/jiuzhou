@@ -41,15 +41,16 @@ export {
   resolvePartnerAvatar,
 } from '../../shared/partnerDisplay';
 
-export type PartnerPanelKey = 'partners' | 'overview' | 'upgrade' | 'technique' | 'skill_policy' | 'recruit';
+export type PartnerPanelKey = 'partners' | 'overview' | 'upgrade' | 'technique' | 'skill_policy' | 'recruit' | 'fusion';
 
 export const PARTNER_PANEL_OPTIONS: Array<{ value: PartnerPanelKey; label: string }> = [
-  { value: 'partners', label: '伙伴列表' },
+  { value: 'partners', label: '列表' },
   { value: 'overview', label: '总览' },
   { value: 'upgrade', label: '升级' },
   { value: 'technique', label: '功法' },
   { value: 'skill_policy', label: '技能策略' },
   { value: 'recruit', label: '招募' },
+  { value: 'fusion', label: '三魂归契' },
 ];
 
 export const PARTNER_GROWTH_ATTRS: Array<keyof PartnerDetailDto['growth']> = [
