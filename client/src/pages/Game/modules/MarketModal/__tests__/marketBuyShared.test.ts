@@ -6,8 +6,8 @@ import {
 } from '../marketBuyShared';
 
 describe('marketBuyShared', () => {
-  it('数量为 1 的挂单不需要弹出自定义购买数量', () => {
-    expect(shouldPromptMarketBuyQuantity(1)).toBe(false);
+  it('所有合法挂单购买都需要先弹出确认框', () => {
+    expect(shouldPromptMarketBuyQuantity(1)).toBe(true);
     expect(shouldPromptMarketBuyQuantity(2)).toBe(true);
   });
 

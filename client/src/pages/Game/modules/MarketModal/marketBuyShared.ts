@@ -15,7 +15,7 @@
  *
  * 关键边界条件与坑点：
  * 1. 前端可以夹紧非法输入，但服务端仍需再次校验；这里的规范化只用于稳定交互，不是安全边界。
- * 2. `listingQty <= 1` 时必须保持一键购买体验，不能平白多弹一个输入框增加操作成本。
+ * 2. 物品坊市所有合法购买都必须先经过同一个确认弹窗，避免单件购买绕开确认入口，导致交互规则分叉。
  */
 
 const normalizeListingQty = (listingQty: number): number => {
@@ -29,7 +29,7 @@ const normalizeUnitPrice = (unitPrice: number): number => {
 };
 
 export const shouldPromptMarketBuyQuantity = (listingQty: number): boolean => {
-  return normalizeListingQty(listingQty) > 1;
+  return normalizeListingQty(listingQty) >= 1;
 };
 
 export const clampMarketBuyQuantity = (
