@@ -23,6 +23,11 @@ export type RealtimeBattleViewSyncMode =
   | 'sync_team_battle'
   | 'sync_reconnect_battle';
 
+type ShouldRestoreBattleSessionFromRealtimeParams = {
+  syncMode: RealtimeBattleViewSyncMode;
+  hasSessionPayload: boolean;
+};
+
 type BattleViewMode = 'map' | 'battle';
 
 const PLAIN_MAP_BATTLE_ID_PREFIX = 'battle-';
@@ -58,4 +63,35 @@ export const resolveRealtimeBattleViewSyncMode = (params: {
   }
 
   return 'sync_reconnect_battle';
+};
+
+/**
+ * battle realtime 驱动下的 session 恢复策略。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一判定某次 socket 战斗接管后，是否还需要按 battleId 补查 BattleSession，避免 Game 页在 battle_started / battle_finished 两处分支重复拼条件。
+ * 2. 做什么：让“队友视角但服务端已附带 session 的秘境/会话战斗”也能恢复成正式 session，上层不再只停留在临时 teamBattleId 回放态。
+ * 3. 不做什么：不发请求、不持有 React 状态，也不关心 session 具体内容是否合法。
+ *
+ * 输入/输出：
+ * - 输入：当前接管模式，以及该条 realtime 是否显式携带 session。
+ * - 输出：是否应该继续执行按 battleId 的 session 恢复。
+ *
+ * 数据流/状态流：
+ * - Game 收到 battle realtime -> 先决定接管模式 -> 本函数判断是否需要补做 session 恢复 -> Game 再决定是否调用 restoreBattleSessionContext。
+ *
+ * 关键边界条件与坑点：
+ * 1. `keep_local_battle` 必须严格跳过恢复，否则普通地图本地战斗会被误抢成外部 session。
+ * 2. `sync_team_battle` 只有在服务端明确附带 session 时才恢复，避免普通组队战斗的高频 `battle_state` 误触发无意义请求。
+ */
+export const shouldRestoreBattleSessionFromRealtime = (
+  params: ShouldRestoreBattleSessionFromRealtimeParams,
+): boolean => {
+  if (params.syncMode === 'keep_local_battle') {
+    return false;
+  }
+  if (params.syncMode === 'sync_reconnect_battle') {
+    return true;
+  }
+  return params.hasSessionPayload;
 };

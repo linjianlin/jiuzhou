@@ -20,7 +20,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveRealtimeBattleViewSyncMode } from '../battleViewSync.js';
+import {
+  resolveRealtimeBattleViewSyncMode,
+  shouldRestoreBattleSessionFromRealtime,
+} from '../battleViewSync.js';
 
 test('普通地图本地战斗已由 BattleArea 持有时，不应再接成 reconnect 战斗', () => {
   assert.equal(
@@ -79,5 +82,25 @@ test('已经处于 reconnect 外部上下文时，不应错误回退成本地战
       currentReconnectBattleId: 'battle-1001-1700000000000',
     }),
     'sync_reconnect_battle',
+  );
+});
+
+test('队友战斗若服务端已附带 session，应继续恢复正式 battle session', () => {
+  assert.equal(
+    shouldRestoreBattleSessionFromRealtime({
+      syncMode: 'sync_team_battle',
+      hasSessionPayload: true,
+    }),
+    true,
+  );
+});
+
+test('普通队友战斗若没有 session，不应额外发起 battle session 恢复请求', () => {
+  assert.equal(
+    shouldRestoreBattleSessionFromRealtime({
+      syncMode: 'sync_team_battle',
+      hasSessionPayload: false,
+    }),
+    false,
   );
 });

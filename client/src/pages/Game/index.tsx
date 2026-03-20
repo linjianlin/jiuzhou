@@ -107,7 +107,10 @@ import { PARTNER_FEATURE_UNLOCK_HINT, hasCharacterFeature } from './shared/featu
 import { formatMainQuestRewardTexts } from './shared/mainQuestRewardText';
 import { shouldActivateBattleSessionView } from './shared/battleSessionRestore';
 import { formatTaskRewardsToText } from './shared/taskRewardText';
-import { resolveRealtimeBattleViewSyncMode } from './shared/battleViewSync';
+import {
+  resolveRealtimeBattleViewSyncMode,
+  shouldRestoreBattleSessionFromRealtime,
+} from './shared/battleViewSync';
 import {
   shouldResetTeamBattleReplayContext,
   type TeamBattleReplayIdentity,
@@ -1653,7 +1656,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           return;
         }
         const syncMode = syncRealtimeBattleView(battleId);
-        if (syncMode === 'sync_reconnect_battle') {
+        if (shouldRestoreBattleSessionFromRealtime({
+          syncMode,
+          hasSessionPayload: Boolean(data.session),
+        })) {
           void restoreBattleSessionContext(battleId);
         }
         return;
@@ -1678,7 +1684,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           return;
         }
         const syncMode = syncRealtimeBattleView(battleId);
-        if (syncMode === 'sync_reconnect_battle') {
+        if (shouldRestoreBattleSessionFromRealtime({
+          syncMode,
+          hasSessionPayload: Boolean(data.session),
+        })) {
           void restoreBattleSessionContext(battleId);
         }
         if (syncMode === 'keep_local_battle') {
