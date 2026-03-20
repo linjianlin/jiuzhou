@@ -15,7 +15,7 @@
  *
  * 关键边界条件与坑点：
  * 1. 必须只读取“当前出战伙伴”，不存在时返回 null；不能在这里隐式挑选其他伙伴顶替。
- * 2. 伙伴技能列表必须复用 battle 的技能静态索引，避免伙伴与角色走出两套不同的技能定义口径。
+ * 2. 伙伴技能列表必须直接复用“已应用层数强化后的有效技能条目”，不能再按 skillId 回查静态技能表，否则会退回初始等级效果。
  */
 
 import { query } from '../../config/database.js';
@@ -24,9 +24,8 @@ import type {
   SkillData,
 } from '../../battle/battleFactory.js';
 import type { PartnerDefConfig } from '../staticConfigLoader.js';
-import { toBattleSkillData } from '../battle/shared/skills.js';
-import { getEnabledBattleSkillDefinitionMap } from '../battle/shared/staticDefinitionIndex.js';
 import {
+  buildPartnerBattleSkillData,
   buildPartnerEffectiveSkillEntries,
   buildPartnerDisplay,
   loadPartnerTechniqueRows,
@@ -167,11 +166,7 @@ export const loadActivePartnerBattleMember = async (
     forUpdate: false,
   });
 
-  const skillDefinitionMap = getEnabledBattleSkillDefinitionMap();
-  const skills = skillPolicyState.availableSkills
-    .map((entry) => skillDefinitionMap.get(entry.skillId))
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-    .map((entry) => toBattleSkillData(entry));
+  const skills = buildPartnerBattleSkillData(skillPolicyState.availableSkills);
 
   const userId = normalizeInteger(partnerRow.user_id);
   const attributeElement = normalizeText(partnerDef.attribute_element) || 'none';

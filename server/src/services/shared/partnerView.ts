@@ -18,6 +18,7 @@
  * 2. 天生功法和后天功法必须走同一套有效功法合并规则，否则伙伴总览与坊市展示会出现技能层级不一致。
  */
 import { query } from '../../config/database.js';
+import type { SkillData } from '../../battle/battleFactory.js';
 import type { SkillTriggerType } from '../../shared/skillTriggerType.js';
 import { resolveSkillTriggerType } from '../../shared/skillTriggerType.js';
 import {
@@ -28,7 +29,10 @@ import {
   type PartnerDefConfig,
   type TechniqueDefConfig,
 } from '../staticConfigLoader.js';
-import { buildEffectiveTechniqueSkillData } from './techniqueSkillProgression.js';
+import {
+  buildEffectiveTechniqueSkillData,
+  cloneSkillEffectList,
+} from './techniqueSkillProgression.js';
 import {
   buildTechniqueSkillUpgradeCountMap,
   getTechniqueLayersByTechniqueIdStatic,
@@ -136,6 +140,7 @@ export interface PartnerTechniqueSkillDto {
   element?: string;
   effects?: object[];
   trigger_type?: SkillTriggerType;
+  ai_priority?: number;
 }
 
 export interface PartnerTechniqueDto {
@@ -168,6 +173,7 @@ export interface PartnerEffectiveSkillEntry {
   element?: string;
   effects?: object[];
   trigger_type?: SkillTriggerType;
+  ai_priority?: number;
   sourceTechniqueId: string;
   sourceTechniqueName: string;
   sourceTechniqueQuality: string;
@@ -452,8 +458,48 @@ const buildPartnerTechniqueSkills = (
         element: normalizeText(skillDef.element) || undefined,
         effects: effectiveSkill.effects,
         trigger_type: triggerType,
+        ai_priority: effectiveSkill.ai_priority,
       };
     });
+};
+
+/**
+ * 伙伴有效技能条目转战斗 SkillData。
+ *
+ * 作用：
+ * 1. 统一把伙伴当前已解锁且已应用层数强化的技能条目转成战斗输入。
+ * 2. 让普通战斗与挂机快照复用同一份升级后技能数据，避免再次回查静态技能表时退回初始层效果。
+ * 3. 不负责筛选技能可用性与排序，调用方应先传入已完成归一化的有效技能列表。
+ *
+ * 边界条件：
+ * 1. `effects` 必须在这里重新克隆一份，避免同一个伙伴技能实例被多个战斗态共享数组引用。
+ * 2. 缺省字段只补战斗引擎要求的最小默认值，不在这里额外做兼容分支。
+ */
+export const toPartnerBattleSkillData = (
+  skill: PartnerEffectiveSkillEntry,
+): SkillData => {
+  return {
+    id: skill.skillId,
+    name: skill.skillName,
+    cost_lingqi: Number(skill.cost_lingqi) || 0,
+    cost_lingqi_rate: Number(skill.cost_lingqi_rate) || 0,
+    cost_qixue: Number(skill.cost_qixue) || 0,
+    cost_qixue_rate: Number(skill.cost_qixue_rate) || 0,
+    cooldown: Math.max(0, normalizeInteger(skill.cooldown)),
+    target_type: normalizeText(skill.target_type) || 'single_enemy',
+    target_count: Math.max(1, normalizeInteger(skill.target_count, 1)),
+    damage_type: normalizeText(skill.damage_type) || 'none',
+    element: normalizeText(skill.element) || 'none',
+    effects: cloneSkillEffectList(skill.effects),
+    trigger_type: skill.trigger_type ?? 'active',
+    ai_priority: Math.max(0, normalizeInteger(skill.ai_priority)),
+  };
+};
+
+export const buildPartnerBattleSkillData = (
+  skills: PartnerEffectiveSkillEntry[],
+): SkillData[] => {
+  return skills.map((skill) => toPartnerBattleSkillData(skill));
 };
 
 export const toPartnerComputedAttrsDto = (
@@ -649,6 +695,7 @@ export const buildPartnerEffectiveSkillEntries = (
         element: skill.element,
         effects: skill.effects,
         trigger_type: skill.trigger_type,
+        ai_priority: skill.ai_priority,
         sourceTechniqueId,
         sourceTechniqueName,
         sourceTechniqueQuality,
