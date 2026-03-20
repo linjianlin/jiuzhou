@@ -185,31 +185,36 @@ body.theme-dark .ant-pagination .ant-pagination-jump-next .ant-pagination-item-e
 }
 
 /* 深色主题下统一修复 InputNumber 步进按钮 hover 变黑、图标不可读的问题 */
-body.theme-dark .ant-input-number .ant-input-number-handler-wrap {
+body.theme-dark .ant-input-number .ant-input-number-actions {
   background: var(--panel-bg);
   border-inline-start: 1px solid var(--border-color-soft);
 }
 
-body.theme-dark .ant-input-number .ant-input-number-handler {
+body.theme-dark .ant-input-number .ant-input-number-action {
   color: var(--text-secondary);
   background: transparent;
   border-color: var(--border-color-soft);
 }
 
-body.theme-dark .ant-input-number .ant-input-number-handler:hover,
-body.theme-dark .ant-input-number .ant-input-number-handler:focus-visible {
+body.theme-dark .ant-input-number .ant-input-number-action:hover,
+body.theme-dark .ant-input-number .ant-input-number-action:focus-visible {
   color: var(--text-color);
   background: var(--hover-bg);
 }
 
-body.theme-dark .ant-input-number .ant-input-number-handler:active {
+body.theme-dark .ant-input-number .ant-input-number-action:active {
   color: var(--text-color);
   background: var(--active-bg);
 }
 
-body.theme-dark .ant-input-number .ant-input-number-handler-up-inner,
-body.theme-dark .ant-input-number .ant-input-number-handler-down-inner,
-body.theme-dark .ant-input-number .ant-input-number-handler .anticon {
+body.theme-dark .ant-input-number .ant-input-number-action-up,
+body.theme-dark .ant-input-number .ant-input-number-action-down {
+  color: inherit;
+}
+
+body.theme-dark .ant-input-number .ant-input-number-action-up span,
+body.theme-dark .ant-input-number .ant-input-number-action-down span,
+body.theme-dark .ant-input-number .ant-input-number-action .anticon {
   color: inherit;
 }
 
