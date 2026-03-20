@@ -2,6 +2,7 @@ import { formatMarkEffectText } from "../shared/markEffectText";
 import { translateControlName } from "../shared/controlNameMap";
 import { formatElementLabel as formatSharedElementLabel } from "../shared/elementTheme";
 import { translateKnownBuffKeyName } from "../shared/buffNameMap";
+import { attrLabel, percentAttrKeys } from "../shared/attrDisplay";
 
 type SkillEffectContext = {
   damageType?: string | null | undefined;
@@ -34,41 +35,7 @@ const MOMENTUM_BONUS_LABEL: Record<string, string> = {
   all: '全部效果',
 };
 
-const ATTR_LABEL: Record<string, string> = {
-  wugong: '物攻',
-  fagong: '法攻',
-  wufang: '物防',
-  fafang: '法防',
-  shanbi: '闪避',
-  sudu: '速度',
-  max_qixue: '气血上限',
-  max_lingqi: '灵气上限',
-  kongzhi_kangxing: '控制抗性',
-};
-
-const PERCENT_BUFF_ATTR_SET = new Set([
-  'wugong',
-  'fagong',
-  'wufang',
-  'fafang',
-  'mingzhong',
-  'shanbi',
-  'zhaojia',
-  'baoji',
-  'baoshang',
-  'kangbao',
-  'zengshang',
-  'zhiliao',
-  'jianliao',
-  'xixue',
-  'lengque',
-  'kongzhi_kangxing',
-  'jin_kangxing',
-  'mu_kangxing',
-  'shui_kangxing',
-  'huo_kangxing',
-  'tu_kangxing',
-]);
+const PERCENT_BUFF_ATTR_SET = percentAttrKeys;
 
 const normalizeAttrKey = (raw: string): string => {
   const lowered = raw.trim().toLowerCase();
@@ -122,7 +89,7 @@ export const formatElementLabel = (value: string | null | undefined): string => 
 const describeScaleAttr = (attrRaw: unknown): string => {
   const attr = normalizeAttrKey(toText(attrRaw));
   if (!attr) return '';
-  return ATTR_LABEL[attr] || attr;
+  return attrLabel[attr] || attr;
 };
 
 const formatScaledValue = (effect: Record<string, unknown>, kind: 'damage' | 'heal' | 'shield'): string => {
@@ -220,7 +187,7 @@ const formatBuffName = (
   }
   if (!attr) return { name: buffKey || (effectType === 'buff' ? '增益效果' : '减益效果'), attr: '', buffKey };
 
-  const attrText = ATTR_LABEL[attr] || attr;
+  const attrText = attrLabel[attr] || attr;
   const trend = effectType === 'buff' ? '提升' : '降低';
   return { name: `${attrText}${trend}`, attr, buffKey };
 };

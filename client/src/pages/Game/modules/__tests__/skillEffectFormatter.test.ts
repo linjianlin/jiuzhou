@@ -94,4 +94,33 @@ describe('skillEffectFormatter', () => {
       '施加增益：增益光环（光环·自身：施加增益：闪避提升（幅度 20%））',
     ]);
   });
+
+  it('光环子效果中的属性 Buff 应展示中文属性名', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'buff',
+        buffKind: 'aura',
+        buffKey: 'buff-aura',
+        auraTarget: 'all_ally',
+        auraEffects: [
+          {
+            type: 'buff',
+            buffKind: 'attr',
+            buffKey: 'buff-zengshang-up',
+            attrKey: 'zengshang',
+            applyType: 'percent',
+            value: 0.08,
+          },
+          {
+            type: 'restore_lingqi',
+            value: 4,
+          },
+        ],
+      },
+    ]);
+
+    expect(lines).toEqual([
+      '施加增益：增益光环（光环·全体友方：施加增益：增伤提升（幅度 8%）；恢复灵气 4）',
+    ]);
+  });
 });
