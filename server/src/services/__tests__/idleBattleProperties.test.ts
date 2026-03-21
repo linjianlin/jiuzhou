@@ -409,6 +409,7 @@ test('4.3 边界：灵气不足时跳过该技能，选下一个可释放技能'
 import { BattleEngine } from '../../battle/battleEngine.js';
 import { createPVEBattle } from '../../battle/battleFactory.js';
 import type { CharacterData, MonsterData, SkillData } from '../../battle/battleFactory.js';
+import { replayIdleBattleLogs } from '../idle/idleBattleSimulationCore.js';
 
 /**
  * 构造最小合法 CharacterData（用于属性 6 测试）
@@ -500,6 +501,71 @@ const EMPTY_SKILL_MAP: Record<string, SkillData[]> = {};
 function deepCloneBattleState(state: ReturnType<BattleEngine['getState']>): ReturnType<BattleEngine['getState']> {
   return JSON.parse(JSON.stringify(state)) as ReturnType<BattleEngine['getState']>;
 }
+
+test('属性 6.1：挂机回放日志与真实结算轮次一致', () => {
+  const character = makeCharacterData(1);
+  const monster = makeMonsterData('test-monster-replay');
+  const candidateMonsterHpList = [1_000, 2_000, 4_000, 8_000, 12_000];
+
+  let matchedRoundCount = 0;
+  let expectedLogSignature: string[] = [];
+  let replayLogSignature: string[] = [];
+
+  for (const monsterHp of candidateMonsterHpList) {
+    const initialState = createPVEBattle(
+      `test-replay-battle-${monsterHp}`,
+      {
+        ...character,
+        qixue: 4_000,
+        max_qixue: 4_000,
+        wugong: 40,
+        fagong: 0,
+        wufang: 120,
+        fafang: 120,
+      },
+      EMPTY_SKILLS,
+      [{
+        ...monster,
+        base_attrs: {
+          ...monster.base_attrs,
+          max_qixue: monsterHp,
+          wugong: 30,
+          wufang: 100,
+          fafang: 100,
+        },
+      }],
+      EMPTY_SKILL_MAP,
+    );
+
+    const baselineState = deepCloneBattleState(initialState);
+    baselineState.battleId = `test-replay-baseline-${monsterHp}`;
+
+    const engine = new BattleEngine(baselineState);
+    engine.startBattle();
+    engine.autoExecute();
+
+    const finalState = engine.getState();
+    if (finalState.roundCount <= 1) {
+      continue;
+    }
+
+    matchedRoundCount = finalState.roundCount;
+    expectedLogSignature = consumeBattleLogDelta(finalState.battleId).logs
+      .map((log) => `${log.type}:${log.round}`);
+    replayLogSignature = replayIdleBattleLogs({
+      initialState: deepCloneBattleState(initialState),
+      playerAutoSkillPolicy: null,
+    }).map((log) => `${log.type}:${log.round}`);
+    break;
+  }
+
+  assert.ok(matchedRoundCount > 1, '测试前置条件失败：未构造出多回合战斗样本');
+  assert.deepEqual(
+    replayLogSignature,
+    expectedLogSignature,
+    `回放日志应与真实结算完全一致，当前样本真实回合数=${matchedRoundCount}`,
+  );
+});
 
 test('属性 6：确定性战斗结算 — 相同初始状态两次 autoExecute 结果完全一致（numRuns: 100）', () => {
   // Feature: offline-idle-battle, Property 6: 确定性战斗结算

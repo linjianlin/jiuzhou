@@ -200,6 +200,8 @@ export function replayIdleBattleLogs(
   replayState.battleId = randomUUID();
   const engine = new BattleEngine(replayState);
   const playerSelector = resolveIdleBattlePlayerSelector(replaySnapshot);
+  // 回放必须复用真实挂机结算同一启动顺序，否则 roundCount 与回合开始效果都会漂移。
+  engine.startBattle();
   engine.autoExecute(playerSelector);
   const battleLog = consumeBattleLogDelta(replayState.battleId).logs;
   clearBattleLogStream(replayState.battleId);
