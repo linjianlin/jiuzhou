@@ -1,6 +1,6 @@
 .battle-area {
   --battle-surface-radius: 10px;
-  --battle-panel-gap: clamp(8px, 1vw, 14px);
+  --battle-panel-gap: clamp(4px, 1vw, 8px);
   --battle-panel-padding: clamp(10px, 1.4vw, 16px);
   --battle-grid-gap: clamp(6px, 0.9vw, 10px);
   --battle-card-radius: 8px;
@@ -119,26 +119,58 @@
 
 .battle-unit-card {
   --battle-card-border: var(--border-color-soft);
-  --battle-card-base-width: 136px;
-  --battle-card-max-width: 176px;
+  /* 尺寸档位只覆盖 raw token，实际渲染统一由 --battle-card-scale 派生，避免缩放逻辑分散。 */
+  --battle-card-base-width-raw: 136px;
+  --battle-card-max-width-raw: 176px;
   --battle-card-aspect-ratio: 5 / 4;
-  --battle-card-padding-block: 8px;
-  --battle-card-padding-inline: 8px;
-  --battle-card-gap: 6px;
-  --battle-name-size: 12px;
-  --battle-meta-size: 10px;
-  --battle-vital-size: 12px;
-  --battle-bar-label-size: 10px;
-  --battle-bar-value-size: 10px;
-  --battle-bar-height: 12px;
-  --battle-tag-height: 17px;
-  --battle-tag-size: 9px;
-  --battle-status-tag-height: 17px;
-  --battle-status-tag-size: 8px;
-  --battle-float-top: 16px;
+  --battle-card-padding-block-raw: 8px;
+  --battle-card-padding-inline-raw: 8px;
+  --battle-card-gap-raw: 6px;
+  --battle-name-size-raw: 12px;
+  --battle-meta-size-raw: 10px;
+  --battle-vital-size-raw: 12px;
+  --battle-bar-label-size-raw: 10px;
+  --battle-bar-value-size-raw: 10px;
+  --battle-bar-height-raw: 12px;
+  --battle-tag-height-raw: 17px;
+  --battle-tag-size-raw: 9px;
+  --battle-status-tag-height-raw: 17px;
+  --battle-status-tag-size-raw: 8px;
+  --battle-float-top-raw: 16px;
+  --battle-unit-title-gap-raw: 4px;
+  --battle-unit-bars-gap-raw: 4px;
+  --battle-bar-gap-raw: 2px;
+  --battle-status-row-gap-raw: 4px;
+  --battle-status-tag-padding-inline-raw: 7px;
+  --battle-float-size-raw: 14px;
+  --battle-card-scale-safe: max(var(--battle-card-scale), 0.4);
+  --battle-card-base-width: calc(var(--battle-card-base-width-raw) * var(--battle-card-scale-safe));
+  --battle-card-max-width: calc(var(--battle-card-max-width-raw) * var(--battle-card-scale-safe));
+  --battle-card-padding-block: calc(var(--battle-card-padding-block-raw) * var(--battle-card-scale-safe));
+  --battle-card-padding-inline: calc(var(--battle-card-padding-inline-raw) * var(--battle-card-scale-safe));
+  --battle-card-gap: calc(var(--battle-card-gap-raw) * var(--battle-card-scale-safe));
+  --battle-name-size: calc(var(--battle-name-size-raw) * var(--battle-card-scale-safe));
+  --battle-meta-size: calc(var(--battle-meta-size-raw) * var(--battle-card-scale-safe));
+  --battle-vital-size: calc(var(--battle-vital-size-raw) * var(--battle-card-scale-safe));
+  --battle-bar-label-size: calc(var(--battle-bar-label-size-raw) * var(--battle-card-scale-safe));
+  --battle-bar-value-size: calc(var(--battle-bar-value-size-raw) * var(--battle-card-scale-safe));
+  --battle-bar-height: calc(var(--battle-bar-height-raw) * var(--battle-card-scale-safe));
+  --battle-tag-height: calc(var(--battle-tag-height-raw) * var(--battle-card-scale-safe));
+  --battle-tag-size: calc(var(--battle-tag-size-raw) * var(--battle-card-scale-safe));
+  --battle-status-tag-height: calc(var(--battle-status-tag-height-raw) * var(--battle-card-scale-safe));
+  --battle-status-tag-size: calc(var(--battle-status-tag-size-raw) * var(--battle-card-scale-safe));
+  --battle-float-top: calc(var(--battle-float-top-raw) * var(--battle-card-scale-safe));
+  --battle-unit-title-gap: calc(var(--battle-unit-title-gap-raw) * var(--battle-card-scale-safe));
+  --battle-unit-bars-gap: calc(var(--battle-unit-bars-gap-raw) * var(--battle-card-scale-safe));
+  --battle-bar-gap: calc(var(--battle-bar-gap-raw) * var(--battle-card-scale-safe));
+  --battle-status-row-gap: calc(var(--battle-status-row-gap-raw) * var(--battle-card-scale-safe));
+  --battle-status-tag-padding-inline: calc(var(--battle-status-tag-padding-inline-raw) * var(--battle-card-scale-safe));
+  --battle-float-size: calc(var(--battle-float-size-raw) * var(--battle-card-scale-safe));
+  --battle-float-enter-offset: calc(8px * var(--battle-card-scale-safe));
+  --battle-float-exit-offset: calc(-22px * var(--battle-card-scale-safe));
 
   position: relative;
-  width: min(100%, calc(var(--battle-card-base-width) * var(--battle-card-scale)));
+  width: min(100%, var(--battle-card-base-width));
   min-width: 0;
   max-width: var(--battle-card-max-width);
   aspect-ratio: var(--battle-card-aspect-ratio);
@@ -189,60 +221,60 @@
 }
 
 .battle-unit-card.size-showcase {
-  --battle-card-base-width: 182px;
-  --battle-card-max-width: 224px;
-  --battle-card-padding-block: 10px;
-  --battle-card-padding-inline: 10px;
-  --battle-card-gap: 8px;
-  --battle-name-size: 13px;
-  --battle-vital-size: 13px;
-  --battle-bar-height: 14px;
-  --battle-status-tag-height: 18px;
-  --battle-status-tag-size: 9px;
-  --battle-float-top: 18px;
+  --battle-card-base-width-raw: 182px;
+  --battle-card-max-width-raw: 224px;
+  --battle-card-padding-block-raw: 10px;
+  --battle-card-padding-inline-raw: 10px;
+  --battle-card-gap-raw: 8px;
+  --battle-name-size-raw: 13px;
+  --battle-vital-size-raw: 13px;
+  --battle-bar-height-raw: 14px;
+  --battle-status-tag-height-raw: 18px;
+  --battle-status-tag-size-raw: 9px;
+  --battle-float-top-raw: 18px;
 }
 
 .battle-unit-card.size-wide {
-  --battle-card-base-width: 160px;
-  --battle-card-max-width: 196px;
+  --battle-card-base-width-raw: 160px;
+  --battle-card-max-width-raw: 196px;
 }
 
 .battle-unit-card.size-compact {
-  --battle-card-base-width: 122px;
-  --battle-card-max-width: 148px;
-  --battle-card-padding-block: 7px;
-  --battle-card-padding-inline: 7px;
-  --battle-card-gap: 5px;
-  --battle-name-size: 11px;
-  --battle-meta-size: 9px;
-  --battle-vital-size: 11px;
-  --battle-bar-label-size: 9px;
-  --battle-bar-value-size: 9px;
-  --battle-bar-height: 10px;
-  --battle-tag-height: 15px;
-  --battle-tag-size: 8px;
-  --battle-status-tag-height: 15px;
-  --battle-status-tag-size: 8px;
-  --battle-float-top: 14px;
+  --battle-card-base-width-raw: 122px;
+  --battle-card-max-width-raw: 148px;
+  --battle-card-padding-block-raw: 7px;
+  --battle-card-padding-inline-raw: 7px;
+  --battle-card-gap-raw: 5px;
+  --battle-name-size-raw: 11px;
+  --battle-meta-size-raw: 9px;
+  --battle-vital-size-raw: 11px;
+  --battle-bar-label-size-raw: 9px;
+  --battle-bar-value-size-raw: 9px;
+  --battle-bar-height-raw: 10px;
+  --battle-tag-height-raw: 15px;
+  --battle-tag-size-raw: 8px;
+  --battle-status-tag-height-raw: 15px;
+  --battle-status-tag-size-raw: 8px;
+  --battle-float-top-raw: 14px;
 }
 
 .battle-unit-card.size-dense {
-  --battle-card-base-width: 104px;
-  --battle-card-max-width: 126px;
-  --battle-card-padding-block: 5px;
-  --battle-card-padding-inline: 5px;
-  --battle-card-gap: 4px;
-  --battle-name-size: 9px;
-  --battle-meta-size: 8px;
-  --battle-vital-size: 10px;
-  --battle-bar-label-size: 8px;
-  --battle-bar-value-size: 8px;
-  --battle-bar-height: 8px;
-  --battle-tag-height: 13px;
-  --battle-tag-size: 7px;
-  --battle-status-tag-height: 13px;
-  --battle-status-tag-size: 7px;
-  --battle-float-top: 10px;
+  --battle-card-base-width-raw: 104px;
+  --battle-card-max-width-raw: 126px;
+  --battle-card-padding-block-raw: 5px;
+  --battle-card-padding-inline-raw: 5px;
+  --battle-card-gap-raw: 4px;
+  --battle-name-size-raw: 9px;
+  --battle-meta-size-raw: 8px;
+  --battle-vital-size-raw: 10px;
+  --battle-bar-label-size-raw: 8px;
+  --battle-bar-value-size-raw: 8px;
+  --battle-bar-height-raw: 8px;
+  --battle-tag-height-raw: 13px;
+  --battle-tag-size-raw: 7px;
+  --battle-status-tag-height-raw: 13px;
+  --battle-status-tag-size-raw: 7px;
+  --battle-float-top-raw: 10px;
 }
 
 .battle-unit-frame {
@@ -268,7 +300,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--battle-unit-title-gap);
 }
 
 .battle-unit-name {
@@ -307,13 +339,13 @@
 .battle-unit-bars {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--battle-unit-bars-gap);
 }
 
 .battle-bar {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--battle-bar-gap);
 }
 
 .battle-bar-meta {
@@ -363,7 +395,7 @@
 .battle-unit-status-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--battle-status-row-gap);
   min-height: var(--battle-status-tag-height);
   overflow: hidden;
 }
@@ -372,7 +404,7 @@
   min-width: 0;
   max-width: 100%;
   height: var(--battle-status-tag-height);
-  padding: 0 7px;
+  padding: 0 var(--battle-status-tag-padding-inline);
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
@@ -416,7 +448,7 @@
   left: 50%;
   top: var(--battle-float-top);
   transform: translateX(-50%);
-  font-size: 14px;
+  font-size: var(--battle-float-size);
   font-weight: 800;
   letter-spacing: 0.2px;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
@@ -426,7 +458,7 @@
 
 .battle-unit-card.size-compact .battle-float,
 .battle-unit-card.size-dense .battle-float {
-  font-size: 11px;
+  font-size: calc(11px * var(--battle-card-scale-safe));
 }
 
 .battle-float.neg {
@@ -440,15 +472,17 @@
 @keyframes battle-float-up {
   0% {
     opacity: 0;
-    transform: translate(calc(-50% + var(--dx)), 8px) scale(0.98);
+    transform: translate(calc(-50% + var(--dx)), var(--battle-float-enter-offset)) scale(0.98);
   }
+
   15% {
     opacity: 1;
     transform: translate(calc(-50% + var(--dx)), 0px) scale(1);
   }
+
   100% {
     opacity: 0;
-    transform: translate(calc(-50% + var(--dx)), -22px) scale(1);
+    transform: translate(calc(-50% + var(--dx)), var(--battle-float-exit-offset)) scale(1);
   }
 }
 
@@ -468,13 +502,13 @@
   }
 
   .battle-unit-card.size-showcase {
-    --battle-card-base-width: 170px;
-    --battle-card-max-width: 200px;
+    --battle-card-base-width-raw: 170px;
+    --battle-card-max-width-raw: 200px;
   }
 
   .battle-unit-card.size-wide {
-    --battle-card-base-width: 152px;
-    --battle-card-max-width: 182px;
+    --battle-card-base-width-raw: 152px;
+    --battle-card-max-width-raw: 182px;
   }
 }
 
@@ -531,7 +565,7 @@
   }
 
   .battle-unit-card.size-showcase {
-    --battle-card-max-width: none;
+    max-width: none;
   }
 
   .battle-units {
@@ -542,84 +576,71 @@
   }
 
   .battle-unit-card {
-    --battle-card-base-width: 118px;
-    --battle-card-max-width: 148px;
-    --battle-card-padding-block: 6px;
-    --battle-card-padding-inline: 6px;
-    --battle-card-gap: 4px;
-    --battle-name-size: 10px;
-    --battle-meta-size: 8px;
-    --battle-bar-label-size: 8px;
-    --battle-bar-value-size: 8px;
-    --battle-bar-height: 8px;
-    --battle-tag-height: 14px;
-    --battle-tag-size: 7px;
-    --battle-status-tag-height: 14px;
-    --battle-status-tag-size: 7px;
-    --battle-float-top: 10px;
+    --battle-card-base-width-raw: 118px;
+    --battle-card-max-width-raw: 148px;
+    --battle-card-padding-block-raw: 6px;
+    --battle-card-padding-inline-raw: 6px;
+    --battle-card-gap-raw: 4px;
+    --battle-name-size-raw: 10px;
+    --battle-meta-size-raw: 8px;
+    --battle-bar-label-size-raw: 8px;
+    --battle-bar-value-size-raw: 8px;
+    --battle-bar-height-raw: 8px;
+    --battle-tag-height-raw: 14px;
+    --battle-tag-size-raw: 7px;
+    --battle-status-tag-height-raw: 14px;
+    --battle-status-tag-size-raw: 7px;
+    --battle-float-top-raw: 10px;
+    --battle-unit-title-gap-raw: 3px;
+    --battle-unit-bars-gap-raw: 3px;
+    --battle-status-row-gap-raw: 3px;
 
     height: auto;
     align-self: center;
   }
 
   .battle-unit-card.size-showcase {
-    --battle-card-base-width: 148px;
-    --battle-card-max-width: 176px;
+    --battle-card-base-width-raw: 148px;
+    --battle-card-max-width-raw: 176px;
   }
 
   .battle-unit-card.size-wide {
-    --battle-card-base-width: 134px;
-    --battle-card-max-width: 160px;
+    --battle-card-base-width-raw: 134px;
+    --battle-card-max-width-raw: 160px;
   }
 
   .battle-unit-card.size-compact {
-    --battle-card-base-width: 114px;
-    --battle-card-max-width: 138px;
-    --battle-card-padding-block: 6px;
-    --battle-card-padding-inline: 6px;
-    --battle-card-gap: 4px;
-    --battle-name-size: 10px;
-    --battle-meta-size: 8px;
-    --battle-vital-size: 11px;
-    --battle-bar-label-size: 8px;
-    --battle-bar-value-size: 8px;
-    --battle-bar-height: 8px;
-    --battle-tag-height: 15px;
-    --battle-tag-size: 8px;
-    --battle-status-tag-height: 15px;
-    --battle-status-tag-size: 8px;
-    --battle-float-top: 12px;
+    --battle-card-base-width-raw: 114px;
+    --battle-card-max-width-raw: 138px;
+    --battle-card-padding-block-raw: 6px;
+    --battle-card-padding-inline-raw: 6px;
+    --battle-card-gap-raw: 4px;
+    --battle-name-size-raw: 10px;
+    --battle-meta-size-raw: 8px;
+    --battle-vital-size-raw: 11px;
+    --battle-bar-label-size-raw: 8px;
+    --battle-bar-value-size-raw: 8px;
+    --battle-bar-height-raw: 8px;
+    --battle-tag-height-raw: 15px;
+    --battle-tag-size-raw: 8px;
+    --battle-status-tag-height-raw: 15px;
+    --battle-status-tag-size-raw: 8px;
+    --battle-float-top-raw: 12px;
   }
 
   .battle-unit-card.size-dense {
-    --battle-card-base-width: 98px;
-    --battle-card-max-width: 116px;
-    --battle-card-padding-block: 4px;
-    --battle-card-padding-inline: 4px;
-    --battle-card-gap: 3px;
-    --battle-name-size: 9px;
-    --battle-meta-size: 7px;
-    --battle-bar-label-size: 7px;
-    --battle-bar-value-size: 7px;
-    --battle-bar-height: 8px;
-    --battle-tag-height: 12px;
-    --battle-tag-size: 7px;
-  }
-
-  .battle-unit-title {
-    gap: 3px;
-  }
-
-  .battle-unit-bars {
-    gap: 3px;
-  }
-
-  .battle-bar {
-    gap: 2px;
-  }
-
-  .battle-unit-status-row {
-    gap: 3px;
+    --battle-card-base-width-raw: 98px;
+    --battle-card-max-width-raw: 116px;
+    --battle-card-padding-block-raw: 4px;
+    --battle-card-padding-inline-raw: 4px;
+    --battle-card-gap-raw: 3px;
+    --battle-name-size-raw: 9px;
+    --battle-meta-size-raw: 7px;
+    --battle-bar-label-size-raw: 7px;
+    --battle-bar-value-size-raw: 7px;
+    --battle-bar-height-raw: 8px;
+    --battle-tag-height-raw: 12px;
+    --battle-tag-size-raw: 7px;
   }
 }
 
