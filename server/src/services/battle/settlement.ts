@@ -62,6 +62,11 @@ import {
   buildBattleFinishedRealtimePayload,
 } from "./runtime/realtime.js";
 import {
+  DUNGEON_FLOW_PVE_BATTLE_START_POLICY,
+  shouldApplyBattleSettlementCooldown,
+  TOWER_PVE_BATTLE_START_POLICY,
+} from "./shared/startPolicy.js";
+import {
   applyTowerPostBattleResourceChange,
   settleTowerBattle,
 } from "../tower/service.js";
@@ -324,9 +329,14 @@ async function finishBattleCore(
       : null
   );
 
-  // 秘境战斗跳过冷却：波次之间无冷却间隔，结算包也不再向客户端下发冷却元数据。
+  // 秘境/千层塔跳过冷却：后续推进不依赖 3 秒战斗冷却，结算包也不再向客户端下发冷却元数据。
   let cooldownUntilMs: number | null = null;
-  if (isDungeonBattle) {
+  const shouldApplySettlementCooldown = isDungeonBattle
+    ? shouldApplyBattleSettlementCooldown(DUNGEON_FLOW_PVE_BATTLE_START_POLICY)
+    : isTowerBattle
+      ? shouldApplyBattleSettlementCooldown(TOWER_PVE_BATTLE_START_POLICY)
+      : true;
+  if (!shouldApplySettlementCooldown) {
     cooldownUntilMs = null;
   } else {
     const participantCharacterIds = participants
@@ -356,7 +366,7 @@ async function finishBattleCore(
       logCursor: finalLogCursor,
       state,
       isTeamBattle: participantCount > 1,
-      ...(isDungeonBattle
+      ...(!shouldApplySettlementCooldown
         ? {}
         : {
             battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,

@@ -44,7 +44,7 @@ import type {
   TowerBattleSessionContext,
 } from '../battleSession/types.js';
 import { isCharacterInBattle } from '../battle/runtime/state.js';
-import { PLAYER_DRIVEN_PVE_BATTLE_START_POLICY } from '../battle/shared/startPolicy.js';
+import { TOWER_PVE_BATTLE_START_POLICY } from '../battle/shared/startPolicy.js';
 import { startResolvedPVEBattleByPolicy } from '../battle/pve.js';
 import { resolveOrderedMonsters } from '../battle/shared/monsters.js';
 import { resolveTowerFloor } from './algorithm.js';
@@ -386,7 +386,7 @@ const createTowerBattleForFloor = async (params: {
     battleId,
     monsters: resolvedFloor.monsters,
     monsterSkillsMap: skillResolveResult.monsterSkillsMap,
-    startPolicy: PLAYER_DRIVEN_PVE_BATTLE_START_POLICY,
+    startPolicy: TOWER_PVE_BATTLE_START_POLICY,
     allowTeamBattle: false,
     syncResourceContext: '同步战前资源（千层塔战斗）',
     startSuccessMessage: `第${params.floor}层挑战开始`,
