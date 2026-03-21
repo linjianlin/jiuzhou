@@ -2,6 +2,7 @@ import { App, Button, Input, Modal, Segmented, Table, Tag, Tooltip } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveIconUrl, DEFAULT_ICON as coin01 } from '../../shared/resolveIcon';
 import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../shared/imageAssets';
+import { getAttrLabel } from '../../shared/attrDisplay';
 import { gameSocket } from '../../../../services/gameSocket';
 import {
   equipCharacterSkill,
@@ -126,36 +127,6 @@ const resolveIcon = resolveIconUrl;
 const mapQuality = (value: unknown): TechQuality => {
   if (value === '天' || value === '地' || value === '玄' || value === '黄') return value;
   return '黄';
-};
-
-const passiveLabel: Record<string, string> = {
-  max_qixue: '气血上限',
-  max_lingqi: '灵气上限',
-  wugong: '物攻',
-  fagong: '法攻',
-  wufang: '物防',
-  fafang: '法防',
-  mingzhong: '命中',
-  shanbi: '闪避',
-  zhaojia: '招架',
-  baoji: '暴击',
-  baoshang: '暴伤',
-  kangbao: '抗暴',
-  zengshang: '增伤',
-  zhiliao: '治疗',
-  jianliao: '减疗',
-  xixue: '吸血',
-  lengque: '冷却',
-  sudu: '速度',
-  qixue_huifu: '气血恢复',
-  lingqi_huifu: '灵气恢复',
-  kongzhi_kangxing: '控制抗性',
-  jin_kangxing: '金抗性',
-  mu_kangxing: '木抗性',
-  shui_kangxing: '水抗性',
-  huo_kangxing: '火抗性',
-  tu_kangxing: '土抗性',
-  fuyuan: '福缘',
 };
 
 const normalizePassiveKey = (raw: string): string =>
@@ -304,7 +275,7 @@ const buildTechniqueView = (
     layers: layers.map((lv) => {
       const passives = coercePassiveEntries(lv.passives).map((p) => ({
         key: p.key,
-        label: passiveLabel[p.key] || p.key,
+        label: getAttrLabel(p.key),
         value: formatTechniqueBonusAmount(p.key, p.value),
         amount: p.value,
       }));

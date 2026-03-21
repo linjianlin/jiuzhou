@@ -2590,6 +2590,74 @@
           ]
         },
         {
+          "key": "jianbaoshang_flat",
+          "name": "暴伤减免+",
+          "apply_type": "flat",
+          "group": "survival",
+          "weight": 60,
+          "tiers": [
+            {
+              "tier": 1,
+              "min": 33.6,
+              "max": 67.2,
+              "realm_rank_min": 1
+            },
+            {
+              "tier": 2,
+              "min": 72.8,
+              "max": 147,
+              "realm_rank_min": 2
+            },
+            {
+              "tier": 3,
+              "min": 157.5,
+              "max": 266,
+              "realm_rank_min": 3
+            },
+            {
+              "tier": 4,
+              "min": 284.2,
+              "max": 462.7,
+              "realm_rank_min": 4
+            },
+            {
+              "tier": 5,
+              "min": 428.4,
+              "max": 687.4,
+              "realm_rank_min": 5
+            },
+            {
+              "tier": 6,
+              "min": 590.1,
+              "max": 941.5,
+              "realm_rank_min": 6
+            },
+            {
+              "tier": 7,
+              "min": 723.1,
+              "max": 1157.8,
+              "realm_rank_min": 7
+            },
+            {
+              "tier": 8,
+              "min": 856.1,
+              "max": 1374.1,
+              "realm_rank_min": 8
+            },
+            {
+              "tier": 9,
+              "min": 975.954,
+              "max": 1566.474,
+              "realm_rank_min": 9
+            }
+          ],
+          "modifiers": [
+            {
+              "attr_key": "jianbaoshang_rating"
+            }
+          ]
+        },
+        {
           "key": "qixue_huifu_flat",
           "name": "气血恢复+",
           "apply_type": "flat",
@@ -3588,6 +3656,68 @@
           "modifiers": [
             {
               "attr_key": "kangbao_rating"
+            }
+          ]
+        },
+        {
+          "key": "jianbaoshang_flat",
+          "name": "暴伤减免+",
+          "apply_type": "flat",
+          "group": "survival",
+          "weight": 65,
+          "tiers": [
+            {
+              "tier": 2,
+              "min": 109.9,
+              "max": 221.2,
+              "realm_rank_min": 2
+            },
+            {
+              "tier": 3,
+              "min": 238,
+              "max": 400.4,
+              "realm_rank_min": 3
+            },
+            {
+              "tier": 4,
+              "min": 429.1,
+              "max": 695.8,
+              "realm_rank_min": 4
+            },
+            {
+              "tier": 5,
+              "min": 646.8,
+              "max": 1033.9,
+              "realm_rank_min": 5
+            },
+            {
+              "tier": 6,
+              "min": 891.1,
+              "max": 1416.8,
+              "realm_rank_min": 6
+            },
+            {
+              "tier": 7,
+              "min": 1092,
+              "max": 1742.3,
+              "realm_rank_min": 7
+            },
+            {
+              "tier": 8,
+              "min": 1292.9,
+              "max": 2067.8,
+              "realm_rank_min": 8
+            },
+            {
+              "tier": 9,
+              "min": 1473.906,
+              "max": 2357.292,
+              "realm_rank_min": 9
+            }
+          ],
+          "modifiers": [
+            {
+              "attr_key": "jianbaoshang_rating"
             }
           ]
         },
@@ -5040,6 +5170,62 @@
           "modifiers": [
             {
               "attr_key": "kangbao_rating"
+            }
+          ]
+        },
+        {
+          "key": "jianbaoshang_flat",
+          "name": "暴伤减免+",
+          "apply_type": "flat",
+          "group": "survival",
+          "weight": 70,
+          "tiers": [
+            {
+              "tier": 3,
+              "min": 319.2,
+              "max": 565.6,
+              "realm_rank_min": 3
+            },
+            {
+              "tier": 4,
+              "min": 606.2,
+              "max": 968.8,
+              "realm_rank_min": 4
+            },
+            {
+              "tier": 5,
+              "min": 935.9,
+              "max": 1434.3,
+              "realm_rank_min": 5
+            },
+            {
+              "tier": 6,
+              "min": 1309.7,
+              "max": 1966.3,
+              "realm_rank_min": 6
+            },
+            {
+              "tier": 7,
+              "min": 1609.3,
+              "max": 2427.6,
+              "realm_rank_min": 7
+            },
+            {
+              "tier": 8,
+              "min": 1908.9,
+              "max": 2888.9,
+              "realm_rank_min": 8
+            },
+            {
+              "tier": 9,
+              "min": 2176.146,
+              "max": 3293.346,
+              "realm_rank_min": 9
+            }
+          ],
+          "modifiers": [
+            {
+              "attr_key": "jianbaoshang_rating"
             }
           ]
         },
@@ -7384,6 +7570,68 @@
           "modifiers": [
             {
               "attr_key": "kangbao_rating"
+            }
+          ]
+        },
+        {
+          "key": "jianbaoshang_flat",
+          "name": "暴伤减免+",
+          "apply_type": "flat",
+          "group": "survival",
+          "weight": 50,
+          "tiers": [
+            {
+              "tier": 2,
+              "min": 72.8,
+              "max": 147,
+              "realm_rank_min": 2
+            },
+            {
+              "tier": 3,
+              "min": 158.2,
+              "max": 319.2,
+              "realm_rank_min": 3
+            },
+            {
+              "tier": 4,
+              "min": 255.5,
+              "max": 517.3,
+              "realm_rank_min": 4
+            },
+            {
+              "tier": 5,
+              "min": 364.7,
+              "max": 742,
+              "realm_rank_min": 5
+            },
+            {
+              "tier": 6,
+              "min": 487.2,
+              "max": 994.7,
+              "realm_rank_min": 6
+            },
+            {
+              "tier": 7,
+              "min": 595,
+              "max": 1219.4,
+              "realm_rank_min": 7
+            },
+            {
+              "tier": 8,
+              "min": 702.8,
+              "max": 1444.1,
+              "realm_rank_min": 8
+            },
+            {
+              "tier": 9,
+              "min": 801.192,
+              "max": 1646.274,
+              "realm_rank_min": 9
+            }
+          ],
+          "modifiers": [
+            {
+              "attr_key": "jianbaoshang_rating"
             }
           ]
         },

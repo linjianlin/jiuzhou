@@ -25,4 +25,9 @@ describe('attrDisplay', () => {
     expect(getAttrLabel('qi')).toBe('气');
     expect(getAttrLabel('shen')).toBe('神');
   });
+
+  it('共享属性映射应覆盖功法被动里的暴伤减免与反伤减免标签', () => {
+    expect(getAttrLabel('jianbaoshang')).toBe('暴伤减免');
+    expect(getAttrLabel('jianfantan')).toBe('反伤减免');
+  });
 });
