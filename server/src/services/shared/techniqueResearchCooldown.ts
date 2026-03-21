@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：集中定义洞府研修冷却时长，并提供状态接口与创建任务前共用的冷却计算函数。
- * 2. 做什么：集中收敛开发环境跳过冷却的规则，避免状态接口与创建任务校验各写一套环境判断。
+ * 2. 做什么：集中收敛“默认始终保留正式冷却”的规则，避免状态接口与创建任务校验各写一套环境判断。
  * 3. 不做什么：不读取数据库、不处理 HTTP 响应、不决定前端展示布局。
  *
  * 输入/输出：
@@ -16,7 +16,7 @@
  * 关键边界条件与坑点：
  * 1. 仅当最近一次研修时间可解析时才计算冷却，避免脏数据把玩家永久锁死。
  * 2. 研修失败不应进入冷却，因此状态接口与创建任务校验必须共享同一个“哪些状态计入冷却”的判断。
- * 3. 开发环境跳过冷却时必须仍走同一返回结构，保证前端展示和服务端拦截同时生效。
+ * 3. 显式跳过冷却时必须仍走同一返回结构，保证测试覆盖与业务主链口径一致。
  * 4. 剩余秒数必须向上取整，保证服务端拦截与前端倒计时在临界秒上口径一致。
  */
 
@@ -26,6 +26,12 @@ import {
 } from './monthCardBenefits.js';
 
 export const TECHNIQUE_RESEARCH_COOLDOWN_HOURS = 72;
+export const TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES = [
+  'pending',
+  'generated_draft',
+  'published',
+  'refunded',
+] as const;
 
 const SECOND_MS = 1_000;
 const MINUTE_SECONDS = 60;
@@ -42,10 +48,9 @@ export type TechniqueResearchCooldownState = {
 export const shouldTechniqueResearchApplyCooldown = (
   latestJobStatus: string | null | undefined,
 ): boolean => {
-  return latestJobStatus === 'pending'
-    || latestJobStatus === 'generated_draft'
-    || latestJobStatus === 'published'
-    || latestJobStatus === 'refunded';
+  return TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES.includes(
+    latestJobStatus as (typeof TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES)[number],
+  );
 };
 
 type TechniqueResearchCooldownOptions = {
@@ -55,17 +60,17 @@ type TechniqueResearchCooldownOptions = {
 
 /**
  * 复用点：
- * - 当前由 `buildTechniqueResearchCooldownState` 默认消费，统一让状态接口与创建任务校验都遵守同一环境口径。
- * - 若纯函数测试或未来批处理需要显式指定环境，可通过参数覆盖，避免直接改全局环境变量。
+ * - 当前由 `buildTechniqueResearchCooldownState` 默认消费，统一让状态接口与创建任务校验都遵守同一正式冷却口径。
+ * - 若纯函数测试或未来批处理需要显式跳过冷却，可通过参数覆盖，避免业务主链再分叉出环境特判。
  *
  * 设计原因：
- * - 项目本地 `dev` 脚本未显式注入 `NODE_ENV`，因此沿用仓库现有“非 production 视为开发态”的约定。
- * - 将环境判断收敛在这里后，业务层只关注冷却状态，不再重复判断运行环境。
+ * - 开发、测试、生产都默认走同一套正式冷却，避免本地联调看不到真实冷却分支。
+ * - 将默认行为收敛在这里后，业务层只关注冷却状态，不再重复判断运行环境。
  */
 export const shouldBypassTechniqueResearchCooldown = (
-  nodeEnv: string | undefined = process.env.NODE_ENV,
+  _nodeEnv: string | undefined = process.env.NODE_ENV,
 ): boolean => {
-  return nodeEnv !== 'production';
+  return false;
 };
 
 const buildTechniqueResearchIdleCooldownState = (

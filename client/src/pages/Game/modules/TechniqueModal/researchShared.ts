@@ -42,6 +42,19 @@ export type TechniqueResearchActionState = {
   canGenerate: boolean;
 };
 
+export type TechniqueResearchSubmitState = {
+  canSubmit: boolean;
+  disabledReason: string | null;
+  hasCooldownBypassToken: boolean;
+  cooldownBypassTokenEnough: boolean;
+};
+
+export type TechniqueResearchCooldownDisplay = {
+  statusText: string;
+  ruleText: string;
+  bypassedByToken: boolean;
+};
+
 export const buildTechniqueResearchIndicator = (
   status: TechniqueResearchStatusData | null,
 ): TechniqueResearchIndicatorView => {
@@ -98,18 +111,109 @@ export const formatTechniqueResearchCooldownRemaining = (
   cooldownRemainingSeconds: number,
 ): string => formatGameCooldownRemaining(cooldownRemainingSeconds);
 
+export const shouldTechniqueResearchBypassCooldown = (
+  status: TechniqueResearchStatusData | null,
+  cooldownBypassEnabled: boolean,
+): boolean => {
+  return Boolean(status?.cooldownBypassTokenBypassesCooldown)
+    && cooldownBypassEnabled
+    && (status?.cooldownHours ?? 0) > 0;
+};
+
+export const isTechniqueResearchCooldownBlocked = (
+  status: TechniqueResearchStatusData | null,
+  cooldownBypassEnabled: boolean,
+): boolean => {
+  return isTechniqueResearchCoolingDown(status)
+    && !shouldTechniqueResearchBypassCooldown(status, cooldownBypassEnabled);
+};
+
 export const resolveTechniqueResearchActionState = (
   status: TechniqueResearchStatusData | null,
+  cooldownBypassEnabled: boolean,
 ): TechniqueResearchActionState => {
   const panelView = resolveTechniqueResearchPanelView(status);
   const canGenerate =
     status !== null &&
     status.unlocked &&
     panelView.kind !== 'pending' &&
-    !isTechniqueResearchCoolingDown(status) &&
+    panelView.kind !== 'draft' &&
+    !isTechniqueResearchCooldownBlocked(status, cooldownBypassEnabled) &&
     status.fragmentBalance >= status.fragmentCost;
 
   return {
     canGenerate,
+  };
+};
+
+export const hasTechniqueResearchCooldownBypassToken = (
+  status: TechniqueResearchStatusData | null,
+): boolean => {
+  return status !== null
+    && status.cooldownBypassTokenAvailableQty >= status.cooldownBypassTokenCost;
+};
+
+export const resolveTechniqueResearchSubmitState = (
+  status: TechniqueResearchStatusData | null,
+  cooldownBypassEnabled: boolean,
+): TechniqueResearchSubmitState => {
+  const actionState = resolveTechniqueResearchActionState(status, cooldownBypassEnabled);
+  const hasCooldownBypassToken = hasTechniqueResearchCooldownBypassToken(status);
+  const cooldownBypassTokenEnough = !cooldownBypassEnabled || hasCooldownBypassToken;
+  const canSubmit = actionState.canGenerate && cooldownBypassTokenEnough;
+
+  if (!cooldownBypassEnabled || canSubmit) {
+    return {
+      canSubmit,
+      disabledReason: null,
+      hasCooldownBypassToken,
+      cooldownBypassTokenEnough,
+    };
+  }
+
+  return {
+    canSubmit,
+    disabledReason: status ? `${status.cooldownBypassTokenItemName}不足，当前无法启用冷却豁免。` : null,
+    hasCooldownBypassToken,
+    cooldownBypassTokenEnough,
+  };
+};
+
+export const resolveTechniqueResearchCooldownDisplay = (
+  status: TechniqueResearchStatusData | null,
+  cooldownBypassEnabled: boolean,
+): TechniqueResearchCooldownDisplay => {
+  if (!status) {
+    return {
+      statusText: '--',
+      ruleText: '--',
+      bypassedByToken: false,
+    };
+  }
+
+  if (!status.unlocked) {
+    return {
+      statusText: '未开放',
+      ruleText: `需达到境界：${status.unlockRealm}`,
+      bypassedByToken: false,
+    };
+  }
+
+  const coolingDown = isTechniqueResearchCoolingDown(status);
+  const bypassedByToken = shouldTechniqueResearchBypassCooldown(status, cooldownBypassEnabled);
+  const cooldownText = formatTechniqueResearchCooldownRemaining(status.cooldownRemainingSeconds);
+  const statusText = !coolingDown
+    ? (bypassedByToken ? '可开始（本次不触发冷却）' : '可开始')
+    : (bypassedByToken ? '本次推演无冷却' : `剩余${cooldownText}`);
+  const ruleText = status.cooldownHours === 0
+    ? '当前环境已关闭研修冷却，可连续开始领悟。'
+    : bypassedByToken
+      ? '已启用顿悟符，本次推演会无视当前冷却，且不会重置或新增研修冷却。'
+      : `每次开始领悟后会进入冷却，当前冷却时长为 ${status.cooldownHours} 小时。`;
+
+  return {
+    statusText,
+    ruleText,
+    bypassedByToken,
   };
 };

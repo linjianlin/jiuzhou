@@ -40,3 +40,18 @@ test('item_def 种子: 高级招募令应可交易、不可分解且不绑定', 
     false,
   );
 });
+
+test('item_def 种子: 顿悟符应可交易、不可分解且不绑定', () => {
+  const itemSeed = loadSeed('item_def.json');
+  const itemList = asArray(itemSeed.items);
+  const targetItem = itemList.find((value) => asText(asObject(value)?.id) === 'token-005');
+  const targetItemObject = asObject(targetItem);
+
+  assert.ok(targetItemObject, '缺少测试物品 token-005');
+  assert.equal(targetItemObject?.tradeable, true);
+  assert.equal(targetItemObject?.bind_type, 'none');
+  assert.equal(
+    resolveItemCanDisassemble(targetItemObject as { disassemblable?: boolean } | null),
+    false,
+  );
+});

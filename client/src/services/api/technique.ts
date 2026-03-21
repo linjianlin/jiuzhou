@@ -274,6 +274,10 @@ export interface TechniqueResearchStatusResponse {
     cooldownHours: number;
     cooldownUntil: string | null;
     cooldownRemainingSeconds: number;
+    cooldownBypassTokenBypassesCooldown: boolean;
+    cooldownBypassTokenCost: number;
+    cooldownBypassTokenItemName: string;
+    cooldownBypassTokenAvailableQty: number;
     currentDraft: TechniqueResearchDraftDto | null;
     draftExpireAt: string | null;
     nameRules: TechniqueResearchNameRulesDto;
@@ -300,8 +304,13 @@ export interface TechniqueResearchGenerateResponse {
 
 export const generateTechniqueResearchDraft = (
   characterId: number,
+  params: {
+    cooldownBypassEnabled: boolean;
+  },
 ): Promise<TechniqueResearchGenerateResponse> => {
-  return api.post(`/character/${characterId}/technique/research/generate`);
+  return api.post(`/character/${characterId}/technique/research/generate`, {
+    cooldownBypassEnabled: params.cooldownBypassEnabled,
+  });
 };
 
 export interface TechniqueResearchPublishResponse {

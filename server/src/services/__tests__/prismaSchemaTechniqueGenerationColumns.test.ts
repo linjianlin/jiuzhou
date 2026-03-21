@@ -64,4 +64,9 @@ test('technique_generation_job: Prisma schema 应声明任务恢复依赖列', (
     /\btype_rolled\s+String\?/,
     'technique_generation_job 缺少 type_rolled 列定义',
   );
+  assertModelHasField(
+    'technique_generation_job',
+    /\bused_cooldown_bypass_token\s+Boolean\b/,
+    'technique_generation_job 缺少 used_cooldown_bypass_token 列定义',
+  );
 });

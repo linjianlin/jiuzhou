@@ -1125,6 +1125,25 @@
       ]
     },
     {
+      "id": "token-005",
+      "name": "顿悟符",
+      "category": "consumable",
+      "sub_category": "token",
+      "quality": "地",
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "disassemblable": false,
+      "icon": "/assets/items/dun_wu_fu.webp",
+      "description": "启用洞府研修冷却豁免时额外消耗的符箓",
+      "long_desc": "以洞府灵机凝成的顿悟符，启用后可让本次洞府研修无视当前冷却，且不会重置或新增研修冷却。",
+      "tags": [
+        "符箓",
+        "功法",
+        "研修"
+      ]
+    },
+    {
       "id": "quest-001",
       "name": "秘境钥匙",
       "category": "quest",

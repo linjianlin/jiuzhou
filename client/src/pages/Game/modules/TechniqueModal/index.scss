@@ -386,6 +386,13 @@
   gap: 4px;
 }
 
+.tech-research-stat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .tech-research-stat span {
   font-size: 11px;
   color: var(--text-secondary);
@@ -394,6 +401,19 @@
 .tech-research-stat strong {
   font-size: 15px;
   color: var(--text-color);
+}
+
+.tech-research-stat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.tech-research-stat-toggle-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .tech-research-costs {
@@ -829,6 +849,10 @@
 
   .tech-research-stats .tech-research-stat:last-child {
     grid-column: 1 / -1;
+  }
+
+  .tech-research-stat-toggle {
+    justify-content: space-between;
   }
 
   .tech-research-actions {

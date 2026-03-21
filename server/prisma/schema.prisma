@@ -1453,6 +1453,7 @@ model technique_generation_job {
   type_rolled            String?    @db.VarChar(16)
   quality_rolled         String     @db.VarChar(4)
   cost_points            Int
+  used_cooldown_bypass_token Boolean @default(false)
   prompt_snapshot        Json?
   model_name             String?    @db.VarChar(64)
   attempt_count          Int        @default(0)

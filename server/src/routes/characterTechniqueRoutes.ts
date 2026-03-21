@@ -101,7 +101,19 @@ router.post('/:characterId/technique/research/generate', asyncHandler(async (req
     throw new BusinessError('登录状态无效，请重新登录', 401);
   }
 
-  const result = await techniqueGenerationService.generateTechniqueDraft(characterId);
+  const cooldownBypassEnabledRaw = req.body?.cooldownBypassEnabled;
+  if (
+    cooldownBypassEnabledRaw !== undefined
+    && cooldownBypassEnabledRaw !== null
+    && typeof cooldownBypassEnabledRaw !== 'boolean'
+  ) {
+    throw new BusinessError('cooldownBypassEnabled 参数无效');
+  }
+
+  const result = await techniqueGenerationService.generateTechniqueDraft(
+    characterId,
+    cooldownBypassEnabledRaw === true,
+  );
   if (result.success) {
     await safePushCharacterUpdate(userId);
     if (result.data) {

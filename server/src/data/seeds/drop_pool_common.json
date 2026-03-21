@@ -856,6 +856,13 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
+        },
+        {
+          "item_def_id": "token-005",
+          "chance": 0.002,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
         }
       ],
       "enabled": true

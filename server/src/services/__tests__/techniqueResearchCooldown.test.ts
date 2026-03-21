@@ -22,11 +22,18 @@ import {
   TECHNIQUE_RESEARCH_COOLDOWN_HOURS,
   buildTechniqueResearchCooldownState,
   formatTechniqueResearchCooldownRemaining,
+  shouldBypassTechniqueResearchCooldown,
   shouldTechniqueResearchApplyCooldown,
 } from '../shared/techniqueResearchCooldown.js';
 
 const NOW_ISO = '2026-03-08T12:00:00.000Z';
 const NOW = new Date(NOW_ISO);
+
+test('shouldBypassTechniqueResearchCooldown: 所有环境默认都应保留正式冷却', () => {
+  assert.equal(shouldBypassTechniqueResearchCooldown('production'), false);
+  assert.equal(shouldBypassTechniqueResearchCooldown('development'), false);
+  assert.equal(shouldBypassTechniqueResearchCooldown(undefined), false);
+});
 
 test('buildTechniqueResearchCooldownState: 无最近研修记录时不应进入冷却', () => {
   const state = buildTechniqueResearchCooldownState(null, NOW, { bypassCooldown: false });

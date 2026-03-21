@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1) 做什么：集中定义招募成本、冷却、预览保留时长、品质权重、属性约束与草稿校验规则。
- * 2) 做什么：统一把模型输出约束在稳定范围内，并收敛开发环境冷却绕过规则，避免 service、worker、前端各自散落一份业务规则。
+ * 2) 做什么：统一把模型输出约束在稳定范围内，并收敛“默认始终保留正式冷却”的规则，避免 service、worker、前端各自散落一份业务规则。
  * 3) 不做什么：不访问数据库、不执行扣费、不负责图片生成或任务调度。
  *
  * 输入/输出：
@@ -819,17 +819,17 @@ type PartnerRecruitCooldownOptions = {
 
 /**
  * 复用点：
- * - 当前由 `buildPartnerRecruitCooldownState` 默认消费，统一让状态接口与创建任务校验共享同一环境口径。
- * - 纯函数测试可通过 `bypassCooldown` 显式覆盖，避免测试直接改全局环境变量。
+ * - 当前由 `buildPartnerRecruitCooldownState` 默认消费，统一让状态接口与创建任务校验共享同一正式冷却口径。
+ * - 纯函数测试可通过 `bypassCooldown` 显式覆盖，避免业务主链再混入环境特判。
  *
  * 设计原因：
- * - 项目本地开发默认不是 production，因此这里沿用仓库既有“非 production 视为开发态”的约定。
- * - 将环境判断收敛在共享规则后，服务层只消费冷却状态，避免重复实现“开发环境 0 冷却”。
+ * - 开发、测试、生产都默认走同一套正式冷却，避免本地联调与线上表现分叉。
+ * - 将默认行为收敛在共享规则后，服务层只消费冷却状态，不再重复实现环境例外。
  */
 export const shouldBypassPartnerRecruitCooldown = (
-  nodeEnv: string | undefined = process.env.NODE_ENV,
+  _nodeEnv: string | undefined = process.env.NODE_ENV,
 ): boolean => {
-  return nodeEnv !== 'production';
+  return false;
 };
 
 const buildIdleCooldownState = (

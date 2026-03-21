@@ -46,8 +46,15 @@ import {
 import {
   buildTechniqueResearchCooldownState,
   formatTechniqueResearchCooldownRemaining,
-  shouldTechniqueResearchApplyCooldown,
+  TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES,
 } from './shared/techniqueResearchCooldown.js';
+import {
+  TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_BYPASSES_COOLDOWN,
+  TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST,
+  TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID,
+  shouldTechniqueResearchBypassCooldownWithToken,
+  shouldTechniqueResearchUseCooldownBypassToken,
+} from './shared/techniqueResearchCooldownBypass.js';
 import { getActiveMonthCardCooldownReductionRate } from './shared/monthCardBenefits.js';
 import {
   buildTechniqueResearchUnlockState,
@@ -183,6 +190,10 @@ type TechniqueResearchStatusData = {
   cooldownHours: number;
   cooldownUntil: string | null;
   cooldownRemainingSeconds: number;
+  cooldownBypassTokenBypassesCooldown: boolean;
+  cooldownBypassTokenCost: number;
+  cooldownBypassTokenItemName: string;
+  cooldownBypassTokenAvailableQty: number;
   currentDraft: GeneratedDraftRow | null;
   draftExpireAt: string | null;
   nameRules: ReturnType<typeof getTechniqueNameRulesView>;
@@ -263,6 +274,17 @@ const resolveTechniqueTypeByRandom = (): GeneratedTechniqueType => {
 
 const buildGenerationId = (): string => {
   return `gen-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+};
+
+const getTechniqueResearchCooldownBypassTokenName = (): string => {
+  const itemDef = getItemDefinitionById(TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID);
+  const itemName = asString(itemDef?.name);
+  if (!itemName) {
+    throw new Error(
+      `洞府研修冷却绕过道具未配置：${TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID}`,
+    );
+  }
+  return itemName;
 };
 
 const buildGeneratedTechniqueId = (): string => {
@@ -461,6 +483,52 @@ class TechniqueGenerationService {
     );
   }
 
+  private async loadCooldownBypassTokenAvailableQty(characterId: number, forUpdate: boolean): Promise<number> {
+    const lockSql = forUpdate ? 'FOR UPDATE' : '';
+    const tokenRes = await query(
+      `
+        SELECT qty
+        FROM item_instance
+        WHERE owner_character_id = $1
+          AND item_def_id = $2
+          AND location IN ('bag', 'warehouse')
+          AND locked = false
+        ${lockSql}
+      `,
+      [characterId, TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID],
+    );
+    return tokenRes.rows.reduce((totalQty, row) => {
+      const currentQty = Number((row as Record<string, unknown>).qty ?? 0);
+      if (!Number.isFinite(currentQty) || currentQty <= 0) {
+        return totalQty;
+      }
+      return totalQty + Math.floor(currentQty);
+    }, 0);
+  }
+
+  private async loadLatestResearchCooldownStartedAt(
+    characterId: number,
+    forUpdate: boolean,
+  ): Promise<string | null> {
+    const lockSql = forUpdate ? 'FOR UPDATE' : '';
+    const latestRes = await query(
+      `
+        SELECT created_at
+        FROM technique_generation_job
+        WHERE character_id = $1
+          AND status = ANY($2::text[])
+          AND used_cooldown_bypass_token = false
+        ORDER BY created_at DESC
+        LIMIT 1
+        ${lockSql}
+      `,
+      [characterId, [...TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES]],
+    );
+    const row = latestRes.rows[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return toIsoString(row.created_at);
+  }
+
   private async refundFragmentsToInventoryTx(characterId: number, qty: number, obtainedFrom: string): Promise<void> {
     const refundQty = Math.max(0, Math.floor(asNumber(qty, 0)));
     if (refundQty <= 0) return;
@@ -550,7 +618,14 @@ class TechniqueGenerationService {
   async getResearchStatus(characterId: number): Promise<ServiceResult<TechniqueResearchStatusData>> {
     await this.refundExpiredDraftJobsTx(characterId);
 
-    const [unlockRes, fragmentBalance, draftRes, currentJobRes] = await Promise.all([
+    const [
+      unlockRes,
+      fragmentBalance,
+      draftRes,
+      currentJobRes,
+      cooldownBypassTokenAvailableQty,
+      cooldownStartedAt,
+    ] = await Promise.all([
       this.getTechniqueResearchUnlockStateTx(characterId, false),
       this.getResearchFragmentBalanceTx(characterId),
       query(
@@ -629,6 +704,8 @@ class TechniqueGenerationService {
         `,
         [characterId],
         ),
+      this.loadCooldownBypassTokenAvailableQty(characterId, false),
+      this.loadLatestResearchCooldownStartedAt(characterId, false),
     ]);
     if (!unlockRes.success) {
       return { success: false, message: unlockRes.message, code: unlockRes.code };
@@ -672,16 +749,11 @@ class TechniqueGenerationService {
           }
         : null,
     );
+    const cooldownBypassTokenItemName = getTechniqueResearchCooldownBypassTokenName();
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-    const cooldownState = buildTechniqueResearchCooldownState(
-      shouldTechniqueResearchApplyCooldown(currentJobState.currentJob?.status)
-        ? currentJobState.currentJob?.startedAt ?? null
-        : null,
-      new Date(),
-      {
-        cooldownReductionRate,
-      },
-    );
+    const cooldownState = buildTechniqueResearchCooldownState(cooldownStartedAt, new Date(), {
+      cooldownReductionRate,
+    });
 
     return {
       success: true,
@@ -694,6 +766,10 @@ class TechniqueGenerationService {
         cooldownHours: cooldownState.cooldownHours,
         cooldownUntil: cooldownState.cooldownUntil,
         cooldownRemainingSeconds: cooldownState.cooldownRemainingSeconds,
+        cooldownBypassTokenBypassesCooldown: TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_BYPASSES_COOLDOWN,
+        cooldownBypassTokenCost: TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST,
+        cooldownBypassTokenItemName,
+        cooldownBypassTokenAvailableQty,
         currentDraft,
         draftExpireAt: currentDraft?.draftExpireAt ?? null,
         nameRules: getTechniqueNameRulesView(),
@@ -705,7 +781,7 @@ class TechniqueGenerationService {
   }
 
   @Transactional
-  private async createGenerationJobTx(characterId: number): Promise<ServiceResult<{
+  private async createGenerationJobTx(characterId: number, cooldownBypassEnabled: boolean): Promise<ServiceResult<{
     generationId: string;
     techniqueType: GeneratedTechniqueType;
     quality: TechniqueQuality;
@@ -741,10 +817,26 @@ class TechniqueGenerationService {
     );
     const latestJobRow = latestJobRes.rows[0] as Record<string, unknown> | undefined;
     const latestJobStatus = asString(latestJobRow?.status) || null;
-    const latestStartedAt = shouldTechniqueResearchApplyCooldown(latestJobStatus)
-      ? toIsoString(latestJobRow?.created_at)
-      : null;
+    if (latestJobStatus === 'pending') {
+      return {
+        success: false,
+        message: '当前已有洞府推演进行中',
+        code: 'RESEARCH_JOB_ACTIVE',
+      };
+    }
+    if (latestJobStatus === 'generated_draft') {
+      return {
+        success: false,
+        message: '当前已有待抄写的研修草稿',
+        code: 'RESEARCH_DRAFT_ACTIVE',
+      };
+    }
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
+    const shouldUseCooldownBypassToken = shouldTechniqueResearchUseCooldownBypassToken(cooldownBypassEnabled);
+    const shouldBypassCooldown = shouldTechniqueResearchBypassCooldownWithToken(cooldownBypassEnabled);
+    const latestStartedAt = shouldBypassCooldown
+      ? null
+      : await this.loadLatestResearchCooldownStartedAt(characterId, true);
     const cooldownState = buildTechniqueResearchCooldownState(latestStartedAt, new Date(), {
       cooldownReductionRate,
     });
@@ -754,6 +846,18 @@ class TechniqueGenerationService {
         message: `洞府研修冷却中，还需等待${formatTechniqueResearchCooldownRemaining(cooldownState.cooldownRemainingSeconds)}`,
         code: 'RESEARCH_COOLDOWN_ACTIVE',
       };
+    }
+
+    if (shouldUseCooldownBypassToken) {
+      const cooldownBypassTokenAvailableQty = await this.loadCooldownBypassTokenAvailableQty(characterId, true);
+      if (cooldownBypassTokenAvailableQty < TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST) {
+        const tokenItemName = getTechniqueResearchCooldownBypassTokenName();
+        return {
+          success: false,
+          message: `${tokenItemName}不足，启用冷却豁免需消耗${TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST}枚`,
+          code: 'RESEARCH_COOLDOWN_BYPASS_TOKEN_NOT_ENOUGH',
+        };
+      }
     }
     const weekKey = resolveWeekKey(new Date());
 
@@ -779,6 +883,21 @@ class TechniqueGenerationService {
       };
     }
 
+    if (shouldUseCooldownBypassToken) {
+      const consumeTokenRes = await consumeMaterialByDefId(
+        characterId,
+        TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID,
+        TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST,
+      );
+      if (!consumeTokenRes.success) {
+        return {
+          success: false,
+          message: consumeTokenRes.message,
+          code: 'RESEARCH_COOLDOWN_BYPASS_TOKEN_CONSUME_FAILED',
+        };
+      }
+    }
+
     const generationId = buildGenerationId();
     await query(
       `
@@ -790,16 +909,17 @@ class TechniqueGenerationService {
           type_rolled,
           quality_rolled,
           cost_points,
+          used_cooldown_bypass_token,
           draft_expire_at,
           created_at,
           updated_at
         ) VALUES (
-          $1, $2, $3, 'pending', $4, $5, $6,
+          $1, $2, $3, 'pending', $4, $5, $6, $7,
           NULL,
           NOW(), NOW()
         )
       `,
-      [generationId, characterId, weekKey, techniqueType, quality, costPoints],
+      [generationId, characterId, weekKey, techniqueType, quality, costPoints, shouldUseCooldownBypassToken],
     );
 
     return {
@@ -1062,13 +1182,13 @@ class TechniqueGenerationService {
     }
   }
 
-  async generateTechniqueDraft(characterId: number): Promise<ServiceResult<{
+  async generateTechniqueDraft(characterId: number, cooldownBypassEnabled: boolean): Promise<ServiceResult<{
     generationId: string;
     techniqueType: GeneratedTechniqueType;
     quality: TechniqueQuality;
     status: 'pending';
   }>> {
-    const createRes = await this.createGenerationJobTx(characterId);
+    const createRes = await this.createGenerationJobTx(characterId, cooldownBypassEnabled);
     if (!createRes.success) {
       return { success: false, message: createRes.message, code: createRes.code };
     }

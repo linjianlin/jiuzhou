@@ -28,7 +28,9 @@ import { useIsMobile } from '../../shared/responsive';
 import { getItemQualityLabel, getItemQualityTagClassName } from '../../shared/itemQuality';
 import ResearchPanel from './ResearchPanel';
 import {
+  hasTechniqueResearchCooldownBypassToken,
   resolveTechniqueResearchIndicatorStatus,
+  resolveTechniqueResearchSubmitState,
   type TechniqueResearchStatusData,
 } from './researchShared';
 import {
@@ -368,6 +370,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchRefreshing, setResearchRefreshing] = useState(false);
   const [generateSubmitting, setGenerateSubmitting] = useState(false);
+  const [researchCooldownBypassEnabled, setResearchCooldownBypassEnabled] = useState(false);
   const [publishSubmitting, setPublishSubmitting] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishTargetGenerationId, setPublishTargetGenerationId] = useState('');
@@ -389,6 +392,15 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     setResearchStatus(status);
     onResearchIndicatorChange?.(resolveTechniqueResearchIndicatorStatus(status));
   }, [onResearchIndicatorChange]);
+
+  const researchSubmitState = useMemo(
+    () => resolveTechniqueResearchSubmitState(researchStatus, researchCooldownBypassEnabled),
+    [researchCooldownBypassEnabled, researchStatus],
+  );
+  const hasResearchCooldownBypassToken = useMemo(
+    () => hasTechniqueResearchCooldownBypassToken(researchStatus),
+    [researchStatus],
+  );
 
   useEffect(() => {
     gameSocket.connect();
@@ -495,6 +507,17 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     researchStatusRef.current = researchStatus;
   }, [researchStatus]);
 
+  useEffect(() => {
+    if (open) return;
+    setResearchCooldownBypassEnabled(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!hasResearchCooldownBypassToken && researchCooldownBypassEnabled) {
+      setResearchCooldownBypassEnabled(false);
+    }
+  }, [hasResearchCooldownBypassToken, researchCooldownBypassEnabled]);
+
   const refreshResearchStatus = useCallback(async (mode: ResearchStatusRefreshMode = 'background') => {
     if (!characterId) {
       setResearchLoading(false);
@@ -575,10 +598,12 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   ]);
 
   const handleGenerateResearchDraft = useCallback(async () => {
-    if (!characterId || generateSubmitting) return;
+    if (!characterId || generateSubmitting || !researchSubmitState.canSubmit) return;
     setGenerateSubmitting(true);
     try {
-      const generateRes = await generateTechniqueResearchDraft(characterId);
+      const generateRes = await generateTechniqueResearchDraft(characterId, {
+        cooldownBypassEnabled: researchCooldownBypassEnabled,
+      });
       if (!generateRes?.success || !generateRes.data) {
         throw new Error(generateRes?.message || '生成失败');
       }
@@ -590,7 +615,14 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     } finally {
       setGenerateSubmitting(false);
     }
-  }, [characterId, generateSubmitting, message, refreshResearchStatus]);
+  }, [
+    characterId,
+    generateSubmitting,
+    message,
+    refreshResearchStatus,
+    researchCooldownBypassEnabled,
+    researchSubmitState.canSubmit,
+  ]);
 
   const closeResearchPublishDialog = useCallback(() => {
     if (publishSubmitting) return;
@@ -1188,7 +1220,10 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         refreshing={researchRefreshing}
         generateSubmitting={generateSubmitting}
         publishSubmitting={publishSubmitting}
+        cooldownBypassEnabled={researchCooldownBypassEnabled}
+        submitState={researchSubmitState}
         onGenerateDraft={() => void handleGenerateResearchDraft()}
+        onCooldownBypassEnabledChange={setResearchCooldownBypassEnabled}
         onRefresh={() => void refreshResearchStatus('manual')}
         onCopyResearchBook={(generationId, suggestedName) => openResearchPublishDialog(generationId, suggestedName)}
       />

@@ -17,13 +17,15 @@
  * 1. `pending` 时不能再允许重复点击“开始领悟”，否则会误导玩家可以并发生成。
  * 2. 冷却展示必须仅消费共享纯函数，避免这里和按钮禁用条件各算一套剩余时间。
  */
-import { Button, Tag } from 'antd';
+import { Button, Switch, Tag } from 'antd';
 import { getItemQualityLabel, getItemQualityTagClassName } from '../../shared/itemQuality';
-import type { TechniqueResearchStatusData } from './researchShared';
+import type {
+  TechniqueResearchStatusData,
+  TechniqueResearchSubmitState,
+} from './researchShared';
 import {
-  formatTechniqueResearchCooldownRemaining,
-  isTechniqueResearchCoolingDown,
-  resolveTechniqueResearchActionState,
+  hasTechniqueResearchCooldownBypassToken,
+  resolveTechniqueResearchCooldownDisplay,
   resolveTechniqueResearchPanelView,
 } from './researchShared';
 import {
@@ -37,7 +39,10 @@ type ResearchPanelProps = {
   refreshing: boolean;
   generateSubmitting: boolean;
   publishSubmitting: boolean;
+  cooldownBypassEnabled: boolean;
+  submitState: TechniqueResearchSubmitState;
   onGenerateDraft: () => void;
+  onCooldownBypassEnabledChange: (nextEnabled: boolean) => void;
   onRefresh: () => void;
   onCopyResearchBook: (generationId: string, suggestedName: string) => void;
 };
@@ -48,21 +53,18 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   refreshing,
   generateSubmitting,
   publishSubmitting,
+  cooldownBypassEnabled,
+  submitState,
   onGenerateDraft,
+  onCooldownBypassEnabledChange,
   onRefresh,
   onCopyResearchBook,
 }) => {
   const panelView = resolveTechniqueResearchPanelView(status);
-  const actionState = resolveTechniqueResearchActionState(status);
-  const coolingDown = isTechniqueResearchCoolingDown(status);
-  const cooldownText = !status
-    ? '--'
-    : !status.unlocked
-      ? `未解锁（需${status.unlockRealm}）`
-      : (coolingDown ? `剩余${formatTechniqueResearchCooldownRemaining(status.cooldownRemainingSeconds)}` : '可开始');
-  const cooldownRuleText = status?.cooldownHours === 0
-    ? '当前环境已关闭研修冷却，可连续开始领悟。'
-    : `每次开始领悟后会进入冷却，当前冷却时长为 ${status?.cooldownHours ?? '--'} 小时。`;
+  const cooldownDisplay = resolveTechniqueResearchCooldownDisplay(status, cooldownBypassEnabled);
+  const hasCooldownBypassCapability = Boolean(status?.unlocked)
+    && Boolean(status?.cooldownBypassTokenBypassesCooldown)
+    && (status?.cooldownHours ?? 0) > 0;
 
   return (
     <div className="tech-pane">
@@ -71,7 +73,24 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         <div className="tech-research-stats">
           <div className="tech-research-stat"><span>功法残页</span><strong>{status?.fragmentBalance ?? '--'}</strong></div>
           <div className="tech-research-stat"><span>单次消耗</span><strong>{status ? `${status.fragmentCost}页` : '--'}</strong></div>
-          <div className="tech-research-stat"><span>当前状态</span><strong>{cooldownText}</strong></div>
+          <div className="tech-research-stat">
+            <div className="tech-research-stat-head">
+              <span>当前状态</span>
+              {hasCooldownBypassCapability ? (
+                <div className="tech-research-stat-toggle">
+                  <span className="tech-research-stat-toggle-label">顿悟符</span>
+                  <Switch
+                    checked={cooldownBypassEnabled}
+                    onChange={onCooldownBypassEnabledChange}
+                    disabled={!hasTechniqueResearchCooldownBypassToken(status)}
+                    checkedChildren="开"
+                    unCheckedChildren="关"
+                  />
+                </div>
+              ) : null}
+            </div>
+            <strong>{cooldownDisplay.statusText}</strong>
+          </div>
         </div>
 
         <div className="tech-research-actions">
@@ -80,7 +99,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
               className="tech-research-generate-button"
               type="primary"
               loading={generateSubmitting}
-              disabled={!actionState.canGenerate}
+              disabled={!submitState.canSubmit}
               onClick={onGenerateDraft}
             >
               开始领悟
@@ -94,9 +113,12 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         <div className="tech-research-tips">
           <div>1. 洞府研修需境界达到 {status?.unlockRealm ?? '--'} 后开启，未达门槛时无法开始领悟。</div>
           <div>2. 每次开始领悟固定消耗 {status?.fragmentCost ?? '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
-          <div>3. {cooldownRuleText}</div>
+          <div>3. {cooldownDisplay.ruleText}</div>
           <div>4. 草稿过期未抄写时，只返还本次消耗的一半功法残页。</div>
           <div>5. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
+          {hasCooldownBypassCapability && status ? (
+            <div>6. {status.cooldownBypassTokenItemName}仅对当前这次推演生效，每次启用都会额外消耗 {status.cooldownBypassTokenCost} 枚。</div>
+          ) : null}
         </div>
 
         <div className="tech-subtitle">当前研修结果</div>
