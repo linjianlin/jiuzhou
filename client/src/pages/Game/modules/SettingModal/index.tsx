@@ -1,6 +1,10 @@
 import { App, Button, Form, Input, Menu, Modal, Select, Space, Switch, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  commitBattleAvatarVisibilitySelection,
+  getStoredBattleAvatarVisibility,
+} from '../../../../constants/battleDisplay';
+import {
   changePassword,
   getCharacterInfo,
   getUnifiedApiErrorMessage,
@@ -195,6 +199,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   useGameItemTaxonomy(open);
   const [activeKey, setActiveKey] = useState<SettingKey>('base');
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
+  const [battleAvatarVisible, setBattleAvatarVisible] = useState<boolean>(() => getStoredBattleAvatarVisibility());
   const [dungeonNoStaminaCostEnabled, setDungeonNoStaminaCostEnabled] = useState(false);
   const [dungeonNoStaminaCostSaving, setDungeonNoStaminaCostSaving] = useState(false);
   const [autoDisassembleEnabled, setAutoDisassembleEnabled] = useState(false);
@@ -243,6 +248,11 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
     const nextMode: ThemeMode = enabled ? 'dark' : 'light';
     setThemeMode(nextMode);
     commitThemeModeSelection(nextMode);
+  };
+
+  const toggleBattleAvatarVisible = (enabled: boolean) => {
+    setBattleAvatarVisible(enabled);
+    commitBattleAvatarVisibilitySelection(enabled);
   };
 
   const saveDungeonNoStaminaCost = async (nextEnabled: boolean, rollback: () => void) => {
@@ -423,6 +433,15 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
               <div className="setting-row">
                 <Typography.Text>暗黑主题</Typography.Text>
                 <Switch checked={themeMode === 'dark'} onChange={toggleDarkTheme} />
+              </div>
+              <div className="setting-row">
+                <div className="setting-row-main">
+                  <Typography.Text>显示战斗头像</Typography.Text>
+                  <Typography.Text type="secondary" className="setting-row-description">
+                    控制战斗单位卡片上的头像背景图显示，不影响战斗外的角色与伙伴头像。
+                  </Typography.Text>
+                </div>
+                <Switch checked={battleAvatarVisible} onChange={toggleBattleAvatarVisible} />
               </div>
               <div className="setting-row">
                 <div className="setting-row-main">

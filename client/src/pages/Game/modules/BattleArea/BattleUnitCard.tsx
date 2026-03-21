@@ -33,6 +33,7 @@ interface BattleUnitCardProps {
   unit: BattleUnit;
   team: BattleTeamSide;
   size: BattleFieldCardSize;
+  showAvatarBackground: boolean;
   showStatusRow: boolean;
   statusTagLimit: number;
   active?: boolean;
@@ -70,6 +71,7 @@ export const BattleUnitCard: React.FC<BattleUnitCardProps> = memo(({
   unit,
   team,
   size,
+  showAvatarBackground,
   showStatusRow,
   statusTagLimit,
   active,
@@ -79,7 +81,7 @@ export const BattleUnitCard: React.FC<BattleUnitCardProps> = memo(({
 }) => {
   const dead = (Number(unit.hp) || 0) <= 0;
   const statusTags = resolveBattleUnitStatusTags(unit.buffs, statusTagLimit);
-  const backgroundImage = resolveBattleUnitBackgroundImage(unit);
+  const backgroundImage = resolveBattleUnitBackgroundImage(unit, showAvatarBackground);
   const handleToggleUnit = () => {
     onToggleUnit(unit.id);
   };

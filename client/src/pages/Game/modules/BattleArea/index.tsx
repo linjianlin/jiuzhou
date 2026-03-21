@@ -1,6 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from 'antd';
 import {
+  BATTLE_AVATAR_VISIBILITY_EVENT_NAME,
+  getStoredBattleAvatarVisibility,
+} from '../../../../constants/battleDisplay';
+import {
   abandonBattle,
   battleAction,
   getUnifiedApiErrorMessage,
@@ -257,6 +261,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
   const [battleState, setBattleState] = useState<BattleStateDto | null>(null);
   const [battleLogs, setBattleLogs] = useState<BattleLogEntryDto[]>([]);
   const [battleId, setBattleId] = useState<string | null>(null);
+  const [showAvatarBackground, setShowAvatarBackground] = useState<boolean>(() => getStoredBattleAvatarVisibility());
   const [selectedEnemyId, setSelectedEnemyId] = useState<string | null>(null);
   const [selectedAllyId, setSelectedAllyId] = useState<string | null>(null);
   const [floats, setFloats] = useState<BattleFloatText[]>([]);
@@ -289,6 +294,20 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
     () => resolveLocalBattleMonsterIds(enemies),
     [enemies],
   );
+
+  useEffect(() => {
+    const handleBattleAvatarVisibilityChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ visible?: boolean }>;
+      if (typeof customEvent.detail?.visible === 'boolean') {
+        setShowAvatarBackground(customEvent.detail.visible);
+      }
+    };
+
+    window.addEventListener(BATTLE_AVATAR_VISIBILITY_EVENT_NAME, handleBattleAvatarVisibilityChange);
+    return () => {
+      window.removeEventListener(BATTLE_AVATAR_VISIBILITY_EVENT_NAME, handleBattleAvatarVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     onAppendBattleLinesRef.current = onAppendBattleLines ?? null;
@@ -1335,6 +1354,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
           team="enemy"
           units={enemyUnits}
           emptyText={enemyEmptyText}
+          showAvatarBackground={showAvatarBackground}
           activeUnitId={activeUnitId}
           selectedUnitId={selectedEnemyId}
           floatsByUnit={floatsByUnit}
@@ -1347,6 +1367,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
           team="ally"
           units={allyUnits}
           emptyText={allyEmptyText}
+          showAvatarBackground={showAvatarBackground}
           activeUnitId={activeUnitId}
           selectedUnitId={selectedAllyId}
           floatsByUnit={floatsByUnit}

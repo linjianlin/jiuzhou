@@ -57,4 +57,16 @@ describe('resolveBattleUnitBackgroundImage', () => {
       }),
     ).toBeUndefined();
   });
+
+  it('关闭战斗头像显示时应直接隐藏背景图', () => {
+    expect(
+      resolveBattleUnitBackgroundImage(
+        {
+          unitType: 'partner',
+          avatar: 'partners/avatar-fox.png',
+        },
+        false,
+      ),
+    ).toBeUndefined();
+  });
 });

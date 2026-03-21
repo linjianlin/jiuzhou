@@ -28,7 +28,9 @@ type BattleUnitBackgroundSource = {
 
 export const resolveBattleUnitBackgroundImage = (
   unit: BattleUnitBackgroundSource,
+  enabled: boolean = true,
 ): string | undefined => {
+  if (!enabled) return undefined;
   const avatar = String(unit.avatar ?? '').trim();
   if (!avatar) return undefined;
   if (unit.unitType === 'player') return resolveAvatarUrl(avatar);

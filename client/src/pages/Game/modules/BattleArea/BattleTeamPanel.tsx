@@ -32,6 +32,7 @@ interface BattleTeamPanelProps {
   team: BattleTeamSide;
   units: BattleUnit[];
   emptyText: string;
+  showAvatarBackground: boolean;
   activeUnitId: string | null;
   selectedUnitId: string | null;
   floatsByUnit: Record<string, BattleFloatText[]>;
@@ -42,6 +43,7 @@ export const BattleTeamPanel: React.FC<BattleTeamPanelProps> = memo(({
   team,
   units,
   emptyText,
+  showAvatarBackground,
   activeUnitId,
   selectedUnitId,
   floatsByUnit,
@@ -107,6 +109,7 @@ export const BattleTeamPanel: React.FC<BattleTeamPanelProps> = memo(({
                 unit={unit}
                 team={team}
                 size={layout.layout.size}
+                showAvatarBackground={showAvatarBackground}
                 showStatusRow={layout.layout.showStatusRow}
                 statusTagLimit={layout.layout.statusTagLimit}
                 active={activeUnitId === unit.id}
