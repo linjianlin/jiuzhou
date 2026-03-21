@@ -17,6 +17,8 @@
 import {
   createPVEBattle,
   type CharacterData,
+  type MonsterData,
+  type SkillData,
 } from "../../battle/battleFactory.js";
 import { BattleEngine } from "../../battle/battleEngine.js";
 import { getRoomInMap } from "../mapService.js";
@@ -214,25 +216,49 @@ export async function startPVEBattle(
   }
 }
 
-const startDungeonPVEBattleByPolicy = async (
-  userId: number,
-  monsterDefIds: string[],
-  startPolicy: PveBattleStartPolicy,
-): Promise<BattleResult> => {
+/**
+ * 用已解析好的怪物数据发起 PVE 战斗。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把“角色校验 -> 战前资源同步 -> 创建 PVE battle”这段通用链路抽出来，给秘境与千层塔共用。
+ * 2. 做什么：允许调用方传入已经生成好的怪物数据，从而支持算法生成型玩法，而不要求怪物必须直接来自房间/静态配置 ID 列表。
+ * 3. 不做什么：不负责房间目标校验，也不负责怪物选择算法；这些由调用方先处理。
+ *
+ * 输入/输出：
+ * - 输入：userId、battleId、怪物列表、开始策略与模式开关。
+ * - 输出：标准 BattleResult，成功时携带 battleId 与初始 state。
+ *
+ * 数据流/状态流：
+ * - tower/dungeon 先准备 monsters -> 本函数复用统一起战流程 -> 注册 active battle。
+ *
+ * 关键边界条件与坑点：
+ * 1. 关闭组队后仍会保留伙伴逻辑，但不会读取队伍成员，保证单人玩法不会被队伍状态混入。
+ * 2. 这里假设 `monsters` 已是最终强度版本，因此不会再次做怪物选择或额外裁剪。
+ */
+export const startResolvedPVEBattleByPolicy = async (params: {
+  userId: number;
+  battleId: string;
+  monsters: MonsterData[];
+  monsterSkillsMap: Record<string, SkillData[]>;
+  startPolicy: PveBattleStartPolicy;
+  allowTeamBattle: boolean;
+  syncResourceContext: string;
+  startSuccessMessage: string;
+  errorMessage: string;
+}): Promise<BattleResult> => {
   try {
-    const baseCharacter = await getCharacterComputedByUserId(userId);
+    const baseCharacter = await getCharacterComputedByUserId(params.userId);
     if (!baseCharacter) {
-      return { success: false, message: "角色不存在" };
+      return { success: false, message: '角色不存在' };
     }
 
     const characterId = Number(baseCharacter.id);
-
     const idleReject = await rejectIfIdling(characterId);
     if (idleReject) return idleReject;
 
     const characterBattleLoadout = await getCharacterBattleLoadoutByCharacterId(characterId);
     if (!characterBattleLoadout) {
-      return { success: false, message: "角色战斗资料不存在" };
+      return { success: false, message: '角色战斗资料不存在' };
     }
     const monthCardActiveMap = await getMonthCardActiveMapByCharacterIds([characterId]);
     const characterWithSetBonus: CharacterData = {
@@ -241,37 +267,43 @@ const startDungeonPVEBattleByPolicy = async (
       setBonusEffects: characterBattleLoadout.setBonusEffects,
     };
     if (characterWithSetBonus.qixue <= 0) {
-      return { success: false, message: "气血不足，无法战斗" };
+      return { success: false, message: '气血不足，无法战斗' };
     }
     const selfInBattleResult = buildCharacterInBattleResult(
       characterId,
-      "character_in_battle",
-      "角色正在战斗中",
+      'character_in_battle',
+      '角色正在战斗中',
     );
     if (selfInBattleResult) return selfInBattleResult;
-    if (shouldValidateBattleStarterCooldown(startPolicy)) {
+    if (shouldValidateBattleStarterCooldown(params.startPolicy)) {
       const selfCooldown = validateBattleStartCooldown(characterId);
       if (selfCooldown) {
         return buildBattleStartCooldownResult(
           selfCooldown,
-          "battle_start_cooldown",
+          'battle_start_cooldown',
         );
       }
     }
-    const character = withBattleStartResources(characterWithSetBonus);
-
-    const requestedMonsterIds = monsterDefIds.filter(
-      (x) => typeof x === "string" && x.length > 0,
-    );
-    if (requestedMonsterIds.length === 0) {
-      return { success: false, message: "请指定战斗目标" };
+    if (params.monsters.length <= 0) {
+      return { success: false, message: '请指定战斗目标' };
     }
 
-    const preparedTeam = await prepareTeamBattleParticipants(
-      userId,
-      character.id,
-      { startPolicy },
-    );
+    const character = withBattleStartResources(characterWithSetBonus);
+
+    const validTeamMembersPromise = params.allowTeamBattle
+      ? prepareTeamBattleParticipants(
+          params.userId,
+          character.id,
+          { startPolicy: params.startPolicy },
+        )
+      : Promise.resolve({
+          success: true as const,
+          validTeamMembers: [],
+          participantUserIds: [params.userId],
+          result: { success: true, message: 'ok' } as BattleResult,
+        });
+
+    const preparedTeam = await validTeamMembersPromise;
     if (!preparedTeam.success) return preparedTeam.result;
     const { validTeamMembers, participantUserIds } = preparedTeam;
 
@@ -281,32 +313,18 @@ const startDungeonPVEBattleByPolicy = async (
         enabled: validTeamMembers.length <= 0,
       });
     await syncBattleStartResourcesForUsers(participantUserIds, {
-      context: "同步战前资源（秘境战斗）",
+      context: params.syncResourceContext,
     });
 
-    const playerCount = validTeamMembers.length + 1;
-    const maxMonsters = Math.min(
-      5,
-      Math.max(1, playerCount > 1 ? playerCount : 3),
-    );
-    const finalMonsterIds = requestedMonsterIds.slice(0, maxMonsters);
-
-    const monsterResolveResult = resolveOrderedMonsters(finalMonsterIds);
-    if (!monsterResolveResult.success) {
-      return { success: false, message: monsterResolveResult.error };
-    }
-    const monsters = monsterResolveResult.monsters;
-    const monsterSkillsMap = monsterResolveResult.monsterSkillsMap;
-
-    const battleId = `dungeon-battle-${userId}-${Date.now()}`;
     const partnerMember = await partnerMemberPromise;
+    const playerCount = validTeamMembers.length + 1;
 
     const battleState = createPVEBattle(
-      battleId,
+      params.battleId,
       character,
       characterBattleLoadout.skills,
-      monsters,
-      monsterSkillsMap,
+      params.monsters,
+      params.monsterSkillsMap,
       {
         teamMembers: validTeamMembers.length > 0 ? validTeamMembers : undefined,
         partnerMember: partnerMember ?? undefined,
@@ -314,19 +332,55 @@ const startDungeonPVEBattleByPolicy = async (
     );
 
     const engine = new BattleEngine(battleState);
-    registerStartedBattle(battleId, engine, participantUserIds);
+    registerStartedBattle(params.battleId, engine, participantUserIds);
 
     return {
       success: true,
-      message: "战斗开始",
+      message: params.startSuccessMessage,
       data: {
-        battleId,
+        battleId: params.battleId,
         state: buildBattleSnapshotState(engine.getState()),
         isTeamBattle: playerCount > 1,
         teamMemberCount: playerCount,
         battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,
       },
     };
+  } catch (error) {
+    console.error(params.errorMessage, error);
+    return { success: false, message: params.errorMessage };
+  }
+};
+
+const startDungeonPVEBattleByPolicy = async (
+  userId: number,
+  monsterDefIds: string[],
+  startPolicy: PveBattleStartPolicy,
+): Promise<BattleResult> => {
+  try {
+    const requestedMonsterIds = monsterDefIds.filter(
+      (x) => typeof x === "string" && x.length > 0,
+    );
+    if (requestedMonsterIds.length === 0) {
+      return { success: false, message: "请指定战斗目标" };
+    }
+    const maxMonsters = Math.min(5, Math.max(1, requestedMonsterIds.length));
+    const finalMonsterIds = requestedMonsterIds.slice(0, maxMonsters);
+    const monsterResolveResult = resolveOrderedMonsters(finalMonsterIds);
+    if (!monsterResolveResult.success) {
+      return { success: false, message: monsterResolveResult.error };
+    }
+    const battleId = `dungeon-battle-${userId}-${Date.now()}`;
+    return startResolvedPVEBattleByPolicy({
+      userId,
+      battleId,
+      monsters: monsterResolveResult.monsters,
+      monsterSkillsMap: monsterResolveResult.monsterSkillsMap,
+      startPolicy,
+      allowTeamBattle: true,
+      syncResourceContext: '同步战前资源（秘境战斗）',
+      startSuccessMessage: '战斗开始',
+      errorMessage: '发起秘境战斗失败',
+    });
   } catch (error) {
     console.error("发起秘境战斗失败:", error);
     return { success: false, message: "发起秘境战斗失败" };

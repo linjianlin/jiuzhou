@@ -30,6 +30,10 @@ import { getBattleState } from '../battle/queries.js';
 import { startPVEBattle } from '../battle/pve.js';
 import { startPVPBattle } from '../battle/pvp.js';
 import { dungeonService } from '../dungeon/service.js';
+import {
+  advanceTowerRun,
+  endTowerRunBySession,
+} from '../tower/service.js';
 import type { BattleState } from '../../battle/types.js';
 import type { BattleResult } from '../battle/battleTypes.js';
 import { buildBattleAbandonedRealtimePayload } from '../battle/runtime/realtime.js';
@@ -188,7 +192,7 @@ const getSessionFinalStatus = (
     return type === 'pvp' ? 'completed' : 'failed';
   }
   if (result === 'draw') {
-    return type === 'dungeon' ? 'failed' : 'completed';
+    return type === 'dungeon' || type === 'tower' ? 'failed' : 'completed';
   }
   return 'completed';
 };
@@ -199,6 +203,11 @@ const getWaitingTransitionPolicy = (
 ): { nextAction: BattleSessionNextAction; canAdvance: boolean } => {
   if (type === 'pvp') {
     return { nextAction: 'return_to_map', canAdvance: true };
+  }
+  if (type === 'tower') {
+    return result === 'attacker_win'
+      ? { nextAction: 'advance', canAdvance: true }
+      : { nextAction: 'return_to_map', canAdvance: true };
   }
   if (result === 'attacker_win') {
     return { nextAction: 'advance', canAdvance: true };
@@ -454,6 +463,9 @@ const completeSessionReturnToMap = async (
   userId: number,
   session: BattleSessionRecord,
 ): Promise<BattleSessionResponse> => {
+  if (session.type === 'tower') {
+    await endTowerRunBySession(session);
+  }
   await deletePveResumeIntentForSession(session);
   const nextStatus = getSessionFinalStatus(session.type, session.lastResult);
   const settledBattleId = session.currentBattleId;
@@ -569,6 +581,16 @@ export const advanceBattleSession = async (
     return buildSessionSuccess(updated, dungeonRes.data.state, false);
   }
 
+  if (session.type === 'tower') {
+    if (session.nextAction === 'return_to_map') {
+      return completeSessionReturnToMap(userId, session);
+    }
+    return advanceTowerRun({
+      userId,
+      session,
+    });
+  }
+
   return completeSessionReturnToMap(userId, session);
 };
 
@@ -606,6 +628,9 @@ export const markBattleSessionAbandoned = async (
   if (!snapshot) return null;
   const session = getBattleSessionRecord(snapshot.sessionId);
   if (!session) return null;
+  if (session.type === 'tower') {
+    await endTowerRunBySession(session);
+  }
   await deletePveResumeIntentForSession(session);
   return finalizeBattleSession({
     sessionId: snapshot.sessionId,

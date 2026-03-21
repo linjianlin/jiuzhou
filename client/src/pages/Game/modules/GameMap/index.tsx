@@ -1,3 +1,4 @@
+import { Button } from 'antd';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { MapRoom } from '../../../../services/api';
 import { useMapDetailSnapshot } from '../../shared/useMapDetailSnapshot';
@@ -7,6 +8,11 @@ interface GameMapProps {
   currentMapId: string;
   currentRoomId: string;
   trackedRoomIds?: string[];
+  headerAction?: {
+    label: string;
+    disabled?: boolean;
+    onClick: () => void;
+  };
   onMove: (next: { mapId: string; roomId: string }) => void;
 }
 
@@ -41,7 +47,13 @@ const normalizeRooms = (rooms: MapRoom[]): RoomNode[] => {
   return withPos.filter((r) => typeof r.id === 'string' && r.id.length > 0);
 };
 
-const GameMap: React.FC<GameMapProps> = ({ currentMapId, currentRoomId, trackedRoomIds, onMove }) => {
+const GameMap: React.FC<GameMapProps> = ({
+  currentMapId,
+  currentRoomId,
+  trackedRoomIds,
+  headerAction,
+  onMove,
+}) => {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const nodesRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -200,6 +212,17 @@ const GameMap: React.FC<GameMapProps> = ({ currentMapId, currentRoomId, trackedR
         <div className="map-header-left">
           <div className="map-room-name">{loading ? '加载中...' : currentRoom?.name ?? '未知房间'}</div>
           {currentRoom?.description ? <div className="map-room-desc">{currentRoom.description}</div> : null}
+          {headerAction ? (
+            <Button
+              className="map-header-action"
+              type="primary"
+              size="small"
+              disabled={headerAction.disabled}
+              onClick={headerAction.onClick}
+            >
+              {headerAction.label}
+            </Button>
+          ) : null}
         </div>
         <div className="map-header-right">{shownMapName}</div>
       </div>

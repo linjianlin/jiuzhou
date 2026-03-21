@@ -235,6 +235,22 @@ model character_research_points {
   characters          characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+/// 千层塔个人进度与当前 run 状态
+model character_tower_progress {
+  character_id       Int        @id
+  best_floor         Int        @default(0)
+  next_floor         Int        @default(1)
+  current_run_id     String?    @db.VarChar(64)
+  current_floor      Int?
+  current_battle_id  String?    @db.VarChar(128)
+  last_settled_floor Int        @default(0)
+  reached_at         DateTime?  @db.Timestamptz(6)
+  updated_at         DateTime   @default(now()) @db.Timestamptz(6)
+  characters         characters @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([best_floor(sort: Desc), reached_at(sort: Asc), character_id], map: "idx_character_tower_progress_rank")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model character_room_resource_state {
   id             Int        @id @default(autoincrement())
@@ -516,6 +532,7 @@ model characters {
   character_feature_unlocks                                                         character_feature_unlocks[]
   character_task_progress                                                           character_task_progress[]
   character_technique                                                               character_technique[]
+  character_tower_progress                                                          character_tower_progress?
   character_title                                                                   character_title[]
   character_wander_story                                                            character_wander_story[]
   character_wander_story_episode                                                    character_wander_story_episode[]

@@ -56,6 +56,8 @@ interface BattleAreaProps {
   onAppendBattleLines?: (lines: string[]) => void;
   onNext?: () => Promise<void>;
   nextLabel?: string;
+  escapeLabel?: string;
+  statusTextOverride?: string;
   advanceMode?: BattleAdvanceMode;
   onSessionChange?: (session: BattleSessionSnapshotDto | null) => void;
   onNotify: (type: 'info' | 'error', content: string, durationSeconds?: number) => void;
@@ -251,6 +253,8 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
   onAppendBattleLines,
   onNext,
   nextLabel,
+  escapeLabel,
+  statusTextOverride,
   advanceMode,
   onSessionChange,
   onNotify,
@@ -1158,6 +1162,9 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
   const allyAliveCount = useMemo(() => pickAlive(allyUnits).length, [allyUnits]);
 
   const statusText = useMemo(() => {
+    if (statusTextOverride) {
+      return statusTextOverride;
+    }
     if (!battleState && startupStatus === 'preparing') {
       return '正在接敌...';
     }
@@ -1172,7 +1179,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
     if (result === 'lose') return `${base} · ${sideText} · 失败`;
     if (result === 'draw') return `${base} · ${sideText} · 平局`;
     return '等待目标';
-  }, [allyAliveCount, allyUnits.length, battleState, enemyAliveCount, enemyUnits.length, isTeamBattle, result, startupStatus, teamMemberCount, turnSide, waitingForCooldown]);
+  }, [allyAliveCount, allyUnits.length, battleState, enemyAliveCount, enemyUnits.length, isTeamBattle, result, startupStatus, statusTextOverride, teamMemberCount, turnSide, waitingForCooldown]);
 
   const isPreparingView = !battleState && (startupStatus !== 'none' || (Boolean(resolvedExternalBattleId) && result === 'running'));
   const enemyEmptyText = isPreparingView ? '正在锁定敌方目标...' : '暂无敌方目标';
@@ -1343,7 +1350,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
           ) : null}
           {onEscape ? (
             <Button size="small" className="battle-top-action" onClick={handleEscape}>
-              逃跑
+              {escapeLabel || '逃跑'}
             </Button>
           ) : null}
         </div>

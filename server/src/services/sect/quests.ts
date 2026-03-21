@@ -3,6 +3,7 @@ import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, toNumber } from './db.js';
 import type { ClaimSectQuestResult, Result, SectQuest, SubmitSectQuestResult } from './types.js';
 import { getItemDefinitions } from '../staticConfigLoader.js';
+import { hashTextU32 } from '../shared/deterministicHash.js';
 
 type QuestProgressEvent = 'donate_spirit_stones' | 'shop_buy_count';
 type SubmitQuestPool = 'item' | 'material' | 'consumable';
@@ -115,15 +116,6 @@ const normalizeQuestStatus = (raw: unknown): SectQuest['status'] => {
   if (raw === 'claimed') return 'claimed';
   if (raw === 'in_progress') return 'in_progress';
   return 'in_progress';
-};
-
-const hashTextU32 = (value: string): number => {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
 };
 
 const getQuestPeriodKeysTx = async (): Promise<QuestPeriodKeys> => {

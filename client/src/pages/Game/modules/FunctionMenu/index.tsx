@@ -19,6 +19,7 @@ import {
   ToolOutlined,
   ClockCircleOutlined,
   UsergroupAddOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import { useMemo, useState } from 'react';
 import { useIsMobile } from '../../shared/responsive';
@@ -62,6 +63,7 @@ const FunctionMenu: React.FC<FunctionMenuProps> = ({ onAction, indicators, itemS
     const items: MenuItem[] = [
       { key: 'map', icon: <EnvironmentOutlined />, label: '地图' },
       { key: 'dungeon', icon: <CompassOutlined />, label: '秘境' },
+      { key: 'tower', icon: <ApartmentOutlined />, label: '千层塔' },
       { key: 'bag', icon: <InboxOutlined />, label: '背包' },
       { key: 'partner', icon: <UsergroupAddOutlined />, label: '伙伴' },
       { key: 'technique', icon: <BookOutlined />, label: '功法' },

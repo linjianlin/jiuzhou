@@ -80,6 +80,20 @@ describe('resolveBattleSessionAdvanceMode', () => {
     ).toBe('manual_session');
   });
 
+  it('千层塔即使可推进，也必须停在手动继续', () => {
+    expect(
+      resolveBattleSessionAdvanceMode({
+        session: createSession({
+          type: 'tower',
+          context: { runId: 'tower-run-1', floor: 12 },
+        }),
+        inTeam: false,
+        isTeamLeader: true,
+        blockedAutoAdvanceSessionKey: '',
+      }),
+    ).toBe('manual_session');
+  });
+
   it('队伍跟随者即使拿到可推进 session，也应保持不可控', () => {
     expect(
       resolveBattleSessionAdvanceMode({

@@ -61,6 +61,11 @@ import {
 import {
   buildBattleFinishedRealtimePayload,
 } from "./runtime/realtime.js";
+import {
+  applyTowerPostBattleResourceChange,
+  settleTowerBattle,
+} from "../tower/service.js";
+import { getTowerBattleRuntime } from "../tower/runtime.js";
 
 type ResolvedSettlementParticipants = {
   participants: BattleParticipant[];
@@ -96,6 +101,10 @@ const loadDungeonBattleRewardEligibleCharacterIdSet = async (battleId: string): 
 export async function getBattleMonsters(engine: BattleEngine): Promise<MonsterData[]> {
   const state = engine.getState();
   if (state.battleType !== "pve") return [];
+  const towerRuntime = getTowerBattleRuntime(state.battleId);
+  if (towerRuntime) {
+    return towerRuntime.monsters;
+  }
   const orderedIds = state.teams.defender.units
     .filter((u) => u.type === "monster")
     .map((u) => String(u.sourceId))
@@ -176,6 +185,7 @@ async function finishBattleCore(
   const participantCount = Math.max(1, participants.length);
   const isVictory = result.result === "attacker_win";
   const isDungeonBattle = battleId.startsWith("dungeon-battle-");
+  const isTowerBattle = getTowerBattleRuntime(battleId) !== null;
   const rewardEligibleCharacterIdSet = isDungeonBattle
     ? await loadDungeonBattleRewardEligibleCharacterIdSet(battleId)
     : null;
@@ -187,24 +197,61 @@ async function finishBattleCore(
       );
 
   let dropResult: DistributeResult | null = null;
+  let towerRewardsData: {
+    exp: number;
+    silver: number;
+    totalExp: number;
+    totalSilver: number;
+    participantCount: number;
+    items: Array<{
+      itemDefId: string;
+      name: string;
+      quantity: number;
+      receiverId: number;
+    }>;
+    perPlayerRewards: Array<{
+      characterId: number;
+      userId: number;
+      exp: number;
+      silver: number;
+      items: Array<{
+        itemDefId: string;
+        itemName: string;
+        quantity: number;
+        instanceIds: number[];
+      }>;
+    }>;
+  } | null = null;
 
   if (state.battleType === "pve") {
     if (isVictory) {
-      dropResult = await battleDropService.distributeBattleRewards(
-        monsters,
-        rewardParticipants,
-        true,
-        { isDungeonBattle },
-      );
-
-      for (const participant of participants) {
-        const computed = await getCharacterComputedByCharacterId(participant.characterId);
-        if (!computed) continue;
-        const healAmount = Math.floor(computed.max_qixue * 0.3);
-        await setCharacterResourcesByCharacterId(participant.characterId, {
-          qixue: Math.min(computed.max_qixue, computed.qixue + healAmount),
-          lingqi: computed.lingqi,
+      if (isTowerBattle) {
+        await applyTowerPostBattleResourceChange({
+          battleId,
+          result: result.result as "attacker_win" | "defender_win" | "draw",
         });
+        towerRewardsData = await settleTowerBattle({
+          battleId,
+          result: result.result as "attacker_win" | "defender_win" | "draw",
+          participants: rewardParticipants,
+        });
+      } else {
+        dropResult = await battleDropService.distributeBattleRewards(
+          monsters,
+          rewardParticipants,
+          true,
+          { isDungeonBattle },
+        );
+
+        for (const participant of participants) {
+          const computed = await getCharacterComputedByCharacterId(participant.characterId);
+          if (!computed) continue;
+          const healAmount = Math.floor(computed.max_qixue * 0.3);
+          await setCharacterResourcesByCharacterId(participant.characterId, {
+            qixue: Math.min(computed.max_qixue, computed.qixue + healAmount),
+            lingqi: computed.lingqi,
+          });
+        }
       }
 
       try {
@@ -227,35 +274,55 @@ async function finishBattleCore(
         console.warn("[battle] 记录击杀怪物事件失败:", error);
       }
     } else if (result.result === "defender_win") {
-      for (const participant of participants) {
-        const computed = await getCharacterComputedByCharacterId(participant.characterId);
-        if (!computed) continue;
-        const loss = Math.floor(computed.max_qixue * 0.1);
-        await applyCharacterResourceDeltaByCharacterId(
-          participant.characterId,
-          { qixue: -loss },
-          { minQixue: 1 },
-        );
+      if (isTowerBattle) {
+        await applyTowerPostBattleResourceChange({
+          battleId,
+          result: result.result as "attacker_win" | "defender_win" | "draw",
+        });
+        await settleTowerBattle({
+          battleId,
+          result: result.result as "attacker_win" | "defender_win" | "draw",
+          participants: rewardParticipants,
+        });
+      } else {
+        for (const participant of participants) {
+          const computed = await getCharacterComputedByCharacterId(participant.characterId);
+          if (!computed) continue;
+          const loss = Math.floor(computed.max_qixue * 0.1);
+          await applyCharacterResourceDeltaByCharacterId(
+            participant.characterId,
+            { qixue: -loss },
+            { minQixue: 1 },
+          );
+        }
       }
+    } else if (isTowerBattle && result.result === "draw") {
+      await settleTowerBattle({
+        battleId,
+        result: result.result as "attacker_win" | "defender_win" | "draw",
+        participants: rewardParticipants,
+      });
     }
   }
 
-  const rewardsData = dropResult
-    ? {
-        exp: dropResult.rewards.exp,
-        silver: dropResult.rewards.silver,
-        totalExp: dropResult.rewards.exp,
-        totalSilver: dropResult.rewards.silver,
-        participantCount: rewardParticipants.length,
-        items: dropResult.rewards.items.map((item) => ({
-          itemDefId: item.itemDefId,
-          name: item.itemName,
-          quantity: item.quantity,
-          receiverId: item.receiverId,
-        })),
-        perPlayerRewards: dropResult.perPlayerRewards,
-      }
-    : null;
+  const rewardsData = towerRewardsData ?? (
+    dropResult
+      ? {
+          exp: dropResult.rewards.exp,
+          silver: dropResult.rewards.silver,
+          totalExp: dropResult.rewards.exp,
+          totalSilver: dropResult.rewards.silver,
+          participantCount: rewardParticipants.length,
+          items: dropResult.rewards.items.map((item) => ({
+            itemDefId: item.itemDefId,
+            name: item.itemName,
+            quantity: item.quantity,
+            receiverId: item.receiverId,
+          })),
+          perPlayerRewards: dropResult.perPlayerRewards,
+        }
+      : null
+  );
 
   // 秘境战斗跳过冷却：波次之间无冷却间隔，结算包也不再向客户端下发冷却元数据。
   let cooldownUntilMs: number | null = null;

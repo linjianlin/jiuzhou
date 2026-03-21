@@ -21,7 +21,7 @@
  * 2) `currentBattleId` 为空表示当前会话没有进行中的单场战斗，调用方必须看 `nextAction/status` 决定后续动作。
  */
 
-export type BattleSessionType = 'pve' | 'dungeon' | 'pvp';
+export type BattleSessionType = 'pve' | 'dungeon' | 'pvp' | 'tower';
 
 export type BattleSessionStatus =
   | 'running'
@@ -50,10 +50,16 @@ export interface PvpBattleSessionContext {
   mode: 'arena' | 'challenge';
 }
 
+export interface TowerBattleSessionContext {
+  runId: string;
+  floor: number;
+}
+
 export type BattleSessionContext =
   | PveBattleSessionContext
   | DungeonBattleSessionContext
-  | PvpBattleSessionContext;
+  | PvpBattleSessionContext
+  | TowerBattleSessionContext;
 
 export interface BattleSessionRecord {
   sessionId: string;

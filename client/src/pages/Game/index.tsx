@@ -36,6 +36,7 @@ import WarehouseModal from './modules/WarehouseModal';
 import SignInModal from './modules/SignInModal';
 import PartnerModal from './modules/PartnerModal';
 import WanderModal from './modules/WanderModal';
+import TowerModal from './modules/TowerModal';
 import { useIdleBattle, IdleBattlePanel, IdleBattleStatusBar } from './modules/IdleBattle';
 import type { IdleSessionDto } from './modules/IdleBattle/types';
 import {
@@ -78,6 +79,7 @@ import type {
   TaskOverviewSummaryRowDto,
   TechniqueResearchResultStatusDto,
   BattleSessionSnapshotDto,
+  BattleStateDto,
 } from '../../services/api';
 import { getMainQuestProgress, startDialogue, advanceDialogue, selectDialogueChoice, completeSection, type DialogueState, type MainQuestProgressDto } from '../../services/mainQuestApi';
 import { PARTNER_FEATURE_CODE } from '../../services/feature';
@@ -724,6 +726,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [arenaModalOpen, setArenaModalOpen] = useState(false);
   const [rankModalOpen, setRankModalOpen] = useState(false);
   const [achievementModalOpen, setAchievementModalOpen] = useState(false);
+  const [towerModalOpen, setTowerModalOpen] = useState(false);
   const [achievementClaimableCount, setAchievementClaimableCount] = useState(0);
   const [taskCompletableCount, setTaskCompletableCount] = useState(0);
   const [realmModalOpen, setRealmModalOpen] = useState(false);
@@ -1468,6 +1471,36 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     return handleAdvanceBattleSession;
   }, [handleAdvanceBattleSession, sessionAdvanceMode]);
 
+  const battleNextLabel = useMemo(() => {
+    if (activeBattleSession?.type === 'tower' && activeBattleSession.nextAction === 'advance') {
+      return '下一层';
+    }
+    return '继续';
+  }, [activeBattleSession]);
+
+  const battleEscapeLabel = useMemo(() => {
+    if (activeBattleSession?.type === 'tower' && activeBattleSession.status === 'waiting_transition') {
+      return '结束挑战';
+    }
+    return '逃跑';
+  }, [activeBattleSession]);
+
+  const battleStatusTextOverride = useMemo(() => {
+    if (activeBattleSession?.type !== 'tower') return undefined;
+    const context = activeBattleSession.context;
+    if (!('floor' in context)) return undefined;
+    if (activeBattleSession.status === 'waiting_transition' && activeBattleSession.nextAction === 'advance') {
+      return `第${context.floor}层已通关，可继续挑战下一层`;
+    }
+    if (activeBattleSession.status === 'waiting_transition' && activeBattleSession.nextAction === 'return_to_map') {
+      return `第${context.floor}层挑战结束，可返回地图整理状态`;
+    }
+    if (activeBattleSession.status === 'running') {
+      return `正在挑战第${context.floor}层`;
+    }
+    return undefined;
+  }, [activeBattleSession]);
+
   /**
    * 控制 BattleArea 是否允许“无 externalBattleId 时本地自动开战”。
    *
@@ -1490,6 +1523,15 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const bindBattleSkillCaster = useCallback((caster: (skillId: string, targetType?: string) => Promise<boolean>) => {
     battleSkillCasterRef.current = caster;
   }, []);
+
+  const handleTowerChallengeStarted = useCallback((payload: {
+    session: BattleSessionSnapshotDto;
+    state?: BattleStateDto;
+  }) => {
+    setBattleEnemies([]);
+    setBattleAllies(buildAllyGroup(character));
+    activateBattleSessionContext(payload.session);
+  }, [activateBattleSessionContext, character]);
 
   const handleBattleTurnChange = useCallback(
     (turnCount: number, turnSide: 'enemy' | 'ally', actionKey: string, activeUnitId: string | null, phase: string | null) => {
@@ -2200,6 +2242,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const genderValue = String(character?.gender ?? '').trim().toLowerCase();
   const isFemale = genderValue === 'female' || genderValue === 'f' || genderValue === '女';
   const equipPortrait = isFemale ? equipFemale : equipMale;
+  const openTowerModal = useCallback(() => {
+    setTowerModalOpen(true);
+  }, []);
   const handleFunctionMenuAction = (key: string) => {
     if (key === 'map') {
       setMapModalCategory('world');
@@ -2209,6 +2254,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       setMapModalCategory('dungeon');
       setMapModalOpen(true);
     }
+    if (key === 'tower') openTowerModal();
     if (key === 'bag') setBagModalOpen(true);
     if (key === 'partner') {
       if (!partnerUnlocked) {
@@ -2279,6 +2325,19 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }
     return Object.keys(out).length > 0 ? out : undefined;
   }, [achievementClaimableCount, isTeamLeader, sectMyApplicationCount, sectPendingApplicationCount, taskCompletableCount, teamApplicationUnread, techniqueIndicatorStatus]);
+
+  const towerRoomHeaderAction = useMemo(
+    () => (
+      currentRoomId === 'room-collapsed-tower'
+        ? {
+            label: '进入千层塔',
+            disabled: false,
+            onClick: openTowerModal,
+          }
+        : undefined
+    ),
+    [currentRoomId, openTowerModal],
+  );
 
   const functionItemStates = useMemo(
     () => ({
@@ -2455,7 +2514,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                         allowAutoNext={allowAutoNextBattle}
                         advanceMode={battleAdvanceMode}
                         onNext={battleOnNext}
-                        nextLabel="继续"
+                        nextLabel={battleNextLabel}
+                        escapeLabel={battleEscapeLabel}
+                        statusTextOverride={battleStatusTextOverride}
                         onAppendBattleLines={appendBattleLinesToChat}
                         onSessionChange={handleBattleSessionChange}
                         onBindSkillCaster={bindBattleSkillCaster}
@@ -2481,19 +2542,21 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                           children: (
                             <div className={`game-top-tab-panel${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
                               {viewMode === 'battle' ? (
-                                <BattleArea
-                                  enemies={battleEnemies}
-                                  allies={battleAllies}
-                                  onNotify={notifyBattleArea}
-                                  allowLocalStart={allowLocalBattleStart}
-                                  externalBattleId={externalBattleId}
-                                  allowAutoNext={allowAutoNextBattle}
-                                  advanceMode={battleAdvanceMode}
-                                  onNext={battleOnNext}
-                                  nextLabel="继续"
-                                  onAppendBattleLines={appendBattleLinesToChat}
-                                  onSessionChange={handleBattleSessionChange}
-                                  onBindSkillCaster={bindBattleSkillCaster}
+                                  <BattleArea
+                                    enemies={battleEnemies}
+                                    allies={battleAllies}
+                                    onNotify={notifyBattleArea}
+                                    allowLocalStart={allowLocalBattleStart}
+                                    externalBattleId={externalBattleId}
+                                    allowAutoNext={allowAutoNextBattle}
+                                    advanceMode={battleAdvanceMode}
+                                    onNext={battleOnNext}
+                                    nextLabel={battleNextLabel}
+                                    escapeLabel={battleEscapeLabel}
+                                    statusTextOverride={battleStatusTextOverride}
+                                    onAppendBattleLines={appendBattleLinesToChat}
+                                    onSessionChange={handleBattleSessionChange}
+                                    onBindSkillCaster={bindBattleSkillCaster}
                                   onEscape={
                                     !inTeam || isTeamLeader
                                       ? handleBattleEscape
@@ -2507,6 +2570,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                                     currentMapId={currentMapId}
                                     currentRoomId={currentRoomId}
                                     trackedRoomIds={trackedRoomIds}
+                                    headerAction={towerRoomHeaderAction}
                                     onMove={(next) => {
                                       setCurrentMapId(next.mapId);
                                       setCurrentRoomId(next.roomId);
@@ -2559,19 +2623,21 @@ const Game: FC<GameProps> = ({ onLogout }) => {
               <div className="game-desktop-main-column">
                 <div className={`game-map-area${isMobileBattleMode ? ' is-mobile-battle' : ''}`}>
                   {viewMode === 'battle' ? (
-                    <BattleArea
-                      enemies={battleEnemies}
-                      allies={battleAllies}
-                      onNotify={notifyBattleArea}
-                      allowLocalStart={allowLocalBattleStart}
-                      externalBattleId={externalBattleId}
-                      allowAutoNext={allowAutoNextBattle}
-                      advanceMode={battleAdvanceMode}
-                      onNext={battleOnNext}
-                      nextLabel="继续"
-                      onAppendBattleLines={appendBattleLinesToChat}
-                      onSessionChange={handleBattleSessionChange}
-                      onBindSkillCaster={bindBattleSkillCaster}
+                      <BattleArea
+                        enemies={battleEnemies}
+                        allies={battleAllies}
+                        onNotify={notifyBattleArea}
+                        allowLocalStart={allowLocalBattleStart}
+                        externalBattleId={externalBattleId}
+                        allowAutoNext={allowAutoNextBattle}
+                        advanceMode={battleAdvanceMode}
+                        onNext={battleOnNext}
+                        nextLabel={battleNextLabel}
+                        escapeLabel={battleEscapeLabel}
+                        statusTextOverride={battleStatusTextOverride}
+                        onAppendBattleLines={appendBattleLinesToChat}
+                        onSessionChange={handleBattleSessionChange}
+                        onBindSkillCaster={bindBattleSkillCaster}
                       onEscape={
                         !inTeam || isTeamLeader
                           ? handleBattleEscape
@@ -2585,6 +2651,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                         currentMapId={currentMapId}
                         currentRoomId={currentRoomId}
                         trackedRoomIds={trackedRoomIds}
+                        headerAction={towerRoomHeaderAction}
                         onMove={(next) => {
                           setCurrentMapId(next.mapId);
                           setCurrentRoomId(next.roomId);
@@ -3178,6 +3245,12 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           }}
         />
       )}
+      <TowerModal
+        open={towerModalOpen}
+        inTeam={inTeam}
+        onClose={() => setTowerModalOpen(false)}
+        onChallengeStarted={handleTowerChallengeStarted}
+      />
       {realmModalOpen && (
         <RealmModal open={realmModalOpen} onClose={() => setRealmModalOpen(false)} character={character} />
       )}

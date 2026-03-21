@@ -2,7 +2,7 @@ import type { AxiosRequestConfig } from 'axios';
 import api from './core';
 import type { BattleStateDto } from './combat-realm';
 
-export type BattleSessionTypeDto = 'pve' | 'dungeon' | 'pvp';
+export type BattleSessionTypeDto = 'pve' | 'dungeon' | 'pvp' | 'tower';
 
 export type BattleSessionStatusDto =
   | 'running'
@@ -26,7 +26,8 @@ export interface BattleSessionSnapshotDto {
   context:
     | { monsterIds: string[] }
     | { instanceId: string }
-    | { opponentCharacterId: number; mode: 'arena' | 'challenge' };
+    | { opponentCharacterId: number; mode: 'arena' | 'challenge' }
+    | { runId: string; floor: number };
 }
 
 export interface BattleSessionResponse {

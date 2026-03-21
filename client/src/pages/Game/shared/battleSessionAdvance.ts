@@ -63,6 +63,10 @@ export const resolveBattleSessionAdvanceMode = (params: {
     return 'manual_session';
   }
 
+  if (session.type === 'tower') {
+    return 'manual_session';
+  }
+
   if (session.type === 'pve' && session.nextAction === 'advance') {
     return 'auto_session_cooldown';
   }

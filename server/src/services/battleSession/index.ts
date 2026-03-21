@@ -10,6 +10,7 @@ export type {
   BattleSessionSnapshot,
   BattleSessionStatus,
   BattleSessionType,
+  TowerBattleSessionContext,
 } from './types.js';
 
 export {
