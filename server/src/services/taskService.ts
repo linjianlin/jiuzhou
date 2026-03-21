@@ -35,6 +35,7 @@ import {
   resolveRewardItemDisplayMetaMap,
   type RewardItemDisplayMeta,
 } from './shared/rewardDisplay.js';
+import { resolveNpcTalkGreetingLines } from './shared/npcTalkGreeting.js';
 import { buildTaskRecurringUnlockState } from './shared/taskRecurringUnlock.js';
 import { notifyTaskOverviewUpdate } from './taskOverviewPush.js';
 
@@ -1500,13 +1501,31 @@ export const npcTalk = async (
 
   await recordTalkNpcEvent(cid, nid);
 
-  const lines: string[] = [];
+  const mainQuestRes = await query(
+    `SELECT current_section_id, section_status FROM character_main_quest_progress WHERE character_id = $1 LIMIT 1`,
+    [cid],
+  );
+  const currentSectionId = asNonEmptyString(mainQuestRes.rows?.[0]?.current_section_id);
+  const sectionStatus = (mainQuestRes.rows?.[0]?.section_status ?? 'not_started') as
+    | 'not_started'
+    | 'dialogue'
+    | 'objectives'
+    | 'turnin'
+    | 'completed';
+
+  let talkTreeLines: string[] = [];
   if (talkTreeId) {
     const talkTree = getTalkTreeDefinitions().find((entry) => entry.enabled !== false && entry.id === talkTreeId);
     if (talkTree && Array.isArray(talkTree.greeting_lines)) {
-      lines.push(...talkTree.greeting_lines.map((x) => String(x ?? '').trim()).filter(Boolean));
+      talkTreeLines = talkTree.greeting_lines.map((x) => String(x ?? '').trim()).filter(Boolean);
     }
   }
+  const lines = resolveNpcTalkGreetingLines({
+    npcId: nid,
+    currentSectionId,
+    currentSectionStatus: sectionStatus,
+    talkTreeLines,
+  });
   if (lines.length === 0) {
     lines.push(`${npcName}看着你，没有多说什么。`);
   }
@@ -1570,23 +1589,10 @@ export const npcTalk = async (
 
   // 查询主线任务
   let mainQuest: NpcTalkMainQuestOption | undefined;
-  const mainQuestRes = await query(
-    `SELECT current_section_id, section_status FROM character_main_quest_progress WHERE character_id = $1 LIMIT 1`,
-    [cid],
-  );
-
   if (mainQuestRes.rows?.[0]) {
-    const currentSectionId = asNonEmptyString(mainQuestRes.rows[0].current_section_id);
     const section = currentSectionId ? getMainQuestSectionById(currentSectionId) : null;
     const chapter = section ? getMainQuestChapterById(section.chapter_id) : null;
     if (section && section.enabled !== false && chapter && chapter.enabled !== false && section.npc_id === nid) {
-      const sectionStatus = (mainQuestRes.rows[0].section_status ?? 'not_started') as
-        | 'not_started'
-        | 'dialogue'
-        | 'objectives'
-        | 'turnin'
-        | 'completed';
-
       // 判断是否可以开始对话（未开始或对话中）
       const canStartDialogue = sectionStatus === 'not_started' || sectionStatus === 'dialogue';
       // 判断是否可以完成（可交付状态）
