@@ -22,6 +22,7 @@ import type { MonsterData } from '../../battle/battleFactory.js';
 import { getMonsterDefinitions, type MonsterDefConfig } from '../staticConfigLoader.js';
 import { REALM_ORDER, normalizeRealmStrict } from '../shared/realmRules.js';
 import { pickDeterministicItem, pickDeterministicIndex } from '../shared/deterministicHash.js';
+import { resolveTowerAttrMultiplier } from './difficulty.js';
 import type { ResolvedTowerFloor, TowerFloorKind } from './types.js';
 
 const TOWER_CYCLE_FLOORS = 10;
@@ -155,25 +156,6 @@ const resolveMonsterCountForFloor = (params: {
   return 2 + extraCount;
 };
 
-const resolveAttrMultiplierForFloor = (params: {
-  floor: number;
-  kind: TowerFloorKind;
-  overflowTierCount: number;
-}): number => {
-  const cycleIndex = Math.floor((params.floor - 1) / TOWER_CYCLE_FLOORS);
-  const floorOffset = (params.floor - 1) % TOWER_CYCLE_FLOORS;
-  const kindMultiplier =
-    params.kind === 'boss'
-      ? 1.22
-      : params.kind === 'elite'
-        ? 1.1
-        : 1;
-  const cycleMultiplier = 1 + cycleIndex * 0.12;
-  const floorOffsetMultiplier = 1 + floorOffset * 0.018;
-  const overflowMultiplier = 1 + params.overflowTierCount * 0.16;
-  return Number((kindMultiplier * cycleMultiplier * floorOffsetMultiplier * overflowMultiplier).toFixed(6));
-};
-
 const buildTowerMonsterForFloor = (params: {
   monster: MonsterDefConfig;
   kind: TowerFloorKind;
@@ -213,7 +195,7 @@ export const resolveTowerFloor = (params: {
     throw new Error(`千层塔楼层缺少怪物候选: floor=${floor}, kind=${kind}, realm=${realm}`);
   }
 
-  const attrMultiplier = resolveAttrMultiplierForFloor({
+  const attrMultiplier = resolveTowerAttrMultiplier({
     floor,
     kind,
     overflowTierCount,
