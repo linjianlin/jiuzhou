@@ -59,6 +59,12 @@ import {
   invalidateCharacterComputedCache,
 } from "../characterComputedService.js";
 import { queueInventoryItemWritebackSnapshot } from "../playerWritebackCacheService.js";
+import type { PlayerStateJsonValue } from "../playerStateTypes.js";
+import {
+  loadPlayerCharacterStateByCharacterId,
+  loadPlayerInventoryStateByItemId,
+  loadPlayerInventoryStatesByCharacterId,
+} from "../playerStateRepository.js";
 import {
   getRealmRankOneBasedForEquipment,
   getRealmRankOneBasedStrict,
@@ -109,7 +115,7 @@ const toPendingInventorySnapshot = (
     equipped_slot: item.equippedSlot,
     strengthen_level: item.strengthenLevel,
     refine_level: item.refineLevel,
-    affixes: item.affixes,
+    affixes: item.affixes as PlayerStateJsonValue,
     affix_gen_version: item.affixGenVersion,
   };
 };
@@ -131,29 +137,10 @@ export const equipItem = async (
   await lockCharacterInventoryMutex(characterId);
 
   const beforeSetBonus = await getEquippedSetBonusDelta(characterId);
-
-  const itemResult = await query(
-    `
-      SELECT ii.id, ii.qty, ii.location, ii.location_slot, ii.locked, ii.item_def_id
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      FOR UPDATE
-    `,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0) {
+  const item = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!item) {
     return { success: false, message: "物品不存在" };
   }
-
-  const item = itemResult.rows[0] as {
-    id: number;
-    qty: number;
-    location: InventoryLocation;
-    location_slot: number | null;
-    locked: boolean;
-    item_def_id: string;
-  };
 
   const itemDef = getStaticItemDef(item.item_def_id);
   if (!itemDef) {
@@ -190,28 +177,13 @@ export const equipItem = async (
       ? itemDef.equip_req_realm.trim()
       : "";
   if (equipRequiredRealm) {
-    const characterRealmResult = await query(
-      `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-        FOR UPDATE
-        LIMIT 1
-      `,
-      [characterId],
-    );
-
-    if (characterRealmResult.rows.length === 0) {
+    const characterState = await loadPlayerCharacterStateByCharacterId(characterId);
+    if (!characterState) {
       return { success: false, message: "角色不存在" };
     }
-
-    const characterRealm = characterRealmResult.rows[0] as {
-      realm: string;
-      sub_realm: string | null;
-    };
     const characterRealmRank = getRealmRankOneBasedStrict(
-      characterRealm.realm,
-      characterRealm.sub_realm,
+      characterState.realm,
+      characterState.sub_realm,
     );
     const equipRequiredRealmRank =
       getEquipRealmRankForReroll(equipRequiredRealm);
@@ -231,19 +203,18 @@ export const equipItem = async (
     return { success: false, message: "装备数据异常" };
   }
 
-  const currentlyEquippedResult = await query(
-    `
-      SELECT ii.id
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.location = 'equipped' AND ii.equipped_slot = $2
-      FOR UPDATE
-    `,
-    [characterId, equipSlot],
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(
+    characterId,
+  );
+  const equippedItem = inventoryStates.find(
+    (state) =>
+      state.location === "equipped" &&
+      state.equipped_slot === equipSlot,
   );
 
   let swappedOutItemId: number | undefined;
-  if (currentlyEquippedResult.rows.length > 0) {
-    swappedOutItemId = Number(currentlyEquippedResult.rows[0].id);
+  if (equippedItem) {
+    swappedOutItemId = Number(equippedItem.id);
     if (Number.isFinite(swappedOutItemId)) {
       const oldDelta = await getEquipmentAttrDeltaByInstanceId(
         characterId,
@@ -257,17 +228,14 @@ export const equipItem = async (
       if (emptySlots.length === 0) {
         return { success: false, message: "背包已满，无法替换装备" };
       }
-
-      await query(
-        `
-          UPDATE item_instance
-          SET location = 'bag',
-              location_slot = $1,
-              equipped_slot = NULL,
-              updated_at = NOW()
-          WHERE id = $2 AND owner_character_id = $3
-        `,
-        [emptySlots[0], swappedOutItemId, characterId],
+      await queueInventoryItemWritebackSnapshot(
+        characterId,
+        equippedItem,
+        {
+          location: "bag",
+          location_slot: emptySlots[0],
+          equipped_slot: null,
+        },
       );
 
       await applyCharacterAttrDelta(
@@ -277,34 +245,20 @@ export const equipItem = async (
     }
   }
 
-  await query(
-    `
-      UPDATE item_instance
-      SET location = 'equipped',
-          location_slot = NULL,
-          equipped_slot = $1,
-          bind_type = CASE
-            WHEN bind_type = 'none' AND $2 = 'equip' THEN 'equip'
-            ELSE bind_type
-          END,
-          bind_owner_user_id = CASE
-            WHEN bind_type = 'none' AND $2 = 'equip' THEN $3
-            ELSE bind_owner_user_id
-          END,
-          bind_owner_character_id = CASE
-            WHEN bind_type = 'none' AND $2 = 'equip' THEN $4
-            ELSE bind_owner_character_id
-          END,
-          updated_at = NOW()
-      WHERE id = $5 AND owner_character_id = $4
-    `,
-    [
-      equipSlot,
-      String(itemDef.bind_type || "none"),
-      userId,
-      characterId,
-      itemInstanceId,
-    ],
+  const nextBindType =
+    item.bind_type === "none" && String(itemDef.bind_type || "none") === "equip"
+      ? "equip"
+      : item.bind_type;
+  void userId;
+  await queueInventoryItemWritebackSnapshot(
+    characterId,
+    item,
+    {
+      location: "equipped",
+      location_slot: null,
+      equipped_slot: equipSlot,
+      bind_type: nextBindType,
+    },
   );
 
   await applyCharacterAttrDelta(characterId, newItemDelta);
@@ -339,27 +293,10 @@ export const unequipItem = async (
   await lockCharacterInventoryMutex(characterId);
 
   const beforeSetBonus = await getEquippedSetBonusDelta(characterId);
-
-  const itemResult = await query(
-    `
-      SELECT id, location, equipped_slot, locked
-      FROM item_instance
-      WHERE id = $1 AND owner_character_id = $2
-      FOR UPDATE
-    `,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0) {
+  const item = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!item) {
     return { success: false, message: "物品不存在" };
   }
-
-  const item = itemResult.rows[0] as {
-    id: number;
-    location: InventoryLocation;
-    equipped_slot: string | null;
-    locked: boolean;
-  };
 
   if (item.locked) {
     return { success: false, message: "物品已锁定" };
@@ -392,16 +329,14 @@ export const unequipItem = async (
 
   const slot = emptySlots[0];
 
-  await query(
-    `
-      UPDATE item_instance
-      SET location = $1,
-          location_slot = $2,
-          equipped_slot = NULL,
-          updated_at = NOW()
-      WHERE id = $3 AND owner_character_id = $4
-    `,
-    [targetLocation, slot, itemInstanceId, characterId],
+  await queueInventoryItemWritebackSnapshot(
+    characterId,
+    item,
+    {
+      location: targetLocation,
+      location_slot: slot,
+      equipped_slot: null,
+    },
   );
 
   await applyCharacterAttrDelta(characterId, invertDelta(delta));
@@ -506,13 +441,13 @@ export const enhanceEquipment = async (
         : curLv;
 
   if (success) {
-    queueInventoryItemWritebackSnapshot(
+    await queueInventoryItemWritebackSnapshot(
       characterId,
       toPendingInventorySnapshot(characterId, item),
       { strengthen_level: targetLv },
     );
   } else if (downgraded) {
-    queueInventoryItemWritebackSnapshot(
+    await queueInventoryItemWritebackSnapshot(
       characterId,
       toPendingInventorySnapshot(characterId, item),
       { strengthen_level: resultLevel ?? 0 },
@@ -520,7 +455,7 @@ export const enhanceEquipment = async (
   } else if (destroyed) {
     if (String(item.location) === "equipped") {
       const beforeSetBonus = await getEquippedSetBonusDelta(characterId);
-      queueInventoryItemWritebackSnapshot(
+      await queueInventoryItemWritebackSnapshot(
         characterId,
         toPendingInventorySnapshot(characterId, item),
         null,
@@ -537,7 +472,7 @@ export const enhanceEquipment = async (
       mergeDelta(setBonusDelta, invertDelta(beforeSetBonus));
       await applyCharacterAttrDelta(characterId, setBonusDelta);
     } else {
-      queueInventoryItemWritebackSnapshot(
+      await queueInventoryItemWritebackSnapshot(
         characterId,
         toPendingInventorySnapshot(characterId, item),
         null,
@@ -667,7 +602,7 @@ export const refineEquipment = async (
     : getRefineFailResultLevel(curLv, targetLv);
 
   if (resultLevel !== curLv) {
-    queueInventoryItemWritebackSnapshot(
+    await queueInventoryItemWritebackSnapshot(
       characterId,
       toPendingInventorySnapshot(characterId, item),
       { refine_level: resultLevel },
@@ -785,24 +720,10 @@ export const getEquipmentGrowthCostPreview = async (
     ? null
     : buildRefineCostPlan(refineTargetLevel, equipReqRealmRank);
 
-  const itemRowResult = await query(
-    `
-      SELECT ii.item_def_id, ii.quality, ii.quality_rank, ii.socketed_gems
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      LIMIT 1
-    `,
-    [itemInstanceId, characterId],
-  );
-  if (itemRowResult.rows.length <= 0) {
+  const itemRow = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!itemRow) {
     return { success: false, message: "物品不存在" };
   }
-  const itemRow = itemRowResult.rows[0] as {
-    item_def_id: string;
-    quality: string | null;
-    quality_rank: number | null;
-    socketed_gems: unknown;
-  };
   const itemDef = getStaticItemDef(itemRow.item_def_id);
   if (!itemDef || itemDef.category !== "equipment") {
     return { success: false, message: "该物品不可强化" };
@@ -898,22 +819,8 @@ export const getRerollCostPreview = async (
     }>;
   };
 }> => {
-  const row = await query(
-    `SELECT ii.item_def_id, ii.affixes, ii.locked, ii.location, ii.qty
-     FROM item_instance ii
-     WHERE ii.id = $1 AND ii.owner_character_id = $2
-     LIMIT 1`,
-    [itemInstanceId, characterId],
-  );
-  if (row.rows.length === 0) return { success: false, message: '物品不存在' };
-
-  const r = row.rows[0] as {
-    item_def_id: string;
-    affixes: unknown;
-    locked: boolean;
-    location: string;
-    qty: number;
-  };
+  const r = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!r) return { success: false, message: '物品不存在' };
 
   const itemDef = getStaticItemDef(r.item_def_id);
   if (!itemDef || itemDef.category !== 'equipment')
@@ -987,23 +894,8 @@ export const getAffixPoolPreview = async (
     }>;
   };
 }> => {
-  const row = await query(
-    `SELECT ii.item_def_id, ii.affixes, ii.locked, ii.location, ii.qty, ii.quality_rank
-     FROM item_instance ii
-     WHERE ii.id = $1 AND ii.owner_character_id = $2
-     LIMIT 1`,
-    [itemInstanceId, characterId],
-  );
-  if (row.rows.length === 0) return { success: false, message: '物品不存在' };
-
-  const r = row.rows[0] as {
-    item_def_id: string;
-    affixes: unknown;
-    locked: boolean;
-    location: string;
-    qty: number;
-    quality_rank: number | null;
-  };
+  const r = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!r) return { success: false, message: '物品不存在' };
 
   const itemDef = getStaticItemDef(r.item_def_id);
   if (!itemDef || itemDef.category !== 'equipment')
@@ -1190,7 +1082,7 @@ export const rerollEquipmentAffixes = async (
       return { success: false, message: currencyRes.message };
     }
 
-    queueInventoryItemWritebackSnapshot(
+    await queueInventoryItemWritebackSnapshot(
       characterId,
       toPendingInventorySnapshot(characterId, item),
       {

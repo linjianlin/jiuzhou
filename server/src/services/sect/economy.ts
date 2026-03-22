@@ -15,9 +15,31 @@ import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, toNumber } from './db.js';
 import { invalidateSectInfoCache } from './cache.js';
 import { recordSectDonateEventTx } from './quests.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from '../playerWritebackCacheService.js';
 import type { DonateResult } from './types.js';
 
 const SPIRIT_STONE_TO_CONTRIBUTION_RATIO = 10;
+
+const loadSectEconomySpiritStones = async (characterId: number): Promise<number | null> => {
+  const characterRow = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate: true });
+  if (!characterRow) return null;
+  return Math.max(0, Math.floor(toNumber(characterRow.spirit_stones)));
+};
+
+const spendSectEconomySpiritStones = async (
+  characterId: number,
+  currentSpiritStones: number,
+  donatedSpiritStones: number,
+): Promise<number> => {
+  const nextSpiritStones = currentSpiritStones - donatedSpiritStones;
+  await queueCharacterWritebackSnapshot(characterId, {
+    spirit_stones: nextSpiritStones,
+  });
+  return nextSpiritStones;
+};
 
 /**
  * 宗门经济服务类
@@ -52,19 +74,15 @@ class SectEconomyService {
 
     const member = await assertMember(characterId);
 
-    const charRes = await query(`SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE`, [characterId]);
-    if (charRes.rows.length === 0) {
+    const curSpiritStones = await loadSectEconomySpiritStones(characterId);
+    if (curSpiritStones === null) {
       return { success: false, message: '角色不存在' };
     }
-    const curSpiritStones = toNumber(charRes.rows[0].spirit_stones);
     if (curSpiritStones < donatedSpiritStones) {
       return { success: false, message: '灵石不足' };
     }
 
-    await query(`UPDATE characters SET spirit_stones = spirit_stones - $2, updated_at = NOW() WHERE id = $1`, [
-      characterId,
-      donatedSpiritStones,
-    ]);
+    await spendSectEconomySpiritStones(characterId, curSpiritStones, donatedSpiritStones);
 
     const addedContribution = donatedSpiritStones * SPIRIT_STONE_TO_CONTRIBUTION_RATIO;
     const addedFunds = addedContribution;

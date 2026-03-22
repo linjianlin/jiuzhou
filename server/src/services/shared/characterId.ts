@@ -5,7 +5,7 @@
  * - `primeCharacterIdByUserIdCache` / `invalidateCharacterIdByUserIdCache`：缓存维护。
  * 返回：有效角色ID或 `null`。
  */
-import { query } from '../../config/database.js';
+import { loadCharacterWritebackRowByUserId } from '../playerWritebackCacheService.js';
 import { createCacheLayer } from './cacheLayer.js';
 
 const CHARACTER_ID_BY_USER_KEY_PREFIX = 'character:id:user:';
@@ -29,8 +29,8 @@ const characterIdByUserIdCache = createCacheLayer<number, number>({
   redisTtlSec: CHARACTER_ID_BY_USER_REDIS_TTL_SEC,
   memoryTtlMs: CHARACTER_ID_BY_USER_MEMORY_TTL_MS,
   loader: async (userId) => {
-    const result = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [userId]);
-    return normalizeCharacterId(result.rows?.[0]?.id);
+    const character = await loadCharacterWritebackRowByUserId(userId);
+    return normalizeCharacterId(character?.id);
   },
 });
 
@@ -47,8 +47,8 @@ export const getCharacterIdByUserIdForUpdate = async (
   const uid = normalizeUserId(userId);
   if (!uid) return null;
 
-  const result = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE', [uid]);
-  return normalizeCharacterId(result.rows?.[0]?.id);
+  const character = await loadCharacterWritebackRowByUserId(uid, { forUpdate: true });
+  return normalizeCharacterId(character?.id);
 };
 
 export const primeCharacterIdByUserIdCache = async (

@@ -1,7 +1,7 @@
 /**
  * 装备状态验证模块
  *
- * 作用：在强化/精炼/洗炼操作前，查询并校验装备实例的状态（存在性、锁定、位置、类别等），
+ * 作用：在强化/精炼/洗炼操作前，读取并校验装备实例的状态（存在性、锁定、位置、类别等），
  *       返回规范化的状态对象供后续操作使用。
  *
  * 输入/输出：
@@ -10,15 +10,14 @@
  * - getRerollItemState(characterId, itemInstanceId) — 洗炼前校验
  *
  * 数据流：
- * - 查询 item_instance 表（FOR UPDATE 行锁）→ 加载静态定义 → 校验各项条件 → 返回状态
+ * - 读取 Redis 主状态中的装备实例 → 加载静态定义 → 校验各项条件 → 返回状态
  *
  * 被引用方：equipment.ts（enhanceEquipment、refineEquipment、rerollEquipmentAffixes）
  *
  * 边界条件：
- * 1. 所有查询均使用 FOR UPDATE 行锁，必须在事务上下文中调用
+ * 1. 所有校验统一从 Redis 主状态读取，不能回退到 item_instance 实时真值
  * 2. auction 位置的装备不可操作（交易中）
  */
-import { query } from "../../../config/database.js";
 import {
   REFINE_MAX_LEVEL,
   normalizeEnhanceLevel,
@@ -28,9 +27,48 @@ import {
 } from "../../equipmentAffixRerollService.js";
 import { resolveQualityRankFromName } from "../../shared/itemQuality.js";
 import type { GeneratedAffix } from "../../equipmentService.js";
-import { applyPendingInventoryItemWritebackRow } from "../../playerWritebackCacheService.js";
+import { loadPlayerInventoryStateByItemId } from "../../playerStateRepository.js";
 import type { InventoryLocation } from "./types.js";
 import { clampInt, getStaticItemDef } from "./helpers.js";
+
+type ValidatedEquipmentState = {
+  id: number;
+  qty: number;
+  location: InventoryLocation | string;
+  location_slot: number | null;
+  equipped_slot: string | null;
+  locked: boolean;
+  strengthen_level: number | null;
+  refine_level: number | null;
+  affixes: unknown;
+  affix_gen_version: number | null;
+  item_def_id: string;
+  quality?: string | null;
+  quality_rank?: number | null;
+};
+
+const loadValidatedEquipmentState = async (
+  characterId: number,
+  itemInstanceId: number,
+): Promise<ValidatedEquipmentState | null> => {
+  const item = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!item) return null;
+  return {
+    id: item.id,
+    qty: item.qty,
+    location: item.location,
+    location_slot: item.location_slot,
+    equipped_slot: item.equipped_slot,
+    locked: item.locked,
+    strengthen_level: item.strengthen_level,
+    refine_level: item.refine_level,
+    affixes: item.affixes,
+    affix_gen_version: item.affix_gen_version,
+    item_def_id: item.item_def_id,
+    quality: item.quality,
+    quality_rank: item.quality_rank,
+  };
+};
 
 /**
  * 强化前装备状态校验
@@ -57,44 +95,7 @@ export const getEnhanceItemState = async (
     itemDefId: string;
   };
 }> => {
-  const itemResult = await query(
-    `
-      SELECT
-        ii.id,
-        ii.qty,
-        ii.location,
-        ii.location_slot,
-        ii.equipped_slot,
-        ii.locked,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.affixes,
-        ii.affix_gen_version,
-        ii.item_def_id
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0)
-    return { success: false, message: "物品不存在" };
-
-  const row = applyPendingInventoryItemWritebackRow(characterId, itemResult.rows[0] as {
-    id: number;
-    qty: number;
-    location: InventoryLocation | string;
-    location_slot: number | null;
-    equipped_slot: string | null;
-    locked: boolean;
-    strengthen_level: number;
-    refine_level: number;
-    affixes: unknown;
-    affix_gen_version: number | null;
-    item_def_id: string;
-  });
+  const row = await loadValidatedEquipmentState(characterId, itemInstanceId);
   if (!row)
     return { success: false, message: "物品不存在" };
 
@@ -158,44 +159,7 @@ export const getRefineItemState = async (
     itemDefId: string;
   };
 }> => {
-  const itemResult = await query(
-    `
-      SELECT
-        ii.id,
-        ii.qty,
-        ii.location,
-        ii.location_slot,
-        ii.equipped_slot,
-        ii.locked,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.affixes,
-        ii.affix_gen_version,
-        ii.item_def_id
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0)
-    return { success: false, message: "物品不存在" };
-
-  const row = applyPendingInventoryItemWritebackRow(characterId, itemResult.rows[0] as {
-    id: number;
-    qty: number;
-    location: InventoryLocation | string;
-    location_slot: number | null;
-    equipped_slot: string | null;
-    locked: boolean;
-    strengthen_level: number;
-    refine_level: number;
-    affixes: unknown;
-    affix_gen_version: number | null;
-    item_def_id: string;
-  });
+  const row = await loadValidatedEquipmentState(characterId, itemInstanceId);
   if (!row)
     return { success: false, message: "物品不存在" };
 
@@ -265,48 +229,7 @@ export const getRerollItemState = async (
     itemDefId: string;
   };
 }> => {
-  const itemResult = await query(
-    `
-      SELECT
-        ii.id,
-        ii.qty,
-        ii.location,
-        ii.location_slot,
-        ii.equipped_slot,
-        ii.locked,
-        ii.affixes,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.affix_gen_version,
-        ii.item_def_id,
-        ii.quality,
-        ii.quality_rank
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0)
-    return { success: false, message: "物品不存在" };
-
-  const row = applyPendingInventoryItemWritebackRow(characterId, itemResult.rows[0] as {
-    id: number;
-    qty: number;
-    location: InventoryLocation | string;
-    location_slot: number | null;
-    equipped_slot: string | null;
-    locked: boolean;
-    affixes: unknown;
-    strengthen_level: number;
-    refine_level: number;
-    affix_gen_version: number | null;
-    item_def_id: string;
-    quality: string | null;
-    quality_rank: number | null;
-  });
+  const row = await loadValidatedEquipmentState(characterId, itemInstanceId);
   if (!row)
     return { success: false, message: "物品不存在" };
 

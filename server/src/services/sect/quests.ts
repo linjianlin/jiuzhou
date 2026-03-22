@@ -4,6 +4,8 @@ import { assertMember, toNumber } from './db.js';
 import type { ClaimSectQuestResult, Result, SectQuest, SubmitSectQuestResult } from './types.js';
 import { getItemDefinitions } from '../staticConfigLoader.js';
 import { hashTextU32 } from '../shared/deterministicHash.js';
+import { loadPlayerInventoryStatesByCharacterId } from '../playerStateRepository.js';
+import { consumeMaterialByDefId } from '../inventory/shared/consume.js';
 
 type QuestProgressEvent = 'donate_spirit_stones' | 'shop_buy_count';
 type SubmitQuestPool = 'item' | 'material' | 'consumable';
@@ -327,41 +329,23 @@ const consumeItemDefQtyTx = async (
   qty: number
 ): Promise<{ success: boolean; message: string; consumed: number }> => {
   const requested = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
-  const rowsRes = await query<{ id: number; qty: number }>(
-    `
-      SELECT id, qty
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND item_def_id = $2
-        AND locked = false
-        AND location IN ('bag', 'warehouse')
-      ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, qty DESC, id ASC
-      FOR UPDATE
-    `,
-    [characterId, itemDefId]
-  );
-
-  const rows = rowsRes.rows;
-  const available = rows.reduce((sum, row) => sum + Math.max(0, toNumber(row.qty)), 0);
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const available = inventoryStates
+    .filter(
+      (row) =>
+        row.item_def_id === itemDefId &&
+        !row.locked &&
+        (row.location === 'bag' || row.location === 'warehouse'),
+    )
+    .reduce((sum, row) => sum + Math.max(0, toNumber(row.qty)), 0);
   if (available <= 0) {
     return { success: false, message: '可提交物品不足', consumed: 0 };
   }
 
   const consumeTarget = Math.min(requested, available);
-  let remaining = consumeTarget;
-  for (const row of rows) {
-    if (remaining <= 0) break;
-    const rowQty = Math.max(0, toNumber(row.qty));
-    if (rowQty <= 0) continue;
-
-    if (rowQty <= remaining) {
-      await query(`DELETE FROM item_instance WHERE id = $1`, [row.id]);
-      remaining -= rowQty;
-      continue;
-    }
-
-    await query(`UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2`, [remaining, row.id]);
-    remaining = 0;
+  const consumeResult = await consumeMaterialByDefId(characterId, itemDefId, consumeTarget);
+  if (!consumeResult.success) {
+    return { success: false, message: consumeResult.message, consumed: 0 };
   }
 
   return { success: true, message: '提交成功', consumed: consumeTarget };

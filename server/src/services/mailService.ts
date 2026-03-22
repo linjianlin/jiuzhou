@@ -41,6 +41,12 @@ import {
 } from './autoDisassembleRewardService.js';
 import { normalizeAutoDisassembleSetting } from './autoDisassembleRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
+import { getCharacterIdByUserId } from './shared/characterId.js';
 
 // ============================================
 // 类型定义
@@ -113,6 +119,11 @@ type ClaimInstanceRow = {
   item_def_id: string;
   qty: number;
   bind_type: string;
+};
+
+type MailCurrencyState = {
+  silver: number;
+  spiritStones: number;
 };
 
 const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_rewards IS NOT NULL OR attach_instance_ids IS NOT NULL)';
@@ -359,18 +370,8 @@ class MailService {
       characterIds.add(directCharacterId);
     }
 
-    const characterResult = await query(
-      `
-        SELECT id
-        FROM characters
-        WHERE user_id = $1
-      `,
-      [recipientUserId],
-    );
-
-    for (const row of characterResult.rows as Array<{ id?: unknown }>) {
-      const characterId = Number(row.id);
-      if (!Number.isInteger(characterId) || characterId <= 0) continue;
+    const characterId = await getCharacterIdByUserId(recipientUserId);
+    if (typeof characterId === 'number' && Number.isInteger(characterId) && characterId > 0) {
       characterIds.add(characterId);
     }
 
@@ -504,6 +505,7 @@ class MailService {
           .filter((itemDefId) => itemDefId.length > 0),
       ),
     );
+    const uniqueItemDefIdSet = new Set(uniqueItemDefIds);
     if (uniqueItemDefIds.length === 0) {
       throw new Error('实例附件缺少有效 item_def_id，无法估算格子');
     }
@@ -521,23 +523,16 @@ class MailService {
       );
     }
 
-    const bagResult = await query(
-      `
-        SELECT item_def_id, bind_type, qty
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'bag'
-          AND item_def_id = ANY($2::varchar[])
-      `,
-      [characterId, uniqueItemDefIds],
-    );
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
 
     const keyOf = (itemDefId: string, bindType: string): string =>
       `${itemDefId}::${bindType}`;
     const freeCapByGroup = new Map<string, number[]>();
 
-    for (const row of bagResult.rows) {
+    for (const row of inventoryStates) {
+      if (row.location !== 'bag') continue;
       const itemDefId = String(row.item_def_id || '').trim();
+      if (!uniqueItemDefIdSet.has(itemDefId)) continue;
       if (!itemDefId) continue;
 
       const stackMax = stackMaxByItemDefId.get(itemDefId);
@@ -616,25 +611,52 @@ class MailService {
     autoDisassemble: boolean,
   ): Promise<AutoDisassembleSetting | null> {
     if (!autoDisassemble) return null;
-
-    const result = await query<{ auto_disassemble_rules: unknown }>(
-      `
-        SELECT auto_disassemble_rules
-        FROM characters
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [characterId],
-    );
-
-    if (result.rows.length === 0) {
-      return null;
-    }
+    const characterRow = await loadCharacterWritebackRowByCharacterId(characterId);
+    if (!characterRow) return null;
 
     return normalizeAutoDisassembleSetting({
       enabled: true,
-      rules: result.rows[0].auto_disassemble_rules,
+      rules: characterRow.auto_disassemble_rules,
     });
+  }
+
+  /**
+   * 统一把邮件相关货币增量写回角色 Redis 状态。
+   *
+   * 作用：
+   * - 把“先读角色当前货币，再累加，再写回”的逻辑集中到单一入口，避免领取附件和自动分解回银两各写一套。
+   * - 只处理邮件链路的 `silver/spiritStones` 增量，不改动背包或其它角色字段。
+   *
+   * 输入/输出：
+   * - 输入：角色 ID、银两增量、灵石增量。
+   * - 输出：写回后的新余额；如果角色不存在则返回 `null`。
+   *
+   * 数据流/状态流：
+   * - 业务层 -> 读取 Redis 角色状态 -> 计算新余额 -> `queueCharacterWritebackSnapshot` -> Redis。
+   *
+   * 关键边界条件与坑点：
+   * 1) 任何调用方都必须在成功后再拼接奖励返回值，避免把旧余额发回前端。
+   * 2) 这里不做余额兜底或修正，调用方传入的增量必须已经是业务校验后的正数。
+   */
+  private async applyMailCurrencyDelta(
+    characterId: number,
+    silverDelta: number,
+    spiritStonesDelta: number,
+  ): Promise<MailCurrencyState | null> {
+    const currentCharacterRow = await loadCharacterWritebackRowByCharacterId(characterId);
+    if (!currentCharacterRow) return null;
+
+    const nextSilver = Number(currentCharacterRow.silver ?? 0) + silverDelta;
+    const nextSpiritStones = Number(currentCharacterRow.spirit_stones ?? 0) + spiritStonesDelta;
+    await queueCharacterWritebackSnapshot(characterId, {
+      silver: nextSilver,
+      spirit_stones: nextSpiritStones,
+    });
+
+    return {
+      silver: nextSilver,
+      spiritStones: nextSpiritStones,
+    };
   }
 
   /**
@@ -1060,19 +1082,22 @@ class MailService {
       }
     } else if (hasItems) {
       if (attachInstanceIds.length > 0) {
-        const lockedInstanceResult = await query<ClaimInstanceRow>(
-          `
-            SELECT id, item_def_id, qty, bind_type
-            FROM item_instance
-            WHERE id = ANY($1::bigint[])
-              AND owner_user_id = $2
-              AND owner_character_id = $3
-              AND location = 'mail'
-            FOR UPDATE
-          `,
-          [attachInstanceIds, userId, characterId],
+        const inventoryStates = await loadPlayerInventoryStatesByCharacterId(
+          characterId,
         );
-        lockedInstanceRows = lockedInstanceResult.rows;
+        const attachInstanceIdSet = new Set(attachInstanceIds);
+        lockedInstanceRows = inventoryStates
+          .filter((state) =>
+            attachInstanceIdSet.has(state.id) &&
+            state.owner_character_id === characterId &&
+            state.location === 'mail',
+          )
+          .map((state) => ({
+            id: state.id,
+            item_def_id: state.item_def_id,
+            qty: state.qty,
+            bind_type: state.bind_type ?? 'none',
+          }));
 
         const lockedIds = new Set(lockedInstanceRows.map((row) => Number(row.id)));
         for (const attachInstanceId of attachInstanceIds) {
@@ -1140,11 +1165,14 @@ class MailService {
       );
     } else if (hasItems || hasCurrency) {
       if (hasCurrency) {
-        await query(`
-          UPDATE characters
-          SET silver = silver + $1, spirit_stones = spirit_stones + $2, updated_at = NOW()
-          WHERE id = $3
-        `, [mail.attach_silver, mail.attach_spirit_stones, characterId]);
+        const currencyState = await this.applyMailCurrencyDelta(
+          characterId,
+          Number(mail.attach_silver) || 0,
+          Number(mail.attach_spirit_stones) || 0,
+        );
+        if (!currencyState) {
+          return { success: false, message: '角色不存在' };
+        }
 
         if (mail.attach_silver > 0) rewards.push({ type: 'silver', amount: mail.attach_silver });
         if (mail.attach_spirit_stones > 0) rewards.push({ type: 'spirit_stones', amount: mail.attach_spirit_stones });
@@ -1225,14 +1253,10 @@ class MailService {
                 );
               },
               addSilver: async (targetCharacterId, silverAmount) => {
-                await query(
-                  `
-                    UPDATE characters
-                    SET silver = silver + $1, updated_at = NOW()
-                    WHERE id = $2
-                  `,
-                  [silverAmount, targetCharacterId],
-                );
+                const currencyState = await this.applyMailCurrencyDelta(targetCharacterId, silverAmount, 0);
+                if (!currencyState) {
+                  return { success: false, message: '角色不存在' };
+                }
                 return { success: true, message: 'ok' };
               },
               sourceEquipOptions: attachItem.options?.equipOptions,

@@ -35,6 +35,10 @@ import {
 import { resolveQualityRankFromName } from '../shared/itemQuality.js';
 import { lockCharacterRewardSettlementTargets } from '../shared/characterRewardTargetLock.js';
 import { getDungeonDifficultyById, getItemDefinitionById } from '../staticConfigLoader.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from '../playerWritebackCacheService.js';
 import { getDungeonDefById } from './shared/configLoader.js';
 import { touchEntryCount, incEntryCount } from './shared/entryCount.js';
 import {
@@ -141,7 +145,7 @@ export const startDungeonInstance = async (
       }
     }
 
-    const participantStaminaMaxMap = new Map<number, number>();
+    const participantStaminaStateMap = new Map<number, Awaited<ReturnType<typeof applyStaminaRecoveryTx>>>();
     if (staminaCost > 0) {
       for (const p of staminaConsumingParticipants) {
         const participantLabel = buildParticipantLabel(p, participantNicknameMap);
@@ -150,8 +154,7 @@ export const startDungeonInstance = async (
           return { success: false, message: `${participantLabel}不存在` };
         }
         const stamina = asNumber(staminaState.stamina, 0);
-        const staminaMax = asNumber(staminaState.maxStamina, 0);
-        participantStaminaMaxMap.set(p.characterId, staminaMax);
+        participantStaminaStateMap.set(p.characterId, staminaState);
         if (stamina < staminaCost) {
           return { success: false, message: `${participantLabel}体力不足，需要${staminaCost}，当前${stamina}` };
         }
@@ -178,22 +181,19 @@ export const startDungeonInstance = async (
       if (staminaCost > 0) {
         for (const p of staminaConsumingParticipants) {
           const participantLabel = buildParticipantLabel(p, participantNicknameMap);
-          const staminaMaxRaw = participantStaminaMaxMap.get(p.characterId);
-          const staminaMax = Math.floor(Number(staminaMaxRaw) || 0);
-          if (staminaMax <= 0) {
+          const staminaState = participantStaminaStateMap.get(p.characterId);
+          if (!staminaState) {
             return { success: false, message: `${participantLabel}体力上限数据缺失` };
           }
-          const updRes = await query(
-            `UPDATE characters
-                SET stamina = stamina - $1,
-                    stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
-                    updated_at = CURRENT_TIMESTAMP
-              WHERE id = $2 AND stamina >= $1`,
-            [staminaCost, p.characterId, staminaMax]
-          );
-          if ((updRes.rowCount ?? 0) === 0) {
-            return { success: false, message: `${participantLabel}体力扣除失败` };
-          }
+          const nextStamina = Math.max(0, Math.floor(Number(staminaState.stamina) || 0) - staminaCost);
+          const nextRecoverAt =
+            (Math.floor(Number(staminaState.stamina) || 0) >= Math.floor(Number(staminaState.maxStamina) || 0))
+              ? new Date()
+              : staminaState.staminaRecoverAt;
+          await queueCharacterWritebackSnapshot(p.characterId, {
+            stamina: nextStamina,
+            stamina_recover_at: nextRecoverAt.toISOString(),
+          });
         }
       }
 
@@ -427,26 +427,17 @@ export const nextDungeonInstance = async (
             clearCountMap.set(asNumber(row.character_id, 0), asNumber(row.cnt, 0));
           }
 
-          const settingRes = await query(
-            `
-              SELECT id, auto_disassemble_enabled, auto_disassemble_rules
-              FROM characters
-              WHERE id = ANY($1)
-            `,
-            [participantCharacterIds]
+          const characterSettings = await Promise.all(
+            participantCharacterIds.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
           );
-          for (const row of settingRes.rows as Array<{
-            id: unknown;
-            auto_disassemble_enabled: boolean | null;
-            auto_disassemble_rules: unknown;
-          }>) {
-            const id = asNumber(row.id, 0);
+          for (const row of characterSettings) {
+            const id = asNumber(row?.id, 0);
             if (!Number.isFinite(id) || id <= 0) continue;
             autoDisassembleSettings.set(
               id,
               normalizeAutoDisassembleSetting({
-                enabled: row.auto_disassemble_enabled,
-                rules: row.auto_disassemble_rules,
+                enabled: row?.auto_disassemble_enabled,
+                rules: row?.auto_disassemble_rules,
               })
             );
           }

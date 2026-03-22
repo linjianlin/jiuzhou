@@ -10,6 +10,8 @@ import { recordCraftItemEvent } from './taskService.js';
 import { REALM_ORDER } from './shared/realmRules.js';
 import { normalizeRecipeRateToPercent, normalizeRecipeRateToRatio } from './shared/recipeRate.js';
 import { getItemDefinitionById, getItemDefinitionsByIds, getItemRecipeById, getItemRecipeDefinitionsByType } from './staticConfigLoader.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
+import { consumeSpecificItemInstance } from './inventory/shared/consume.js';
 
 type CraftRecipeType = 'craft' | 'refine' | 'decompose' | 'upgrade' | string;
 
@@ -239,22 +241,14 @@ const getUnlockedItemCounts = async (
   const ids = Array.from(new Set(itemDefIds.map((x) => x.trim()).filter(Boolean)));
   const map = new Map<string, number>();
   if (ids.length === 0) return map;
-  const res = await query(
-    `
-      SELECT item_def_id, SUM(qty)::bigint AS qty
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND item_def_id = ANY($2::varchar[])
-        AND location IN ('bag', 'warehouse')
-        AND locked = false
-      GROUP BY item_def_id
-    `,
-    [characterId, ids],
-  );
-  for (const row of res.rows ?? []) {
-    const itemDefId = asString((row as Record<string, unknown>).item_def_id);
-    if (!itemDefId) continue;
-    map.set(itemDefId, clampInt((row as Record<string, unknown>).qty, 0, Number.MAX_SAFE_INTEGER));
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const idSet = new Set(ids);
+  for (const item of inventoryStates) {
+    const itemDefId = asString(item.item_def_id);
+    if (!itemDefId || !idSet.has(itemDefId)) continue;
+    if (item.locked) continue;
+    if (!['bag', 'warehouse'].includes(asString(item.location))) continue;
+    map.set(itemDefId, (map.get(itemDefId) ?? 0) + clampInt(item.qty, 0, Number.MAX_SAFE_INTEGER));
   }
   return map;
 };
@@ -311,24 +305,23 @@ const consumeMaterialByDefIdTx = async (
   qty: number,
 ): Promise<{ success: boolean; message: string }> => {
   const need = clampInt(qty, 1, 999999);
-  const rowsRes = await query(
-    `
-      SELECT id, qty, locked
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND item_def_id = $2
-        AND location IN ('bag', 'warehouse')
-      ORDER BY qty DESC, id ASC
-      FOR UPDATE
-    `,
-    [characterId, itemDefId],
-  );
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const rows = inventoryStates
+    .filter((item) => (
+      asString(item.item_def_id) === itemDefId &&
+      ['bag', 'warehouse'].includes(asString(item.location))
+    ))
+    .map((item) => ({
+      id: clampInt(item.id, 0, Number.MAX_SAFE_INTEGER),
+      qty: clampInt(item.qty, 0, 999999),
+      locked: Boolean(item.locked),
+    }))
+    .sort((left, right) => right.qty - left.qty || left.id - right.id);
 
-  if (!rowsRes.rows?.length) {
+  if (rows.length <= 0) {
     return { success: false, message: `${itemDefId}数量不足` };
   }
 
-  const rows = rowsRes.rows as Array<{ id: number; qty: number; locked: boolean }>;
   const available = rows.filter((row) => !row.locked).reduce((sum, row) => sum + clampInt(row.qty, 0, 999999), 0);
   if (available < need) return { success: false, message: `${itemDefId}数量不足` };
 
@@ -339,10 +332,9 @@ const consumeMaterialByDefIdTx = async (
     const rowQty = clampInt(row.qty, 0, 999999);
     if (rowQty <= 0) continue;
     const consume = Math.min(rowQty, remaining);
-    if (consume >= rowQty) {
-      await query(`DELETE FROM item_instance WHERE id = $1`, [row.id]);
-    } else {
-      await query(`UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2`, [consume, row.id]);
+    const consumeResult = await consumeSpecificItemInstance(characterId, row.id, consume);
+    if (!consumeResult.success) {
+      return { success: false, message: consumeResult.message };
     }
     remaining -= consume;
   }
@@ -615,11 +607,11 @@ class CraftService {
       }
     }
 
-    const characterRes = await query(
-      `SELECT exp, silver, spirit_stones FROM characters WHERE id = $1 LIMIT 1`,
-      [character.id],
-    );
-    const charRow = (characterRes.rows?.[0] ?? {}) as Record<string, unknown>;
+    const remainingCharacter = {
+      exp: Math.max(0, character.exp - totalExpCost),
+      silver: Math.max(0, character.silver - totalSilverCost),
+      spiritStones: Math.max(0, character.spiritStones - totalSpiritCost),
+    };
     const productCategory = asString(recipe.product_category);
     const productSubCategory = asString(recipe.product_sub_category);
     const craftKind = inferCraftKind(recipeType, productCategory, productSubCategory);
@@ -654,9 +646,9 @@ class CraftService {
         returnedItems,
         produced,
         character: {
-          exp: clampInt(charRow.exp, 0, Number.MAX_SAFE_INTEGER),
-          silver: clampInt(charRow.silver, 0, Number.MAX_SAFE_INTEGER),
-          spiritStones: clampInt(charRow.spirit_stones, 0, Number.MAX_SAFE_INTEGER),
+          exp: remainingCharacter.exp,
+          silver: remainingCharacter.silver,
+          spiritStones: remainingCharacter.spiritStones,
         },
       },
     };

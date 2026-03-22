@@ -39,6 +39,7 @@ import {
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { lockCharacterRewardSettlementTargets } from './shared/characterRewardTargetLock.js';
 import { getRealmOrderIndex } from './shared/realmRules.js';
+import { loadCharacterWritebackRowByCharacterId } from './playerWritebackCacheService.js';
 
 // ============================================
 // 类型定义
@@ -702,19 +703,11 @@ class BattleDropService {
     const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
 
     if (requiresInventoryMutation && participantCharacterIds.length > 0) {
-      const settingResult = await query(
-        `
-          SELECT id, auto_disassemble_enabled, auto_disassemble_rules
-          FROM characters
-          WHERE id = ANY($1)
-        `,
-        [participantCharacterIds]
+      const settingRows = await Promise.all(
+        participantCharacterIds.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
       );
-      for (const row of settingResult.rows as Array<{
-        id: number;
-        auto_disassemble_enabled: boolean | null;
-        auto_disassemble_rules: unknown;
-      }>) {
+      for (const row of settingRows) {
+        if (!row) continue;
         autoDisassembleSettings.set(
           Number(row.id),
           normalizeAutoDisassembleSetting({

@@ -2,6 +2,12 @@ import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { getGameServer } from '../game/gameServer.js';
 import { updateAchievementProgress } from './achievementService.js';
+import { consumeSpecificItemInstance } from './inventory/shared/consume.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
+import {
+  loadCharacterWritebackRowByUserId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
 import { invalidateStaminaCache } from './staminaCacheService.js';
 import {
   DEFAULT_MONTH_CARD_ITEM_DEF_ID,
@@ -73,6 +79,35 @@ const normalizeDateKey = (v: unknown) => {
   return '';
 };
 
+const pickMonthCardItemInstanceId = async (
+  characterId: number,
+  itemDefId: string,
+  options?: { itemInstanceId?: number; itemDefId?: string },
+): Promise<number | null> => {
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const monthCardItems = inventoryStates.filter((item) => {
+    return (
+      item.item_def_id === itemDefId &&
+      item.location === 'bag' &&
+      !item.locked &&
+      Number(item.qty) > 0
+    );
+  });
+
+  if (Number.isInteger(options?.itemInstanceId) && Number(options?.itemInstanceId) > 0) {
+    const selectedItem = monthCardItems.find((item) => item.id === Number(options?.itemInstanceId));
+    return selectedItem ? selectedItem.id : null;
+  }
+
+  const [earliestItem] = monthCardItems.sort((left, right) => {
+    const leftTime = left.created_at ? Date.parse(left.created_at) : Number.MAX_SAFE_INTEGER;
+    const rightTime = right.created_at ? Date.parse(right.created_at) : Number.MAX_SAFE_INTEGER;
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return left.id - right.id;
+  });
+  return earliestItem ? earliestItem.id : null;
+};
+
 const asNumber = (v: unknown, fallback: number) => {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : fallback;
@@ -82,10 +117,10 @@ const defaultDailySpiritStones = 10000;
 
 class MonthCardService {
   async getMonthCardStatus(userId: number, monthCardId: string): Promise<MonthCardStatusResult> {
-    const charRes = await query(`SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1`, [userId]);
-    if (charRes.rows.length === 0) return { success: false, message: '角色不存在' };
-    const characterId = Number(charRes.rows[0].id);
-    const spiritStones = Number(charRes.rows[0].spirit_stones ?? 0);
+    const characterRow = await loadCharacterWritebackRowByUserId(userId);
+    if (!characterRow) return { success: false, message: '角色不存在' };
+    const characterId = Number(characterRow.id);
+    const spiritStones = Number(characterRow.spirit_stones ?? 0);
 
     const def = getMonthCardDefinitionById(monthCardId);
     if (!def) return { success: false, message: '月卡不存在' };
@@ -146,61 +181,20 @@ class MonthCardService {
 
     const durationDays = asNumber(monthCardDef.duration_days, 30);
 
-    const charRes = await query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
-    if (charRes.rows.length === 0) {
+    const characterRow = await loadCharacterWritebackRowByUserId(userId, { forUpdate: true });
+    if (!characterRow) {
       return { success: false, message: '角色不存在' };
     }
-    const characterId = Number(charRes.rows[0].id);
+    const characterId = Number(characterRow.id);
 
     const itemDefId = options?.itemDefId || DEFAULT_MONTH_CARD_ITEM_DEF_ID;
-
-    let itemInstanceRow: { id: number; qty: number } | null = null;
-    if (Number.isInteger(options?.itemInstanceId) && Number(options?.itemInstanceId) > 0) {
-      const instanceResult = await query(
-        `
-          SELECT id, qty
-          FROM item_instance
-          WHERE id = $1
-            AND owner_character_id = $2
-            AND item_def_id = $3
-            AND location = 'bag'
-          LIMIT 1
-          FOR UPDATE
-        `,
-        [Number(options?.itemInstanceId), characterId, itemDefId],
-      );
-      if (instanceResult.rows.length > 0) {
-        itemInstanceRow = { id: Number(instanceResult.rows[0].id), qty: Number(instanceResult.rows[0].qty) };
-      }
-    } else {
-      const instanceResult = await query(
-        `
-          SELECT id, qty
-          FROM item_instance
-          WHERE owner_character_id = $1
-            AND item_def_id = $2
-            AND location = 'bag'
-          ORDER BY created_at ASC
-          LIMIT 1
-          FOR UPDATE
-        `,
-        [characterId, itemDefId],
-      );
-      if (instanceResult.rows.length > 0) {
-        itemInstanceRow = { id: Number(instanceResult.rows[0].id), qty: Number(instanceResult.rows[0].qty) };
-      }
-    }
-
-    if (!itemInstanceRow || !Number.isFinite(itemInstanceRow.qty) || itemInstanceRow.qty <= 0) {
+    const itemInstanceId = await pickMonthCardItemInstanceId(characterId, itemDefId, options);
+    if (!itemInstanceId) {
       return { success: false, message: '背包中没有可用的月卡道具' };
     }
-    if (itemInstanceRow.qty === 1) {
-      await query(`DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2`, [itemInstanceRow.id, characterId]);
-    } else {
-      await query(`UPDATE item_instance SET qty = qty - 1, updated_at = NOW() WHERE id = $1 AND owner_character_id = $2`, [
-        itemInstanceRow.id,
-        characterId,
-      ]);
+    const consumeRes = await consumeSpecificItemInstance(characterId, itemInstanceId, 1);
+    if (!consumeRes.success) {
+      return { success: false, message: consumeRes.message };
     }
 
     const ownRes = await query(
@@ -268,24 +262,21 @@ class MonthCardService {
     const durationDays = asNumber(monthCardDef.duration_days, 30);
     const priceSpiritStones = BigInt(monthCardDef.price_spirit_stones ?? 0);
 
-    const charRes = await query(`SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
-    if (charRes.rows.length === 0) {
+    const currentCharacterRow = await loadCharacterWritebackRowByUserId(userId, { forUpdate: true });
+    if (!currentCharacterRow) {
       return { success: false, message: '角色不存在' };
     }
-    const characterId = Number(charRes.rows[0].id);
-    const curStones = BigInt(charRes.rows[0]?.spirit_stones ?? 0);
+    const characterId = Number(currentCharacterRow.id);
+    const curStones = BigInt(Number(currentCharacterRow.spirit_stones ?? 0));
     if (priceSpiritStones > 0n && curStones < priceSpiritStones) {
       return { success: false, message: `灵石不足，需要${priceSpiritStones.toString()}` };
     }
 
-    let nextStones = curStones;
-    if (priceSpiritStones > 0n) {
-      const updated = await query(
-        `UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2 RETURNING spirit_stones`,
-        [priceSpiritStones.toString(), characterId],
-      );
-      nextStones = BigInt(updated.rows[0]?.spirit_stones ?? nextStones);
-    }
+    const nextStones = curStones - priceSpiritStones;
+    await queueCharacterWritebackSnapshot(characterId, {
+      ...currentCharacterRow,
+      spirit_stones: Number(nextStones),
+    });
 
     const ownRes = await query(
       `
@@ -340,11 +331,11 @@ class MonthCardService {
       return { success: false, message: '月卡不存在或未启用' };
     }
 
-    const charRes = await query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
-    if (charRes.rows.length === 0) {
+    const currentCharacterRow = await loadCharacterWritebackRowByUserId(userId, { forUpdate: true });
+    if (!currentCharacterRow) {
       return { success: false, message: '角色不存在' };
     }
-    const characterId = Number(charRes.rows[0].id);
+    const characterId = Number(currentCharacterRow.id);
 
     const reward = asNumber(monthCardDef.daily_spirit_stones, defaultDailySpiritStones);
 
@@ -382,10 +373,11 @@ class MonthCardService {
       [characterId, monthCardId, todayKey, reward],
     );
 
-    const updated = await query(
-      `UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2 RETURNING spirit_stones`,
-      [reward, characterId],
-    );
+    const nextSpiritStones = Number(currentCharacterRow.spirit_stones ?? 0) + reward;
+    await queueCharacterWritebackSnapshot(characterId, {
+      ...currentCharacterRow,
+      spirit_stones: nextSpiritStones,
+    });
 
     await query(
       `UPDATE month_card_ownership SET last_claim_date = $1::date, updated_at = NOW() WHERE id = $2`,
@@ -399,7 +391,7 @@ class MonthCardService {
         monthCardId,
         date: todayKey,
         rewardSpiritStones: reward,
-        spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
+        spiritStones: nextSpiritStones,
       },
     };
   }

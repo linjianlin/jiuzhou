@@ -3,6 +3,10 @@ import { Transactional } from '../decorators/transactional.js';
 import { addItemToInventory } from './inventory/index.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
+import {
   getBattlePassStaticConfig,
   type BattlePassRewardEntry,
 } from './staticConfigLoader.js';
@@ -169,6 +173,43 @@ const toBattlePassRewardItemDtos = (
   return rewards
     .map((reward) => toBattlePassRewardItemDto(reward))
     .filter((reward): reward is BattlePassRewardItemDto => reward !== null);
+};
+
+const applyBattlePassCurrencyRewards = async (
+  characterId: number,
+  forUpdate: boolean,
+  rewardEntries: BattlePassRewardEntry[],
+): Promise<{ spiritStones: number; silver: number } | null> => {
+  const current = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate });
+  if (!current) return null;
+
+  let nextSpiritStones = Number(current.spirit_stones ?? 0);
+  let nextSilver = Number(current.silver ?? 0);
+  let hasCurrencyReward = false;
+
+  for (const reward of rewardEntries) {
+    if (reward.type !== 'currency') continue;
+    const amount = Math.max(0, Number(reward.amount) || 0);
+    if (amount <= 0) continue;
+    hasCurrencyReward = true;
+    if (reward.currency === 'spirit_stones') {
+      nextSpiritStones += amount;
+    } else if (reward.currency === 'silver') {
+      nextSilver += amount;
+    }
+  }
+
+  if (hasCurrencyReward) {
+    await queueCharacterWritebackSnapshot(characterId, {
+      spirit_stones: nextSpiritStones,
+      silver: nextSilver,
+    });
+  }
+
+  return {
+    spiritStones: nextSpiritStones,
+    silver: nextSilver,
+  };
 };
 
 const getResolvedSeasonFromStaticConfig = (seasonId?: string, now: Date = new Date()) => {
@@ -534,26 +575,9 @@ class BattlePassService {
     const rewards = toBattlePassRewardItemDtos(rewardEntries);
 
     // 发放奖励
-    let spiritStonesGained = 0;
-    let silverGained = 0;
 
     for (const reward of rewardEntries) {
-      if (reward.type === 'currency') {
-        const amount = Number(reward.amount) || 0;
-        if (reward.currency === 'spirit_stones' && amount > 0) {
-          await query(
-            `UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`,
-            [amount, characterId],
-          );
-          spiritStonesGained += amount;
-        } else if (reward.currency === 'silver' && amount > 0) {
-          await query(
-            `UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`,
-            [amount, characterId],
-          );
-          silverGained += amount;
-        }
-      } else if (reward.type === 'item') {
+      if (reward.type === 'item') {
         const itemDefId = reward.item_def_id;
         const qty = Number(reward.qty) || 1;
         if (itemDefId && qty > 0) {
@@ -574,11 +598,10 @@ class BattlePassService {
       [characterId, seasonId, level, track],
     );
 
-    // 获取更新后的灵石和银两数量
-    const charRes = await query(
-      `SELECT spirit_stones, silver FROM characters WHERE id = $1`,
-      [characterId],
-    );
+    const currencyState = await applyBattlePassCurrencyRewards(characterId, true, rewardEntries);
+    if (!currencyState) {
+      return { success: false, message: '角色不存在' };
+    }
     return {
       success: true,
       message: '领取成功',
@@ -586,8 +609,8 @@ class BattlePassService {
         level,
         track,
         rewards,
-        spiritStones: Number(charRes.rows[0]?.spirit_stones ?? 0),
-        silver: Number(charRes.rows[0]?.silver ?? 0),
+        spiritStones: currencyState.spiritStones,
+        silver: currencyState.silver,
       },
     };
   }

@@ -1,6 +1,10 @@
 import { HolidayUtil } from 'lunar-typescript';
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
+import {
+  loadCharacterWritebackRowByUserId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
 
 export interface SignInRecordDto {
   date: string;
@@ -228,8 +232,8 @@ class SignInService {
     const todayKey = buildDateKey(today);
     const holidayInfo = getHolidayInfo(today);
 
-    const characterCheck = await query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
-    if (characterCheck.rows.length === 0) {
+    const character = await loadCharacterWritebackRowByUserId(userId, { forUpdate: true });
+    if (!character) {
       return { success: false, message: '角色不存在，无法签到' };
     }
 
@@ -267,10 +271,10 @@ class SignInService {
       [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
     );
 
-    const updated = await query(
-      'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
-      [reward, userId]
-    );
+    const nextSpiritStones = Math.max(0, Number(character.spirit_stones ?? 0)) + reward;
+    await queueCharacterWritebackSnapshot(character.id, {
+      spirit_stones: nextSpiritStones,
+    });
 
     return {
       success: true,
@@ -280,7 +284,7 @@ class SignInService {
         reward,
         isHoliday: holidayInfo.isHoliday,
         holidayName: holidayInfo.holidayName,
-        spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
+        spiritStones: nextSpiritStones,
       },
     };
   }

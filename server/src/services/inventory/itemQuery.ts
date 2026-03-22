@@ -10,7 +10,7 @@
  * - getEquippedItemDefIds(characterId) — 已装备物品定义 ID 列表
  *
  * 数据流：
- * 1. getInventoryItems → 物品实例列表
+ * 1. getInventoryItems / Redis 库存主状态 → 物品实例列表
  * 2. getItemDefinitionsByIds → 批量加载物品静态定义
  * 3. getItemSetDefinitions → 套装定义（仅当有套装 ID 时）
  * 4. getEquippedItemDefIds → 已装备物品（仅当有套装 ID 时）
@@ -23,7 +23,6 @@
  * 1. 空物品列表直接返回，不执行后续查询
  * 2. 缺少物品定义的物品，def 设为 undefined
  */
-import { query } from "../../config/database.js";
 import {
   getItemDefinitionById,
   getItemDefinitionsByIds,
@@ -43,7 +42,7 @@ import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { resolveItemCanDisassemble } from "../shared/itemDisassembleRule.js";
 import { resolveGeneratedTechniqueBookDisplay } from "../shared/generatedTechniqueBookView.js";
 import { buildAffixPoolSlotCacheKey } from "../shared/affixPoolSlotResolver.js";
-import { applyPendingInventoryItemWritebackRows } from "../playerWritebackCacheService.js";
+import { loadPlayerInventoryStatesByCharacterId } from "../playerStateRepository.js";
 import type {
   InventoryInfo,
   InventoryItem,
@@ -73,16 +72,8 @@ type InventoryItemDefContext = {
 export const getEquippedItemDefIds = async (
   characterId: number,
 ): Promise<string[]> => {
-  const result = await query(
-    `SELECT item_def_id FROM item_instance ii
-     WHERE ii.owner_character_id = $1 AND ii.location = 'equipped'`,
-    [characterId],
-  );
-  const rows = applyPendingInventoryItemWritebackRows(
-    characterId,
-    result.rows as Array<{ id?: unknown; item_def_id?: unknown } & Record<string, unknown>>,
-  );
-  return rows
+  return (await loadPlayerInventoryStatesByCharacterId(characterId))
+    .filter((row) => String(row.location) === "equipped")
     .map((row) => String(row.item_def_id || "").trim())
     .filter((id) => id.length > 0);
 };

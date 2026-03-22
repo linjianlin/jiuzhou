@@ -18,15 +18,16 @@
  * - sortInventory(characterId, location) — 整理背包
  *
  * 数据流：
- * - 读操作直接查询 inventory / item_instance 表
- * - 写操作在事务内执行（由外层 @Transactional 保证）
+ * - 容量信息仍读取 inventory 表
+ * - 物品实时状态统一从 Redis 主状态仓库读取
+ * - 写操作优先修改 Redis 主状态，再由 flush 服务同步 item_instance 镜像
  *
  * 被引用方：service.ts、equipment.ts（findEmptySlots）、disassemble.ts（addItemToInventory）、
  *           marketService.ts / mailService.ts（moveItemInstanceToBagWithStacking）
  *
  * 边界条件：
  * 1. addItemToInventory 在 INSERT 遇到唯一约束冲突时会重试（最多 6 次），处理并发写入竞争
- * 2. sortInventory 采用两步更新（先写临时负数槽位，再写最终槽位）避免唯一索引瞬时冲突
+ * 2. sortInventory 直接重排 Redis 槽位；数据库镜像由后续 flush 统一落盘
  */
 import { query } from "../../config/database.js";
 import {
@@ -37,16 +38,23 @@ import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { normalizeItemInstanceObtainedFrom } from "../shared/itemInstanceSource.js";
 import { tryInsertItemInstanceWithSlot } from "../shared/itemInstanceSlotInsert.js";
 import {
-  applyPendingInventoryItemTotal,
-  applyPendingInventoryItemWritebackRows,
-  applyPendingInventoryUsageToInfo,
+  queueInventoryItemWritebackSnapshot,
 } from "../playerWritebackCacheService.js";
+import {
+  deletePlayerInventoryState,
+  loadPlayerCharacterStateByCharacterId,
+  loadPlayerInventoryStateByItemId,
+  loadPlayerInventoryStatesByCharacterId,
+  patchPlayerInventoryState,
+  upsertPlayerInventoryState,
+} from "../playerStateRepository.js";
 import type {
   InventoryInfo,
   InventoryItem,
   InventoryLocation,
   SlottedInventoryLocation,
 } from "./shared/types.js";
+import type { PlayerInventoryItemState, PlayerStateJsonValue } from "../playerStateTypes.js";
 import {
   BAG_CAPACITY_MAX,
 } from "./shared/types.js";
@@ -57,6 +65,64 @@ import {
   createDefaultInventoryInfo,
   getSlottedCapacity,
 } from "./shared/helpers.js";
+
+const countUsedSlots = (
+  inventoryStates: PlayerInventoryItemState[],
+  location: SlottedInventoryLocation,
+): number => {
+  const usedSlots = new Set<number>();
+  for (const item of inventoryStates) {
+    if (item.location !== location) continue;
+    if (item.location_slot === null || item.location_slot < 0) continue;
+    usedSlots.add(item.location_slot);
+  }
+  return usedSlots.size;
+};
+
+const toInventoryItem = (
+  state: PlayerInventoryItemState,
+): InventoryItem => {
+  return {
+    id: state.id,
+    item_def_id: state.item_def_id,
+    qty: state.qty,
+    quality: state.quality,
+    quality_rank: state.quality_rank,
+    metadata: state.metadata,
+    location: state.location as InventoryLocation,
+    location_slot: state.location_slot,
+    equipped_slot: state.equipped_slot,
+    strengthen_level: state.strengthen_level ?? 0,
+    refine_level: state.refine_level ?? 0,
+    socketed_gems: state.socketed_gems,
+    affixes: state.affixes,
+    identified: state.identified ?? false,
+    locked: state.locked,
+    bind_type: state.bind_type ?? "none",
+    created_at: state.created_at ? new Date(state.created_at) : new Date(0),
+  };
+};
+
+const compareInventoryItemsForList = (
+  left: PlayerInventoryItemState,
+  right: PlayerInventoryItemState,
+): number => {
+  const leftSlot = left.location_slot;
+  const rightSlot = right.location_slot;
+  if (leftSlot === null && rightSlot !== null) return 1;
+  if (leftSlot !== null && rightSlot === null) return -1;
+  if (leftSlot !== null && rightSlot !== null && leftSlot !== rightSlot) {
+    return leftSlot - rightSlot;
+  }
+
+  const leftCreatedAt = left.created_at ? new Date(left.created_at).getTime() : 0;
+  const rightCreatedAt = right.created_at ? new Date(right.created_at).getTime() : 0;
+  if (leftCreatedAt !== rightCreatedAt) {
+    return rightCreatedAt - leftCreatedAt;
+  }
+
+  return right.id - left.id;
+};
 
 // ============================================
 // 获取背包信息（容量与使用情况）
@@ -69,38 +135,33 @@ import {
 export const getInventoryInfo = async (
   characterId: number,
 ): Promise<InventoryInfo> => {
-  const sql = `
-    SELECT
-      i.bag_capacity,
-      i.warehouse_capacity,
-      (SELECT COUNT(DISTINCT location_slot)::int
-         FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'bag'
-          AND location_slot IS NOT NULL
-          AND location_slot >= 0) as bag_used,
-      (SELECT COUNT(DISTINCT location_slot)::int
-         FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'warehouse'
-          AND location_slot IS NOT NULL
-          AND location_slot >= 0) as warehouse_used
-    FROM inventory i
-    WHERE i.character_id = $1
-  `;
-
-  const result = await query(sql, [characterId]);
+  const result = await query(
+    `
+      SELECT
+        i.bag_capacity,
+        i.warehouse_capacity
+      FROM inventory i
+      WHERE i.character_id = $1
+    `,
+    [characterId],
+  );
 
   if (result.rows.length === 0) {
     await query(
       "INSERT INTO inventory (character_id) VALUES ($1) ON CONFLICT DO NOTHING",
       [characterId],
     );
-    return applyPendingInventoryUsageToInfo(characterId, createDefaultInventoryInfo());
+    return createDefaultInventoryInfo();
   }
 
-  const info = result.rows[0] as InventoryInfo;
-  return applyPendingInventoryUsageToInfo(characterId, info);
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const row = result.rows[0] as Pick<InventoryInfo, "bag_capacity" | "warehouse_capacity">;
+  return {
+    bag_capacity: Number(row.bag_capacity) || 0,
+    warehouse_capacity: Number(row.warehouse_capacity) || 0,
+    bag_used: countUsedSlots(inventoryStates, "bag"),
+    warehouse_used: countUsedSlots(inventoryStates, "warehouse"),
+  };
 };
 
 // ============================================
@@ -115,39 +176,14 @@ export const getInventoryItems = async (
 ): Promise<{ items: InventoryItem[]; total: number }> => {
   await getInventoryInfo(characterId);
   const offset = (page - 1) * pageSize;
-
-  const sql = `
-    WITH items AS (
-      SELECT
-        ii.id, ii.item_def_id, ii.qty, ii.location, ii.location_slot,
-        ii.quality, ii.quality_rank,
-        ii.metadata,
-        ii.equipped_slot, ii.strengthen_level, ii.refine_level,
-        ii.socketed_gems,
-        ii.affixes, ii.identified, ii.locked, ii.bind_type, ii.created_at
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.location = $2
-      ORDER BY ii.location_slot NULLS LAST, ii.created_at DESC
-      LIMIT $3 OFFSET $4
-    ),
-    total AS (
-      SELECT COUNT(*) as cnt FROM item_instance
-      WHERE owner_character_id = $1 AND location = $2
-    )
-    SELECT items.*, total.cnt as total_count
-    FROM items, total
-  `;
-
-  const result = await query(sql, [characterId, location, pageSize, offset]);
-
-  const totalFromDb =
-    result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
-  const itemsFromDb = result.rows.map((row) => {
-    const { total_count, ...item } = row;
-    return item as InventoryItem;
-  });
-  const items = applyPendingInventoryItemWritebackRows(characterId, itemsFromDb);
-  const total = applyPendingInventoryItemTotal(characterId, location, totalFromDb);
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const filteredStates = inventoryStates
+    .filter((state) => state.location === location)
+    .sort(compareInventoryItemsForList);
+  const total = filteredStates.length;
+  const items = filteredStates
+    .slice(offset, offset + pageSize)
+    .map((state) => toInventoryItem(state));
 
   return { items, total };
 };
@@ -169,7 +205,7 @@ export const getInventoryItems = async (
  *
  * 数据流：
  * - 调用方负责先拿到容量；
- * - 本函数只查询 `item_instance.location_slot`；
+ * - 本函数直接读取 Redis inventory 主状态；
  * - 依据容量线性扫描缺口，返回可用槽位。
  *
  * 关键边界条件与坑点：
@@ -186,13 +222,17 @@ const findEmptySlotsByCapacity = async (
     return [];
   }
 
-  const sql = `
-    SELECT location_slot FROM item_instance
-    WHERE owner_character_id = $1 AND location = $2 AND location_slot IS NOT NULL
-    ORDER BY location_slot
-  `;
-  const result = await query(sql, [characterId, location]);
-  const usedSlots = new Set(result.rows.map((row) => row.location_slot));
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const usedSlots = new Set<number>();
+  for (const item of inventoryStates) {
+    if (item.location !== location) {
+      continue;
+    }
+    if (item.location_slot === null || item.location_slot < 0) {
+      continue;
+    }
+    usedSlots.add(item.location_slot);
+  }
 
   const emptySlots: number[] = [];
   for (let slot = 0; slot < capacity && emptySlots.length < count; slot += 1) {
@@ -232,6 +272,18 @@ const runInventoryMutation = async <T extends { success: boolean }>(
   return await executor();
 };
 
+const isEmptyInventoryMetadata = (
+  metadata: PlayerInventoryItemState["metadata"],
+): boolean => {
+  if (metadata === null) {
+    return true;
+  }
+  if (typeof metadata !== "object" || Array.isArray(metadata)) {
+    return false;
+  }
+  return Object.keys(metadata).length === 0;
+};
+
 /**
  * 添加物品到背包/仓库
  * 支持智能堆叠：优先填充已有堆叠行，不够再创建新行
@@ -244,9 +296,9 @@ export const addItemToInventory = async (
   options: {
     location?: SlottedInventoryLocation;
     bindType?: string;
-    affixes?: any;
+    affixes?: PlayerStateJsonValue;
     obtainedFrom?: string;
-    metadata?: Record<string, unknown> | null;
+    metadata?: PlayerStateJsonValue;
     quality?: string | null;
     qualityRank?: number | null;
   } = {},
@@ -272,7 +324,10 @@ export const addItemToInventory = async (
     const obtainedFrom = normalizeItemInstanceObtainedFrom(
       options.obtainedFrom,
     ).value;
-    const metadataJson = options.metadata ? JSON.stringify(options.metadata) : null;
+    const metadataJson =
+      options.metadata !== undefined && options.metadata !== null
+        ? JSON.stringify(options.metadata)
+        : null;
     const quality = typeof options.quality === "string" && options.quality.trim().length > 0
       ? options.quality.trim()
       : null;
@@ -284,29 +339,33 @@ export const addItemToInventory = async (
 
     const info = await getInventoryInfo(characterId);
     const capacity = getSlottedCapacity(info, location);
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
 
     const itemIds: number[] = [];
     let remainingQty = qty;
 
     let stackRows: Array<{ id: number; qty: number }> = [];
     if (stack_max > 1 && canStackByOption) {
-      const stackResult = await query(
-        `
-          SELECT id, qty FROM item_instance
-          WHERE owner_character_id = $1 AND item_def_id = $2
-            AND location = $3 AND qty < $4 AND bind_type = $5
-            AND metadata IS NULL
-            AND quality IS NULL
-            AND quality_rank IS NULL
-          ORDER BY qty DESC
-          FOR UPDATE
-        `,
-        [characterId, itemDefId, location, stack_max, actualBindType],
-      );
-      stackRows = stackResult.rows.map((r) => ({
-        id: Number(r.id),
-        qty: Number(r.qty),
-      }));
+      stackRows = inventoryStates
+        .filter((item) =>
+          item.location === location &&
+          item.item_def_id === itemDefId &&
+          item.qty < stack_max &&
+          item.bind_type === actualBindType &&
+          isEmptyInventoryMetadata(item.metadata) &&
+          item.quality === null &&
+          item.quality_rank === null,
+        )
+        .map((item) => ({
+          id: item.id,
+          qty: item.qty,
+        }))
+        .sort((left, right) => {
+          if (right.qty !== left.qty) {
+            return right.qty - left.qty;
+          }
+          return left.id - right.id;
+        });
     }
 
     let remainingAfterStacks = remainingQty;
@@ -344,10 +403,9 @@ export const addItemToInventory = async (
         const canAdd = Math.min(remainingQty, Math.max(0, stack_max - rowQty));
         if (canAdd <= 0) continue;
 
-        await query(
-          "UPDATE item_instance SET qty = qty + $1, updated_at = NOW() WHERE id = $2",
-          [canAdd, row.id],
-        );
+        await patchPlayerInventoryState(characterId, row.id, {
+          qty: rowQty + canAdd,
+        });
         itemIds.push(row.id);
         remainingQty -= canAdd;
       }
@@ -356,6 +414,7 @@ export const addItemToInventory = async (
     while (remainingQty > 0) {
       const addQty = Math.min(remainingQty, Math.max(1, stack_max));
       let insertedId: number | null = null;
+      let insertedSlot: number | null = null;
       let attempt = 0;
 
       while (insertedId === null && attempt < 6) {
@@ -387,7 +446,9 @@ export const addItemToInventory = async (
               location,
               slot,
               actualBindType,
-              options.affixes ? JSON.stringify(options.affixes) : null,
+              options.affixes !== undefined && options.affixes !== null
+                ? JSON.stringify(options.affixes)
+                : null,
               obtainedFrom,
               metadataJson,
               quality,
@@ -396,6 +457,7 @@ export const addItemToInventory = async (
           );
           if (inserted !== null) {
             insertedId = inserted;
+            insertedSlot = slot;
             break;
           }
         }
@@ -405,6 +467,42 @@ export const addItemToInventory = async (
         return { success: false, message: "背包已满" };
       }
 
+      await upsertPlayerInventoryState(characterId, {
+        id: insertedId,
+        owner_user_id: userId,
+        owner_character_id: characterId,
+        item_def_id: itemDefId,
+        qty: addQty,
+        locked: false,
+        quality,
+        quality_rank: qualityRank,
+        strengthen_level: null,
+        refine_level: null,
+        socketed_gems: [],
+        affixes:
+          options.affixes !== undefined && options.affixes !== null
+            ? options.affixes
+            : [],
+        affix_gen_version: null,
+        affix_roll_meta: {},
+        identified: null,
+        bind_type: actualBindType,
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        location,
+        location_slot: insertedSlot,
+        equipped_slot: null,
+        random_seed: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: obtainedFrom,
+        obtained_ref_id: null,
+        metadata:
+          options.metadata !== undefined && options.metadata !== null
+            ? options.metadata
+            : {},
+        created_at: new Date().toISOString(),
+      });
       itemIds.push(insertedId);
       remainingQty -= addQty;
     }
@@ -419,16 +517,6 @@ export const addItemToInventory = async (
 };
 
 type MoveToBagSourceLocation = "auction" | "mail";
-
-type MoveToBagSourceRow = {
-  id: number;
-  owner_user_id: number;
-  owner_character_id: number;
-  item_def_id: string;
-  qty: number;
-  location: string;
-  bind_type: string;
-};
 
 type MoveToBagStackRow = {
   id: number;
@@ -447,8 +535,8 @@ type MoveToBagStackRow = {
  * - 输出：成功时返回最终承载该数量的实例ID（可能是原实例，也可能是被合并目标）
  *
  * 数据流：
- * 1) 先锁定来源实例 + 目标可堆叠实例，计算是否需要新格子；
- * 2) 再执行数量合并；
+ * 1) 先从 Redis 主状态读取来源实例与目标堆叠实例，计算是否需要新格子；
+ * 2) 先更新 Redis 物品状态，数据库镜像交给后续 flush；
  * 3) 若数量未合并完，则把来源实例迁移到背包空格。
  *
  * 边界条件：
@@ -463,36 +551,18 @@ export const moveItemInstanceToBagWithStacking = async (
     expectedOwnerUserId?: number;
   },
 ): Promise<{ success: boolean; message: string; itemId?: number }> => {
-  const sourceResult = await query(
-    `
-      SELECT
-        id,
-        owner_user_id,
-        owner_character_id,
-        item_def_id,
-        qty,
-        location,
-        bind_type
-      FROM item_instance
-      WHERE id = $1
-      FOR UPDATE
-    `,
-    [itemInstanceId],
-  );
-
-  if (sourceResult.rows.length === 0) {
+  const source = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!source) {
     return { success: false, message: "物品不存在" };
   }
-
-  const source = sourceResult.rows[0] as MoveToBagSourceRow;
   if (Number(source.owner_character_id) !== characterId) {
     return { success: false, message: "物品归属异常" };
   }
-  if (
-    options.expectedOwnerUserId !== undefined &&
-    Number(source.owner_user_id) !== options.expectedOwnerUserId
-  ) {
-    return { success: false, message: "物品归属异常" };
+  if (options.expectedOwnerUserId !== undefined) {
+    const ownerCharacter = await loadPlayerCharacterStateByCharacterId(characterId);
+    if (!ownerCharacter || ownerCharacter.user_id !== options.expectedOwnerUserId) {
+      return { success: false, message: "物品归属异常" };
+    }
   }
 
   const location = String(source.location || "");
@@ -512,25 +582,33 @@ export const moveItemInstanceToBagWithStacking = async (
 
   let stackRows: MoveToBagStackRow[] = [];
   if (stackMax > 1) {
-    const stackResult = await query(
-      `
-        SELECT id, qty
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'bag'
-          AND item_def_id = $2
-          AND bind_type = $3
-          AND qty < $4
-          AND id != $5
-        ORDER BY qty DESC, id ASC
-        FOR UPDATE
-      `,
-      [characterId, itemDefId, bindType, stackMax, itemInstanceId],
-    );
-    stackRows = stackResult.rows.map((row) => ({
-      id: Number(row.id),
-      qty: Math.max(0, Math.floor(Number(row.qty) || 0)),
-    }));
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    stackRows = inventoryStates
+      .filter((item) => {
+        if (item.id === itemInstanceId) {
+          return false;
+        }
+        if (item.location !== "bag") {
+          return false;
+        }
+        if (String(item.item_def_id || "").trim() !== itemDefId) {
+          return false;
+        }
+        if (String(item.bind_type || "none") !== bindType) {
+          return false;
+        }
+        return Math.max(0, Math.floor(Number(item.qty) || 0)) < stackMax;
+      })
+      .map((item) => ({
+        id: item.id,
+        qty: Math.max(0, Math.floor(Number(item.qty) || 0)),
+      }))
+      .sort((left, right) => {
+        if (right.qty !== left.qty) {
+          return right.qty - left.qty;
+        }
+        return left.id - right.id;
+      });
   }
 
   let freeInStacks = 0;
@@ -554,14 +632,8 @@ export const moveItemInstanceToBagWithStacking = async (
     const canAdd = Math.min(remainingQty, Math.max(0, stackMax - row.qty));
     if (canAdd <= 0) continue;
 
-    await query(
-      `
-        UPDATE item_instance
-        SET qty = qty + $1, updated_at = NOW()
-        WHERE id = $2
-      `,
-      [canAdd, row.id],
-    );
+    const nextQty = row.qty + canAdd;
+    await patchPlayerInventoryState(characterId, row.id, { qty: nextQty });
 
     if (representativeItemId === null) {
       representativeItemId = row.id;
@@ -570,7 +642,7 @@ export const moveItemInstanceToBagWithStacking = async (
   }
 
   if (remainingQty <= 0) {
-    await query(`DELETE FROM item_instance WHERE id = $1`, [itemInstanceId]);
+    await deletePlayerInventoryState(characterId, itemInstanceId);
     if (representativeItemId === null) {
       throw new Error("实例堆叠后缺少承载目标，数据状态异常");
     }
@@ -582,37 +654,18 @@ export const moveItemInstanceToBagWithStacking = async (
   }
 
   if (remainingQty !== sourceQty) {
-    await query(
-      `
-        UPDATE item_instance
-        SET qty = $1, updated_at = NOW()
-        WHERE id = $2
-      `,
-      [remainingQty, itemInstanceId],
-    );
+    await patchPlayerInventoryState(characterId, itemInstanceId, { qty: remainingQty });
   }
 
-  const moveResult = await query(
-    `
-      UPDATE item_instance
-      SET location = 'bag',
-          location_slot = $1,
-          equipped_slot = NULL,
-          updated_at = NOW()
-      WHERE id = $2
-      RETURNING id
-    `,
-    [targetSlot, itemInstanceId],
-  );
-
-  if (moveResult.rows.length === 0) {
-    throw new Error("实例入包更新失败，数据状态异常");
-  }
-
+  await patchPlayerInventoryState(characterId, itemInstanceId, {
+    location: "bag",
+    location_slot: targetSlot,
+    equipped_slot: null,
+  });
   return {
     success: true,
     message: "移动成功",
-    itemId: Number(moveResult.rows[0].id),
+    itemId: itemInstanceId,
   };
 };
 
@@ -631,38 +684,29 @@ export const removeItemFromInventory = async (
 
   await lockCharacterInventoryMutex(characterId);
 
-  const result = await query(
-    `
-    SELECT id, qty, locked FROM item_instance
-    WHERE id = $1 AND owner_character_id = $2
-    FOR UPDATE
-  `,
-    [itemInstanceId, characterId],
+  const item = await loadPlayerInventoryStateByItemId(
+    characterId,
+    itemInstanceId,
   );
-
-  if (result.rows.length === 0) {
+  if (!item) {
     return { success: false, message: "物品不存在" };
   }
-
-  const item = result.rows[0];
 
   if (item.locked) {
     return { success: false, message: "物品已锁定" };
   }
 
-  if (item.qty < qty) {
+  const currentQty = Math.max(0, Number(item.qty) || 0);
+  if (currentQty < qty) {
     return { success: false, message: "数量不足" };
   }
 
-  if (item.qty === qty) {
-    await query("DELETE FROM item_instance WHERE id = $1", [
-      itemInstanceId,
-    ]);
+  if (currentQty === qty) {
+    await queueInventoryItemWritebackSnapshot(characterId, item, null);
   } else {
-    await query(
-      "UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2",
-      [qty, itemInstanceId],
-    );
+    await queueInventoryItemWritebackSnapshot(characterId, item, {
+      qty: currentQty - qty,
+    });
   }
   return { success: true, message: "移除成功" };
 };
@@ -682,22 +726,15 @@ export const setItemLocked = async (
 }> => {
   await lockCharacterInventoryMutex(characterId);
 
-  const itemResult = await query(
-    `
-      SELECT id, location
-      FROM item_instance
-      WHERE id = $1 AND owner_character_id = $2
-      FOR UPDATE
-    `,
-    [itemInstanceId, characterId],
+  const item = await loadPlayerInventoryStateByItemId(
+    characterId,
+    itemInstanceId,
   );
-
-  if (itemResult.rows.length === 0) {
+  if (!item) {
     return { success: false, message: "物品不存在" };
   }
 
-  const row = itemResult.rows[0] as { id: number; location: string };
-  const location = String(row.location || "");
+  const location = String(item.location || "");
   if (location === "auction") {
     return { success: false, message: "该物品当前位置不可锁定" };
   }
@@ -705,14 +742,9 @@ export const setItemLocked = async (
     return { success: false, message: "该物品当前位置不可锁定" };
   }
 
-  await query(
-    `
-      UPDATE item_instance
-      SET locked = $1, updated_at = NOW()
-      WHERE id = $2 AND owner_character_id = $3
-    `,
-    [locked, itemInstanceId, characterId],
-  );
+  await queueInventoryItemWritebackSnapshot(characterId, item, {
+    locked,
+  });
   return {
     success: true,
     message: locked ? "已锁定" : "已解锁",
@@ -730,39 +762,14 @@ export const moveItem = async (
   targetLocation: SlottedInventoryLocation,
   targetSlot?: number,
 ): Promise<{ success: boolean; message: string }> => {
-  type MoveItemRow = {
-    id: number;
-    item_def_id: string;
-    qty: number;
-    location: string;
-    location_slot: number | null;
-    bind_type: string;
-  };
   type StackTargetRow = { id: number; qty: number };
 
   await lockCharacterInventoryMutex(characterId);
-
-  const itemResult = await query(
-    `
-    SELECT
-      ii.id,
-      ii.item_def_id,
-      ii.qty,
-      ii.location,
-      ii.location_slot,
-      ii.bind_type
-    FROM item_instance ii
-    WHERE ii.id = $1 AND ii.owner_character_id = $2
-    FOR UPDATE
-  `,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0) {
+  const item = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!item) {
     return { success: false, message: "物品不存在" };
   }
 
-  const item = itemResult.rows[0] as MoveItemRow;
   const itemDef = getStaticItemDef(item.item_def_id);
   if (!itemDef) {
     return { success: false, message: "物品不存在" };
@@ -788,66 +795,62 @@ export const moveItem = async (
 
   let remainingQty = originalQty;
   if (currentLocation !== targetLocation && stackMax > 1) {
-    const stackResult = await query(
-      `
-        SELECT id, qty FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = $2
-          AND item_def_id = $3
-          AND bind_type = $4
-          AND qty < $5
-          AND id != $6
-        ORDER BY qty DESC, id ASC
-        FOR UPDATE
-      `,
-      [
-        characterId,
-        targetLocation,
-        item.item_def_id,
-        item.bind_type,
-        stackMax,
-        itemInstanceId,
-      ],
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    const inventoryStateMap = new Map(
+      inventoryStates.map((state) => [state.id, state] as const),
     );
+    const stackRows: StackTargetRow[] = inventoryStates
+      .filter((state) => {
+        if (state.id === itemInstanceId) {
+          return false;
+        }
+        if (state.location !== targetLocation) {
+          return false;
+        }
+        if (String(state.item_def_id || "").trim() !== item.item_def_id) {
+          return false;
+        }
+        if (String(state.bind_type || "none") !== String(item.bind_type || "none")) {
+          return false;
+        }
+        return Math.max(0, Number(state.qty) || 0) < stackMax;
+      })
+      .map((state) => ({
+        id: state.id,
+        qty: Math.max(0, Number(state.qty) || 0),
+      }))
+      .sort((left, right) => {
+        if (right.qty !== left.qty) {
+          return right.qty - left.qty;
+        }
+        return left.id - right.id;
+      });
 
-    const stackRows = stackResult.rows as StackTargetRow[];
     for (const row of stackRows) {
       if (remainingQty <= 0) break;
       const stackQty = Math.max(0, Number(row.qty) || 0);
       const canAdd = Math.min(remainingQty, Math.max(0, stackMax - stackQty));
       if (canAdd <= 0) continue;
+      const stackTargetState = inventoryStateMap.get(Number(row.id));
+      if (!stackTargetState) {
+        return { success: false, message: "目标堆叠物品不存在" };
+      }
 
-      await query(
-        `
-          UPDATE item_instance
-          SET qty = qty + $1, updated_at = NOW()
-          WHERE id = $2 AND owner_character_id = $3
-        `,
-        [canAdd, Number(row.id), characterId],
-      );
+      await queueInventoryItemWritebackSnapshot(characterId, stackTargetState, {
+        qty: stackQty + canAdd,
+      });
       remainingQty -= canAdd;
     }
 
     if (remainingQty <= 0) {
-      await query(
-        `
-          DELETE FROM item_instance
-          WHERE id = $1 AND owner_character_id = $2
-        `,
-        [itemInstanceId, characterId],
-      );
+      await queueInventoryItemWritebackSnapshot(characterId, item, null);
       return { success: true, message: "移动成功" };
     }
 
     if (remainingQty !== originalQty) {
-      await query(
-        `
-          UPDATE item_instance
-          SET qty = $1, updated_at = NOW()
-          WHERE id = $2 AND owner_character_id = $3
-        `,
-        [remainingQty, itemInstanceId, characterId],
-      );
+      await queueInventoryItemWritebackSnapshot(characterId, item, {
+        qty: remainingQty,
+      });
     }
   }
 
@@ -876,47 +879,31 @@ export const moveItem = async (
     }
     finalSlot = emptySlots[0];
   } else {
-    const slotCheck = await query(
-      `
-      SELECT id FROM item_instance
-      WHERE owner_character_id = $1 AND location = $2 AND location_slot = $3 AND id != $4
-      FOR UPDATE
-    `,
-      [characterId, targetLocation, finalSlot, itemInstanceId],
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    const otherItem = inventoryStates.find((state) =>
+      state.id !== itemInstanceId &&
+      state.location === targetLocation &&
+      state.location_slot === finalSlot,
     );
 
-    if (slotCheck.rows.length > 0) {
-      const otherItemId = Number(slotCheck.rows[0].id);
+    if (otherItem) {
+      const otherItemId = Number(otherItem.id);
       if (!Number.isInteger(otherItemId) || otherItemId <= 0) {
         return { success: false, message: "目标格子状态异常" };
       }
 
-      await query(
-        `
-          UPDATE item_instance
-          SET location_slot = NULL, updated_at = NOW()
-          WHERE id = $1 AND owner_character_id = $2
-        `,
-        [itemInstanceId, characterId],
-      );
-
-      await query(
-        `
-        UPDATE item_instance SET location = $1, location_slot = $2, updated_at = NOW()
-        WHERE id = $3 AND owner_character_id = $4
-      `,
-        [currentLocation, currentSlot, otherItemId, characterId],
-      );
+      await queueInventoryItemWritebackSnapshot(characterId, otherItem, {
+        location: currentLocation,
+        location_slot: currentSlot,
+      });
     }
   }
 
-  await query(
-    `
-    UPDATE item_instance SET location = $1, location_slot = $2, updated_at = NOW()
-    WHERE id = $3 AND owner_character_id = $4
-  `,
-    [targetLocation, finalSlot, itemInstanceId, characterId],
-  );
+  await queueInventoryItemWritebackSnapshot(characterId, item, {
+    qty: remainingQty,
+    location: targetLocation,
+    location_slot: finalSlot,
+  });
   return { success: true, message: "移动成功" };
 };
 
@@ -955,42 +942,35 @@ export const removeItemsBatch = async (
 
   await lockCharacterInventoryMutex(characterId);
 
-  const itemResult = await query(
-    `
-      SELECT
-        ii.id,
-        ii.qty,
-        ii.location,
-        ii.locked,
-        ii.item_def_id
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.id = ANY($2)
-      FOR UPDATE
-    `,
-    [characterId, uniqueIds],
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(
+    characterId,
+  );
+  const stateMap = new Map(
+    inventoryStates.map((state) => [state.id, state] as const),
   );
 
-  if (itemResult.rows.length !== uniqueIds.length) {
-    return { success: false, message: "包含不存在的物品" };
+  for (const rowId of uniqueIds) {
+    if (!stateMap.has(rowId)) {
+      return { success: false, message: "包含不存在的物品" };
+    }
   }
 
   const staticDefMap = getItemDefinitionsByIds(
-    itemResult.rows.map((row) =>
-      String((row as { item_def_id?: unknown }).item_def_id || "").trim(),
-    ),
+    uniqueIds
+      .map((rowId) => String(stateMap.get(rowId)?.item_def_id || "").trim())
+      .filter((itemDefId) => itemDefId.length > 0),
   );
 
   const removableIds: number[] = [];
   let skippedLockedCount = 0;
   let skippedLockedQtyTotal = 0;
   let removedQtyTotal = 0;
-  for (const row of itemResult.rows as Array<{
-    id: number;
-    qty: number;
-    location: InventoryLocation;
-    locked: boolean;
-    item_def_id: string;
-  }>) {
+  for (const rowId of uniqueIds) {
+    const row = stateMap.get(rowId);
+    if (!row) {
+      return { success: false, message: "包含不存在的物品" };
+    }
+
     const itemDef = staticDefMap.get(String(row.item_def_id || "").trim());
     if (!itemDef) {
       return { success: false, message: "包含不存在的物品" };
@@ -1003,10 +983,6 @@ export const removeItemsBatch = async (
     }
     if (itemDef.destroyable !== true) {
       return { success: false, message: "包含不可丢弃的物品" };
-    }
-    const rowId = Number(row.id);
-    if (!Number.isInteger(rowId) || rowId <= 0) {
-      return { success: false, message: "itemIds参数错误" };
     }
 
     const rowQty = Math.max(0, Number(row.qty) || 0);
@@ -1024,10 +1000,13 @@ export const removeItemsBatch = async (
     return { success: false, message: "没有可丢弃的物品" };
   }
 
-  await query(
-    "DELETE FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2)",
-    [characterId, removableIds],
-  );
+  for (const rowId of removableIds) {
+    const row = stateMap.get(rowId);
+    if (!row) {
+      return { success: false, message: "包含不存在的物品" };
+    }
+    await queueInventoryItemWritebackSnapshot(characterId, row, null);
+  }
   const msg =
     skippedLockedCount > 0
       ? `丢弃成功（已跳过已锁定×${skippedLockedCount}）`
@@ -1134,7 +1113,7 @@ type SortInventoryRow = {
   quality: string | null;
   quality_rank: number | null;
   bind_type: string;
-  metadata_text: string | null;
+  metadata: PlayerInventoryItemState["metadata"];
   location_slot: number | null;
 };
 
@@ -1162,9 +1141,9 @@ type SortInventoryQtyUpdate = {
  * - 输出：归并后的实例列表、需要更新数量的实例计划、以及需要删除的空实例 ID。
  *
  * 数据流：
- * - sortInventory 先查出当前位置全部实例；
+ * - sortInventory 先从 Redis 主状态读取当前位置全部实例；
  * - 本函数只在内存里按 `item_def_id + bind_type` 合并普通堆叠实例；
- * - sortInventory 再统一执行数量更新、删除空实例、最后重排槽位。
+ * - sortInventory 再统一回写 Redis 状态，并由 flush 服务把最终镜像刷回数据库。
  *
  * 关键边界条件与坑点：
  * 1. 仅 `metadata/quality/quality_rank` 都为空的普通实例允许自动堆叠，和统一入包口径保持一致，避免特殊实例被误合并。
@@ -1187,7 +1166,7 @@ const compactRowsForSortStacking = (
     const stackMax = stackMaxByItemDefId.get(String(row.item_def_id || "").trim()) ?? 1;
     const canAutoStack =
       stackMax > 1 &&
-      row.metadata_text === null &&
+      isEmptyInventoryMetadata(row.metadata) &&
       row.quality === null &&
       row.quality_rank === null;
     if (!canAutoStack) {
@@ -1254,25 +1233,24 @@ export const sortInventory = async (
 
   const info = await getInventoryInfo(characterId);
   const capacity = getSlottedCapacity(info, location);
-  const itemResult = await query(
-    `
-      SELECT
-        id,
-        item_def_id,
-        qty,
-        quality,
-        quality_rank,
-        bind_type,
-        metadata::text AS metadata_text,
-        location_slot
-      FROM item_instance
-      WHERE owner_character_id = $1 AND location = $2
-      FOR UPDATE
-    `,
-    [characterId, location],
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(
+    characterId,
   );
-
-  const rows = itemResult.rows as SortInventoryRow[];
+  const stateMap = new Map(
+    inventoryStates.map((state) => [state.id, state] as const),
+  );
+  const rows: SortInventoryRow[] = inventoryStates
+    .filter((state) => state.location === location)
+    .map((state) => ({
+      id: state.id,
+      item_def_id: state.item_def_id,
+      qty: state.qty,
+      quality: state.quality,
+      quality_rank: state.quality_rank,
+      bind_type: state.bind_type ?? "none",
+      metadata: state.metadata,
+      location_slot: state.location_slot,
+    }));
   const defMap = getItemDefinitionsByIds(
     rows.map((row) => String(row.item_def_id || "").trim()),
   );
@@ -1294,35 +1272,22 @@ export const sortInventory = async (
   );
 
   for (const { itemId, nextQty } of qtyUpdates) {
-    await query(
-      `
-        UPDATE item_instance
-        SET qty = $1,
-            updated_at = NOW()
-        WHERE id = $2 AND owner_character_id = $3
-      `,
-      [nextQty, itemId, characterId],
-    );
+    const itemState = stateMap.get(itemId);
+    if (!itemState) {
+      return { success: false, message: "整理目标不存在" };
+    }
+    await queueInventoryItemWritebackSnapshot(characterId, itemState, {
+      qty: nextQty,
+    });
   }
 
   for (const deleteId of deleteIds) {
-    await query(
-      `
-        DELETE FROM item_instance
-        WHERE id = $1 AND owner_character_id = $2
-      `,
-      [deleteId, characterId],
-    );
-  }
-
-  let minExistingSlot = 0;
-  for (const row of compactedRows) {
-    const slot = Number(row.location_slot);
-    if (Number.isInteger(slot) && slot < minExistingSlot) {
-      minExistingSlot = slot;
+    const itemState = stateMap.get(deleteId);
+    if (!itemState) {
+      return { success: false, message: "整理目标不存在" };
     }
+    await queueInventoryItemWritebackSnapshot(characterId, itemState, null);
   }
-  const tempSlotStart = minExistingSlot - compactedRows.length - 1;
 
   const sortableRows: SortInventoryCompactedRow[] = compactedRows.map((row) => {
     const itemDef = defMap.get(String(row.item_def_id || "").trim()) ?? null;
@@ -1369,30 +1334,15 @@ export const sortInventory = async (
 
   for (let index = 0; index < sortableRows.length; index += 1) {
     const row = sortableRows[index];
-    const tempSlot = tempSlotStart + index;
-    await query(
-      `
-        UPDATE item_instance
-        SET location_slot = $1,
-            updated_at = NOW()
-        WHERE id = $2 AND owner_character_id = $3
-      `,
-      [tempSlot, row.id, characterId],
-    );
-  }
-
-  for (let index = 0; index < sortableRows.length; index += 1) {
-    const row = sortableRows[index];
     const finalSlot = index < capacity ? index : null;
-    await query(
-      `
-        UPDATE item_instance
-        SET location_slot = $1,
-            updated_at = NOW()
-        WHERE id = $2 AND owner_character_id = $3
-      `,
-      [finalSlot, row.id, characterId],
-    );
+    const itemState = stateMap.get(row.id);
+    if (!itemState) {
+      return { success: false, message: "整理目标不存在" };
+    }
+    await queueInventoryItemWritebackSnapshot(characterId, itemState, {
+      qty: row.qty,
+      location_slot: finalSlot,
+    });
   }
   return { success: true, message: "整理完成" };
 };

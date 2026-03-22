@@ -83,8 +83,8 @@ export const createCharacter = async (
   gender: 'male' | 'female'
 ): Promise<CharacterResult> => {
   // 检查是否已有角色
-  const existCheck = await query('SELECT id FROM characters WHERE user_id = $1', [userId]);
-  if (existCheck.rows.length > 0) {
+  const existingCharacter = await loadCharacterWritebackRowByUserId(userId);
+  if (existingCharacter) {
     return { success: false, message: '已存在角色，无法重复创建' };
   }
 
@@ -146,14 +146,10 @@ export const renameCharacterWithCard = async (
     message: string;
     broadcastContent: string | null;
   }> => {
-    const characterResult = await query(
-      'SELECT id, nickname FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE',
-      [userId],
-    );
-    if (characterResult.rows.length === 0) {
+    const characterRow = await loadCharacterWritebackRowByUserId(userId, { forUpdate: true });
+    if (!characterRow) {
       return { success: false, message: '角色不存在', broadcastContent: null };
     }
-    const characterRow = characterResult.rows[0] as { id?: number; nickname?: string | null };
     const characterId = Number(characterRow.id);
     if (!Number.isInteger(characterId) || characterId <= 0) {
       return { success: false, message: '角色不存在', broadcastContent: null };

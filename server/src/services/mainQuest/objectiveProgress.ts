@@ -17,6 +17,8 @@ import { query } from '../../config/database.js';
 import { getRealmOrderIndex } from '../shared/realmRules.js';
 import { getTechniqueDefinitions } from '../staticConfigLoader.js';
 import { asString, asNumber, asArray, asObject } from '../shared/typeCoercion.js';
+import { loadCharacterWritebackRowByCharacterId } from '../playerWritebackCacheService.js';
+import { loadPlayerInventoryStatesByCharacterId } from '../playerStateRepository.js';
 import { getEnabledMainQuestSectionById } from './shared/questConfig.js';
 import type { SectionStatus, MainQuestProgressEvent } from './types.js';
 import { updateSectionProgressByEvent } from './progressUpdater.js';
@@ -49,22 +51,15 @@ const loadCollectObjectiveItemQtyMap = async (
     return new Map<string, number>();
   }
 
-  const itemQtyRes = await query(
-    `SELECT item_def_id, COALESCE(SUM(qty), 0)::int AS qty
-     FROM item_instance
-     WHERE owner_character_id = $1
-       AND location = 'bag'
-       AND item_def_id = ANY($2::text[])
-     GROUP BY item_def_id`,
-    [characterId, itemIds],
-  );
-
   const itemQtyMap = new Map<string, number>();
-  for (const row of itemQtyRes.rows ?? []) {
-    const record = row as { item_def_id?: unknown; qty?: unknown };
-    const itemId = asString(record.item_def_id).trim();
+  const itemIdSet = new Set(itemIds);
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  for (const row of inventoryStates) {
+    if (asString(row.location) !== 'bag') continue;
+    const itemId = asString(row.item_def_id).trim();
     if (!itemId) continue;
-    itemQtyMap.set(itemId, Math.max(0, Math.floor(asNumber(record.qty, 0))));
+    if (!itemIdSet.has(itemId)) continue;
+    itemQtyMap.set(itemId, (itemQtyMap.get(itemId) ?? 0) + Math.max(0, Math.floor(asNumber(row.qty, 0))));
   }
   return itemQtyMap;
 };
@@ -107,8 +102,7 @@ export const syncCurrentSectionStaticProgress = async (characterId: number): Pro
   const progressData = asObject(progress.objectives_progress);
   const collectObjectiveItemQtyMap = await loadCollectObjectiveItemQtyMap(cid, objectives);
 
-  const characterRes = await query(`SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1`, [cid]);
-  const characterRow = characterRes.rows?.[0] as { realm?: unknown; sub_realm?: unknown } | undefined;
+  const characterRow = await loadCharacterWritebackRowByCharacterId(cid);
   const currentRealmRank = getRealmRank(characterRow?.realm, characterRow?.sub_realm);
 
   const techniqueRes = await query(

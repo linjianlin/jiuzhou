@@ -15,6 +15,7 @@ import {
   loadCharacterWritebackRowByCharacterId,
   queueCharacterWritebackSnapshot,
 } from './playerWritebackCacheService.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
 import { getItemDefinitionById } from './staticConfigLoader.js';
 import {
   getItemMetaMap,
@@ -34,6 +35,7 @@ import {
   listCharacterAvailableSkillIdSet,
 } from './shared/characterAvailableSkills.js';
 import { loadCharacterBattleSkillEntries } from './shared/characterBattleSkills.js';
+import { consumeSpecificItemInstance } from './inventory/shared/consume.js';
 
 // ============================================
 // 类型定义
@@ -302,20 +304,15 @@ class CharacterTechniqueService {
       return { success: false, message: '功法不存在' };
     }
 
-    const charResult = await query(
-      'SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1',
-      [characterId],
-    );
-    if (charResult.rows.length === 0) {
+    const character = await loadCharacterWritebackRowByCharacterId(characterId);
+    if (!character) {
       return { success: false, message: '角色不存在' };
     }
 
     const requiredRealm = typeof techniqueDef.required_realm === 'string' ? techniqueDef.required_realm.trim() : '';
-    const currentRealm = charResult.rows[0].realm;
-    const currentSubRealm = charResult.rows[0].sub_realm;
     if (
       shouldValidateTechniqueLearnRealm({ obtainedFrom }) &&
-      !isRealmSufficient(currentRealm, requiredRealm, currentSubRealm)
+      !isRealmSufficient(character.realm, requiredRealm, character.sub_realm)
     ) {
       return { success: false, message: `境界不足，需要达到${requiredRealm}` };
     }
@@ -448,14 +445,15 @@ class CharacterTechniqueService {
     }
 
     // 检查并扣除材料
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
     for (const mat of costMaterials) {
-      const matResult = await query(
-        `SELECT COALESCE(SUM(qty), 0) as total
-         FROM item_instance
-         WHERE owner_character_id = $1 AND item_def_id = $2 AND location IN ('bag', 'warehouse')`,
-        [characterId, mat.itemId]
-      );
-      const totalQty = parseInt(matResult.rows[0].total);
+      const totalQty = inventoryStates
+        .filter((item) => (
+          String(item.item_def_id) === mat.itemId &&
+          ['bag', 'warehouse'].includes(String(item.location)) &&
+          !item.locked
+        ))
+        .reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
       if (totalQty < mat.qty) {
         // 获取材料名称
         const matName = getItemDefinitionById(mat.itemId)?.name || mat.itemId;
@@ -472,26 +470,25 @@ class CharacterTechniqueService {
     // 扣除材料
     for (const mat of costMaterials) {
       let remainingQty = mat.qty;
-      const itemsResult = await query(
-        `SELECT id, qty FROM item_instance
-         WHERE owner_character_id = $1 AND item_def_id = $2 AND location IN ('bag', 'warehouse')
-         ORDER BY qty ASC FOR UPDATE`,
-        [characterId, mat.itemId]
-      );
+      const materialItems = inventoryStates
+        .filter((item) => (
+          String(item.item_def_id) === mat.itemId &&
+          ['bag', 'warehouse'].includes(String(item.location)) &&
+          !item.locked
+        ))
+        .sort((left, right) => (Number(left.qty) || 0) - (Number(right.qty) || 0));
 
-      for (const item of itemsResult.rows) {
+      for (const item of materialItems) {
         if (remainingQty <= 0) break;
 
-        if (item.qty <= remainingQty) {
-          await query('DELETE FROM item_instance WHERE id = $1', [item.id]);
-          remainingQty -= item.qty;
-        } else {
-          await query(
-            'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
-            [remainingQty, item.id]
-          );
-          remainingQty = 0;
+        const itemQty = Number(item.qty) || 0;
+        if (itemQty <= 0) continue;
+        const consumeQty = Math.min(itemQty, remainingQty);
+        const consumeResult = await consumeSpecificItemInstance(characterId, item.id, consumeQty);
+        if (!consumeResult.success) {
+          return { success: false, message: consumeResult.message };
         }
+        remainingQty -= consumeQty;
       }
     }
 
@@ -759,7 +756,10 @@ class CharacterTechniqueService {
      * 1) 必须放在 `@Transactional` 方法内部，否则 `FOR UPDATE` 只能在单语句生命周期内生效，无法实现跨语句串行化。
      * 2) 锁粒度固定为“单角色”，因此只会阻塞同角色并发写，不会放大到全表级别。
      */
-    await query('SELECT id FROM characters WHERE id = $1 FOR UPDATE', [characterId]);
+    const lockedCharacter = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate: true });
+    if (!lockedCharacter) {
+      return { success: false, message: '角色不存在' };
+    }
 
     // 检查技能是否可用（来自已装备功法且已解锁）
     const available = await loadCharacterAvailableSkillEntries(characterId);

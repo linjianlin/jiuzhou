@@ -8,7 +8,9 @@ import { invalidateCharacterComputedCache } from "./characterComputedService.js"
 import {
   loadCharacterWritebackRowByUserId,
   queueCharacterWritebackSnapshot,
+  queueInventoryItemWritebackSnapshot,
 } from "./playerWritebackCacheService.js";
+import { loadPlayerInventoryStatesByCharacterId } from "./playerStateRepository.js";
 import {
   getDungeonDefinitions,
   getDungeonDifficultyById,
@@ -16,6 +18,7 @@ import {
   getMainQuestChapterById,
   getTechniqueDefinitions,
 } from "./staticConfigLoader.js";
+import type { PlayerInventoryItemState } from "./playerStateTypes.js";
 
 export type RealmRequirementStatus = "done" | "todo" | "unknown";
 
@@ -145,6 +148,8 @@ type BreakthroughRequirement =
   | MainQuestChapterCompletedRequirement
   | VersionLockedRequirement
   | { id: string; type: string; title: string };
+
+type BagItemQtyMap = Map<string, number>;
 
 type CostExp = { type: "exp"; amount: number };
 type CostSpiritStones = { type: "spirit_stones"; amount: number };
@@ -370,6 +375,20 @@ const getItemDefMap = async (
   return out;
 };
 
+const buildBagItemQtyMap = (
+  inventoryStates: PlayerInventoryItemState[],
+): Map<string, number> => {
+  const qtyMap = new Map<string, number>();
+  for (const row of inventoryStates) {
+    if (row.location !== "bag") continue;
+    const itemDefId = String(row.item_def_id || "").trim();
+    if (!itemDefId) continue;
+    const currentQty = qtyMap.get(itemDefId) ?? 0;
+    qtyMap.set(itemDefId, currentQty + Math.max(0, Number(row.qty) || 0));
+  }
+  return qtyMap;
+};
+
 const getTechniqueDefMap = async (
   techniqueIds: string[],
 ): Promise<Record<string, { name: string }>> => {
@@ -421,18 +440,12 @@ const getDungeonDifficultyMap = async (
 };
 
 const getItemQtyInBag = async (
-  characterId: number,
   itemDefId: string,
+  bagQtyMap: Map<string, number> | undefined,
 ): Promise<number> => {
-  const res = await query(
-    `
-      SELECT COALESCE(SUM(qty), 0)::int AS qty
-      FROM item_instance
-      WHERE owner_character_id = $1 AND location = 'bag' AND item_def_id = $2
-    `,
-    [characterId, itemDefId],
-  );
-  return Number(res.rows?.[0]?.qty ?? 0) || 0;
+  const normalizedItemDefId = String(itemDefId || "").trim();
+  if (!normalizedItemDefId) return 0;
+  return bagQtyMap?.get(normalizedItemDefId) ?? 0;
 };
 
 const getEquippedMainTechnique = async (
@@ -585,8 +598,9 @@ const evaluateRequirements = async (args: {
   exp: number;
   spiritStones: number;
   requirements: BreakthroughRequirement[];
+  bagQtyMap: BagItemQtyMap;
 }): Promise<RealmRequirementView[]> => {
-  const { characterId, exp, spiritStones } = args;
+  const { characterId, exp, spiritStones, bagQtyMap } = args;
   const reqs = Array.isArray(args.requirements) ? args.requirements : [];
 
   const itemIds: string[] = [];
@@ -763,9 +777,7 @@ const evaluateRequirements = async (args: {
     if (isItemQtyMinRequirement(r)) {
       const itemDefId = String(r.itemDefId || "").trim();
       const qtyNeed = Number(r.qty ?? 0) || 0;
-      const qtyHave = itemDefId
-        ? await getItemQtyInBag(characterId, itemDefId)
-        : 0;
+      const qtyHave = itemDefId ? await getItemQtyInBag(itemDefId, bagQtyMap) : 0;
       const ok = qtyHave >= qtyNeed;
       const meta = itemMap[itemDefId];
       const itemName = meta?.name || itemDefId || "材料";
@@ -870,6 +882,7 @@ const buildCostsView = async (args: {
   characterId?: number;
   currentExp?: number;
   currentSpiritStones?: number;
+  bagQtyMap: BagItemQtyMap;
 }): Promise<{
   exp: number;
   spiritStones: number;
@@ -881,6 +894,7 @@ const buildCostsView = async (args: {
   const characterId = Number(args.characterId ?? 0) || 0;
   const currentExp = Number(args.currentExp ?? NaN);
   const currentSpiritStones = Number(args.currentSpiritStones ?? NaN);
+  const bagQtyMap = args.bagQtyMap;
 
   let costExp = 0;
   let costSpiritStones = 0;
@@ -940,7 +954,7 @@ const buildCostsView = async (args: {
     const meta = itemMap[it.itemDefId];
     const have =
       characterId > 0
-        ? await getItemQtyInBag(characterId, it.itemDefId)
+        ? await getItemQtyInBag(it.itemDefId, bagQtyMap)
         : NaN;
     const ok = Number.isFinite(have) ? have >= it.qty : true;
     view.push({
@@ -1012,50 +1026,51 @@ const buildRewardsView = (rewards?: RewardConfig): RealmRewardView[] => {
   return out;
 };
 
-const consumeItemFromBagTx = async (
+const consumeItemFromBagState = async (
   characterId: number,
   itemDefId: string,
   qty: number,
+  inventoryStates: PlayerInventoryItemState[],
 ): Promise<{ success: boolean; message: string }> => {
+  const normalizedItemDefId = String(itemDefId || "").trim();
   let remaining = Math.max(0, Math.floor(qty));
-  if (!itemDefId || remaining <= 0) return { success: true, message: "ok" };
+  if (!normalizedItemDefId || remaining <= 0) return { success: true, message: "ok" };
 
-  while (remaining > 0) {
-    const res = await query(
-      `
-        SELECT id, qty
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND item_def_id = $2
-          AND location = 'bag'
-        ORDER BY created_at ASC
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [characterId, itemDefId],
+  const rows = inventoryStates
+    .filter(
+      (row) =>
+        row.item_def_id === normalizedItemDefId &&
+        row.location === "bag",
+    )
+    .sort(
+      (left, right) =>
+        (new Date(left.created_at || 0).getTime() || 0) -
+          (new Date(right.created_at || 0).getTime() || 0) ||
+        left.id - right.id,
     );
 
-    if (res.rows.length === 0) return { success: false, message: "材料不足" };
+  if (rows.length === 0) return { success: false, message: "材料不足" };
 
-    const row = res.rows[0] as { id?: unknown; qty?: unknown };
-    const instanceId = Number(row.id ?? 0) || 0;
-    const hasQty = Number(row.qty ?? 0) || 0;
-    if (instanceId <= 0 || hasQty <= 0)
-      return { success: false, message: "材料数据异常" };
+  const totalQty = rows.reduce(
+    (sum, row) => sum + Math.max(0, Number(row.qty) || 0),
+    0,
+  );
+  if (totalQty < remaining) return { success: false, message: "材料不足" };
 
-    if (hasQty <= remaining) {
-      await query(
-        "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
-        [instanceId, characterId],
-      );
-      remaining -= hasQty;
+  for (const row of rows) {
+    if (remaining <= 0) break;
+    const rowQty = Math.max(0, Number(row.qty) || 0);
+    if (rowQty <= 0) continue;
+
+    const consume = Math.min(rowQty, remaining);
+    if (consume >= rowQty) {
+      await queueInventoryItemWritebackSnapshot(characterId, row, null);
     } else {
-      await query(
-        "UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
-        [remaining, instanceId, characterId],
-      );
-      remaining = 0;
+      await queueInventoryItemWritebackSnapshot(characterId, row, {
+        qty: rowQty - consume,
+      });
     }
+    remaining -= consume;
   }
 
   return { success: true, message: "ok" };
@@ -1087,19 +1102,9 @@ class RealmService {
   }> {
     const cfg = await loadConfig();
 
-    const res = await query(
-      "SELECT id, realm, sub_realm, exp, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
-      [userId],
-    );
-    if (res.rows.length === 0) return { success: false, message: "角色不存在" };
+    const row = await loadCharacterWritebackRowByUserId(userId);
+    if (!row) return { success: false, message: "角色不存在" };
 
-    const row = res.rows[0] as {
-      id?: unknown;
-      realm?: unknown;
-      sub_realm?: unknown;
-      exp?: unknown;
-      spirit_stones?: unknown;
-    };
     const characterId = Number(row.id ?? 0) || 0;
     const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
     const subRealm =
@@ -1108,6 +1113,8 @@ class RealmService {
       realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
     const exp = Number(row.exp ?? 0) || 0;
     const spiritStones = Number(row.spirit_stones ?? 0) || 0;
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    const bagQtyMap = buildBagItemQtyMap(inventoryStates);
 
     const currentIndex = getRealmIndex(cfg.realmOrder, currentRealm);
     const nextRealm = getNextRealmName(cfg.realmOrder, currentRealm);
@@ -1115,11 +1122,12 @@ class RealmService {
 
     const requirements = bt
       ? await evaluateRequirements({
-          characterId,
-          exp,
-          spiritStones,
-          requirements: bt.requirements ?? [],
-        })
+        characterId,
+        exp,
+        spiritStones,
+        requirements: bt.requirements ?? [],
+        bagQtyMap,
+      })
       : [];
 
     const costsBuilt = bt
@@ -1128,6 +1136,7 @@ class RealmService {
           characterId,
           currentExp: exp,
           currentSpiritStones: spiritStones,
+          bagQtyMap,
         })
       : null;
     const costs = costsBuilt?.view ?? [];
@@ -1180,6 +1189,8 @@ class RealmService {
     const exp = Number(row.exp ?? 0) || 0;
     const spiritStones = Number(row.spirit_stones ?? 0) || 0;
     const attributePoints = Number(row.attribute_points ?? 0) || 0;
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    const bagQtyMap = buildBagItemQtyMap(inventoryStates);
 
     const nextRealm = getNextRealmName(cfg.realmOrder, fromRealm);
     if (!nextRealm) return { success: false, message: "已达最高境界" };
@@ -1193,6 +1204,7 @@ class RealmService {
       exp,
       spiritStones,
       requirements: bt.requirements ?? [],
+      bagQtyMap,
     });
     const unmet = reqViews.find((r) => r.status !== "done");
     if (unmet) {
@@ -1207,6 +1219,10 @@ class RealmService {
 
     const costsBuilt = await buildCostsView({
       costs: bt.costs ?? [],
+      characterId,
+      currentExp: exp,
+      currentSpiritStones: spiritStones,
+      bagQtyMap,
     });
     if (exp < costsBuilt.exp)
       return { success: false, message: `经验不足，需要 ${costsBuilt.exp}` };
@@ -1216,28 +1232,39 @@ class RealmService {
         message: `灵石不足，需要 ${costsBuilt.spiritStones}`,
       };
 
-    const itemDefIds = costsBuilt.items.map((x) => x.itemDefId);
+    const itemDefIds = Array.from(
+      new Set(costsBuilt.items.map((x) => x.itemDefId)),
+    );
     const itemMap = await getItemDefMap(itemDefIds);
-
+    const requiredItemQtyMap = new Map<string, number>();
     for (const it of costsBuilt.items) {
-      const have = await getItemQtyInBag(characterId, it.itemDefId);
-      if (have < it.qty) {
-        const meta = itemMap[it.itemDefId];
+      requiredItemQtyMap.set(
+        it.itemDefId,
+        (requiredItemQtyMap.get(it.itemDefId) ?? 0) + it.qty,
+      );
+    }
+
+    for (const [itemDefId, requiredQty] of requiredItemQtyMap) {
+      const have = bagQtyMap.get(itemDefId) ?? 0;
+      if (have < requiredQty) {
+        const meta = itemMap[itemDefId];
         return {
           success: false,
-          message: `材料不足：${meta?.name || it.itemDefId}`,
+          message: `材料不足：${meta?.name || itemDefId}`,
         };
       }
     }
 
-    for (const it of costsBuilt.items) {
-      const consumeRes = await consumeItemFromBagTx(
+    for (const [itemDefId, requiredQty] of requiredItemQtyMap) {
+      const consumeRes = await consumeItemFromBagState(
         characterId,
-        it.itemDefId,
-        it.qty,
+        itemDefId,
+        requiredQty,
+        inventoryStates,
       );
-      if (!consumeRes.success)
+      if (!consumeRes.success) {
         return { success: false, message: consumeRes.message };
+      }
     }
 
     const rewards = bt.rewards || {};

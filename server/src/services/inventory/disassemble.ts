@@ -19,7 +19,6 @@
  * 1. 穿戴中的装备不可拆解，预览与实际拆解都会命中同一校验结果
  * 2. 前端不再自行推导产物，若奖励物品静态定义缺失，服务端直接返回配置错误，避免展示与结算继续漂移
  */
-import { query } from "../../config/database.js";
 import {
   getItemDefinitionsByIds,
 } from "../staticConfigLoader.js";
@@ -29,6 +28,10 @@ import {
   type DisassembleRewardsPlan,
 } from "../disassembleRewardPlanner.js";
 import { lockCharacterInventoryMutex } from "../inventoryMutex.js";
+import {
+  loadPlayerInventoryStateByItemId,
+  loadPlayerInventoryStatesByCharacterId,
+} from "../playerStateRepository.js";
 import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { resolveItemCanDisassemble } from "../shared/itemDisassembleRule.js";
 import { consumeSpecificItemInstance, addCharacterCurrencies } from "./shared/consume.js";
@@ -58,40 +61,19 @@ type ResolvedNamedDisassembleRewardItem = {
   qty: number;
 };
 
-const singleDisassembleItemSelect = `
-      SELECT
-        ii.id,
-        ii.item_def_id,
-        ii.qty,
-        ii.location,
-        ii.locked,
-        ii.quality_rank AS instance_quality_rank,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.affixes
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-`;
-
 const loadSingleDisassembleRewardPlan = async (
   characterId: number,
   itemInstanceId: number,
   qty: number,
-  options: { forUpdate: boolean },
+  _options: { forUpdate: boolean },
 ): Promise<
   | { success: true; rewards: DisassembleRewardsPlan }
   | { success: false; message: string }
 > => {
-  const itemResult = await query(
-    `${singleDisassembleItemSelect}${options.forUpdate ? "\n      FOR UPDATE" : ""}`,
-    [itemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0) {
+  const item = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!item) {
     return { success: false, message: "物品不存在" };
   }
-
-  const item = itemResult.rows[0] as SingleDisassembleItemRow;
   const itemDef = getStaticItemDef(item.item_def_id);
   if (!itemDef) {
     return { success: false, message: "物品不存在" };
@@ -131,7 +113,7 @@ const loadSingleDisassembleRewardPlan = async (
     subCategory: itemDef.sub_category ?? null,
     effectDefs: itemDef.effect_defs ?? null,
     qualityRankRaw:
-      item.instance_quality_rank ??
+      item.quality_rank ??
       resolveQualityRankFromName(itemDef.quality, 1),
     strengthenLevelRaw: item.strengthen_level,
     refineLevelRaw: item.refine_level,
@@ -353,26 +335,10 @@ export const disassembleEquipmentBatch = async (
 
   await lockCharacterInventoryMutex(characterId);
 
-  const itemResult = await query(
-    `
-      SELECT
-        ii.id,
-        ii.item_def_id,
-        ii.qty,
-        ii.location,
-        ii.locked,
-        ii.quality_rank AS instance_quality_rank,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.affixes
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.id = ANY($2)
-      FOR UPDATE
-    `,
-    [characterId, uniqueIds],
-  );
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const itemRows = inventoryStates.filter((state) => uniqueIds.includes(state.id));
 
-  if (itemResult.rows.length !== uniqueIds.length) {
+  if (itemRows.length !== uniqueIds.length) {
     return { success: false, message: "包含不存在的物品" };
   }
 
@@ -388,20 +354,18 @@ export const disassembleEquipmentBatch = async (
   let totalSilver = 0;
   const rewardItemsByDefId = new Map<string, ResolvedNamedDisassembleRewardItem>();
   const staticDefMap = getItemDefinitionsByIds(
-    itemResult.rows.map((row) =>
-      String((row as { item_def_id?: unknown }).item_def_id || "").trim(),
-    ),
+    itemRows.map((row) => String(row.item_def_id || "").trim()),
   );
 
-  for (const row of itemResult.rows as Array<{
-    id: number | string;
+  for (const row of itemRows as Array<{
+    id: number;
     item_def_id: string;
     qty: number;
-    location: InventoryLocation;
+    location: string;
     locked: boolean;
-    instance_quality_rank: number | null;
-    strengthen_level: number;
-    refine_level: number;
+    quality_rank: number | null;
+    strengthen_level: number | null;
+    refine_level: number | null;
     affixes: unknown;
   }>) {
     const itemDefId = String(row.item_def_id || "").trim();
@@ -410,12 +374,7 @@ export const disassembleEquipmentBatch = async (
       return { success: false, message: "包含不存在的物品" };
     }
 
-    const rowId = Number(row.id);
-    if (!Number.isInteger(rowId) || rowId <= 0) {
-      return { success: false, message: "items参数错误" };
-    }
-
-    const requestQty = qtyById.get(rowId) ?? 0;
+    const requestQty = qtyById.get(row.id) ?? 0;
     if (requestQty <= 0) {
       return { success: false, message: "items参数错误" };
     }
@@ -444,7 +403,7 @@ export const disassembleEquipmentBatch = async (
       subCategory: itemDef.sub_category ?? null,
       effectDefs: itemDef.effect_defs ?? null,
       qualityRankRaw:
-        row.instance_quality_rank ??
+        row.quality_rank ??
         resolveQualityRankFromName(itemDef.quality, 1),
       strengthenLevelRaw: row.strengthen_level,
       refineLevelRaw: row.refine_level,
@@ -472,7 +431,7 @@ export const disassembleEquipmentBatch = async (
       rewardItemsByDefId.set(itemReward.itemDefId, { ...itemReward });
     }
 
-    consumeOperations.push({ id: rowId, rowQty, consumeQty: requestQty });
+    consumeOperations.push({ id: row.id, rowQty, consumeQty: requestQty });
     disassembledQtyTotal += requestQty;
   }
 
@@ -481,16 +440,13 @@ export const disassembleEquipmentBatch = async (
   }
 
   for (const op of consumeOperations) {
-    if (op.consumeQty >= op.rowQty) {
-      await query(
-        "DELETE FROM item_instance WHERE owner_character_id = $1 AND id = $2",
-        [characterId, op.id],
-      );
-    } else {
-      await query(
-        "UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE owner_character_id = $2 AND id = $3",
-        [op.consumeQty, characterId, op.id],
-      );
+    const consumeRes = await consumeSpecificItemInstance(
+      characterId,
+      op.id,
+      op.consumeQty,
+    );
+    if (!consumeRes.success) {
+      return { success: false, message: consumeRes.message };
     }
   }
 

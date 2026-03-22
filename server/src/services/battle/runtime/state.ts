@@ -23,6 +23,7 @@ import { query } from "../../../config/database.js";
 import { BattleEngine } from "../../../battle/battleEngine.js";
 import type { BattleState, BattleUnit } from "../../../battle/types.js";
 import { getGameServer } from "../../../game/gameServer.js";
+import { loadCharacterWritebackRowByCharacterId } from "../../playerWritebackCacheService.js";
 import {
   scheduleBattleCooldownPush,
 } from "../cooldownManager.js";
@@ -171,10 +172,8 @@ export async function getUserIdByCharacterId(
     return cached.userId;
 
   try {
-    const res = await query("SELECT user_id FROM characters WHERE id = $1", [
-      characterId,
-    ]);
-    const userId = Number(res.rows?.[0]?.user_id);
+    const character = await loadCharacterWritebackRowByCharacterId(characterId);
+    const userId = Number(character?.user_id);
     if (!Number.isFinite(userId) || userId <= 0) return null;
     characterOwnerCache.set(characterId, { userId, at: now });
     return userId;

@@ -2,31 +2,34 @@
  * 体力恢复服务
  *
  * 作用：
- *   管理角色体力的恢复计算与持久化。每次读取体力时根据 stamina_recover_at
- *   时间戳惰性计算已恢复量，并写回 DB。
+ *   管理角色体力的恢复计算与持久化。读取和写回都统一走角色写回缓存入口，
+ *   让体力状态与角色主状态保持同一数据源。
  *
  * 输入：characterId / userId
  * 输出：StaminaRecoveryState（当前体力、恢复量、是否变更）
  *
  * 数据流：
- *   读取：Redis 缓存（staminaCacheService）→ 命中则直接返回
- *         → 未命中则查 DB → 计算恢复 → 写 DB → 回填缓存
- *   事务内（applyStaminaRecoveryTx）：始终走 DB（需行锁），提交后由调用方同步缓存
+ *   读取：角色写回缓存 → 计算恢复 → 如有变化则写回角色写回缓存
+ *   事务内（applyStaminaRecoveryTx）：复用同一套角色写回入口，不再直读 `characters`
  *
  * 关键边界条件：
- *   1. Redis 不可用时自动降级到纯 DB 路径，不影响核心功能
- *   2. 事务内操作不走缓存（需要 FOR UPDATE 行锁保证一致性）
+ *   1. 体力恢复依赖月卡有效窗口，窗口信息只从月卡 ownership 读取，不从角色表推导
+ *   2. 体力上限依赖悟道等级，统一通过角色计算结果读取，避免在本文件里再查 `characters`
  */
 
 import { query } from '../config/database.js';
-import { getCachedStamina, setCachedStamina, toRecoveryState } from './staminaCacheService.js';
+import { getCharacterComputedByCharacterId } from './characterComputedService.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  loadCharacterWritebackRowByUserId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
 import {
   DEFAULT_MONTH_CARD_ID,
   getMonthCardStaminaRecoveryRate,
   normalizeMonthCardBenefitWindow,
 } from './shared/monthCardBenefits.js';
 import {
-  calcCharacterStaminaMaxByInsightLevel,
   resolveStaminaRecoveryState,
   STAMINA_BASE_MAX,
   type StaminaRecoverySpeedWindow,
@@ -70,28 +73,37 @@ export type StaminaRecoveryState = {
   recoverySpeedWindow: StaminaRecoverySpeedWindow;
 };
 
-type QueryRunner = (text: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+type MonthCardOwnershipRow = {
+  start_at: Date | string | number | null;
+  expire_at: Date | string | number | null;
+};
+
+type CharacterRecoveryStateRow = {
+  id: number;
+  stamina: number;
+  stamina_recover_at: string | null;
+};
 
 /**
- * 从 DB 行数据计算恢复并写回（内部核心逻辑，不走缓存）
+ * 从统一角色状态和月卡窗口计算恢复结果。
+ *
+ * 作用：把体力计算逻辑收口成单一入口，避免读取侧和写回侧各自拼一套恢复公式。
+ * 输入：角色快照、体力上限、月卡窗口、当前时间。
+ * 输出：计算后的体力状态，必要时由调用方再写回角色快照。
+ * 边界条件：
+ * 1. 角色快照不能为空，否则无法继续恢复计算。
+ * 2. 月卡窗口可能为空或已过期，`resolveStaminaRecoveryState` 会自行按窗口判断是否加速。
  */
-const applyRecoveryFromRow = async (
-  runQuery: QueryRunner,
-  row: Record<string, unknown>,
-): Promise<StaminaRecoveryState | null> => {
-  const characterId = toNonNegativeInt(row.id, 0);
-  if (characterId <= 0) return null;
-
+const applyRecoveryFromState = (
+  characterId: number,
+  stamina: number,
+  staminaRecoverAt: string | null,
+  staminaMax: number,
+  recoverySpeedWindow: StaminaRecoverySpeedWindow,
+): StaminaRecoveryState => {
   const nowMs = Date.now();
-  const rawStamina = toNonNegativeInt(row.stamina, 0);
-  const insightLevel = toNonNegativeInt(row.insight_level, 0);
-  const staminaMax = calcCharacterStaminaMaxByInsightLevel(insightLevel);
-  const currentStamina = Math.min(staminaMax, rawStamina);
-  const parsedRecoverAt = parseTime(row.stamina_recover_at, nowMs);
-  const recoverySpeedWindow = normalizeMonthCardBenefitWindow(
-    row.month_card_start_at as Date | string | number | null | undefined,
-    row.month_card_expire_at as Date | string | number | null | undefined,
-  );
+  const currentStamina = Math.min(staminaMax, toNonNegativeInt(stamina, 0));
+  const parsedRecoverAt = parseTime(staminaRecoverAt, nowMs);
   const recoveryResult = resolveStaminaRecoveryState({
     stamina: currentStamina,
     maxStamina: staminaMax,
@@ -106,22 +118,10 @@ const applyRecoveryFromRow = async (
   const nextRecoverAtMs = recoveryResult.nextRecoverAtMs;
   const recovered = recoveryResult.recovered;
 
-  const staminaChanged = rawStamina !== nextStamina;
+  const staminaChanged = currentStamina !== nextStamina;
   const recoverAtChanged = parsedRecoverAt.fallbackUsed || nextRecoverAtMs !== parsedRecoverAt.ms;
   const changed = staminaChanged || recoverAtChanged;
-
-  if (changed) {
-    if (staminaChanged) {
-      await runQuery(
-        'UPDATE characters SET stamina = $2, stamina_recover_at = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
-        [characterId, nextStamina, new Date(nextRecoverAtMs)],
-      );
-    } else {
-      await runQuery('UPDATE characters SET stamina_recover_at = $2 WHERE id = $1', [characterId, new Date(nextRecoverAtMs)]);
-    }
-  }
-
-  const state: StaminaRecoveryState = {
+  return {
     characterId,
     stamina: nextStamina,
     maxStamina: staminaMax,
@@ -130,126 +130,83 @@ const applyRecoveryFromRow = async (
     staminaRecoverAt: new Date(nextRecoverAtMs),
     recoverySpeedWindow,
   };
-
-  // 回填缓存（DB 写入后同步）
-  await setCachedStamina(characterId, nextStamina, new Date(nextRecoverAtMs), staminaMax, recoverySpeedWindow);
-
-  return state;
 };
 
-/**
- * 从 DB 查询并计算恢复（内部函数，不走缓存）
- */
-const applyRecoveryByCharacterIdFromDB = async (
-  runQuery: QueryRunner,
+const loadMonthCardRecoveryWindow = async (characterId: number): Promise<StaminaRecoverySpeedWindow> => {
+  const rowRes = await query<MonthCardOwnershipRow>(
+    `
+      SELECT start_at, expire_at
+      FROM month_card_ownership
+      WHERE character_id = $1 AND month_card_id = $2
+      LIMIT 1
+    `,
+    [characterId, DEFAULT_MONTH_CARD_ID],
+  );
+  const row = rowRes.rows[0] ?? null;
+  return normalizeMonthCardBenefitWindow(row?.start_at ?? null, row?.expire_at ?? null);
+};
+
+const loadRecoveryStateByCharacterState = async (
+  character: CharacterRecoveryStateRow,
+): Promise<StaminaRecoveryState | null> => {
+  if (!Number.isFinite(character.id) || character.id <= 0) return null;
+  const computed = await getCharacterComputedByCharacterId(character.id, { bypassStaticCache: true });
+  if (!computed) return null;
+  const characterId = character.id;
+  const recoverySpeedWindow = await loadMonthCardRecoveryWindow(characterId);
+  return applyRecoveryFromState(
+    characterId,
+    character.stamina,
+    character.stamina_recover_at,
+    computed.stamina_max,
+    recoverySpeedWindow,
+  );
+};
+
+const loadRecoveryStateByCharacterId = async (
   characterId: number,
-  lockRow: boolean,
 ): Promise<StaminaRecoveryState | null> => {
   if (!Number.isFinite(characterId) || characterId <= 0) return null;
-  const selectSql = lockRow
-    ? `
-      SELECT
-        c.id,
-        c.stamina,
-        c.stamina_recover_at,
-        COALESCE(cip.level, 0) AS insight_level,
-        mco.start_at AS month_card_start_at,
-        mco.expire_at AS month_card_expire_at
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      LEFT JOIN month_card_ownership mco
-        ON mco.character_id = c.id
-       AND mco.month_card_id = $2
-      WHERE c.id = $1
-      LIMIT 1
-      FOR UPDATE OF c
-    `
-    : `
-      SELECT
-        c.id,
-        c.stamina,
-        c.stamina_recover_at,
-        COALESCE(cip.level, 0) AS insight_level,
-        mco.start_at AS month_card_start_at,
-        mco.expire_at AS month_card_expire_at
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      LEFT JOIN month_card_ownership mco
-        ON mco.character_id = c.id
-       AND mco.month_card_id = $2
-      WHERE c.id = $1
-      LIMIT 1
-    `;
-  const rowRes = await runQuery(selectSql, [characterId, DEFAULT_MONTH_CARD_ID]);
-  const row = rowRes.rows[0];
-  if (!row) return null;
-  return applyRecoveryFromRow(runQuery, row);
+  const character = await loadCharacterWritebackRowByCharacterId(characterId);
+  if (!character) return null;
+  return loadRecoveryStateByCharacterState(character);
 };
 
 /**
  * 按角色 ID 获取体力状态（含恢复计算）
  *
- * 优先从 Redis 缓存读取，未命中则走 DB 并回填缓存
+ * 统一从角色写回快照读取，不再直查 `characters`
  */
 export const applyStaminaRecoveryByCharacterId = async (characterId: number): Promise<StaminaRecoveryState | null> => {
-  if (!Number.isFinite(characterId) || characterId <= 0) return null;
-
-  // 优先走缓存
-  const cached = await getCachedStamina(characterId);
-  if (cached) return toRecoveryState(cached);
-
-  // 缓存未命中，走 DB（applyRecoveryFromRow 内部会回填缓存）
-  return applyRecoveryByCharacterIdFromDB((text, params) => query(text, params), characterId, false);
+  const current = await loadRecoveryStateByCharacterId(characterId);
+  if (!current) return null;
+  if (!current.changed) return current;
+  await queueCharacterWritebackSnapshot(characterId, {
+    stamina: current.stamina,
+    stamina_recover_at: current.staminaRecoverAt.toISOString(),
+  });
+  return current;
 };
 
 /**
  * 按用户 ID 获取体力状态（含恢复计算）
  *
- * 需先查 characterId，再走缓存路径
+ * 先走角色写回缓存，再按统一体力公式计算。
  */
 export const applyStaminaRecoveryByUserId = async (userId: number): Promise<StaminaRecoveryState | null> => {
   if (!Number.isFinite(userId) || userId <= 0) return null;
-  const rowRes = await query(
-    `
-      SELECT
-        c.id,
-        c.stamina,
-        c.stamina_recover_at,
-        COALESCE(cip.level, 0) AS insight_level,
-        mco.start_at AS month_card_start_at,
-        mco.expire_at AS month_card_expire_at
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      LEFT JOIN month_card_ownership mco
-        ON mco.character_id = c.id
-       AND mco.month_card_id = $2
-      WHERE c.user_id = $1
-      LIMIT 1
-    `,
-    [userId, DEFAULT_MONTH_CARD_ID],
-  );
-  const row = rowRes.rows[0];
-  if (!row) return null;
-
-  const characterId = toNonNegativeInt(row.id, 0);
-  if (characterId <= 0) return null;
-
-  // 尝试缓存
-  const cached = await getCachedStamina(characterId);
-  if (cached) return toRecoveryState(cached);
-
-  // 缓存未命中，用已查到的 row 直接计算（避免重复查库）
-  return applyRecoveryFromRow((text, params) => query(text, params), row);
+  const character = await loadCharacterWritebackRowByUserId(userId);
+  if (!character) return null;
+  return loadRecoveryStateByCharacterState(character);
 };
 
 /**
- * 事务内获取体力状态（带行锁，不走缓存）
+ * 兼容旧调用名的体力状态读取入口。
  *
- * 事务需要 FOR UPDATE 行锁保证一致性，不适合走缓存。
- * 调用方在事务提交后应自行调用 setCachedStamina 同步缓存。
+ * 统一读取角色写回快照，不再直查 `characters`。
  */
 export const applyStaminaRecoveryTx = async (characterId: number): Promise<StaminaRecoveryState | null> => {
-  return applyRecoveryByCharacterIdFromDB((text, params) => query(text, params), characterId, true);
+  return loadRecoveryStateByCharacterId(characterId);
 };
 
 /**
@@ -266,7 +223,7 @@ export const recoverStaminaByCharacterId = async (
   if (!Number.isFinite(characterId) || characterId <= 0) return null;
 
   const delta = toNonNegativeInt(amount, 0);
-  const current = await applyStaminaRecoveryTx(characterId);
+  const current = await loadRecoveryStateByCharacterId(characterId);
   if (!current) return null;
   if (delta <= 0) return current;
 
@@ -279,17 +236,10 @@ export const recoverStaminaByCharacterId = async (
 
   if (!changed) return current;
 
-  await query(
-    'UPDATE characters SET stamina = $2, stamina_recover_at = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
-    [characterId, nextStamina, nextRecoverAt],
-  );
-  await setCachedStamina(
-    characterId,
-    nextStamina,
-    nextRecoverAt,
-    current.maxStamina,
-    current.recoverySpeedWindow,
-  );
+  await queueCharacterWritebackSnapshot(characterId, {
+    stamina: nextStamina,
+    stamina_recover_at: nextRecoverAt.toISOString(),
+  });
 
   return {
     ...current,

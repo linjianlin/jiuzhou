@@ -17,6 +17,10 @@ import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, generateSectId, getCharacterSectId, hasPermission, positionRank, toNumber } from './db.js';
 import { getCachedSectInfo, invalidateSectInfoCache } from './cache.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from '../playerWritebackCacheService.js';
 import type { CreateResult, Result, SectDefRow, SectInfo, SectListResult, SectPosition } from './types.js';
 import { updateAchievementProgress } from '../achievementService.js';
 
@@ -81,18 +85,17 @@ class SectCoreService {
     }
 
     const createCost = 1000;
-    const charRes = await query('SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE', [characterId]);
-    if (charRes.rows.length === 0) {
+    const characterRow = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate: true });
+    if (!characterRow) {
       return { success: false, message: '角色不存在' };
     }
-    const curSS = toNumber(charRes.rows[0]?.spirit_stones);
+    const curSS = toNumber(characterRow.spirit_stones);
     if (curSS < createCost) {
       return { success: false, message: `灵石不足，创建需要${createCost}` };
     }
-    await query(`UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2`, [
-      createCost,
-      characterId,
-    ]);
+    await queueCharacterWritebackSnapshot(characterId, {
+      spirit_stones: curSS - createCost,
+    });
 
     const sectId = generateSectId();
     await query(

@@ -15,8 +15,8 @@
  * - applyCharacterAttrDelta(characterId, delta) — 应用角色属性差分（当前为空操作）
  *
  * 数据流：
- * - 从 item_instance 表查询装备实例 → 加载静态定义 → 计算基础属性/词条/宝石属性差分
- * - getEquippedSetBonusDelta 先查已装备物品，再匹配套装定义计算激活加成
+ * - 从 Redis 主状态读取装备实例 → 加载静态定义 → 计算基础属性/词条/宝石属性差分
+ * - getEquippedSetBonusDelta 先读已装备物品，再匹配套装定义计算激活加成
  *
  * 被引用方：equipment.ts（强化/精炼/穿戴/卸下/洗炼）、socket.ts（镶嵌）
  *
@@ -25,7 +25,6 @@
  *    保留函数签名以兼容调用链，未来如需恢复直接实现即可
  * 2. 查询不到装备实例或非 equipment 类别时返回 null，调用方需检查
  */
-import { query } from "../../../config/database.js";
 import {
   buildEquipmentDisplayBaseAttrs,
 } from "../../equipmentGrowthRules.js";
@@ -35,9 +34,9 @@ import {
 import { extractFlatAffixDeltas } from "../../shared/affixModifier.js";
 import { resolveQualityRankFromName } from "../../shared/itemQuality.js";
 import {
-  applyPendingInventoryItemWritebackRow,
-  applyPendingInventoryItemWritebackRows,
-} from "../../playerWritebackCacheService.js";
+  loadPlayerInventoryStateByItemId,
+  loadPlayerInventoryStatesByCharacterId,
+} from "../../playerStateRepository.js";
 import type { CharacterAttrKey, InventoryLocation } from "./types.js";
 import { allowedCharacterAttrKeys } from "./types.js";
 import { safeNumber, getStaticItemDef } from "./helpers.js";
@@ -101,34 +100,7 @@ export const getEquipmentAttrDeltaByInstanceId = async (
   characterId: number,
   instanceId: number,
 ): Promise<Map<CharacterAttrKey, number> | null> => {
-  const result = await query(
-    `
-      SELECT
-        ii.id,
-        ii.owner_character_id,
-        ii.item_def_id,
-        ii.affixes,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.socketed_gems,
-        ii.quality_rank
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      LIMIT 1
-    `,
-    [instanceId, characterId],
-  );
-
-  if (result.rows.length === 0) return null;
-  const row = applyPendingInventoryItemWritebackRow(characterId, result.rows[0] as {
-    id: number;
-    item_def_id: string;
-    affixes: unknown;
-    strengthen_level: unknown;
-    refine_level: unknown;
-    socketed_gems: unknown;
-    quality_rank: unknown;
-  });
+  const row = await loadPlayerInventoryStateByItemId(characterId, instanceId);
   if (!row) return null;
   const itemDef = getStaticItemDef(row.item_def_id);
   if (!itemDef || itemDef.category !== "equipment") return null;
@@ -226,18 +198,8 @@ export const applyEquipmentDiffIfEquipped = async (
 export const getEquippedSetBonusDelta = async (
   characterId: number,
 ): Promise<Map<CharacterAttrKey, number>> => {
-  const equippedResult = await query(
-    `
-      SELECT ii.id, ii.item_def_id
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.location = 'equipped'
-    `,
-    [characterId],
-  );
-  const equippedRows = applyPendingInventoryItemWritebackRows(
-    characterId,
-    equippedResult.rows as Array<{ id: number; item_def_id?: unknown }>,
-  );
+  const equippedRows = (await loadPlayerInventoryStatesByCharacterId(characterId))
+    .filter((row) => String(row.location) === "equipped");
 
   const counts = new Map<string, number>();
   for (const row of equippedRows) {

@@ -5,6 +5,7 @@ import { getPvpWeeklyTitleIdByRank, PVP_WEEKLY_TITLE_VALID_DAYS } from './achiev
 import { clearExpiredEquippedPvpWeeklyTitlesTx, grantExpiringTitleTx } from './achievement/titleOwnership.js';
 import { sendSystemMail } from './mailService.js';
 import { getTitleDefinitions } from './staticConfigLoader.js';
+import { loadCharacterWritebackRowByCharacterId } from './playerWritebackCacheService.js';
 
 /**
  * 竞技场周结算服务（每周一 00:00，Asia/Shanghai）
@@ -141,17 +142,12 @@ class ArenaWeeklySettlementService {
     if (awards.length === 0) return;
 
     const characterIds = awards.map((item) => item.characterId);
-    const characterRes = await query(
-      `
-      SELECT id, user_id
-      FROM characters
-      WHERE id = ANY($1::int[])
-    `,
-      [characterIds],
-    );
-
     const userIdByCharacterId = new Map<number, number>();
-    for (const row of characterRes.rows as Array<Record<string, unknown>>) {
+    const characterRows = await Promise.all(
+      characterIds.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
+    );
+    for (const row of characterRows) {
+      if (!row) continue;
       const characterId = Number(row.id);
       const userId = Number(row.user_id);
       if (!Number.isFinite(characterId) || characterId <= 0) continue;

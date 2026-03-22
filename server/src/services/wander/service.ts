@@ -23,7 +23,7 @@ import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { getMapDefinitions } from '../staticConfigLoader.js';
 import { getMainQuestProgress } from '../mainQuest/index.js';
-import { applyPendingCharacterWriteback } from '../playerWritebackCacheService.js';
+import { loadCharacterWritebackRowByCharacterId } from '../playerWritebackCacheService.js';
 import { grantPermanentTitleTx } from '../achievement/titleOwnership.js';
 import { generateWanderAiEpisodeDraft, isWanderAiAvailable, type WanderAiPreviousEpisodeContext } from './ai.js';
 import { buildDateKey, resolveWanderGenerationDayKey, shouldBypassWanderDailyLimit } from './rules.js';
@@ -271,18 +271,24 @@ const buildOverview = (params: {
 
 class WanderService {
   private async loadCharacterContext(characterId: number): Promise<CharacterContextRow | null> {
-    const result = await query<CharacterContextRow>(
-      `
-        SELECT c.id, c.nickname, c.realm, c.sub_realm, c.current_map_id,
-               EXISTS(SELECT 1 FROM team_members tm WHERE tm.character_id = c.id) AS has_team
-        FROM characters c
-        WHERE c.id = $1
-        LIMIT 1
-      `,
-      [characterId],
-    );
-    const row = result.rows[0];
-    return row ? applyPendingCharacterWriteback(row) : null;
+    const [character, teamResult] = await Promise.all([
+      loadCharacterWritebackRowByCharacterId(characterId),
+      query<{ has_team: boolean }>(
+        `
+          SELECT EXISTS(SELECT 1 FROM team_members WHERE character_id = $1) AS has_team
+        `,
+        [characterId],
+      ),
+    ]);
+    if (!character) return null;
+    return {
+      id: character.id,
+      nickname: character.nickname,
+      realm: character.realm,
+      sub_realm: character.sub_realm,
+      current_map_id: character.current_map_id,
+      has_team: Boolean(teamResult.rows[0]?.has_team),
+    };
   }
 
   private async loadTodayEpisodeRow(characterId: number, today: string): Promise<WanderEpisodeRow | null> {

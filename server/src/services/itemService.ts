@@ -43,6 +43,8 @@ import { unbindEquipmentBindingByInstanceId } from './inventory/equipmentUnbind.
 import type { PartnerLearnTechniqueResultDto } from './partnerService.js';
 import { partnerService } from './partnerService.js';
 import { recoverStaminaByCharacterId } from './staminaService.js';
+import { consumeSpecificItemInstance } from './inventory/shared/consume.js';
+import { loadPlayerInventoryStateByItemId } from './playerStateRepository.js';
 
 // 物品定义接口
 export interface ItemDef {
@@ -79,12 +81,6 @@ type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue | undefined };
 
 type ItemUseEffect = JsonObject;
-
-type CharacterRealmRow = {
-  id: number;
-  realm: string;
-  sub_realm: string | null;
-};
 
 type ItemUseCooldownRow = {
   cooldown_until: Date | string | null;
@@ -413,35 +409,21 @@ class ItemService {
   ): Promise<ItemUseResult> {
     await lockCharacterInventoryMutex(characterId);
 
-    const charResult = await query<CharacterRealmRow>(
-      'SELECT id, realm, sub_realm FROM characters WHERE id = $1 FOR UPDATE',
-      [characterId]
-    );
-    if (charResult.rows.length === 0) {
+    const characterWriteback = await loadCharacterWritebackRowByCharacterId(characterId, {
+      forUpdate: true,
+    });
+    if (!characterWriteback) {
       return { success: false, message: '角色不存在' };
     }
-    const charRow = charResult.rows[0];
     const computedBefore = await getCharacterComputedByCharacterId(characterId);
     if (!computedBefore) {
       return { success: false, message: '角色数据异常' };
     }
 
-    // 获取物品实例
-    const instanceResult = await query<ItemInstanceRow>(
-      `
-      SELECT *
-      FROM item_instance
-      WHERE id = $1 AND owner_character_id = $2
-      FOR UPDATE
-    `,
-      [instanceId, characterId],
-    );
-  
-    if (instanceResult.rows.length === 0) {
+    const item = await loadPlayerInventoryStateByItemId(characterId, instanceId);
+    if (!item) {
       return { success: false, message: '物品不存在' };
     }
-  
-    const item = instanceResult.rows[0];
     const itemDefId = item.item_def_id.trim();
     if (!itemDefId) {
       return { success: false, message: '物品数据异常' };
@@ -453,7 +435,7 @@ class ItemService {
     }
     const resolvedTechniqueBook = resolveTechniqueBookLearning({
       itemDef,
-      metadata: item.metadata,
+      metadata: asJsonObject(item.metadata as JsonValue | undefined),
     });
     const category = String(itemDef.category || '');
     const useType = String(itemDef.use_type || '');
@@ -726,7 +708,7 @@ class ItemService {
         const requiredRealm = String(techniqueDef.required_realm || '').trim();
         if (
           shouldValidateTechniqueLearnRealm({ effectType: 'learn_generated_technique', itemDefId }) &&
-          !isRealmSufficient(charRow.realm, requiredRealm, charRow.sub_realm)
+          !isRealmSufficient(characterWriteback.realm, requiredRealm, characterWriteback.sub_realm)
         ) {
           return { success: false, message: `境界不足，需要达到${requiredRealm}` };
         }
@@ -796,7 +778,7 @@ class ItemService {
         }
 
         const requiredRealm = String(techniqueDef.required_realm || '').trim();
-        if (!isRealmSufficient(charRow.realm, requiredRealm, charRow.sub_realm)) {
+        if (!isRealmSufficient(characterWriteback.realm, requiredRealm, characterWriteback.sub_realm)) {
           return { success: false, message: `境界不足，需要达到${requiredRealm}` };
         }
 
@@ -868,13 +850,6 @@ class ItemService {
     const hasCharacterWriteback =
       deltaExp !== 0 || deltaSilver !== 0 || deltaSpiritStones !== 0;
     if (hasCharacterWriteback) {
-      const characterWriteback = await loadCharacterWritebackRowByCharacterId(characterId, {
-        forUpdate: true,
-      });
-      if (!characterWriteback) {
-        return { success: false, message: '角色不存在' };
-      }
-
       queueCharacterWritebackSnapshot(characterId, {
         ...(deltaExp !== 0 ? { exp: characterWriteback.exp + deltaExp } : {}),
         ...(deltaSilver !== 0 ? { silver: characterWriteback.silver + deltaSilver } : {}),
@@ -927,14 +902,10 @@ class ItemService {
       );
     }
   
-    // 扣除物品
-    if ((Number(item.qty) || 0) === qty) {
-      await query('DELETE FROM item_instance WHERE id = $1', [instanceId]);
-    } else {
-      await query(
-        'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
-        [qty, instanceId]
-      );
+    // 扣除物品统一复用共享消耗入口，避免直写 item_instance 与 Redis 主状态分叉。
+    const consumeRes = await consumeSpecificItemInstance(characterId, instanceId, qty);
+    if (!consumeRes.success) {
+      return { success: false, message: consumeRes.message };
     }
     if (partnerTechniqueResult) {
       partnerTechniqueResult = {

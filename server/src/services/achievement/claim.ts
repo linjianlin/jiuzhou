@@ -25,6 +25,7 @@ import {
 } from '../staticConfigLoader.js';
 import { grantPermanentTitleTx } from './titleOwnership.js';
 import { lockCharacterRewardSettlementTargets } from '../shared/characterRewardTargetLock.js';
+import { addCharacterCurrencies } from '../inventory/shared/consume.js';
 
 /**
  * 成就领取服务
@@ -122,11 +123,14 @@ class AchievementClaimService {
         const amount = asFiniteNonNegativeInt(row.amount, 0);
         if (amount <= 0) continue;
 
-        const field = type === 'silver' ? 'silver' : type === 'spirit_stones' ? 'spirit_stones' : 'exp';
-        await query(
-          `UPDATE characters SET ${field} = ${field} + $1, updated_at = NOW() WHERE id = $2`,
-          [amount, characterId],
-        );
+        const resourceResult = await addCharacterCurrencies(characterId, {
+          exp: type === 'exp' ? amount : 0,
+          silver: type === 'silver' ? amount : 0,
+          spiritStones: type === 'spirit_stones' ? amount : 0,
+        });
+        if (!resourceResult.success) {
+          throw new Error(resourceResult.message || '发放成就资源失败');
+        }
         out.push({ type, amount });
         continue;
       }

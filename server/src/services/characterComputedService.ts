@@ -47,16 +47,19 @@ import {
   TECHNIQUE_PASSIVE_PERCENT_MULTIPLY_KEYS,
   splitTechniquePassiveAttrs,
 } from './shared/techniquePassiveAttrs.js';
-import { CHARACTER_BASE_COLUMNS_SQL } from './shared/sqlFragments.js';
 import {
   CHARACTER_RATIO_ATTR_KEY_SET,
   TITLE_EFFECT_KEY_SET,
 } from './shared/characterAttrRegistry.js';
 import {
-  applyPendingCharacterWriteback,
-  applyPendingInventoryItemWritebackRows,
   getPlayerWritebackRuntimeVersion,
 } from './playerWritebackCacheService.js';
+import {
+  loadPlayerCharacterStateByCharacterId,
+  loadPlayerCharacterStateByUserId,
+  loadPlayerInventoryStatesByCharacterId,
+} from './playerStateRepository.js';
+import type { PlayerCharacterState } from './playerStateTypes.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -87,6 +90,39 @@ interface CharacterBaseRow {
   current_map_id: string;
   current_room_id: string;
 }
+
+const toCharacterBaseRow = (
+  state: PlayerCharacterState,
+  insightLevel: number,
+): CharacterBaseRow => {
+  return {
+    id: state.id,
+    user_id: state.user_id,
+    nickname: state.nickname,
+    title: state.title,
+    gender: state.gender,
+    avatar: state.avatar,
+    auto_cast_skills: state.auto_cast_skills,
+    auto_disassemble_enabled: state.auto_disassemble_enabled,
+    auto_disassemble_rules: state.auto_disassemble_rules,
+    dungeon_no_stamina_cost: state.dungeon_no_stamina_cost,
+    spirit_stones: state.spirit_stones,
+    silver: state.silver,
+    stamina: state.stamina,
+    realm: state.realm,
+    sub_realm: state.sub_realm,
+    exp: state.exp,
+    insight_level: Math.max(0, Math.floor(Number(insightLevel) || 0)),
+    attribute_points: state.attribute_points,
+    jing: state.jing,
+    qi: state.qi,
+    shen: state.shen,
+    attribute_type: state.attribute_type,
+    attribute_element: state.attribute_element,
+    current_map_id: state.current_map_id,
+    current_room_id: state.current_room_id,
+  };
+};
 
 interface CharacterComputedStats {
   max_qixue: number;
@@ -589,24 +625,8 @@ const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: numb
   const primaryAttrPctModifiers: Partial<Record<CharacterPrimaryAttrKey, number>> = {};
   const ratingTotals: Partial<Record<CharacterAttrKey, number>> = {};
 
-  const equippedResult = await query(
-    `
-      SELECT
-        ii.affixes,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.socketed_gems,
-        ii.item_def_id,
-        ii.quality_rank
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1
-        AND ii.location = 'equipped'
-    `,
-    [characterId],
-  );
-  const equippedRows = applyPendingInventoryItemWritebackRows(
-    characterId,
-    equippedResult.rows as Array<Record<string, unknown>>,
+  const equippedRows = (await loadPlayerInventoryStatesByCharacterId(characterId)).filter(
+    (row) => row.location === 'equipped',
   );
 
   const itemDefIds = Array.from(
@@ -903,37 +923,64 @@ const writeResourceStateCache = async (characterId: number, state: CharacterReso
 };
 
 const selectBaseCharacterByUserId = async (userId: number): Promise<CharacterBaseRow | null> => {
-  const result = await query(
-    `
-      SELECT
-        ${CHARACTER_BASE_COLUMNS_SQL},
-        COALESCE(cip.level, 0) AS insight_level
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      WHERE c.user_id = $1
-      LIMIT 1
-    `,
-    [userId],
-  );
-  if (result.rows.length <= 0) return null;
-  return applyPendingCharacterWriteback(result.rows[0] as CharacterBaseRow);
+  const state = await loadPlayerCharacterStateByUserId(userId);
+  if (!state) return null;
+  const insightLevel = await loadCharacterInsightLevelByCharacterId(state.id);
+  return toCharacterBaseRow(state, insightLevel);
 };
 
 const selectBaseCharacterByCharacterId = async (characterId: number): Promise<CharacterBaseRow | null> => {
+  const state = await loadPlayerCharacterStateByCharacterId(characterId);
+  if (!state) return null;
+  const insightLevel = await loadCharacterInsightLevelByCharacterId(state.id);
+  return toCharacterBaseRow(state, insightLevel);
+};
+
+const loadCharacterInsightLevelByCharacterId = async (characterId: number): Promise<number> => {
   const result = await query(
     `
-      SELECT
-        ${CHARACTER_BASE_COLUMNS_SQL},
-        COALESCE(cip.level, 0) AS insight_level
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      WHERE c.id = $1
+      SELECT COALESCE(cip.level, 0) AS insight_level
+      FROM character_insight_progress cip
+      WHERE cip.character_id = $1
       LIMIT 1
     `,
     [characterId],
   );
-  if (result.rows.length <= 0) return null;
-  return applyPendingCharacterWriteback(result.rows[0] as CharacterBaseRow);
+  if (result.rows.length <= 0) return 0;
+  return Math.max(0, Math.floor(Number((result.rows[0] as { insight_level?: unknown }).insight_level) || 0));
+};
+
+const loadCharacterInsightLevelMapByCharacterIds = async (
+  characterIds: number[],
+): Promise<Map<number, number>> => {
+  const ids = [...new Set(characterIds.map((id) => Math.floor(Number(id))).filter((id) => Number.isFinite(id) && id > 0))];
+  const resultMap = new Map<number, number>();
+  if (ids.length <= 0) return resultMap;
+
+  const result = await query(
+    `
+      SELECT
+        cip.character_id,
+        COALESCE(cip.level, 0) AS insight_level
+      FROM character_insight_progress cip
+      WHERE cip.character_id = ANY($1)
+    `,
+    [ids],
+  );
+
+  for (const row of result.rows as Array<{ character_id?: unknown; insight_level?: unknown }>) {
+    const characterId = Math.floor(Number(row.character_id) || 0);
+    if (!Number.isFinite(characterId) || characterId <= 0) continue;
+    resultMap.set(characterId, Math.max(0, Math.floor(Number(row.insight_level) || 0)));
+  }
+
+  for (const id of ids) {
+    if (!resultMap.has(id)) {
+      resultMap.set(id, 0);
+    }
+  }
+
+  return resultMap;
 };
 
 const ensureResourceState = async (
@@ -1056,19 +1103,13 @@ export const getCharacterComputedBatchByCharacterIds = async (
   const out = new Map<number, CharacterComputedRow>();
   if (ids.length <= 0) return out;
 
-  const result = await query(
-    `
-      SELECT
-        ${CHARACTER_BASE_COLUMNS_SQL},
-        COALESCE(cip.level, 0) AS insight_level
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      WHERE c.id = ANY($1)
-    `,
-    [ids],
-  );
-
-  const rows = (result.rows as CharacterBaseRow[]).map((row) => applyPendingCharacterWriteback(row));
+  const [states, insightLevelMap] = await Promise.all([
+    Promise.all(ids.map((id) => loadPlayerCharacterStateByCharacterId(id))),
+    loadCharacterInsightLevelMapByCharacterIds(ids),
+  ]);
+  const rows = states
+    .filter((state): state is PlayerCharacterState => state !== null)
+    .map((state) => toCharacterBaseRow(state, insightLevelMap.get(state.id) ?? 0));
   const monthCardFuyuanBonusMap = await loadMonthCardFuyuanBonusMap(rows.map((row) => row.id));
   await Promise.all(
     rows.map(async (row) => {

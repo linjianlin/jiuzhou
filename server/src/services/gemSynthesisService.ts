@@ -3,10 +3,20 @@ import { Transactional } from '../decorators/transactional.js';
 import { randomInt } from 'crypto';
 import { addItemToInventory } from './inventory/index.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
+import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import {
   getCharacterComputedByCharacterId,
   type CharacterComputedRow,
 } from './characterComputedService.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
+import {
+  deletePlayerInventoryState,
+  loadPlayerInventoryStatesByCharacterId,
+  patchPlayerInventoryState,
+} from './playerStateRepository.js';
 import {
   getEnabledItemDefinitions,
   getItemDefinitionsByIds,
@@ -63,27 +73,12 @@ type ItemDefLite = {
 
 type IntegerLike = string | number | bigint | null | undefined;
 
-type CharacterWalletRow = {
-  silver: IntegerLike;
-  spirit_stones: IntegerLike;
-};
-
-type ItemOwnedQtyRow = {
-  item_def_id: string;
-  qty: IntegerLike;
-};
-
 type ItemInstanceRow = {
   id: IntegerLike;
   item_def_id: string | null;
   qty: IntegerLike;
   locked: boolean | null;
   location: string | null;
-};
-
-type ItemConsumeRow = {
-  id: number;
-  qty: IntegerLike;
 };
 
 export type GemSynthesisRecipeView = {
@@ -380,16 +375,8 @@ const getCharacterWalletTx = async (
   characterId: number,
   forUpdate: boolean,
 ): Promise<CharacterWallet | null> => {
-  const sql = `
-    SELECT silver, spirit_stones
-    FROM characters
-    WHERE id = $1
-    ${forUpdate ? 'FOR UPDATE' : ''}
-    LIMIT 1
-  `;
-  const result = await query(sql, [characterId]);
-  if (!result.rows[0]) return null;
-  const row = result.rows[0] as CharacterWalletRow;
+  const row = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate });
+  if (!row) return null;
   return {
     silver: clampInt(row.silver, 0, Number.MAX_SAFE_INTEGER),
     spiritStones: clampInt(row.spirit_stones, 0, Number.MAX_SAFE_INTEGER),
@@ -462,23 +449,17 @@ const getItemOwnedQtyMapTx = async (
   const ids = [...new Set(itemDefIds.map((x) => x.trim()).filter((x) => x.length > 0))];
   if (ids.length === 0) return new Map();
   const locations = normalizeMaterialLocations(options.locations);
-
-  const result = await query(
-    `
-      SELECT item_def_id, SUM(qty)::bigint AS qty
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND item_def_id = ANY($2::text[])
-        AND locked = false
-        AND location = ANY($3::text[])
-      GROUP BY item_def_id
-    `,
-    [characterId, ids, locations],
-  );
-
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
   const map = new Map<string, number>();
-  for (const row of result.rows as ItemOwnedQtyRow[]) {
-    map.set(String(row.item_def_id || '').trim(), clampInt(row.qty, 0, Number.MAX_SAFE_INTEGER));
+  for (const item of inventoryStates) {
+    const itemDefId = String(item.item_def_id || '').trim();
+    if (!itemDefId || !ids.includes(itemDefId)) continue;
+    if (item.locked) continue;
+    if (!locations.some((location) => location === item.location)) continue;
+
+    const qty = clampInt(item.qty, 0, Number.MAX_SAFE_INTEGER);
+    if (qty <= 0) continue;
+    map.set(itemDefId, (map.get(itemDefId) ?? 0) + qty);
   }
   return map;
 };
@@ -491,34 +472,40 @@ type ItemInstanceMaterialRow = {
   location: string;
 };
 
-const getItemInstanceRowsByIdsForUpdateTx = async (
+const loadItemInstanceRowsFromInventoryStateTx = async (
   characterId: number,
   itemInstanceIds: number[],
 ): Promise<ItemInstanceMaterialRow[]> => {
   const ids = [...new Set(itemInstanceIds.map((id) => clampInt(id, 1, Number.MAX_SAFE_INTEGER)).filter((id) => id > 0))];
   if (ids.length === 0) return [];
 
-  const result = await query(
-    `
-      SELECT id, item_def_id, qty, locked, location
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND id = ANY($2::int[])
-      FOR UPDATE
-    `,
-    [characterId, ids],
-  );
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const stateMap = new Map(inventoryStates.map((row) => [row.id, row] as const));
 
-  return (result.rows as ItemInstanceRow[]).map((row) => ({
-    id: clampInt(row.id, 0, Number.MAX_SAFE_INTEGER),
-    itemDefId: String(row.item_def_id || '').trim(),
-    qty: clampInt(row.qty, 0, Number.MAX_SAFE_INTEGER),
-    locked: Boolean(row.locked),
-    location: String(row.location || '').trim(),
-  }));
+  return ids
+    .map((itemId) => {
+      const row = stateMap.get(itemId);
+      if (!row) return null;
+      return {
+        id: row.id,
+        itemDefId: String(row.item_def_id || '').trim(),
+        qty: clampInt(row.qty, 0, Number.MAX_SAFE_INTEGER),
+        locked: row.locked,
+        location: String(row.location || '').trim(),
+      };
+    })
+    .filter((row): row is ItemInstanceMaterialRow => row !== null);
+};
+
+const getItemInstanceRowsByIdsForUpdateTx = async (
+  characterId: number,
+  itemInstanceIds: number[],
+): Promise<ItemInstanceMaterialRow[]> => {
+  return loadItemInstanceRowsFromInventoryStateTx(characterId, itemInstanceIds);
 };
 
 const consumeSelectedItemInstancesTx = async (
+  characterId: number,
   consumeQtyByItemId: Map<number, number>,
   rowsByItemId: Map<number, ItemInstanceMaterialRow>,
 ): Promise<{ success: boolean; message: string }> => {
@@ -529,10 +516,12 @@ const consumeSelectedItemInstancesTx = async (
     if (row.qty < consumeQty) return { success: false, message: '所选宝石数量不足' };
 
     if (row.qty === consumeQty) {
-      await query('DELETE FROM item_instance WHERE id = $1', [itemId]);
+      await deletePlayerInventoryState(characterId, itemId);
       continue;
     }
-    await query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [consumeQty, itemId]);
+    await patchPlayerInventoryState(characterId, itemId, {
+      qty: row.qty - consumeQty,
+    });
   }
 
   return { success: true, message: '扣除材料成功' };
@@ -569,41 +558,40 @@ const consumeItemDefIdsQtyTx = async (
     return { success: false, message: options.insufficientMessage || '材料不足' };
   }
   const locations = normalizeMaterialLocations(options.locations);
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const ownedByItemDefId = new Map<string, number>();
+  for (const item of inventoryStates) {
+    const itemDefId = String(item.item_def_id || '').trim();
+    if (!itemDefId || !ids.includes(itemDefId)) continue;
+    if (item.locked) continue;
+    if (!locations.some((location) => location === item.location)) continue;
 
-  const result = await query(
-    `
-      SELECT id, qty
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND item_def_id = ANY($2::text[])
-        AND locked = false
-        AND location = ANY($3::text[])
-      ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, qty DESC, id ASC
-      FOR UPDATE
-    `,
-    [characterId, ids, locations],
-  );
+    const itemQty = clampInt(item.qty, 0, Number.MAX_SAFE_INTEGER);
+    if (itemQty <= 0) continue;
+    ownedByItemDefId.set(itemDefId, (ownedByItemDefId.get(itemDefId) ?? 0) + itemQty);
+  }
 
-  const rows = result.rows as ItemConsumeRow[];
-  const total = rows.reduce((sum, row) => sum + clampInt(row.qty, 0, Number.MAX_SAFE_INTEGER), 0);
+  const total = [...ownedByItemDefId.values()].reduce((sum, ownedQty) => sum + ownedQty, 0);
   if (total < need) {
     return { success: false, message: options.insufficientMessage || '材料不足' };
   }
 
   let remaining = need;
-  for (const row of rows) {
+  for (const itemDefId of ids) {
     if (remaining <= 0) break;
-    const rowQty = clampInt(row.qty, 0, Number.MAX_SAFE_INTEGER);
-    if (rowQty <= 0) continue;
+    const availableQty = ownedByItemDefId.get(itemDefId) ?? 0;
+    if (availableQty <= 0) continue;
 
-    if (rowQty <= remaining) {
-      await query('DELETE FROM item_instance WHERE id = $1', [row.id]);
-      remaining -= rowQty;
-      continue;
+    const consumeQty = Math.min(remaining, availableQty);
+    const consumeRes = await consumeMaterialByDefId(characterId, itemDefId, consumeQty);
+    if (!consumeRes.success) {
+      return consumeRes;
     }
+    remaining -= consumeQty;
+  }
 
-    await query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [remaining, row.id]);
-    remaining = 0;
+  if (remaining > 0) {
+    return { success: false, message: options.insufficientMessage || '材料不足' };
   }
 
   return { success: true, message: '扣除材料成功' };
@@ -618,10 +606,15 @@ const consumeItemDefQtyTx = async (
     insufficientMessage?: string;
   } = {},
 ): Promise<{ success: boolean; message: string }> => {
-  return consumeItemDefIdsQtyTx(characterId, [itemDefId], qty, {
-    insufficientMessage: options.insufficientMessage || '宝石数量不足',
-    ...(options.locations ? { locations: options.locations } : {}),
-  });
+  const consumeRes = await consumeMaterialByDefId(
+    characterId,
+    itemDefId,
+    clampInt(qty, 1, Number.MAX_SAFE_INTEGER),
+  );
+  if (!consumeRes.success) {
+    return { success: false, message: options.insufficientMessage || '宝石数量不足' };
+  }
+  return { success: true, message: '扣除材料成功' };
 };
 
 const calcMaxSynthesizeTimes = (params: {
@@ -642,16 +635,10 @@ const calcMaxSynthesizeTimes = (params: {
 };
 
 const updateCharacterWalletTx = async (characterId: number, wallet: CharacterWallet): Promise<void> => {
-  await query(
-    `
-      UPDATE characters
-      SET silver = $2,
-          spirit_stones = $3,
-          updated_at = NOW()
-      WHERE id = $1
-    `,
-    [characterId, wallet.silver, wallet.spiritStones],
-  );
+  await queueCharacterWritebackSnapshot(characterId, {
+    silver: wallet.silver,
+    spirit_stones: wallet.spiritStones,
+  });
 };
 
 type GemConvertContext = {
@@ -1158,7 +1145,7 @@ class GemSynthesisService {
       consumeQtyByItemId.set(itemId, baseQty * requestedTimes);
     }
 
-    const consumeRes = await consumeSelectedItemInstancesTx(consumeQtyByItemId, rowsByItemId);
+    const consumeRes = await consumeSelectedItemInstancesTx(characterId, consumeQtyByItemId, rowsByItemId);
     if (!consumeRes.success) {
       return { success: false, message: consumeRes.message };
     }

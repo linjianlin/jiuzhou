@@ -24,6 +24,8 @@ import { Transactional } from '../decorators/transactional.js';
 import type { SkillTriggerType } from '../shared/skillTriggerType.js';
 import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
+import { loadCharacterWritebackRowByCharacterId } from './playerWritebackCacheService.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
 import { getItemDefinitionById, getTechniqueDefinitions, refreshGeneratedTechniqueSnapshots } from './staticConfigLoader.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { buildTechniqueResearchJobState } from './shared/techniqueResearchJobShared.js';
@@ -417,6 +419,22 @@ const remapGeneratedSkillIds = (
   return remapTechniqueCandidateSkillIds(candidate);
 };
 
+const sumAvailableInventoryQtyByItemDefId = (
+  inventoryStates: Awaited<ReturnType<typeof loadPlayerInventoryStatesByCharacterId>>,
+  itemDefId: string,
+): number => {
+  return inventoryStates.reduce((totalQty, item) => {
+    if (
+      item.item_def_id !== itemDefId ||
+      item.locked ||
+      (item.location !== 'bag' && item.location !== 'warehouse')
+    ) {
+      return totalQty;
+    }
+    return totalQty + Math.max(0, Math.floor(asNumber(item.qty, 0)));
+  }, 0);
+};
+
 class TechniqueGenerationService {
   private async broadcastHeavenTechniquePublish(
     characterId: number,
@@ -443,73 +461,31 @@ class TechniqueGenerationService {
     characterId: number,
     lockRow: boolean,
   ): Promise<ServiceResult<TechniqueResearchUnlockState>> {
-    const queryText = lockRow
-      ? `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-        FOR UPDATE
-      `
-      : `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-      `;
-    const charRes = await query(queryText, [characterId]);
-    if (charRes.rows.length === 0) {
+    const character = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate: lockRow });
+    if (!character) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
-
-    const row = charRes.rows[0] as { realm?: string | null; sub_realm?: string | null };
     return {
       success: true,
       message: '获取研修解锁态成功',
       data: buildTechniqueResearchUnlockState(
-        typeof row.realm === 'string' ? row.realm.trim() : '',
-        typeof row.sub_realm === 'string' && row.sub_realm.trim() ? row.sub_realm.trim() : null,
+        character.realm.trim(),
+        character.sub_realm && character.sub_realm.trim() ? character.sub_realm.trim() : null,
       ),
     };
   }
 
   private async getResearchFragmentBalanceTx(characterId: number): Promise<number> {
-    const fragmentRes = await query(
-      `
-        SELECT COALESCE(SUM(qty), 0) AS fragment_balance
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND item_def_id = $2
-          AND location IN ('bag', 'warehouse')
-          AND locked = false
-      `,
-      [characterId, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID],
-    );
-    return Math.max(
-      0,
-      Math.floor(asNumber((fragmentRes.rows[0] as Record<string, unknown> | undefined)?.fragment_balance, 0)),
-    );
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    return sumAvailableInventoryQtyByItemDefId(inventoryStates, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID);
   }
 
-  private async loadCooldownBypassTokenAvailableQty(characterId: number, forUpdate: boolean): Promise<number> {
-    const lockSql = forUpdate ? 'FOR UPDATE' : '';
-    const tokenRes = await query(
-      `
-        SELECT qty
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND item_def_id = $2
-          AND location IN ('bag', 'warehouse')
-          AND locked = false
-        ${lockSql}
-      `,
-      [characterId, TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID],
+  private async loadCooldownBypassTokenAvailableQty(characterId: number, _forUpdate: boolean): Promise<number> {
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    return sumAvailableInventoryQtyByItemDefId(
+      inventoryStates,
+      TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID,
     );
-    return tokenRes.rows.reduce((totalQty, row) => {
-      const currentQty = Number((row as Record<string, unknown>).qty ?? 0);
-      if (!Number.isFinite(currentQty) || currentQty <= 0) {
-        return totalQty;
-      }
-      return totalQty + Math.floor(currentQty);
-    }, 0);
   }
 
   private async loadLatestResearchCooldownStartedAt(
@@ -539,21 +515,12 @@ class TechniqueGenerationService {
     const refundQty = Math.max(0, Math.floor(asNumber(qty, 0)));
     if (refundQty <= 0) return;
 
-    const characterRes = await query(
-      `
-        SELECT user_id
-        FROM characters
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [characterId],
-    );
-    const userId = Math.floor(asNumber((characterRes.rows[0] as Record<string, unknown> | undefined)?.user_id, 0));
-    if (userId <= 0) {
+    const character = await loadCharacterWritebackRowByCharacterId(characterId);
+    if (!character || character.user_id <= 0) {
       throw new Error('退款失败：角色不存在');
     }
 
-    const addRes = await addItemToInventory(characterId, userId, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID, refundQty, {
+    const addRes = await addItemToInventory(characterId, character.user_id, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID, refundQty, {
       obtainedFrom,
     });
     if (!addRes.success) {

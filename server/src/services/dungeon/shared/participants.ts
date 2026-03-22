@@ -15,7 +15,10 @@
  */
 
 import { query } from '../../../config/database.js';
-import { applyPendingCharacterWriteback } from '../../playerWritebackCacheService.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  loadCharacterWritebackRowByUserId,
+} from '../../playerWritebackCacheService.js';
 import { asObject, asArray, asString } from './typeUtils.js';
 import type { DungeonInstanceParticipant } from '../types.js';
 
@@ -61,13 +64,14 @@ export const getParticipantNicknameMap = async (participants: DungeonInstancePar
   );
   if (characterIds.length === 0) return new Map<number, string>();
 
-  const rows = await query('SELECT id, nickname FROM characters WHERE id = ANY($1::int[])', [characterIds]);
   const nicknameMap = new Map<number, string>();
-  for (const rawRow of rows.rows as Array<Record<string, unknown>>) {
-    const row = applyPendingCharacterWriteback(rawRow);
-    const characterId = Number(row.id);
+  const rows = await Promise.all(
+    characterIds.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
+  );
+  for (const row of rows) {
+    const characterId = Number(row?.id);
     if (!Number.isFinite(characterId) || characterId <= 0) continue;
-    const nickname = asString(row.nickname, '').trim();
+    const nickname = asString(row?.nickname, '').trim();
     if (!nickname) continue;
     nicknameMap.set(characterId, nickname);
   }
@@ -87,11 +91,11 @@ export const getUserAndCharacter = async (
   | { ok: true; userId: number; characterId: number; realm: string; teamId: string | null; isLeader: boolean }
   | { ok: false; message: string }
 > => {
-  const charRes = await query(`SELECT id, realm, sub_realm FROM characters WHERE user_id = $1 LIMIT 1`, [userId]);
-  if (charRes.rows.length === 0) return { ok: false, message: '角色不存在' };
-  const characterId = Number(charRes.rows[0]?.id);
+  const character = await loadCharacterWritebackRowByUserId(userId);
+  if (!character) return { ok: false, message: '角色不存在' };
+  const characterId = Number(character.id);
   if (!Number.isFinite(characterId) || characterId <= 0) return { ok: false, message: '角色不存在' };
-  const realm = getFullRealm(String(charRes.rows[0]?.realm || '凡人'), (charRes.rows[0]?.sub_realm ?? null) as string | null);
+  const realm = getFullRealm(String(character.realm || '凡人'), (character.sub_realm ?? null) as string | null);
 
   const memberRes = await query(`SELECT team_id, role FROM team_members WHERE character_id = $1 LIMIT 1`, [characterId]);
   const teamId = memberRes.rows.length > 0 ? asString(memberRes.rows[0]?.team_id, '') : '';

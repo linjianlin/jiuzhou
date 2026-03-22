@@ -215,14 +215,7 @@ export const applyDialogueEffectsTx = async (
         const flagName = typeof params.flag === 'string' ? params.flag : '';
         const flagValue = params.value ?? true;
         if (flagName) {
-          await query(
-            `UPDATE characters 
-             SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object($1, $2::jsonb),
-                 updated_at = NOW()
-             WHERE id = $3`,
-            [flagName, JSON.stringify(flagValue), characterId],
-          );
-          results.push({ type: 'flag', flag: flagName, value: flagValue });
+          throw new Error(`当前库结构不支持对话旗标写入: ${flagName}=${JSON.stringify(flagValue)}`);
         }
         continue;
       }

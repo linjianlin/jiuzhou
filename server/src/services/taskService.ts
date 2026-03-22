@@ -45,6 +45,7 @@ import {
   type TaskEvent,
   type TaskObjectiveLike,
 } from './shared/taskRecurringEventMatcher.js';
+import { loadCharacterWritebackRowByCharacterId } from './playerWritebackCacheService.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -446,18 +447,8 @@ const loadCharacterTaskRealmState = async (
   const cid = Number(characterId);
   if (!Number.isFinite(cid) || cid <= 0) return null;
 
-  const runner = dbClient ?? { query };
-  const res = await runner.query(
-    `
-      SELECT realm, sub_realm
-      FROM characters
-      WHERE id = $1
-      LIMIT 1
-    `,
-    [cid],
-  );
-
-  const row = (res.rows?.[0] ?? null) as Record<string, unknown> | null;
+  void dbClient;
+  const row = await loadCharacterWritebackRowByCharacterId(cid);
   if (!row) return null;
   return {
     realm: asNonEmptyString(row.realm) ?? '凡人',

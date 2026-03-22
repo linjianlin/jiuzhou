@@ -23,6 +23,8 @@ import {
   loadCharacterWritebackRowByCharacterId,
   queueCharacterWritebackSnapshot,
 } from './playerWritebackCacheService.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
+import { consumeSpecificItemInstance } from './inventory/shared/consume.js';
 import {
   PARTNER_SYSTEM_FEATURE_CODE,
   isFeatureUnlocked,
@@ -202,13 +204,91 @@ const randomIntInclusive = (min: number, max: number): number => {
   return Math.floor(Math.random() * (upper - lower + 1)) + lower;
 };
 
-type PartnerItemInstanceRow = {
-  id: number;
-  item_def_id: string;
-  qty: number;
-  location: string;
-  location_slot: number | null;
-  metadata: object | null;
+type PartnerMaterialCountMap = Map<string, number>;
+
+const getPartnerBooksFromInventory = async (characterId: number): Promise<PartnerBookDto[]> => {
+  const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+  const books: PartnerBookDto[] = [];
+  for (const item of inventoryStates) {
+    if (normalizeText(item.location) !== 'bag') continue;
+    if (normalizeInteger(item.qty) <= 0) continue;
+    const itemDefId = normalizeText(item.item_def_id);
+    if (!itemDefId) continue;
+    const itemDef = getItemDefinitionById(itemDefId);
+    if (!itemDef) continue;
+    const itemMetadata: Record<string, unknown> | null =
+      typeof item.metadata === 'object' && item.metadata !== null && !Array.isArray(item.metadata)
+        ? (item.metadata as Record<string, unknown>)
+        : null;
+    const learning = resolveTechniqueBookLearning({
+      itemDef,
+      metadata: itemMetadata,
+    });
+    if (!learning) continue;
+    const techniqueMeta = getPartnerTechniqueStaticMeta(learning.techniqueId, 1);
+    if (!techniqueMeta) continue;
+    const generatedDisplay = resolveGeneratedTechniqueBookDisplay(itemDefId, itemMetadata);
+    books.push({
+      itemInstanceId: normalizeInteger(item.id, 1),
+      itemDefId,
+      name:
+        normalizeText(generatedDisplay?.name) ||
+        normalizeText(itemDef.name) ||
+        itemDefId,
+      icon: normalizeText(itemDef.icon) || null,
+      techniqueId: learning.techniqueId,
+      techniqueName:
+        normalizeText(generatedDisplay?.generatedTechniqueName) ||
+        normalizeText(techniqueMeta.definition.name) ||
+        learning.techniqueId,
+      quality:
+        normalizeText(generatedDisplay?.quality) ||
+        normalizeText(itemDef.quality) ||
+        normalizeText(techniqueMeta.definition.quality) ||
+        '黄',
+      qty: normalizeInteger(item.qty, 1),
+    });
+  }
+  return books;
+};
+
+const getPartnerMaterialItemsFromInventory = (
+  inventoryStates: Awaited<ReturnType<typeof loadPlayerInventoryStatesByCharacterId>>,
+  itemId: string,
+): Array<{ id: number; qty: number }> => {
+  return inventoryStates
+    .filter((item) => {
+      const itemDefId = normalizeText(item.item_def_id);
+      if (itemDefId !== itemId) return false;
+      const location = normalizeText(item.location);
+      return (location === 'bag' || location === 'warehouse') && !item.locked;
+    })
+    .map((item) => ({
+      id: normalizeInteger(item.id, 0),
+      qty: normalizeInteger(item.qty, 0),
+    }))
+    .sort((left, right) => left.qty - right.qty || left.id - right.id);
+};
+
+const loadPartnerMaterialCounts = async (
+  characterId: number,
+  itemIds: string[],
+  inventoryStates?: Awaited<ReturnType<typeof loadPlayerInventoryStatesByCharacterId>>,
+): Promise<PartnerMaterialCountMap> => {
+  const targetIds = Array.from(new Set(itemIds.map((id) => normalizeText(id)).filter((id) => id.length > 0)));
+  const currentInventoryStates = inventoryStates ?? await loadPlayerInventoryStatesByCharacterId(characterId);
+  const counts: PartnerMaterialCountMap = new Map();
+  if (targetIds.length <= 0) return counts;
+  const targetIdSet = new Set(targetIds);
+  for (const item of currentInventoryStates) {
+    const itemDefId = normalizeText(item.item_def_id);
+    if (!itemDefId || !targetIdSet.has(itemDefId)) continue;
+    const location = normalizeText(item.location);
+    if (location !== 'bag' && location !== 'warehouse') continue;
+    if (item.locked) continue;
+    counts.set(itemDefId, (counts.get(itemDefId) ?? 0) + normalizeInteger(item.qty));
+  }
+  return counts;
 };
 
 const loadCharacterPartnerContext = async (
@@ -244,54 +324,7 @@ const buildPartnerDetailWithTradeState = async (params: {
 };
 
 const loadPartnerBooks = async (characterId: number): Promise<PartnerBookDto[]> => {
-  const result = await query(
-    `
-      SELECT id, item_def_id, qty, location, location_slot, metadata
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND location = 'bag'
-        AND qty > 0
-      ORDER BY location_slot ASC NULLS LAST, id ASC
-    `,
-    [characterId],
-  );
-
-  const books: PartnerBookDto[] = [];
-  for (const row of result.rows as PartnerItemInstanceRow[]) {
-    const itemDefId = normalizeText(row.item_def_id);
-    if (!itemDefId) continue;
-    const itemDef = getItemDefinitionById(itemDefId);
-    const learning = resolveTechniqueBookLearning({
-      itemDef,
-      metadata: row.metadata,
-    });
-    if (!itemDef || !learning) continue;
-    const techniqueMeta = getPartnerTechniqueStaticMeta(learning.techniqueId, 1);
-    if (!techniqueMeta) continue;
-    const generatedDisplay = resolveGeneratedTechniqueBookDisplay(itemDefId, row.metadata);
-    books.push({
-      itemInstanceId: normalizeInteger(row.id, 1),
-      itemDefId,
-      name:
-        normalizeText(generatedDisplay?.name) ||
-        normalizeText(itemDef.name) ||
-        itemDefId,
-      icon: normalizeText(itemDef.icon) || null,
-      techniqueId: learning.techniqueId,
-      techniqueName:
-        normalizeText(generatedDisplay?.generatedTechniqueName) ||
-        normalizeText(techniqueMeta.definition.name) ||
-        learning.techniqueId,
-      quality:
-        normalizeText(generatedDisplay?.quality) ||
-        normalizeText(itemDef.quality) ||
-        normalizeText(techniqueMeta.definition.quality) ||
-        '黄',
-      qty: normalizeInteger(row.qty, 1),
-    });
-  }
-
-  return books;
+  return getPartnerBooksFromInventory(characterId);
 };
 
 const buildTechniqueStateList = (
@@ -1048,18 +1081,14 @@ class PartnerService {
         };
       }
 
+      const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+      const materialCounts = await loadPartnerMaterialCounts(
+        characterId,
+        cost.materials.map((material) => material.itemId),
+        inventoryStates,
+      );
       for (const material of cost.materials) {
-        const materialResult = await query(
-          `
-            SELECT COALESCE(SUM(qty), 0) AS total
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND item_def_id = $2
-              AND location IN ('bag', 'warehouse')
-          `,
-          [characterId, material.itemId],
-        );
-        const totalQty = normalizeInteger(materialResult.rows[0]?.total);
+        const totalQty = materialCounts.get(material.itemId) ?? 0;
         if (totalQty < material.qty) {
           return {
             success: false,
@@ -1075,30 +1104,22 @@ class PartnerService {
 
       for (const material of cost.materials) {
         let remainingQty = material.qty;
-        const itemsResult = await query(
-          `
-            SELECT id, qty
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND item_def_id = $2
-              AND location IN ('bag', 'warehouse')
-            ORDER BY qty ASC
-            FOR UPDATE
-          `,
-          [characterId, material.itemId],
-        );
+        const materialItems = getPartnerMaterialItemsFromInventory(inventoryStates, material.itemId);
 
-        for (const item of itemsResult.rows as Array<{ id: number; qty: number }>) {
+        for (const item of materialItems) {
           if (remainingQty <= 0) break;
           if (item.qty <= remainingQty) {
-            await query('DELETE FROM item_instance WHERE id = $1', [item.id]);
+            const consumeResult = await consumeSpecificItemInstance(characterId, item.id, item.qty);
+            if (!consumeResult.success) {
+              return { success: false, message: consumeResult.message };
+            }
             remainingQty -= item.qty;
             continue;
           }
-          await query(
-            'UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2',
-            [remainingQty, item.id],
-          );
+          const consumeResult = await consumeSpecificItemInstance(characterId, item.id, remainingQty);
+          if (!consumeResult.success) {
+            return { success: false, message: consumeResult.message };
+          }
           remainingQty = 0;
         }
       }

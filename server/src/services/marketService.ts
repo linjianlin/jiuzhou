@@ -38,6 +38,18 @@ import {
 import { resolveGeneratedTechniqueBookDisplay } from "./shared/generatedTechniqueBookView.js";
 import { buildAffixPoolSlotCacheKey } from "./shared/affixPoolSlotResolver.js";
 import { mailService } from "./mailService.js";
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from "./playerWritebackCacheService.js";
+import type { PlayerInventoryItemState } from "./playerStateTypes.js";
+import { loadPlayerInventoryStatesByCharacterId } from "./playerStateRepository.js";
+import {
+  loadPlayerInventoryStateByItemId,
+  deletePlayerInventoryState,
+  patchPlayerInventoryState,
+  upsertPlayerInventoryState,
+} from "./playerStateRepository.js";
 
 export type MarketSort = "timeDesc" | "priceAsc" | "priceDesc" | "qtyDesc";
 
@@ -99,6 +111,38 @@ type MarketListingsCacheData = {
   total: number;
 };
 
+type MarketWalletState = {
+  id: number;
+  user_id: number;
+  silver: number;
+  spirit_stones: number;
+};
+
+type MarketListingQueryRow = {
+  id: number | string | null;
+  item_instance_id: number | string | null;
+  item_def_id: string | null;
+  qty: number | string | null;
+  unit_price_spirit_stones: number | string | null;
+  seller_character_id: number | string | null;
+  listed_at: string | Date | null;
+  instance_quality: string | null;
+  instance_quality_rank: number | string | null;
+  strengthen_level: number | string | null;
+  refine_level: number | string | null;
+  socketed_gems: PlayerInventoryItemState["socketed_gems"];
+  identified: boolean | null;
+  affixes: PlayerInventoryItemState["affixes"];
+  metadata: PlayerInventoryItemState["metadata"];
+  seller_name: string | null;
+  instance_owner_character_id: number | string | null;
+};
+
+type MarketListingReadOverlay = {
+  sellerNameByCharacterId: Map<number, string>;
+  itemStateByOwnerCharacterId: Map<number, Map<number, PlayerInventoryItemState>>;
+};
+
 const MARKET_LISTINGS_CACHE_REDIS_TTL_SEC = 8;
 const MARKET_LISTINGS_CACHE_MEMORY_TTL_MS = 2_000;
 
@@ -121,16 +165,66 @@ const invalidateMarketListingsCache = async (): Promise<void> => {
   marketListingsCache.invalidateAll();
 };
 
+const loadMarketWallet = async (
+  characterId: number,
+): Promise<MarketWalletState | null> => {
+  const wallet = await loadCharacterWritebackRowByCharacterId(characterId, {
+    forUpdate: true,
+  });
+  if (!wallet) return null;
+  return {
+    id: Number(wallet.id),
+    user_id: Number(wallet.user_id),
+    silver: Number(wallet.silver ?? 0),
+    spirit_stones: Number(wallet.spirit_stones ?? 0),
+  };
+};
+
+const applyMarketWalletDelta = async (
+  characterId: number,
+  current: MarketWalletState,
+  delta: { silver?: number; spiritStones?: number },
+): Promise<MarketWalletState> => {
+  const nextWallet: MarketWalletState = {
+    ...current,
+    silver: Number(current.silver ?? 0) + (delta.silver ?? 0),
+    spirit_stones: Number(current.spirit_stones ?? 0) + (delta.spiritStones ?? 0),
+  };
+  await queueCharacterWritebackSnapshot(characterId, {
+    silver: nextWallet.silver,
+    spirit_stones: nextWallet.spirit_stones,
+  });
+  return nextWallet;
+};
+
 /**
- * 复用 item_instance 拆堆复制逻辑，避免“部分上架”和“部分购买”各写一份插入 SQL。
+ * 复用上架实例复制逻辑。
+ *
+ * 作用：
+ * - 做什么：把一个已有物品实例按指定数量复制成新的拍卖实例，并同步写入 Redis 库存状态。
+ * - 不做什么：不处理下架和购买，不负责决定该实例是否真的可以交易。
+ *
+ * 输入/输出：
+ * - 输入：源实例 ID、源 Redis 物品状态、归属角色/账号、复制数量、目标位置。
+ * - 输出：新拍卖实例的数据库 ID。
+ *
+ * 数据流/状态流：
+ * - 业务层先完成 Redis 库存状态变更，再用源 Redis 实例字段生成数据库镜像行，最后把新实例状态写回 Redis。
+ *
+ * 关键边界条件与坑点：
+ * 1. 源 Redis 物品状态必须已存在，否则克隆出来的拍卖实例无法与主状态对齐。
+ * 2. 新实例状态的 `location` 必须与数据库插入结果一致，否则 overlay 会读到错位状态。
  */
 const cloneItemInstanceWithQty = async (params: {
-  sourceItemInstanceId: number;
+  sourceItemState?: PlayerInventoryItemState;
   ownerUserId: number;
   ownerCharacterId: number;
   qty: number;
   location: "auction" | "mail";
 }): Promise<number> => {
+  if (!params.sourceItemState) {
+    throw new Error("复制坊市物品实例缺少源状态");
+  }
   const insertResult = await query(
     `
       INSERT INTO item_instance (
@@ -143,31 +237,61 @@ const cloneItemInstanceWithQty = async (params: {
         obtained_from, obtained_ref_id, metadata,
         created_at, updated_at
       )
-      SELECT
-        $1, $2, item_def_id, $3,
-        bind_type, bind_owner_user_id, bind_owner_character_id,
-        $4, NULL, NULL,
-        strengthen_level, refine_level,
-        socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
-        custom_name, locked, expire_at,
-        obtained_from, obtained_ref_id, metadata,
+      VALUES (
+        $1, $2, $3, $4,
+        $5, $6, $7,
+        $8, NULL, NULL,
+        $9, $10,
+        $11::jsonb, $12, $13::jsonb, $14, $15, $16::jsonb,
+        $17, $18, $19::timestamptz,
+        $20, $21, $22::jsonb,
         NOW(), NOW()
-      FROM item_instance
-      WHERE id = $5
+      )
       RETURNING id
     `,
     [
       params.ownerUserId,
       params.ownerCharacterId,
+      params.sourceItemState.item_def_id,
       params.qty,
+      params.sourceItemState.bind_type,
+      params.sourceItemState.bind_owner_user_id,
+      params.sourceItemState.bind_owner_character_id,
       params.location,
-      params.sourceItemInstanceId,
+      params.sourceItemState.strengthen_level,
+      params.sourceItemState.refine_level,
+      JSON.stringify(params.sourceItemState.socketed_gems),
+      params.sourceItemState.random_seed,
+      JSON.stringify(params.sourceItemState.affixes),
+      params.sourceItemState.identified,
+      params.sourceItemState.affix_gen_version,
+      JSON.stringify(params.sourceItemState.affix_roll_meta),
+      params.sourceItemState.custom_name,
+      params.sourceItemState.locked,
+      params.sourceItemState.expire_at,
+      params.sourceItemState.obtained_from,
+      params.sourceItemState.obtained_ref_id,
+      JSON.stringify(params.sourceItemState.metadata),
     ],
   );
 
   const nextItemInstanceId = Number(insertResult.rows[0]?.id);
   if (!Number.isInteger(nextItemInstanceId) || nextItemInstanceId <= 0) {
     throw new Error("复制坊市物品实例失败");
+  }
+
+  if (params.sourceItemState) {
+    await upsertPlayerInventoryState(params.ownerCharacterId, {
+      ...params.sourceItemState,
+      id: nextItemInstanceId,
+      owner_user_id: params.ownerUserId,
+      owner_character_id: params.ownerCharacterId,
+      qty: params.qty,
+      location: params.location,
+      location_slot: null,
+      equipped_slot: null,
+      created_at: new Date().toISOString(),
+    });
   }
   return nextItemInstanceId;
 };
@@ -304,6 +428,107 @@ const toListingDto = (
   };
 };
 
+const loadMarketListingReadOverlay = async (
+  rows: MarketListingQueryRow[],
+): Promise<MarketListingReadOverlay> => {
+  const sellerCharacterIds = [...new Set(
+    rows
+      .map((row) => Number(row.seller_character_id))
+      .filter((characterId) => Number.isInteger(characterId) && characterId > 0),
+  )];
+  const sellerNameEntries = await Promise.all(
+    sellerCharacterIds.map(async (characterId) => {
+      const row = await loadCharacterWritebackRowByCharacterId(characterId);
+      if (!row) {
+        throw new Error(`角色不存在: ${characterId}`);
+      }
+      return [characterId, row.nickname] as const;
+    }),
+  );
+
+  const ownerCharacterIds = [...new Set(
+    rows
+      .map((row) => Number(row.instance_owner_character_id))
+      .filter((characterId) => Number.isInteger(characterId) && characterId > 0),
+  )];
+  const itemStateEntries = await Promise.all(
+    ownerCharacterIds.map(async (ownerCharacterId) => {
+      const itemStates = await loadPlayerInventoryStatesByCharacterId(ownerCharacterId);
+      return [
+        ownerCharacterId,
+        new Map<number, PlayerInventoryItemState>(
+          itemStates.map((itemState: PlayerInventoryItemState) => [itemState.id, itemState] as const),
+        ),
+      ] as const;
+    }),
+  );
+
+  return {
+    sellerNameByCharacterId: new Map(sellerNameEntries),
+    itemStateByOwnerCharacterId: new Map(itemStateEntries),
+  };
+};
+
+const applyMarketListingReadOverlay = (
+  row: MarketListingQueryRow,
+  overlay: MarketListingReadOverlay,
+): MarketListingQueryRow => {
+  const sellerCharacterId = Number(row.seller_character_id);
+  const sellerName = overlay.sellerNameByCharacterId.get(sellerCharacterId);
+  if (!sellerName) {
+    throw new Error(`角色不存在: ${sellerCharacterId}`);
+  }
+
+  const ownerCharacterId = Number(row.instance_owner_character_id);
+  if (!Number.isInteger(ownerCharacterId) || ownerCharacterId <= 0) {
+    throw new Error(`角色物品归属异常: ${row.item_instance_id}`);
+  }
+  const itemStateById = overlay.itemStateByOwnerCharacterId.get(ownerCharacterId);
+  if (!itemStateById) {
+    throw new Error(`角色物品状态不存在: ${ownerCharacterId}`);
+  }
+
+  const itemInstanceId = Number(row.item_instance_id);
+  const itemState = itemStateById.get(itemInstanceId);
+  if (!itemState) {
+    throw new Error(`物品状态不存在: ${itemInstanceId}`);
+  }
+
+  return {
+    ...row,
+    seller_name: sellerName,
+    instance_quality: itemState.quality,
+    instance_quality_rank: itemState.quality_rank,
+    strengthen_level: itemState.strengthen_level,
+    refine_level: itemState.refine_level,
+    socketed_gems: itemState.socketed_gems,
+    identified: itemState.identified,
+    affixes: itemState.affixes,
+    metadata: itemState.metadata,
+  };
+};
+
+const buildMarketListingDtosWithReadOverlay = async (
+  rows: MarketListingQueryRow[],
+  affixPoolCache: Map<string, ReturnType<typeof loadAffixPoolForReroll>>,
+): Promise<MarketListingDto[]> => {
+  if (rows.length === 0) return [];
+  const overlay = await loadMarketListingReadOverlay(rows);
+  return rows
+    .map((row) => applyMarketListingReadOverlay(row, overlay))
+    .map((row) => toListingDto(row as Record<string, unknown>, affixPoolCache))
+    .filter((entry): entry is MarketListingDto => entry !== null);
+};
+
+const buildMarketListingDtosFromRows = (
+  rows: MarketListingQueryRow[],
+  affixPoolCache: Map<string, ReturnType<typeof loadAffixPoolForReroll>>,
+): MarketListingDto[] => {
+  return rows
+    .map((row) => toListingDto(row as Record<string, unknown>, affixPoolCache))
+    .filter((entry): entry is MarketListingDto => entry !== null);
+};
+
 const normalizeMarketListingsQuery = (params: {
   category?: string;
   quality?: string;
@@ -423,18 +648,17 @@ const loadMarketListingsCacheData = async (
       ml.unit_price_spirit_stones,
       ml.seller_character_id,
       ml.listed_at,
-      ii.quality AS instance_quality,
-      ii.quality_rank AS instance_quality_rank,
-      ii.strengthen_level,
-      ii.refine_level,
-      ii.socketed_gems,
-      ii.identified,
-      ii.affixes,
-      ii.metadata,
-      c.nickname AS seller_name
+      ml.seller_character_id AS instance_owner_character_id,
+      NULL AS instance_quality,
+      NULL AS instance_quality_rank,
+      NULL AS strengthen_level,
+      NULL AS refine_level,
+      '[]'::jsonb AS socketed_gems,
+      NULL AS identified,
+      '[]'::jsonb AS affixes,
+      '{}'::jsonb AS metadata,
+      NULL AS seller_name
     FROM market_listing ml
-    JOIN item_instance ii ON ii.id = ml.item_instance_id
-    JOIN characters c ON c.id = ml.seller_character_id
     ${whereSql}
     ORDER BY ${orderBy}
     LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -443,8 +667,6 @@ const loadMarketListingsCacheData = async (
   const countSql = `
     SELECT COUNT(*)::int AS cnt
     FROM market_listing ml
-    JOIN item_instance ii ON ii.id = ml.item_instance_id
-    JOIN characters c ON c.id = ml.seller_character_id
     ${whereSql}
   `;
 
@@ -457,11 +679,10 @@ const loadMarketListingsCacheData = async (
     string,
     ReturnType<typeof loadAffixPoolForReroll>
   >();
-  const listings: MarketListingDto[] = listResult.rows
-    .map((row) =>
-      toListingDto(row as Record<string, unknown>, affixPoolCache),
-    )
-    .filter((entry): entry is MarketListingDto => entry !== null);
+  const listings = await buildMarketListingDtosWithReadOverlay(
+    listResult.rows as MarketListingQueryRow[],
+    affixPoolCache,
+  );
 
   return { listings, total };
 };
@@ -519,33 +740,63 @@ class MarketService {
     const pageSize = clampInt(parsePositiveInt(params.pageSize) ?? 20, 1, 100);
     const offset = (page - 1) * pageSize;
     const status = parseMaybeString(params.status) || "active";
+    const useLiveOverlay = status === "active";
 
     const listResult = await query(
-      `
-        SELECT
-          ml.id,
-          ml.item_instance_id,
-          ml.item_def_id,
-          ml.qty,
-          ml.unit_price_spirit_stones,
-          ml.seller_character_id,
-          ml.listed_at,
-          ii.quality AS instance_quality,
-          ii.quality_rank AS instance_quality_rank,
-          ii.strengthen_level,
-          ii.refine_level,
-          ii.socketed_gems,
-          ii.identified,
-          ii.affixes,
-          ii.metadata,
-          c.nickname AS seller_name
-        FROM market_listing ml
-        LEFT JOIN item_instance ii ON ii.id = ml.item_instance_id
-        JOIN characters c ON c.id = ml.seller_character_id
-        WHERE ml.seller_character_id = $1 AND ml.status = $2
-        ORDER BY ml.listed_at DESC
-        LIMIT $3 OFFSET $4
-      `,
+      useLiveOverlay
+        ? `
+          SELECT
+            ml.id,
+            ml.item_instance_id,
+            ml.item_def_id,
+            ml.qty,
+            ml.unit_price_spirit_stones,
+            ml.seller_character_id,
+            ml.listed_at,
+            CASE
+              WHEN ml.status = 'sold' THEN ml.buyer_character_id
+              ELSE ml.seller_character_id
+            END AS instance_owner_character_id,
+            NULL AS instance_quality,
+            NULL AS instance_quality_rank,
+            NULL AS strengthen_level,
+            NULL AS refine_level,
+            '[]'::jsonb AS socketed_gems,
+            NULL AS identified,
+            '[]'::jsonb AS affixes,
+            '{}'::jsonb AS metadata,
+            NULL AS seller_name
+          FROM market_listing ml
+          WHERE ml.seller_character_id = $1 AND ml.status = $2
+          ORDER BY ml.listed_at DESC
+          LIMIT $3 OFFSET $4
+        `
+        : `
+          SELECT
+            ml.id,
+            ml.item_instance_id,
+            ml.item_def_id,
+            ml.qty,
+            ml.unit_price_spirit_stones,
+            ml.seller_character_id,
+            ml.listed_at,
+            NULL AS instance_owner_character_id,
+            ii.quality AS instance_quality,
+            ii.quality_rank AS instance_quality_rank,
+            ii.strengthen_level,
+            ii.refine_level,
+            ii.socketed_gems,
+            ii.identified,
+            ii.affixes,
+            ii.metadata,
+            c.nickname AS seller_name
+          FROM market_listing ml
+          LEFT JOIN item_instance ii ON ii.id = ml.item_instance_id
+          JOIN characters c ON c.id = ml.seller_character_id
+          WHERE ml.seller_character_id = $1 AND ml.status = $2
+          ORDER BY ml.listed_at DESC
+          LIMIT $3 OFFSET $4
+        `,
       [params.characterId, status, pageSize, offset],
     );
 
@@ -563,11 +814,10 @@ class MarketService {
       string,
       ReturnType<typeof loadAffixPoolForReroll>
     >();
-    const listings: MarketListingDto[] = listResult.rows
-      .map((row) =>
-        toListingDto(row as Record<string, unknown>, affixPoolCache),
-      )
-      .filter((entry): entry is MarketListingDto => entry !== null);
+    const listingRows = listResult.rows as MarketListingQueryRow[];
+    const listings = useLiveOverlay
+      ? await buildMarketListingDtosWithReadOverlay(listingRows, affixPoolCache)
+      : buildMarketListingDtosFromRows(listingRows, affixPoolCache);
 
     return { success: true, message: "ok", data: { listings, total } };
   }
@@ -602,42 +852,14 @@ class MarketService {
 
     await lockCharacterInventoryMutex(params.characterId);
 
-    const itemResult = await query(
-      `
-        SELECT
-          ii.id,
-          ii.owner_user_id,
-          ii.owner_character_id,
-          ii.item_def_id,
-          ii.qty,
-          ii.location,
-          ii.location_slot,
-          ii.equipped_slot,
-          ii.strengthen_level,
-          ii.refine_level,
-          ii.socketed_gems,
-          ii.random_seed,
-          ii.affixes,
-          ii.identified,
-          ii.custom_name,
-          ii.locked,
-          ii.expire_at,
-          ii.obtained_from,
-          ii.obtained_ref_id,
-          ii.metadata,
-          ii.bind_type
-        FROM item_instance ii
-        WHERE ii.id = $1 AND ii.owner_character_id = $2
-        FOR UPDATE
-      `,
-      [itemInstanceId, params.characterId],
+    const sourceItemState = await loadPlayerInventoryStateByItemId(
+      params.characterId,
+      itemInstanceId,
     );
-
-    if (itemResult.rows.length === 0) {
+    if (!sourceItemState) {
       return { success: false, message: "物品不存在" };
     }
-    const row = itemResult.rows[0];
-    const itemDefId = String(row.item_def_id || "").trim();
+    const itemDefId = String(sourceItemState.item_def_id || "").trim();
     const itemDef = itemDefId ? getItemDefinitionById(itemDefId) : null;
     if (!itemDef) {
       return { success: false, message: "物品不存在" };
@@ -645,32 +867,32 @@ class MarketService {
     if (itemDef.tradeable !== true) {
       return { success: false, message: "该物品不可交易" };
     }
-    if (String(row.bind_type) !== "none") {
+    if (String(sourceItemState.bind_type) !== "none") {
       return { success: false, message: "该物品已绑定，无法上架" };
     }
-    if (row.locked) {
+    if (sourceItemState.locked) {
       return { success: false, message: "该物品已锁定，无法上架" };
     }
-    if (String(row.location) === "equipped" || row.equipped_slot) {
+    if (
+      String(sourceItemState.location) === "equipped" ||
+      sourceItemState.equipped_slot
+    ) {
       return { success: false, message: "已穿戴物品无法上架" };
     }
-    if (!["bag", "warehouse"].includes(String(row.location))) {
+    if (!["bag", "warehouse"].includes(String(sourceItemState.location))) {
       return { success: false, message: "该物品当前位置无法上架" };
     }
 
-    const curQty = Number(row.qty) || 0;
+    const curQty = Number(sourceItemState.qty) || 0;
     if (qty > curQty) {
       return { success: false, message: "数量不足" };
     }
 
-    const characterWalletResult = await query(
-      `SELECT silver FROM characters WHERE id = $1 FOR UPDATE`,
-      [params.characterId],
-    );
-    if (characterWalletResult.rows.length === 0) {
+    const sellerWallet = await loadMarketWallet(params.characterId);
+    if (!sellerWallet) {
       return { success: false, message: "角色不存在" };
     }
-    const currentSilver = BigInt(characterWalletResult.rows[0].silver ?? 0);
+    const currentSilver = BigInt(sellerWallet.silver ?? 0);
     if (currentSilver < listingFeeSilver) {
       return {
         success: false,
@@ -678,32 +900,31 @@ class MarketService {
       };
     }
     if (listingFeeSilver > 0n) {
-      await query(
-        `UPDATE characters SET silver = silver - $1, updated_at = NOW() WHERE id = $2`,
-        [listingFeeSilver.toString(), params.characterId],
-      );
+      await applyMarketWalletDelta(params.characterId, sellerWallet, {
+        silver: -Number(listingFeeSilver),
+      });
     }
 
     let listingItemInstanceId = itemInstanceId;
 
     if (qty < curQty) {
-      await query(
-        "UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2",
-        [qty, itemInstanceId],
-      );
+      await patchPlayerInventoryState(params.characterId, itemInstanceId, {
+        qty: curQty - qty,
+      });
 
       listingItemInstanceId = await cloneItemInstanceWithQty({
-        sourceItemInstanceId: itemInstanceId,
+        sourceItemState,
         ownerUserId: params.userId,
         ownerCharacterId: params.characterId,
         qty,
         location: "auction",
       });
     } else {
-      await query(
-        `UPDATE item_instance SET location = 'auction', location_slot = NULL, equipped_slot = NULL, updated_at = NOW() WHERE id = $1`,
-        [itemInstanceId],
-      );
+      await patchPlayerInventoryState(params.characterId, itemInstanceId, {
+        location: "auction",
+        location_slot: null,
+        equipped_slot: null,
+      });
     }
     const listingResult = await query(
       `
@@ -788,20 +1009,19 @@ class MarketService {
       remainingQty,
     );
 
+    const sellerWallet = await loadMarketWallet(params.characterId);
+    if (!sellerWallet) {
+      return { success: false, message: "角色不存在" };
+    }
+
     const itemInstanceId = Number(listing.item_instance_id);
-    const itemResult = await query(
-      `
-        SELECT id, owner_character_id, location
-        FROM item_instance
-        WHERE id = $1
-        FOR UPDATE
-      `,
-      [itemInstanceId],
+    const item = await loadPlayerInventoryStateByItemId(
+      params.characterId,
+      itemInstanceId,
     );
-    if (itemResult.rows.length === 0) {
+    if (!item) {
       return { success: false, message: "物品不存在" };
     }
-    const item = itemResult.rows[0];
     if (Number(item.owner_character_id) !== params.characterId) {
       return { success: false, message: "物品归属异常，无法下架" };
     }
@@ -838,10 +1058,9 @@ class MarketService {
     );
 
     if (refundFeeSilver > 0n) {
-      await query(
-        `UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`,
-        [refundFeeSilver.toString(), params.characterId],
-      );
+      await applyMarketWalletDelta(params.characterId, sellerWallet, {
+        silver: Number(refundFeeSilver),
+      });
     }
 
     await invalidateMarketListingsCache();
@@ -944,21 +1163,20 @@ class MarketService {
     const totalPrice = calculateMarketTradeTotalPrice(unitPrice, buyQty);
     const isPartialPurchase = buyQty < listingQty;
 
-    const itemRowResult = await query(
-      `SELECT id, owner_character_id, location, qty FROM item_instance WHERE id = $1 FOR UPDATE`,
-      [itemInstanceId],
+    const sourceItemState = await loadPlayerInventoryStateByItemId(
+      sellerCharacterId,
+      itemInstanceId,
     );
-    if (itemRowResult.rows.length === 0) {
+    if (!sourceItemState) {
       return { success: false, message: "物品不存在" };
     }
-    const itemRow = itemRowResult.rows[0];
-    if (String(itemRow.location) !== "auction") {
+    if (String(sourceItemState.location) !== "auction") {
       return { success: false, message: "物品不在坊市中" };
     }
-    if (Number(itemRow.qty) !== listingQty) {
+    if (Number(sourceItemState.qty) !== listingQty) {
       return { success: false, message: "物品数量异常，请刷新后重试" };
     }
-    if (Number(itemRow.owner_character_id) !== sellerCharacterId) {
+    if (Number(sourceItemState.owner_character_id) !== sellerCharacterId) {
       return { success: false, message: "物品归属异常，请刷新后重试" };
     }
 
@@ -970,14 +1188,14 @@ class MarketService {
     const taxAmount = getTaxAmount(totalPrice, taxRate);
     const sellerGain = totalPrice - taxAmount;
 
-    const buyerCharResult = await query(
-      `SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE`,
-      [params.buyerCharacterId],
-    );
-    if (buyerCharResult.rows.length === 0) {
+    const [buyerWallet, sellerWallet] = await Promise.all([
+      loadMarketWallet(params.buyerCharacterId),
+      loadMarketWallet(sellerCharacterId),
+    ]);
+    if (!buyerWallet || !sellerWallet) {
       return { success: false, message: "角色不存在" };
     }
-    const buyerStones = BigInt(buyerCharResult.rows[0].spirit_stones ?? 0);
+    const buyerStones = BigInt(buyerWallet.spirit_stones ?? 0);
     if (buyerStones < totalPrice) {
       return {
         success: false,
@@ -985,23 +1203,20 @@ class MarketService {
       };
     }
 
-    await query(
-      `UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2`,
-      [totalPrice.toString(), params.buyerCharacterId],
-    );
-    await query(
-      `UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`,
-      [sellerGain.toString(), sellerCharacterId],
-    );
+    await applyMarketWalletDelta(params.buyerCharacterId, buyerWallet, {
+      spiritStones: -Number(totalPrice),
+    });
+    await applyMarketWalletDelta(sellerCharacterId, sellerWallet, {
+      spiritStones: Number(sellerGain),
+    });
 
     let deliveredItemInstanceId = itemInstanceId;
     if (isPartialPurchase) {
-      await query(
-        `UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2`,
-        [buyQty, itemInstanceId],
-      );
+      await patchPlayerInventoryState(sellerCharacterId, itemInstanceId, {
+        qty: listingQty - buyQty,
+      });
       deliveredItemInstanceId = await cloneItemInstanceWithQty({
-        sourceItemInstanceId: itemInstanceId,
+        sourceItemState,
         ownerUserId: params.buyerUserId,
         ownerCharacterId: params.buyerCharacterId,
         qty: buyQty,
@@ -1017,20 +1232,16 @@ class MarketService {
         [buyQty, listingId],
       );
     } else {
-      await query(
-        `
-          UPDATE item_instance
-          SET owner_user_id = $1,
-              owner_character_id = $2,
-              -- 坊市成交后先进入邮件附件池，不直接写入背包，避免背包容量成为交易阻断点。
-              location = 'mail',
-              location_slot = NULL,
-              equipped_slot = NULL,
-              updated_at = NOW()
-          WHERE id = $3
-        `,
-        [params.buyerUserId, params.buyerCharacterId, itemInstanceId],
-      );
+      await deletePlayerInventoryState(sellerCharacterId, itemInstanceId);
+      await upsertPlayerInventoryState(params.buyerCharacterId, {
+        ...sourceItemState,
+        id: itemInstanceId,
+        owner_user_id: params.buyerUserId,
+        owner_character_id: params.buyerCharacterId,
+        location: "mail",
+        location_slot: null,
+        equipped_slot: null,
+      });
 
       await query(
         `
@@ -1146,12 +1357,8 @@ class MarketService {
           tr.unit_price_spirit_stones,
           tr.buyer_character_id,
           tr.seller_character_id,
-          tr.created_at,
-          cb.nickname AS buyer_name,
-          cs.nickname AS seller_name
+          tr.created_at
         FROM market_trade_record tr
-        JOIN characters cb ON cb.id = tr.buyer_character_id
-        JOIN characters cs ON cs.id = tr.seller_character_id
         WHERE tr.buyer_character_id = $1 OR tr.seller_character_id = $1
         ORDER BY tr.created_at DESC
         LIMIT $2 OFFSET $3
@@ -1169,14 +1376,31 @@ class MarketService {
     );
 
     const total = Number(countResult.rows[0]?.cnt ?? 0);
+    const playerIds = [...new Set(
+      listResult.rows
+        .flatMap((row) => [Number(row.buyer_character_id), Number(row.seller_character_id)])
+        .filter((characterId) => Number.isInteger(characterId) && characterId > 0),
+    )];
+    const nicknameEntries = await Promise.all(
+      playerIds.map(async (characterId) => {
+        const row = await loadCharacterWritebackRowByCharacterId(characterId);
+        if (!row) {
+          throw new Error(`角色不存在: ${characterId}`);
+        }
+        return [characterId, row.nickname] as const;
+      }),
+    );
+    const nicknameMap = new Map(nicknameEntries);
     const records: MarketTradeRecordDto[] = listResult.rows.map((r) => {
       const buyerId = Number(r.buyer_character_id);
       const type: "买入" | "卖出" =
         params.characterId === buyerId ? "买入" : "卖出";
-      const counterparty =
-        type === "买入"
-          ? String(r.seller_name ?? "")
-          : String(r.buyer_name ?? "");
+      const counterpartyId =
+        type === "买入" ? Number(r.seller_character_id) : buyerId;
+      const counterparty = nicknameMap.get(counterpartyId);
+      if (!counterparty) {
+        throw new Error(`角色不存在: ${counterpartyId}`);
+      }
       const itemDefId = String(r.item_def_id || "").trim();
       const itemDef = itemDefId ? getItemDefinitionById(itemDefId) : null;
       return {

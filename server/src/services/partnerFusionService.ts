@@ -24,6 +24,7 @@ import {
   PARTNER_SYSTEM_FEATURE_CODE,
   isFeatureUnlocked,
 } from './featureUnlockService.js';
+import { loadCharacterWritebackRowByCharacterId } from './playerWritebackCacheService.js';
 import { partnerService } from './partnerService.js';
 import {
   buildGeneratedPartnerDefId,
@@ -106,10 +107,6 @@ type FusionMaterialRow = {
   character_id: number;
   material_order: number;
   partner_snapshot: object;
-};
-
-type CharacterExistRow = {
-  id: number;
 };
 
 type PartnerFusionMaterialSnapshot = {
@@ -199,20 +196,10 @@ const buildPartnerFusionReferencePartners = (
 const loadCharacterExists = async (
   characterId: number,
   forUpdate: boolean,
-): Promise<CharacterExistRow | null> => {
-  const lockSql = forUpdate ? 'FOR UPDATE' : '';
-  const result = await query(
-    `
-      SELECT id
-      FROM characters
-      WHERE id = $1
-      LIMIT 1
-      ${lockSql}
-    `,
-    [characterId],
-  );
-  if (result.rows.length <= 0) return null;
-  return result.rows[0] as CharacterExistRow;
+): Promise<{ id: number } | null> => {
+  const character = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate });
+  if (!character) return null;
+  return { id: Number(character.id) };
 };
 
 const loadCharacterPartnersByIds = async (

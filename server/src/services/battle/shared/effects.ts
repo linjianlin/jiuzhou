@@ -21,13 +21,13 @@
  * 2) 套装效果按 priority -> pieceCount 升序排列
  */
 
-import { query } from "../../../config/database.js";
 import type { BattleSetBonusEffect } from "../../../battle/types.js";
 import type { CharacterData } from "../../../battle/battleFactory.js";
 import {
   getItemDefinitionsByIds,
   getItemSetDefinitions,
 } from "../../staticConfigLoader.js";
+import { loadPlayerInventoryStatesByCharacterId } from "../../playerStateRepository.js";
 import {
   extractBattleAffixEffectsFromEquippedItems,
   type BattleAffixEffectSource,
@@ -55,6 +55,19 @@ const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
   "mark",
 ]);
 
+const loadEquippedBattleItemRows = async (
+  characterId: number,
+): Promise<Array<Record<string, unknown>>> => {
+  return (await loadPlayerInventoryStatesByCharacterId(characterId))
+    .filter((item) => String(item.location) === "equipped")
+    .map((item) => ({
+      id: item.id,
+      item_instance_id: item.id,
+      item_def_id: item.item_def_id,
+      affixes: item.affixes,
+    }));
+};
+
 // ------ 套装效果 ------
 
 export async function getCharacterBattleSetBonusEffects(
@@ -62,26 +75,18 @@ export async function getCharacterBattleSetBonusEffects(
 ): Promise<BattleSetBonusEffect[]> {
   if (!Number.isFinite(characterId) || characterId <= 0) return [];
 
-  const result = await query(
-    `
-      SELECT item_def_id
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND location = 'equipped'
-    `,
-    [characterId],
-  );
+  const rows = await loadEquippedBattleItemRows(characterId);
 
   const itemDefIds = Array.from(
     new Set(
-      (result.rows as Array<Record<string, unknown>>)
+      rows
         .map((row) => toText(row.item_def_id))
         .filter((itemDefId): itemDefId is string => !!itemDefId),
     ),
   );
   const defs = getItemDefinitionsByIds(itemDefIds);
   const setCountMap = new Map<string, number>();
-  for (const row of result.rows as Array<Record<string, unknown>>) {
+  for (const row of rows) {
     const itemDefId = toText(row.item_def_id);
     if (!itemDefId) continue;
     const setId = toText(defs.get(itemDefId)?.set_id);
@@ -153,28 +158,18 @@ export async function getCharacterBattleAffixEffects(
 ): Promise<BattleSetBonusEffect[]> {
   if (!Number.isFinite(characterId) || characterId <= 0) return [];
 
-  const result = await query(
-    `
-      SELECT id AS item_instance_id, item_def_id, affixes
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND location = 'equipped'
-      ORDER BY id ASC
-    `,
-    [characterId],
-  );
+  const rows = await loadEquippedBattleItemRows(characterId);
 
   const itemDefIds = Array.from(
     new Set(
-      (result.rows as Array<Record<string, unknown>>)
+      rows
         .map((row) => toText(row.item_def_id))
         .filter((itemDefId): itemDefId is string => !!itemDefId),
     ),
   );
   const defs = getItemDefinitionsByIds(itemDefIds);
   const sources: BattleAffixEffectSource[] = [];
-  for (const row of result.rows) {
-    const record = row as Record<string, unknown>;
+  for (const record of rows) {
     const itemInstanceId = Math.floor(toNumber(record.item_instance_id) ?? 0);
     if (itemInstanceId <= 0) continue;
     const itemDefId = toText(record.item_def_id);

@@ -346,8 +346,16 @@ const emitTeamUpdateToUserIds = (userIds: number[], payload: TeamUpdatePayload) 
 const getUserIdsByCharacterIds = async (characterIds: number[]): Promise<number[]> => {
   const ids = Array.from(new Set(characterIds.filter((id) => Number.isFinite(id))));
   if (ids.length === 0) return [];
-  const res = await query<TeamUserIdRow>(`SELECT DISTINCT user_id FROM characters WHERE id = ANY($1::int[])`, [ids]);
-  return res.rows.map((row) => Number(row.user_id)).filter((n: number) => Number.isFinite(n));
+  const characters = await Promise.all(
+    ids.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
+  );
+  return Array.from(
+    new Set(
+      characters
+        .map((character) => Number(character?.user_id))
+        .filter((userId) => Number.isFinite(userId) && userId > 0),
+    ),
+  );
 };
 
 const notifyTeamMembersChanged = async (teamId: string, extraCharacterIds: number[] = [], kind: string = 'team_changed') => {
@@ -627,11 +635,11 @@ export const applyToTeam = async (characterId: number, teamId: string, message?:
   }
 
   // 检查境界要求
-  const charResult = await query(
-    `SELECT realm, sub_realm FROM characters WHERE id = $1`,
-    [characterId]
-  );
-  const charRealm = getFullRealm(charResult.rows[0].realm, charResult.rows[0].sub_realm);
+  const character = await loadCharacterWritebackRowByCharacterId(characterId);
+  if (!character) {
+    return { success: false, message: '角色不存在' };
+  }
+  const charRealm = getFullRealm(character.realm, character.sub_realm);
 
   if (!isRealmSufficient(charRealm, team.join_min_realm)) {
     return { success: false, message: `境界不足，需要${team.join_min_realm}以上` };

@@ -20,6 +20,7 @@
  * 2. 已入宗角色正常情况下不应再有 pending 申请；这里仍按数据库真实值计算，便于在脏数据场景下快速暴露问题，而不是静默吞掉。
  */
 import { query } from '../../config/database.js';
+import { loadCharacterWritebackRowByCharacterId } from '../playerWritebackCacheService.js';
 import type { SectPosition } from './types.js';
 
 export interface SectIndicatorPayload {
@@ -158,18 +159,17 @@ export const getCharacterUserIdMap = async (characterIds: number[]): Promise<Map
   const ids = normalizeCharacterIdList(characterIds);
   if (ids.length <= 0) return new Map<number, number>();
 
-  const result = await query<CharacterUserRow>(
-    `
-      SELECT id, user_id
-      FROM characters
-      WHERE id = ANY($1::int[])
-    `,
-    [ids]
+  const rows = await Promise.all(
+    ids.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
   );
 
-  return new Map<number, number>(
-    result.rows
-      .map((row) => [normalizeCount(row.id), normalizeCount(row.user_id)] as const)
-      .filter(([characterId, userId]) => characterId > 0 && userId > 0)
-  );
+  const userIdMap = new Map<number, number>();
+  for (const row of rows) {
+    if (!row) continue;
+    const characterId = normalizeCount(row.id);
+    const userId = normalizeCount(row.user_id);
+    if (characterId <= 0 || userId <= 0) continue;
+    userIdMap.set(characterId, userId);
+  }
+  return userIdMap;
 };

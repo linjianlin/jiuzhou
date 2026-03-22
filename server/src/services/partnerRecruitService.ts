@@ -31,6 +31,8 @@ import {
 import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { partnerService } from './partnerService.js';
+import { loadCharacterWritebackRowByCharacterId, queueCharacterWritebackSnapshot } from './playerWritebackCacheService.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
 import {
   buildPartnerRecruitJobState,
   type PartnerRecruitJobStatus,
@@ -77,6 +79,7 @@ import {
   type PartnerRecruitUnlockState,
 } from './shared/partnerRecruitUnlock.js';
 import { broadcastHeavenPartnerAcquired } from './shared/partnerWorldBroadcast.js';
+import type { PlayerCharacterState } from './playerStateTypes.js';
 
 export type ServiceResult<T = undefined> = {
   success: boolean;
@@ -108,6 +111,11 @@ type RecruitJobRow = {
   requestedBaseModel: string | null;
   previewPartnerDefId: string | null;
 };
+
+type PartnerRecruitCharacterState = Pick<
+  PlayerCharacterState,
+  'id' | 'user_id' | 'realm' | 'sub_realm' | 'spirit_stones'
+>;
 
 const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
 
@@ -145,6 +153,38 @@ export type GeneratedRecruitTechniqueDraft = GeneratedPartnerTechniqueDraft;
 export const executePartnerRecruitVisualGeneration = executeGeneratedPartnerVisualGeneration;
 export const buildPartnerRecruitTextModelRequest = buildGeneratedPartnerTextModelRequest;
 
+const loadPartnerRecruitCharacterState = async (
+  characterId: number,
+  lockRow: boolean,
+): Promise<PartnerRecruitCharacterState | null> => {
+  const character = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate: lockRow });
+  if (!character) return null;
+  return {
+    id: character.id,
+    user_id: character.user_id,
+    realm: character.realm,
+    sub_realm: character.sub_realm,
+    spirit_stones: character.spirit_stones,
+  };
+};
+
+const adjustPartnerRecruitSpiritStones = async (
+  characterId: number,
+  lockRow: boolean,
+  delta: number,
+): Promise<{ character: PartnerRecruitCharacterState; nextSpiritStones: number } | null> => {
+  const character = await loadPartnerRecruitCharacterState(characterId, lockRow);
+  if (!character) return null;
+  const nextSpiritStones = character.spirit_stones + delta;
+  await queueCharacterWritebackSnapshot(characterId, {
+    spirit_stones: nextSpiritStones,
+  });
+  return {
+    character,
+    nextSpiritStones,
+  };
+};
+
 class PartnerRecruitService {
   private async broadcastHeavenPartnerRecruit(
     characterId: number,
@@ -163,30 +203,16 @@ class PartnerRecruitService {
     characterId: number,
     lockRow: boolean,
   ): Promise<ServiceResult<PartnerRecruitUnlockState>> {
-    const queryText = lockRow
-      ? `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-        FOR UPDATE
-      `
-      : `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-      `;
-    const characterRes = await query(queryText, [characterId]);
-    if (characterRes.rows.length === 0) {
+    const character = await loadPartnerRecruitCharacterState(characterId, lockRow);
+    if (!character) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
-
-    const row = characterRes.rows[0] as { realm?: string | null; sub_realm?: string | null };
     return {
       success: true,
       message: '获取伙伴招募开放态成功',
       data: buildPartnerRecruitUnlockState(
-        typeof row.realm === 'string' ? row.realm.trim() : '',
-        typeof row.sub_realm === 'string' && row.sub_realm.trim() ? row.sub_realm.trim() : null,
+        character.realm.trim(),
+        character.sub_realm && character.sub_realm.trim() ? character.sub_realm.trim() : null,
       ),
     };
   }
@@ -319,55 +345,30 @@ class PartnerRecruitService {
   }
 
   private async loadCharacterSpiritStones(characterId: number, forUpdate: boolean): Promise<number | null> {
-    const lockSql = forUpdate ? 'FOR UPDATE' : '';
-    const result = await query(
-      `
-        SELECT spirit_stones
-        FROM characters
-        WHERE id = $1
-        LIMIT 1
-        ${lockSql}
-      `,
-      [characterId],
-    );
-    if (result.rows.length <= 0) return null;
-    return Math.max(0, Math.floor(asNumber((result.rows[0] as Record<string, unknown>).spirit_stones, 0)));
+    const character = await loadPartnerRecruitCharacterState(characterId, forUpdate);
+    if (!character) return null;
+    return Math.max(0, Math.floor(asNumber(character.spirit_stones, 0)));
   }
 
   private async loadCharacterUserId(characterId: number, forUpdate: boolean): Promise<number | null> {
-    const lockSql = forUpdate ? 'FOR UPDATE' : '';
-    const result = await query(
-      `
-        SELECT user_id
-        FROM characters
-        WHERE id = $1
-        LIMIT 1
-        ${lockSql}
-      `,
-      [characterId],
-    );
-    if (result.rows.length <= 0) return null;
-    const userId = Number((result.rows[0] as Record<string, unknown>).user_id);
+    const character = await loadPartnerRecruitCharacterState(characterId, forUpdate);
+    if (!character) return null;
+    const userId = Number(character.user_id);
     if (!Number.isInteger(userId) || userId <= 0) return null;
     return userId;
   }
 
   private async loadCustomBaseModelTokenAvailableQty(characterId: number, forUpdate: boolean): Promise<number> {
-    const lockSql = forUpdate ? 'FOR UPDATE' : '';
-    const result = await query(
-      `
-        SELECT qty
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND item_def_id = $2
-          AND location IN ('bag', 'warehouse')
-          AND locked = false
-        ${lockSql}
-      `,
-      [characterId, PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID],
-    );
-    return result.rows.reduce((totalQty, row) => {
-      const currentQty = Number((row as Record<string, unknown>).qty ?? 0);
+    const inventoryStates = await loadPlayerInventoryStatesByCharacterId(characterId);
+    return inventoryStates.reduce((totalQty: number, row) => {
+      if (
+        row.item_def_id !== PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID ||
+        row.locked ||
+        !['bag', 'warehouse'].includes(row.location)
+      ) {
+        return totalQty;
+      }
+      const currentQty = Number(row.qty);
       if (!Number.isFinite(currentQty) || currentQty <= 0) {
         return totalQty;
       }
@@ -538,17 +539,15 @@ class PartnerRecruitService {
       }
     }
 
-    const generationId = buildPartnerRecruitGenerationId();
-    await query(
-      `
-        UPDATE characters
-        SET spirit_stones = spirit_stones - $2,
-            updated_at = NOW()
-        WHERE id = $1
-      `,
-      [characterId, PARTNER_RECRUIT_SPIRIT_STONES_COST],
+    const spiritStoneUpdate = await adjustPartnerRecruitSpiritStones(
+      characterId,
+      true,
+      -PARTNER_RECRUIT_SPIRIT_STONES_COST,
     );
-
+    if (!spiritStoneUpdate) {
+      return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
+    }
+    const generationId = buildPartnerRecruitGenerationId();
     if (shouldUseCustomBaseModelToken) {
       const consumeTokenResult = await consumeMaterialByDefId(
         characterId,
@@ -632,15 +631,8 @@ class PartnerRecruitService {
     const usedCustomBaseModelToken = asBoolean(row.used_custom_base_model_token);
     if (status === 'accepted' || status === 'discarded' || status === 'failed' || status === 'refunded') return;
 
-    await query(
-      `
-        UPDATE characters
-        SET spirit_stones = spirit_stones + $2,
-            updated_at = NOW()
-        WHERE id = $1
-      `,
-      [characterId, spiritStonesCost],
-    );
+    const spiritStoneUpdate = await adjustPartnerRecruitSpiritStones(characterId, true, spiritStonesCost);
+    if (!spiritStoneUpdate) return;
     if (usedCustomBaseModelToken) {
       const userId = await this.loadCharacterUserId(characterId, true);
       if (userId) {

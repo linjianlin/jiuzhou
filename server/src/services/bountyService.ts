@@ -4,6 +4,11 @@ import { getBountyDefinitions, getItemDefinitions, getItemDefinitionsByIds } fro
 import { getTaskDefinitionById } from './taskDefinitionService.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { Transactional } from '../decorators/transactional.js';
+import { consumeMaterialByDefId } from './inventory/shared/consume.js';
+import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
 
 export type BountySourceType = 'daily' | 'player';
 export type BountyClaimPolicy = 'unique' | 'limited' | 'unlimited';
@@ -78,7 +83,6 @@ type BountyInstanceRow = {
 
 type TaskStatusRow = { status: string | null };
 type InsertIdRow = { id: number | string | null };
-type CharacterCurrencyRow = { spirit_stones: number | string | null; silver: number | string | null };
 type ClaimLookupRow = {
   claim_id: number | string | null;
   claim_status: string | null;
@@ -86,11 +90,9 @@ type ClaimLookupRow = {
   required_items: unknown;
 };
 type ProgressLookupRow = { progress: unknown; status: string | null };
-type InventoryOwnedItemRow = {
-  id: number | string | null;
-  qty: number | string | null;
-  locked: boolean | null;
-  location: string | null;
+type BountyCharacterCurrencySnapshot = {
+  spiritStones: number;
+  silver: number;
 };
 type TaskObjectiveRecord = Record<string, unknown>;
 type BountyRequiredItemRecord = {
@@ -156,6 +158,34 @@ const getLocalDateKey = (d: Date = new Date()): string => {
 
 const getLocalNextMidnight = (d: Date = new Date()): Date => {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0);
+};
+
+const loadBountyCharacterCurrencySnapshot = async (
+  characterId: number,
+): Promise<BountyCharacterCurrencySnapshot | null> => {
+  const character = await loadCharacterWritebackRowByCharacterId(characterId, { forUpdate: true });
+  if (!character) return null;
+  return {
+    spiritStones: asFiniteNonNegativeInt(character.spirit_stones, 0),
+    silver: asFiniteNonNegativeInt(character.silver, 0),
+  };
+};
+
+const spendBountyCharacterCurrencies = async (
+  characterId: number,
+  current: BountyCharacterCurrencySnapshot,
+  spiritCost: number,
+  silverCost: number,
+): Promise<BountyCharacterCurrencySnapshot> => {
+  const nextCurrency = {
+    spiritStones: current.spiritStones - spiritCost,
+    silver: current.silver - silverCost,
+  };
+  await queueCharacterWritebackSnapshot(characterId, {
+    spirit_stones: nextCurrency.spiritStones,
+    silver: nextCurrency.silver,
+  });
+  return nextCurrency;
 };
 
 const pickWeightedUnique = (defs: BountyDefRow[], take: number): BountyDefRow[] => {
@@ -591,26 +621,16 @@ class BountyService {
       }
     }
 
-    const charRes = await query<CharacterCurrencyRow>(
-      `SELECT spirit_stones, silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE`,
-      [cid],
-    );
-    if (charRes.rows.length === 0) {
+    const character = await loadBountyCharacterCurrencySnapshot(cid);
+    if (!character) {
       return { success: false, message: '角色不存在' };
     }
-    const curSpirit = asFiniteNonNegativeInt(charRes.rows[0]?.spirit_stones, 0);
-    const curSilver = asFiniteNonNegativeInt(charRes.rows[0]?.silver, 0);
-    if (curSpirit < spiritCost) {
+    if (character.spiritStones < spiritCost) {
       return { success: false, message: '灵石不足' };
     }
-    if (curSilver < silverCost) {
+    if (character.silver < silverCost) {
       return { success: false, message: '银两不足' };
     }
-
-    await query(
-      `UPDATE characters SET spirit_stones = spirit_stones - $1, silver = silver - $2, updated_at = NOW() WHERE id = $3`,
-      [spiritCost, silverCost, cid],
-    );
 
     const res = await query<InsertIdRow>(
       `
@@ -650,6 +670,7 @@ class BountyService {
     if (!id) {
       return { success: false, message: '发布失败' };
     }
+    await spendBountyCharacterCurrencies(cid, character, spiritCost, silverCost);
     return { success: true, message: '发布成功', data: { bountyInstanceId: id } };
   }
 
@@ -761,37 +782,9 @@ class BountyService {
     const submitTarget = submitObj ? getObjectiveTarget(submitObj) : 1;
 
     for (const reqItem of requiredItems) {
-      let remaining = Math.max(1, Math.floor(reqItem.qty));
-      const rowsRes = await query<InventoryOwnedItemRow>(
-        `
-          SELECT id, qty, locked, location
-          FROM item_instance
-          WHERE owner_character_id = $1
-            AND item_def_id = $2
-            AND location IN ('bag','warehouse')
-          ORDER BY CASE WHEN location = 'bag' THEN 0 ELSE 1 END ASC, created_at ASC
-          FOR UPDATE
-        `,
-        [cid, reqItem.itemDefId],
-      );
-      const rows = rowsRes.rows;
-      const available = rows.filter((r) => !r.locked).reduce((sum, r) => sum + Math.max(0, Number(r.qty) || 0), 0);
-      if (available < remaining) {
-        return { success: false, message: `${reqItem.name}数量不足` };
-      }
-
-      for (const row of rows) {
-        if (remaining <= 0) break;
-        if (row.locked) continue;
-        const rowQty = Math.max(0, Number(row.qty) || 0);
-        if (rowQty <= 0) continue;
-        const takeQty = Math.min(remaining, rowQty);
-        if (takeQty === rowQty) {
-          await query('DELETE FROM item_instance WHERE id = $1', [row.id]);
-        } else {
-          await query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [takeQty, row.id]);
-        }
-        remaining -= takeQty;
+      const consumeResult = await consumeMaterialByDefId(cid, reqItem.itemDefId, reqItem.qty);
+      if (!consumeResult.success) {
+        return { success: false, message: consumeResult.message };
       }
     }
 

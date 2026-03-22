@@ -16,6 +16,7 @@ import {
   getCharacterComputedByCharacterId,
   type CharacterComputedRow,
 } from './characterComputedService.js';
+import { loadPlayerInventoryStatesByCharacterId } from './playerStateRepository.js';
 import type { MapObjectDto } from './roomObjectService.js';
 import {
   getItemDefinitionById,
@@ -474,20 +475,9 @@ export const getInfoTargetDetail = async (type: InfoTargetType, id: string): Pro
     const characterId = Math.floor(Number(id));
     if (!Number.isFinite(characterId) || characterId <= 0) return null;
 
-    const [computed, equipRes, techRes] = await Promise.all([
+    const [computed, equippedStates, techRes] = await Promise.all([
       getCharacterComputedByCharacterId(characterId),
-      query(
-        `
-          SELECT
-            ii.equipped_slot,
-            ii.item_def_id,
-            NULLIF(ii.quality, '') AS item_quality
-          FROM item_instance ii
-          WHERE ii.owner_character_id = $1 AND ii.location = 'equipped'
-          ORDER BY ii.equipped_slot ASC, ii.id ASC
-        `,
-        [characterId]
-      ),
+      loadPlayerInventoryStatesByCharacterId(characterId),
       query(
         `
           SELECT
@@ -503,7 +493,18 @@ export const getInfoTargetDetail = async (type: InfoTargetType, id: string): Pro
 
     if (!computed) return null;
 
-    const equipRows = equipRes.rows as EquippedRow[];
+    const equipRows = equippedStates
+      .filter((row) => String(row.location) === 'equipped')
+      .sort((left, right) => {
+        const slotCompare = String(left.equipped_slot || '').localeCompare(String(right.equipped_slot || ''));
+        if (slotCompare !== 0) return slotCompare;
+        return Number(left.id) - Number(right.id);
+      })
+      .map((row) => ({
+        equipped_slot: row.equipped_slot,
+        item_def_id: row.item_def_id,
+        item_quality: typeof row.quality === 'string' ? row.quality : null,
+      })) as EquippedRow[];
     const equipItemDefIds = Array.from(
       new Set(
         equipRows

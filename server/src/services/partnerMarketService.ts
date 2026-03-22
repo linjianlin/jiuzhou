@@ -35,6 +35,10 @@ import {
   type PartnerDisplayDto,
 } from './shared/partnerView.js';
 import {
+  loadCharacterWritebackRowByCharacterId,
+  queueCharacterWritebackSnapshot,
+} from './playerWritebackCacheService.js';
+import {
   calculateMarketListingFeeSilver,
   calculateMarketTradeTotalPrice,
   getTaxAmount,
@@ -99,11 +103,11 @@ type PartnerTradeRecordRow = {
   created_at: Date | string;
 };
 
-type CharacterWalletRow = {
+type PartnerMarketWalletState = {
   id: number;
   user_id: number;
-  spirit_stones: number | string | bigint;
-  silver: number | string | bigint;
+  spirit_stones: number;
+  silver: number;
 };
 
 const PARTNER_MARKET_TAX_RATE = 0;
@@ -252,6 +256,40 @@ const partnerMarketListingsCache = createCacheLayer<string, PartnerListingsCache
   },
 });
 
+const loadCharacterWallet = async (
+  characterId: number,
+  _forUpdate: boolean,
+): Promise<PartnerMarketWalletState | null> => {
+  const character = await loadCharacterWritebackRowByCharacterId(characterId);
+  if (!character) return null;
+  return {
+    id: Number(character.id),
+    user_id: Number(character.user_id),
+    spirit_stones: Number(character.spirit_stones ?? 0),
+    silver: Number(character.silver ?? 0),
+  };
+};
+
+const adjustCharacterWallet = async (
+  characterId: number,
+  current: PartnerMarketWalletState,
+  delta: {
+    spiritStones?: number;
+    silver?: number;
+  },
+): Promise<PartnerMarketWalletState> => {
+  const nextWallet: PartnerMarketWalletState = {
+    ...current,
+    spirit_stones: Number(current.spirit_stones ?? 0) + (delta.spiritStones ?? 0),
+    silver: Number(current.silver ?? 0) + (delta.silver ?? 0),
+  };
+  await queueCharacterWritebackSnapshot(characterId, {
+    spirit_stones: nextWallet.spirit_stones,
+    silver: nextWallet.silver,
+  });
+  return nextWallet;
+};
+
 const buildTradeRecordDto = (
   row: PartnerTradeRecordRow,
   viewerCharacterId: number,
@@ -290,25 +328,6 @@ const buildPartnerSnapshot = async (partnerId: number): Promise<PartnerDisplayDt
     definition,
     techniqueRows: techniqueMap.get(partnerId) ?? [],
   });
-};
-
-const loadCharacterWallet = async (
-  characterId: number,
-  forUpdate: boolean,
-): Promise<CharacterWalletRow | null> => {
-  const lockSql = forUpdate ? 'FOR UPDATE' : '';
-  const result = await query(
-    `
-      SELECT id, user_id, spirit_stones, silver
-      FROM characters
-      WHERE id = $1
-      LIMIT 1
-      ${lockSql}
-    `,
-    [characterId],
-  );
-  if (result.rows.length <= 0) return null;
-  return result.rows[0] as CharacterWalletRow;
 };
 
 class PartnerMarketService {
@@ -501,15 +520,9 @@ class PartnerMarketService {
     }
 
     if (listingFeeSilver > 0n) {
-      await query(
-        `
-          UPDATE characters
-          SET silver = silver - $1,
-              updated_at = NOW()
-          WHERE id = $2
-        `,
-        [listingFeeSilver.toString(), params.characterId],
-      );
+      await adjustCharacterWallet(params.characterId, seller, {
+        silver: -Number(listingFeeSilver),
+      });
     }
 
     const listingResult = await query(
@@ -609,15 +622,9 @@ class PartnerMarketService {
 
     const refundFeeSilver = BigInt(listing.listing_fee_silver ?? 0);
     if (refundFeeSilver > 0n) {
-      await query(
-        `
-          UPDATE characters
-          SET silver = silver + $1,
-              updated_at = NOW()
-          WHERE id = $2
-        `,
-        [refundFeeSilver.toString(), params.characterId],
-      );
+      await adjustCharacterWallet(params.characterId, seller, {
+        silver: Number(refundFeeSilver),
+      });
     }
 
     await invalidatePartnerMarketListingsCache();
@@ -743,24 +750,12 @@ class PartnerMarketService {
       };
     }
 
-    await query(
-      `
-        UPDATE characters
-        SET spirit_stones = spirit_stones - $1,
-            updated_at = NOW()
-        WHERE id = $2
-      `,
-      [totalPrice.toString(), params.buyerCharacterId],
-    );
-    await query(
-      `
-        UPDATE characters
-        SET spirit_stones = spirit_stones + $1,
-            updated_at = NOW()
-        WHERE id = $2
-      `,
-      [sellerGain.toString(), sellerCharacterId],
-    );
+    await adjustCharacterWallet(params.buyerCharacterId, buyer, {
+      spiritStones: -Number(totalPrice),
+    });
+    await adjustCharacterWallet(sellerCharacterId, seller, {
+      spiritStones: Number(sellerGain),
+    });
 
     await query(
       `

@@ -12,8 +12,8 @@
  * - 纯函数辅助：normalizeGemSlotTypes / normalizeSocketedGemEntries / toSocketedGemsJson / ...
  *
  * 数据流：
- * 1. 校验装备状态 → 2. 计算属性差分快照 → 3. 校验宝石 →
- * 4. 检查孔位匹配 → 5. 扣除宝石/货币 → 6. 更新 socketed_gems → 7. 应用属性差分
+ * 1. 从 Redis 主状态读取装备/宝石 → 2. 计算属性差分快照 → 3. 校验宝石 →
+ * 4. 检查孔位匹配 → 5. 扣除宝石/货币 → 6. 写回 socketed_gems → 7. 应用属性差分
  *
  * 被引用方：service.ts（InventoryService.socketEquipment）
  *
@@ -21,7 +21,6 @@
  * 1. 同一件装备不可镶嵌相同宝石（按 itemDefId 判断）
  * 2. 替换已有宝石时银两消耗为 100，新镶嵌为 50
  */
-import { query } from "../../config/database.js";
 import {
   isGemTypeAllowedInSlot,
   parseSocketEffectsFromItemEffectDefs,
@@ -47,6 +46,12 @@ import {
   applyEquipmentDiffIfEquipped,
 } from "./shared/attrDelta.js";
 import { clampInt, getStaticItemDef, getEnabledStaticItemDef } from "./shared/helpers.js";
+import { queueInventoryItemWritebackSnapshot } from "../playerWritebackCacheService.js";
+import { loadPlayerInventoryStateByItemId } from "../playerStateRepository.js";
+import type {
+  PlayerInventoryItemState,
+  PlayerStateJsonValue,
+} from "../playerStateTypes.js";
 
 // ============================================
 // 宝石孔位纯函数工具
@@ -157,8 +162,8 @@ export const removeSocketEntryBySlot = (
 // ============================================
 
 /**
- * 查询装备实例的镶嵌状态（FOR UPDATE 行锁）
- * 返回孔位上限、已镶嵌条目、宝石类型限制等
+ * 查询装备实例的镶嵌状态
+ * 直接从 Redis 主状态读取装备实例，再根据静态配置计算孔位与宝石类型限制
  */
 export const readEquipmentSocketState = async (
   characterId: number,
@@ -168,57 +173,55 @@ export const readEquipmentSocketState = async (
   message: string;
   item?: {
     id: number;
-    location: string;
+    owner_user_id: number;
+    owner_character_id: number;
+    item_def_id: string;
     qty: number;
     locked: boolean;
+    quality: string | null;
+    quality_rank: number | null;
+    strengthen_level: number | null;
+    refine_level: number | null;
+    socketed_gems: PlayerStateJsonValue;
+    affixes: PlayerStateJsonValue;
+    affix_gen_version: number | null;
+    affix_roll_meta: PlayerStateJsonValue;
+    identified: boolean | null;
+    bind_type: string | null;
+    bind_owner_user_id: number | null;
+    bind_owner_character_id: number | null;
+    location: string;
+    location_slot: number | null;
+    equipped_slot: string | null;
+    random_seed: number | null;
+    custom_name: string | null;
+    expire_at: string | null;
+    obtained_from: string | null;
+    obtained_ref_id: string | null;
+    metadata: PlayerStateJsonValue;
+    created_at: string | null;
     socketMax: number;
     gemSlotTypes: unknown;
     socketedEntries: SocketedGemEntry[];
   };
 }> => {
-  const result = await query(
-    `
-      SELECT
-        ii.id,
-        ii.qty,
-        ii.location,
-        ii.locked,
-        ii.socketed_gems,
-        ii.item_def_id,
-        ii.quality_rank
-      FROM item_instance ii
-      WHERE ii.id = $1 AND ii.owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [itemInstanceId, characterId],
-  );
-  if (result.rows.length === 0)
+  const itemState = await loadPlayerInventoryStateByItemId(characterId, itemInstanceId);
+  if (!itemState)
     return { success: false, message: "物品不存在" };
-  const row = result.rows[0] as {
-    id: number;
-    qty: number;
-    location: string;
-    locked: boolean;
-    socketed_gems: unknown;
-    item_def_id: string;
-    quality_rank: unknown;
-  };
-
-  const itemDef = getStaticItemDef(row.item_def_id);
+  const itemDef = getStaticItemDef(itemState.item_def_id);
   if (!itemDef || itemDef.category !== "equipment")
     return { success: false, message: "该物品不可镶嵌" };
-  if (row.locked) return { success: false, message: "物品已锁定" };
-  if ((Number(row.qty) || 0) !== 1)
+  if (itemState.locked) return { success: false, message: "物品已锁定" };
+  if ((Number(itemState.qty) || 0) !== 1)
     return { success: false, message: "装备数量异常" };
-  if (String(row.location) === "auction")
+  if (String(itemState.location) === "auction")
     return { success: false, message: "交易中的装备不可镶嵌" };
-  if (!["bag", "warehouse", "equipped"].includes(String(row.location))) {
+  if (!["bag", "warehouse", "equipped"].includes(String(itemState.location))) {
     return { success: false, message: "该物品当前位置不可镶嵌" };
   }
 
   const resolvedQualityRank =
-    Number(row.quality_rank) || resolveQualityRankFromName(itemDef.quality, 1);
+    Number(itemState.quality_rank) || resolveQualityRankFromName(itemDef.quality, 1);
   const socketMax = resolveSocketMax(itemDef.socket_max, resolvedQualityRank);
   if (socketMax <= 0) return { success: false, message: "该装备无可用镶嵌孔" };
 
@@ -226,13 +229,10 @@ export const readEquipmentSocketState = async (
     success: true,
     message: "ok",
     item: {
-      id: Number(row.id),
-      location: String(row.location),
-      qty: Number(row.qty) || 1,
-      locked: Boolean(row.locked),
+      ...itemState,
       socketMax,
       gemSlotTypes: normalizeGemSlotTypes(itemDef.gem_slot_types),
-      socketedEntries: normalizeSocketedGemEntries(row.socketed_gems),
+      socketedEntries: normalizeSocketedGemEntries(itemState.socketed_gems),
     },
   };
 };
@@ -243,7 +243,7 @@ export const readEquipmentSocketState = async (
 
 /**
  * 加载并校验用于镶嵌的宝石物品
- * 返回宝石的类型、效果、名称等信息
+ * 直接从 Redis 主状态读取宝石实例，再校验静态配置中的宝石定义
  */
 export const loadGemItemForSocket = async (
   characterId: number,
@@ -260,36 +260,18 @@ export const loadGemItemForSocket = async (
     effects: SocketEffect[];
   };
 }> => {
-  const itemResult = await query(
-    `
-      SELECT id, item_def_id, qty, locked, location
-      FROM item_instance
-      WHERE id = $1 AND owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [gemItemInstanceId, characterId],
-  );
-
-  if (itemResult.rows.length === 0)
+  const itemState = await loadPlayerInventoryStateByItemId(characterId, gemItemInstanceId);
+  if (!itemState)
     return { success: false, message: "宝石不存在" };
 
-  const item = itemResult.rows[0] as {
-    id: number;
-    item_def_id: string;
-    qty: number;
-    locked: boolean;
-    location: string;
-  };
-
-  if (item.locked) return { success: false, message: "宝石已锁定" };
-  if (!["bag", "warehouse"].includes(String(item.location))) {
+  if (itemState.locked) return { success: false, message: "宝石已锁定" };
+  if (!["bag", "warehouse"].includes(String(itemState.location))) {
     return { success: false, message: "宝石当前位置不可消耗" };
   }
-  if ((Number(item.qty) || 0) < 1)
+  if ((Number(itemState.qty) || 0) < 1)
     return { success: false, message: "宝石数量不足" };
 
-  const gemDefId = String(item.item_def_id || "");
+  const gemDefId = String(itemState.item_def_id || "");
   if (!gemDefId) return { success: false, message: "宝石数据异常" };
 
   const row = getEnabledStaticItemDef(gemDefId);
@@ -305,7 +287,7 @@ export const loadGemItemForSocket = async (
     success: true,
     message: "ok",
     gem: {
-      itemInstanceId: Number(item.id),
+      itemInstanceId: Number(itemState.id),
       itemDefId: String(row.id),
       name: String(row.name || row.id),
       icon: row.icon ? String(row.icon) : null,
@@ -444,9 +426,12 @@ export const socketEquipment = async (
     }
   }
 
-  await query(
-    `UPDATE item_instance SET socketed_gems = $1::jsonb, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3`,
-    [toSocketedGemsJson(nextEntries), itemInstanceId, characterId],
+  await queueInventoryItemWritebackSnapshot(
+    characterId,
+    equip as PlayerInventoryItemState,
+    {
+      socketed_gems: nextEntries,
+    },
   );
 
   const applyDiffRes = await applyEquipmentDiffIfEquipped(

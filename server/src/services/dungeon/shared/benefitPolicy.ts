@@ -11,16 +11,15 @@
  * - loadDungeonBenefitPolicyMap 输入角色 ID 列表，输出 `characterId -> policy` 的 Map。
  *
  * 数据流/状态流：
- * 1) 角色设置页保存 `dungeon_no_stamina_cost` 到 characters 表。
+ * 1) 角色设置页保存 `dungeon_no_stamina_cost` 到统一角色状态。
  * 2) startDungeonInstance 开战前批量读取本模块策略，决定“谁需要扣体力”“谁具备奖励资格”。
  * 3) 结算阶段只消费开战时固化的奖励资格名单，避免中途改设置导致结果漂移。
  *
  * 关键边界条件与坑点：
  * 1) `dungeon_no_stamina_cost=true` 时，必须同时生效“免体力 + 无奖励”两条规则，不能只关闭其中一条。
- * 2) 批量读取只返回数据库中存在的角色；调用方必须自行校验缺失角色，避免把脏数据当成默认值继续执行。
+ * 2) 批量读取只返回角色状态中存在的角色；调用方必须自行校验缺失角色，避免把脏数据当成默认值继续执行。
  */
-
-import { query } from '../../../config/database.js';
+import { loadCharacterWritebackRowByCharacterId } from '../../playerWritebackCacheService.js';
 
 export interface DungeonBenefitPolicy {
   skipStaminaCost: boolean;
@@ -46,19 +45,14 @@ export const loadDungeonBenefitPolicyMap = async (
   const out = new Map<number, DungeonBenefitPolicy>();
   if (normalizedCharacterIds.length <= 0) return out;
 
-  const result = await query(
-    `
-      SELECT id, dungeon_no_stamina_cost
-      FROM characters
-      WHERE id = ANY($1::int[])
-    `,
-    [normalizedCharacterIds],
+  const rows = await Promise.all(
+    normalizedCharacterIds.map(async (characterId) => loadCharacterWritebackRowByCharacterId(characterId)),
   );
 
-  for (const row of result.rows as Array<{ id: unknown; dungeon_no_stamina_cost: unknown }>) {
-    const characterId = Math.floor(Number(row.id));
+  for (const row of rows) {
+    const characterId = Math.floor(Number(row?.id));
     if (!Number.isFinite(characterId) || characterId <= 0) continue;
-    out.set(characterId, resolveDungeonBenefitPolicy(row.dungeon_no_stamina_cost));
+    out.set(characterId, resolveDungeonBenefitPolicy(row?.dungeon_no_stamina_cost));
   }
 
   return out;

@@ -32,6 +32,7 @@ import { updateAchievementProgress } from './achievement/progress.js';
 import { equipTitle, getTitleList } from './achievement/title.js';
 import { getRealmOrderIndex } from './shared/realmRules.js';
 import { getAchievementDefinitions, getItemDefinitionsByIds } from './staticConfigLoader.js';
+import { loadCharacterWritebackRowByCharacterId } from './playerWritebackCacheService.js';
 
 const getRealmRank = (realmRaw: unknown, subRealmRaw?: unknown): number => {
   return getRealmOrderIndex(realmRaw, subRealmRaw);
@@ -66,8 +67,8 @@ const syncStaticAchievementProgress = async (characterId: number): Promise<void>
     .map((def) => def.id);
   if (trackedDefIds.length === 0) return;
 
-  const characterRes = await query(`SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1`, [cid]);
-  const character = (characterRes.rows?.[0] ?? {}) as Record<string, unknown>;
+  const character = await loadCharacterWritebackRowByCharacterId(cid);
+  if (!character) return;
   const currentRealmRank = getRealmRank(character.realm, character.sub_realm);
 
   const sectMemberRes = await query(`SELECT 1 FROM sect_member WHERE character_id = $1 LIMIT 1`, [cid]);
