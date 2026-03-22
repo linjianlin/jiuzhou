@@ -19,6 +19,7 @@
 
 import type { BattleLogEntry, BattleState, BattleUnit, TargetHitResult } from '../types.js';
 import { applyDamage } from './damage.js';
+import { calculateDefenseReductionRate } from './defense.js';
 
 export interface ReactiveDamageApplyResult {
   actualDamage: number;
@@ -38,17 +39,20 @@ export function calculateReactiveDamageByRate(
   return Math.floor(sourceDamage * rate * damageMultiplier);
 }
 
-export function applyReactiveTrueDamage(
+export function applyReactiveDamage(
   state: BattleState,
   source: BattleUnit,
   target: BattleUnit,
   damage: number,
+  damageType: 'physical' | 'magic' | 'true',
 ): ReactiveDamageApplyResult | null {
   const normalizedDamage = Math.floor(damage);
   if (!Number.isFinite(normalizedDamage) || normalizedDamage <= 0) return null;
+  const reducedDamage = applyReactiveDefenseReduction(target, normalizedDamage, damageType);
+  if (reducedDamage <= 0) return null;
 
   const wasAlive = target.isAlive;
-  const { actualDamage, shieldAbsorbed } = applyDamage(state, target, normalizedDamage, 'true');
+  const { actualDamage, shieldAbsorbed } = applyDamage(state, target, reducedDamage, damageType);
   const safeDamage = Math.max(0, actualDamage);
   const safeShieldAbsorbed = Math.max(0, shieldAbsorbed);
   source.stats.damageDealt += safeDamage;
@@ -80,4 +84,23 @@ export function applyReactiveTrueDamage(
     },
     extraLogs,
   };
+}
+
+export function applyReactiveTrueDamage(
+  state: BattleState,
+  source: BattleUnit,
+  target: BattleUnit,
+  damage: number,
+): ReactiveDamageApplyResult | null {
+  return applyReactiveDamage(state, source, target, damage, 'true');
+}
+
+function applyReactiveDefenseReduction(
+  target: BattleUnit,
+  damage: number,
+  damageType: 'physical' | 'magic' | 'true',
+): number {
+  if (damageType === 'true') return damage;
+  const reductionRate = calculateDefenseReductionRate(target, damageType);
+  return Math.max(0, Math.floor(damage * (1 - reductionRate)));
 }

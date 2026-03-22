@@ -23,6 +23,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { executeSkill } from '../../battle/modules/skill.js';
 import type { BattleSkill } from '../../battle/types.js';
+import { BATTLE_CONSTANTS } from '../../battle/types.js';
 import { asActionLog, consumeBattleLogs, createState, createUnit } from './battleTestUtils.js';
 
 function createReflectBuffSkill(reflectRate = 0.5): BattleSkill {
@@ -50,7 +51,10 @@ function createReflectBuffSkill(reflectRate = 0.5): BattleSkill {
   };
 }
 
-function createStrikeSkill(damage = 200): BattleSkill {
+function createStrikeSkill(
+  damage = 200,
+  damageType: 'physical' | 'magic' | 'true' = 'true',
+): BattleSkill {
   return {
     id: 'skill-flat-true-damage',
     name: '碎岳击',
@@ -59,14 +63,14 @@ function createStrikeSkill(damage = 200): BattleSkill {
     cooldown: 0,
     targetType: 'single_enemy',
     targetCount: 1,
-    damageType: 'true',
+    damageType,
     element: 'none',
     effects: [
       {
         type: 'damage',
         valueType: 'flat',
         value: damage,
-        damageType: 'true',
+        damageType,
         element: 'none',
       },
     ],
@@ -140,4 +144,32 @@ test('reflect_damage Buff 在低伤害场景下不应因二次取整被额外抹
   const actionLogs = consumeBattleLogs(state).filter((log) => log.type === 'action');
   const reflectLog = asActionLog(actionLogs[2]);
   assert.equal(reflectLog.targets[0]?.hits[0]?.damage, 1);
+});
+
+test('reflect_damage Buff 应继承来源物理伤害类型并受目标物防减免', () => {
+  const defender = createUnit({
+    id: 'player-1',
+    name: '守御者',
+    attrs: { wufang: 0, fafang: 0 },
+  });
+  const attacker = createUnit({
+    id: 'monster-1',
+    name: '进攻者',
+    type: 'monster',
+    attrs: { wufang: 200, fafang: 0, jianfantan: 0 },
+  });
+  const state = createState({ attacker: [defender], defender: [attacker] });
+
+  const applyBuffResult = executeSkill(state, defender, createReflectBuffSkill());
+  assert.equal(applyBuffResult.success, true);
+
+  const attackResult = executeSkill(state, attacker, createStrikeSkill(200, 'physical'), [defender.id]);
+  assert.equal(attackResult.success, true);
+
+  const expectedReduction = 200 / (200 + BATTLE_CONSTANTS.DEFENSE_DAMAGE_K);
+  const expectedReflectDamage = Math.floor(100 * (1 - expectedReduction));
+
+  const actionLogs = consumeBattleLogs(state).filter((log) => log.type === 'action');
+  const reflectLog = asActionLog(actionLogs[2]);
+  assert.equal(reflectLog.targets[0]?.hits[0]?.damage, expectedReflectDamage);
 });

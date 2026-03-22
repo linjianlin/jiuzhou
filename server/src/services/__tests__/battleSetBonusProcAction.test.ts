@@ -328,6 +328,36 @@ test('echo伤害词条缺失本次命中伤害时不应生效', () => {
   assert.equal(logs.length, 0);
 });
 
+test('reflect反击词条应继承来源伤害类型并受目标物防减免', () => {
+  const effect: BattleSetBonusEffect = {
+    setId: 'affix-603-proc_fansha',
+    setName: '反煞甲',
+    pieceCount: 1,
+    trigger: 'on_be_hit',
+    target: 'enemy',
+    effectType: 'damage',
+    params: {
+      chance: 1,
+      damage_type: 'reflect',
+      value: 0.5,
+    },
+  };
+  const owner = createUnit('player-7', '测试体修', [effect]);
+  const target = createUnit('monster-7', '木桩妖', []);
+  target.currentAttrs.wufang = 200;
+  target.baseAttrs.wufang = 200;
+  const state = createState(owner, target);
+
+  const logs = triggerSetBonusEffects(state, 'on_be_hit', owner, {
+    target,
+    damage: 200,
+    damageType: 'physical',
+  });
+  assert.equal(logs.length, 1);
+  const actionLog = assertActionLog(logs[0]);
+  assert.equal(actionLog.targets[0]?.hits[0]?.damage, 80);
+});
+
 test('damage_echo护盾词条应按本次受击伤害比例生成护盾', () => {
   const effect: BattleSetBonusEffect = {
     setId: 'affix-701-proc_xuangang',

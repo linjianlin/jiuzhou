@@ -23,7 +23,7 @@ import {
   resolveMarkEffectConfig,
 } from './mark.js';
 import { applyMarkConsumeRuntimeAddon } from './markAddonRuntime.js';
-import { applyReactiveTrueDamage, calculateReactiveDamageByRate } from './reactiveDamage.js';
+import { applyReactiveDamage, applyReactiveTrueDamage, calculateReactiveDamageByRate } from './reactiveDamage.js';
 import {
   convertRatingToPercent,
   getEffectiveLevelByRealm,
@@ -33,6 +33,7 @@ import {
 interface SetBonusTriggerContext {
   target?: BattleUnit;
   damage?: number;
+  damageType?: 'physical' | 'magic' | 'true';
   heal?: number;
 }
 
@@ -106,7 +107,7 @@ export function triggerSetBonusEffects(
         applyResult = applySetBuffOrDebuff(effect, owner, target, params);
         break;
       case 'damage':
-        applyResult = applySetDamage(state, owner, target, params, context.damage);
+        applyResult = applySetDamage(state, owner, target, params, context.damage, context.damageType);
         break;
       case 'heal':
         applyResult = applySetHeal(owner, target, params);
@@ -221,7 +222,8 @@ function applySetDamage(
   owner: BattleUnit,
   target: BattleUnit,
   params: Record<string, unknown>,
-  sourceDamage?: number
+  sourceDamage?: number,
+  sourceDamageType?: 'physical' | 'magic' | 'true',
 ): SetBonusApplyResult | null {
   const rawValue = asFiniteNumber(params.value) ?? 0;
   const damageTypeRaw = asNonEmptyString(params.damage_type) ?? 'true';
@@ -258,8 +260,12 @@ function applySetDamage(
 
   const damageType = normalizeDamageType(damageTypeRaw);
   const reactiveDamageResult =
-    damageTypeRaw === 'reflect' || damageTypeRaw === 'echo'
-      ? applyReactiveTrueDamage(state, owner, target, damage)
+    damageTypeRaw === 'reflect'
+      ? sourceDamageType
+        ? applyReactiveDamage(state, owner, target, damage, sourceDamageType)
+        : null
+      : damageTypeRaw === 'echo'
+        ? applyReactiveTrueDamage(state, owner, target, damage)
       : null;
   const directDamageResult = reactiveDamageResult
     ? null

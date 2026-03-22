@@ -49,7 +49,7 @@ import {
   resolveMomentumEffectConfig,
   type MomentumBonusType,
 } from './momentum.js';
-import { applyReactiveTrueDamage, calculateReactiveDamageByRate } from './reactiveDamage.js';
+import { applyReactiveDamage, applyReactiveTrueDamage, calculateReactiveDamageByRate } from './reactiveDamage.js';
 import { resolveSkillCostForResourceState } from '../../shared/skillCost.js';
 import {
   applySkillCooldownAfterCast,
@@ -569,17 +569,20 @@ function executeDamageEffect(
     const onHitLogs = triggerSetBonusEffects(state, 'on_hit', caster, {
       target,
       damage: actualDamage,
+      damageType,
     });
     appendBattleLogs(state, onHitLogs);
     const onBeHitLogs = triggerSetBonusEffects(state, 'on_be_hit', target, {
       target: caster,
       damage: actualDamage,
+      damageType,
     });
     appendBattleLogs(state, onBeHitLogs);
     if (damageResult.isCrit) {
       const onCritLogs = triggerSetBonusEffects(state, 'on_crit', caster, {
         target,
         damage: actualDamage,
+        damageType,
       });
       appendBattleLogs(state, onCritLogs);
     }
@@ -588,11 +591,12 @@ function executeDamageEffect(
       const onAllyHitLogs = triggerSetBonusEffects(state, 'on_ally_hit', ally, {
         target,
         damage: actualDamage,
+        damageType,
       });
       appendBattleLogs(state, onAllyHitLogs);
     }
 
-    const reflectLogs = buildReflectDamageLogs(state, target, caster, actualDamage);
+    const reflectLogs = buildReflectDamageLogs(state, target, caster, actualDamage, damageType);
     if (reflectLogs.length > 0) {
       appendBattleLogs(state, reflectLogs);
     }
@@ -611,7 +615,8 @@ function buildReflectDamageLogs(
   state: BattleState,
   defender: BattleUnit,
   attacker: BattleUnit,
-  actualDamage: number
+  actualDamage: number,
+  sourceDamageType: 'physical' | 'magic' | 'true',
 ): BattleLogEntry[] {
   if (actualDamage <= 0 || !attacker.isAlive) return [];
 
@@ -623,7 +628,7 @@ function buildReflectDamageLogs(
   );
   if (reflectDamage <= 0) return [];
 
-  const applied = applyReactiveTrueDamage(state, defender, attacker, reflectDamage);
+  const applied = applyReactiveDamage(state, defender, attacker, reflectDamage, sourceDamageType);
   if (!applied) return [];
 
   return [{
