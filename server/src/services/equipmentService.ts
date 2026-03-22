@@ -44,6 +44,8 @@ import { normalizeItemInstanceObtainedFrom } from './shared/itemInstanceSource.j
 import { tryInsertItemInstanceWithSlot } from './shared/itemInstanceSlotInsert.js';
 import { resolveAffixPoolBySlot } from './shared/affixPoolSlotResolver.js';
 import { roundAffixResultValue } from './shared/affixPrecision.js';
+import { syncDirtyInventoryMirrorOnSlotConflict } from './inventory/shared/inventoryMirrorSync.js';
+import { upsertPlayerInventoryState } from './playerStateRepository.js';
 
 // ============================================
 // 类型定义
@@ -800,6 +802,7 @@ class EquipmentService {
     await lockCharacterInventoryMutex(characterId);
 
     let attempt = 0;
+    let mirrorSyncAttempted = false;
     while (attempt < 6) {
       attempt += 1;
 
@@ -840,11 +843,53 @@ class EquipmentService {
       );
 
       if (insertedId !== null) {
+        await upsertPlayerInventoryState(characterId, {
+          id: insertedId,
+          owner_user_id: userId,
+          owner_character_id: characterId,
+          item_def_id: generated.itemDefId,
+          qty: 1,
+          locked: false,
+          quality: generated.quality,
+          quality_rank: generated.qualityRank,
+          strengthen_level: null,
+          refine_level: null,
+          socketed_gems: [],
+          affixes: generated.affixes,
+          affix_gen_version: generated.affixGenVersion || AFFIX_GEN_VERSION,
+          affix_roll_meta: {},
+          identified: options.identified !== false,
+          bind_type: options.bindType || 'none',
+          bind_owner_user_id: null,
+          bind_owner_character_id: null,
+          location,
+          location_slot: locationSlot,
+          equipped_slot: null,
+          random_seed: generated.seed,
+          custom_name: null,
+          expire_at: null,
+          obtained_from: obtainedFrom,
+          obtained_ref_id: null,
+          metadata: {},
+          created_at: new Date().toISOString(),
+        });
         return {
           success: true,
           instanceId: insertedId,
           message: '装备创建成功',
         };
+      }
+
+      if (!mirrorSyncAttempted) {
+        mirrorSyncAttempted = await syncDirtyInventoryMirrorOnSlotConflict(
+          characterId,
+        );
+        if (mirrorSyncAttempted) {
+          if (!hasExplicitSlot) {
+            locationSlot = null;
+          }
+          continue;
+        }
       }
 
       if (hasExplicitSlot) return { success: false, message: '目标格子已被占用' };

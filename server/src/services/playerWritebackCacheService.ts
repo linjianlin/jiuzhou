@@ -23,6 +23,7 @@ import {
   flushPlayerStateByCharacterId,
 } from './playerStateFlushService.js';
 import {
+  clearAllPlayerStateCache,
   deletePlayerInventoryState,
   ensurePlayerStateHydratedByCharacterId,
   loadDirtyPlayerStateCharacterIds,
@@ -59,13 +60,13 @@ type InventoryWritebackBaseSnapshot = {
   strengthen_level: number | null;
   refine_level: number | null;
   affixes: PlayerStateJsonValue;
-  affix_gen_version: number | null;
+  affix_gen_version: number;
   affix_roll_meta?: PlayerStateJsonValue;
   locked?: boolean;
   quality?: string | null;
   quality_rank?: number | null;
   socketed_gems?: PlayerStateJsonValue;
-  identified?: boolean | null;
+  identified?: boolean;
   bind_type?: string | null;
   bind_owner_user_id?: number | null;
   bind_owner_character_id?: number | null;
@@ -193,8 +194,9 @@ export const queueInventoryItemWritebackSnapshot = async (
         quality: base.quality ?? null,
         quality_rank: base.quality_rank ?? null,
         socketed_gems: base.socketed_gems ?? [],
+        affix_gen_version: base.affix_gen_version ?? 0,
         affix_roll_meta: base.affix_roll_meta ?? {},
-        identified: base.identified ?? null,
+        identified: base.identified ?? false,
         bind_type: base.bind_type ?? null,
         bind_owner_user_id: base.bind_owner_user_id ?? null,
         bind_owner_character_id: base.bind_owner_character_id ?? null,
@@ -320,6 +322,30 @@ export const startPlayerWritebackFlushLoop = (): void => {
 
 export const stopPlayerWritebackFlushLoop = (): void => {
   cancelFlushTimer();
+};
+
+/**
+ * 启动期玩家写回缓存清理入口
+ *
+ * 作用：
+ * 1. 做什么：在服务启动时统一清空 Redis 玩家运行时缓存，并同步重置当前进程内的角色运行时版本号。
+ * 2. 不做什么：不负责把缓存刷回数据库；调用前应明确接受“直接丢弃运行时缓存”的启动语义。
+ *
+ * 输入/输出：
+ * - 输入：无。
+ * - 输出：本次启动清理删除的 Redis key 数量。
+ *
+ * 数据流/状态流：
+ * startupPipeline -> clearPlayerWritebackCacheOnStartup -> clearAllPlayerStateCache + 本地 runtime version reset。
+ *
+ * 关键边界条件与坑点：
+ * 1. 该入口应只在启动阶段调用；运行中调用会直接清空 Redis 主状态，导致在线玩家读取回落到 DB。
+ * 2. 清理不仅要删 Redis 主状态，还要同步清空进程内 runtime version；否则本地派生缓存签名可能保留旧版本。
+ */
+export const clearPlayerWritebackCacheOnStartup = async (): Promise<number> => {
+  cancelFlushTimer();
+  characterRuntimeVersions.clear();
+  return clearAllPlayerStateCache();
 };
 
 export const resetPlayerWritebackStateForTests = (): void => {

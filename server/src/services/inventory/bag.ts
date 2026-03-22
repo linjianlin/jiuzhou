@@ -65,6 +65,7 @@ import {
   createDefaultInventoryInfo,
   getSlottedCapacity,
 } from "./shared/helpers.js";
+import { syncDirtyInventoryMirrorOnSlotConflict } from "./shared/inventoryMirrorSync.js";
 
 const countUsedSlots = (
   inventoryStates: PlayerInventoryItemState[],
@@ -416,6 +417,7 @@ export const addItemToInventory = async (
       let insertedId: number | null = null;
       let insertedSlot: number | null = null;
       let attempt = 0;
+      let mirrorSyncAttempted = false;
 
       while (insertedId === null && attempt < 6) {
         attempt += 1;
@@ -461,6 +463,12 @@ export const addItemToInventory = async (
             break;
           }
         }
+
+        if (insertedId === null && !mirrorSyncAttempted) {
+          mirrorSyncAttempted = await syncDirtyInventoryMirrorOnSlotConflict(
+            characterId,
+          );
+        }
       }
 
       if (insertedId === null || !Number.isFinite(insertedId)) {
@@ -483,9 +491,9 @@ export const addItemToInventory = async (
           options.affixes !== undefined && options.affixes !== null
             ? options.affixes
             : [],
-        affix_gen_version: null,
+        affix_gen_version: 0,
         affix_roll_meta: {},
-        identified: null,
+        identified: false,
         bind_type: actualBindType,
         bind_owner_user_id: null,
         bind_owner_character_id: null,

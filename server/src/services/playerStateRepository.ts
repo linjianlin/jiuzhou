@@ -23,17 +23,28 @@ import { query } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { CHARACTER_BASE_COLUMNS_SQL } from './shared/sqlFragments.js';
 import {
+  PLAYER_CHARACTER_INTEGER_FIELDS,
+  PLAYER_INVENTORY_INTEGER_FIELDS,
+  PLAYER_INVENTORY_NULLABLE_INTEGER_FIELDS,
+  PLAYER_INVENTORY_REQUIRED_INTEGER_FIELDS,
+} from './playerStateTypes.js';
+import {
   playerStateCharacterKey,
   playerStateDirtySetKey,
   playerStateFlushLockKey,
   playerStateHydrateLockKey,
   playerStateInventoryKey,
+  playerStateKeyPattern,
   playerStateMetaKey,
   playerStateUserCharacterKey,
 } from './playerStateKeys.js';
 import { withPlayerStateMutex } from './playerStateMutex.js';
 import type {
   PlayerCharacterState,
+  PlayerCharacterIntegerField,
+  PlayerInventoryIntegerField,
+  PlayerInventoryNullableIntegerField,
+  PlayerInventoryRequiredIntegerField,
   PlayerCharacterStatePatch,
   PlayerInventoryItemState,
   PlayerInventoryItemStatePatch,
@@ -97,16 +108,149 @@ const normalizeTimestamp = (value: unknown): string | null => {
   return null;
 };
 
+const INTEGER_LIKE_PATTERN = /^-?\d+$/;
+
+type PlayerStateIntegerField = PlayerCharacterIntegerField | PlayerInventoryIntegerField;
+
+const parseSafeIntegerLike = <TField extends PlayerStateIntegerField>(value: unknown, fieldName: TField): number => {
+  if (typeof value === 'number') {
+    if (Number.isSafeInteger(value)) return value;
+    throw new Error(`玩家状态字段 ${String(fieldName)} 必须是安全整数，收到 number: ${String(value)}`);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (INTEGER_LIKE_PATTERN.test(trimmed)) {
+      const normalized = Number(trimmed);
+      if (Number.isSafeInteger(normalized)) return normalized;
+    }
+    throw new Error(`玩家状态字段 ${String(fieldName)} 必须是安全整数，收到 string: ${value}`);
+  }
+  if (typeof value === 'bigint') {
+    const normalized = Number(value);
+    if (Number.isSafeInteger(normalized)) return normalized;
+    throw new Error(`玩家状态字段 ${String(fieldName)} 必须是安全整数，收到 bigint: ${value.toString()}`);
+  }
+  throw new Error(`玩家状态字段 ${String(fieldName)} 必须是安全整数，收到类型: ${typeof value}`);
+};
+
+const parseNullableSafeIntegerLike = <TField extends PlayerInventoryNullableIntegerField>(
+  value: unknown,
+  fieldName: TField,
+): number | null => {
+  if (value === null || value === undefined) return null;
+  return parseSafeIntegerLike(value, fieldName);
+};
+
+const normalizePlayerCharacterStateRecord = (row: Record<string, unknown>): PlayerCharacterState => {
+  const normalized = {
+    id: parseInteger(row.id),
+    user_id: parseInteger(row.user_id),
+    nickname: typeof row.nickname === 'string' ? row.nickname : '',
+    title: typeof row.title === 'string' ? row.title : '散修',
+    gender: typeof row.gender === 'string' ? row.gender : 'male',
+    avatar: typeof row.avatar === 'string' ? row.avatar : null,
+    auto_cast_skills: parseBoolean(row.auto_cast_skills, true),
+    auto_disassemble_enabled: parseBoolean(row.auto_disassemble_enabled, false),
+    auto_disassemble_rules: normalizeJsonValue(row.auto_disassemble_rules ?? []),
+    dungeon_no_stamina_cost: parseBoolean(row.dungeon_no_stamina_cost, false),
+    spirit_stones: row.spirit_stones,
+    silver: row.silver,
+    stamina: row.stamina,
+    stamina_recover_at: normalizeTimestamp(row.stamina_recover_at),
+    realm: typeof row.realm === 'string' ? row.realm : '凡人',
+    sub_realm: typeof row.sub_realm === 'string' ? row.sub_realm : null,
+    exp: row.exp,
+    attribute_points: row.attribute_points,
+    jing: row.jing,
+    qi: row.qi,
+    shen: row.shen,
+    attribute_type: typeof row.attribute_type === 'string' ? row.attribute_type : 'physical',
+    attribute_element: typeof row.attribute_element === 'string' ? row.attribute_element : 'none',
+    current_map_id: typeof row.current_map_id === 'string' ? row.current_map_id : 'starting_village',
+    current_room_id: typeof row.current_room_id === 'string' ? row.current_room_id : 'village_square',
+    last_offline_at: normalizeTimestamp(row.last_offline_at),
+  } as PlayerCharacterState;
+
+  // 角色主状态是共享的单一数据源，整数列必须在仓库边界一次性收口；
+  // 否则字符串进入 Redis 后，后续奖励/扣费的加法会退化成字符串拼接并持续放大坏值。
+  for (const fieldName of PLAYER_CHARACTER_INTEGER_FIELDS) {
+    normalized[fieldName] = parseSafeIntegerLike(normalized[fieldName], fieldName);
+  }
+
+  return normalized;
+};
+
+const normalizePlayerInventoryItemStateRecord = (row: Record<string, unknown>): PlayerInventoryItemState => {
+  const normalized = {
+    id: row.id,
+    owner_user_id: row.owner_user_id,
+    owner_character_id: row.owner_character_id,
+    item_def_id: typeof row.item_def_id === 'string' ? row.item_def_id : '',
+    qty: row.qty,
+    locked: parseBoolean(row.locked, false),
+    quality: typeof row.quality === 'string' ? row.quality : null,
+    quality_rank: row.quality_rank,
+    strengthen_level: row.strengthen_level,
+    refine_level: row.refine_level,
+    socketed_gems: normalizeJsonValue(row.socketed_gems ?? []),
+    affixes: normalizeJsonValue(row.affixes ?? []),
+    affix_gen_version: row.affix_gen_version ?? 0,
+    affix_roll_meta: normalizeJsonValue(row.affix_roll_meta ?? {}),
+    identified: parseBoolean(row.identified, false),
+    bind_type: typeof row.bind_type === 'string' ? row.bind_type : null,
+    bind_owner_user_id: row.bind_owner_user_id,
+    bind_owner_character_id: row.bind_owner_character_id,
+    location: typeof row.location === 'string' ? row.location : 'bag',
+    location_slot: row.location_slot,
+    equipped_slot: typeof row.equipped_slot === 'string' ? row.equipped_slot : null,
+    random_seed: row.random_seed,
+    custom_name: typeof row.custom_name === 'string' ? row.custom_name : null,
+    expire_at: normalizeTimestamp(row.expire_at),
+    obtained_from: typeof row.obtained_from === 'string' ? row.obtained_from : null,
+    obtained_ref_id: typeof row.obtained_ref_id === 'string' ? row.obtained_ref_id : null,
+    metadata: normalizeJsonValue(row.metadata ?? {}),
+    created_at: normalizeTimestamp(row.created_at),
+  } as PlayerInventoryItemState;
+
+  const integerRecord = normalized as Pick<PlayerInventoryItemState, PlayerInventoryIntegerField>;
+
+  // 物品主状态与角色主状态共享同一套 Redis 真相，数量/绑定 ID/随机种子等整数列也必须在仓库层收口，
+  // 避免字符串混入后在堆叠、扣减、转移时再次触发字符串拼接或越界落库。
+  for (const fieldName of PLAYER_INVENTORY_REQUIRED_INTEGER_FIELDS) {
+    integerRecord[fieldName] = parseSafeIntegerLike(integerRecord[fieldName], fieldName);
+  }
+  for (const fieldName of PLAYER_INVENTORY_NULLABLE_INTEGER_FIELDS) {
+    integerRecord[fieldName] = parseNullableSafeIntegerLike(integerRecord[fieldName], fieldName);
+  }
+  for (const fieldName of PLAYER_INVENTORY_INTEGER_FIELDS) {
+    if (PLAYER_INVENTORY_REQUIRED_INTEGER_FIELDS.has(fieldName as PlayerInventoryRequiredIntegerField)) continue;
+    if (PLAYER_INVENTORY_NULLABLE_INTEGER_FIELDS.has(fieldName as PlayerInventoryNullableIntegerField)) continue;
+    throw new Error(`物品整数列配置遗漏: ${String(fieldName)}`);
+  }
+
+  return normalized;
+};
+
 const serialize = (value: PlayerCharacterState | PlayerInventoryItemState): string => {
   return JSON.stringify(value);
 };
 
-const deserializeCharacter = (raw: string): PlayerCharacterState => {
-  return JSON.parse(raw) as PlayerCharacterState;
+const deserializeCharacter = (characterId: number, raw: string): PlayerCharacterState => {
+  try {
+    return normalizePlayerCharacterStateRecord(JSON.parse(raw) as Record<string, unknown>);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`角色 ${characterId} 状态损坏: ${message}`);
+  }
 };
 
-const deserializeInventoryItem = (raw: string): PlayerInventoryItemState => {
-  return JSON.parse(raw) as PlayerInventoryItemState;
+const deserializeInventoryItem = (characterId: number, itemId: number, raw: string): PlayerInventoryItemState => {
+  try {
+    return normalizePlayerInventoryItemStateRecord(JSON.parse(raw) as Record<string, unknown>);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`角色 ${characterId} 物品 ${itemId} 状态损坏: ${message}`);
+  }
 };
 
 const buildDefaultMeta = (): PlayerStateMeta => {
@@ -120,73 +264,11 @@ const buildDefaultMeta = (): PlayerStateMeta => {
 };
 
 const normalizeCharacterStateRow = (row: Record<string, unknown>): PlayerCharacterState => {
-  return {
-    id: parseInteger(row.id),
-    user_id: parseInteger(row.user_id),
-    nickname: typeof row.nickname === 'string' ? row.nickname : '',
-    title: typeof row.title === 'string' ? row.title : '散修',
-    gender: typeof row.gender === 'string' ? row.gender : 'male',
-    avatar: typeof row.avatar === 'string' ? row.avatar : null,
-    auto_cast_skills: parseBoolean(row.auto_cast_skills, true),
-    auto_disassemble_enabled: parseBoolean(row.auto_disassemble_enabled, false),
-    auto_disassemble_rules: normalizeJsonValue(row.auto_disassemble_rules ?? []),
-    dungeon_no_stamina_cost: parseBoolean(row.dungeon_no_stamina_cost, false),
-    spirit_stones: parseInteger(row.spirit_stones),
-    silver: parseInteger(row.silver),
-    stamina: parseInteger(row.stamina),
-    stamina_recover_at: normalizeTimestamp(row.stamina_recover_at),
-    realm: typeof row.realm === 'string' ? row.realm : '凡人',
-    sub_realm: typeof row.sub_realm === 'string' ? row.sub_realm : null,
-    exp: parseInteger(row.exp),
-    attribute_points: parseInteger(row.attribute_points),
-    jing: parseInteger(row.jing),
-    qi: parseInteger(row.qi),
-    shen: parseInteger(row.shen),
-    attribute_type: typeof row.attribute_type === 'string' ? row.attribute_type : 'physical',
-    attribute_element: typeof row.attribute_element === 'string' ? row.attribute_element : 'none',
-    current_map_id: typeof row.current_map_id === 'string' ? row.current_map_id : 'starting_village',
-    current_room_id: typeof row.current_room_id === 'string' ? row.current_room_id : 'village_square',
-    last_offline_at: normalizeTimestamp(row.last_offline_at),
-  };
+  return normalizePlayerCharacterStateRecord(row);
 };
 
 const normalizeInventoryItemRow = (row: Record<string, unknown>): PlayerInventoryItemState => {
-  return {
-    id: parseInteger(row.id),
-    owner_user_id: parseInteger(row.owner_user_id),
-    owner_character_id: parseInteger(row.owner_character_id),
-    item_def_id: typeof row.item_def_id === 'string' ? row.item_def_id : '',
-    qty: parseInteger(row.qty),
-    locked: parseBoolean(row.locked, false),
-    quality: typeof row.quality === 'string' ? row.quality : null,
-    quality_rank: row.quality_rank === null || row.quality_rank === undefined ? null : parseInteger(row.quality_rank),
-    strengthen_level:
-      row.strengthen_level === null || row.strengthen_level === undefined ? null : parseInteger(row.strengthen_level),
-    refine_level: row.refine_level === null || row.refine_level === undefined ? null : parseInteger(row.refine_level),
-    socketed_gems: normalizeJsonValue(row.socketed_gems ?? []),
-    affixes: normalizeJsonValue(row.affixes ?? []),
-    affix_gen_version:
-      row.affix_gen_version === null || row.affix_gen_version === undefined ? null : parseInteger(row.affix_gen_version),
-    affix_roll_meta: normalizeJsonValue(row.affix_roll_meta ?? {}),
-    identified:
-      row.identified === null || row.identified === undefined ? null : parseBoolean(row.identified, false),
-    bind_type: typeof row.bind_type === 'string' ? row.bind_type : null,
-    bind_owner_user_id:
-      row.bind_owner_user_id === null || row.bind_owner_user_id === undefined ? null : parseInteger(row.bind_owner_user_id),
-    bind_owner_character_id:
-      row.bind_owner_character_id === null || row.bind_owner_character_id === undefined ? null : parseInteger(row.bind_owner_character_id),
-    location: typeof row.location === 'string' ? row.location : 'bag',
-    location_slot: row.location_slot === null || row.location_slot === undefined ? null : parseInteger(row.location_slot),
-    equipped_slot: typeof row.equipped_slot === 'string' ? row.equipped_slot : null,
-    random_seed:
-      row.random_seed === null || row.random_seed === undefined ? null : parseInteger(row.random_seed),
-    custom_name: typeof row.custom_name === 'string' ? row.custom_name : null,
-    expire_at: normalizeTimestamp(row.expire_at),
-    obtained_from: typeof row.obtained_from === 'string' ? row.obtained_from : null,
-    obtained_ref_id: typeof row.obtained_ref_id === 'string' ? row.obtained_ref_id : null,
-    metadata: normalizeJsonValue(row.metadata ?? {}),
-    created_at: normalizeTimestamp(row.created_at),
-  };
+  return normalizePlayerInventoryItemStateRecord(row);
 };
 
 const sleep = async (ms: number): Promise<void> => {
@@ -333,6 +415,37 @@ const writeHydratedState = async (
   await transaction.exec();
 };
 
+/**
+ * 强制用数据库镜像重建指定角色的 Redis 主状态。
+ *
+ * 作用：
+ * 1. 做什么：在确认当前 Redis 库存缓存不可信时，直接以数据库当前快照重建该角色的角色态与背包态。
+ * 2. 不做什么：不保留旧 Redis 的 dirty/version 变化，也不适用于存在未落库脏写的场景。
+ *
+ * 输入/输出：
+ * - 输入：角色 ID。
+ * - 输出：无；保证 Redis 中该角色主状态已被数据库最新快照覆盖。
+ *
+ * 数据流/状态流：
+ * 调用方 -> 角色互斥锁 -> 读取 PostgreSQL 角色/物品 -> `writeHydratedState` 覆盖 Redis 主状态。
+ *
+ * 关键边界条件与坑点：
+ * 1. 只能在确认 `dirtyCharacter/dirtyInventory` 都为 false 时调用，否则会覆盖尚未刷库的 Redis 真相。
+ * 2. 本函数会重置 meta 为干净状态；调用方必须把它视为“缓存重建”，而不是普通 patch。
+ */
+export const refreshPlayerStateFromDatabaseByCharacterId = async (
+  characterIdRaw: number,
+): Promise<void> => {
+  const characterId = ensurePositiveInteger(characterIdRaw);
+  await withPlayerStateMutex(characterId, async () => {
+    const [characterState, inventoryStates] = await Promise.all([
+      hydrateCharacterState(characterId),
+      hydrateInventoryStates(characterId),
+    ]);
+    await writeHydratedState(characterState, inventoryStates);
+  });
+};
+
 export const ensurePlayerStateHydratedByCharacterId = async (characterIdRaw: number): Promise<number> => {
   const characterId = ensurePositiveInteger(characterIdRaw);
   const existing = await redis.exists(playerStateCharacterKey(characterId));
@@ -375,7 +488,7 @@ export const loadPlayerCharacterStateByCharacterId = async (
   const characterId = ensurePositiveInteger(characterIdRaw);
   await ensurePlayerStateHydratedByCharacterId(characterId);
   const raw = await redis.get(playerStateCharacterKey(characterId));
-  return raw ? deserializeCharacter(raw) : null;
+  return raw ? deserializeCharacter(characterId, raw) : null;
 };
 
 export const loadPlayerCharacterStateByUserId = async (
@@ -396,10 +509,10 @@ export const patchPlayerCharacterState = async (
     if (!current) {
       throw new Error(`角色不存在: ${characterId}`);
     }
-    const nextState: PlayerCharacterState = {
+    const nextState = normalizePlayerCharacterStateRecord({
       ...current,
       ...patch,
-    };
+    });
     await redis.set(playerStateCharacterKey(characterId), serialize(nextState));
     await bumpMetaVersion(characterId, { dirtyCharacter: true });
     return nextState;
@@ -412,7 +525,7 @@ export const loadPlayerInventoryStatesByCharacterId = async (
   const characterId = ensurePositiveInteger(characterIdRaw);
   await ensurePlayerStateHydratedByCharacterId(characterId);
   const rawMap = await redis.hgetall(playerStateInventoryKey(characterId));
-  return Object.values(rawMap).map((raw) => deserializeInventoryItem(raw));
+  return Object.entries(rawMap).map(([itemId, raw]) => deserializeInventoryItem(characterId, parseInteger(itemId), raw));
 };
 
 export const loadPlayerInventoryStateByItemId = async (
@@ -423,7 +536,7 @@ export const loadPlayerInventoryStateByItemId = async (
   const itemId = ensurePositiveInteger(itemIdRaw);
   await ensurePlayerStateHydratedByCharacterId(characterId);
   const raw = await redis.hget(playerStateInventoryKey(characterId), String(itemId));
-  return raw ? deserializeInventoryItem(raw) : null;
+  return raw ? deserializeInventoryItem(characterId, itemId, raw) : null;
 };
 
 export const upsertPlayerInventoryState = async (
@@ -433,10 +546,10 @@ export const upsertPlayerInventoryState = async (
   const characterId = ensurePositiveInteger(characterIdRaw);
   return withPlayerStateMutex(characterId, async () => {
     await ensurePlayerStateHydratedByCharacterId(characterId);
-    const normalizedState: PlayerInventoryItemState = {
+    const normalizedState = normalizePlayerInventoryItemStateRecord({
       ...nextState,
       owner_character_id: characterId,
-    };
+    });
     await redis.hset(
       playerStateInventoryKey(characterId),
       String(normalizedState.id),
@@ -546,4 +659,26 @@ export const clearPlayerStateForTests = async (characterIdRaw: number): Promise<
     multi.del(playerStateUserCharacterKey(character.user_id));
   }
   await multi.exec();
+};
+
+export const clearAllPlayerStateCache = async (): Promise<number> => {
+  let cursor = '0';
+  let deletedKeyCount = 0;
+
+  do {
+    const [nextCursor, keys] = await redis.scan(
+      cursor,
+      'MATCH',
+      playerStateKeyPattern(),
+      'COUNT',
+      100,
+    );
+    cursor = nextCursor;
+    if (keys.length <= 0) {
+      continue;
+    }
+    deletedKeyCount += await redis.del(...keys);
+  } while (cursor !== '0');
+
+  return deletedKeyCount;
 };

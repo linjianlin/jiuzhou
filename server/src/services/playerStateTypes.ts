@@ -57,6 +57,46 @@ export type PlayerCharacterState = {
 
 export type PlayerCharacterStatePatch = Partial<Omit<PlayerCharacterState, 'id' | 'user_id'>>;
 
+export type PlayerCharacterIntegerField =
+  | 'id'
+  | 'user_id'
+  | 'spirit_stones'
+  | 'silver'
+  | 'stamina'
+  | 'exp'
+  | 'attribute_points'
+  | 'jing'
+  | 'qi'
+  | 'shen';
+
+export type PlayerInventoryIntegerField =
+  | 'id'
+  | 'owner_user_id'
+  | 'owner_character_id'
+  | 'qty'
+  | 'quality_rank'
+  | 'strengthen_level'
+  | 'refine_level'
+  | 'bind_owner_user_id'
+  | 'bind_owner_character_id'
+  | 'location_slot'
+  | 'random_seed'
+  | 'affix_gen_version';
+
+export type PlayerInventoryNullableIntegerField =
+  | 'quality_rank'
+  | 'strengthen_level'
+  | 'refine_level'
+  | 'bind_owner_user_id'
+  | 'bind_owner_character_id'
+  | 'location_slot'
+  | 'random_seed';
+
+export type PlayerInventoryRequiredIntegerField = Exclude<
+  PlayerInventoryIntegerField,
+  PlayerInventoryNullableIntegerField
+>;
+
 export type PlayerInventoryItemState = {
   id: number;
   owner_user_id: number;
@@ -70,9 +110,9 @@ export type PlayerInventoryItemState = {
   refine_level: number | null;
   socketed_gems: PlayerStateJsonValue;
   affixes: PlayerStateJsonValue;
-  affix_gen_version: number | null;
+  affix_gen_version: number;
   affix_roll_meta: PlayerStateJsonValue;
-  identified: boolean | null;
+  identified: boolean;
   bind_type: string | null;
   bind_owner_user_id: number | null;
   bind_owner_character_id: number | null;
@@ -102,9 +142,55 @@ export const PLAYER_CHARACTER_JSON_FIELDS = new Set<keyof PlayerCharacterState>(
   'auto_disassemble_rules',
 ]);
 
+export const PLAYER_CHARACTER_INTEGER_FIELDS = new Set<PlayerCharacterIntegerField>([
+  'id',
+  'user_id',
+  'spirit_stones',
+  'silver',
+  'stamina',
+  'exp',
+  'attribute_points',
+  'jing',
+  'qi',
+  'shen',
+]);
+
 export const PLAYER_CHARACTER_TIMESTAMP_FIELDS = new Set<keyof PlayerCharacterState>([
   'stamina_recover_at',
   'last_offline_at',
+]);
+
+export const PLAYER_INVENTORY_INTEGER_FIELDS = new Set<PlayerInventoryIntegerField>([
+  'id',
+  'owner_user_id',
+  'owner_character_id',
+  'qty',
+  'quality_rank',
+  'strengthen_level',
+  'refine_level',
+  'affix_gen_version',
+  'bind_owner_user_id',
+  'bind_owner_character_id',
+  'location_slot',
+  'random_seed',
+]);
+
+export const PLAYER_INVENTORY_NULLABLE_INTEGER_FIELDS = new Set<PlayerInventoryNullableIntegerField>([
+  'quality_rank',
+  'strengthen_level',
+  'refine_level',
+  'bind_owner_user_id',
+  'bind_owner_character_id',
+  'location_slot',
+  'random_seed',
+]);
+
+export const PLAYER_INVENTORY_REQUIRED_INTEGER_FIELDS = new Set<PlayerInventoryRequiredIntegerField>([
+  'id',
+  'owner_user_id',
+  'owner_character_id',
+  'qty',
+  'affix_gen_version',
 ]);
 
 export const PLAYER_INVENTORY_JSON_FIELDS = new Set<keyof PlayerInventoryItemState>([

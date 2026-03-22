@@ -40,6 +40,10 @@ export const playerStateDirtySetKey = (): string => {
   return `${PLAYER_STATE_PREFIX}:dirty`;
 };
 
+export const playerStateKeyPattern = (): string => {
+  return `${PLAYER_STATE_PREFIX}:*`;
+};
+
 export const playerStateHydrateLockKey = (characterId: number): string => {
   return `${PLAYER_STATE_PREFIX}:lock:hydrate:${characterId}`;
 };

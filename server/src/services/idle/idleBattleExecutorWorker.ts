@@ -472,7 +472,7 @@ export function stopAllExecutionLoops(): void {
   }
 
   activeLoops.clear();
-  activeBuffers.clear();
+  // 关停阶段仍要把已积累的战斗结果交给 flushAllBuffers，不能在这里提前丢掉缓冲区。
   loopWakeHandlers.clear();
   loopRuntimeStates.clear();
   clearIdleExecutionLoopRegistry();

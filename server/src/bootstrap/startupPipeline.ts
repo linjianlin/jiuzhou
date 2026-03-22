@@ -54,6 +54,7 @@ import {
   stopAfdianMessageRetryService,
 } from "../services/afdianMessageRetryService.js";
 import {
+  clearPlayerWritebackCacheOnStartup,
   flushAllPlayerWriteback,
   startPlayerWritebackFlushLoop,
   stopPlayerWritebackFlushLoop,
@@ -64,6 +65,26 @@ export interface StartServerOptions {
   host: string;
   port: number;
 }
+
+/**
+ * 关闭期 Worker 池等待预算。
+ *
+ * 作用：
+ * 1. 做什么：把 dev/tsx 的 5 秒强杀窗口内可接受的 Worker drain 时间收敛到单一常量，避免关闭路径被内部默认 10 秒拖住。
+ * 2. 不做什么：不改变 WorkerPool 的通用默认值；只有优雅关闭入口显式覆盖预算。
+ *
+ * 输入/输出：
+ * - 输入：无。
+ * - 输出：优雅关闭阶段传给 `shutdownWorkerPool` 的毫秒预算。
+ *
+ * 数据流/状态流：
+ * registerGracefulShutdown -> shutdownWorkerPool({ timeoutMs }) -> WorkerPool.shutdown。
+ *
+ * 关键边界条件与坑点：
+ * 1. 这里只收紧“关服预算”，不代表正常业务任务超时；业务执行仍走 WorkerPool 自己的 task timeout。
+ * 2. 预算过长会让 tsx 在本地开发时先把进程强杀，预算过短则会更早终止仍在执行的 Worker，因此需要留出少量 drain 时间但不能沿用 10 秒默认值。
+ */
+const GRACEFUL_SHUTDOWN_WORKER_POOL_TIMEOUT_MS = 1_500;
 
 /**
  * 服务启动流水线（连接检查 -> 数据准备 -> 启动恢复 -> 监听端口）
@@ -81,6 +102,11 @@ export const startServerWithPipeline = async (
   const redisConnected = await testRedisConnection();
   if (!redisConnected) {
     console.warn("⚠ Redis 连接失败，战斗状态将不会持久化");
+  } else {
+    // const clearedPlayerStateKeyCount = await clearPlayerWritebackCacheOnStartup();
+    // console.log(
+    //   `✓ 启动时已清理玩家写回缓存（${clearedPlayerStateKeyCount} 个 Redis key）\n`,
+    // );
   }
 
   await initTables();
@@ -198,17 +224,16 @@ export const registerGracefulShutdown = (httpServer: HttpServer): void => {
       stopAfdianMessageRetryService();
       console.log("✓ 爱发电私信重试调度器已关闭");
 
-      await shutdownWorkerPool();
+      await shutdownWorkerPool({
+        timeoutMs: GRACEFUL_SHUTDOWN_WORKER_POOL_TIMEOUT_MS,
+      });
       console.log("✓ Worker 池已关闭");
 
-      // 4. 等待现有操作完成（给一点时间让正在执行的操作完成）
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // 5. 刷新所有缓冲区
+      // 4. 刷新所有缓冲区
       await flushAllBuffers();
       console.log("✓ 挂机缓冲区已刷写");
 
-      // 6. 关闭外部连接
+      // 5. 关闭外部连接
       await closeRedis();
       console.log("✓ Redis 连接已关闭");
 

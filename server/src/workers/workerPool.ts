@@ -61,6 +61,9 @@ type WorkerPoolOptions = {
   autoRestart?: boolean;
 };
 
+/** Worker 池优雅关闭默认等待时间。 */
+const DEFAULT_WORKER_POOL_SHUTDOWN_TIMEOUT_MS = 10_000;
+
 // ============================================
 // WorkerPool 类
 // ============================================
@@ -317,7 +320,7 @@ export class WorkerPool {
   /**
    * 优雅关闭 Worker 池
    */
-  async shutdown(timeoutMs = 10_000): Promise<void> {
+  async shutdown(timeoutMs = DEFAULT_WORKER_POOL_SHUTDOWN_TIMEOUT_MS): Promise<void> {
     this.isShuttingDown = true;
     console.log(`[WorkerPool] 正在关闭 ${this.workers.length} 个 Worker...`);
 
@@ -403,9 +406,11 @@ export async function initializeWorkerPool(options?: WorkerPoolOptions): Promise
 /**
  * 关闭全局 WorkerPool
  */
-export async function shutdownWorkerPool(): Promise<void> {
+export async function shutdownWorkerPool(options?: {
+  timeoutMs?: number;
+}): Promise<void> {
   if (globalWorkerPool) {
-    await globalWorkerPool.shutdown();
+    await globalWorkerPool.shutdown(options?.timeoutMs);
     globalWorkerPool = null;
   }
 }

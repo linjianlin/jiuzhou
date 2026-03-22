@@ -116,7 +116,7 @@ const toPendingInventorySnapshot = (
     strengthen_level: item.strengthenLevel,
     refine_level: item.refineLevel,
     affixes: item.affixes as PlayerStateJsonValue,
-    affix_gen_version: item.affixGenVersion,
+    affix_gen_version: item.affixGenVersion ?? 0,
   };
 };
 
