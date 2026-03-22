@@ -2548,7 +2548,7 @@
       "stack_max": 9999,
       "bind_type": "none",
       "tradeable": true,
-      "icon": "/assets/items/xushi-jinghe.webp",
+      "icon": "/assets/items/daojing-xuansha.webp",
       "description": "大道镜墟中凝结的折光玄砂，常用于镜律锻铸与道印推演。",
       "long_desc": "玄砂会随镜界律动改变纹理，是合道期套装锻铸、镜印稳固与突破准备的主材料。",
       "tags": [
@@ -2571,7 +2571,7 @@
       "stack_max": 9999,
       "bind_type": "none",
       "tradeable": true,
-      "icon": "/assets/items/yangshen_dan.png",
+      "icon": "/assets/items/hedao-qiyin.webp",
       "description": "用来校准神识与大道镜律的契合印记，是还虚迈向合道的核心凭证。",
       "long_desc": "契印需以镜界玄砂为基，在司天律印中完成照鉴，属于合道突破的硬门槛材料。",
       "tags": [
