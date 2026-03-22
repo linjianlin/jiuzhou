@@ -42,6 +42,7 @@ import {
 import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { resolveItemCanDisassemble } from "../shared/itemDisassembleRule.js";
 import { resolveGeneratedTechniqueBookDisplay } from "../shared/generatedTechniqueBookView.js";
+import { buildAffixPoolSlotCacheKey } from "../shared/affixPoolSlotResolver.js";
 import type {
   InventoryInfo,
   InventoryItem,
@@ -302,11 +303,16 @@ const enrichInventoryItemsWithDefs = (
       typeof normalizedDef.affix_pool_id === "string"
         ? (normalizedDef.affix_pool_id as string).trim()
         : "";
-    if (normalizedAffixes.length > 0 && affixPoolId) {
-      if (!affixPoolCache.has(affixPoolId)) {
-        affixPoolCache.set(affixPoolId, loadAffixPoolForReroll(affixPoolId));
+    const equipSlot =
+      typeof normalizedDef.equip_slot === "string"
+        ? (normalizedDef.equip_slot as string).trim()
+        : "";
+    if (normalizedAffixes.length > 0 && affixPoolId && equipSlot) {
+      const affixPoolCacheKey = buildAffixPoolSlotCacheKey(affixPoolId, equipSlot);
+      if (!affixPoolCache.has(affixPoolCacheKey)) {
+        affixPoolCache.set(affixPoolCacheKey, loadAffixPoolForReroll(affixPoolId, equipSlot));
       }
-      const affixPool = affixPoolCache.get(affixPoolId);
+      const affixPool = affixPoolCache.get(affixPoolCacheKey);
       if (affixPool) {
         const realmRank = getEquipRealmRankForReroll(
           normalizedDef.equip_req_realm as string | undefined,

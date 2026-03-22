@@ -11,7 +11,26 @@ import {
   getGeneratedTechniqueLayerDefinitions,
   reloadGeneratedTechniqueConfigStore,
 } from './generatedTechniqueConfigStore.js';
+import {
+  normalizeAffixPoolFile,
+  type AffixModifierConfig,
+  type AffixPoolRulesConfig,
+  type AffixTierConfig,
+  type NormalizedAffixDefConfig as AffixDefConfig,
+  type NormalizedAffixPoolDefConfig as AffixPoolDefConfig,
+  type RawAffixPoolFile as AffixPoolFile,
+} from './shared/affixPoolConfig.js';
 import type { TechniqueUsageScope } from './shared/techniqueUsageScope.js';
+
+export type {
+  AffixModifierConfig,
+  AffixPoolRulesConfig,
+  AffixTierConfig,
+} from './shared/affixPoolConfig.js';
+export type {
+  NormalizedAffixDefConfig as AffixDefConfig,
+  NormalizedAffixPoolDefConfig as AffixPoolDefConfig,
+} from './shared/affixPoolConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -603,55 +622,6 @@ type DropPoolFile = {
 
 type CommonDropPoolFile = {
   pools: DropPoolDefConfig[];
-};
-
-export type AffixTierConfig = {
-  tier: number;
-  min: number;
-  max: number;
-  realm_rank_min: number;
-  description?: string;
-};
-
-export type AffixModifierConfig = {
-  attr_key: string;
-  ratio?: number;
-};
-
-export type AffixDefConfig = {
-  key: string;
-  name: string;
-  modifiers?: AffixModifierConfig[];
-  apply_type: 'flat' | 'percent' | 'special';
-  group: string;
-  weight: number;
-  is_legendary?: boolean;
-  trigger?: 'on_turn_start' | 'on_skill' | 'on_hit' | 'on_crit' | 'on_be_hit' | 'on_heal';
-  target?: 'self' | 'enemy';
-  effect_type?: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield' | 'mark';
-  duration_round?: number;
-  params?: Record<string, string | number | boolean>;
-  tiers: AffixTierConfig[];
-};
-
-export type AffixPoolRulesConfig = {
-  allow_duplicate?: boolean;
-  mutex_groups?: string[][];
-  legendary_chance?: number;
-};
-
-export type AffixPoolDefConfig = {
-  id: string;
-  name: string;
-  description?: string;
-  rules: AffixPoolRulesConfig;
-  affixes: AffixDefConfig[];
-  enabled?: boolean;
-  version?: number;
-};
-
-type AffixPoolFile = {
-  pools: AffixPoolDefConfig[];
 };
 
 export type ItemSetPieceConfig = {
@@ -1504,7 +1474,7 @@ export const getCommonDropPoolDefinitions = (): DropPoolDefConfig[] => {
 export const getAffixPoolDefinitions = (): AffixPoolDefConfig[] => {
   if (affixPoolDefCache !== undefined) return affixPoolDefCache ?? [];
   const file = readJsonFile<AffixPoolFile>('affix_pool.json');
-  affixPoolDefCache = Array.isArray(file?.pools) ? file.pools : [];
+  affixPoolDefCache = Array.isArray(file?.pools) ? normalizeAffixPoolFile(file) : [];
   return affixPoolDefCache;
 };
 

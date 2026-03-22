@@ -63,6 +63,9 @@ import {
   getRealmRankOneBasedStrict,
 } from "../shared/realmRules.js";
 import { resolveQualityRankFromName } from "../shared/itemQuality.js";
+import {
+  resolveAffixPoolBySlot,
+} from "../shared/affixPoolSlotResolver.js";
 import { lockCharacterInventoryMutex } from "../inventoryMutex.js";
 import {
   getEquipmentAttrDeltaByInstanceId,
@@ -984,10 +987,9 @@ export const getAffixPoolPreview = async (
   const affixPoolId = String(itemDef.affix_pool_id || '').trim();
   if (!affixPoolId) return { success: false, message: '该装备没有可用词条池' };
 
-  const poolDef = getAffixPoolDefinitions().find(
-    (entry) => entry.enabled !== false && entry.id === affixPoolId,
-  );
-  if (!poolDef) return { success: false, message: '词条池不存在' };
+  const equipSlot = String(itemDef.equip_slot || '').trim();
+  const poolDef = resolveAffixPoolBySlot(getAffixPoolDefinitions(), affixPoolId, equipSlot);
+  if (!poolDef || poolDef.affixes.length <= 0) return { success: false, message: '词条池不存在' };
 
   const realmRank = getEquipRealmRankForReroll(itemDef.equip_req_realm);
   const ownedKeys = new Set(affixes.map((a) => a.key));
@@ -1085,7 +1087,7 @@ export const rerollEquipmentAffixes = async (
       return { success: false, message: beforeDiffRes.message };
     }
 
-    const affixPool = loadAffixPoolForReroll(item.affixPoolId);
+    const affixPool = loadAffixPoolForReroll(item.affixPoolId, item.equipSlot ?? "");
     if (!affixPool) {
       return { success: false, message: "该装备没有可用词条池" };
     }

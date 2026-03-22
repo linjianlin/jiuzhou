@@ -7,6 +7,7 @@
  * 3. 提供从“旧结构（attr_key + value）”到“新结构（modifiers）”的安全转换能力。
  */
 import { CHARACTER_RATIO_ATTR_KEY_SET } from './characterAttrRegistry.js';
+import { roundAffixResultValue } from './affixPrecision.js';
 
 export type AffixApplyType = 'flat' | 'percent' | 'special';
 export type AffixEffectType = 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield' | 'mark';
@@ -16,6 +17,7 @@ export type AffixParams = Record<string, AffixParamValue>;
 export interface AffixModifierDef {
   attr_key: string;
   ratio?: number;
+  value_source?: string;
 }
 
 export interface GeneratedAffixModifier {
@@ -81,7 +83,7 @@ export const normalizeAffixValueByContext = (
   value: number
 ): number => {
   if (!Number.isFinite(value)) return 0;
-  if (shouldKeepRatioPrecision(context)) return Number(value.toFixed(6));
+  if (shouldKeepRatioPrecision(context)) return roundAffixResultValue(value);
   return Math.round(value);
 };
 
@@ -89,6 +91,12 @@ const normalizeModifierRatio = (ratioRaw: unknown): number => {
   const ratio = toFiniteNumber(ratioRaw, 1);
   if (!Number.isFinite(ratio) || ratio === 0) return 1;
   return ratio;
+};
+
+const normalizeModifierValueSource = (valueSourceRaw: unknown): string | undefined => {
+  if (typeof valueSourceRaw !== 'string') return undefined;
+  const valueSource = valueSourceRaw.trim();
+  return valueSource || undefined;
 };
 
 export const normalizeAffixModifierDefs = (
@@ -103,10 +111,20 @@ export const normalizeAffixModifierDefs = (
     if (!raw || typeof raw !== 'object') continue;
     const row = raw as Record<string, unknown>;
     const attrKey = typeof row.attr_key === 'string' ? row.attr_key.trim() : '';
-    if (!attrKey || seen.has(attrKey)) continue;
-    seen.add(attrKey);
+    const valueSource = normalizeModifierValueSource(row.value_source);
+    const dedupeKey = `${attrKey}::${valueSource ?? 'default'}`;
+    if (!attrKey || seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const ratio = normalizeModifierRatio(row.ratio);
-    out.push(ratio === 1 ? { attr_key: attrKey } : { attr_key: attrKey, ratio });
+    if (ratio === 1 && !valueSource) {
+      out.push({ attr_key: attrKey });
+      continue;
+    }
+    out.push({
+      attr_key: attrKey,
+      ...(ratio === 1 ? {} : { ratio }),
+      ...(valueSource ? { value_source: valueSource } : {}),
+    });
   }
 
   if (out.length > 0) return out;
@@ -122,13 +140,21 @@ export const buildGeneratedAffixModifiers = (params: {
   params?: AffixParams;
   modifierDefs: AffixModifierDef[];
   baseValue: number;
+  baseValueBySource?: Record<string, number>;
+  defaultValueSource?: string;
 }): GeneratedAffixModifier[] => {
   const out: GeneratedAffixModifier[] = [];
+  const defaultValueSource = normalizeModifierValueSource(params.defaultValueSource);
   for (const modifierDef of params.modifierDefs) {
     const attrKey = String(modifierDef.attr_key || '').trim();
     if (!attrKey) continue;
     const ratio = normalizeModifierRatio(modifierDef.ratio);
-    const rawValue = params.baseValue * ratio;
+    const sourceKey = normalizeModifierValueSource(modifierDef.value_source) ?? defaultValueSource;
+    const sourceValue =
+      sourceKey && params.baseValueBySource && sourceKey in params.baseValueBySource
+        ? toFiniteNumber(params.baseValueBySource[sourceKey], params.baseValue)
+        : params.baseValue;
+    const rawValue = sourceValue * ratio;
     const value = normalizeAffixValueByContext(
       {
         applyType: params.applyType,
@@ -160,6 +186,8 @@ export const buildAffixValueAndModifiers = (params: {
   params?: AffixParams;
   modifiersRaw: unknown;
   rawScaledValue: number;
+  rawScaledValueBySource?: Record<string, number>;
+  defaultValueSource?: string;
 }): BuildAffixValueResult | null => {
   const modifierDefs =
     params.applyType === 'special'
@@ -174,6 +202,8 @@ export const buildAffixValueAndModifiers = (params: {
           params: params.params,
           modifierDefs,
           baseValue: params.rawScaledValue,
+          baseValueBySource: params.rawScaledValueBySource,
+          defaultValueSource: params.defaultValueSource,
         });
 
   const affixAttrKey = resolvePrimaryAffixAttrKey({

@@ -42,6 +42,8 @@ import {
 } from './shared/affixRating.js';
 import { normalizeItemInstanceObtainedFrom } from './shared/itemInstanceSource.js';
 import { tryInsertItemInstanceWithSlot } from './shared/itemInstanceSlotInsert.js';
+import { resolveAffixPoolBySlot } from './shared/affixPoolSlotResolver.js';
+import { roundAffixResultValue } from './shared/affixPrecision.js';
 
 // ============================================
 // 类型定义
@@ -99,7 +101,51 @@ const resolveAffixRollRatio = (
 
 const normalizeScaledAttrValue = (attrKey: string, value: number): number => {
   if (!Number.isFinite(value)) return 0;
-  return isRatioAttrKey(attrKey) ? Number(value.toFixed(6)) : Math.round(value);
+  return isRatioAttrKey(attrKey) ? roundAffixResultValue(value) : Math.round(value);
+};
+
+const sampleTierValueByRollRatio = (tier: AffixTier, rollRatio: number): number | null => {
+  const min = Number(tier.min);
+  const max = Number(tier.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  const safeRollRatio = clampNumber(rollRatio, 0, 1);
+
+  if (Number.isInteger(low) && Number.isInteger(high)) {
+    return clampInt(Math.round(low + (high - low) * safeRollRatio), low, high);
+  }
+
+  return roundAffixResultValue(low + (high - low) * safeRollRatio);
+};
+
+const buildAffixSourceValueMap = (
+  affix: AffixDef,
+  selectedTier: number,
+  rollRatio: number,
+  attrFactor: number,
+  primaryValue: number,
+): Record<string, number> | undefined => {
+  if (!affix.value_tiers) return undefined;
+
+  const out: Record<string, number> = {};
+  for (const [valueSource, tiers] of Object.entries(affix.value_tiers)) {
+    const tier = tiers.find((row) => row.tier === selectedTier);
+    if (!tier) continue;
+    const sourceValue = sampleTierValueByRollRatio(tier, rollRatio);
+    if (sourceValue === null) continue;
+    out[valueSource] =
+      Number.isFinite(attrFactor) && attrFactor !== 1
+        ? sourceValue * attrFactor
+        : sourceValue;
+  }
+
+  const primaryValueSource = typeof affix.primary_value_source === 'string' ? affix.primary_value_source.trim() : '';
+  if (primaryValueSource) {
+    out[primaryValueSource] = primaryValue;
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
 };
 
 const scaleAttrs = (attrs: Record<string, number>, factor: number): Record<string, number> => {
@@ -118,6 +164,9 @@ export interface AffixDef {
   key: string;
   name: string;
   modifiers?: AffixModifierDef[];
+  allowed_slots?: string[];
+  primary_value_source?: string;
+  value_tiers?: Record<string, AffixTier[]>;
   apply_type: AffixApplyType;
   group: string;
   weight: number;
@@ -300,9 +349,12 @@ export const getEquipmentDef = async (itemDefId: string): Promise<EquipmentDef |
 /**
  * 获取词条池
  */
-export const getAffixPool = async (poolId: string): Promise<{ rules: AffixPoolRules; affixes: AffixDef[] } | null> => {
-  const result = getAffixPoolDefinitions().find((entry) => entry.enabled !== false && entry.id === poolId) ?? null;
-  if (!result) return null;
+export const getAffixPool = async (
+  poolId: string,
+  equipSlot: string,
+): Promise<{ rules: AffixPoolRules; affixes: AffixDef[] } | null> => {
+  const result = resolveAffixPoolBySlot(getAffixPoolDefinitions(), poolId, equipSlot);
+  if (!result || result.affixes.length <= 0) return null;
   return {
     rules: result.rules as AffixPoolRules,
     affixes: result.affixes as AffixDef[]
@@ -507,6 +559,7 @@ const rollAffixValue = (
   const rawScaledValue = Number.isFinite(attrFactor) && attrFactor !== 1
     ? sampledValue * attrFactor
     : sampledValue;
+  const rawScaledValueBySource = buildAffixSourceValueMap(affix, selectedTier.tier, rollRatio, attrFactor, rawScaledValue);
   const resolvedAffixValue = buildAffixValueAndModifiers({
     applyType: affix.apply_type,
     keyRaw: affix.key,
@@ -514,6 +567,8 @@ const rollAffixValue = (
     params: affix.params,
     modifiersRaw: affix.modifiers,
     rawScaledValue,
+    rawScaledValueBySource,
+    defaultValueSource: affix.primary_value_source,
   });
   if (!resolvedAffixValue) return null;
   const scaledValue = resolvedAffixValue.value;
@@ -666,7 +721,7 @@ export const generateEquipment = async (
   // 3. 获取词条池并抽取词条
   let affixes: GeneratedAffix[] = [];
   if (def.affix_pool_id) {
-    const pool = await getAffixPool(def.affix_pool_id);
+    const pool = await getAffixPool(def.affix_pool_id, def.equip_slot);
     if (pool) {
       const explicitRealmRank = Number.isInteger(options.realmRank) && Number(options.realmRank) > 0
         ? Number(options.realmRank)

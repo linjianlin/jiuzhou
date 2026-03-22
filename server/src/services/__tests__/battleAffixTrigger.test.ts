@@ -1,31 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { extractBattleAffixEffectsFromEquippedItems } from '../battleAffixEffectService.js';
-
-type SeedAffixTier = {
-  tier: number;
-  min: number;
-  max: number;
-  realm_rank_min: number;
-  description?: string;
-};
-
-type SeedAffix = {
-  key: string;
-  apply_type: string;
-  tiers: SeedAffixTier[];
-};
-
-type SeedPool = {
-  id: string;
-  affixes: SeedAffix[];
-};
-
-type AffixPoolSeedFile = {
-  pools: SeedPool[];
-};
+import type { AffixAllowedSlot } from '../shared/affixPoolConfig.js';
+import { collectAffixesBySlot, loadNormalizedAffixPools } from './seedTestUtils.js';
 
 test('special词条应转换为战斗触发效果并注入params.value', () => {
   const effects = extractBattleAffixEffectsFromEquippedItems([
@@ -151,41 +128,33 @@ test('on_hit/on_be_hit/on_crit/on_turn_start四类触发词条可被识别', () 
   assert.deepEqual(triggers, ['on_be_hit', 'on_crit', 'on_hit', 'on_turn_start']);
 });
 
-test('六个高品池触发词条应与方案一致且档位分层正确', () => {
-  const candidatePaths = [
-    resolve(process.cwd(), 'server/src/data/seeds/affix_pool.json'),
-    resolve(process.cwd(), 'src/data/seeds/affix_pool.json'),
-  ];
-  const seedPath = candidatePaths.find((filePath) => existsSync(filePath));
-  assert.ok(seedPath, '未找到 affix_pool.json 种子文件');
-  const seedFile = JSON.parse(readFileSync(seedPath, 'utf-8')) as AffixPoolSeedFile;
+test('总词缀池触发词条应按部位过滤后与方案一致且档位分层正确', () => {
+  const pools = loadNormalizedAffixPools();
+  const matchedPool = pools.find((row) => row.id === 'ap-equipment');
+  assert.ok(matchedPool, '缺少词条池: ap-equipment');
+  const pool = matchedPool;
 
-  const poolPlan: Array<{ id: string; keys: string[] }> = [
-    { id: 'ap-weapon-uncommon', keys: ['proc_zhuihun', 'proc_baonu', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
-    { id: 'ap-weapon-rare', keys: ['proc_zhuihun', 'proc_tianlei', 'proc_baonu', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
-    { id: 'ap-armor-uncommon', keys: ['proc_hushen', 'proc_fansha', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
-    { id: 'ap-armor-rare', keys: ['proc_hushen', 'proc_fansha', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
-    { id: 'ap-accessory-uncommon', keys: ['proc_baonu', 'proc_lingchao', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
-    { id: 'ap-artifact-uncommon', keys: ['proc_tianlei', 'proc_lingchao', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
+  const poolPlan: Array<{ slot: AffixAllowedSlot; keys: string[] }> = [
+    { slot: 'weapon', keys: ['proc_zhuihun', 'proc_tianlei', 'proc_baonu', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
+    { slot: 'head', keys: ['proc_hushen', 'proc_fansha', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
+    { slot: 'accessory', keys: ['proc_baonu', 'proc_lingchao', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
+    { slot: 'artifact', keys: ['proc_tianlei', 'proc_lingchao', 'proc_duanxing', 'proc_huixiang', 'proc_xuangang'] },
   ];
   const t8OnlySpecialKeys = new Set(['proc_duanxing', 'proc_huixiang', 'proc_xuangang']);
 
   for (const plan of poolPlan) {
-    const pool = seedFile.pools.find((row) => row.id === plan.id);
-    assert.ok(pool, `缺少词条池: ${plan.id}`);
-
-    const specialAffixes = pool.affixes.filter((affix) => affix.apply_type === 'special');
+    const specialAffixes = collectAffixesBySlot(pool, plan.slot).filter((affix) => affix.apply_type === 'special');
     const specialKeys = specialAffixes.map((affix) => affix.key).sort();
-    assert.deepEqual(specialKeys, [...plan.keys].sort(), `${plan.id} 触发词条与方案不一致`);
+    assert.deepEqual(specialKeys, [...plan.keys].sort(), `${plan.slot} 触发词条与方案不一致`);
 
     for (const affix of specialAffixes) {
       const tiers = affix.tiers.map((tier) => tier.tier).sort((a, b) => a - b);
-      const expectedTiers = t8OnlySpecialKeys.has(affix.key) ? [8] : [5, 6, 7, 8];
-      assert.deepEqual(tiers, expectedTiers, `${plan.id}:${affix.key} 词条档位不符合分层规则`);
+      const expectedTiers = t8OnlySpecialKeys.has(affix.key) ? [8, 9, 10] : [5, 6, 7, 8, 9, 10];
+      assert.deepEqual(tiers, expectedTiers, `${plan.slot}:${affix.key} 词条档位不符合分层规则`);
       for (const tier of affix.tiers) {
         assert.ok(
           typeof tier.description === 'string' && tier.description.trim().length > 0,
-          `${plan.id}:${affix.key}:T${tier.tier} 缺少描述`
+          `${plan.slot}:${affix.key}:T${tier.tier} 缺少描述`
         );
       }
     }

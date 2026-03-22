@@ -36,6 +36,7 @@ import {
   parseVersionedCacheBaseKey,
 } from "./shared/cacheVersion.js";
 import { resolveGeneratedTechniqueBookDisplay } from "./shared/generatedTechniqueBookView.js";
+import { buildAffixPoolSlotCacheKey } from "./shared/affixPoolSlotResolver.js";
 import { mailService } from "./mailService.js";
 
 export type MarketSort = "timeDesc" | "priceAsc" | "priceDesc" | "qtyDesc";
@@ -212,11 +213,16 @@ const toListingDto = (
       typeof itemDef.affix_pool_id === "string"
         ? itemDef.affix_pool_id.trim()
         : "";
-    if (affixPoolId) {
-      if (!affixPoolCache.has(affixPoolId)) {
-        affixPoolCache.set(affixPoolId, loadAffixPoolForReroll(affixPoolId));
+    const equipSlot =
+      typeof itemDef.equip_slot === "string"
+        ? itemDef.equip_slot.trim()
+        : "";
+    if (affixPoolId && equipSlot) {
+      const affixPoolCacheKey = buildAffixPoolSlotCacheKey(affixPoolId, equipSlot);
+      if (!affixPoolCache.has(affixPoolCacheKey)) {
+        affixPoolCache.set(affixPoolCacheKey, loadAffixPoolForReroll(affixPoolId, equipSlot));
       }
-      const affixPool = affixPoolCache.get(affixPoolId);
+      const affixPool = affixPoolCache.get(affixPoolCacheKey);
       if (affixPool) {
         const realmRank = getEquipRealmRankForReroll(itemDef.equip_req_realm);
         const resolvedQualityMultiplier =

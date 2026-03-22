@@ -201,6 +201,7 @@ export const getRerollItemState = async (
     location: InventoryLocation | string;
     locked: boolean;
     affixPoolId: string;
+    equipSlot: string | null;
     affixes: GeneratedAffix[];
     resolvedQuality: string | null;
     resolvedQualityRank: number;
@@ -270,6 +271,10 @@ export const getRerollItemState = async (
       location: row.location,
       locked: Boolean(row.locked),
       affixPoolId,
+      equipSlot:
+        typeof itemDef.equip_slot === "string"
+          ? itemDef.equip_slot
+          : null,
       affixes,
       resolvedQuality:
         typeof row.quality === "string"

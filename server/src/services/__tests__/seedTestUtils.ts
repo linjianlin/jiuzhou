@@ -21,6 +21,13 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  normalizeAffixPoolFile,
+  type AffixAllowedSlot,
+  type NormalizedAffixDefConfig,
+  type NormalizedAffixPoolDefConfig,
+  type RawAffixPoolFile,
+} from '../shared/affixPoolConfig.js';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -39,6 +46,31 @@ export const resolveSeedPath = (filename: string): string => {
 export const loadSeed = (filename: string): JsonObject => {
   const seedPath = resolveSeedPath(filename);
   return JSON.parse(readFileSync(seedPath, 'utf-8')) as JsonObject;
+};
+
+export const loadNormalizedAffixPools = (): NormalizedAffixPoolDefConfig[] => {
+  const seedPath = resolveSeedPath('affix_pool.json');
+  const file = JSON.parse(readFileSync(seedPath, 'utf-8')) as RawAffixPoolFile;
+  return normalizeAffixPoolFile(file);
+};
+
+export const findAffixByKeyAndSlot = (
+  pool: NormalizedAffixPoolDefConfig,
+  affixKey: string,
+  equipSlot: AffixAllowedSlot,
+): NormalizedAffixDefConfig | undefined => {
+  return pool.affixes.find((affix) => {
+    if (affix.key !== affixKey) return false;
+    if (!Array.isArray(affix.allowed_slots)) return false;
+    return affix.allowed_slots.includes(equipSlot);
+  });
+};
+
+export const collectAffixesBySlot = (
+  pool: NormalizedAffixPoolDefConfig,
+  equipSlot: AffixAllowedSlot,
+): NormalizedAffixDefConfig[] => {
+  return pool.affixes.filter((affix) => Array.isArray(affix.allowed_slots) && affix.allowed_slots.includes(equipSlot));
 };
 
 export const asObject = (value: JsonValue | undefined): JsonObject | null => {

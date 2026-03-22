@@ -18,44 +18,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { findAffixByKeyAndSlot, loadNormalizedAffixPools } from './seedTestUtils.js';
 
-type SeedAffixTier = {
-  tier: number;
-  min: number;
-  max: number;
-  realm_rank_min: number;
-};
-
-type SeedAffixModifier = {
-  attr_key: string;
-};
-
-type SeedAffix = {
-  key: string;
-  name: string;
-  apply_type: 'flat' | 'percent' | 'special';
-  group: string;
-  weight: number;
-  tiers: SeedAffixTier[];
-  modifiers?: SeedAffixModifier[];
-};
-
-type SeedPool = {
-  id: string;
-  affixes: SeedAffix[];
-};
-
-type AffixPoolSeedFile = {
-  pools: SeedPool[];
-};
-
-const CRIT_DEFENSE_POOL_IDS = [
-  'ap-armor-common',
-  'ap-armor-uncommon',
-  'ap-armor-rare',
-  'ap-accessory-uncommon',
+const CRIT_DEFENSE_SLOTS = [
+  'head',
+  'accessory',
 ] as const;
 const CRIT_DAMAGE_RESIST_SCALE = 0.7;
 
@@ -63,28 +30,17 @@ const scaleTierValue = (value: number): number => {
   return Number((value * CRIT_DAMAGE_RESIST_SCALE).toFixed(6));
 };
 
-const loadSeed = (): AffixPoolSeedFile => {
-  const candidatePaths = [
-    resolve(process.cwd(), 'server/src/data/seeds/affix_pool.json'),
-    resolve(process.cwd(), 'src/data/seeds/affix_pool.json'),
-  ];
-  const seedPath = candidatePaths.find((filePath) => existsSync(filePath));
-  assert.ok(seedPath, '未找到 affix_pool.json 种子文件');
-  return JSON.parse(readFileSync(seedPath, 'utf-8')) as AffixPoolSeedFile;
-};
-
 test('暴伤减免词缀应进入暴击防御向装备池，并按 0.7 系数复用同池抗暴档位口径', () => {
-  const seed = loadSeed();
+  const pools = loadNormalizedAffixPools();
+  const pool = pools.find((row) => row.id === 'ap-equipment');
+  assert.ok(pool, '缺少词条池: ap-equipment');
 
-  for (const poolId of CRIT_DEFENSE_POOL_IDS) {
-    const pool = seed.pools.find((row) => row.id === poolId);
-    assert.ok(pool, `缺少词缀池: ${poolId}`);
+  for (const equipSlot of CRIT_DEFENSE_SLOTS) {
+    const critResistAffix = findAffixByKeyAndSlot(pool, 'jianbaoshang_flat', equipSlot);
+    const critDefenseAffix = findAffixByKeyAndSlot(pool, 'kangbao_flat', equipSlot);
 
-    const critResistAffix = pool.affixes.find((affix) => affix.key === 'jianbaoshang_flat');
-    const critDefenseAffix = pool.affixes.find((affix) => affix.key === 'kangbao_flat');
-
-    assert.ok(critResistAffix, `${poolId} 缺少 jianbaoshang_flat`);
-    assert.ok(critDefenseAffix, `${poolId} 缺少 kangbao_flat 参照词缀`);
+    assert.ok(critResistAffix, `${equipSlot} 缺少 jianbaoshang_flat`);
+    assert.ok(critDefenseAffix, `${equipSlot} 缺少 kangbao_flat 参照词缀`);
 
     assert.equal(critResistAffix.name, '暴伤减免+');
     assert.equal(critResistAffix.apply_type, 'flat');

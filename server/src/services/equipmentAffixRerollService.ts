@@ -19,6 +19,8 @@ import {
   resolveRatingBaseAttrKey,
   toRatingAttrKey,
 } from './shared/affixRating.js';
+import { resolveAffixPoolBySlot } from './shared/affixPoolSlotResolver.js';
+import { roundAffixResultValue } from './shared/affixPrecision.js';
 
 export interface RerollAffixPool {
   rules: AffixPoolRules;
@@ -64,6 +66,50 @@ const resolveAffixRollRatio = (
   const span = high - low;
   if (span <= Number.EPSILON) return 1;
   return clampNumber((sampledValue - low) / span, 0, 1);
+};
+
+const sampleTierValueByRollRatio = (tier: AffixDef['tiers'][number], rollRatio: number): number | null => {
+  const min = toNumber(tier.min, NaN);
+  const max = toNumber(tier.max, NaN);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  const safeRollRatio = clampNumber(rollRatio, 0, 1);
+
+  if (Number.isInteger(low) && Number.isInteger(high)) {
+    return clampInt(Math.round(low + (high - low) * safeRollRatio), low, high);
+  }
+
+  return roundAffixResultValue(low + (high - low) * safeRollRatio);
+};
+
+const buildAffixSourceValueMap = (
+  affix: AffixDef,
+  selectedTier: number,
+  rollRatio: number,
+  attrFactor: number,
+  primaryValue: number,
+): Record<string, number> | undefined => {
+  if (!affix.value_tiers) return undefined;
+
+  const out: Record<string, number> = {};
+  for (const [valueSource, tiers] of Object.entries(affix.value_tiers)) {
+    const tier = tiers.find((row) => toNumber(row.tier, 0) === selectedTier);
+    if (!tier) continue;
+    const sourceValue = sampleTierValueByRollRatio(tier, rollRatio);
+    if (sourceValue === null) continue;
+    out[valueSource] =
+      Number.isFinite(attrFactor) && attrFactor !== 1
+        ? sourceValue * attrFactor
+        : sourceValue;
+  }
+
+  const primaryValueSource = typeof affix.primary_value_source === 'string' ? affix.primary_value_source.trim() : '';
+  if (primaryValueSource) {
+    out[primaryValueSource] = primaryValue;
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
 };
 
 const normalizeQualityByRank = (qualityRankRaw: unknown): Quality => {
@@ -217,9 +263,12 @@ export const parseGeneratedAffixesForReroll = (raw: unknown): GeneratedAffix[] =
   return out;
 };
 
-export const loadAffixPoolForReroll = (poolId: string): RerollAffixPool | null => {
-  const row = getAffixPoolDefinitions().find((entry) => entry.enabled !== false && entry.id === poolId) ?? null;
-  if (!row || !row.rules || !Array.isArray(row.affixes)) return null;
+export const loadAffixPoolForReroll = (
+  poolId: string,
+  equipSlot: string,
+): RerollAffixPool | null => {
+  const row = resolveAffixPoolBySlot(getAffixPoolDefinitions(), poolId, equipSlot);
+  if (!row || !row.rules || !Array.isArray(row.affixes) || row.affixes.length <= 0) return null;
   return {
     rules: row.rules as AffixPoolRules,
     affixes: row.affixes as AffixDef[],
@@ -228,10 +277,11 @@ export const loadAffixPoolForReroll = (poolId: string): RerollAffixPool | null =
 
 export const loadAffixPoolForRerollTx = async (
   client: PoolClient,
-  poolId: string
+  poolId: string,
+  equipSlot: string,
 ): Promise<RerollAffixPool | null> => {
   void client;
-  return loadAffixPoolForReroll(poolId);
+  return loadAffixPoolForReroll(poolId, equipSlot);
 };
 
 class SeededRandom {
@@ -292,6 +342,13 @@ const rollAffixValue = (rng: SeededRandom, affix: AffixDef, realmRank: number, a
   const rawScaledValue = Number.isFinite(attrFactor) && attrFactor !== 1
     ? value * attrFactor
     : value;
+  const rawScaledValueBySource = buildAffixSourceValueMap(
+    affix,
+    Math.max(1, Math.floor(toNumber(selectedTier.tier, 1))),
+    rollRatio,
+    attrFactor,
+    rawScaledValue,
+  );
   const resolvedAffixValue = buildAffixValueAndModifiers({
     applyType: affix.apply_type,
     keyRaw: affix.key,
@@ -299,6 +356,8 @@ const rollAffixValue = (rng: SeededRandom, affix: AffixDef, realmRank: number, a
     params: affix.params,
     modifiersRaw: affix.modifiers,
     rawScaledValue,
+    rawScaledValueBySource,
+    defaultValueSource: affix.primary_value_source,
   });
   if (!resolvedAffixValue) return null;
   const scaledValue = resolvedAffixValue.value;
