@@ -233,6 +233,24 @@ test('buildPartnerRecruitPromptInput: 玩家指定底模时应声明可作属性
     ),
     true,
   );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '玩家指定的底模只影响伙伴主体设定、气质、文风与属性流派倾向，不得改变当前 quality、passiveValueGuideByKey 与全部字段约束',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '若底模中出现速度、攻击、血量、连击、暴击、护盾、回血、控制、无敌、秒杀等含义，可以提炼为仙侠世界中的外形意象、气质意象或战斗倾向，但禁止直接实现为极高速度、极高攻击、极高血量、离谱连击、必定暴击、无敌或秒杀等明显超出当前品质约束的数值与机制结果',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '自定义底模只影响伙伴主体设定与描述方向，禁止把玩家底模诉求翻译成额外强度补偿；最终数值、成长与天生功法收益仍只能严格服从当前 quality、passiveValueGuideByKey 与全部字段约束',
+    ),
+    true,
+  );
 });
 
 test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供 combatStyle 与基础类型', () => {

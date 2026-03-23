@@ -132,6 +132,12 @@ const PARTNER_RECRUIT_TEXT_LENGTH_LIMITS = {
   techniqueDescription: { min: 18, max: 60 },
 } as const satisfies Record<string, TextLengthRange>;
 
+const PARTNER_RECRUIT_BASE_MODEL_SEMANTIC_RULES = [
+  '玩家指定的底模只影响伙伴主体设定、气质、文风与属性流派倾向，不得改变当前 quality、passiveValueGuideByKey 与全部字段约束',
+  '若底模中出现速度、攻击、血量、连击、暴击、护盾、回血、控制、无敌、秒杀等含义，可以提炼为仙侠世界中的外形意象、气质意象或战斗倾向，但禁止直接实现为极高速度、极高攻击、极高血量、离谱连击、必定暴击、无敌或秒杀等明显超出当前品质约束的数值与机制结果',
+  '自定义底模只影响伙伴主体设定与描述方向，禁止把玩家底模诉求翻译成额外强度补偿；最终数值、成长与天生功法收益仍只能严格服从当前 quality、passiveValueGuideByKey 与全部字段约束',
+] as const;
+
 export const PARTNER_RECRUIT_SPIRIT_STONES_COST = 0;
 export const PARTNER_RECRUIT_COOLDOWN_HOURS = 168;
 export const PARTNER_RECRUIT_PREVIEW_EXPIRE_HOURS = 24;
@@ -731,7 +737,10 @@ export const buildPartnerRecruitPromptInput = (
       ...PARTNER_RECRUIT_FORM_RULES,
       `本次伙伴基础类型固定为「${options.baseModel}」；伙伴主体形态、种族特征与描述必须围绕该基础类型展开，可做仙侠化变体，但禁止偏离成其他基础类型`,
       ...(options.isPlayerProvidedBaseModel
-        ? [`玩家指定的底模「${options.baseModel}」仅作为伙伴主体形态、种族特征、气质、文风与属性流派倾向参考，不得作为基础属性、成长数值、天生功法收益或整体强度的具体数值参考`]
+        ? [
+          `玩家指定的底模「${options.baseModel}」仅作为伙伴主体形态、种族特征、气质、文风与属性流派倾向参考，不得作为基础属性、成长数值、天生功法收益或整体强度的具体数值参考`,
+          ...PARTNER_RECRUIT_BASE_MODEL_SEMANTIC_RULES,
+        ]
         : []),
       `伙伴名字 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.max} 个中文字符，不得包含标点或空格`,
       `伙伴描述 ${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.min}-${PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.max} 个中文字符`,
