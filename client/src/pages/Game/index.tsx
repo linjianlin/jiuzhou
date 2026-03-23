@@ -120,7 +120,9 @@ import {
 } from './shared/battleViewSync';
 import {
   buildBattleSessionAdvanceKey,
+  canStartBattleSessionAdvanceRequest,
   getBattleSessionAutoAdvanceDelayMs,
+  isCurrentBattleSessionAdvanceTarget,
   resolveBattleSessionAdvanceMode,
 } from './shared/battleSessionAdvance';
 import { resolveBattleViewUiState } from './shared/battleViewUiState';
@@ -809,6 +811,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const gatherTickTimerRef = useRef<number | null>(null);
   const sessionAutoAdvanceTimerRef = useRef<number | null>(null);
   const lastAutoAdvanceSessionKeyRef = useRef<string>('');
+  const advancingBattleSessionKeyRef = useRef<string>('');
   const appendBattleLinesToChat = useCallback((lines: string[]) => {
     chatPanelRef.current?.appendBattleLines(lines);
   }, []);
@@ -1323,16 +1326,27 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }
 
     const sessionAdvanceKey = buildBattleSessionAdvanceKey(session);
+    if (!canStartBattleSessionAdvanceRequest({
+      requestSessionKey: sessionAdvanceKey,
+      advancingSessionKey: advancingBattleSessionKeyRef.current,
+    })) {
+      return;
+    }
     const isLatestAdvanceTarget = () => (
-      buildBattleSessionAdvanceKey(activeBattleSessionRef.current) === sessionAdvanceKey
+      isCurrentBattleSessionAdvanceTarget({
+        session: activeBattleSessionRef.current,
+        requestSessionKey: sessionAdvanceKey,
+      })
     );
+    advancingBattleSessionKeyRef.current = sessionAdvanceKey;
     try {
       const res = await advanceBattleSession(session.sessionId, SILENT_API_REQUEST_CONFIG);
       const nextSession = res?.data?.session ?? null;
+      if (!isLatestAdvanceTarget()) {
+        return;
+      }
       if (!res?.success || !nextSession) {
-        if (isLatestAdvanceTarget()) {
-          setBlockedAutoAdvanceSessionKey(sessionAdvanceKey);
-        }
+        setBlockedAutoAdvanceSessionKey(sessionAdvanceKey);
         messageRef.current.error(res?.message || '推进战斗失败');
         return;
       }
@@ -1364,12 +1378,8 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       setBattlePhase(null);
       setBattleActiveUnitId(null);
     } catch (error) {
-      const latestSessionId = activeBattleSessionRef.current?.sessionId ?? null;
       const errorText = getUnifiedApiErrorMessage(error, '推进战斗失败');
-      if (latestSessionId !== session.sessionId && isBattleSessionMissingError(errorText)) {
-        return;
-      }
-      if (latestSessionId !== session.sessionId) {
+      if (!isLatestAdvanceTarget()) {
         return;
       }
       if (isBattleSessionMissingError(errorText)) {
@@ -1385,10 +1395,12 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         setBattleActiveUnitId(null);
         return;
       }
-      if (isLatestAdvanceTarget()) {
-        setBlockedAutoAdvanceSessionKey(sessionAdvanceKey);
-      }
+      setBlockedAutoAdvanceSessionKey(sessionAdvanceKey);
       messageRef.current.error(errorText);
+    } finally {
+      if (advancingBattleSessionKeyRef.current === sessionAdvanceKey) {
+        advancingBattleSessionKeyRef.current = '';
+      }
     }
   }, [activeBattleSession, applyBattleViewUiState, clearBattleAutoCloseTimer, clearSessionAutoAdvanceTimer]);
 

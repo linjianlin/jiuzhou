@@ -23,8 +23,10 @@ import { describe, expect, it } from 'vitest';
 import type { BattleSessionSnapshotDto } from '../../../../services/api/battleSession';
 import {
   buildBattleSessionAdvanceKey,
+  canStartBattleSessionAdvanceRequest,
   DEFAULT_BATTLE_SESSION_AUTO_ADVANCE_DELAY_MS,
   getBattleSessionAutoAdvanceDelayMs,
+  isCurrentBattleSessionAdvanceTarget,
   TOWER_BATTLE_SESSION_AUTO_ADVANCE_DELAY_MS,
   resolveBattleSessionAdvanceMode,
 } from '../battleSessionAdvance';
@@ -141,5 +143,48 @@ describe('resolveBattleSessionAdvanceMode', () => {
         }),
       ),
     ).toBe(DEFAULT_BATTLE_SESSION_AUTO_ADVANCE_DELAY_MS);
+  });
+
+  it('同一 sessionId 进入下一波后，旧波次推进结果不应再视为当前目标', () => {
+    const previousWaveSession = createSession({
+      currentBattleId: 'dungeon-battle-1',
+      status: 'waiting_transition',
+      nextAction: 'advance',
+      canAdvance: true,
+      lastResult: 'attacker_win',
+    });
+    const nextWaveSession = createSession({
+      currentBattleId: 'dungeon-battle-2',
+      status: 'running',
+      nextAction: 'none',
+      canAdvance: false,
+      lastResult: null,
+    });
+
+    expect(
+      isCurrentBattleSessionAdvanceTarget({
+        session: nextWaveSession,
+        requestSessionKey: buildBattleSessionAdvanceKey(previousWaveSession),
+      }),
+    ).toBe(false);
+  });
+
+  it('同一波次已有推进请求进行中时，应阻止重复发起', () => {
+    const session = createSession();
+    const requestSessionKey = buildBattleSessionAdvanceKey(session);
+
+    expect(
+      canStartBattleSessionAdvanceRequest({
+        requestSessionKey,
+        advancingSessionKey: requestSessionKey,
+      }),
+    ).toBe(false);
+
+    expect(
+      canStartBattleSessionAdvanceRequest({
+        requestSessionKey,
+        advancingSessionKey: '',
+      }),
+    ).toBe(true);
   });
 });
