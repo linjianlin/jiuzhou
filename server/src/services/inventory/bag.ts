@@ -68,19 +68,22 @@ export const getInventoryInfo = async (
     SELECT
       i.bag_capacity,
       i.warehouse_capacity,
-      (SELECT COUNT(DISTINCT location_slot)::int
-         FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'bag'
-          AND location_slot IS NOT NULL
-          AND location_slot >= 0) as bag_used,
-      (SELECT COUNT(DISTINCT location_slot)::int
-         FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'warehouse'
-          AND location_slot IS NOT NULL
-          AND location_slot >= 0) as warehouse_used
+      COALESCE(usage.bag_used, 0)::int AS bag_used,
+      COALESCE(usage.warehouse_used, 0)::int AS warehouse_used
     FROM inventory i
+    LEFT JOIN (
+      SELECT
+        owner_character_id,
+        COUNT(DISTINCT location_slot) FILTER (WHERE location = 'bag') AS bag_used,
+        COUNT(DISTINCT location_slot) FILTER (WHERE location = 'warehouse') AS warehouse_used
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND location IN ('bag', 'warehouse')
+        AND location_slot IS NOT NULL
+        AND location_slot >= 0
+      GROUP BY owner_character_id
+    ) AS usage
+      ON usage.owner_character_id = i.character_id
     WHERE i.character_id = $1
   `;
 

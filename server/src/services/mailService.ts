@@ -116,6 +116,7 @@ type ClaimInstanceRow = {
 };
 
 const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_rewards IS NOT NULL OR attach_instance_ids IS NOT NULL)';
+const MAIL_ACTIVE_SCOPE_SQL = `COALESCE(expire_at, 'infinity'::timestamptz) > NOW()`;
 const MAIL_UNREAD_CACHE_REDIS_TTL_SEC = 30;
 const MAIL_UNREAD_CACHE_MEMORY_TTL_MS = 5_000;
 
@@ -131,8 +132,15 @@ type MailScopedUnionSqlOptions = {
 };
 
 type MailUnreadCounter = {
+  totalCount: number;
   unreadCount: number;
   unclaimedCount: number;
+};
+
+type LoadMailCounterOptions = {
+  characterId: number;
+  userId: number;
+  commonWhereSql?: string[];
 };
 
 const buildLegacyMailRewardPayload = (input: {
@@ -242,42 +250,60 @@ const buildRecipientScopedMailUnionSql = ({
   ].join('\n          UNION ALL\n');
 };
 
-const loadMailUnreadCounter = async (cacheKey: string): Promise<MailUnreadCounter | null> => {
-  const parsedKey = parseMailUnreadCacheKey(cacheKey);
-  if (!parsedKey) return null;
-
+const loadMailCounter = async ({
+  characterId,
+  userId,
+  commonWhereSql = [],
+}: LoadMailCounterOptions): Promise<MailUnreadCounter> => {
   const scopedMailUnionSql = buildRecipientScopedMailUnionSql({
-    selectSql: 'read_at, claimed_at, attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids',
+    selectSql: `
+              COUNT(*)::bigint AS total_count,
+              (COUNT(*) FILTER (WHERE read_at IS NULL))::bigint AS unread_count,
+              (COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}))::bigint AS unclaimed_count`,
     characterIdParamIndex: 1,
     userIdParamIndex: 2,
-    commonWhereSql: [
-      'deleted_at IS NULL',
-      '(expire_at IS NULL OR expire_at > NOW())',
-    ],
+    commonWhereSql,
   });
 
   const result = await query(
     `
-      WITH scoped_mail AS (
+      WITH scoped_mail_counter AS (
         ${scopedMailUnionSql}
       )
       SELECT
-        COUNT(*) FILTER (WHERE read_at IS NULL) as unread_count,
-        COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}) as unclaimed_count
-      FROM scoped_mail
+        COALESCE(SUM(total_count), 0)::bigint AS total_count,
+        COALESCE(SUM(unread_count), 0)::bigint AS unread_count,
+        COALESCE(SUM(unclaimed_count), 0)::bigint AS unclaimed_count
+      FROM scoped_mail_counter
     `,
-    [parsedKey.characterId, parsedKey.userId],
+    [characterId, userId],
   );
 
   const row = (result.rows[0] ?? {}) as {
+    total_count?: string | number;
     unread_count?: string | number;
     unclaimed_count?: string | number;
   };
 
   return {
+    totalCount: Math.max(0, Math.floor(Number(row.total_count) || 0)),
     unreadCount: Math.max(0, Math.floor(Number(row.unread_count) || 0)),
     unclaimedCount: Math.max(0, Math.floor(Number(row.unclaimed_count) || 0)),
   };
+};
+
+const loadMailUnreadCounter = async (cacheKey: string): Promise<MailUnreadCounter | null> => {
+  const parsedKey = parseMailUnreadCacheKey(cacheKey);
+  if (!parsedKey) return null;
+
+  return loadMailCounter({
+    characterId: parsedKey.characterId,
+    userId: parsedKey.userId,
+    commonWhereSql: [
+      'deleted_at IS NULL',
+      MAIL_ACTIVE_SCOPE_SQL,
+    ],
+  });
 };
 
 const mailUnreadCounterCache = createCacheLayer<string, MailUnreadCounter>({
@@ -292,6 +318,37 @@ const mailUnreadCounterCache = createCacheLayer<string, MailUnreadCounter>({
 // ============================================
 
 class MailService {
+  private async cleanupExpiredMailForRecipient(
+    userId: number,
+    characterId: number,
+  ): Promise<void> {
+    await Promise.all([
+      query(
+        `
+          UPDATE mail
+          SET deleted_at = NOW(), updated_at = NOW()
+          WHERE recipient_character_id = $1
+            AND deleted_at IS NULL
+            AND expire_at IS NOT NULL
+            AND expire_at < NOW()
+        `,
+        [characterId],
+      ),
+      query(
+        `
+          UPDATE mail
+          SET deleted_at = NOW(), updated_at = NOW()
+          WHERE recipient_user_id = $1
+            AND recipient_character_id IS NULL
+            AND deleted_at IS NULL
+            AND expire_at IS NOT NULL
+            AND expire_at < NOW()
+        `,
+        [userId],
+      ),
+    ]);
+  }
+
   /**
    * 生成“邮件收件人可见范围”SQL 片段。
    *
@@ -855,7 +912,6 @@ class MailService {
     pageSize: number = 50
   ): Promise<{ success: boolean; mails: MailDto[]; total: number; unreadCount: number; unclaimedCount: number }> {
     const offset = (page - 1) * pageSize;
-    const recipientScopeSql = this.buildRecipientScopeSql(1, 2);
     const branchLimit = pageSize + offset;
     const listScopedMailUnionSql = buildRecipientScopedMailUnionSql({
       selectSql: `
@@ -864,54 +920,32 @@ class MailService {
               read_at, claimed_at, expire_at, created_at`,
       characterIdParamIndex: 1,
       userIdParamIndex: 2,
-      commonWhereSql: ['deleted_at IS NULL'],
+      commonWhereSql: ['deleted_at IS NULL', MAIL_ACTIVE_SCOPE_SQL],
       orderBySql: 'ORDER BY created_at DESC, id DESC',
       limitParamIndex: 5,
-    });
-    const statsScopedMailUnionSql = buildRecipientScopedMailUnionSql({
-      selectSql: 'read_at, claimed_at, attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids',
-      characterIdParamIndex: 1,
-      userIdParamIndex: 2,
-      commonWhereSql: ['deleted_at IS NULL'],
     });
 
     try {
       // 清理过期邮件（软删除）
-      await query(`
-        UPDATE mail SET deleted_at = NOW(), updated_at = NOW()
-        WHERE ${recipientScopeSql}
-          AND expire_at IS NOT NULL
-          AND expire_at < NOW()
-          AND deleted_at IS NULL
-      `, [characterId, userId]);
+      await this.cleanupExpiredMailForRecipient(userId, characterId);
 
-      // 获取邮件列表
-      const result = await query(`
-        WITH scoped_mail AS (
-          ${listScopedMailUnionSql}
-        )
-        SELECT
-          id, sender_type, sender_name, mail_type, title, content,
-          attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids,
-          read_at, claimed_at, expire_at, created_at
-        FROM scoped_mail
-        ORDER BY created_at DESC, id DESC
-        LIMIT $3 OFFSET $4
-      `, [characterId, userId, pageSize, offset, branchLimit]);
-
-      // 获取统计
-      const statsResult = await query(`
-        WITH scoped_mail AS (
-          ${statsScopedMailUnionSql}
-        )
-        SELECT
-          COUNT(*) as total,
-          COUNT(*) FILTER (WHERE read_at IS NULL) as unread_count,
-          COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}) as unclaimed_count
-        FROM scoped_mail
-      `, [characterId, userId]);
-
-      const stats = statsResult.rows[0];
+      const [result, stats] = await Promise.all([
+        query(`
+          WITH scoped_mail AS (
+            ${listScopedMailUnionSql}
+          )
+          SELECT
+            id, sender_type, sender_name, mail_type, title, content,
+            attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids,
+            read_at, claimed_at, expire_at, created_at
+          FROM scoped_mail
+          ORDER BY created_at DESC, id DESC
+          LIMIT $3 OFFSET $4
+        `, [characterId, userId, pageSize, offset, branchLimit]),
+        mailUnreadCounterCache.get(
+          this.buildUnreadCounterCacheKey(userId, characterId),
+        ),
+      ]);
 
       const mails: MailDto[] = result.rows.map(row => ({
         id: row.id,
@@ -941,9 +975,9 @@ class MailService {
       return {
         success: true,
         mails,
-        total: parseInt(stats.total),
-        unreadCount: parseInt(stats.unread_count),
-        unclaimedCount: parseInt(stats.unclaimed_count)
+        total: stats?.totalCount ?? 0,
+        unreadCount: stats?.unreadCount ?? 0,
+        unclaimedCount: stats?.unclaimedCount ?? 0,
       };
     } catch (error) {
       console.error('获取邮件列表失败:', error);
@@ -1339,7 +1373,7 @@ class MailService {
         'deleted_at IS NULL',
         'claimed_at IS NULL',
         MAIL_HAS_ATTACHMENTS_SQL,
-        '(expire_at IS NULL OR expire_at > NOW())',
+        MAIL_ACTIVE_SCOPE_SQL,
       ],
       orderBySql: 'ORDER BY created_at ASC, id ASC',
     });
@@ -1553,7 +1587,10 @@ class MailService {
       const cachedCounter = await mailUnreadCounterCache.get(
         this.buildUnreadCounterCacheKey(userId, characterId),
       );
-      return cachedCounter ?? { unreadCount: 0, unclaimedCount: 0 };
+      return {
+        unreadCount: cachedCounter?.unreadCount ?? 0,
+        unclaimedCount: cachedCounter?.unclaimedCount ?? 0,
+      };
     } catch (error) {
       console.error('获取未读数量失败:', error);
       return { unreadCount: 0, unclaimedCount: 0 };
