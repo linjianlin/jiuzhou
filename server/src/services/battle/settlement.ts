@@ -30,7 +30,6 @@ import {
   applyCharacterResourceDeltaByCharacterId,
   getCharacterComputedBatchByCharacterIds,
   getCharacterComputedByCharacterId,
-  setCharacterResourcesByCharacterId,
 } from "../characterComputedService.js";
 import { getArenaStatus } from "../arenaService.js";
 import { recordKillMonsterEvent } from "../taskService.js";
@@ -66,6 +65,7 @@ import {
   shouldApplyBattleSettlementCooldown,
   TOWER_PVE_BATTLE_START_POLICY,
 } from "./shared/startPolicy.js";
+import { restoreCharacterResourcesAfterVictoryByCharacterIds } from "./shared/resourceRecovery.js";
 import {
   applyTowerPostBattleResourceChange,
   settleTowerBattle,
@@ -270,15 +270,9 @@ async function finishBattleCore(
           rewardParticipantCount: rewardParticipants.length,
         });
 
-        for (const participant of participants) {
-          const computed = await getCharacterComputedByCharacterId(participant.characterId);
-          if (!computed) continue;
-          const healAmount = Math.floor(computed.max_qixue * 0.3);
-          await setCharacterResourcesByCharacterId(participant.characterId, {
-            qixue: Math.min(computed.max_qixue, computed.qixue + healAmount),
-            lingqi: computed.lingqi,
-          });
-        }
+        await restoreCharacterResourcesAfterVictoryByCharacterIds(
+          participants.map((participant) => participant.characterId),
+        );
         slowLogger.mark("restoreCharacterResourcesAfterVictory");
       }
 

@@ -22,13 +22,11 @@ import { query } from "../../../config/database.js";
 import type { CharacterData, SkillData } from "../../../battle/battleFactory.js";
 import type { PoolClient } from "pg";
 import { getGameServer } from "../../../game/gameServer.js";
-import {
-  getCharacterComputedBatchByCharacterIds,
-  recoverBattleStartResourcesByUserIds,
-} from "../../characterComputedService.js";
+import { getCharacterComputedBatchByCharacterIds } from "../../characterComputedService.js";
 import { idleSessionService } from "../../idle/idleSessionService.js";
 import type { BattleResult } from "../battleTypes.js";
 import { getBattleStartCooldownRemainingMs, isCharacterInBattle } from "../runtime/state.js";
+import { recoverBattleStartResourcesByUserIds } from "./resourceRecovery.js";
 import { getCharacterBattleLoadoutByCharacterId } from "./profileCache.js";
 import {
   shouldValidateTeamMemberCooldown,

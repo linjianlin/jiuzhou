@@ -913,6 +913,32 @@ const selectBaseCharacterByUserId = async (userId: number): Promise<CharacterBas
   return result.rows[0] as CharacterBaseRow;
 };
 
+const selectBaseCharactersByUserIds = async (
+  userIds: number[],
+): Promise<CharacterBaseRow[]> => {
+  const normalizedUserIds = [...new Set(
+    userIds
+      .map((userId) => Math.floor(Number(userId)))
+      .filter((userId) => Number.isFinite(userId) && userId > 0),
+  )];
+  if (normalizedUserIds.length <= 0) {
+    return [];
+  }
+
+  const result = await query(
+    `
+      SELECT
+        ${CHARACTER_BASE_COLUMNS_SQL},
+        COALESCE(cip.level, 0) AS insight_level
+      FROM characters c
+      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      WHERE c.user_id = ANY($1)
+    `,
+    [normalizedUserIds],
+  );
+  return result.rows as CharacterBaseRow[];
+};
+
 const selectBaseCharacterByCharacterId = async (characterId: number): Promise<CharacterBaseRow | null> => {
   const result = await query(
     `
@@ -1076,6 +1102,27 @@ export const getCharacterComputedBatchByCharacterIds = async (
   return out;
 };
 
+export const getCharacterComputedBatchByUserIds = async (
+  userIds: number[],
+  options?: { bypassStaticCache?: boolean },
+): Promise<Map<number, CharacterComputedRow>> => {
+  const rows = await selectBaseCharactersByUserIds(userIds);
+  const out = new Map<number, CharacterComputedRow>();
+  if (rows.length <= 0) return out;
+
+  const monthCardFuyuanBonusMap = await loadMonthCardFuyuanBonusMap(rows.map((row) => row.id));
+  await Promise.all(
+    rows.map(async (row) => {
+      const computed = await buildComputedRow(row, {
+        ...options,
+        monthCardFuyuanBonus: monthCardFuyuanBonusMap.get(row.id) ?? 0,
+      });
+      out.set(computed.user_id, computed);
+    }),
+  );
+  return out;
+};
+
 export const backfillCharacterRankSnapshots = async (): Promise<void> => {
   type CharacterIdRow = { id: number | string };
   const BATCH_SIZE = 200;
@@ -1200,6 +1247,14 @@ export const setCharacterResourcesByCharacterId = async (
 ): Promise<CharacterResourceState | null> => {
   const computed = await getCharacterComputedByCharacterId(characterId);
   if (!computed) return null;
+  return setCharacterResourcesByComputedRow(computed, next, options);
+};
+
+export const setCharacterResourcesByComputedRow = async (
+  computed: CharacterComputedRow,
+  next: CharacterResourceState,
+  options?: { minQixue?: number },
+): Promise<CharacterResourceState | null> => {
   const minQixue = Math.max(0, Math.floor(safeNumber(options?.minQixue, 0)));
   const normalized: CharacterResourceState = {
     qixue: clampNumber(Math.floor(safeNumber(next.qixue, computed.qixue)), minQixue, computed.max_qixue),
@@ -1237,23 +1292,6 @@ export const applyCharacterResourceDeltaByCharacterId = async (
     max_qixue: computed.max_qixue,
     max_lingqi: computed.max_lingqi,
   };
-};
-
-export const recoverBattleStartResourcesByUserIds = async (userIds: number[]): Promise<void> => {
-  const uniq = [...new Set(userIds.map((id) => Math.floor(Number(id))).filter((id) => Number.isFinite(id) && id > 0))];
-  if (uniq.length <= 0) return;
-
-  await Promise.all(
-    uniq.map(async (userId) => {
-      const computed = await getCharacterComputedByUserId(userId);
-      if (!computed) return;
-      const targetLingqi = Math.max(0, Math.floor(computed.max_lingqi * 0.5));
-      await setCharacterResourcesByCharacterId(computed.id, {
-        qixue: computed.max_qixue,
-        lingqi: Math.max(computed.lingqi, targetLingqi),
-      });
-    }),
-  );
 };
 
 export const clearCharacterRuntimeResourceCache = async (characterId: number): Promise<void> => {
