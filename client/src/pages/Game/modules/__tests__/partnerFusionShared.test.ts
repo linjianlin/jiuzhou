@@ -41,6 +41,7 @@ const createPartner = (overrides: Partial<PartnerDetailDto> = {}): PartnerDetail
   role: '术修',
   element: 'mu',
   level: 12,
+  currentEffectiveLevel: 12,
   progressExp: 20,
   nextLevelCostExp: 100,
   slotCount: 4,

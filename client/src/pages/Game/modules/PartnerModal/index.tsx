@@ -42,6 +42,7 @@ import { findRenameCardInventoryItem } from '../../shared/renameCard';
 import { getSkillCardSections, renderSkillTooltip } from '../TechniqueModal/skillDetailShared';
 import {
   buildPartnerCombatAttrRows,
+  buildPartnerUpgradeRuleLines,
   buildPartnerSkillPolicySlots,
   formatPartnerElementLabel,
   formatPartnerAttrValue,
@@ -49,10 +50,12 @@ import {
   formatPartnerTechniqueSkillToggleLabel,
   formatPartnerTechniqueUpgradeCostLines,
   formatPartnerLearnResult,
+  formatPartnerLevelSummary,
   formatPartnerTechniquePassiveLines,
   getPartnerAttrLabel,
   getPartnerDisplayName,
   getPartnerEmptySlotCount,
+  hasPartnerLevelLimitApplied,
   getPartnerVisibleBaseAttrs,
   groupPartnerSkillPolicyEntries,
   movePartnerSkillPolicyEntry,
@@ -843,7 +846,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                 <div className="partner-list-info">
                   <div className="partner-list-name">{getPartnerDisplayName(partner)}</div>
                   <div className="partner-list-desc">
-                    等级 {partner.level} · <span className={getElementTextClassName(partner.element)}>{formatPartnerElementLabel(partner.element)}</span> · {partner.role}
+                    {formatPartnerLevelSummary(partner)} · <span className={getElementTextClassName(partner.element)}>{formatPartnerElementLabel(partner.element)}</span> · {partner.role}
                   </div>
                   <div className="partner-tag-row">
                     <Tag color={partner.isActive ? 'green' : 'default'}>{partner.isActive ? '已出战' : '待命中'}</Tag>
@@ -909,6 +912,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             <div className="partner-tag-row">
               <Tag color={selectedPartner.isActive ? 'green' : 'default'}>{selectedPartner.isActive ? '当前出战' : '未出战'}</Tag>
               <Tag color="blue">等级 {selectedPartner.level}</Tag>
+              {hasPartnerLevelLimitApplied(selectedPartner) ? (
+                <Tag color="red">生效等级 {selectedPartner.currentEffectiveLevel}</Tag>
+              ) : null}
               <Tag className={getItemQualityTagClassName(selectedPartner.quality)}>{selectedPartner.quality}</Tag>
               {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="orange">坊市中</Tag> : null}
               {selectedPartner.fusionStatus === 'fusion_locked' ? <Tag color="magenta">归契中</Tag> : null}
@@ -955,6 +961,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
 
   const renderUpgradePanel = () => {
     if (!selectedPartner) return <div className="partner-empty">暂无伙伴数据</div>;
+    const upgradeRuleLines = buildPartnerUpgradeRuleLines(selectedPartner);
 
     return (
       <div className="partner-pane-card">
@@ -972,6 +979,11 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               strokeColor="var(--primary-color)"
               format={(percent) => `${Number(percent ?? 0).toFixed(2)}%`}
             />
+            {hasPartnerLevelLimitApplied(selectedPartner) ? (
+              <div className="partner-meta partner-meta--warning">
+                当前等级已超出本境界上限，现阶段仅按 {selectedPartner.currentEffectiveLevel} 级生效。
+              </div>
+            ) : null}
           </div>
 
           <div className="partner-inject-panel">
@@ -1007,6 +1019,14 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             >
               灌注经验
             </Button>
+          </div>
+        </div>
+        <div className="partner-upgrade-rule-card">
+          <div className="partner-section-title">培养规则</div>
+          <div className="partner-upgrade-rule-list">
+            {upgradeRuleLines.map((line) => (
+              <div key={line} className="partner-meta">{line}</div>
+            ))}
           </div>
         </div>
       </div>
@@ -1593,7 +1613,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                             <div className="partner-fusion-material-main">
                               <div className="partner-fusion-material-name">{getPartnerDisplayName(partner)}</div>
                               <div className="partner-fusion-material-meta">
-                                等级 {partner.level} · {partner.role}
+                                {formatPartnerLevelSummary(partner)} · {partner.role}
                               </div>
                               <div className="partner-tag-row">
                                 <Tag className={getItemQualityTagClassName(partner.quality)}>{partner.quality}</Tag>

@@ -654,6 +654,20 @@
   gap: 12px;
 }
 
+.partner-upgrade-rule-card {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg);
+}
+
+.partner-upgrade-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .partner-progress-meta {
   display: flex;
   flex-wrap: wrap;

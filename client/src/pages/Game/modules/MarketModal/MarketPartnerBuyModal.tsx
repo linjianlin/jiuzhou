@@ -4,6 +4,7 @@ import type { PartnerDisplayDto } from '../../../../services/api';
 import {
   buildPartnerCombatAttrRows,
   formatPartnerElementLabel,
+  hasPartnerLevelLimitApplied,
   resolvePartnerAvatar,
 } from '../../shared/partnerDisplay';
 import { getElementToneClassName } from '../../shared/elementTheme';
@@ -56,6 +57,7 @@ const MarketPartnerBuyModal: React.FC<MarketPartnerBuyModalProps> = ({
                 <Tag className={`market-tag ${getElementToneClassName(partner.element)}`}>{formatPartnerElementLabel(partner.element)}</Tag>
                 <Tag className="market-tag">{partner.role}</Tag>
                 <Tag className="market-tag">等级 {partner.level}</Tag>
+                {hasPartnerLevelLimitApplied(partner) ? <Tag className="market-tag">生效 {partner.currentEffectiveLevel}</Tag> : null}
               </div>
             </div>
           </div>

@@ -118,6 +118,7 @@ export type PartnerDisplayDto = {
   role: string;
   quality: string;
   level: number;
+  currentEffectiveLevel: number;
   progressExp: number;
   nextLevelCostExp: number;
   slotCount: number;

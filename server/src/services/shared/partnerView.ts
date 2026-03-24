@@ -44,6 +44,10 @@ import {
   type PartnerGrowthValues,
 } from './partnerRules.js';
 import type { PartnerFusionLockState, PartnerFusionLockStatus } from './partnerFusionState.js';
+import {
+  resolvePartnerLevelLimit,
+  type PartnerOwnerRealmContext,
+} from './partnerLevelLimit.js';
 
 export type PartnerTradeStatus = 'none' | 'market_listed';
 
@@ -191,6 +195,7 @@ export interface PartnerDisplayDto {
   role: string;
   quality: string;
   level: number;
+  currentEffectiveLevel: number;
   progressExp: number;
   nextLevelCostExp: number;
   slotCount: number;
@@ -711,10 +716,15 @@ export const buildPartnerDisplay = (params: {
   row: PartnerRow;
   definition: PartnerDefConfig;
   techniqueRows: PartnerTechniqueRow[];
+  ownerRealm: PartnerOwnerRealmContext;
 }): PartnerDisplayDto => {
-  const { row, definition, techniqueRows } = params;
+  const { row, definition, techniqueRows, ownerRealm } = params;
   const config = getPartnerGrowthConfig();
   const growth = toPartnerGrowth(row);
+  const levelLimit = resolvePartnerLevelLimit({
+    ownerRealm,
+    partnerLevel: row.level,
+  });
   const effectiveTechniqueEntries = buildEffectivePartnerTechniqueEntries(
     definition,
     techniqueRows,
@@ -741,7 +751,7 @@ export const buildPartnerDisplay = (params: {
   const element = normalizeText(definition.attribute_element) || 'none';
   const finalAttrs = buildPartnerBattleAttrs({
     baseAttrs: definition.base_attrs,
-    level: row.level,
+    level: levelLimit.effectiveLevel,
     levelAttrGains: definition.level_attr_gains,
     passiveAttrs,
     element,
@@ -758,6 +768,7 @@ export const buildPartnerDisplay = (params: {
     role: normalizeText(definition.role) || '伙伴',
     quality: normalizeText(definition.quality) || '黄',
     level: normalizeInteger(row.level, 1),
+    currentEffectiveLevel: levelLimit.effectiveLevel,
     progressExp: normalizeInteger(row.progress_exp),
     nextLevelCostExp: calcPartnerUpgradeExpByTargetLevel(
       normalizeInteger(row.level, 1) + 1,
@@ -792,6 +803,7 @@ export const attachPartnerTradeState = (
 export const buildPartnerDetails = async (params: {
   rows: PartnerRow[];
   techniqueMap: Map<number, PartnerTechniqueRow[]>;
+  ownerRealmMap: Map<number, PartnerOwnerRealmContext>;
   tradeStateMap?: Map<number, { tradeStatus: PartnerTradeStatus; marketListingId: number | null }>;
   fusionStateMap?: Map<number, PartnerFusionLockState>;
 }): Promise<PartnerDetailDto[]> => {
@@ -803,11 +815,16 @@ export const buildPartnerDetails = async (params: {
     if (!definition) {
       throw new Error(`伙伴模板不存在: ${row.partner_def_id}`);
     }
+    const ownerRealm = params.ownerRealmMap.get(row.character_id);
+    if (!ownerRealm) {
+      throw new Error(`伙伴所属角色境界缺失: ${row.character_id}`);
+    }
     const techniqueRows = params.techniqueMap.get(row.id) ?? [];
     const partner = buildPartnerDisplay({
       row,
       definition,
       techniqueRows,
+      ownerRealm,
     });
     return attachPartnerTradeState(
       partner,

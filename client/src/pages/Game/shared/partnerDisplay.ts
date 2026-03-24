@@ -84,6 +84,22 @@ export const getPartnerDisplayName = (
   return String(partner.nickname || '').trim() || partner.name;
 };
 
+export const hasPartnerLevelLimitApplied = (
+  partner: Pick<PartnerDisplayDto, 'level' | 'currentEffectiveLevel'>,
+): boolean => {
+  return Number(partner.currentEffectiveLevel) > 0
+    && Number(partner.currentEffectiveLevel) < Number(partner.level);
+};
+
+export const formatPartnerLevelSummary = (
+  partner: Pick<PartnerDisplayDto, 'level' | 'currentEffectiveLevel'>,
+): string => {
+  if (hasPartnerLevelLimitApplied(partner)) {
+    return `等级 ${partner.level} · 生效 ${partner.currentEffectiveLevel}`;
+  }
+  return `等级 ${partner.level}`;
+};
+
 export const resolvePartnerAvatar = (avatar: string | null): string => {
   return resolveIconUrl(avatar, DEFAULT_ICON);
 };

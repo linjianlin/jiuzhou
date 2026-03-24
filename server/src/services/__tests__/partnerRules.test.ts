@@ -50,6 +50,23 @@ test('resolvePartnerInjectPlan: 经验不足时仅累加当前级进度', () => 
   assert.equal(plan.remainingCharacterExp, 0);
 });
 
+test('resolvePartnerInjectPlan: 命中等级上限时应停止继续升级', () => {
+  const plan = resolvePartnerInjectPlan({
+    beforeLevel: 8,
+    beforeProgressExp: 0,
+    characterExp: 10_000,
+    injectExpBudget: 10_000,
+    config: mockConfig,
+    maxLevel: 10,
+  });
+
+  assert.equal(plan.afterLevel, 10);
+  assert.equal(plan.afterProgressExp, 0);
+  assert.equal(plan.gainedLevels, 2);
+  assert.equal(plan.spentExp, 6571);
+  assert.equal(plan.remainingCharacterExp, 3429);
+});
+
 test('buildPartnerBattleAttrs: 功法百分比被动应体现在伙伴面板主属性上', () => {
   const attrs = buildPartnerBattleAttrs({
     baseAttrs: {

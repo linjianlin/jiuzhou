@@ -35,6 +35,7 @@ import {
   type PartnerRow,
   type PartnerTechniqueRow,
 } from './partnerView.js';
+import type { PartnerOwnerRealmContext } from './partnerLevelLimit.js';
 import {
   buildPartnerBattleSkillPolicy,
   loadPartnerSkillPolicyRows,
@@ -50,6 +51,8 @@ export interface PartnerBattleMember {
 
 type ActivePartnerBattleRow = PartnerRow & {
   user_id: number;
+  realm: string;
+  sub_realm: string | null;
 };
 
 type PartnerBattleSkillPolicyState = {
@@ -136,6 +139,8 @@ export const loadActivePartnerBattleMember = async (
   const rows = await query(
     `
       SELECT cp.*, c.user_id
+           , c.realm
+           , c.sub_realm
       FROM character_partner cp
       JOIN characters c ON c.id = cp.character_id
       WHERE cp.character_id = $1
@@ -156,10 +161,15 @@ export const loadActivePartnerBattleMember = async (
 
   const techniqueMap = await loadPartnerTechniqueRows([partnerRow.id], false);
   const techniqueRows = techniqueMap.get(partnerRow.id) ?? [];
+  const ownerRealm: PartnerOwnerRealmContext = {
+    realm: normalizeText(partnerRow.realm) || '凡人',
+    subRealm: normalizeText(partnerRow.sub_realm) || null,
+  };
   const partnerDisplay = buildPartnerDisplay({
     row: partnerRow,
     definition: partnerDef,
     techniqueRows,
+    ownerRealm,
   });
   const skillPolicyState = await loadPartnerBattleSkillPolicyState({
     partnerId: partnerRow.id,

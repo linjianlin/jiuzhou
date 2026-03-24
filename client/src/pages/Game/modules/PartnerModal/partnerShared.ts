@@ -37,6 +37,8 @@ export {
   formatPartnerElementLabel,
   getPartnerDisplayName,
   getPartnerAttrLabel,
+  hasPartnerLevelLimitApplied,
+  formatPartnerLevelSummary,
   getPartnerVisibleBaseAttrs,
   getPartnerVisibleCombatAttrs,
   resolvePartnerAvatar,
@@ -134,6 +136,21 @@ export const formatPartnerLearnResult = (
 
 export const resolvePartnerBookLabel = (book: PartnerBookDto): string => {
   return book.name;
+};
+
+export const buildPartnerUpgradeRuleLines = (
+  partner: Pick<PartnerDetailDto, 'level' | 'currentEffectiveLevel'>,
+): string[] => {
+  const lines = [
+    '伙伴等级受角色境界限制：凡人上限 10 级，此后每提升一个境界档位，上限额外增加 10 级。',
+    '达到当前境界上限后，无法继续灌注经验，需先突破境界再继续培养。',
+  ];
+  if (partner.currentEffectiveLevel < partner.level) {
+    lines.push(`当前伙伴虽然仍可出战，但现阶段仅按 ${partner.currentEffectiveLevel} 级结算属性。`);
+    return lines;
+  }
+  lines.push('即使未来伙伴实际等级高于当前境界上限，也仍可出战，但只会按当前生效等级结算属性。');
+  return lines;
 };
 
 export const groupPartnerSkillPolicyEntries = (

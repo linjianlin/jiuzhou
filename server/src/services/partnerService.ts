@@ -80,6 +80,10 @@ import {
   type PartnerSkillPolicySlotDto,
 } from './shared/partnerSkillPolicy.js';
 import { loadPartnerBattleSkillPolicyState, type PartnerBattleMember } from './shared/partnerBattleMember.js';
+import {
+  resolvePartnerLevelLimit,
+  type PartnerOwnerRealmContext,
+} from './shared/partnerLevelLimit.js';
 import { resolveTechniqueBookLearning } from './shared/techniqueBookRules.js';
 import { consumeRenameCardItemInstance } from './shared/characterRenameCard.js';
 import { validatePartnerName } from './shared/partnerNameRules.js';
@@ -255,6 +259,7 @@ const buildPartnerDetailWithTradeState = async (params: {
   row: PartnerRow;
   definition: PartnerDefConfig;
   techniqueRows: PartnerTechniqueRow[];
+  ownerRealm: PartnerOwnerRealmContext;
 }): Promise<PartnerDetailDto> => {
   const tradeStateMap = await loadPartnerMarketTradeStateMap([params.row.id]);
   const fusionStateMap = await loadPartnerFusionLockStateMap([params.row.id]);
@@ -517,6 +522,12 @@ class PartnerService {
       const partners = await buildPartnerDetails({
         rows,
         techniqueMap,
+        ownerRealmMap: new Map(
+          rows.map((row) => [row.character_id, {
+            realm: character.realm,
+            subRealm: character.subRealm,
+          }]),
+        ),
         tradeStateMap,
         fusionStateMap,
       });
@@ -594,7 +605,8 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      if (!await loadCharacterPartnerContext(characterId, true)) {
+      const character = await loadCharacterPartnerContext(characterId, true);
+      if (!character) {
         return { success: false, message: '角色不存在' };
       }
 
@@ -682,7 +694,8 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      if (!await loadCharacterPartnerContext(characterId, true)) {
+      const character = await loadCharacterPartnerContext(characterId, true);
+      if (!character) {
         return { success: false, message: '角色不存在' };
       }
 
@@ -715,6 +728,10 @@ class PartnerService {
         row: refreshedPartner,
         definition: partnerDef,
         techniqueRows: techniqueMap.get(partnerId) ?? [],
+        ownerRealm: {
+          realm: character.realm,
+          subRealm: character.subRealm,
+        },
       });
       await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
 
@@ -795,12 +812,27 @@ class PartnerService {
         return { success: false, message: fusionBlockedMessage };
       }
 
+      const levelLimit = resolvePartnerLevelLimit({
+        ownerRealm: {
+          realm: character.realm,
+          subRealm: character.subRealm,
+        },
+        partnerLevel: partnerRow.level,
+      });
+      if (levelLimit.actualLevel >= levelLimit.levelCap) {
+        return {
+          success: false,
+          message: `当前境界下伙伴等级上限为${levelLimit.levelCap}级，请突破境界后再继续灌注`,
+        };
+      }
+
       const injectPlan = resolvePartnerInjectPlan({
         beforeLevel: partnerRow.level,
         beforeProgressExp: partnerRow.progress_exp,
         characterExp: character.exp,
         injectExpBudget,
         config: getPartnerGrowthConfig(),
+        maxLevel: levelLimit.levelCap,
       });
       if (injectPlan.spentExp <= 0) {
         return { success: false, message: '角色经验不足' };
@@ -836,6 +868,10 @@ class PartnerService {
         row: refreshedPartner,
         definition: partnerDef,
         techniqueRows: techniqueMap.get(partnerId) ?? [],
+        ownerRealm: {
+          realm: character.realm,
+          subRealm: character.subRealm,
+        },
       });
 
       await invalidateCharacterComputedCache(characterId);
@@ -922,6 +958,10 @@ class PartnerService {
         row: refreshedPartner,
         definition: partnerDef,
         techniqueRows: techniqueMap.get(partnerId) ?? [],
+        ownerRealm: {
+          realm: character.realm,
+          subRealm: character.subRealm,
+        },
       });
 
       await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
@@ -1151,6 +1191,10 @@ class PartnerService {
         row: partnerRow,
         definition: partnerDef,
         techniqueRows: refreshedTechniqueMap.get(partnerId) ?? [],
+        ownerRealm: {
+          realm: character.realm,
+          subRealm: character.subRealm,
+        },
       });
       const updatedTechnique =
         partner.techniques.find((entry) => entry.techniqueId === techniqueId) ?? null;
@@ -1285,6 +1329,10 @@ class PartnerService {
           row: partnerRow,
           definition: partnerDef,
           techniqueRows: refreshedTechniqueMap.get(params.partnerId) ?? [],
+          ownerRealm: {
+            realm: character.realm,
+            subRealm: character.subRealm,
+          },
         });
         const learnedTechnique = partner.techniques.find(
           (entry) => entry.techniqueId === params.techniqueId,
@@ -1311,6 +1359,10 @@ class PartnerService {
         row: partnerRow,
         definition: partnerDef,
         techniqueRows: refreshedTechniqueMap.get(params.partnerId) ?? [],
+        ownerRealm: {
+          realm: character.realm,
+          subRealm: character.subRealm,
+        },
       });
       const learnedTechnique = partner.techniques.find(
         (entry) => entry.techniqueId === params.techniqueId,

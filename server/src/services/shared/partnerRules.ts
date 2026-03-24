@@ -13,7 +13,7 @@
  * partnerService / battle-pve / main quest reward -> partnerRules -> 返回稳定规则结果 -> 调用方负责落库或构建 DTO。
  *
  * 关键边界条件与坑点：
- * 1) 伙伴等级无上限，但单级升级经验必须始终为正整数，否则会导致注入循环无法终止。
+ * 1) 伙伴实际等级可能因历史数据或交易流转高于当前境界上限，但培养入口必须按调用方传入的等级上限及时截断。
  * 2) 打书只能覆盖后天功法，因此“当前只有天生功法”必须明确判定为不可覆盖，不能静默回退。
  */
 import type {
@@ -63,10 +63,10 @@ export const PARTNER_INTEGER_ATTR_KEYS = new Set<string>([
   'lingqi_huifu',
 ]);
 
-const normalizeInteger = (value: unknown): number => {
+const normalizeInteger = (value: unknown, minimum: number = 0): number => {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, Math.floor(parsed));
+  if (!Number.isFinite(parsed)) return minimum;
+  return Math.max(minimum, Math.floor(parsed));
 };
 
 const normalizeFiniteNumber = (value: unknown): number => {
@@ -133,6 +133,7 @@ export const resolvePartnerInjectPlan = (params: {
   characterExp: number;
   injectExpBudget: number;
   config: PartnerGrowthConfig;
+  maxLevel?: number;
 }): PartnerInjectPlan => {
   const beforeLevel = Math.max(1, normalizeInteger(params.beforeLevel));
   const beforeProgressExp = normalizeInteger(params.beforeProgressExp);
@@ -141,6 +142,10 @@ export const resolvePartnerInjectPlan = (params: {
     characterExp,
     normalizeInteger(params.injectExpBudget),
   );
+  const maxLevel =
+    params.maxLevel === undefined
+      ? Number.MAX_SAFE_INTEGER
+      : Math.max(1, normalizeInteger(params.maxLevel));
 
   let currentLevel = beforeLevel;
   let currentProgressExp = beforeProgressExp;
@@ -156,6 +161,11 @@ export const resolvePartnerInjectPlan = (params: {
   }
 
   while (remainingBudget > 0) {
+    if (currentLevel >= maxLevel) {
+      currentProgressExp = 0;
+      break;
+    }
+
     const nextLevelCost = calcPartnerUpgradeExpByTargetLevel(
       currentLevel + 1,
       params.config,

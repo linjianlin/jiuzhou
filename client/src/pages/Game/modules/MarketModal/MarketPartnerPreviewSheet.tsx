@@ -3,6 +3,7 @@ import type { PartnerDisplayDto } from '../../../../services/api';
 import {
   buildPartnerCombatAttrRows,
   formatPartnerElementLabel,
+  hasPartnerLevelLimitApplied,
   resolvePartnerAvatar,
 } from '../../shared/partnerDisplay';
 import { getElementToneClassName } from '../../shared/elementTheme';
@@ -55,6 +56,9 @@ const MarketPartnerPreviewSheet: React.FC<MarketPartnerPreviewSheetProps> = ({
                 <span className={`market-list-sheet-tag ${getElementToneClassName(partner.element)}`}>{formatPartnerElementLabel(partner.element)}</span>
                 <span className="market-list-sheet-tag">{partner.role}</span>
                 <span className="market-list-sheet-tag">等级 {partner.level}</span>
+                {hasPartnerLevelLimitApplied(partner) ? (
+                  <span className="market-list-sheet-tag">生效 {partner.currentEffectiveLevel}</span>
+                ) : null}
               </div>
             </div>
           </div>

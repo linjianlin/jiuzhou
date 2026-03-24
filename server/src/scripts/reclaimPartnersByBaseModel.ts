@@ -122,6 +122,8 @@ type TargetPartnerRow = {
     owner_user_id: number;
     owner_character_id: number;
     owner_nickname: string;
+    owner_realm: string;
+    owner_sub_realm: string | null;
     recruit_job_id: string;
     requested_base_model: string;
     recruit_created_at: Date;
@@ -509,6 +511,8 @@ const loadTargetPartners = async (baseModels: string[]): Promise<TargetPartnerRo
         c.user_id AS owner_user_id,
         c.id AS owner_character_id,
         c.nickname AS owner_nickname,
+        c.realm AS owner_realm,
+        c.sub_realm AS owner_sub_realm,
         prj.id AS recruit_job_id,
         prj.requested_base_model,
         prj.created_at AS recruit_created_at,
@@ -575,6 +579,8 @@ const loadTargetPartnersByIds = async (partnerIds: number[]): Promise<TargetPart
         c.user_id AS owner_user_id,
         c.id AS owner_character_id,
         c.nickname AS owner_nickname,
+        c.realm AS owner_realm,
+        c.sub_realm AS owner_sub_realm,
         prj.id AS recruit_job_id,
         prj.requested_base_model,
         prj.created_at AS recruit_created_at,
@@ -826,6 +832,10 @@ const buildPartnerComputedAttrs = async (
         row: toPartnerDisplayRow(row),
         definition,
         techniqueRows,
+        ownerRealm: {
+            realm: normalizeText(row.owner_realm) || '凡人',
+            subRealm: normalizeText(row.owner_sub_realm) || null,
+        },
     }).computedAttrs;
 };
 

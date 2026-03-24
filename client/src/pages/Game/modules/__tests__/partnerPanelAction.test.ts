@@ -42,6 +42,7 @@ const createPartner = (params: {
   role: '剑修',
   quality: '黄',
   level: 1,
+  currentEffectiveLevel: 1,
   progressExp: 0,
   nextLevelCostExp: 100,
   slotCount: 1,

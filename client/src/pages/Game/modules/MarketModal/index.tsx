@@ -44,6 +44,7 @@ import {
   formatPartnerElementLabel,
   getPartnerAttrLabel,
   getPartnerVisibleCombatAttrs,
+  hasPartnerLevelLimitApplied,
   resolvePartnerAvatar,
 } from '../../shared/partnerDisplay';
 import { PARTNER_CHANGED_EVENT } from '../../shared/partnerTradeEvents';
@@ -2319,7 +2320,12 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             <div className="market-mobile-card-head">
               <img className="market-partner-avatar" src={resolvePartnerAvatar(partner.avatar)} alt={partner.name} />
               <div className="market-mobile-head-main">
-                <div className="market-item-name">{partner.nickname || partner.name} <span className="market-partner-level">Lv.{partner.level}</span></div>
+                <div className="market-item-name">
+                  {partner.nickname || partner.name}
+                  <span className="market-partner-level">
+                    {hasPartnerLevelLimitApplied(partner) ? `Lv.${partner.level} / 生效 ${partner.currentEffectiveLevel}` : `Lv.${partner.level}`}
+                  </span>
+                </div>
                 <div className="market-item-tags">
                   <Tag className={`market-tag market-tag-quality ${getItemQualityTagClassName(partner.quality)}`}>{partner.quality}</Tag>
                   <Tag className={`market-tag ${getElementToneClassName(partner.element)}`}>{formatPartnerElementLabel(partner.element)}</Tag>
@@ -2379,6 +2385,9 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                             <Tag className={`market-tag ${getElementToneClassName(selectedPartner.element)}`}>{formatPartnerElementLabel(selectedPartner.element)}</Tag>
                             <Tag className="market-tag">{selectedPartner.role}</Tag>
                             <Tag className="market-tag">等级 {selectedPartner.level}</Tag>
+                            {hasPartnerLevelLimitApplied(selectedPartner) ? (
+                              <Tag className="market-tag">生效 {selectedPartner.currentEffectiveLevel}</Tag>
+                            ) : null}
                             {renderMarketPartnerStatusTags(selectedPartner)}
                           </div>
                         </div>
@@ -2388,6 +2397,11 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                       ) : null}
                       {selectedPartner.tradeStatus === 'market_listed' ? (
                         <div className="market-list-locked-tip" style={{ marginTop: 12 }}>该伙伴已在坊市挂单中，无法重复上架。</div>
+                      ) : null}
+                      {hasPartnerLevelLimitApplied(selectedPartner) ? (
+                        <div className="market-list-locked-tip" style={{ marginTop: 12 }}>
+                          当前境界下该伙伴仅按 {selectedPartner.currentEffectiveLevel} 级生效。
+                        </div>
                       ) : null}
                     </div>
 
