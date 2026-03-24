@@ -15,13 +15,16 @@
  *
  * 关键边界条件与坑点：
  * 1) mail 活跃范围查询依赖 `COALESCE(expire_at, 'infinity')` 表达式，索引表达式必须与查询写法保持一致，否则 PostgreSQL 无法稳定命中。
- * 2) item_instance 堆叠查询只应覆盖普通可堆叠实例，必须把 `metadata / quality / quality_rank IS NULL` 放进部分索引谓词，避免把特殊实例也塞进同一索引扫描路径。
- * 3) 已存在但定义过旧的索引，`CREATE INDEX IF NOT EXISTS` 不会自动修正；必须显式校验定义并重建，否则优化永远落不到老库。
+ * 2) mail 红点计数会同时读取 `read_at / claimed_at / attach_*`，索引若不覆盖这些列，角色邮件大盘点数仍会退化成大范围 heap scan。
+ * 3) item_instance 堆叠查询只应覆盖普通可堆叠实例，必须把 `metadata / quality / quality_rank IS NULL` 放进部分索引谓词，避免把特殊实例也塞进同一索引扫描路径。
+ * 4) 已存在但定义过旧的索引，`CREATE INDEX IF NOT EXISTS` 不会自动修正；必须显式校验定义并重建，否则优化永远落不到老库。
  */
 import { query } from '../../config/database.js';
 
 export const MAIL_CHARACTER_ACTIVE_SCOPE_INDEX_NAME = 'idx_mail_character_active_scope';
 export const MAIL_USER_ACTIVE_SCOPE_INDEX_NAME = 'idx_mail_user_active_scope';
+export const MAIL_CHARACTER_ACTIVE_COUNTER_INDEX_NAME = 'idx_mail_character_active_counter';
+export const MAIL_USER_ACTIVE_COUNTER_INDEX_NAME = 'idx_mail_user_active_counter';
 export const MAIL_CHARACTER_EXPIRE_CLEANUP_INDEX_NAME = 'idx_mail_character_expire_cleanup';
 export const MAIL_USER_EXPIRE_CLEANUP_INDEX_NAME = 'idx_mail_user_expire_cleanup';
 export const ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME = 'idx_item_instance_stackable_lookup';
@@ -55,6 +58,32 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
     ],
   },
   {
+    name: MAIL_CHARACTER_ACTIVE_COUNTER_INDEX_NAME,
+    createSql: `
+      CREATE INDEX IF NOT EXISTS ${MAIL_CHARACTER_ACTIVE_COUNTER_INDEX_NAME}
+      ON mail (
+        recipient_character_id,
+        (COALESCE(expire_at, 'infinity'::timestamptz))
+      )
+      INCLUDE (
+        read_at,
+        claimed_at,
+        attach_silver,
+        attach_spirit_stones,
+        attach_items,
+        attach_rewards,
+        attach_instance_ids
+      )
+      WHERE deleted_at IS NULL
+    `,
+    matchFragments: [
+      'recipient_character_id',
+      "COALESCE(expire_at, 'infinity'::timestamp with time zone)",
+      'INCLUDE (read_at, claimed_at, attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids)',
+      'deleted_at IS NULL',
+    ],
+  },
+  {
     name: MAIL_USER_ACTIVE_SCOPE_INDEX_NAME,
     createSql: `
       CREATE INDEX IF NOT EXISTS ${MAIL_USER_ACTIVE_SCOPE_INDEX_NAME}
@@ -72,6 +101,34 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
       "COALESCE(expire_at, 'infinity'::timestamp with time zone)",
       'created_at DESC',
       'id DESC',
+      'deleted_at IS NULL',
+      'recipient_character_id IS NULL',
+    ],
+  },
+  {
+    name: MAIL_USER_ACTIVE_COUNTER_INDEX_NAME,
+    createSql: `
+      CREATE INDEX IF NOT EXISTS ${MAIL_USER_ACTIVE_COUNTER_INDEX_NAME}
+      ON mail (
+        recipient_user_id,
+        (COALESCE(expire_at, 'infinity'::timestamptz))
+      )
+      INCLUDE (
+        read_at,
+        claimed_at,
+        attach_silver,
+        attach_spirit_stones,
+        attach_items,
+        attach_rewards,
+        attach_instance_ids
+      )
+      WHERE deleted_at IS NULL
+        AND recipient_character_id IS NULL
+    `,
+    matchFragments: [
+      'recipient_user_id',
+      "COALESCE(expire_at, 'infinity'::timestamp with time zone)",
+      'INCLUDE (read_at, claimed_at, attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids)',
       'deleted_at IS NULL',
       'recipient_character_id IS NULL',
     ],

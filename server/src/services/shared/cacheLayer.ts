@@ -10,6 +10,7 @@
  *
  * 数据流：
  *   get: 内存（TTL 内）→ Redis（TTL 内）→ loader（DB 查询）→ 回填两层
+ *   并发 get: 同 key 共享同一次 loader Promise，避免热点 key 在缓存失效瞬间重复打数据库
  *   set: 同时写内存 + Redis
  *   invalidate: 同时删内存 + Redis
  *
@@ -17,6 +18,7 @@
  *   1. Redis 不可用时降级到仅内存缓存 + loader，不抛异常
  *   2. loader 返回 null 时不缓存（避免缓存穿透需调用方自行处理）
  *   3. 内存缓存无大小限制，长期运行需关注内存占用（可通过 invalidateAll 手动清理）
+ *   4. 单飞只按 key 合并当前进程内的并发请求，不负责跨进程协调
  */
 
 import { redis } from '../../config/redis.js';
@@ -85,6 +87,7 @@ export function createCacheLayer<K extends CacheKey, T>(
   } = options;
 
   const memoryCache = new Map<K, { payload: T; expiresAt: number }>();
+  const inFlightLoads = new Map<K, Promise<T | null>>();
 
   function redisKey(key: K): string {
     return `${keyPrefix}${String(key)}`;
@@ -112,22 +115,40 @@ export function createCacheLayer<K extends CacheKey, T>(
     }
 
     // 3. Loader（DB 查询）
-    const loaded = await loader(key);
-    if (loaded === null) return null;
-
-    // 回填两层
-    memoryCache.set(key, { payload: loaded, expiresAt: Date.now() + memoryTtlMs });
-    try {
-      await redis.set(redisKey(key), serialize(loaded), 'EX', redisTtlSec);
-    } catch {
-      // Redis 不可用时仅保留内存缓存
+    // 同 key 命中并发 miss 时复用同一个 Promise，避免热点 key 瞬时击穿数据库。
+    const inFlight = inFlightLoads.get(key);
+    if (inFlight) {
+      return inFlight;
     }
 
-    return loaded;
+    const loadPromise = (async (): Promise<T | null> => {
+      const loaded = await loader(key);
+      if (loaded === null) return null;
+
+      // 回填两层
+      memoryCache.set(key, { payload: loaded, expiresAt: Date.now() + memoryTtlMs });
+      try {
+        await redis.set(redisKey(key), serialize(loaded), 'EX', redisTtlSec);
+      } catch {
+        // Redis 不可用时仅保留内存缓存
+      }
+
+      return loaded;
+    })();
+
+    inFlightLoads.set(key, loadPromise);
+    try {
+      return await loadPromise;
+    } finally {
+      if (inFlightLoads.get(key) === loadPromise) {
+        inFlightLoads.delete(key);
+      }
+    }
   }
 
   async function set(key: K, value: T): Promise<void> {
     memoryCache.set(key, { payload: value, expiresAt: Date.now() + memoryTtlMs });
+    inFlightLoads.delete(key);
     try {
       await redis.set(redisKey(key), serialize(value), 'EX', redisTtlSec);
     } catch {
@@ -137,6 +158,7 @@ export function createCacheLayer<K extends CacheKey, T>(
 
   async function invalidate(key: K): Promise<void> {
     memoryCache.delete(key);
+    inFlightLoads.delete(key);
     try {
       await redis.del(redisKey(key));
     } catch {
@@ -146,6 +168,7 @@ export function createCacheLayer<K extends CacheKey, T>(
 
   function invalidateAll(): void {
     memoryCache.clear();
+    inFlightLoads.clear();
   }
 
   return { get, set, invalidate, invalidateAll };

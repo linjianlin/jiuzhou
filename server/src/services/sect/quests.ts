@@ -468,18 +468,18 @@ class SectQuestService {
       return { success: false, message: '任务不存在' };
     }
 
-    const existing = await query(
-      `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
-      [characterId, questId]
+    const insertResult = await query(
+      `
+        INSERT INTO sect_quest_progress (character_id, quest_id, progress, status)
+        VALUES ($1, $2, 0, 'in_progress')
+        ON CONFLICT (character_id, quest_id) DO NOTHING
+        RETURNING id
+      `,
+      [characterId, questId],
     );
-    if (existing.rows.length > 0) {
+    if (insertResult.rows.length === 0) {
       return { success: false, message: '任务已接取' };
     }
-
-    await query(
-      `INSERT INTO sect_quest_progress (character_id, quest_id, progress, status) VALUES ($1, $2, 0, 'in_progress')`,
-      [characterId, questId]
-    );
     return { success: true, message: `接取成功：${quest.name}` };
   }
 

@@ -15,7 +15,7 @@
  * - 使用 @Transactional 装饰器替代手动事务管理
  * - 辅助函数改为私有方法，提升内聚性
  */
-import { query } from '../config/database.js';
+import { afterTransactionCommit, query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import type { GenerateOptions } from './equipmentService.js';
 import { itemService } from './itemService.js';
@@ -539,11 +539,12 @@ class MailService {
   }
 
   /**
-   * 统一处理“邮件未读缓存失效 + 首页红点推送”。
+   * 统一调度“邮件未读缓存失效 + 首页红点推送”。
    *
    * 作用：
    * - 把所有会影响邮件红点的写路径收敛成单一入口，避免 send/read/claim/delete 各处重复写一套缓存失效与 socket 推送。
    * - 保证首页看到的邮件红点和 `/mail/unread` 共用同一份缓存读模型。
+   * - 对事务内调用统一延后到提交后执行，避免持有背包 advisory lock / mail 行锁时再触发慢计数查询。
    *
    * 输入/输出：
    * - 输入：recipientUserId，以及可选的 recipientCharacterId
@@ -551,14 +552,16 @@ class MailService {
    *
    * 边界条件：
    * 1) 账号级邮件会影响该账号所有角色缓存，因此这里不能只清当前 characterId 的键。
-   * 2) 推送失败时不允许抛出到业务写路径，避免成功的邮件写入被 socket 提示反向打断。
+   * 2) 提交后副作用必须复用同一入口，避免事务方法和非事务方法出现两套通知时机。
    */
   private async invalidateUnreadCounterAndNotifyRecipient(
     recipientUserId: number,
     recipientCharacterId?: number,
   ): Promise<void> {
-    await this.invalidateUnreadCounterCacheForRecipient(recipientUserId, recipientCharacterId);
-    await this.pushUnreadCounterUpdateToUser(recipientUserId);
+    await afterTransactionCommit(async () => {
+      await this.invalidateUnreadCounterCacheForRecipient(recipientUserId, recipientCharacterId);
+      await this.pushUnreadCounterUpdateToUser(recipientUserId);
+    });
   }
 
   /**

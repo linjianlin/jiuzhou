@@ -26,6 +26,7 @@ import { pool, query } from '../../config/database.js';
 import {
   ensurePerformanceIndexes,
   getPerformanceIndexDefinitions,
+  MAIL_CHARACTER_ACTIVE_COUNTER_INDEX_NAME,
   ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME,
   MAIL_CHARACTER_ACTIVE_SCOPE_INDEX_NAME,
   MAIL_CHARACTER_EXPIRE_CLEANUP_INDEX_NAME,
@@ -70,6 +71,20 @@ test('ensurePerformanceIndexes 应保证热点性能索引存在', async () => {
   const mailIndexDef = mailIndexResult.rows[0]?.indexdef ?? '';
   assert.match(mailIndexDef, /COALESCE\(expire_at, 'infinity'::timestamp with time zone\)/i);
   assert.match(mailIndexDef, /deleted_at IS NULL/i);
+
+  const mailCounterIndexResult = await query<{ indexdef: string }>(
+    `
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = $1
+    `,
+    [MAIL_CHARACTER_ACTIVE_COUNTER_INDEX_NAME],
+  );
+  const mailCounterIndexDef = mailCounterIndexResult.rows[0]?.indexdef ?? '';
+  assert.match(mailCounterIndexDef, /COALESCE\(expire_at, 'infinity'::timestamp with time zone\)/i);
+  assert.match(mailCounterIndexDef, /INCLUDE \(read_at, claimed_at, attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids\)/i);
+  assert.match(mailCounterIndexDef, /deleted_at IS NULL/i);
 
   const itemStackIndexResult = await query<{ indexdef: string }>(
     `
