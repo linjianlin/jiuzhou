@@ -18,6 +18,13 @@ import PlayerName from '../../shared/PlayerName';
 import { useAvatarUploadFlow } from '../../shared/avatarUploadFlow';
 import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
 import { useDeferredGameRequest } from '../../shared/useDeferredGameRequest';
+import {
+  ATTRIBUTE_POINT_STEP_OPTIONS,
+  canAdjustAttributePointByStep,
+  DEFAULT_ATTRIBUTE_POINT_STEP,
+  getAttributePointActionLabel,
+  type AttributePointStep,
+} from './attributePointStep';
 import './index.scss';
 
 const CHARACTER_REFRESH_INTERVAL_MS = 30_000;
@@ -37,6 +44,7 @@ const PlayerInfo: React.FC<PlayerInfoProps> = ({
   const [character, setCharacter] = useState<CharacterData | null>(null);
   const [realmOverview, setRealmOverview] = useState<RealmOverviewDto | null>(initialRealmOverview ?? null);
   const [processingPoint, setProcessingPoint] = useState<string | null>(null);
+  const [attributePointStep, setAttributePointStep] = useState<AttributePointStep>(DEFAULT_ATTRIBUTE_POINT_STEP);
   const [phoneBindingDialogOpen, setPhoneBindingDialogOpen] = useState(false);
   const [shouldLoadPhoneBindingStatus, setShouldLoadPhoneBindingStatus] = useState(false);
   const {
@@ -168,11 +176,21 @@ const PlayerInfo: React.FC<PlayerInfoProps> = ({
 
   // 加点处理
   const handleAddPoint = async (attribute: 'jing' | 'qi' | 'shen') => {
-    if (!character || character.attributePoints <= 0) return;
+    if (
+      !character
+      || !canAdjustAttributePointByStep({
+        action: 'add',
+        step: attributePointStep,
+        attributePoints: character.attributePoints,
+        currentValue: character[attribute],
+      })
+    ) {
+      return;
+    }
 
     setProcessingPoint(`add-${attribute}`);
     try {
-      const result = await addAttributePoint(attribute, 1);
+      const result = await addAttributePoint(attribute, attributePointStep);
       if (result.success) {
         gameSocket.refreshCharacter();
       } else {
@@ -187,11 +205,21 @@ const PlayerInfo: React.FC<PlayerInfoProps> = ({
 
   // 减点处理
   const handleRemovePoint = async (attribute: 'jing' | 'qi' | 'shen') => {
-    if (!character || character[attribute] <= 0) return;
+    if (
+      !character
+      || !canAdjustAttributePointByStep({
+        action: 'remove',
+        step: attributePointStep,
+        attributePoints: character.attributePoints,
+        currentValue: character[attribute],
+      })
+    ) {
+      return;
+    }
 
     setProcessingPoint(`remove-${attribute}`);
     try {
-      const result = await removeAttributePoint(attribute, 1);
+      const result = await removeAttributePoint(attribute, attributePointStep);
       if (result.success) {
         gameSocket.refreshCharacter();
       } else {
@@ -439,57 +467,86 @@ const PlayerInfo: React.FC<PlayerInfoProps> = ({
       ) : null}
 
       <div className="attr-section">
-        <div className="attr-section-header">
+        <div className="attr-section-header attr-section-header--point-control">
           <div className="attr-section-title">基础属性</div>
-          <div className="attr-section-sub">
-            剩余属性点: <span className="attr-section-sub-value">{character.attributePoints}</span>
+          <div className="attr-section-sub attr-section-sub--point-control">
+            <div className="attr-point-remaining">
+              剩余属性点: <span className="attr-section-sub-value">{character.attributePoints}</span>
+            </div>
+            <div className="attr-point-step-picker" role="group" aria-label="属性加减档位">
+              {ATTRIBUTE_POINT_STEP_OPTIONS.map((step) => (
+                <Button
+                  key={step}
+                  size="small"
+                  type={attributePointStep === step ? 'primary' : 'default'}
+                  onClick={() => setAttributePointStep(step)}
+                >
+                  {step}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="base-rows">
-          {CHARACTER_PRIMARY_ATTR_META_LIST.map((row) => (
-            <div key={row.key} className="base-row">
-              <Tooltip
-                placement="topLeft"
-                title={(
-                  <div className="primary-attr-tooltip">
-                    <div className="primary-attr-tooltip-title">{row.label}</div>
-                    <div className="primary-attr-tooltip-summary">{row.summary}</div>
-                    <div className="primary-attr-tooltip-effects">
-                      {row.effects.map((effect) => (
-                        <div key={effect} className="primary-attr-tooltip-effect">
-                          {effect}
-                        </div>
-                      ))}
+          {CHARACTER_PRIMARY_ATTR_META_LIST.map((row) => {
+            const addDisabled = !canAdjustAttributePointByStep({
+              action: 'add',
+              step: attributePointStep,
+              attributePoints: character.attributePoints,
+              currentValue: character[row.key],
+            });
+            const removeDisabled = !canAdjustAttributePointByStep({
+              action: 'remove',
+              step: attributePointStep,
+              attributePoints: character.attributePoints,
+              currentValue: character[row.key],
+            });
+
+            return (
+              <div key={row.key} className="base-row">
+                <Tooltip
+                  placement="topLeft"
+                  title={(
+                    <div className="primary-attr-tooltip">
+                      <div className="primary-attr-tooltip-title">{row.label}</div>
+                      <div className="primary-attr-tooltip-summary">{row.summary}</div>
+                      <div className="primary-attr-tooltip-effects">
+                        {row.effects.map((effect) => (
+                          <div key={effect} className="primary-attr-tooltip-effect">
+                            {effect}
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  )}
+                >
+                  <div className="base-left base-left--tooltip">
+                    <span className="base-label">{row.label}</span>
+                    <span className="base-value">{character[row.key]}</span>
                   </div>
-                )}
-              >
-                <div className="base-left base-left--tooltip">
-                  <span className="base-label">{row.label}</span>
-                  <span className="base-value">{character[row.key]}</span>
+                </Tooltip>
+                <div className="base-actions">
+                  <Button
+                    size="small"
+                    aria-label={getAttributePointActionLabel('remove', row.label, attributePointStep)}
+                    icon={<MinusOutlined />}
+                    onClick={() => handleRemovePoint(row.key)}
+                    disabled={removeDisabled || processingPoint === `remove-${row.key}`}
+                    loading={processingPoint === `remove-${row.key}`}
+                  />
+                  <Button
+                    size="small"
+                    aria-label={getAttributePointActionLabel('add', row.label, attributePointStep)}
+                    icon={<PlusOutlined />}
+                    onClick={() => handleAddPoint(row.key)}
+                    disabled={addDisabled || processingPoint === `add-${row.key}`}
+                    loading={processingPoint === `add-${row.key}`}
+                  />
                 </div>
-              </Tooltip>
-              <div className="base-actions">
-                <Button
-                  size="small"
-                  aria-label={`减少${row.label}`}
-                  icon={<MinusOutlined />}
-                  onClick={() => handleRemovePoint(row.key)}
-                  disabled={character[row.key] <= 0 || processingPoint === `remove-${row.key}`}
-                  loading={processingPoint === `remove-${row.key}`}
-                />
-                <Button
-                  size="small"
-                  aria-label={`增加${row.label}`}
-                  icon={<PlusOutlined />}
-                  onClick={() => handleAddPoint(row.key)}
-                  disabled={character.attributePoints <= 0 || processingPoint === `add-${row.key}`}
-                  loading={processingPoint === `add-${row.key}`}
-                />
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
