@@ -8,6 +8,7 @@ import {
 } from '../../shared/partnerDisplay';
 import { getElementToneClassName } from '../../shared/elementTheme';
 import { getItemQualityTagClassName } from '../../shared/itemQuality';
+import MarketPartnerTechniqueList from './MarketPartnerTechniqueList';
 
 interface MarketPartnerPreviewSheetProps {
   partner: PartnerDisplayDto | null;
@@ -82,18 +83,7 @@ const MarketPartnerPreviewSheet: React.FC<MarketPartnerPreviewSheetProps> = ({
           </div>
           <div className="market-list-sheet-section">
             <div className="market-list-sheet-section-title">功法</div>
-            <div className="market-partner-technique-grid">
-              {partner.techniques.length > 0 ? (
-                partner.techniques.map((tech) => (
-                  <div key={tech.techniqueId} className="market-partner-technique-cell">
-                    <div className="market-partner-technique-name">{tech.name} <span className="market-partner-technique-level">一层</span></div>
-                    <div className="market-partner-technique-desc">{tech.description || '暂无描述'}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="market-list-detail-text">暂无功法</div>
-              )}
-            </div>
+            <MarketPartnerTechniqueList techniques={partner.techniques} />
           </div>
         </div>
 

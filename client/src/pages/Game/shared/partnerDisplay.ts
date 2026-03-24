@@ -21,6 +21,7 @@ import type {
   PartnerBaseAttrsDto,
   PartnerComputedAttrsDto,
   PartnerDisplayDto,
+  PartnerTechniqueDto,
 } from '../../../services/api';
 import { formatPercent, formatRecovery } from './formatAttr';
 import { getAttrLabel, isPercentAttrKey } from './attrDisplay';
@@ -98,6 +99,12 @@ export const formatPartnerLevelSummary = (
     return `等级 ${partner.level} · 生效 ${partner.currentEffectiveLevel}`;
   }
   return `等级 ${partner.level}`;
+};
+
+export const formatPartnerTechniqueLayerLabel = (
+  technique: Pick<PartnerTechniqueDto, 'currentLayer' | 'maxLayer'>,
+): string => {
+  return `第 ${technique.currentLayer} / ${technique.maxLayer} 层`;
 };
 
 export const resolvePartnerAvatar = (avatar: string | null): string => {

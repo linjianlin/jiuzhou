@@ -37,6 +37,7 @@ export {
   formatPartnerElementLabel,
   getPartnerDisplayName,
   getPartnerAttrLabel,
+  formatPartnerTechniqueLayerLabel,
   hasPartnerLevelLimitApplied,
   formatPartnerLevelSummary,
   getPartnerVisibleBaseAttrs,
@@ -92,12 +93,6 @@ export const formatPartnerTechniquePassiveLines = (
   return passiveEntries.map(([attrKey, value]) => {
     return `${getPartnerAttrLabel(attrKey)} ${formatTechniquePassiveAmount(attrKey, value)}`;
   });
-};
-
-export const formatPartnerTechniqueLayerLabel = (
-  technique: PartnerTechniqueDto,
-): string => {
-  return `第 ${technique.currentLayer} / ${technique.maxLayer} 层`;
 };
 
 export const formatPartnerTechniqueUpgradeCostLines = (

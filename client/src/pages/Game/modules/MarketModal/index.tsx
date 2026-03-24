@@ -55,6 +55,7 @@ import MarketBuyDialog from './MarketBuyDialog';
 import MarketCaptchaDialog from './MarketCaptchaDialog';
 import MarketPartnerPreviewSheet from './MarketPartnerPreviewSheet';
 import MarketPartnerBuyModal from './MarketPartnerBuyModal';
+import MarketPartnerTechniqueList from './MarketPartnerTechniqueList';
 import MarketEquipmentSummary from './MarketEquipmentSummary';
 import { usePagedRequestController } from './usePagedRequestController';
 import {
@@ -342,18 +343,7 @@ const PartnerListSheet: React.FC<PartnerListSheetProps> = ({
           </div>
           <div className="market-list-sheet-section">
             <div className="market-list-sheet-section-title">功法</div>
-            <div className="market-partner-technique-grid">
-              {partner.techniques.length > 0 ? (
-                partner.techniques.map((tech) => (
-                  <div key={tech.techniqueId} className="market-partner-technique-cell">
-                    <div className="market-partner-technique-name">{tech.name} <span className="market-partner-technique-level">一层</span></div>
-                    <div className="market-partner-technique-desc">{tech.description || '暂无描述'}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="market-list-detail-text">暂无功法</div>
-              )}
-            </div>
+            <MarketPartnerTechniqueList techniques={partner.techniques} />
           </div>
         </div>
 
@@ -2416,18 +2406,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                       </div>
                       <div className="market-list-detail-section">
                         <div className="market-list-detail-title">功法</div>
-                        <div className="market-partner-technique-grid">
-                          {selectedPartner.techniques.length > 0 ? (
-                            selectedPartner.techniques.map((tech) => (
-                              <div key={tech.techniqueId} className="market-partner-technique-cell">
-                                <div className="market-partner-technique-name">{tech.name} <span className="market-partner-technique-level">一层</span></div>
-                                <div className="market-partner-technique-desc">{tech.description || '暂无描述'}</div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="market-list-detail-text">暂无功法</div>
-                          )}
-                        </div>
+                        <MarketPartnerTechniqueList techniques={selectedPartner.techniques} />
                       </div>
                     </div>
 
