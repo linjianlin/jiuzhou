@@ -374,6 +374,14 @@ const parseJson = <T>(json: string): T => {
   return JSON.parse(json) as T;
 };
 
+const normalizeProjectionEntityIds = (ids: number[]): number[] => {
+  return [...new Set(
+    ids
+      .map((id) => toInt(id))
+      .filter((id) => id > 0),
+  )];
+};
+
 const getCurrentDateText = (): string => {
   return new Date().toISOString().slice(0, 10);
 };
@@ -837,6 +845,52 @@ const loadCharacterSnapshotFromRedis = async (
   return cached;
 };
 
+/**
+ * 批量加载角色在线战斗快照。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把多角色快照 miss 时的 Redis 读取收口为单次 `mget`，避免战斗准备、秘境参与者、结算等热点链路逐个 `await`。
+ * 2. 做什么：复用与单角色读取一致的内存索引回填逻辑，保证后续读取直接命中同一份快照。
+ * 3. 不做什么：不做 DB 回退；Redis 没有的角色仍直接视为缺失。
+ *
+ * 输入/输出：
+ * - 输入：已归一化的角色 ID 列表。
+ * - 输出：按“请求角色 ID”组织的快照映射。
+ *
+ * 数据流/状态流：
+ * 调用方收集 miss 角色 ID -> 本函数 `mget` 批量取 Redis -> 回填内存快照索引 -> 返回结果。
+ *
+ * 关键边界条件与坑点：
+ * 1. 这里只接收正整数角色 ID；上游若传入脏值，会在归一化阶段被丢弃，不在这里补救。
+ * 2. 返回 Map 的 key 以“请求角色 ID”为准，调用方可以继续按原始角色 ID 取值，不需要感知快照缓存细节。
+ */
+const loadCharacterSnapshotsByCharacterIdsFromRedis = async (
+  characterIds: number[],
+): Promise<Map<number, OnlineBattleCharacterSnapshot>> => {
+  const result = new Map<number, OnlineBattleCharacterSnapshot>();
+  if (characterIds.length <= 0) {
+    return result;
+  }
+
+  const rawSnapshots = await redis.mget(
+    ...characterIds.map((characterId) => buildCharacterKey(characterId)),
+  );
+  for (let index = 0; index < characterIds.length; index += 1) {
+    const requestedCharacterId = characterIds[index]!;
+    const rawSnapshot = rawSnapshots[index];
+    if (typeof rawSnapshot !== 'string' || rawSnapshot.length <= 0) {
+      continue;
+    }
+
+    const snapshot = parseJson<OnlineBattleCharacterSnapshot>(rawSnapshot);
+    characterSnapshotsByCharacterId.set(snapshot.characterId, snapshot);
+    userIdToCharacterId.set(snapshot.userId, snapshot.characterId);
+    result.set(requestedCharacterId, snapshot);
+  }
+
+  return result;
+};
+
 const loadTeamProjectionFromRedis = async (
   userId: number,
 ): Promise<TeamMemberProjectionRecord | null> => {
@@ -844,6 +898,30 @@ const loadTeamProjectionFromRedis = async (
   if (!cached) return null;
   teamProjectionByUserId.set(userId, cached);
   return cached;
+};
+
+const loadCharacterIdsByUserIdsFromRedis = async (
+  userIds: number[],
+): Promise<Map<number, number>> => {
+  const result = new Map<number, number>();
+  if (userIds.length <= 0) {
+    return result;
+  }
+
+  const rawCharacterIds = await redis.mget(
+    ...userIds.map((userId) => buildUserCharacterKey(userId)),
+  );
+  for (let index = 0; index < userIds.length; index += 1) {
+    const userId = userIds[index]!;
+    const characterId = toInt(rawCharacterIds[index]);
+    if (characterId <= 0) {
+      continue;
+    }
+    userIdToCharacterId.set(userId, characterId);
+    result.set(userId, characterId);
+  }
+
+  return result;
 };
 
 const loadSessionProjectionFromRedis = async (
@@ -1335,12 +1413,32 @@ export const getOnlineBattleCharacterSnapshotsByCharacterIds = async (
   characterIds: number[],
 ): Promise<Map<number, OnlineBattleCharacterSnapshot>> => {
   requireOnlineBattleProjectionReady();
+  const normalizedCharacterIds = normalizeProjectionEntityIds(characterIds);
   const result = new Map<number, OnlineBattleCharacterSnapshot>();
-  for (const characterId of characterIds) {
-    const snapshot = await getOnlineBattleCharacterSnapshotByCharacterId(characterId);
-    if (!snapshot) continue;
-    result.set(snapshot.characterId, snapshot);
+  const missingCharacterIds: number[] = [];
+
+  for (const characterId of normalizedCharacterIds) {
+    const cachedSnapshot = characterSnapshotsByCharacterId.get(characterId);
+    if (cachedSnapshot) {
+      result.set(characterId, cachedSnapshot);
+      continue;
+    }
+    missingCharacterIds.push(characterId);
   }
+
+  if (missingCharacterIds.length <= 0) {
+    return result;
+  }
+
+  const loadedSnapshots = await loadCharacterSnapshotsByCharacterIdsFromRedis(
+    missingCharacterIds,
+  );
+  for (const characterId of missingCharacterIds) {
+    const snapshot = loadedSnapshots.get(characterId);
+    if (!snapshot) continue;
+    result.set(characterId, snapshot);
+  }
+
   return result;
 };
 
@@ -1348,12 +1446,40 @@ export const getOnlineBattleCharacterSnapshotsByUserIds = async (
   userIds: number[],
 ): Promise<Map<number, OnlineBattleCharacterSnapshot>> => {
   requireOnlineBattleProjectionReady();
+  const normalizedUserIds = normalizeProjectionEntityIds(userIds);
   const result = new Map<number, OnlineBattleCharacterSnapshot>();
-  for (const userId of userIds) {
-    const snapshot = await getOnlineBattleCharacterSnapshotByUserId(userId);
-    if (!snapshot) continue;
-    result.set(snapshot.userId, snapshot);
+  const missingUserIds: number[] = [];
+  const characterIdByUserId = new Map<number, number>();
+
+  for (const userId of normalizedUserIds) {
+    const cachedCharacterId = userIdToCharacterId.get(userId);
+    if (cachedCharacterId && cachedCharacterId > 0) {
+      characterIdByUserId.set(userId, cachedCharacterId);
+      continue;
+    }
+    missingUserIds.push(userId);
   }
+
+  if (missingUserIds.length > 0) {
+    const loadedCharacterIds = await loadCharacterIdsByUserIdsFromRedis(missingUserIds);
+    for (const userId of missingUserIds) {
+      const characterId = loadedCharacterIds.get(userId);
+      if (!characterId) continue;
+      characterIdByUserId.set(userId, characterId);
+    }
+  }
+
+  const snapshotsByCharacterId = await getOnlineBattleCharacterSnapshotsByCharacterIds(
+    [...characterIdByUserId.values()],
+  );
+  for (const userId of normalizedUserIds) {
+    const characterId = characterIdByUserId.get(userId);
+    if (!characterId) continue;
+    const snapshot = snapshotsByCharacterId.get(characterId);
+    if (!snapshot) continue;
+    result.set(userId, snapshot);
+  }
+
   return result;
 };
 
