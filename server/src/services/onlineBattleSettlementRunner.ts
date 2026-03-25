@@ -44,6 +44,7 @@ import { rollDungeonRewardBundle, mergeDungeonRewardBundle } from './dungeon/sha
 import { asNumber } from './dungeon/shared/typeUtils.js';
 import type { DungeonRewardBundle } from './dungeon/types.js';
 import { applyStaminaDeltaByCharacterId } from './staminaService.js';
+import { getGameServer } from '../game/gameServer.js';
 import { createScopedLogger } from '../utils/logger.js';
 import { createSlowOperationLogger } from '../utils/slowOperationLogger.js';
 import {
@@ -94,6 +95,66 @@ const buildKillMonsterEventsFromSnapshots = (
     monsterId,
     count,
   }));
+};
+
+/**
+ * 解析延迟结算完成后需要补推角色刷新的用户集合。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把延迟结算任务里会受 DB 真实落库影响的参与者收敛为唯一 userId 列表，避免 runner 成功后遗漏角色刷新。
+ * 2. 做什么：同时覆盖普通发奖与组队场景，避免 battle settlement / dungeon / runner 各自再拼一套通知对象。
+ * 3. 不做什么：不决定具体推送内容，也不在这里执行任务状态迁移。
+ *
+ * 输入/输出：
+ * - 输入：已完成真实落库的延迟结算任务。
+ * - 输出：去重后的 userId 数组。
+ *
+ * 数据流/状态流：
+ * runner 执行成功 -> 本函数提取参与者 userId -> `pushCharacterUpdate` 重新加载权威角色数据。
+ *
+ * 关键边界条件与坑点：
+ * 1. `rewardParticipants` 在部分链路里可能比 `participants` 更精确，这里要两者合并去重，避免组队奖励成员漏推。
+ * 2. 非法 userId 必须过滤，否则会把脏任务数据继续传播到 socket 刷新链路。
+ */
+const collectDeferredSettlementAffectedUserIds = (
+  task: DeferredSettlementTask,
+): number[] => {
+  const userIdSet = new Set<number>();
+  for (const participant of task.payload.participants) {
+    const userId = Math.floor(Number(participant.userId));
+    if (!Number.isFinite(userId) || userId <= 0) continue;
+    userIdSet.add(userId);
+  }
+  for (const participant of task.payload.rewardParticipants) {
+    const userId = Math.floor(Number(participant.userId));
+    if (!Number.isFinite(userId) || userId <= 0) continue;
+    userIdSet.add(userId);
+  }
+  return [...userIdSet];
+};
+
+const pushCharacterUpdatesAfterDeferredSettlement = async (
+  task: DeferredSettlementTask,
+): Promise<void> => {
+  const affectedUserIds = collectDeferredSettlementAffectedUserIds(task);
+  if (affectedUserIds.length <= 0) return;
+
+  const gameServer = getGameServer();
+  await Promise.all(
+    affectedUserIds.map(async (userId) => {
+      try {
+        await gameServer.pushCharacterUpdate(userId);
+      } catch (error) {
+        settlementRunnerLogger.warn({
+          taskId: task.taskId,
+          battleId: task.battleId,
+          userId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+        }, '延迟结算完成后推送角色刷新失败');
+      }
+    }),
+  );
 };
 
 const settleDungeonStartConsumptionInDb = async (
@@ -754,6 +815,7 @@ class OnlineBattleSettlementRunner {
       });
       await executeDeferredSettlementTask(freshTask);
       await deleteDeferredSettlementTask(freshTask.taskId);
+      await pushCharacterUpdatesAfterDeferredSettlement(freshTask);
       return 'success';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
