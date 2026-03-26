@@ -17,7 +17,8 @@ import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { consumeCharacterCurrencies } from '../inventory/shared/consume.js';
 import { assertMember, generateSectId, getCharacterSectId, hasPermission, positionRank, toNumber } from './db.js';
-import { getCachedSectInfo, invalidateSectInfoCache } from './cache.js';
+import { getCachedSectInfo, invalidateSectApplicationCachesBySectIds, invalidateSectInfoCache } from './cache.js';
+import { cancelVisiblePendingApplicationsByCharacterId } from './pendingApplications.js';
 import type { CreateResult, Result, SectDefRow, SectInfo, SectListResult, SectPosition } from './types.js';
 import { updateAchievementProgress } from '../achievementService.js';
 
@@ -100,6 +101,7 @@ class SectCoreService {
       `,
       [sectId, name, characterId, description || null]
     );
+    const clearedPendingSectIds = await cancelVisiblePendingApplicationsByCharacterId(characterId);
 
     await query(
       `
@@ -121,7 +123,10 @@ class SectCoreService {
     }
 
     await this.upsertLog(sectId, 'create', characterId, null, `创建宗门：${name}`);
-    await invalidateSectInfoCache(sectId);
+    await Promise.all([
+      invalidateSectInfoCache(sectId),
+      invalidateSectApplicationCachesBySectIds(clearedPendingSectIds, characterId),
+    ]);
     await updateAchievementProgress(characterId, 'sect:join', 1);
     return { success: true, message: '创建成功', sectId };
   }

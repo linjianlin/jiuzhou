@@ -24,6 +24,7 @@ import { createCacheLayer } from '../shared/cacheLayer.js';
 import { getMonthCardActiveMapByCharacterIds } from '../shared/monthCardBenefits.js';
 import { withBuildingRequirement } from './buildingRequirement.js';
 import { toNumber } from './db.js';
+import { VISIBLE_PENDING_APPLICATION_CONDITION } from './pendingApplications.js';
 import type {
   MySectApplicationListItem,
   SectApplicationListItem,
@@ -124,7 +125,8 @@ const loadSectApplications = async (sectId: string): Promise<SectApplicationList
       SELECT a.*, c.nickname, c.realm
       FROM sect_application a
       JOIN characters c ON c.id = a.character_id
-      WHERE a.sect_id = $1 AND a.status = 'pending'
+      WHERE a.sect_id = $1
+        AND ${VISIBLE_PENDING_APPLICATION_CONDITION}
       ORDER BY a.created_at ASC
     `,
     [sectId],
@@ -153,7 +155,8 @@ const loadMySectApplications = async (characterId: number): Promise<MySectApplic
         sd.join_type
       FROM sect_application a
       JOIN sect_def sd ON sd.id = a.sect_id
-      WHERE a.character_id = $1 AND a.status = 'pending'
+      WHERE a.character_id = $1
+        AND ${VISIBLE_PENDING_APPLICATION_CONDITION}
       ORDER BY a.created_at DESC
     `,
     [characterId],
@@ -225,6 +228,17 @@ export const invalidateSectApplicationCaches = async (
 ): Promise<void> => {
   await Promise.all([
     invalidateSectApplicationsCache(sectId),
+    invalidateMySectApplicationsCache(characterId),
+  ]);
+};
+
+export const invalidateSectApplicationCachesBySectIds = async (
+  sectIds: readonly string[],
+  characterId: number,
+): Promise<void> => {
+  const uniqueSectIds = Array.from(new Set(sectIds.map((sectId) => sectId.trim()).filter((sectId) => sectId.length > 0)));
+  await Promise.all([
+    ...uniqueSectIds.map((sectId) => invalidateSectApplicationsCache(sectId)),
     invalidateMySectApplicationsCache(characterId),
   ]);
 };

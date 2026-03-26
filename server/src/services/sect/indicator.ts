@@ -12,15 +12,16 @@
  *
  * 数据流/状态流：
  * - characterId -> 读取 sect_member 与 sect_application -> 计算 joined / 我的待处理申请数 / 是否可审批。
- * - 若当前角色可审批申请 -> 继续按 sect_id 统计宗门待处理申请总数。
+ * - 若当前角色可审批申请 -> 继续按 sect_id 统计“申请人当前仍未入宗”的有效待处理申请总数。
  * - sectId -> 读取 sect_member -> 产出需要接收通知的角色集合。
  *
  * 关键边界条件与坑点：
  * 1. 首页红点只认 leader / vice_leader / elder 的审批权限，权限判定必须与业务规则保持单一来源。
- * 2. 已入宗角色正常情况下不应再有 pending 申请；这里仍按数据库真实值计算，便于在脏数据场景下快速暴露问题，而不是静默吞掉。
+ * 2. 已入宗角色历史上残留的 pending 申请不能继续计入红点，否则会出现“红点存在但界面里没有申请”的假提示。
  */
 import { query } from '../../config/database.js';
 import type { SectPosition } from './types.js';
+import { VISIBLE_PENDING_APPLICATION_CONDITION } from './pendingApplications.js';
 
 export interface SectIndicatorPayload {
   joined: boolean;
@@ -69,8 +70,9 @@ const loadMyPendingApplicationCount = async (characterId: number): Promise<numbe
   const result = await query<{ count: number | string }>(
     `
       SELECT COUNT(*)::int AS count
-      FROM sect_application
-      WHERE character_id = $1 AND status = 'pending'
+      FROM sect_application a
+      WHERE a.character_id = $1
+        AND ${VISIBLE_PENDING_APPLICATION_CONDITION}
     `,
     [characterId]
   );
@@ -81,8 +83,9 @@ const loadSectPendingApplicationCount = async (sectId: string): Promise<number> 
   const result = await query<{ count: number | string }>(
     `
       SELECT COUNT(*)::int AS count
-      FROM sect_application
-      WHERE sect_id = $1 AND status = 'pending'
+      FROM sect_application a
+      WHERE a.sect_id = $1
+        AND ${VISIBLE_PENDING_APPLICATION_CONDITION}
     `,
     [sectId]
   );

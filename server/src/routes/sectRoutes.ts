@@ -35,6 +35,7 @@ import { BusinessError } from '../middleware/BusinessError.js';
 import { getCharacterSectId } from '../services/sect/db.js';
 import { getSingleParam, getSingleQueryValue, parseFiniteNumber, parseNonEmptyText } from '../services/shared/httpParam.js';
 import { listSectMemberCharacterIds } from '../services/sect/indicator.js';
+import { getSectApplicationScopeById, listVisiblePendingApplicationSectIdsByCharacterId } from '../services/sect/pendingApplications.js';
 import {
   notifySectIndicatorByApplicationId,
   notifySectIndicatorToCharacterIds,
@@ -47,6 +48,13 @@ const router = Router();
 
 const parseBodyNumber = (v: unknown): number | undefined => {
   return parseFiniteNumber(v);
+};
+
+const notifySectIndicatorToPendingManagers = (sectIds: readonly string[]): void => {
+  const uniqueSectIds = Array.from(new Set(sectIds.map((sectId) => sectId.trim()).filter((sectId) => sectId.length > 0)));
+  for (const sectId of uniqueSectIds) {
+    notifySectIndicatorToSectManagers(sectId);
+  }
 };
 
 router.use(requireCharacter);
@@ -76,10 +84,12 @@ router.post('/create', asyncHandler(async (req, res) => {
   if (!name) throw new BusinessError('宗门名称不能为空');
   if (name.length > 16) throw new BusinessError('宗门名称过长');
 
+  const pendingApplicationSectIds = await listVisiblePendingApplicationSectIdsByCharacterId(characterId);
   const result = await createSect(characterId, name, description);
   if (result.success) {
     await safePushCharacterUpdate(userId);
     notifySectIndicatorToCharacterIds([characterId]);
+    notifySectIndicatorToPendingManagers(pendingApplicationSectIds);
   }
   return sendResult(res, result);
 }));
@@ -90,12 +100,14 @@ router.post('/apply', asyncHandler(async (req, res) => {
   const body = req.body as { sectId?: unknown; message?: unknown };
   const sectId = typeof body?.sectId === 'string' ? body.sectId : '';
   const message = typeof body?.message === 'string' ? body.message : undefined;
+  const pendingApplicationSectIds = await listVisiblePendingApplicationSectIdsByCharacterId(characterId);
   const result = await applyToSect(characterId, sectId, message);
   if (result.success) {
     await safePushCharacterUpdate(userId);
     const joinedSectId = await getCharacterSectId(characterId);
     if (joinedSectId) {
       notifySectIndicatorToCharacterIds([characterId]);
+      notifySectIndicatorToPendingManagers(pendingApplicationSectIds);
     } else {
       notifySectIndicatorToSectManagers(sectId, [characterId]);
     }
@@ -122,10 +134,19 @@ router.post('/applications/handle', asyncHandler(async (req, res) => {
   const applicationId = parseBodyNumber(body?.applicationId);
   const approve = typeof body?.approve === 'boolean' ? body.approve : body?.approve === 'true';
   if (!applicationId) throw new BusinessError('参数错误');
+  const applicationScope = await getSectApplicationScopeById(applicationId);
+  const pendingApplicationSectIds = applicationScope
+    ? await listVisiblePendingApplicationSectIdsByCharacterId(applicationScope.characterId)
+    : [];
   const result = await handleApplication(characterId, applicationId, approve);
   if (result.success) {
     await safePushCharacterUpdate(userId);
     notifySectIndicatorByApplicationId(applicationId);
+    if (applicationScope) {
+      notifySectIndicatorToPendingManagers(
+        pendingApplicationSectIds.filter((sectId) => sectId !== applicationScope.sectId)
+      );
+    }
   }
   return sendResult(res, result);
 }));

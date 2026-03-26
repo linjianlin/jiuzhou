@@ -1,7 +1,14 @@
 import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, compareRealmRank, getCharacterRealm, getCharacterSectId, hasPermission, toNumber } from './db.js';
-import { getCachedMySectApplications, getCachedSectApplications, invalidateMySectApplicationsCache, invalidateSectApplicationCaches, invalidateSectInfoCache } from './cache.js';
+import {
+  getCachedMySectApplications,
+  getCachedSectApplications,
+  invalidateSectApplicationCaches,
+  invalidateSectApplicationCachesBySectIds,
+  invalidateSectInfoCache,
+} from './cache.js';
+import { cancelVisiblePendingApplicationsByCharacterId } from './pendingApplications.js';
 import type { MySectApplicationListItem, Result, SectApplicationListItem, SectApplicationRow } from './types.js';
 import { updateAchievementProgress } from '../achievementService.js';
 
@@ -71,6 +78,7 @@ class SectApplicationService {
     }
 
     if (joinType === 'open') {
+      const clearedPendingSectIds = await cancelVisiblePendingApplicationsByCharacterId(characterId);
       await query(
         `INSERT INTO sect_member (sect_id, character_id, position, contribution, weekly_contribution)
          VALUES ($1, $2, 'disciple', 0, 0)`,
@@ -78,8 +86,10 @@ class SectApplicationService {
       );
       await query('UPDATE sect_def SET member_count = member_count + 1, updated_at = NOW() WHERE id = $1', [sectId]);
       await this.addLog(sectId, 'join', characterId, null, '加入宗门（开放加入）');
-      await invalidateSectInfoCache(sectId);
-      await invalidateMySectApplicationsCache(characterId);
+      await Promise.all([
+        invalidateSectInfoCache(sectId),
+        invalidateSectApplicationCachesBySectIds(clearedPendingSectIds, characterId),
+      ]);
       await updateAchievementProgress(characterId, 'sect:join', 1);
       return { success: true, message: '加入成功' };
     }
@@ -182,6 +192,7 @@ class SectApplicationService {
       return { success: false, message: '对方已加入其他宗门' };
     }
 
+    const clearedPendingSectIds = await cancelVisiblePendingApplicationsByCharacterId(app.character_id, applicationId);
     await query(
       `INSERT INTO sect_member (sect_id, character_id, position, contribution, weekly_contribution)
        VALUES ($1, $2, 'disciple', 0, 0)`,
@@ -195,7 +206,7 @@ class SectApplicationService {
     await this.addLog(me.sectId, 'approve', operatorId, app.character_id, '通过入门申请');
     await Promise.all([
       invalidateSectInfoCache(me.sectId),
-      invalidateSectApplicationCaches(me.sectId, app.character_id),
+      invalidateSectApplicationCachesBySectIds([me.sectId, ...clearedPendingSectIds], app.character_id),
     ]);
     await updateAchievementProgress(app.character_id, 'sect:join', 1);
     return { success: true, message: '已通过' };
