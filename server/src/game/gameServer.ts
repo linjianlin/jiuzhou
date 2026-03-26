@@ -1255,3 +1255,8 @@ export const getGameServer = (): GameServer => {
   }
   return gameServer;
 };
+
+// 获取游戏服务器实例（未初始化时返回 null）
+export const getGameServerIfInitialized = (): GameServer | null => {
+  return gameServer;
+};

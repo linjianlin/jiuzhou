@@ -233,10 +233,28 @@ export const applyMailCounterDeltas = async (
   inputs: readonly MailCounterDeltaInput[],
 ): Promise<void> => {
   const deltas = mergeMailCounterDeltas(inputs);
+  if (deltas.length <= 0) {
+    return;
+  }
 
-  for (const delta of deltas) {
-    await query(
-      `
+  await query(
+    `
+      WITH input_rows AS (
+        SELECT
+          scope_type,
+          scope_id,
+          total_count_delta,
+          unread_count_delta,
+          unclaimed_count_delta
+        FROM jsonb_to_recordset($1::jsonb) AS rows (
+          scope_type varchar(16),
+          scope_id bigint,
+          total_count_delta bigint,
+          unread_count_delta bigint,
+          unclaimed_count_delta bigint
+        )
+      ),
+      upserted AS (
         INSERT INTO mail_counter (
           scope_type,
           scope_id,
@@ -244,41 +262,42 @@ export const applyMailCounterDeltas = async (
           unread_count,
           unclaimed_count,
           updated_at
-        ) VALUES (
-          $1,
-          $2,
-          GREATEST($3, 0),
-          GREATEST($4, 0),
-          GREATEST($5, 0),
-          NOW()
         )
+        SELECT
+          input_rows.scope_type,
+          input_rows.scope_id,
+          input_rows.total_count_delta,
+          input_rows.unread_count_delta,
+          input_rows.unclaimed_count_delta,
+          NOW()
+        FROM input_rows
         ON CONFLICT (scope_type, scope_id) DO UPDATE SET
-          total_count = GREATEST(0, mail_counter.total_count + $3),
-          unread_count = GREATEST(0, mail_counter.unread_count + $4),
-          unclaimed_count = GREATEST(0, mail_counter.unclaimed_count + $5),
+          total_count = GREATEST(0, mail_counter.total_count + EXCLUDED.total_count),
+          unread_count = GREATEST(0, mail_counter.unread_count + EXCLUDED.unread_count),
+          unclaimed_count = GREATEST(0, mail_counter.unclaimed_count + EXCLUDED.unclaimed_count),
           updated_at = NOW()
-      `,
-      [
-        delta.scopeType,
-        delta.scopeId,
-        delta.totalCountDelta,
-        delta.unreadCountDelta,
-        delta.unclaimedCountDelta,
-      ],
-    );
-
-    await query(
-      `
-        DELETE FROM mail_counter
-        WHERE scope_type = $1
-          AND scope_id = $2
-          AND total_count <= 0
-          AND unread_count <= 0
-          AND unclaimed_count <= 0
-      `,
-      [delta.scopeType, delta.scopeId],
-    );
-  }
+        RETURNING scope_type, scope_id
+      )
+      DELETE FROM mail_counter
+      USING upserted
+      WHERE mail_counter.scope_type = upserted.scope_type
+        AND mail_counter.scope_id = upserted.scope_id
+        AND mail_counter.total_count <= 0
+        AND mail_counter.unread_count <= 0
+        AND mail_counter.unclaimed_count <= 0
+    `,
+    [
+      JSON.stringify(
+        deltas.map((delta) => ({
+          scope_type: delta.scopeType,
+          scope_id: delta.scopeId,
+          total_count_delta: delta.totalCountDelta,
+          unread_count_delta: delta.unreadCountDelta,
+          unclaimed_count_delta: delta.unclaimedCountDelta,
+        })),
+      ),
+    ],
+  );
 };
 
 export const loadMailCounterSnapshot = async (

@@ -7,6 +7,7 @@
     "dev": "pnpm run db:sync && node scripts/build-workers.mjs && tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
+    "mail:server-exception-compensation": "tsx src/scripts/sendServerExceptionCompensationMail.ts",
     "partner:reclaim": "tsx src/scripts/reclaimPartnersByBaseModel.ts",
     "test:local": "tsx --test src/services/__tests__/*.test.ts",
     "test:local:technique-generation": "tsx --test src/services/__tests__/techniqueNameRules.test.ts",

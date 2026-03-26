@@ -23,7 +23,7 @@ import { getInventoryInfo, moveItemInstanceToBagWithStacking } from './inventory
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import { recordCollectItemEvent } from './taskService.js';
 import { createCacheLayer } from './shared/cacheLayer.js';
-import { getGameServer } from '../game/gameServer.js';
+import { getGameServerIfInitialized } from '../game/gameServer.js';
 import { grantSectionRewards } from './mainQuest/grantRewards.js';
 import type { RewardResult } from './mainQuest/types.js';
 import {
@@ -91,6 +91,31 @@ export interface SendMailOptions {
   metadata?: any;
 }
 
+export interface BulkMailRecipient {
+  recipientUserId: number;
+  recipientCharacterId?: number;
+}
+
+export interface SendBulkMailOptions {
+  recipients: BulkMailRecipient[];
+  senderType?: SenderType;
+  senderUserId?: number;
+  senderCharacterId?: number;
+  senderName?: string;
+  mailType?: MailType;
+  title: string;
+  content: string;
+  attachSilver?: number;
+  attachSpiritStones?: number;
+  attachItems?: MailAttachItem[];
+  attachRewards?: GrantedRewardPayload;
+  attachInstanceIds?: number[];
+  expireDays?: number;
+  source?: string;
+  sourceRefId?: string;
+  metadata?: any;
+}
+
 export interface MailDto {
   id: number;
   senderType: SenderType;
@@ -129,6 +154,36 @@ type ClaimInstanceRow = {
   bind_type: string;
 };
 
+type NormalizedMailRecipient = {
+  recipientUserId: number;
+  recipientCharacterId: number | null;
+};
+
+type PreparedMailInsertPayload = {
+  senderType: SenderType;
+  senderUserId: number | null;
+  senderCharacterId: number | null;
+  senderName: string;
+  mailType: MailType;
+  title: string;
+  content: string;
+  attachSilver: number;
+  attachSpiritStones: number;
+  attachItemsJson: string | null;
+  attachRewardsJson: string | null;
+  attachInstanceIds: number[];
+  attachInstanceIdsJson: string | null;
+  expireAt: Date | null;
+  source: string | null;
+  sourceRefId: string | null;
+  metadataJson: string | null;
+  isUnclaimed: boolean;
+};
+
+type PrepareMailInsertPayloadResult =
+  | { success: true; payload: PreparedMailInsertPayload }
+  | { success: false; message: string };
+
 const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_rewards IS NOT NULL OR attach_instance_ids IS NOT NULL)';
 const MAIL_ACTIVE_SCOPE_SQL = `COALESCE(expire_at, 'infinity'::timestamptz) > NOW()`;
 const MAIL_UNREAD_CACHE_REDIS_TTL_SEC = 300;
@@ -137,6 +192,7 @@ const MAIL_UNREAD_CACHE_MIN_REDIS_TTL_SEC = 1;
 const MAIL_UNREAD_CACHE_MIN_MEMORY_TTL_MS = 250;
 const MAIL_EXPIRE_CLEANUP_THROTTLE_MS = 60_000;
 const MAIL_UNREAD_PUSH_COALESCE_MS = 500;
+const MAIL_BULK_INSERT_BATCH_SIZE = 500;
 
 type MailScopedUnionSqlOptions = {
   selectSql: string;
@@ -218,6 +274,17 @@ const buildMailUnreadCacheKey = (userId: number, characterId: number): string =>
 };
 
 const buildMailExpireCleanupKey = buildMailUnreadCacheKey;
+
+const chunkMailRecipients = (
+  recipients: readonly NormalizedMailRecipient[],
+  chunkSize: number,
+): NormalizedMailRecipient[][] => {
+  const chunks: NormalizedMailRecipient[][] = [];
+  for (let index = 0; index < recipients.length; index += chunkSize) {
+    chunks.push(recipients.slice(index, index + chunkSize));
+  }
+  return chunks;
+};
 
 const parseMailUnreadCacheKey = (
   cacheKey: string,
@@ -555,59 +622,135 @@ class MailService {
     return buildMailUnreadCacheKey(userId, characterId);
   }
 
+  private normalizeBulkMailRecipients(
+    recipients: readonly BulkMailRecipient[],
+  ): NormalizedMailRecipient[] | null {
+    if (recipients.length <= 0) {
+      return [];
+    }
+
+    const recipientMap = new Map<string, NormalizedMailRecipient>();
+
+    for (const recipient of recipients) {
+      const recipientUserId = Math.floor(Number(recipient.recipientUserId));
+      if (!Number.isInteger(recipientUserId) || recipientUserId <= 0) {
+        return null;
+      }
+
+      const rawRecipientCharacterId = recipient.recipientCharacterId;
+      const recipientCharacterId =
+        rawRecipientCharacterId === undefined
+          ? null
+          : Math.floor(Number(rawRecipientCharacterId));
+
+      if (
+        recipientCharacterId !== null
+        && (!Number.isInteger(recipientCharacterId) || recipientCharacterId <= 0)
+      ) {
+        return null;
+      }
+
+      const dedupeKey = `${recipientUserId}:${recipientCharacterId ?? 0}`;
+      if (!recipientMap.has(dedupeKey)) {
+        recipientMap.set(dedupeKey, {
+          recipientUserId,
+          recipientCharacterId,
+        });
+      }
+    }
+
+    return Array.from(recipientMap.values());
+  }
+
+  /**
+   * 批量失效多个收件对象可见的邮件红点缓存。
+   *
+   * 作用：
+   * - 把单封邮件与批量发奖共用的缓存失效逻辑收口到同一入口，避免 bulk send 再退回 N 次逐账号查角色。
+   * - 统一处理账号级邮件对全部角色视图的影响，保证计数缓存与 `mail_counter` 同步失效。
+   *
+   * 输入/输出：
+   * - 输入：归一化后的收件对象列表（`recipientUserId + recipientCharacterId`）
+   * - 输出：无；保证这些账号相关的邮件计数缓存被清理
+   *
+   * 边界条件：
+   * 1) 账号当前没有角色记录时，仍要保留显式传入的 `(userId, characterId)` 直达键失效，避免事务内写入的新角色邮件留脏缓存。
+   * 2) 账号级邮件会影响该账号全部角色，因此必须先按 `userId` 扩散出所有角色键，再统一删缓存。
+   */
+  private async invalidateUnreadCounterCacheForRecipients(
+    recipients: readonly NormalizedMailRecipient[],
+  ): Promise<void> {
+    if (recipients.length <= 0) {
+      return;
+    }
+
+    const unreadCacheKeys = new Set<string>();
+    const recipientUserIds = Array.from(
+      new Set(recipients.map((recipient) => recipient.recipientUserId)),
+    );
+
+    for (const recipient of recipients) {
+      if (recipient.recipientCharacterId !== null) {
+        unreadCacheKeys.add(
+          this.buildUnreadCounterCacheKey(
+            recipient.recipientUserId,
+            recipient.recipientCharacterId,
+          ),
+        );
+      }
+    }
+
+    const characterResult = await query<{ user_id: number | string; id: number | string }>(
+      `
+        SELECT user_id, id
+        FROM characters
+        WHERE user_id = ANY($1::int[])
+      `,
+      [recipientUserIds],
+    );
+
+    for (const row of characterResult.rows) {
+      const userId = Number(row.user_id);
+      const characterId = Number(row.id);
+      if (!Number.isInteger(userId) || userId <= 0) continue;
+      if (!Number.isInteger(characterId) || characterId <= 0) continue;
+      unreadCacheKeys.add(this.buildUnreadCounterCacheKey(userId, characterId));
+    }
+
+    if (unreadCacheKeys.size <= 0) {
+      return;
+    }
+
+    await Promise.all(
+      Array.from(unreadCacheKeys, (cacheKey) => mailUnreadCounterCache.invalidate(cacheKey)),
+    );
+  }
+
   /**
    * 失效指定账号下所有角色可见的邮件红点缓存。
    *
    * 作用：
-   * - 统一处理“账号级邮件”对全部角色视图的影响；
-   * - 避免发邮件/已读/删除等多个写路径分别手写查角色 + 删缓存逻辑。
+   * - 兼容现有单收件人调用点，继续复用批量缓存失效入口。
+   * - 让 read/claim/delete 这类单封写路径不需要感知批处理实现细节。
    *
    * 输入/输出：
    * - 输入：recipientUserId，和可选的直接命中角色ID
    * - 输出：无；保证该账号相关邮件计数缓存被清理
    *
    * 边界条件：
-   * 1) 若账号当前没有角色记录，则仅失效显式传入的角色键。
-   * 2) 账号级邮件会被所有该账号角色共享，因此必须按 userId 扩散失效，不能只删当前 characterId。
+   * 1) 这里不重复实现任何查角色逻辑，单收件人与批量收件必须共用同一条缓存失效链路。
+   * 2) `recipientCharacterId` 允许为空，表示账号级邮件只按 user 维度扩散。
    */
   private async invalidateUnreadCounterCacheForRecipient(
     recipientUserId: number,
     recipientCharacterId?: number,
   ): Promise<void> {
-    const characterIds = new Set<number>();
-    const directCharacterId = recipientCharacterId;
-    if (
-      typeof directCharacterId === 'number'
-      && Number.isInteger(directCharacterId)
-      && directCharacterId > 0
-    ) {
-      characterIds.add(directCharacterId);
-    }
-
-    const characterResult = await query(
-      `
-        SELECT id
-        FROM characters
-        WHERE user_id = $1
-      `,
-      [recipientUserId],
-    );
-
-    for (const row of characterResult.rows as Array<{ id?: unknown }>) {
-      const characterId = Number(row.id);
-      if (!Number.isInteger(characterId) || characterId <= 0) continue;
-      characterIds.add(characterId);
-    }
-
-    if (characterIds.size <= 0) return;
-
-    await Promise.all(
-      Array.from(characterIds, (characterId) =>
-        mailUnreadCounterCache.invalidate(
-          this.buildUnreadCounterCacheKey(recipientUserId, characterId),
-        ),
-      ),
-    );
+    await this.invalidateUnreadCounterCacheForRecipients([
+      {
+        recipientUserId,
+        recipientCharacterId: recipientCharacterId ?? null,
+      },
+    ]);
   }
 
   /**
@@ -623,11 +766,13 @@ class MailService {
    *
    * 边界条件：
    * 1) 账号离线或当前没有在线角色时直接跳过，邮件写操作本身不能依赖 socket 成功。
-   * 2) 邮件缓存必须先失效再读取最新计数，否则会把旧红点重新推回前端。
+   * 2) 脚本/离线工具环境可能根本没有初始化 GameServer，这里必须静默跳过，不能因为缺少 socket 容器污染运维日志。
+   * 3) 邮件缓存必须先失效再读取最新计数，否则会把旧红点重新推回前端。
    */
   async pushUnreadCounterUpdateToUser(recipientUserId: number): Promise<void> {
     try {
-      const gameServer = getGameServer();
+      const gameServer = getGameServerIfInitialized();
+      if (!gameServer) return;
       const activeCharacterId = gameServer.getActiveCharacterIdByUserId(recipientUserId);
       if (!activeCharacterId) return;
 
@@ -726,9 +871,40 @@ class MailService {
     recipientUserId: number,
     recipientCharacterId?: number,
   ): Promise<void> {
+    await this.invalidateUnreadCounterAndNotifyRecipients([
+      {
+        recipientUserId,
+        recipientCharacterId: recipientCharacterId ?? null,
+      },
+    ]);
+  }
+
+  /**
+   * 统一调度“批量邮件未读缓存失效 + 首页红点推送”。
+   *
+   * 作用：
+   * - 给 bulk send 提供单一提交后副作用入口，避免一批补偿邮件拆成 N 次 after-commit 回调。
+   * - 统一对同一批收件人做缓存失效与在线红点调度，减少重复 userId 去重与查角色成本。
+   *
+   * 输入/输出：
+   * - 输入：归一化后的收件对象列表
+   * - 输出：无；保证这批账号的邮件缓存已失效，并尝试推送最新红点
+   *
+   * 边界条件：
+   * 1) 必须在事务提交后执行，不能在批量 insert 期间混入额外的读计数查询。
+   * 2) 同一 userId 可能因为多封角色邮件重复出现，推送调度必须先去重。
+   */
+  private async invalidateUnreadCounterAndNotifyRecipients(
+    recipients: readonly NormalizedMailRecipient[],
+  ): Promise<void> {
     await afterTransactionCommit(async () => {
-      await this.invalidateUnreadCounterCacheForRecipient(recipientUserId, recipientCharacterId);
-      this.scheduleUnreadCounterUpdateToUser(recipientUserId);
+      await this.invalidateUnreadCounterCacheForRecipients(recipients);
+
+      for (const recipientUserId of new Set(
+        recipients.map((recipient) => recipient.recipientUserId),
+      )) {
+        this.scheduleUnreadCounterUpdateToUser(recipientUserId);
+      }
     });
   }
 
@@ -1039,16 +1215,27 @@ class MailService {
     await applyMailCounterDeltas(effectiveDeltas);
   }
 
-  // ============================================
-  // 发送邮件
-  // ============================================
-
-  @Transactional
-  async sendMail(options: SendMailOptions): Promise<{ success: boolean; mailId?: number; message: string }> {
+  /**
+   * 统一准备邮件写库载荷。
+   *
+   * 作用：
+   * - 把单封发送与批量发送共用的标题/正文/附件校验收口到同一入口，避免两条写路径各维护一套规则。
+   * - 预先把 JSONB 附件、过期时间和“是否有未领取附件”计算好，降低写库阶段的重复判断。
+   *
+   * 输入/输出：
+   * - 输入：除收件人以外的发件参数。
+   * - 输出：可直接用于 `INSERT INTO mail` 的标准化载荷，或校验失败消息。
+   *
+   * 边界条件：
+   * 1) `attachRewards` 与旧附件字段/实例附件仍然互斥，任何混用都必须在这里直接拦截。
+   * 2) 这里不校验收件人是否存在；收件范围由调用方负责确定，避免把筛选逻辑散到邮件服务里。
+   */
+  private prepareMailInsertPayload(
+    options: Omit<SendBulkMailOptions, 'recipients'>,
+  ): PrepareMailInsertPayloadResult {
     const normalizedAttachRewards = normalizeGrantedRewardPayload(options.attachRewards);
     const hasNormalizedAttachRewards = hasGrantedRewardPayload(normalizedAttachRewards);
 
-    // 参数校验
     if (!options.title || options.title.length > 128) {
       return { success: false, message: '邮件标题无效（1-128字符）' };
     }
@@ -1088,24 +1275,188 @@ class MailService {
       return { success: false, message: '附件实例ID无效' };
     }
 
-    const insertCounterDelta = buildMailCounterInsertDelta({
-      recipientUserId: options.recipientUserId,
-      recipientCharacterId: options.recipientCharacterId ?? null,
-      isUnread: true,
-      isUnclaimed:
-        hasNormalizedAttachRewards
-        || (options.attachSilver ?? 0) > 0
-        || (options.attachSpiritStones ?? 0) > 0
-        || (options.attachItems?.length ?? 0) > 0
-        || attachInstanceIds.length > 0,
-    });
-
-    // 计算过期时间
     let expireAt: Date | null = null;
     if (options.expireDays && options.expireDays > 0) {
       expireAt = new Date();
       expireAt.setDate(expireAt.getDate() + options.expireDays);
     }
+
+    return {
+      success: true,
+      payload: {
+        senderType: options.senderType || 'system',
+        senderUserId: options.senderUserId || null,
+        senderCharacterId: options.senderCharacterId || null,
+        senderName: options.senderName || '系统',
+        mailType: options.mailType || 'normal',
+        title: options.title,
+        content: options.content,
+        attachSilver: hasNormalizedAttachRewards ? 0 : (options.attachSilver || 0),
+        attachSpiritStones: hasNormalizedAttachRewards ? 0 : (options.attachSpiritStones || 0),
+        attachItemsJson: hasNormalizedAttachRewards
+          ? null
+          : (options.attachItems ? JSON.stringify(options.attachItems) : null),
+        attachRewardsJson: hasNormalizedAttachRewards
+          ? JSON.stringify(normalizedAttachRewards)
+          : null,
+        attachInstanceIds,
+        attachInstanceIdsJson:
+          attachInstanceIds.length > 0 ? JSON.stringify(attachInstanceIds) : null,
+        expireAt,
+        source: options.source || null,
+        sourceRefId: options.sourceRefId || null,
+        metadataJson: options.metadata ? JSON.stringify(options.metadata) : null,
+        isUnclaimed:
+          hasNormalizedAttachRewards
+          || (options.attachSilver ?? 0) > 0
+          || (options.attachSpiritStones ?? 0) > 0
+          || (options.attachItems?.length ?? 0) > 0
+          || attachInstanceIds.length > 0,
+      },
+    };
+  }
+
+  /**
+   * 批量写入同模板邮件。
+   *
+   * 作用：
+   * - 用单条 `INSERT ... SELECT` 承接一批同模板邮件，避免全服补偿退化成逐条插入。
+   * - 通过固定批大小分片，控制单次 JSON 参数和事务内 SQL 文本规模。
+   *
+   * 输入/输出：
+   * - 输入：归一化后的收件对象列表，以及标准化好的邮件写库载荷。
+   * - 输出：无；成功时保证整批邮件都已写入 `mail`。
+   *
+   * 边界条件：
+   * 1) 分片只影响单条 SQL 的体积，不改变“当前事务内全部成功或全部失败”的语义。
+   * 2) 收件人列表必须先去重，否则同一角色会重复收到补偿。
+   */
+  private async insertBulkMailRows(
+    recipients: readonly NormalizedMailRecipient[],
+    payload: PreparedMailInsertPayload,
+  ): Promise<void> {
+    for (const chunk of chunkMailRecipients(recipients, MAIL_BULK_INSERT_BATCH_SIZE)) {
+      await query(
+        `
+          INSERT INTO mail (
+            recipient_user_id,
+            recipient_character_id,
+            sender_type,
+            sender_user_id,
+            sender_character_id,
+            sender_name,
+            mail_type,
+            title,
+            content,
+            attach_silver,
+            attach_spirit_stones,
+            attach_items,
+            attach_rewards,
+            attach_instance_ids,
+            expire_at,
+            source,
+            source_ref_id,
+            metadata
+          )
+          SELECT
+            input_rows.recipient_user_id,
+            input_rows.recipient_character_id,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11,
+            $12::jsonb,
+            $13,
+            $14,
+            $15,
+            $16,
+            $17
+          FROM jsonb_to_recordset($1::jsonb) AS input_rows (
+            recipient_user_id bigint,
+            recipient_character_id bigint
+          )
+        `,
+        [
+          JSON.stringify(
+            chunk.map((recipient) => ({
+              recipient_user_id: recipient.recipientUserId,
+              recipient_character_id: recipient.recipientCharacterId,
+            })),
+          ),
+          payload.senderType,
+          payload.senderUserId,
+          payload.senderCharacterId,
+          payload.senderName,
+          payload.mailType,
+          payload.title,
+          payload.content,
+          payload.attachSilver,
+          payload.attachSpiritStones,
+          payload.attachItemsJson,
+          payload.attachRewardsJson,
+          payload.attachInstanceIdsJson,
+          payload.expireAt,
+          payload.source,
+          payload.sourceRefId,
+          payload.metadataJson,
+        ],
+      );
+    }
+  }
+
+  // ============================================
+  // 发送邮件
+  // ============================================
+
+  @Transactional
+  async sendMail(options: SendMailOptions): Promise<{ success: boolean; mailId?: number; message: string }> {
+    const preparedPayloadResult = this.prepareMailInsertPayload({
+      senderType: options.senderType,
+      senderUserId: options.senderUserId,
+      senderCharacterId: options.senderCharacterId,
+      senderName: options.senderName,
+      mailType: options.mailType,
+      title: options.title,
+      content: options.content,
+      attachSilver: options.attachSilver,
+      attachSpiritStones: options.attachSpiritStones,
+      attachItems: options.attachItems,
+      attachRewards: options.attachRewards,
+      attachInstanceIds: options.attachInstanceIds,
+      expireDays: options.expireDays,
+      source: options.source,
+      sourceRefId: options.sourceRefId,
+      metadata: options.metadata,
+    });
+    if (!preparedPayloadResult.success) {
+      return { success: false, message: preparedPayloadResult.message };
+    }
+
+    const normalizedRecipient = this.normalizeBulkMailRecipients([
+      {
+        recipientUserId: options.recipientUserId,
+        recipientCharacterId: options.recipientCharacterId,
+      },
+    ]);
+    if (!normalizedRecipient) {
+      return { success: false, message: '收件人无效' };
+    }
+
+    const recipient = normalizedRecipient[0];
+    const preparedPayload = preparedPayloadResult.payload;
+
+    const insertCounterDelta = buildMailCounterInsertDelta({
+      recipientUserId: recipient.recipientUserId,
+      recipientCharacterId: recipient.recipientCharacterId,
+      isUnread: true,
+      isUnclaimed: preparedPayload.isUnclaimed,
+    });
 
     try {
       const result = await query(`
@@ -1118,37 +1469,108 @@ class MailService {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18)
         RETURNING id
       `, [
-        options.recipientUserId,
-        options.recipientCharacterId || null,
-        options.senderType || 'system',
-        options.senderUserId || null,
-        options.senderCharacterId || null,
-        options.senderName || '系统',
-        options.mailType || 'normal',
-        options.title,
-        options.content,
-        hasNormalizedAttachRewards ? 0 : (options.attachSilver || 0),
-        hasNormalizedAttachRewards ? 0 : (options.attachSpiritStones || 0),
-        hasNormalizedAttachRewards ? null : (options.attachItems ? JSON.stringify(options.attachItems) : null),
-        hasNormalizedAttachRewards ? JSON.stringify(normalizedAttachRewards) : null,
-        attachInstanceIds.length > 0 ? JSON.stringify(attachInstanceIds) : null,
-        expireAt,
-        options.source || null,
-        options.sourceRefId || null,
-        options.metadata ? JSON.stringify(options.metadata) : null
+        recipient.recipientUserId,
+        recipient.recipientCharacterId,
+        preparedPayload.senderType,
+        preparedPayload.senderUserId,
+        preparedPayload.senderCharacterId,
+        preparedPayload.senderName,
+        preparedPayload.mailType,
+        preparedPayload.title,
+        preparedPayload.content,
+        preparedPayload.attachSilver,
+        preparedPayload.attachSpiritStones,
+        preparedPayload.attachItemsJson,
+        preparedPayload.attachRewardsJson,
+        preparedPayload.attachInstanceIdsJson,
+        preparedPayload.expireAt,
+        preparedPayload.source,
+        preparedPayload.sourceRefId,
+        preparedPayload.metadataJson,
       ]);
 
       await this.applyMailCounterDeltaInputs([insertCounterDelta]);
 
-      await this.invalidateUnreadCounterAndNotifyRecipient(
-        options.recipientUserId,
-        options.recipientCharacterId,
-      );
+      await this.invalidateUnreadCounterAndNotifyRecipients(normalizedRecipient);
 
       return { success: true, mailId: result.rows[0].id, message: '邮件发送成功' };
     } catch (error) {
       console.error('发送邮件失败:', error);
       return { success: false, message: '发送邮件失败' };
+    }
+  }
+
+  /**
+   * 批量发送同模板邮件。
+   *
+   * 作用：
+   * - 承接全服补偿、批量运营发奖等“一批收件人共享同一封邮件模板”的场景，避免脚本层逐条调用 `sendMail`。
+   * - 统一复用单封邮件的附件校验、`mail_counter` 增量协议与提交后红点刷新逻辑。
+   *
+   * 输入/输出：
+   * - 输入：收件人列表，以及共享的标题/正文/附件配置。
+   * - 输出：成功时返回实际发送数量；失败时返回统一错误消息。
+   *
+   * 边界条件：
+   * 1) 这里不会为每个收件人单独返回 mailId；批量入口强调吞吐和一致性，追踪应改用 `sourceRefId`/`metadata`。
+   * 2) 收件人列表会先去重，避免同一角色因为上游筛选重复而收到多封相同补偿。
+   */
+  @Transactional
+  async sendBulkMail(
+    options: SendBulkMailOptions,
+  ): Promise<{ success: boolean; sentCount: number; message: string }> {
+    const normalizedRecipients = this.normalizeBulkMailRecipients(options.recipients);
+    if (!normalizedRecipients) {
+      return { success: false, sentCount: 0, message: '收件人无效' };
+    }
+    if (normalizedRecipients.length <= 0) {
+      return { success: false, sentCount: 0, message: '收件人不能为空' };
+    }
+
+    const preparedPayloadResult = this.prepareMailInsertPayload({
+      senderType: options.senderType,
+      senderUserId: options.senderUserId,
+      senderCharacterId: options.senderCharacterId,
+      senderName: options.senderName,
+      mailType: options.mailType,
+      title: options.title,
+      content: options.content,
+      attachSilver: options.attachSilver,
+      attachSpiritStones: options.attachSpiritStones,
+      attachItems: options.attachItems,
+      attachRewards: options.attachRewards,
+      attachInstanceIds: options.attachInstanceIds,
+      expireDays: options.expireDays,
+      source: options.source,
+      sourceRefId: options.sourceRefId,
+      metadata: options.metadata,
+    });
+    if (!preparedPayloadResult.success) {
+      return { success: false, sentCount: 0, message: preparedPayloadResult.message };
+    }
+
+    try {
+      await this.insertBulkMailRows(normalizedRecipients, preparedPayloadResult.payload);
+      await this.applyMailCounterDeltaInputs(
+        normalizedRecipients.map((recipient) =>
+          buildMailCounterInsertDelta({
+            recipientUserId: recipient.recipientUserId,
+            recipientCharacterId: recipient.recipientCharacterId,
+            isUnread: true,
+            isUnclaimed: preparedPayloadResult.payload.isUnclaimed,
+          }),
+        ),
+      );
+      await this.invalidateUnreadCounterAndNotifyRecipients(normalizedRecipients);
+
+      return {
+        success: true,
+        sentCount: normalizedRecipients.length,
+        message: `批量邮件发送成功（${normalizedRecipients.length}封）`,
+      };
+    } catch (error) {
+      console.error('批量发送邮件失败:', error);
+      return { success: false, sentCount: 0, message: '批量发送邮件失败' };
     }
   }
 

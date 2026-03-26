@@ -33,7 +33,10 @@ import {
   getItemDefinitionsByIds,
 } from "../staticConfigLoader.js";
 import { lockCharacterInventoryMutex } from "../inventoryMutex.js";
-import { normalizeItemBindType } from "../shared/itemBindType.js";
+import {
+  buildNormalizedItemBindTypeSql,
+  normalizeItemBindType,
+} from "../shared/itemBindType.js";
 import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { normalizeItemInstanceObtainedFrom } from "../shared/itemInstanceSource.js";
 import { tryInsertItemInstanceWithSlot } from "../shared/itemInstanceSlotInsert.js";
@@ -53,7 +56,10 @@ import {
   createDefaultInventoryInfo,
   getSlottedCapacity,
 } from "./shared/helpers.js";
-import { isPlainStackingState } from "./shared/stacking.js";
+import {
+  buildPlainStackingSqlPredicate,
+  isPlainStackingState,
+} from "./shared/stacking.js";
 
 // ============================================
 // 获取背包信息（容量与使用情况）
@@ -230,6 +236,99 @@ const runInventoryMutation = async <T extends { success: boolean }>(
   return await executor();
 };
 
+type PlainAutoStackLookupRow = {
+  id: number;
+  qty: number;
+};
+
+type PlainAutoStackLookupOptions = {
+  characterId: number;
+  itemDefId: string;
+  location: SlottedInventoryLocation;
+  stackMax: number;
+  bindType: string;
+  excludeItemId?: number;
+};
+
+const ITEM_INSTANCE_STACKABLE_BIND_TYPE_SQL = buildNormalizedItemBindTypeSql(
+  "bind_type",
+);
+const ITEM_INSTANCE_STACKABLE_PREDICATE_SQL = buildPlainStackingSqlPredicate({
+  metadata: "metadata",
+  quality: "quality",
+  qualityRank: "quality_rank",
+});
+const PLAIN_STACKING_CANONICAL_SET_SQL = `
+bind_type = $2,
+metadata = NULL,
+quality = NULL,
+quality_rank = NULL,
+updated_at = NOW()
+`;
+
+/**
+ * 读取当前入包链路可复用的普通堆叠承载实例。
+ *
+ * 作用：
+ * - 统一复用“旧空语义 + 标准绑定态”的 SQL 判定，避免新增入包、实例回包各写一套兼容查询。
+ * - 查询结果只覆盖语义上属于普通可堆叠的实例，真正的数据归一化在写入时一次完成。
+ *
+ * 边界条件：
+ * 1. SQL 结构必须与性能索引保持同构，确保兼容旧数据后依然走热点索引。
+ * 2. `excludeItemId` 只用于回包场景排除来源实例，普通掉落/奖励入包不传即可。
+ */
+const loadPlainAutoStackRows = async ({
+  characterId,
+  itemDefId,
+  location,
+  stackMax,
+  bindType,
+  excludeItemId,
+}: PlainAutoStackLookupOptions): Promise<PlainAutoStackLookupRow[]> => {
+  if (stackMax <= 1) {
+    return [];
+  }
+
+  const params: Array<number | string> = [
+    characterId,
+    itemDefId,
+    location,
+    stackMax,
+    bindType,
+  ];
+  const excludeItemClause =
+    excludeItemId === undefined
+      ? ""
+      : `
+          AND id != $6
+        `;
+  if (excludeItemId !== undefined) {
+    params.push(excludeItemId);
+  }
+
+  const stackResult = await query(
+    `
+      SELECT id, qty
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND item_def_id = $2
+        AND location = $3
+        AND qty < $4
+        AND ${ITEM_INSTANCE_STACKABLE_BIND_TYPE_SQL} = $5
+        AND ${ITEM_INSTANCE_STACKABLE_PREDICATE_SQL}
+        ${excludeItemClause}
+      ORDER BY qty DESC, id ASC
+      FOR UPDATE
+    `,
+    params,
+  );
+
+  return stackResult.rows.map((row) => ({
+    id: Number(row.id),
+    qty: Math.max(0, Math.floor(Number(row.qty) || 0)),
+  }));
+};
+
 /**
  * 添加物品到背包/仓库
  * 支持智能堆叠：优先填充已有堆叠行，不够再创建新行
@@ -289,25 +388,15 @@ export const addItemToInventory = async (
     const itemIds: number[] = [];
     let remainingQty = qty;
 
-    let stackRows: Array<{ id: number; qty: number }> = [];
+    let stackRows: PlainAutoStackLookupRow[] = [];
     if (stack_max > 1 && canStackByOption) {
-      const stackResult = await query(
-        `
-          SELECT id, qty FROM item_instance
-          WHERE owner_character_id = $1 AND item_def_id = $2
-            AND location = $3 AND qty < $4 AND bind_type = $5
-            AND metadata IS NULL
-            AND quality IS NULL
-            AND quality_rank IS NULL
-          ORDER BY qty DESC
-          FOR UPDATE
-        `,
-        [characterId, itemDefId, location, stack_max, actualBindType],
-      );
-      stackRows = stackResult.rows.map((r) => ({
-        id: Number(r.id),
-        qty: Number(r.qty),
-      }));
+      stackRows = await loadPlainAutoStackRows({
+        characterId,
+        itemDefId,
+        location,
+        stackMax: stack_max,
+        bindType: actualBindType,
+      });
     }
 
     let remainingAfterStacks = remainingQty;
@@ -346,8 +435,13 @@ export const addItemToInventory = async (
         if (canAdd <= 0) continue;
 
         await query(
-          "UPDATE item_instance SET qty = qty + $1, updated_at = NOW() WHERE id = $2",
-          [canAdd, row.id],
+          `
+            UPDATE item_instance
+            SET qty = qty + $1,
+                ${PLAIN_STACKING_CANONICAL_SET_SQL}
+            WHERE id = $3
+          `,
+          [canAdd, actualBindType, row.id],
         );
         itemIds.push(row.id);
         remainingQty -= canAdd;
@@ -427,13 +521,11 @@ type MoveToBagSourceRow = {
   owner_character_id: number;
   item_def_id: string;
   qty: number;
+  quality: string | null;
+  quality_rank: number | null;
+  metadata_text: string | null;
   location: string;
   bind_type: string;
-};
-
-type MoveToBagStackRow = {
-  id: number;
-  qty: number;
 };
 
 /**
@@ -472,6 +564,9 @@ export const moveItemInstanceToBagWithStacking = async (
         owner_character_id,
         item_def_id,
         qty,
+        quality,
+        quality_rank,
+        metadata::text AS metadata_text,
         location,
         bind_type
       FROM item_instance
@@ -512,28 +607,24 @@ export const moveItemInstanceToBagWithStacking = async (
   const bindType = normalizeItemBindType(
     typeof source.bind_type === "string" ? source.bind_type : null,
   );
+  const sourceCanAutoStack =
+    stackMax > 1 &&
+    isPlainStackingState({
+      metadataText: source.metadata_text,
+      quality: source.quality,
+      qualityRank: source.quality_rank,
+    });
 
-  let stackRows: MoveToBagStackRow[] = [];
-  if (stackMax > 1) {
-    const stackResult = await query(
-      `
-        SELECT id, qty
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = 'bag'
-          AND item_def_id = $2
-          AND bind_type = $3
-          AND qty < $4
-          AND id != $5
-        ORDER BY qty DESC, id ASC
-        FOR UPDATE
-      `,
-      [characterId, itemDefId, bindType, stackMax, itemInstanceId],
-    );
-    stackRows = stackResult.rows.map((row) => ({
-      id: Number(row.id),
-      qty: Math.max(0, Math.floor(Number(row.qty) || 0)),
-    }));
+  let stackRows: PlainAutoStackLookupRow[] = [];
+  if (sourceCanAutoStack) {
+    stackRows = await loadPlainAutoStackRows({
+      characterId,
+      itemDefId,
+      location: "bag",
+      stackMax,
+      bindType,
+      excludeItemId: itemInstanceId,
+    });
   }
 
   let freeInStacks = 0;
@@ -560,10 +651,11 @@ export const moveItemInstanceToBagWithStacking = async (
     await query(
       `
         UPDATE item_instance
-        SET qty = qty + $1, updated_at = NOW()
-        WHERE id = $2
+        SET qty = qty + $1,
+            ${PLAIN_STACKING_CANONICAL_SET_SQL}
+        WHERE id = $3
       `,
-      [canAdd, row.id],
+      [canAdd, bindType, row.id],
     );
 
     if (representativeItemId === null) {
@@ -602,6 +694,7 @@ export const moveItemInstanceToBagWithStacking = async (
           location_slot = $1,
           bind_type = $2,
           equipped_slot = NULL,
+          ${sourceCanAutoStack ? "metadata = NULL,\n          quality = NULL,\n          quality_rank = NULL,\n          " : ""}
           updated_at = NOW()
       WHERE id = $3
       RETURNING id
@@ -738,11 +831,13 @@ export const moveItem = async (
     id: number;
     item_def_id: string;
     qty: number;
+    quality: string | null;
+    quality_rank: number | null;
+    metadata_text: string | null;
     location: string;
     location_slot: number | null;
     bind_type: string;
   };
-  type StackTargetRow = { id: number; qty: number };
 
   await lockCharacterInventoryMutex(characterId);
 
@@ -752,6 +847,9 @@ export const moveItem = async (
       ii.id,
       ii.item_def_id,
       ii.qty,
+      ii.quality,
+      ii.quality_rank,
+      ii.metadata::text AS metadata_text,
       ii.location,
       ii.location_slot,
       ii.bind_type
@@ -789,32 +887,25 @@ export const moveItem = async (
   if (originalQty <= 0) {
     return { success: false, message: "物品数量异常" };
   }
+  const normalizedBindType = normalizeItemBindType(item.bind_type);
+  const sourceCanAutoStack =
+    stackMax > 1 &&
+    isPlainStackingState({
+      metadataText: item.metadata_text,
+      quality: item.quality,
+      qualityRank: item.quality_rank,
+    });
 
   let remainingQty = originalQty;
-  if (currentLocation !== targetLocation && stackMax > 1) {
-    const stackResult = await query(
-      `
-        SELECT id, qty FROM item_instance
-        WHERE owner_character_id = $1
-          AND location = $2
-          AND item_def_id = $3
-          AND bind_type = $4
-          AND qty < $5
-          AND id != $6
-        ORDER BY qty DESC, id ASC
-        FOR UPDATE
-      `,
-      [
-        characterId,
-        targetLocation,
-        item.item_def_id,
-        item.bind_type,
-        stackMax,
-        itemInstanceId,
-      ],
-    );
-
-    const stackRows = stackResult.rows as StackTargetRow[];
+  if (currentLocation !== targetLocation && sourceCanAutoStack) {
+    const stackRows = await loadPlainAutoStackRows({
+      characterId,
+      itemDefId: item.item_def_id,
+      location: targetLocation,
+      stackMax,
+      bindType: normalizedBindType,
+      excludeItemId: itemInstanceId,
+    });
     for (const row of stackRows) {
       if (remainingQty <= 0) break;
       const stackQty = Math.max(0, Number(row.qty) || 0);
@@ -824,10 +915,11 @@ export const moveItem = async (
       await query(
         `
           UPDATE item_instance
-          SET qty = qty + $1, updated_at = NOW()
-          WHERE id = $2 AND owner_character_id = $3
+          SET qty = qty + $1,
+              ${PLAIN_STACKING_CANONICAL_SET_SQL}
+          WHERE id = $3 AND owner_character_id = $4
         `,
-        [canAdd, Number(row.id), characterId],
+        [canAdd, normalizedBindType, Number(row.id), characterId],
       );
       remainingQty -= canAdd;
     }
@@ -916,10 +1008,15 @@ export const moveItem = async (
 
   await query(
     `
-    UPDATE item_instance SET location = $1, location_slot = $2, updated_at = NOW()
-    WHERE id = $3 AND owner_character_id = $4
+    UPDATE item_instance
+    SET location = $1,
+        location_slot = $2,
+        bind_type = $3,
+        ${sourceCanAutoStack ? "metadata = NULL,\n        quality = NULL,\n        quality_rank = NULL,\n        " : ""}
+        updated_at = NOW()
+    WHERE id = $4 AND owner_character_id = $5
   `,
-    [targetLocation, finalSlot, itemInstanceId, characterId],
+    [targetLocation, finalSlot, normalizedBindType, itemInstanceId, characterId],
   );
   return { success: true, message: "移动成功" };
 };
@@ -1152,6 +1249,7 @@ type SortInventoryRowUpdate = {
   itemId: number;
   nextQty: number;
   nextBindType: string;
+  clearPlainFields: boolean;
 };
 
 /**
@@ -1192,12 +1290,24 @@ const compactRowsForSortStacking = (
     sourceRowById.set(Number(row.id), row);
     const stackMax = stackMaxByItemDefId.get(String(row.item_def_id || "").trim()) ?? 1;
     const normalizedBindType = normalizeItemBindType(row.bind_type);
+    const sourceIsPlainStacking = isPlainStackingState({
+      metadataText: row.metadata_text,
+      quality: row.quality,
+      qualityRank: row.quality_rank,
+    });
     const normalizedRow =
-      normalizedBindType === row.bind_type
+      normalizedBindType === row.bind_type &&
+      (!sourceIsPlainStacking ||
+        (row.metadata_text === null &&
+          row.quality === null &&
+          row.quality_rank === null))
         ? row
         : {
             ...row,
             bind_type: normalizedBindType,
+            metadata_text: sourceIsPlainStacking ? null : row.metadata_text,
+            quality: sourceIsPlainStacking ? null : row.quality,
+            quality_rank: sourceIsPlainStacking ? null : row.quality_rank,
           };
     const canAutoStack =
       stackMax > 1 &&
@@ -1255,13 +1365,24 @@ const compactRowsForSortStacking = (
     if (!sourceRow) {
       continue;
     }
-    if (row.qty === sourceRow.qty && row.bind_type === sourceRow.bind_type) {
+    if (
+      row.qty === sourceRow.qty &&
+      row.bind_type === sourceRow.bind_type &&
+      row.quality === sourceRow.quality &&
+      row.quality_rank === sourceRow.quality_rank &&
+      row.metadata_text === sourceRow.metadata_text
+    ) {
       continue;
     }
     rowUpdates.push({
       itemId: Number(row.id),
       nextQty: row.qty,
       nextBindType: row.bind_type,
+      clearPlainFields: isPlainStackingState({
+        metadataText: sourceRow.metadata_text,
+        quality: sourceRow.quality,
+        qualityRank: sourceRow.quality_rank,
+      }),
     });
   }
 
@@ -1319,7 +1440,20 @@ export const sortInventory = async (
     stackMaxByItemDefId,
   );
 
-  for (const { itemId, nextQty, nextBindType } of rowUpdates) {
+  for (const { itemId, nextQty, nextBindType, clearPlainFields } of rowUpdates) {
+    if (clearPlainFields) {
+      await query(
+        `
+          UPDATE item_instance
+          SET qty = $1,
+              ${PLAIN_STACKING_CANONICAL_SET_SQL}
+          WHERE id = $3 AND owner_character_id = $4
+        `,
+        [nextQty, nextBindType, itemId, characterId],
+      );
+      continue;
+    }
+
     await query(
       `
         UPDATE item_instance

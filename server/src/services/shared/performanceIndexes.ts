@@ -16,10 +16,12 @@
  * 关键边界条件与坑点：
  * 1) mail 活跃范围查询依赖 `COALESCE(expire_at, 'infinity')` 表达式，索引表达式必须与查询写法保持一致，否则 PostgreSQL 无法稳定命中。
  * 2) mail 红点计数会同时读取 `read_at / claimed_at / attach_*`，索引若不覆盖这些列，角色邮件大盘点数仍会退化成大范围 heap scan。
- * 3) item_instance 堆叠查询只应覆盖普通可堆叠实例，必须把 `metadata / quality / quality_rank IS NULL` 放进部分索引谓词，避免把特殊实例也塞进同一索引扫描路径。
+ * 3) item_instance 堆叠查询既要兼容历史“空字符串 / 0 / json null”旧数据，又要继续把特殊实例排除在热点索引之外，否则新旧普通实例会继续分堆或把索引放大成无差别扫描。
  * 4) 已存在但定义过旧的索引，`CREATE INDEX IF NOT EXISTS` 不会自动修正；必须显式校验定义并重建，否则优化永远落不到老库。
  */
 import { query } from '../../config/database.js';
+import { buildPlainStackingSqlPredicate } from '../inventory/shared/stacking.js';
+import { buildNormalizedItemBindTypeSql } from './itemBindType.js';
 
 export const MAIL_CHARACTER_ACTIVE_SCOPE_INDEX_NAME = 'idx_mail_character_active_scope';
 export const MAIL_USER_ACTIVE_SCOPE_INDEX_NAME = 'idx_mail_user_active_scope';
@@ -31,6 +33,13 @@ export const MAIL_DELETED_HISTORY_CLEANUP_INDEX_NAME = 'idx_mail_deleted_history
 export const MAIL_EXPIRED_HISTORY_CLEANUP_INDEX_NAME = 'idx_mail_expired_history_cleanup';
 export const ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME = 'idx_item_instance_stackable_lookup';
 export const MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME = 'idx_market_listing_item_instance_id';
+
+const ITEM_INSTANCE_STACKABLE_LOOKUP_BIND_TYPE_SQL = buildNormalizedItemBindTypeSql('bind_type');
+const ITEM_INSTANCE_STACKABLE_LOOKUP_PREDICATE_SQL = buildPlainStackingSqlPredicate({
+  metadata: 'metadata',
+  quality: 'quality',
+  qualityRank: 'quality_rank',
+});
 
 export type PerformanceIndexDefinition = {
   name: string;
@@ -203,24 +212,22 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
         owner_character_id,
         location,
         item_def_id,
-        bind_type,
+        (${ITEM_INSTANCE_STACKABLE_LOOKUP_BIND_TYPE_SQL}),
         qty DESC,
         id ASC
       )
-      WHERE metadata IS NULL
-        AND quality IS NULL
-        AND quality_rank IS NULL
+      WHERE ${ITEM_INSTANCE_STACKABLE_LOOKUP_PREDICATE_SQL}
     `,
     matchFragments: [
       'owner_character_id',
       'location',
       'item_def_id',
-      'bind_type',
+      "COALESCE(NULLIF(LOWER(BTRIM(bind_type)), ''), 'none')",
       'qty DESC',
       'id',
-      'metadata IS NULL',
-      'quality IS NULL',
-      'quality_rank IS NULL',
+      "metadata IS NULL OR LOWER(BTRIM(metadata::text)) = 'null'",
+      "quality IS NULL OR BTRIM(quality) = ''",
+      'quality_rank IS NULL OR quality_rank <= 0',
     ],
   },
   {

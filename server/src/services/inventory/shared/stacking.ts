@@ -2,9 +2,9 @@
  * 普通堆叠实例判定工具
  *
  * 作用（做什么 / 不做什么）：
- * - 做什么：统一归一化 `metadata / quality / qualityRank` 的“空语义”判定，供背包整理等内存归并流程复用。
- * - 做什么：把“哪些实例可视为普通可堆叠实例”的规则集中在一个模块里，避免同类判断散落在各处。
- * - 不做什么：不负责数据库查询、不直接执行堆叠写入，也不替代 SQL 层基于 `IS NULL` 的索引过滤规则。
+ * - 做什么：统一归一化 `metadata / quality / qualityRank` 的“空语义”判定，供背包整理、自动堆叠、性能索引复用。
+ * - 做什么：把“哪些实例可视为普通可堆叠实例”的规则集中在一个模块里，避免 JS 与 SQL 各写一套条件后逐渐漂移。
+ * - 不做什么：不负责数据库查询、不直接执行堆叠写入，也不处理绑定态分组规则。
  *
  * 输入/输出：
  * - 输入：实例的 `metadataText / quality / qualityRank` 原始值。
@@ -26,6 +26,12 @@ type PlainStackingState = {
   qualityRank: number | null;
 };
 
+type PlainStackingSqlColumns = {
+  metadata: string;
+  quality: string;
+  qualityRank: string;
+};
+
 const isPlainMetadataText = (metadataText: string | null): boolean => {
   if (metadataText === null) return true;
   const normalized = metadataText.trim().toLowerCase();
@@ -44,6 +50,18 @@ const isPlainQualityRank = (qualityRank: number | null): boolean => {
   return normalized <= 0;
 };
 
+const buildPlainMetadataSql = (metadataColumn: string): string => {
+  return `(${metadataColumn} IS NULL OR LOWER(BTRIM(${metadataColumn}::text)) = 'null')`;
+};
+
+const buildPlainQualitySql = (qualityColumn: string): string => {
+  return `(${qualityColumn} IS NULL OR BTRIM(${qualityColumn}) = '')`;
+};
+
+const buildPlainQualityRankSql = (qualityRankColumn: string): string => {
+  return `(${qualityRankColumn} IS NULL OR ${qualityRankColumn} <= 0)`;
+};
+
 export const isPlainStackingState = ({
   metadataText,
   quality,
@@ -54,4 +72,16 @@ export const isPlainStackingState = ({
     isPlainQuality(quality) &&
     isPlainQualityRank(qualityRank)
   );
+};
+
+export const buildPlainStackingSqlPredicate = ({
+  metadata,
+  quality,
+  qualityRank,
+}: PlainStackingSqlColumns): string => {
+  return [
+    buildPlainMetadataSql(metadata),
+    buildPlainQualitySql(quality),
+    buildPlainQualityRankSql(qualityRank),
+  ].join("\nAND ");
 };

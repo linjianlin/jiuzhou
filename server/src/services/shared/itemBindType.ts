@@ -3,6 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * - 做什么：统一后端对 `bind_type` 的标准化口径，把空值、空字符串、大小写不一致统一收敛成稳定字符串。
+ * - 做什么：提供与运行时标准化一致的 SQL 表达式，给堆叠查询与热点索引复用。
  * - 做什么：为背包整理、入包堆叠、装备解绑等链路提供单一绑定态入口，避免“玩家看起来同一种未绑定，服务端却按不同值分组”。
  * - 不做什么：不负责绑定业务规则判定，不决定是否允许交易/解绑，也不做前端展示映射。
  *
@@ -28,4 +29,10 @@ export const normalizeItemBindType = (
   }
   const normalized = value.trim().toLowerCase();
   return normalized || "none";
+};
+
+export const buildNormalizedItemBindTypeSql = (
+  columnExpression: string,
+): string => {
+  return `COALESCE(NULLIF(LOWER(BTRIM(${columnExpression})), ''), 'none')`;
 };

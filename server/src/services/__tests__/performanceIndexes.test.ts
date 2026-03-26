@@ -17,7 +17,7 @@
  *
  * 关键边界条件与坑点：
  * 1) mail 活跃范围索引必须保留 `COALESCE(expire_at, 'infinity'::timestamptz)`，否则和服务层查询写法脱钩。
- * 2) item_instance 堆叠索引必须保留特殊实例过滤谓词，不能把 metadata / quality / quality_rank 非空行纳入普通堆叠扫描。
+ * 2) item_instance 堆叠索引必须保留旧空语义兼容谓词与标准绑定态表达式，避免新掉落物品无法和历史普通实例共用热点索引。
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -96,9 +96,10 @@ test('ensurePerformanceIndexes 应保证热点性能索引存在', async () => {
     [ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME],
   );
   const itemStackIndexDef = itemStackIndexResult.rows[0]?.indexdef ?? '';
-  assert.match(itemStackIndexDef, /metadata IS NULL/i);
-  assert.match(itemStackIndexDef, /quality IS NULL/i);
-  assert.match(itemStackIndexDef, /quality_rank IS NULL/i);
+  assert.match(itemStackIndexDef, /COALESCE\(NULLIF\(LOWER\(BTRIM\(bind_type\)\), ''\), 'none'\)/i);
+  assert.match(itemStackIndexDef, /metadata IS NULL OR LOWER\(BTRIM\(\(metadata\)::text\)\) = 'null'/i);
+  assert.match(itemStackIndexDef, /quality IS NULL OR BTRIM\(quality\) = ''/i);
+  assert.match(itemStackIndexDef, /quality_rank IS NULL OR quality_rank <= 0/i);
 
   const cleanupIndexResult = await query<{ indexdef: string }>(
     `
