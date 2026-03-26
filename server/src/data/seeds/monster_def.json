@@ -3222,6 +3222,422 @@
       "silver_reward_min": 1360,
       "silver_reward_max": 2020,
       "enabled": true
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期怪物 =========="
+    },
+    {
+      "id": "monster-zhengdao-tianque-xunshou",
+      "code": "zhengdao_tianque_xunshou",
+      "name": "天阙巡狩",
+      "title": "阙门执巡",
+      "realm": "炼虚合道·证道期",
+      "level": 63,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "normal",
+      "element": "金",
+      "base_attrs": {
+        "qixue": 10200,
+        "max_qixue": 10200,
+        "lingqi": 920,
+        "max_lingqi": 920,
+        "wugong": 382,
+        "fagong": 286,
+        "wufang": 248,
+        "fafang": 236,
+        "mingzhong": 1.7,
+        "shanbi": 0.118,
+        "zhaojia": 0.18,
+        "baoji": 0.238,
+        "baoshang": 2.92,
+        "kangbao": 0.18,
+        "sudu": 9,
+        "kongzhi_kangxing": 1.22
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.04,
+      "attr_multiplier_max": 1.28,
+      "ai_profile": {
+        "skills": [
+          "sk-jingmang-zhan",
+          "sk-jingjia-fanzhao"
+        ],
+        "skill_weights": {
+          "sk-jingmang-zhan": 56,
+          "sk-jingjia-fanzhao": 44
+        }
+      },
+      "drop_pool_id": "dp-zhengdao-tianque-xunshou",
+      "exp_reward": 1960,
+      "silver_reward_min": 560,
+      "silver_reward_max": 820,
+      "enabled": true
+    },
+    {
+      "id": "monster-zhengdao-lvwen-youhun",
+      "code": "zhengdao_lvwen_youhun",
+      "name": "律纹游魂",
+      "title": "回廊执纹者",
+      "realm": "炼虚合道·证道期",
+      "level": 64,
+      "avatar": "/assets/monster/shadow_viper.png",
+      "kind": "normal",
+      "element": "光",
+      "base_attrs": {
+        "qixue": 9700,
+        "max_qixue": 9700,
+        "lingqi": 980,
+        "max_lingqi": 980,
+        "wugong": 286,
+        "fagong": 390,
+        "wufang": 238,
+        "fafang": 260,
+        "mingzhong": 1.74,
+        "shanbi": 0.12,
+        "zhaojia": 0.18,
+        "baoji": 0.244,
+        "baoshang": 2.96,
+        "kangbao": 0.18,
+        "sudu": 10,
+        "kongzhi_kangxing": 1.2
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.05,
+      "attr_multiplier_max": 1.3,
+      "ai_profile": {
+        "skills": [
+          "sk-zheguang-huilv"
+        ],
+        "skill_weights": {
+          "sk-zheguang-huilv": 100
+        }
+      },
+      "drop_pool_id": "dp-zhengdao-lvwen-youhun",
+      "exp_reward": 2040,
+      "silver_reward_min": 590,
+      "silver_reward_max": 860,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-zhengdao-zhenzhang-shi",
+      "code": "elite_zhengdao_zhenzhang_shi",
+      "name": "镇章使",
+      "title": "精英",
+      "realm": "炼虚合道·证道期",
+      "level": 65,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "elite",
+      "element": "金",
+      "base_attrs": {
+        "qixue": 30800,
+        "max_qixue": 30800,
+        "lingqi": 1680,
+        "max_lingqi": 1680,
+        "wugong": 566,
+        "fagong": 508,
+        "wufang": 372,
+        "fafang": 356,
+        "mingzhong": 1.84,
+        "shanbi": 0.118,
+        "zhaojia": 0.18,
+        "baoji": 0.25,
+        "baoshang": 3.08,
+        "jianbaoshang": 0.24,
+        "kangbao": 0.18,
+        "sudu": 9,
+        "kongzhi_kangxing": 1.4
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.4,
+      "attr_multiplier_max": 1.78,
+      "ai_profile": {
+        "skills": [
+          "sk-jingmang-zhan",
+          "sk-beishi-nilin"
+        ],
+        "skill_weights": {
+          "sk-jingmang-zhan": 42,
+          "sk-beishi-nilin": 58
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 0.6,
+            "action": "enrage",
+            "effects": [
+              {
+                "type": "buff",
+                "value": 0.24,
+                "duration": 99,
+                "stacks": 1,
+                "buffKey": "buff-zengshang-up",
+                "buffKind": "attr",
+                "attrKey": "zengshang",
+                "applyType": "flat"
+              }
+            ]
+          }
+        ]
+      },
+      "drop_pool_id": "dp-zhengdao-elite-zhenzhang-shi",
+      "exp_reward": 3020,
+      "silver_reward_min": 860,
+      "silver_reward_max": 1260,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-zhengdao-wentian-zhiju",
+      "code": "elite_zhengdao_wentian_zhiju",
+      "name": "问天执炬",
+      "title": "精英",
+      "realm": "炼虚合道·证道期",
+      "level": 66,
+      "avatar": "/assets/monster/withered_ent.png",
+      "kind": "elite",
+      "element": "火",
+      "base_attrs": {
+        "qixue": 32200,
+        "max_qixue": 32200,
+        "lingqi": 1740,
+        "max_lingqi": 1740,
+        "wugong": 548,
+        "fagong": 540,
+        "wufang": 362,
+        "fafang": 370,
+        "mingzhong": 1.88,
+        "shanbi": 0.12,
+        "zhaojia": 0.18,
+        "baoji": 0.254,
+        "baoshang": 3.12,
+        "jianbaoshang": 0.24,
+        "kangbao": 0.18,
+        "sudu": 9,
+        "kongzhi_kangxing": 1.44
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.42,
+      "attr_multiplier_max": 1.8,
+      "ai_profile": {
+        "skills": [
+          "sk-zheguang-huilv",
+          "sk-jingyu-duanlv"
+        ],
+        "skill_weights": {
+          "sk-zheguang-huilv": 34,
+          "sk-jingyu-duanlv": 66
+        }
+      },
+      "drop_pool_id": "dp-zhengdao-elite-wentian-zhiju",
+      "exp_reward": 3180,
+      "silver_reward_min": 900,
+      "silver_reward_max": 1320,
+      "enabled": true
+    },
+    {
+      "id": "monster-zhengdao-daogong-shouwei",
+      "code": "zhengdao_daogong_shouwei",
+      "name": "道宫守卫",
+      "title": "法宫镇守",
+      "realm": "炼虚合道·证道期",
+      "level": 64,
+      "avatar": "/assets/monster/storm_wolf_lord.png",
+      "kind": "normal",
+      "element": "金",
+      "base_attrs": {
+        "qixue": 11800,
+        "max_qixue": 11800,
+        "lingqi": 1040,
+        "max_lingqi": 1040,
+        "wugong": 418,
+        "fagong": 332,
+        "wufang": 282,
+        "fafang": 272,
+        "mingzhong": 1.8,
+        "shanbi": 0.116,
+        "zhaojia": 0.2,
+        "baoji": 0.246,
+        "baoshang": 3.02,
+        "kangbao": 0.18,
+        "sudu": 8,
+        "kongzhi_kangxing": 1.28
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.08,
+      "attr_multiplier_max": 1.34,
+      "ai_profile": {
+        "skills": [
+          "sk-jingmang-zhan",
+          "sk-jingjia-fanzhao"
+        ],
+        "skill_weights": {
+          "sk-jingmang-zhan": 50,
+          "sk-jingjia-fanzhao": 50
+        }
+      },
+      "drop_pool_id": "dp-zhengdao-daogong-shouwei",
+      "exp_reward": 2280,
+      "silver_reward_min": 660,
+      "silver_reward_max": 960,
+      "enabled": true
+    },
+    {
+      "id": "monster-elite-zhengdao-zhilv-faxiang",
+      "code": "elite_zhengdao_zhilv_faxiang",
+      "name": "执律法相",
+      "title": "精英",
+      "realm": "炼虚合道·证道期",
+      "level": 66,
+      "avatar": "/assets/monster/rune_golem.png",
+      "kind": "elite",
+      "element": "光",
+      "base_attrs": {
+        "qixue": 33800,
+        "max_qixue": 33800,
+        "lingqi": 1820,
+        "max_lingqi": 1820,
+        "wugong": 592,
+        "fagong": 586,
+        "wufang": 388,
+        "fafang": 382,
+        "mingzhong": 1.92,
+        "shanbi": 0.118,
+        "zhaojia": 0.2,
+        "baoji": 0.258,
+        "baoshang": 3.16,
+        "jianbaoshang": 0.24,
+        "kangbao": 0.18,
+        "sudu": 9,
+        "kongzhi_kangxing": 1.5
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.44,
+      "attr_multiplier_max": 1.84,
+      "ai_profile": {
+        "skills": [
+          "sk-zheguang-huilv",
+          "sk-jingyu-duanlv"
+        ],
+        "skill_weights": {
+          "sk-zheguang-huilv": 38,
+          "sk-jingyu-duanlv": 62
+        }
+      },
+      "drop_pool_id": "dp-zhengdao-elite-zhilv-faxiang",
+      "exp_reward": 3360,
+      "silver_reward_min": 960,
+      "silver_reward_max": 1400,
+      "enabled": true
+    },
+    {
+      "id": "monster-boss-zhengdao-taishang-lvzhu",
+      "code": "boss_zhengdao_taishang_lvzhu",
+      "name": "太上律主",
+      "title": "首领",
+      "realm": "炼虚合道·证道期",
+      "level": 68,
+      "avatar": "/assets/monster/withered_ent.png",
+      "kind": "boss",
+      "element": "金",
+      "base_attrs": {
+        "qixue": 80200,
+        "max_qixue": 80200,
+        "lingqi": 3660,
+        "max_lingqi": 3660,
+        "wugong": 882,
+        "fagong": 876,
+        "wufang": 596,
+        "fafang": 572,
+        "mingzhong": 2.18,
+        "shanbi": 0.112,
+        "zhaojia": 0.38,
+        "baoji": 0.278,
+        "baoshang": 3.32,
+        "jianbaoshang": 0.24,
+        "kangbao": 0.18,
+        "sudu": 8,
+        "kongzhi_kangxing": 1.62
+      },
+      "attr_variance": 0,
+      "attr_multiplier_min": 1.52,
+      "attr_multiplier_max": 1.94,
+      "ai_profile": {
+        "skills": [
+          "sk-fantian-mingjing",
+          "sk-xuanjian-zhenmie",
+          "sk-jingyu-duanlv",
+          "sk-zheguang-huilv"
+        ],
+        "skill_weights": {
+          "sk-fantian-mingjing": 28,
+          "sk-xuanjian-zhenmie": 32,
+          "sk-jingyu-duanlv": 24,
+          "sk-zheguang-huilv": 16
+        },
+        "phase_triggers": [
+          {
+            "hp_percent": 0.72,
+            "action": "summon",
+            "summon_id": "monster-zhengdao-daogong-shouwei",
+            "summon_count": 2
+          },
+          {
+            "hp_percent": 0.56,
+            "action": "enrage",
+            "effects": [
+              {
+                "type": "buff",
+                "value": 0.16,
+                "duration": 99,
+                "stacks": 1,
+                "buffKey": "buff-wufang-up",
+                "buffKind": "attr",
+                "attrKey": "wufang",
+                "applyType": "percent"
+              },
+              {
+                "type": "buff",
+                "value": 0.16,
+                "duration": 99,
+                "stacks": 1,
+                "buffKey": "buff-fafang-up",
+                "buffKind": "attr",
+                "attrKey": "fafang",
+                "applyType": "percent"
+              }
+            ]
+          },
+          {
+            "hp_percent": 0.34,
+            "action": "enrage",
+            "effects": [
+              {
+                "type": "buff",
+                "value": 0.2,
+                "duration": 99,
+                "stacks": 1,
+                "buffKey": "buff-zengshang-up",
+                "buffKind": "attr",
+                "attrKey": "zengshang",
+                "applyType": "flat"
+              },
+              {
+                "type": "buff",
+                "value": 1,
+                "duration": 99,
+                "stacks": 1,
+                "buffKey": "buff-sudu-up",
+                "buffKind": "attr",
+                "attrKey": "sudu",
+                "applyType": "flat"
+              }
+            ]
+          }
+        ]
+      },
+      "drop_pool_id": "dp-zhengdao-boss-taishang-lvzhu",
+      "exp_reward": 4580,
+      "silver_reward_min": 1500,
+      "silver_reward_max": 2240,
+      "enabled": true
     }
   ]
 }

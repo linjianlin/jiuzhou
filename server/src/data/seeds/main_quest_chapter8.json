@@ -1,0 +1,405 @@
+{
+  "chapters": [
+    {
+      "id": "mq-chapter-8",
+      "chapter_num": 8,
+      "name": "第八章：天阙证道",
+      "description": "合道已成，你将踏入万法天阙，在万律并临的高压试炼中叩开证道之门。",
+      "background": "万法天阙是大道镜墟更高层的法则中枢，所有出手都会被天阙律纹记录、放大并追偿。你需要在这一处天阙中清剿巡狩、收束灵砂、完成道宫问律并铸成证道法印，才有资格真正迈入炼虚合道。",
+      "min_realm": "炼神返虚·合道期",
+      "chapter_rewards": {
+        "exp": 32000,
+        "silver": 42000,
+        "spirit_stones": 3600,
+        "items": [
+          {
+            "item_def_id": "box-013",
+            "quantity": 2
+          },
+          {
+            "item_def_id": "mat-zhendao-fayin",
+            "quantity": 1
+          }
+        ]
+      },
+      "unlock_features": [
+        "map-wanfa-tianque",
+        "dungeon-lianxu-wanfa-daogong"
+      ],
+      "sort_weight": 920,
+      "enabled": true
+    }
+  ],
+  "sections": [
+    {
+      "id": "main-8-001",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 1,
+      "name": "天阙初临",
+      "description": "沿镜墟高阶界桥抵达万法天阙，并与引痕使确认此地的问律规则。",
+      "brief": "抵达万法天阙，并与引痕使交谈。",
+      "npc_id": "npc-tianque-yinhen-shi",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-outer-gate",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-001",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "reach",
+          "text": "抵达万法天阙",
+          "target": 1,
+          "params": {
+            "room_id": "room-tianque-outer-gate"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "与引痕使交谈",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-tianque-yinhen-shi"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 2100,
+        "silver": 3000,
+        "spirit_stones": 260
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 920,
+      "enabled": true
+    },
+    {
+      "id": "main-8-002",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 2,
+      "name": "外庭清律",
+      "description": "在阙门外庭与律纹回廊清理天阙巡狩和律纹游魂，摸清外环法则反噬的节奏。",
+      "brief": "击败天阙巡狩6只、律纹游魂6只。",
+      "npc_id": "npc-tianque-yinhen-shi",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-lvwen-corridor",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-002",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "kill_monster",
+          "text": "击败天阙巡狩",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-zhengdao-tianque-xunshou"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "kill_monster",
+          "text": "击败律纹游魂",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-zhengdao-lvwen-youhun"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 2500,
+        "silver": 3600,
+        "spirit_stones": 300,
+        "items": [
+          {
+            "item_def_id": "mat-tianque-lingsha",
+            "quantity": 4
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 921,
+      "enabled": true
+    },
+    {
+      "id": "main-8-003",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 3,
+      "name": "灵砂归纹",
+      "description": "收束万法天阙散落的灵砂，并交由铸纹师稳固法印底胚。",
+      "brief": "收集天阙灵砂12个，并向铸纹师复命。",
+      "npc_id": "npc-tianque-zhuwen-shi",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-zhenzhang-platform",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-003",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "collect",
+          "text": "收集天阙灵砂",
+          "target": 12,
+          "params": {
+            "item_id": "mat-tianque-lingsha"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "向铸纹师复命",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-tianque-zhuwen-shi"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 2900,
+        "silver": 4200,
+        "spirit_stones": 340,
+        "items": [
+          {
+            "item_def_id": "mat-zhendao-fayin",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 922,
+      "enabled": true
+    },
+    {
+      "id": "main-8-004",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 4,
+      "name": "道宫初问",
+      "description": "进入万法道宫完成一次普通问律，验证你是否能承受证道前的基础法则审照。",
+      "brief": "通关万法道宫（普通）1次。",
+      "npc_id": "npc-tianque-zhilv-tianguan",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-daogong-gate",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-004",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关万法道宫（普通）",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong",
+            "difficulty_id": "dd-wanfa-daogong-n"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 3300,
+        "silver": 4800,
+        "spirit_stones": 380,
+        "items": [
+          {
+            "item_def_id": "box-013",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 923,
+      "enabled": true
+    },
+    {
+      "id": "main-8-005",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 5,
+      "name": "镇章压律",
+      "description": "在镇章台击败两类精英执法者，证明你已有资格进入高压问律。",
+      "brief": "击败镇章使2只、问天执炬2只。",
+      "npc_id": "npc-tianque-yinhen-shi",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-zhenzhang-platform",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-005",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "kill_monster",
+          "text": "击败镇章使",
+          "target": 2,
+          "params": {
+            "monster_id": "monster-elite-zhengdao-zhenzhang-shi"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "kill_monster",
+          "text": "击败问天执炬",
+          "target": 2,
+          "params": {
+            "monster_id": "monster-elite-zhengdao-wentian-zhiju"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 3700,
+        "silver": 5400,
+        "spirit_stones": 430,
+        "items": [
+          {
+            "item_def_id": "mat-tianque-lingsha",
+            "quantity": 6
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 924,
+      "enabled": true
+    },
+    {
+      "id": "main-8-006",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 6,
+      "name": "道宫再问",
+      "description": "完成两轮高压问律，让法印在困难法宫中真正压实。",
+      "brief": "通关万法道宫（困难）2次。",
+      "npc_id": "npc-tianque-zhilv-tianguan",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-daogong-gate",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-006",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "dungeon_clear",
+          "text": "通关万法道宫（困难）",
+          "target": 2,
+          "params": {
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong",
+            "difficulty_id": "dd-wanfa-daogong-h"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 4200,
+        "silver": 6200,
+        "spirit_stones": 500,
+        "items": [
+          {
+            "item_def_id": "mat-zhendao-fayin",
+            "quantity": 2
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 925,
+      "enabled": true
+    },
+    {
+      "id": "main-8-007",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 7,
+      "name": "法印既成",
+      "description": "收齐证道法印，向执律天官提交最后一轮证道材料。",
+      "brief": "收集证道法印4个，并向执律天官复命。",
+      "npc_id": "npc-tianque-zhilv-tianguan",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-daogong-gate",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-007",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "collect",
+          "text": "收集证道法印",
+          "target": 4,
+          "params": {
+            "item_id": "mat-zhendao-fayin"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "向执律天官复命",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-tianque-zhilv-tianguan"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 4700,
+        "silver": 7000,
+        "spirit_stones": 580,
+        "items": [
+          {
+            "item_def_id": "box-013",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": false,
+      "sort_weight": 926,
+      "enabled": true
+    },
+    {
+      "id": "main-8-008",
+      "chapter_id": "mq-chapter-8",
+      "section_num": 8,
+      "name": "证道开阙",
+      "description": "在万法天阙完成最终突破，并向执律天官回报，正式迈入证道期。",
+      "brief": "突破到炼虚合道·证道期，并向执律天官复命。",
+      "npc_id": "npc-tianque-zhilv-tianguan",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-daogong-gate",
+      "min_realm": "炼神返虚·合道期",
+      "dialogue_id": "dlg-main-8-008",
+      "objectives": [
+        {
+          "id": "obj-1",
+          "type": "upgrade_realm",
+          "text": "突破到炼虚合道·证道期",
+          "target": 1,
+          "params": {
+            "realm": "炼虚合道·证道期"
+          }
+        },
+        {
+          "id": "obj-2",
+          "type": "talk_npc",
+          "text": "向执律天官复命",
+          "target": 1,
+          "params": {
+            "npc_id": "npc-tianque-zhilv-tianguan"
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 5600,
+        "silver": 8400,
+        "spirit_stones": 720,
+        "items": [
+          {
+            "item_def_id": "mat-zhendao-fayin",
+            "quantity": 1
+          }
+        ]
+      },
+      "auto_accept": true,
+      "auto_complete": false,
+      "is_chapter_final": true,
+      "sort_weight": 927,
+      "enabled": true
+    }
+  ]
+}

@@ -669,6 +669,81 @@
       "quest_giver_id": "qg-chapter7-main",
       "sort_weight": 261,
       "enabled": true
+    },
+    {
+      "id": "npc-tianque-yinhen-shi",
+      "code": "tianque_yinhen_shi",
+      "name": "引痕使",
+      "title": "天阙接引官",
+      "gender": "男",
+      "realm": "炼虚合道·证道期",
+      "avatar": "/assets/npc/guide.png",
+      "description": "负责维持万法天阙外庭律纹稳定，引导合道修士进入证道试炼。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 15200,
+        "max_qixue": 15200,
+        "wugong": 382,
+        "fagong": 416,
+        "wufang": 330,
+        "fafang": 352,
+        "sudu": 14
+      },
+      "talk_tree_id": "talk-shenshi-guide",
+      "quest_giver_id": "qg-chapter8-main",
+      "sort_weight": 262,
+      "enabled": true
+    },
+    {
+      "id": "npc-tianque-zhuwen-shi",
+      "code": "tianque_zhuwen_shi",
+      "name": "铸纹师",
+      "title": "天阙定纹官",
+      "gender": "女",
+      "realm": "炼虚合道·证道期",
+      "avatar": "/assets/npc/mysterious_merchant.png",
+      "description": "专司天阙灵砂的定纹与法印锻底，负责证道前的材料收束与校正。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 14900,
+        "max_qixue": 14900,
+        "wugong": 368,
+        "fagong": 434,
+        "wufang": 324,
+        "fafang": 366,
+        "sudu": 12
+      },
+      "talk_tree_id": "talk-shenshi-merchant",
+      "quest_giver_id": "qg-chapter8-main",
+      "sort_weight": 263,
+      "enabled": true
+    },
+    {
+      "id": "npc-tianque-zhilv-tianguan",
+      "code": "tianque_zhilv_tianguan",
+      "name": "执律天官",
+      "title": "证真问律官",
+      "gender": "女",
+      "realm": "炼虚合道·证道期",
+      "avatar": "/assets/npc/teleporter.png",
+      "description": "执掌万法道宫的最终问律，负责判定修士是否具备证道资格。",
+      "npc_type": "quest",
+      "area": "S",
+      "base_attrs": {
+        "qixue": 15800,
+        "max_qixue": 15800,
+        "wugong": 374,
+        "fagong": 446,
+        "wufang": 338,
+        "fafang": 378,
+        "sudu": 13
+      },
+      "talk_tree_id": "talk-shenshi-watcher",
+      "quest_giver_id": "qg-chapter8-main",
+      "sort_weight": 264,
+      "enabled": true
     }
   ],
   "talk_trees": [

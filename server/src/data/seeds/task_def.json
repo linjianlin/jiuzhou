@@ -1813,6 +1813,140 @@
       "prereq_task_ids": [],
       "enabled": true,
       "sort_weight": 741
+    },
+    {
+      "id": "task-zhengdao-daily-001",
+      "category": "daily",
+      "title": "天阙日课",
+      "realm": "炼神返虚·合道期",
+      "description": "完成一轮万法天阙外庭巡检，并进入万法道宫完成当日问律。",
+      "giver_npc_id": "npc-tianque-yinhen-shi",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-outer-gate",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "kill_monster",
+          "text": "击败天阙巡狩6只",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-zhengdao-tianque-xunshou"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "kill_monster",
+          "text": "击败律纹游魂6只",
+          "target": 6,
+          "params": {
+            "monster_id": "monster-zhengdao-lvwen-youhun"
+          }
+        },
+        {
+          "id": "obj-003",
+          "type": "gather_resource",
+          "text": "收集天阙灵砂 8 份",
+          "target": 8,
+          "params": {
+            "resource_id": "mat-tianque-lingsha"
+          }
+        },
+        {
+          "id": "obj-004",
+          "type": "dungeon_clear",
+          "text": "通关万法道宫 1 次",
+          "target": 1,
+          "params": {
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 36000
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 3600
+        },
+        {
+          "type": "item",
+          "item_def_id": "box-013",
+          "qty": 1
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 742
+    },
+    {
+      "id": "task-zhengdao-weekly-001",
+      "category": "event",
+      "title": "周常：道宫问律",
+      "realm": "炼神返虚·合道期",
+      "description": "完成多轮高压问律，收集灵砂与法印，验证证道前的整体承压能力。",
+      "giver_npc_id": "npc-tianque-zhilv-tianguan",
+      "map_id": "map-wanfa-tianque",
+      "room_id": "room-tianque-daogong-gate",
+      "objectives": [
+        {
+          "id": "obj-001",
+          "type": "dungeon_clear",
+          "text": "通关万法道宫（困难）3次",
+          "target": 3,
+          "params": {
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong",
+            "difficulty_id": "dd-wanfa-daogong-h"
+          }
+        },
+        {
+          "id": "obj-002",
+          "type": "kill_monster",
+          "text": "击败太上律主 1 次",
+          "target": 1,
+          "params": {
+            "monster_id": "monster-boss-zhengdao-taishang-lvzhu"
+          }
+        },
+        {
+          "id": "obj-003",
+          "type": "gather_resource",
+          "text": "收集天阙灵砂 24 份",
+          "target": 24,
+          "params": {
+            "resource_id": "mat-tianque-lingsha"
+          }
+        },
+        {
+          "id": "obj-004",
+          "type": "gather_resource",
+          "text": "收集证道法印 4 份",
+          "target": 4,
+          "params": {
+            "resource_id": "mat-zhendao-fayin"
+          }
+        }
+      ],
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 68000
+        },
+        {
+          "type": "item",
+          "item_def_id": "mat-zhendao-fayin",
+          "qty": 2
+        },
+        {
+          "type": "item",
+          "item_def_id": "box-013",
+          "qty": 2
+        }
+      ],
+      "prereq_task_ids": [],
+      "enabled": true,
+      "sort_weight": 743
     }
   ]
 }

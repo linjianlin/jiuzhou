@@ -631,60 +631,88 @@
       "to": "炼虚合道·证道期",
       "requirements": [
         {
-          "id": "version-lock-zhengdao",
+          "id": "version-lock-lijie",
           "type": "version_locked",
           "title": "境界开放进度",
-          "reason": "炼炁化神·采药期及以上境界暂未开放"
+          "reason": "炼虚合道·证道期及以上境界暂未开放"
         },
         {
           "id": "exp",
           "type": "exp_min",
-          "min": 5600000,
+          "min": 6400000,
           "title": "修为经验"
         },
         {
-          "id": "tech-count-2-layer-9",
+          "id": "tech-count-3-layer-9",
           "type": "techniques_count_min_layer",
-          "minCount": 2,
+          "minCount": 3,
           "minLayer": 9,
           "title": "九重功法圆满"
         },
         {
-          "id": "dungeon-clear-any-40",
+          "id": "dungeon-clear-wanfa-daogong-4",
           "type": "dungeon_clear_min",
-          "minCount": 40,
-          "title": "秘境大道试炼"
+          "dungeonId": "dungeon-lianxu-wanfa-daogong",
+          "difficultyId": "dd-wanfa-daogong-h",
+          "minCount": 4,
+          "title": "万法道宫高压问律"
         },
         {
-          "id": "dungeon-clear-frost-abyss-18",
-          "type": "dungeon_clear_min",
-          "dungeonId": "dungeon-qiqi-frost-abyss",
-          "minCount": 18,
-          "title": "寒渊极限试炼"
+          "id": "chapter-8-complete",
+          "type": "main_quest_chapter_completed",
+          "chapterId": "mq-chapter-8",
+          "title": "第八章主线完成"
+        },
+        {
+          "id": "item-lingsha-30",
+          "type": "item_qty_min",
+          "itemDefId": "mat-tianque-lingsha",
+          "qty": 30,
+          "title": "天阙灵砂准备"
+        },
+        {
+          "id": "item-fayin-6",
+          "type": "item_qty_min",
+          "itemDefId": "mat-zhendao-fayin",
+          "qty": 6,
+          "title": "证道法印准备"
         }
       ],
       "costs": [
         {
           "type": "spirit_stones",
-          "amount": 27000
+          "amount": 30000
         },
         {
           "type": "exp",
-          "amount": 5600000
+          "amount": 6400000
+        },
+        {
+          "type": "items",
+          "items": [
+            {
+              "itemDefId": "mat-tianque-lingsha",
+              "qty": 20
+            },
+            {
+              "itemDefId": "mat-zhendao-fayin",
+              "qty": 4
+            }
+          ]
         }
       ],
       "rewards": {
-        "attributePoints": 34,
+        "attributePoints": 36,
         "pct": {
-          "max_qixue": 0.3,
-          "max_lingqi": 0.3,
-          "wugong": 0.2,
-          "fagong": 0.2,
-          "wufang": 0.2,
-          "fafang": 0.2
+          "max_qixue": 0.32,
+          "max_lingqi": 0.32,
+          "wugong": 0.22,
+          "fagong": 0.22,
+          "wufang": 0.22,
+          "fafang": 0.22
         },
         "addPercent": {
-          "kongzhi_kangxing": 0.11
+          "kongzhi_kangxing": 0.12
         }
       }
     },
@@ -696,7 +724,7 @@
           "id": "version-lock-lijie",
           "type": "version_locked",
           "title": "境界开放进度",
-          "reason": "炼炁化神·采药期及以上境界暂未开放"
+          "reason": "炼虚合道·历劫期及以上境界暂未开放"
         },
         {
           "id": "exp",
@@ -758,7 +786,7 @@
           "id": "version-lock-chengsheng",
           "type": "version_locked",
           "title": "境界开放进度",
-          "reason": "炼炁化神·采药期及以上境界暂未开放"
+          "reason": "炼虚合道·成圣期暂未开放"
         },
         {
           "id": "exp",

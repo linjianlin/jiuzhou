@@ -2653,6 +2653,86 @@
       ]
     },
     {
+      "id": "mat-tianque-lingsha",
+      "name": "天阙灵砂",
+      "category": "material",
+      "sub_category": "technique",
+      "quality": "天",
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/xuling-jinghua.png",
+      "description": "万法天阙律纹沉降后留下的灵性砂晶，是稳固法印底纹的核心材料。",
+      "long_desc": "灵砂会随天阙法则起伏改变纹路，只有在律纹回落时才能完整收束，是证道期野外循环与法印锻底的基础资源。",
+      "tags": [
+        "材料",
+        "功法",
+        "证道期"
+      ],
+      "source_hint": [
+        "万法天阙采集",
+        "万法天阙野外怪",
+        "证道期日常/周常"
+      ]
+    },
+    {
+      "id": "mat-zhendao-fayin",
+      "name": "证道法印",
+      "category": "material",
+      "sub_category": "breakthrough",
+      "quality": "天",
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/hedao-qiyin.webp",
+      "description": "在万法道宫高压问律中压成的法则印记，是合道迈向证道的核心凭证。",
+      "long_desc": "法印必须在道宫的并临法则中反复压实，既是突破材料，也是判断修士能否承受更高法则追偿的硬门槛。",
+      "tags": [
+        "材料",
+        "突破",
+        "法印",
+        "证道期"
+      ],
+      "source_hint": [
+        "第八章主线",
+        "万法道宫",
+        "证道期周常"
+      ]
+    },
+    {
+      "id": "box-013",
+      "name": "证道宝石袋",
+      "category": "consumable",
+      "sub_category": "box",
+      "quality": "天",
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/Props-baodai-2.png",
+      "description": "打开后可随机获得1个5~6级宝石。",
+      "long_desc": "用于证道阶段构筑强化，产出区间高于合道宝石袋。",
+      "tags": [
+        "宝箱",
+        "宝石",
+        "证道",
+        "随机"
+      ],
+      "use_type": "instant",
+      "effect_defs": [
+        {
+          "trigger": "use",
+          "target": "self",
+          "effect_type": "loot",
+          "params": {
+            "loot_type": "random_gem",
+            "min_level": 5,
+            "max_level": 6,
+            "gems_per_use": 1
+          }
+        }
+      ]
+    },
+    {
       "id": "book-generated-technique",
       "name": "《无名功法秘卷》",
       "category": "consumable",

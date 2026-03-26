@@ -3487,6 +3487,178 @@
             }
           ],
           "items": [],
+          "portals": [
+            {
+              "target_map_id": "map-wanfa-tianque",
+              "target_room_id": "room-tianque-outer-gate",
+              "name": "万法天阙界桥"
+            }
+          ],
+          "events": []
+        }
+      ]
+    },
+    {
+      "id": "map-wanfa-tianque",
+      "code": "wanfa_tianque",
+      "name": "万法天阙",
+      "description": "大道镜墟更高层显化出的法则中枢，万律并临，所有失衡都会被立刻追偿。",
+      "background_image": "/assets/map/yanbing_rift.png",
+      "map_type": "field",
+      "parent_map_id": "map-dadao-jingxu",
+      "region": "东洲",
+      "world_position": {
+        "x": 244,
+        "y": 266
+      },
+      "req_realm_min": "炼神返虚·合道期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-wanfa-tianque",
+      "revive_room_id": "room-tianque-outer-gate",
+      "sort_weight": 600,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-tianque-outer-gate",
+          "name": "阙门外庭",
+          "description": "万法天阙的外庭由引痕使把守，负责校准所有初入者的法则波动。",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "north",
+              "target_room_id": "room-tianque-lvwen-corridor"
+            }
+          ],
+          "npcs": [
+            "npc-tianque-yinhen-shi"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [
+            {
+              "target_map_id": "map-dadao-jingxu",
+              "target_room_id": "room-jingxu-sitian-gate",
+              "name": "大道镜墟界桥"
+            }
+          ],
+          "events": []
+        },
+        {
+          "id": "room-tianque-lvwen-corridor",
+          "name": "律纹回廊",
+          "description": "回廊中的律纹不断回卷，天阙巡狩与律纹游魂会轮番放大试炼者的失衡。",
+          "position": {
+            "x": 0,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-tianque-outer-gate"
+            },
+            {
+              "direction": "east",
+              "target_room_id": "room-tianque-zhenzhang-platform"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-zhengdao-tianque-xunshou",
+              "count": 3,
+              "respawn_sec": 56
+            },
+            {
+              "monster_def_id": "monster-zhengdao-lvwen-youhun",
+              "count": 2,
+              "respawn_sec": 60
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-tianque-lingsha",
+              "count": 8,
+              "collect_limit": 8,
+              "respawn_sec": 360
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-tianque-zhenzhang-platform",
+          "name": "镇章台",
+          "description": "镇章台会主动放大追偿节奏，镇章使与问天执炬在此筛掉所有根基不稳者。",
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "room_type": "field",
+          "connections": [
+            {
+              "direction": "west",
+              "target_room_id": "room-tianque-lvwen-corridor"
+            },
+            {
+              "direction": "north",
+              "target_room_id": "room-tianque-daogong-gate"
+            }
+          ],
+          "npcs": [],
+          "monsters": [
+            {
+              "monster_def_id": "monster-elite-zhengdao-zhenzhang-shi",
+              "count": 1,
+              "respawn_sec": 220
+            },
+            {
+              "monster_def_id": "monster-elite-zhengdao-wentian-zhiju",
+              "count": 1,
+              "respawn_sec": 230
+            }
+          ],
+          "resources": [
+            {
+              "resource_id": "mat-tianque-lingsha",
+              "count": 6,
+              "collect_limit": 6,
+              "respawn_sec": 380
+            }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-tianque-daogong-gate",
+          "name": "道宫正门",
+          "description": "万法道宫门前立有证真法碑，铸纹师与执律天官在此审定证道资格。",
+          "position": {
+            "x": 1,
+            "y": 2
+          },
+          "room_type": "safe",
+          "connections": [
+            {
+              "direction": "south",
+              "target_room_id": "room-tianque-zhenzhang-platform"
+            }
+          ],
+          "npcs": [
+            "npc-tianque-zhuwen-shi",
+            "npc-tianque-zhilv-tianguan"
+          ],
+          "monsters": [],
+          "resources": [],
+          "items": [],
           "portals": [],
           "events": []
         }

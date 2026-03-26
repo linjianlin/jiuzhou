@@ -2340,6 +2340,588 @@
         }
       ],
       "common_pool_ids": []
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期怪物掉落池 =========="
+    },
+    {
+      "id": "dp-zhengdao-tianque-xunshou",
+      "name": "天阙巡狩掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 0.92,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao"
+      ]
+    },
+    {
+      "id": "dp-zhengdao-lvwen-youhun",
+      "name": "律纹游魂掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 0.88,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao"
+      ]
+    },
+    {
+      "id": "dp-zhengdao-elite-zhenzhang-shi",
+      "name": "镇章使掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao",
+        "dp-common-monster-elite"
+      ]
+    },
+    {
+      "id": "dp-zhengdao-elite-wentian-zhiju",
+      "name": "问天执炬掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao",
+        "dp-common-monster-elite"
+      ]
+    },
+    {
+      "id": "dp-zhengdao-daogong-shouwei",
+      "name": "道宫守卫掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 1,
+          "qty_min": 2,
+          "qty_max": 4,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao"
+      ]
+    },
+    {
+      "id": "dp-zhengdao-elite-zhilv-faxiang",
+      "name": "执律法相掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 1,
+          "qty_min": 4,
+          "qty_max": 6,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-zhendao-fayin",
+          "chance": 0.32,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao",
+        "dp-common-monster-elite"
+      ]
+    },
+    {
+      "id": "dp-zhengdao-boss-taishang-lvzhu",
+      "name": "太上律主掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-zhendao-fayin",
+          "chance": 1,
+          "qty_min": 3,
+          "qty_max": 5,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 1,
+          "qty_min": 8,
+          "qty_max": 12,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-weapon",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-head",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-artifact",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-weapon",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-head",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-artifact",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-weapon",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-head",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-artifact",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "cons-monthcard-001",
+          "chance": 0.004,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-zhengdao",
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind",
+        "dp-common-dungeon-boss-advanced-recruit-token"
+      ]
+    },
+    {
+      "_comment": "========== 证道一期秘境掉落池 =========="
+    },
+    {
+      "id": "dp-dungeon-tianque-n",
+      "name": "万法道宫普通掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 0.88,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-zhendao-fayin",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-necklace",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-accessory",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-necklace",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-accessory",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-necklace",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-accessory",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": []
+    },
+    {
+      "id": "dp-dungeon-tianque-h",
+      "name": "万法道宫困难掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 0.82,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-zhendao-fayin",
+          "chance": 0.18,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-clothes",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-gloves",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-pants",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-necklace",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-accessory",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-clothes",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-gloves",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-pants",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-necklace",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-accessory",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-clothes",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-gloves",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-pants",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-necklace",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-accessory",
+          "chance": 0.09,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-head",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-head",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-head",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": []
+    },
+    {
+      "id": "dp-dungeon-tianque-nm",
+      "name": "万法道宫噩梦掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-tianque-lingsha",
+          "chance": 0.76,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-zhendao-fayin",
+          "chance": 0.24,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-weapon",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-head",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-artifact",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-weapon",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-head",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-artifact",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-weapon",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-head",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-artifact",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": []
     }
   ]
 }

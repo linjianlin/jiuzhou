@@ -3249,6 +3249,426 @@
           "priority": 3
         }
       ]
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期套装：天衍套装（法攻/法则烙印） =========="
+    },
+    {
+      "id": "set-tianyan",
+      "name": "天衍套装",
+      "description": "天衍套装以法则烙印与连锁回响为核心，通过持续叠层与追击回声打出高频法术压制。",
+      "quality_rank": 7,
+      "min_realm": "炼虚合道·证道期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-tianyan-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-tianyan-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-tianyan-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-tianyan-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-tianyan-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-tianyan-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-tianyan-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-tianyan-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 30,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "lengque_rating",
+                "value": 180,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "on_skill",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "apply",
+                "mark_id": "mirror_crack",
+                "max_stacks": 4,
+                "chance": 0.45
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 0.06,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_skill",
+              "target": "enemy",
+              "effect_type": "mark",
+              "params": {
+                "operation": "consume",
+                "mark_id": "mirror_crack",
+                "consume_mode": "fixed",
+                "consume_stacks": 2,
+                "per_stack_rate": 0.88,
+                "result_type": "damage",
+                "value": 0,
+                "scale_key": "fagong",
+                "scale_rate": 0.34
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_skill",
+              "target": "enemy",
+              "effect_type": "damage",
+              "params": {
+                "damage_type": "echo",
+                "value": 0.26,
+                "chance": 0.32
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期套装：玄衡套装（坦度/护盾反制） =========="
+    },
+    {
+      "id": "set-xuanheng",
+      "name": "玄衡套装",
+      "description": "玄衡套装以护盾稳场与减速反制为核心，通过受击回稳和镇压节奏扛住高压法则战。",
+      "quality_rank": 7,
+      "min_realm": "炼虚合道·证道期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-xuanheng-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-xuanheng-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-xuanheng-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-xuanheng-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-xuanheng-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-xuanheng-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-xuanheng-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-xuanheng-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 620,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wufang",
+                "value": 32,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "on_be_hit",
+              "target": "enemy",
+              "effect_type": "debuff",
+              "duration_round": 2,
+              "params": {
+                "attr_key": "sudu",
+                "value": 0.08,
+                "apply_type": "percent",
+                "chance": 0.38
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "on_be_hit",
+              "target": "self",
+              "effect_type": "shield",
+              "duration_round": 2,
+              "params": {
+                "shield_mode": "damage_echo",
+                "value": 0.48,
+                "chance": 0.38
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_be_hit",
+              "target": "enemy",
+              "effect_type": "damage",
+              "params": {
+                "damage_type": "reflect",
+                "value": 0.36,
+                "chance": 0.35
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期套装：破虚套装（物攻/破障追斩） =========="
+    },
+    {
+      "id": "set-poxu",
+      "name": "破虚套装",
+      "description": "破虚套装以破障追斩与持续压防为核心，通过重斩连携撕开道宫守御。",
+      "quality_rank": 7,
+      "min_realm": "炼虚合道·证道期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "set-poxu-weapon",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "set-poxu-head",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "set-poxu-clothes",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "set-poxu-gloves",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "set-poxu-pants",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "set-poxu-necklace",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "set-poxu-accessory",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "set-poxu-artifact",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wugong",
+                "value": 30,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "baoji_rating",
+                "value": 180,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "on_hit",
+              "target": "enemy",
+              "effect_type": "debuff",
+              "duration_round": 2,
+              "params": {
+                "attr_key": "wufang",
+                "value": 0.1,
+                "apply_type": "percent",
+                "chance": 0.38
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 0.06,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "on_hit",
+              "target": "enemy",
+              "effect_type": "damage",
+              "params": {
+                "damage_type": "physical",
+                "value": 0,
+                "scale_key": "wugong",
+                "scale_rate": 0.32,
+                "chance": 0.34
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "on_crit",
+              "target": "enemy",
+              "effect_type": "damage",
+              "params": {
+                "damage_type": "physical",
+                "value": 0,
+                "scale_key": "wugong",
+                "scale_rate": 0.68,
+                "chance": 0.35
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
     }
   ]
 }

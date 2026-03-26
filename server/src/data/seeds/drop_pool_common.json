@@ -1494,6 +1494,21 @@
         }
       ],
       "enabled": true
+    },
+    {
+      "id": "dp-common-monster-zhengdao",
+      "name": "炼虚合道·证道期公共掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "box-013",
+          "chance": 0.04,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
     }
   ]
 }

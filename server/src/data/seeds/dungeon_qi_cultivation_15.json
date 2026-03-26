@@ -1,0 +1,498 @@
+{
+  "version": 1,
+  "description": "秘境种子数据 - 证道一期 - 万法道宫",
+  "dungeons": [
+    {
+      "def": {
+        "id": "dungeon-lianxu-wanfa-daogong",
+        "name": "万法道宫",
+        "type": "equipment",
+        "category": "境界",
+        "description": "万法天阙深处的证道法宫，所有术式都会被律纹拆解、追偿并重构。",
+        "icon": "/assets/dungeon/withered_altar.png",
+        "background": "/assets/dungeon/bg_withered_altar.png",
+        "min_players": 1,
+        "max_players": 5,
+        "min_realm": "炼神返虚·合道期",
+        "recommended_realm": "炼虚合道·证道期",
+        "unlock_condition": {},
+        "daily_limit": 0,
+        "weekly_limit": 0,
+        "stamina_cost": 18,
+        "time_limit_sec": 1320,
+        "revive_limit": 2,
+        "tags": [
+          "证道一期",
+          "装备",
+          "万法道宫"
+        ],
+        "sort_weight": 110,
+        "enabled": true,
+        "version": 1
+      },
+      "difficulties": [
+        {
+          "id": "dd-wanfa-daogong-n",
+          "dungeon_id": "dungeon-lianxu-wanfa-daogong",
+          "name": "普通",
+          "difficulty_rank": 1,
+          "monster_level_add": 0,
+          "monster_attr_mult": 1.82,
+          "reward_mult": 1,
+          "min_realm": "炼神返虚·合道期",
+          "unlock_prev_difficulty": false,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-tianque-lingsha",
+                "qty": 8
+              },
+              {
+                "item_def_id": "mat-zhendao-fayin",
+                "qty": 1
+              }
+            ],
+            "silver": 2800,
+            "exp": 3400
+          },
+          "drop_pool_id": "dp-dungeon-tianque-n",
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-wanfa-daogong-n-1",
+              "difficulty_id": "dd-wanfa-daogong-n",
+              "stage_index": 1,
+              "name": "阙门前庭",
+              "type": "battle",
+              "description": "前庭中的律纹会拆掉失衡的第一轮爆发，逼迫修士稳住起手节奏。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 4
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-wanfa-daogong-n-2",
+              "difficulty_id": "dd-wanfa-daogong-n",
+              "stage_index": 2,
+              "name": "天衡回廊",
+              "type": "battle",
+              "description": "回廊内的法则会记录每一次贪进，并在下一拍用更重的追偿回击。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-wanfa-daogong-n-3",
+              "difficulty_id": "dd-wanfa-daogong-n",
+              "stage_index": 3,
+              "name": "证真主殿",
+              "type": "boss",
+              "description": "太上律主端坐主殿，以法则追偿审定所有试炼者是否具备证真资格。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-zhengdao-taishang-lvzhu",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dd-wanfa-daogong-h",
+          "dungeon_id": "dungeon-lianxu-wanfa-daogong",
+          "name": "困难",
+          "difficulty_rank": 2,
+          "monster_level_add": 2,
+          "monster_attr_mult": 2.08,
+          "reward_mult": 1.52,
+          "min_realm": "炼神返虚·合道期",
+          "unlock_prev_difficulty": true,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-tianque-lingsha",
+                "qty": 12
+              },
+              {
+                "item_def_id": "mat-zhendao-fayin",
+                "qty": 2
+              },
+              {
+                "item_def_id": "set-tianyan-weapon",
+                "qty": 1
+              }
+            ],
+            "silver": 3400,
+            "exp": 4000
+          },
+          "drop_pool_id": "dp-dungeon-tianque-h",
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-wanfa-daogong-h-1",
+              "difficulty_id": "dd-wanfa-daogong-h",
+              "stage_index": 1,
+              "name": "阙门前庭·极",
+              "type": "battle",
+              "description": "更高密度的律纹审照会持续压缩你的出手窗口。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 5
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 3
+                    },
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-wanfa-daogong-h-2",
+              "difficulty_id": "dd-wanfa-daogong-h",
+              "stage_index": 2,
+              "name": "天衡回廊·极",
+              "type": "battle",
+              "description": "回廊会同时记账并追偿，失误越多，压制就越重。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-wanfa-daogong-h-3",
+              "difficulty_id": "dd-wanfa-daogong-h",
+              "stage_index": 3,
+              "name": "证真主殿·极",
+              "type": "boss",
+              "description": "太上律主会在高压律纹中连续追偿所有失误，逼迫试炼者彻底收束节奏。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-zhengdao-taishang-lvzhu",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dd-wanfa-daogong-nm",
+          "dungeon_id": "dungeon-lianxu-wanfa-daogong",
+          "name": "噩梦",
+          "difficulty_rank": 3,
+          "monster_level_add": 4,
+          "monster_attr_mult": 2.34,
+          "reward_mult": 1.92,
+          "min_realm": "炼神返虚·合道期",
+          "unlock_prev_difficulty": true,
+          "first_clear_rewards": {
+            "items": [
+              {
+                "item_def_id": "mat-tianque-lingsha",
+                "qty": 16
+              },
+              {
+                "item_def_id": "mat-zhendao-fayin",
+                "qty": 3
+              },
+              {
+                "item_def_id": "set-xuanheng-artifact",
+                "qty": 1
+              }
+            ],
+            "silver": 4200,
+            "exp": 4800
+          },
+          "drop_pool_id": "dp-dungeon-tianque-nm",
+          "enabled": true,
+          "stages": [
+            {
+              "id": "ds-wanfa-daogong-nm-1",
+              "difficulty_id": "dd-wanfa-daogong-nm",
+              "stage_index": 1,
+              "name": "阙门前庭·噩",
+              "type": "battle",
+              "description": "前庭律纹几乎没有空窗，每一轮错位都会被放大成重罚。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 5
+                    },
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 2,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-wanfa-daogong-nm-2",
+              "difficulty_id": "dd-wanfa-daogong-nm",
+              "stage_index": 2,
+              "name": "天衡回廊·噩",
+              "type": "battle",
+              "description": "噩梦回廊会叠加追偿印记，逼迫队伍在极窄窗口内完成节奏修正。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 3,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-zhengdao-daogong-shouwei",
+                      "count": 2
+                    },
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 2
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            },
+            {
+              "id": "ds-wanfa-daogong-nm-3",
+              "difficulty_id": "dd-wanfa-daogong-nm",
+              "stage_index": 3,
+              "name": "证真主殿·噩",
+              "type": "boss",
+              "description": "噩梦主殿中的太上律主会把所有未修正的失衡一并追偿，是真正意义上的证道终考。",
+              "time_limit_sec": 0,
+              "clear_condition": {
+                "type": "kill_all"
+              },
+              "fail_condition": {},
+              "events": [],
+              "waves": [
+                {
+                  "wave_index": 1,
+                  "spawn_delay_sec": 0,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-elite-zhengdao-zhilv-faxiang",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                },
+                {
+                  "wave_index": 2,
+                  "spawn_delay_sec": 4,
+                  "monsters": [
+                    {
+                      "monster_def_id": "monster-boss-zhengdao-taishang-lvzhu",
+                      "count": 1
+                    }
+                  ],
+                  "wave_rewards": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

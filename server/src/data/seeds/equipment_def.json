@@ -4930,6 +4930,672 @@
         "物攻",
         "合道期"
       ]
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期套装：天衍套装（法攻/法则烙印） =========="
+    },
+    {
+      "id": "set-tianyan-weapon",
+      "name": "天衍律尺",
+      "category": "equipment",
+      "sub_category": "sword",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/01-weapon-set-xuying-weapon.webp",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "fagong": 43,
+        "lengque_rating": 132
+      },
+      "implicit_attrs": {
+        "fagong": 21,
+        "baoji_rating": 132
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "武器",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-head",
+      "name": "天衍玄冠",
+      "category": "equipment",
+      "sub_category": "hat",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/02-head-set-xuying-head.webp",
+      "equip_slot": "head",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_lingqi": 632,
+        "fagong": 29,
+        "kongzhi_kangxing_rating": 379
+      },
+      "implicit_attrs": {
+        "max_lingqi": 215,
+        "zhaojia_rating": 190
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "头部",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-clothes",
+      "name": "天衍道袍",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/03-clothes-set-xuying-clothes.webp",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_lingqi": 927,
+        "fagong": 35,
+        "fafang": 32
+      },
+      "implicit_attrs": {
+        "max_lingqi": 287
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "衣服",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-gloves",
+      "name": "天衍执纹",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/04-gloves-set-xuying-gloves.webp",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "fagong": 29,
+        "lengque_rating": 573
+      },
+      "implicit_attrs": {
+        "fagong": 15
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "手部",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-pants",
+      "name": "天衍云裳",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/05-pants-set-xuying-pants.webp",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 470,
+        "fafang": 35,
+        "fagong": 20
+      },
+      "implicit_attrs": {
+        "fafang": 18
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "腿部",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-necklace",
+      "name": "天衍心印",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/06-necklace-set-xuying-necklace.webp",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "fagong": 27,
+        "kongzhi_kangxing_rating": 379
+      },
+      "implicit_attrs": {
+        "fagong": 16,
+        "baoji_rating": 123
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "项链",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-accessory",
+      "name": "天衍法环",
+      "category": "equipment",
+      "sub_category": "ring",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/07-accessory-set-xuying-accessory.webp",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "fagong": 31,
+        "lengque_rating": 314
+      },
+      "implicit_attrs": {
+        "fagong": 17,
+        "lengque_rating": 179
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "饰品",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-tianyan-artifact",
+      "name": "天衍天盘",
+      "category": "equipment",
+      "sub_category": "token",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuying/08-artifact-set-xuying-artifact.webp",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "kongzhi_kangxing_rating": 1254,
+        "lengque_rating": 470
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing_rating": 385
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-tianyan",
+      "tags": [
+        "法宝",
+        "天衍套装",
+        "法攻",
+        "证道期"
+      ]
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期套装：玄衡套装（坦度/护盾反制） =========="
+    },
+    {
+      "id": "set-xuanheng-weapon",
+      "name": "玄衡镇岳",
+      "category": "equipment",
+      "sub_category": "sword",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/01-weapon-set-xuanguang-weapon.webp",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wugong": 38,
+        "wufang": 40
+      },
+      "implicit_attrs": {
+        "wugong": 18,
+        "wufang": 19
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "武器",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-head",
+      "name": "玄衡重盔",
+      "category": "equipment",
+      "sub_category": "hat",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/02-head-set-xuanguang-head.webp",
+      "equip_slot": "head",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 703,
+        "wufang": 35,
+        "kangbao_rating": 419
+      },
+      "implicit_attrs": {
+        "max_qixue": 293
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "头部",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-clothes",
+      "name": "玄衡法甲",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/03-clothes-set-xuanguang-clothes.webp",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 959,
+        "wufang": 41,
+        "fafang": 32
+      },
+      "implicit_attrs": {
+        "max_qixue": 354
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "衣服",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-gloves",
+      "name": "玄衡镇臂",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/04-gloves-set-xuanguang-gloves.webp",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wufang": 32,
+        "zhaojia_rating": 757
+      },
+      "implicit_attrs": {
+        "zhaojia_rating": 320
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "手部",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-pants",
+      "name": "玄衡坠裳",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/05-pants-set-xuanguang-pants.webp",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 558,
+        "fafang": 32
+      },
+      "implicit_attrs": {
+        "fafang": 21
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "腿部",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-necklace",
+      "name": "玄衡真链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/06-necklace-set-xuanguang-necklace.webp",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 392,
+        "kangbao_rating": 515
+      },
+      "implicit_attrs": {
+        "kangbao_rating": 320
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "项链",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-accessory",
+      "name": "玄衡坤环",
+      "category": "equipment",
+      "sub_category": "ring",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/07-accessory-set-xuanguang-accessory.webp",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wufang": 38,
+        "fafang": 27
+      },
+      "implicit_attrs": {
+        "wufang": 20
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "饰品",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-xuanheng-artifact",
+      "name": "玄衡天衡",
+      "category": "equipment",
+      "sub_category": "token",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-xuanguang/08-artifact-set-xuanguang-artifact.webp",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "kongzhi_kangxing_rating": 1089,
+        "zhaojia_rating": 580
+      },
+      "implicit_attrs": {
+        "kongzhi_kangxing_rating": 435
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-xuanheng",
+      "tags": [
+        "法宝",
+        "玄衡套装",
+        "证道期"
+      ]
+    },
+    {
+      "_comment": "========== 炼虚合道·证道期套装：破虚套装（物攻/破障追斩） =========="
+    },
+    {
+      "id": "set-poxu-weapon",
+      "name": "破虚斩界",
+      "category": "equipment",
+      "sub_category": "sword",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/01-weapon-set-pojun-weapon.webp",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wugong": 43,
+        "baoji_rating": 132
+      },
+      "implicit_attrs": {
+        "wugong": 21,
+        "mingzhong_rating": 132
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "武器",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-head",
+      "name": "破虚猎冠",
+      "category": "equipment",
+      "sub_category": "hat",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/02-head-set-pojun-head.webp",
+      "equip_slot": "head",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 632,
+        "wugong": 29,
+        "baoji_rating": 379
+      },
+      "implicit_attrs": {
+        "max_qixue": 215,
+        "wufang": 27
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "头部",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-clothes",
+      "name": "破虚裂甲",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/03-clothes-set-pojun-clothes.webp",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 927,
+        "wugong": 35,
+        "wufang": 32
+      },
+      "implicit_attrs": {
+        "max_qixue": 287
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "衣服",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-gloves",
+      "name": "破虚擒锋",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/04-gloves-set-pojun-gloves.webp",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wugong": 29,
+        "baoshang_rating": 573
+      },
+      "implicit_attrs": {
+        "wugong": 15
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "手部",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-pants",
+      "name": "破虚行裳",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/05-pants-set-pojun-pants.webp",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "max_qixue": 470,
+        "wufang": 35,
+        "wugong": 20
+      },
+      "implicit_attrs": {
+        "wufang": 18
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "腿部",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-necklace",
+      "name": "破虚裂骨链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/06-necklace-set-pojun-necklace.webp",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wugong": 27,
+        "mingzhong_rating": 379
+      },
+      "implicit_attrs": {
+        "wugong": 16,
+        "baoji_rating": 123
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "项链",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-accessory",
+      "name": "破虚夺魄环",
+      "category": "equipment",
+      "sub_category": "ring",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/07-accessory-set-pojun-accessory.webp",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "wugong": 31,
+        "baoji_rating": 314
+      },
+      "implicit_attrs": {
+        "wugong": 17,
+        "baoshang_rating": 179
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "饰品",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
+    },
+    {
+      "id": "set-poxu-artifact",
+      "name": "破虚断界印",
+      "category": "equipment",
+      "sub_category": "token",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/set-pojun/08-artifact-set-pojun-artifact.webp",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼虚合道·证道期",
+      "base_attrs": {
+        "mingzhong_rating": 470,
+        "baoshang_rating": 1254
+      },
+      "implicit_attrs": {
+        "baoji_rating": 385
+      },
+      "affix_pool_id": "ap-equipment",
+      "set_id": "set-poxu",
+      "tags": [
+        "法宝",
+        "破虚套装",
+        "物攻",
+        "证道期"
+      ]
     }
   ]
 }
