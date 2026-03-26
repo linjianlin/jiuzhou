@@ -50,6 +50,9 @@ type ResearchPanelProps = {
   submitState: TechniqueResearchSubmitState;
   onGenerateDraft: () => void;
   onBurningWordPromptChange: (nextValue: string) => void;
+  onBurningWordPromptCompositionStart: () => void;
+  onBurningWordPromptCompositionEnd: (nextValue: string) => void;
+  onBurningWordPromptBlur: (nextValue: string) => void;
   onCooldownBypassEnabledChange: (nextEnabled: boolean) => void;
   onRefresh: () => void;
   onDiscardDraft: (generationId: string) => void;
@@ -75,6 +78,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   submitState,
   onGenerateDraft,
   onBurningWordPromptChange,
+  onBurningWordPromptCompositionStart,
+  onBurningWordPromptCompositionEnd,
+  onBurningWordPromptBlur,
   onCooldownBypassEnabledChange,
   onRefresh,
   onDiscardDraft,
@@ -83,7 +89,6 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   const panelView = resolveTechniqueResearchPanelView(status);
   const cooldownDisplay = resolveTechniqueResearchCooldownDisplay(status, cooldownBypassEnabled);
   const currentFragmentCost = resolveTechniqueResearchCurrentFragmentCost(status, cooldownBypassEnabled);
-  const burningWordPromptMaxLength = status?.burningWordPromptMaxLength ?? 2;
   const burningWordPromptInputDisabled = !status?.unlocked
     || panelView.kind === 'pending'
     || panelView.kind === 'draft'
@@ -130,8 +135,10 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
                 className="tech-research-burning-word-input"
                 value={burningWordPromptInput}
                 onChange={(event) => onBurningWordPromptChange(event.target.value)}
+                onCompositionStart={onBurningWordPromptCompositionStart}
+                onCompositionEnd={(event) => onBurningWordPromptCompositionEnd(event.currentTarget.value)}
+                onBlur={(event) => onBurningWordPromptBlur(event.currentTarget.value)}
                 placeholder="留空随机"
-                maxLength={burningWordPromptMaxLength}
                 disabled={burningWordPromptInputDisabled}
                 prefix={<span className="tech-research-burning-word-prefix">{TECHNIQUE_RESEARCH_BURNING_WORD_LABEL}</span>}
               />

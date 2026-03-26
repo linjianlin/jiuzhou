@@ -19,7 +19,7 @@
  */
 
 const TECHNIQUE_RESEARCH_BURNING_WORD_CHAR_PATTERN = /^[\p{Script=Han}]$/u;
-export const TECHNIQUE_RESEARCH_BURNING_WORD_LABEL = '提示词';
+export const TECHNIQUE_RESEARCH_BURNING_WORD_LABEL = '焚诀';
 
 export const normalizeTechniqueResearchBurningWordInput = (
   raw: string,
@@ -32,14 +32,24 @@ export const normalizeTechniqueResearchBurningWordInput = (
   return hanChars.slice(0, Math.max(0, maxLength)).join('');
 };
 
+export const resolveTechniqueResearchBurningWordDisplayValue = (
+  raw: string,
+  maxLength: number,
+  isComposing: boolean,
+): string => {
+  if (isComposing) return raw;
+  return normalizeTechniqueResearchBurningWordInput(raw, maxLength);
+};
+
 export const getTechniqueResearchBurningWordInputLength = (value: string): number => {
   return Array.from(value).length;
 };
 
 export const resolveTechniqueResearchBurningWordRequestValue = (
   value: string,
+  maxLength: number,
 ): string | undefined => {
-  const normalized = value.trim();
+  const normalized = normalizeTechniqueResearchBurningWordInput(value, maxLength);
   return normalized || undefined;
 };
 

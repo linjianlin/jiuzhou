@@ -5,6 +5,7 @@ import {
   buildTechniqueResearchBurningWordTagText,
   getTechniqueResearchBurningWordInputLength,
   normalizeTechniqueResearchBurningWordInput,
+  resolveTechniqueResearchBurningWordDisplayValue,
   resolveTechniqueResearchBurningWordRequestValue,
 } from '../researchPromptShared';
 
@@ -18,9 +19,15 @@ describe('researchPromptShared', () => {
     expect(normalizeTechniqueResearchBurningWordInput('abc', 1)).toBe('');
   });
 
+  it('resolveTechniqueResearchBurningWordDisplayValue: 组合输入阶段应保留原始值', () => {
+    expect(resolveTechniqueResearchBurningWordDisplayValue('yan', 2, true)).toBe('yan');
+    expect(resolveTechniqueResearchBurningWordDisplayValue('焰火流', 2, false)).toBe('焰火');
+  });
+
   it('resolveTechniqueResearchBurningWordRequestValue: 留空应返回 undefined', () => {
-    expect(resolveTechniqueResearchBurningWordRequestValue('')).toBeUndefined();
-    expect(resolveTechniqueResearchBurningWordRequestValue('焰')).toBe('焰');
+    expect(resolveTechniqueResearchBurningWordRequestValue('', 2)).toBeUndefined();
+    expect(resolveTechniqueResearchBurningWordRequestValue('焰', 2)).toBe('焰');
+    expect(resolveTechniqueResearchBurningWordRequestValue(' a焰火流 ', 2)).toBe('焰火');
   });
 
   it('getTechniqueResearchBurningWordInputLength: 应按字符数统计', () => {

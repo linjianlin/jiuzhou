@@ -43,6 +43,7 @@ import {
 } from './researchNaming';
 import {
   normalizeTechniqueResearchBurningWordInput,
+  resolveTechniqueResearchBurningWordDisplayValue,
   resolveTechniqueResearchBurningWordRequestValue,
 } from './researchPromptShared';
 import { getSkillInlineSummary, renderSkillInlineDetails, renderSkillTooltip } from './skillDetailShared';
@@ -379,6 +380,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   const [discardSubmitting, setDiscardSubmitting] = useState(false);
   const [researchCooldownBypassEnabled, setResearchCooldownBypassEnabled] = useState(false);
   const [researchBurningWordInput, setResearchBurningWordInput] = useState('');
+  const researchBurningWordComposingRef = useRef(false);
   const [publishSubmitting, setPublishSubmitting] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishTargetGenerationId, setPublishTargetGenerationId] = useState('');
@@ -518,6 +520,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
 
   useEffect(() => {
     if (open) return;
+    researchBurningWordComposingRef.current = false;
     setResearchCooldownBypassEnabled(false);
   }, [open]);
 
@@ -526,6 +529,13 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
       setResearchCooldownBypassEnabled(false);
     }
   }, [hasResearchCooldownBypassToken, researchCooldownBypassEnabled]);
+
+  useEffect(() => {
+    if (researchBurningWordComposingRef.current) return;
+    setResearchBurningWordInput((currentValue) => {
+      return normalizeTechniqueResearchBurningWordInput(currentValue, researchBurningWordMaxLength);
+    });
+  }, [researchBurningWordMaxLength]);
 
   const refreshResearchStatus = useCallback(async (mode: ResearchStatusRefreshMode = 'background') => {
     if (!characterId) {
@@ -612,7 +622,10 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     try {
       const generateRes = await generateTechniqueResearchDraft(characterId, {
         cooldownBypassEnabled: researchCooldownBypassEnabled,
-        burningWordPrompt: resolveTechniqueResearchBurningWordRequestValue(researchBurningWordInput),
+        burningWordPrompt: resolveTechniqueResearchBurningWordRequestValue(
+          researchBurningWordInput,
+          researchBurningWordMaxLength,
+        ),
       });
       if (!generateRes?.success || !generateRes.data) {
         throw new Error(generateRes?.message || '生成失败');
@@ -631,9 +644,39 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     message,
     refreshResearchStatus,
     researchBurningWordInput,
+    researchBurningWordMaxLength,
     researchCooldownBypassEnabled,
     researchSubmitState.canSubmit,
   ]);
+
+  const commitResearchBurningWordInput = useCallback((nextValue: string) => {
+    researchBurningWordComposingRef.current = false;
+    setResearchBurningWordInput(
+      resolveTechniqueResearchBurningWordDisplayValue(nextValue, researchBurningWordMaxLength, false),
+    );
+  }, [researchBurningWordMaxLength]);
+
+  const handleResearchBurningWordInputChange = useCallback((nextValue: string) => {
+    setResearchBurningWordInput(
+      resolveTechniqueResearchBurningWordDisplayValue(
+        nextValue,
+        researchBurningWordMaxLength,
+        researchBurningWordComposingRef.current,
+      ),
+    );
+  }, [researchBurningWordMaxLength]);
+
+  const handleResearchBurningWordCompositionStart = useCallback(() => {
+    researchBurningWordComposingRef.current = true;
+  }, []);
+
+  const handleResearchBurningWordCompositionEnd = useCallback((nextValue: string) => {
+    commitResearchBurningWordInput(nextValue);
+  }, [commitResearchBurningWordInput]);
+
+  const handleResearchBurningWordBlur = useCallback((nextValue: string) => {
+    commitResearchBurningWordInput(nextValue);
+  }, [commitResearchBurningWordInput]);
 
   const closeResearchPublishDialog = useCallback(() => {
     if (publishSubmitting) return;
@@ -1261,11 +1304,10 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         burningWordPromptInput={researchBurningWordInput}
         submitState={researchSubmitState}
         onGenerateDraft={() => void handleGenerateResearchDraft()}
-        onBurningWordPromptChange={(nextValue) => {
-          setResearchBurningWordInput(
-            normalizeTechniqueResearchBurningWordInput(nextValue, researchBurningWordMaxLength),
-          );
-        }}
+        onBurningWordPromptChange={handleResearchBurningWordInputChange}
+        onBurningWordPromptCompositionStart={handleResearchBurningWordCompositionStart}
+        onBurningWordPromptCompositionEnd={handleResearchBurningWordCompositionEnd}
+        onBurningWordPromptBlur={handleResearchBurningWordBlur}
         onCooldownBypassEnabledChange={setResearchCooldownBypassEnabled}
         onRefresh={() => void refreshResearchStatus('manual')}
         onDiscardDraft={(generationId) => handleDiscardResearchDraft(generationId)}
