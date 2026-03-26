@@ -8,6 +8,7 @@
  * pnpm --filter ./server exec tsx scripts/freeze-tower-frontier.ts 80
  */
 
+import '../src/bootstrap/installConsoleLogger.js';
 import { freezeTowerFrontier } from '../src/services/tower/freezeService.js';
 
 const parseFrozenFloorMax = (argv: string[]): number => {

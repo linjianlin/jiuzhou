@@ -19,6 +19,7 @@
  * 2. `db push` 的 `--accept-data-loss` 必须只在这一类命令追加，避免影响 `generate`、`db pull` 等其他 Prisma 子命令。
  * 3. 若未来 Prisma 依赖未安装，本脚本应直接失败并暴露原始问题，而不是静默回退到其他实现。
  */
+import './shared/installConsoleLogger.mjs';
 import { existsSync, readdirSync } from "node:fs";
 import { delimiter } from "node:path";
 import { dirname, join, resolve } from "node:path";

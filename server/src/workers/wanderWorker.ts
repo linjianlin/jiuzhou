@@ -17,6 +17,7 @@
  * 1. 业务失败必须落成 `result`，不能靠抛异常让任务永久停在 pending。
  * 2. worker 只执行单任务；任务恢复、重试与生命周期都由 runner 统一负责。
  */
+import '../bootstrap/installConsoleLogger.js';
 import { parentPort } from 'worker_threads';
 import { wanderService } from '../services/wander/service.js';
 import type { WanderWorkerMessage, WanderWorkerResponse } from './wanderWorkerShared.js';

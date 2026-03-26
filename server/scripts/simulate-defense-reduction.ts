@@ -23,6 +23,7 @@
  * 2) 防御区间必须满足 start <= end 且 step >= 1，非法参数直接报错退出，避免输出误导结果。
  */
 
+import '../src/bootstrap/installConsoleLogger.js';
 import { BATTLE_CONSTANTS } from '../src/battle/types.js';
 
 interface ArgMap {

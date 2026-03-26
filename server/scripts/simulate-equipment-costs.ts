@@ -18,6 +18,7 @@
  * 2) 强化/精炼等级范围与锁定词条上限会做硬校验，非法参数直接报错，避免输出误导数据。
  */
 
+import '../src/bootstrap/installConsoleLogger.js';
 import { buildEnhanceCostPlan, buildRefineCostPlan, REFINE_MAX_LEVEL } from '../src/services/equipmentGrowthRules.js';
 import { buildAffixRerollCostPlan } from '../src/services/equipmentAffixRerollRules.js';
 import { getRealmRankOneBasedForEquipment, REALM_ORDER } from '../src/services/shared/realmRules.js';

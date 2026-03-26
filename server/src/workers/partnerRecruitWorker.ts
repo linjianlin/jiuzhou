@@ -16,6 +16,7 @@
  * 1) 业务失败必须转换成 `result` 返回主线程，避免任务静默卡在 pending。
  * 2) worker 只执行单任务，不在本线程里维护重试或队列，线程生命周期统一由 runner 管理。
  */
+import '../bootstrap/installConsoleLogger.js';
 import { parentPort } from 'worker_threads';
 import { partnerRecruitService } from '../services/partnerRecruitService.js';
 import type {

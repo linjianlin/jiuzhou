@@ -1,3 +1,4 @@
+import './bootstrap/installConsoleLogger.js';
 import express from 'express';
 import { createServer } from 'http';
 import cors, { type CorsOptions } from 'cors';

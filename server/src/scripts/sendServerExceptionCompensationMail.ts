@@ -20,6 +20,7 @@
  * 2. 执行模式不会为每个角色单独回显 mailId；追踪批次应使用统一的 `sourceRefId=batchId` 和 `metadata`。
  */
 
+import '../bootstrap/installConsoleLogger.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';

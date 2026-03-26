@@ -13,6 +13,7 @@
  * 数据流/状态流：
  * 解析参数 -> 加载 item_def.json -> 过滤功法书 -> 逐个发放 -> 汇总结果
  */
+import '../src/bootstrap/installConsoleLogger.js';
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';

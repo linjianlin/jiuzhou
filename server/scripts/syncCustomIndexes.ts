@@ -17,6 +17,7 @@
  * 1) 该脚本必须保持幂等，避免重复执行导致索引创建报错。
  * 2) 这里只维护项目明确收口的索引；常规表结构仍应继续由 Prisma schema 维护。
  */
+import '../src/bootstrap/installConsoleLogger.js';
 import { pool } from '../src/config/database.js';
 import { ensureItemInstanceSlotUniqueIndex, ITEM_INSTANCE_SLOT_UNIQUE_INDEX_NAME } from '../src/services/shared/itemInstanceSlotUniqueIndex.js';
 import { ensurePerformanceIndexes, getPerformanceIndexDefinitions } from '../src/services/shared/performanceIndexes.js';

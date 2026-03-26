@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './shared/installConsoleLogger.mjs';
 /**
  * Worker 构建脚本 - 开发环境专用
  *

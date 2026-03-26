@@ -5,6 +5,7 @@
  * - 不再执行任何配置入库 SQL
  * - 仅在初始化时输出各静态配置条目数量
  */
+import '../bootstrap/installConsoleLogger.js';
 import { pathToFileURL } from 'url';
 import {
   getAchievementDefinitions,

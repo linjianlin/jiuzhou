@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Writable } from 'node:stream';
 
-import { createLogger } from '../../utils/logger.js';
+import { createLogger, createPinoConsole } from '../../utils/logger.js';
 
 class MemoryWritable extends Writable {
   public readonly lines: string[] = [];
@@ -76,4 +76,33 @@ test('createLogger: 非法日志级别应回退到 info', () => {
   const logLine = destination.lines[0] ?? '';
   assert.match(logLine, /\[logger\.test\] fallback works/);
   assert.doesNotMatch(logLine, /"level":/);
+});
+
+test('createPinoConsole: 应把 console 风格输出桥接到同一条 pretty 日志链路', () => {
+  const destination = new MemoryWritable();
+  const bridge = createPinoConsole({
+    scope: 'console.test',
+    destination,
+    level: 'info',
+  });
+
+  bridge.info('[UserConnectionSlots] 用户进入排队', {
+    activeCount: 1,
+    queuedCount: 1,
+    userId: 7007,
+  });
+
+  bridge.error('服务启动失败:', new Error('boom'));
+
+  assert.equal(destination.lines.length, 2);
+
+  const infoLine = destination.lines[0] ?? '';
+  assert.match(infoLine, /\[console\.test\] \[UserConnectionSlots\] 用户进入排队/);
+  assert.match(infoLine, /activeCount:\s*1/);
+  assert.match(infoLine, /queuedCount:\s*1/);
+  assert.match(infoLine, /userId:\s*7007/);
+
+  const errorLine = destination.lines[1] ?? '';
+  assert.match(errorLine, /\[console\.test\] 服务启动失败:/);
+  assert.match(errorLine, /Error: boom/);
 });

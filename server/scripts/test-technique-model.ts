@@ -17,6 +17,7 @@
  * 1) 若 AI_TECHNIQUE_MODEL_URL / AI_TECHNIQUE_MODEL_KEY 缺失，脚本会直接失败退出。
  * 2) 模型可能返回非纯 JSON 文本，脚本会尝试从文本中提取第一个 JSON 对象。
  */
+import '../src/bootstrap/installConsoleLogger.js';
 import dotenv from 'dotenv';
 import { generateTechniqueSkillIconMap } from '../src/services/shared/techniqueSkillImageGenerator.js';
 import {

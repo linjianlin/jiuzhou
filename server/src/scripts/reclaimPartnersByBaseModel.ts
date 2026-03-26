@@ -20,6 +20,7 @@
  * 2) 生成时间筛选按 `partner_recruit_job.created_at < PARTNER_RECLAIM_GENERATION_CUTOFF_AT` 执行，业务口径是“中国时区 2026-03-23 18:00:00 前”；等于 18:00:00 的记录不会命中。
  * 3) `character_partner_technique.learned_from_item_def_id` 只保留当前仍挂在伙伴身上的后天功法书来源；历史上已被覆盖的打书记录无法从现有表结构中精确追溯。
  */
+import '../bootstrap/installConsoleLogger.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pool, query, withTransaction } from '../config/database.js';

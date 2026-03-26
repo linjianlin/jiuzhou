@@ -21,6 +21,7 @@
  *   4. 怪物解析复用 resolveMonsterDataForBattle，保持与普通战斗一致
  */
 
+import '../bootstrap/installConsoleLogger.js';
 import { parentPort } from 'worker_threads';
 import type { IdleSessionRow } from '../services/idle/types.js';
 import {
