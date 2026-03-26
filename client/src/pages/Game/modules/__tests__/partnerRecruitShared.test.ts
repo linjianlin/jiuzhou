@@ -17,7 +17,7 @@ const buildRecruitStatus = (
   unlockRealm: '炼神返虚·养神期',
   unlocked: true,
   spiritStoneCost: 0,
-  cooldownHours: 168,
+  cooldownHours: 120,
   cooldownUntil: null,
   cooldownRemainingSeconds: 0,
   customBaseModelBypassesCooldown: true,

@@ -43,12 +43,12 @@ test('buildPartnerRecruitCooldownState: 生产口径下无招募记录时不应�
   assert.equal(state.isCoolingDown, false);
 });
 
-test('buildPartnerRecruitCooldownState: 生产口径下 168 小时内应返回剩余冷却秒数', () => {
+test('buildPartnerRecruitCooldownState: 生产口径下 120 小时内应返回剩余冷却秒数', () => {
   const state = buildPartnerRecruitCooldownState('2026-03-08T06:00:00.000Z', NOW, { bypassCooldown: false });
 
   assert.equal(state.cooldownHours, PARTNER_RECRUIT_COOLDOWN_HOURS);
-  assert.equal(state.cooldownUntil, '2026-03-15T06:00:00.000Z');
-  assert.equal(state.cooldownRemainingSeconds, 583_200);
+  assert.equal(state.cooldownUntil, '2026-03-13T06:00:00.000Z');
+  assert.equal(state.cooldownRemainingSeconds, 410_400);
   assert.equal(state.isCoolingDown, true);
 });
 
@@ -62,9 +62,9 @@ test('buildPartnerRecruitCooldownState: 月卡激活时应缩短 10% 招募冷�
     },
   );
 
-  assert.equal(state.cooldownHours, 151.2);
-  assert.equal(state.cooldownUntil, '2026-03-14T13:12:00.000Z');
-  assert.equal(state.cooldownRemainingSeconds, 522_720);
+  assert.equal(state.cooldownHours, 108);
+  assert.equal(state.cooldownUntil, '2026-03-12T18:00:00.000Z');
+  assert.equal(state.cooldownRemainingSeconds, 367_200);
   assert.equal(state.isCoolingDown, true);
 });
 
