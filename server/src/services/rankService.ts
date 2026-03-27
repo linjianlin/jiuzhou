@@ -7,6 +7,15 @@ const clampLimit = (limit?: number, fallback: number = 50): number => {
   return Math.max(1, Math.min(200, n));
 };
 
+const normalizePartnerRankMetric = (
+  metric: string | null | undefined,
+): PartnerRankMetric | null => {
+  const normalized = typeof metric === 'string' ? metric.trim().toLowerCase() : '';
+  if (normalized === 'level') return 'level';
+  if (normalized === 'power') return 'power';
+  return null;
+};
+
 const RANK_CACHE_REDIS_TTL_SEC = 30;
 const RANK_CACHE_MEMORY_TTL_MS = 5_000;
 
@@ -48,6 +57,23 @@ export type ArenaRankRow = {
   loseCount: number;
 };
 
+export type PartnerRankMetric = 'level' | 'power';
+
+export type PartnerRankRow = {
+  rank: number;
+  partnerId: number;
+  characterId: number;
+  ownerName: string;
+  ownerMonthCardActive: boolean;
+  partnerName: string;
+  avatar: string | null;
+  quality: string;
+  element: string;
+  role: string;
+  level: number;
+  power: number;
+};
+
 type RealmRankQueryRow = {
   rank: number | string;
   character_id: number | string;
@@ -84,6 +110,20 @@ type ArenaRankQueryRow = {
   score: number | string;
   winCount: number | string;
   loseCount: number | string;
+};
+
+type PartnerRankQueryRow = {
+  rank: number | string;
+  partner_id: number | string;
+  character_id: number | string;
+  ownerName: string;
+  partnerName: string;
+  avatar: string | null;
+  quality: string;
+  element: string;
+  role: string;
+  level: number | string;
+  power: number | string;
 };
 
 const loadRealmRanks = async (limit: number): Promise<RealmRankRow[]> => {
@@ -238,6 +278,59 @@ const loadArenaRanks = async (limit: number): Promise<ArenaRankRow[]> => {
   }));
 };
 
+const PARTNER_RANK_ORDER_SQL: Record<PartnerRankMetric, string> = {
+  level: 'prs.level DESC, prs.power DESC, prs.partner_id ASC',
+  power: 'prs.power DESC, prs.level DESC, prs.partner_id ASC',
+};
+
+const loadPartnerRanks = async (
+  metric: PartnerRankMetric,
+  limit: number,
+): Promise<PartnerRankRow[]> => {
+  const orderSql = PARTNER_RANK_ORDER_SQL[metric];
+  const res = await query(
+    `
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY ${orderSql})::int AS rank,
+        prs.partner_id,
+        prs.character_id,
+        COALESCE(NULLIF(c.nickname, ''), CONCAT('修士', c.id::text)) AS "ownerName",
+        prs.partner_name AS "partnerName",
+        prs.avatar,
+        prs.quality,
+        prs.element,
+        prs.role,
+        prs.level::int AS level,
+        prs.power::bigint AS power
+      FROM partner_rank_snapshot prs
+      JOIN characters c ON c.id = prs.character_id
+      ORDER BY rank
+      LIMIT $1
+    `,
+    [limit],
+  );
+
+  const rows = res.rows as PartnerRankQueryRow[];
+  const ownerMonthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    rows.map((row) => Number(row.character_id)),
+  );
+
+  return rows.map((row) => ({
+    rank: Number(row.rank),
+    partnerId: Number(row.partner_id),
+    characterId: Number(row.character_id),
+    ownerName: String(row.ownerName),
+    ownerMonthCardActive: ownerMonthCardActiveMap.get(Number(row.character_id)) ?? false,
+    partnerName: String(row.partnerName),
+    avatar: typeof row.avatar === 'string' && row.avatar.trim().length > 0 ? row.avatar : null,
+    quality: String(row.quality),
+    element: String(row.element),
+    role: String(row.role),
+    level: Number(row.level),
+    power: Number(row.power),
+  }));
+};
+
 const realmRankCache = createCacheLayer<number, RealmRankRow[]>({
   keyPrefix: 'rank:realm:',
   redisTtlSec: RANK_CACHE_REDIS_TTL_SEC,
@@ -265,6 +358,20 @@ const arenaRankCache = createCacheLayer<number, ArenaRankRow[]>({
   memoryTtlMs: RANK_CACHE_MEMORY_TTL_MS,
   loader: loadArenaRanks,
 });
+
+const createPartnerRankCache = (
+  metric: PartnerRankMetric,
+) => createCacheLayer<number, PartnerRankRow[]>({
+  keyPrefix: `rank:partner:${metric}:`,
+  redisTtlSec: RANK_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: RANK_CACHE_MEMORY_TTL_MS,
+  loader: (limit) => loadPartnerRanks(metric, limit),
+});
+
+const partnerRankCaches: Record<PartnerRankMetric, ReturnType<typeof createPartnerRankCache>> = {
+  level: createPartnerRankCache('level'),
+  power: createPartnerRankCache('power'),
+};
 
 export const getRealmRanks = async (
   limit?: number
@@ -295,6 +402,20 @@ export const getArenaRanks = async (
 ): Promise<{ success: boolean; message: string; data?: ArenaRankRow[] }> => {
   const l = clampLimit(limit, 50);
   const data = (await arenaRankCache.get(l)) ?? [];
+  return { success: true, message: 'ok', data };
+};
+
+export const getPartnerRanks = async (
+  metricRaw: string | null | undefined,
+  limit?: number,
+): Promise<{ success: boolean; message: string; data?: PartnerRankRow[] }> => {
+  const metric = normalizePartnerRankMetric(metricRaw);
+  if (!metric) {
+    return { success: false, message: '伙伴排行维度不合法' };
+  }
+
+  const l = clampLimit(limit, 50);
+  const data = (await partnerRankCaches[metric].get(l)) ?? [];
   return { success: true, message: 'ok', data };
 };
 

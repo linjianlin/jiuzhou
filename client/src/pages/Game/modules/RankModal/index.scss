@@ -123,6 +123,17 @@
   color: var(--text-tertiary);
 }
 
+.rank-partner-segmented {
+  .ant-segmented-item-label {
+    min-height: 32px;
+    line-height: 32px;
+    padding-inline: 12px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+}
+
 .rank-pane-body {
   flex: 1;
   min-height: 0;
@@ -142,6 +153,58 @@
   height: 16px;
   object-fit: contain;
   display: block;
+}
+
+.rank-partner-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rank-partner-avatar {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--border-color-soft);
+  background: var(--panel-bg-soft);
+}
+
+.rank-partner-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rank-partner-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-partner-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+
+  .ant-tag {
+    margin-inline-end: 0;
+  }
+}
+
+.rank-partner-role,
+.rank-partner-level {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-secondary);
 }
 
 .rank-mobile-list {
@@ -164,6 +227,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.rank-mobile-card-head--partner {
+  align-items: flex-start;
 }
 
 .rank-mobile-rank {
@@ -279,11 +346,26 @@
     min-height: 0;
   }
 
+  .rank-partner-segmented {
+    .ant-segmented-item-label {
+      min-height: 30px;
+      line-height: 30px;
+      padding-inline: 10px;
+      font-size: 11px;
+    }
+  }
+
   .rank-pane-body {
     padding: 10px 12px 12px;
   }
 
   .rank-mobile-card {
     padding: 9px;
+  }
+
+  .rank-partner-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
   }
 }

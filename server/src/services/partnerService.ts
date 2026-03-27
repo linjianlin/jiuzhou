@@ -35,6 +35,7 @@ import {
   scheduleActivePartnerBattleCacheRefreshByCharacterId,
 } from './battle/shared/profileCache.js';
 import { scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId } from './onlineBattleProjectionService.js';
+import { schedulePartnerRankSnapshotRefreshByCharacterId } from './partnerRankSnapshotService.js';
 import { resolveGeneratedTechniqueBookDisplay } from './shared/generatedTechniqueBookView.js';
 import {
   PARTNER_GROWTH_KEYS,
@@ -449,6 +450,7 @@ const buildPartnerTechniqueLearnSuccessResult = async (params: {
   }
 
   await schedulePartnerBattleStateRefreshByCharacterId(params.characterId);
+  await schedulePartnerRankSnapshotRefreshByCharacterId(params.characterId);
 
   return {
     success: true,
@@ -860,6 +862,7 @@ const createPartnerInstanceFromDefinition = async (params: {
     ],
   );
   const partnerId = normalizeInteger(insertResult.rows[0]?.id, 1);
+  await schedulePartnerRankSnapshotRefreshByCharacterId(characterId);
   return {
     reward: buildPartnerRewardDto(partnerId, definition),
     activated,
@@ -1267,6 +1270,7 @@ class PartnerService {
 
       await invalidateCharacterComputedCache(characterId);
       await schedulePartnerBattleStateRefreshByCharacterId(characterId);
+      await schedulePartnerRankSnapshotRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1356,6 +1360,7 @@ class PartnerService {
       });
 
       await schedulePartnerBattleStateRefreshByCharacterId(characterId);
+      await schedulePartnerRankSnapshotRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1601,6 +1606,7 @@ class PartnerService {
 
       await invalidateCharacterComputedCache(characterId);
       await schedulePartnerBattleStateRefreshByCharacterId(characterId);
+      await schedulePartnerRankSnapshotRefreshByCharacterId(characterId);
 
       return {
         success: true,

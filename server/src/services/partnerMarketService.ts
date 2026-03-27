@@ -47,6 +47,7 @@ import { parsePositiveInt } from './shared/httpParam.js';
 import { loadActivePartnerMarketListing } from './shared/partnerMarketState.js';
 import { loadActivePartnerFusionMaterial } from './shared/partnerFusionState.js';
 import { getPartnerDefinitionById } from './staticConfigLoader.js';
+import { schedulePartnerRankSnapshotRefreshByCharacterId } from './partnerRankSnapshotService.js';
 
 export type PartnerMarketSort = 'timeDesc' | 'priceAsc' | 'priceDesc' | 'levelDesc';
 
@@ -534,7 +535,6 @@ class PartnerMarketService {
         listingFeeSilver.toString(),
       ],
     );
-
     await invalidatePartnerMarketListingsCache();
     return {
       success: true,
@@ -779,6 +779,7 @@ class PartnerMarketService {
       ],
     );
 
+    await schedulePartnerRankSnapshotRefreshByCharacterId(params.buyerCharacterId);
     await invalidatePartnerMarketListingsCache();
     return {
       success: true,

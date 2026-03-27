@@ -337,6 +337,7 @@ model character_partner {
   characters                  characters                  @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   character_partner_skill_policy character_partner_skill_policy[]
   character_partner_technique character_partner_technique[]
+  partner_rank_snapshot       partner_rank_snapshot?
 
   @@index([character_id], map: "idx_character_partner_character_id")
 }
@@ -508,6 +509,26 @@ model character_rank_snapshot {
   @@index([realm_rank(sort: Desc), power(sort: Desc), character_id], map: "idx_character_rank_snapshot_realm_power")
 }
 
+model partner_rank_snapshot {
+  partner_id        Int               @id
+  character_id      Int
+  partner_name      String            @default("") @db.VarChar(64)
+  avatar            String?           @db.VarChar(255)
+  quality           String            @default("黄") @db.VarChar(8)
+  element           String            @default("none") @db.VarChar(16)
+  role              String            @default("伙伴") @db.VarChar(32)
+  level             Int               @default(1)
+  power             BigInt            @default(0)
+  updated_at        DateTime          @default(now()) @db.Timestamptz(6)
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  character_partner character_partner @relation(fields: [partner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  characters        characters        @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id], map: "idx_partner_rank_snapshot_character")
+  @@index([level(sort: Desc), power(sort: Desc), partner_id], map: "idx_partner_rank_snapshot_level_power")
+  @@index([power(sort: Desc), level(sort: Desc), partner_id], map: "idx_partner_rank_snapshot_power_level")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model characters {
   id                                                                                Int                             @id @default(autoincrement())
@@ -559,6 +580,7 @@ model characters {
   character_room_resource_state                                                     character_room_resource_state[]
   character_skill_slot                                                              character_skill_slot[]
   character_partner                                                                 character_partner[]
+  partner_rank_snapshot                                                             partner_rank_snapshot[]
   character_feature_unlocks                                                         character_feature_unlocks[]
   character_task_progress                                                           character_task_progress[]
   character_technique                                                               character_technique[]

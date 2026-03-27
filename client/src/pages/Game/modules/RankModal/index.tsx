@@ -1,15 +1,53 @@
+/**
+ * 排行榜弹窗。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一承载角色榜单与伙伴榜单展示，复用同一左侧分类入口，避免功能菜单再拆第二个排行弹窗。
+ * 2. 做什么：把伙伴榜的“等级 / 战力”维度切换收在榜单头部，保证桌面端与移动端都能在同一入口快速切换。
+ * 3. 不做什么：不处理接口缓存、不决定后端排序逻辑，也不负责菜单按钮状态。
+ *
+ * 输入/输出：
+ * - 输入：弹窗开关与关闭回调。
+ * - 输出：可直接交给 Game 页面挂载的排行榜弹窗。
+ *
+ * 数据流/状态流：
+ * Game -> RankModal -> rankShared 拉取当前榜单数据 -> 本组件按 tab / metric 渲染表格或移动卡片。
+ *
+ * 复用设计说明：
+ * 1. 原有四类角色榜继续复用既有 Table / 卡片结构，新增伙伴榜只补独有的头像、品质和元素展示，避免整份弹窗重写。
+ * 2. 伙伴身份块、等级文案和头部维度切换都收在本文件局部纯函数里，移动端与桌面端共享同一展示规则。
+ * 3. 伙伴榜和角色榜仍共用同一左侧分类导航，用户只记一个“排行”入口，不产生风格割裂的新菜单路径。
+ *
+ * 关键边界条件与坑点：
+ * 1. 伙伴榜等级维度只展示真实等级，不能把生效等级拼进文案，否则会和榜单排序口径不一致。
+ * 2. 移动端头部空间很紧，伙伴维度切换必须压在榜单头部而不是左侧导航里，否则会出现横向滚动和点击目标过密。
+ */
 import { Button, Modal, Segmented, Table, Tag } from 'antd';
 import { useMemo, useState } from 'react';
 import type {
   ArenaRankRowDto,
+  PartnerRankRowDto,
   RealmRankRowDto,
   SectRankRowDto,
   WealthRankRowDto,
 } from '../../../../services/api';
 import { IMG_COIN as coin01 } from '../../shared/imageAssets';
+import { getElementToneClassName } from '../../shared/elementTheme';
+import { getItemQualityTagClassName } from '../../shared/itemQuality';
 import PlayerName from '../../shared/PlayerName';
+import { formatPartnerElementLabel, resolvePartnerAvatar } from '../../shared/partnerDisplay';
 import { useIsMobile } from '../../shared/responsive';
-import { RANK_TAB_KEYS, RANK_TAB_META, RANK_TAB_META_MAP, useRankRows, type RankTab } from './rankShared';
+import {
+  PARTNER_RANK_METRIC_KEYS,
+  PARTNER_RANK_METRIC_META,
+  PARTNER_RANK_METRIC_META_MAP,
+  RANK_TAB_KEYS,
+  RANK_TAB_META,
+  RANK_TAB_META_MAP,
+  useRankRows,
+  type PartnerRankMetric,
+  type RankTab,
+} from './rankShared';
 import './index.scss';
 
 interface RankModalProps {
@@ -17,15 +55,27 @@ interface RankModalProps {
   onClose: () => void;
 }
 
+const formatPartnerRankLevelText = (row: Pick<PartnerRankRowDto, 'level'>): string => `Lv.${row.level}`;
+
 const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
   const [tab, setTab] = useState<RankTab>('realm');
+  const [partnerMetric, setPartnerMetric] = useState<PartnerRankMetric>('level');
   const isMobile = useIsMobile();
-  const { rankRowsByTab, loadingByTab } = useRankRows(open, tab);
-  const loading = loadingByTab[tab];
+  const {
+    rankRowsByTab,
+    partnerRankRowsByMetric,
+    loadingByTab,
+    partnerLoadingByMetric,
+  } = useRankRows(open, tab, partnerMetric);
+
   const realmRanks: RealmRankRowDto[] = rankRowsByTab.realm;
   const sectRanks: SectRankRowDto[] = rankRowsByTab.sect;
   const wealthRanks: WealthRankRowDto[] = rankRowsByTab.wealth;
   const arenaRanks: ArenaRankRowDto[] = rankRowsByTab.arena;
+  const partnerRanks: PartnerRankRowDto[] = partnerRankRowsByMetric[partnerMetric];
+  const loading = tab === 'partner'
+    ? partnerLoadingByMetric[partnerMetric]
+    : loadingByTab[tab];
 
   const leftItems = useMemo(
     () => RANK_TAB_META.map((item) => ({ key: item.key, label: item.label })),
@@ -37,18 +87,53 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
     [],
   );
 
-  const renderPaneTop = (tabKey: RankTab) => (
+  const partnerMetricOptions = useMemo(
+    () => PARTNER_RANK_METRIC_META.map((item) => ({ value: item.key, label: item.label })),
+    [],
+  );
+
+  const renderPaneTop = (
+    title: string,
+    subtitle: string,
+    extra?: React.ReactNode,
+  ) => (
     <div className="rank-pane-top">
       <div className="rank-top-row">
-        <div className="rank-title">{RANK_TAB_META_MAP[tabKey].label}</div>
+        <div className="rank-title">{title}</div>
+        {extra}
       </div>
-      <div className="rank-subtitle">{RANK_TAB_META_MAP[tabKey].subtitle}</div>
+      <div className="rank-subtitle">{subtitle}</div>
+    </div>
+  );
+
+  const renderPartnerTags = (row: PartnerRankRowDto) => (
+    <div className="rank-partner-tags">
+      <Tag className={getItemQualityTagClassName(row.quality)}>{row.quality}</Tag>
+      <Tag className={getElementToneClassName(row.element)}>{formatPartnerElementLabel(row.element)}</Tag>
+      <span className="rank-partner-role">{row.role}</span>
+    </div>
+  );
+
+  const renderPartnerIdentity = (row: PartnerRankRowDto) => (
+    <div className="rank-partner-main">
+      <img
+        className="rank-partner-avatar"
+        src={resolvePartnerAvatar(row.avatar)}
+        alt={row.partnerName}
+      />
+      <div className="rank-partner-copy">
+        <div className="rank-partner-name">{row.partnerName}</div>
+        {renderPartnerTags(row)}
+      </div>
     </div>
   );
 
   const renderRealmRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('realm')}
+      {renderPaneTop(
+        RANK_TAB_META_MAP.realm.label,
+        RANK_TAB_META_MAP.realm.subtitle,
+      )}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -101,7 +186,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
 
   const renderSectRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('sect')}
+      {renderPaneTop(
+        RANK_TAB_META_MAP.sect.label,
+        RANK_TAB_META_MAP.sect.subtitle,
+      )}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -164,7 +252,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
 
   const renderWealthRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('wealth')}
+      {renderPaneTop(
+        RANK_TAB_META_MAP.wealth.label,
+        RANK_TAB_META_MAP.wealth.subtitle,
+      )}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -241,7 +332,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
 
   const renderArenaRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('arena')}
+      {renderPaneTop(
+        RANK_TAB_META_MAP.arena.label,
+        RANK_TAB_META_MAP.arena.subtitle,
+      )}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -301,11 +395,108 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
     </div>
   );
 
+  const renderPartnerRank = () => (
+    <div className="rank-pane">
+      {renderPaneTop(
+        RANK_TAB_META_MAP.partner.label,
+        PARTNER_RANK_METRIC_META_MAP[partnerMetric].subtitle,
+        <Segmented
+          className="rank-partner-segmented"
+          value={partnerMetric}
+          options={partnerMetricOptions}
+          onChange={(value) => {
+            if (typeof value !== 'string') return;
+            if (!PARTNER_RANK_METRIC_KEYS.includes(value as PartnerRankMetric)) return;
+            setPartnerMetric(value as PartnerRankMetric);
+          }}
+        />,
+      )}
+      <div className="rank-pane-body">
+        {isMobile ? (
+          <div className="rank-mobile-list">
+            {loading ? <div className="rank-empty">加载中...</div> : null}
+            {!loading
+              ? partnerRanks.map((row) => (
+                  <div key={row.partnerId} className="rank-mobile-card">
+                    <div className="rank-mobile-card-head rank-mobile-card-head--partner">
+                      <div className="rank-mobile-rank">#{row.rank}</div>
+                      {renderPartnerIdentity(row)}
+                    </div>
+                    <div className="rank-mobile-meta">
+                      <span className="rank-mobile-meta-item">
+                        <span className="rank-mobile-meta-k">主人</span>
+                        <PlayerName
+                          name={row.ownerName}
+                          monthCardActive={row.ownerMonthCardActive}
+                          ellipsis
+                          className="rank-mobile-meta-v"
+                        />
+                      </span>
+                      <span className="rank-mobile-meta-item">
+                        <span className="rank-mobile-meta-k">等级</span>
+                        <span className="rank-mobile-meta-v">{formatPartnerRankLevelText(row)}</span>
+                      </span>
+                      <span className="rank-mobile-meta-item">
+                        <span className="rank-mobile-meta-k">战力</span>
+                        <span className="rank-mobile-meta-v">{row.power.toLocaleString()}</span>
+                      </span>
+                    </div>
+                  </div>
+                ))
+              : null}
+            {!loading && partnerRanks.length === 0 ? <div className="rank-empty">暂无伙伴排行</div> : null}
+          </div>
+        ) : (
+          <Table
+            size="small"
+            rowKey={(row) => String(row.partnerId)}
+            pagination={false}
+            loading={loading}
+            columns={[
+              { title: '名次', dataIndex: 'rank', key: 'rank', width: 80, render: (v: number) => `#${v}` },
+              {
+                title: '伙伴',
+                key: 'partner',
+                width: 280,
+                render: (_value: number, row: PartnerRankRowDto) => renderPartnerIdentity(row),
+              },
+              {
+                title: '主人',
+                dataIndex: 'ownerName',
+                key: 'ownerName',
+                width: 160,
+                render: (value: string, row: PartnerRankRowDto) => (
+                  <PlayerName name={value} monthCardActive={row.ownerMonthCardActive} ellipsis />
+                ),
+              },
+              {
+                title: '等级',
+                key: 'level',
+                width: 160,
+                render: (_value: number, row: PartnerRankRowDto) => (
+                  <span className="rank-partner-level">{formatPartnerRankLevelText(row)}</span>
+                ),
+              },
+              {
+                title: '战力',
+                dataIndex: 'power',
+                key: 'power',
+                render: (value: number) => value.toLocaleString(),
+              },
+            ]}
+            dataSource={partnerRanks}
+          />
+        )}
+      </div>
+    </div>
+  );
+
   const panelContent = () => {
     if (tab === 'realm') return renderRealmRank();
     if (tab === 'sect') return renderSectRank();
     if (tab === 'wealth') return renderWealthRank();
-    return renderArenaRank();
+    if (tab === 'arena') return renderArenaRank();
+    return renderPartnerRank();
   };
 
   return (
@@ -322,6 +513,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
       afterOpenChange={(visible) => {
         if (!visible) return;
         setTab('realm');
+        setPartnerMetric('level');
       }}
     >
       <div className="rank-shell">

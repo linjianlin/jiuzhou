@@ -6,6 +6,7 @@ import { updateSectionProgress } from "./mainQuest/index.js";
 import { updateAchievementProgress } from "./achievementService.js";
 import { invalidateCharacterComputedCache } from "./characterComputedService.js";
 import { scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId } from "./onlineBattleProjectionService.js";
+import { schedulePartnerRankSnapshotRefreshByCharacterId } from "./partnerRankSnapshotService.js";
 import {
   getDungeonDefinitions,
   getDungeonDifficultyById,
@@ -1368,6 +1369,7 @@ class RealmService {
 
     // 清除角色计算缓存（不依赖事务，放在方法末尾即可）
     await invalidateCharacterComputedCache(characterId);
+    await schedulePartnerRankSnapshotRefreshByCharacterId(characterId);
     await scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId(characterId);
 
     const spentItems = costsBuilt.items.map((x) => {

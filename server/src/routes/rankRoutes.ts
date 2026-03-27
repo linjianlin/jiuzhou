@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
-import { getArenaRanks, getRankOverview, getRealmRanks, getSectRanks, getWealthRanks } from '../services/rankService.js';
+import { getArenaRanks, getPartnerRanks, getRankOverview, getRealmRanks, getSectRanks, getWealthRanks } from '../services/rankService.js';
 import { getSingleQueryValue, parsePositiveInt } from '../services/shared/httpParam.js';
 import { sendResult } from '../middleware/response.js';
 
@@ -38,6 +38,13 @@ router.get('/wealth', asyncHandler(async (req, res) => {
 router.get('/arena', asyncHandler(async (req, res) => {
   const limit = parsePositiveInt(getSingleQueryValue(req.query.limit)) ?? undefined;
   const result = await getArenaRanks(limit);
+  return sendResult(res, result);
+}));
+
+router.get('/partner', asyncHandler(async (req, res) => {
+  const metric = getSingleQueryValue(req.query.metric);
+  const limit = parsePositiveInt(getSingleQueryValue(req.query.limit)) ?? undefined;
+  const result = await getPartnerRanks(metric, limit);
   return sendResult(res, result);
 }));
 

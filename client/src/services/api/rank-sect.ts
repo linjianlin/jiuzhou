@@ -39,6 +39,23 @@ export type ArenaRankRowDto = {
   loseCount: number;
 };
 
+export type PartnerRankMetricDto = 'level' | 'power';
+
+export type PartnerRankRowDto = {
+  rank: number;
+  partnerId: number;
+  characterId: number;
+  ownerName: string;
+  ownerMonthCardActive: boolean;
+  partnerName: string;
+  avatar: string | null;
+  quality: string;
+  element: string;
+  role: string;
+  level: number;
+  power: number;
+};
+
 export interface RankOverviewResponse {
   success: boolean;
   message: string;
@@ -71,6 +88,13 @@ export const getArenaRanks = (
   limit: number = 50
 ): Promise<{ success: boolean; message: string; data?: ArenaRankRowDto[] }> => {
   return api.get('/rank/arena', { params: { limit } });
+};
+
+export const getPartnerRanks = (
+  metric: PartnerRankMetricDto,
+  limit: number = 50,
+): Promise<{ success: boolean; message: string; data?: PartnerRankRowDto[] }> => {
+  return api.get('/rank/partner', { params: { metric, limit } });
 };
 
 export type SectPositionDto = 'leader' | 'vice_leader' | 'elder' | 'elite' | 'disciple';
