@@ -476,6 +476,302 @@
       "sort_weight": 680,
       "enabled": true,
       "version": 1
+    },
+    {
+      "id": "ach-combat-win-streak-10",
+      "name": "势如破竹",
+      "description": "连续赢下 10 场战斗",
+      "category": "combat",
+      "points": 90,
+      "track_type": "flag",
+      "track_key": "battle:win:streak:10",
+      "target_value": 1,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1500
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 80
+        }
+      ],
+      "title_id": "title-unbroken-edge",
+      "sort_weight": 670,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-combat-low-hp-win-3",
+      "name": "命悬一线",
+      "description": "在剩余气血不高于 10% 时赢下战斗 3 次",
+      "category": "combat",
+      "points": 110,
+      "hidden": true,
+      "track_type": "counter",
+      "track_key": "battle:win:low_hp",
+      "target_value": 3,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 2000
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 100
+        }
+      ],
+      "sort_weight": 665,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-cultivation-realm-ningqi",
+      "name": "炁海初成",
+      "description": "境界达到 炼精化炁·凝炁期",
+      "category": "cultivation",
+      "points": 100,
+      "prerequisite_id": "ach-realm-yangqi",
+      "track_type": "flag",
+      "track_key": "realm:reach:炼精化炁·凝炁期",
+      "target_value": 1,
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 90
+        }
+      ],
+      "sort_weight": 660,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-cultivation-layer-6",
+      "name": "六转归元",
+      "description": "任意功法达到第 6 层",
+      "category": "cultivation",
+      "points": 95,
+      "prerequisite_id": "ach-tech-layer-3",
+      "track_type": "flag",
+      "track_key": "skill:level:layer:6",
+      "target_value": 1,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 2500
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 60
+        }
+      ],
+      "sort_weight": 655,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-exploration-map-8",
+      "name": "九州半卷",
+      "description": "探索 8 张地图",
+      "category": "exploration",
+      "points": 120,
+      "prerequisite_id": "ach-map-discover-2",
+      "track_type": "multi",
+      "track_key": "map:discover:*",
+      "target_list": [
+        "map:discover:map-qingyun-village",
+        "map:discover:map-qingyun-outskirts",
+        "map:discover:map-fallen-ruins",
+        "map:discover:map-howling-ridge",
+        "map:discover:map-withered-grove",
+        "map:discover:map-yaowang-valley",
+        "map:discover:map-youming-valley",
+        "map:discover:map-nanhai-coast"
+      ],
+      "target_value": 8,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 3000
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 120
+        }
+      ],
+      "sort_weight": 650,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-exploration-nightmare-3",
+      "name": "踏梦而行",
+      "description": "通关噩梦难度秘境 3 次",
+      "category": "exploration",
+      "points": 130,
+      "track_type": "counter",
+      "track_key": "dungeon:clear:difficulty:nightmare",
+      "target_value": 3,
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 130
+        }
+      ],
+      "sort_weight": 645,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-exploration-frontier-four",
+      "name": "天涯履印",
+      "description": "探索炎冰裂谷、胎息沼、九台宫阙与神识荒原",
+      "category": "exploration",
+      "points": 140,
+      "track_type": "multi",
+      "track_key": "map:discover:*",
+      "target_list": [
+        "map:discover:map-yanbing-rift",
+        "map:discover:map-taixi-marsh",
+        "map:discover:map-jiutai-sanctum",
+        "map:discover:map-shenshi-wasteland"
+      ],
+      "target_value": 4,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 4000
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 140
+        }
+      ],
+      "sort_weight": 640,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-social-talk-four-npcs",
+      "name": "四方请益",
+      "description": "分别与村长、铁匠张、药婆婆和传送使者交谈",
+      "category": "social",
+      "points": 70,
+      "track_type": "multi",
+      "track_key": "talk:npc:*",
+      "target_list": [
+        "talk:npc:npc-village-elder",
+        "talk:npc:npc-blacksmith",
+        "talk:npc:npc-herbalist",
+        "talk:npc:npc-teleporter"
+      ],
+      "target_value": 4,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1200
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 40
+        }
+      ],
+      "sort_weight": 635,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-social-team-dungeon-5",
+      "name": "同袍无间",
+      "description": "组队通关任意秘境 5 次",
+      "category": "social",
+      "points": 120,
+      "prerequisite_id": "ach-team-join-3",
+      "track_type": "counter",
+      "track_key": "team:dungeon:clear:*",
+      "target_value": 5,
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 100
+        }
+      ],
+      "title_id": "title-bonded-path",
+      "sort_weight": 630,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-collection-obtain-200",
+      "name": "纳物成仓",
+      "description": "获得任意物品 200 次",
+      "category": "collection",
+      "points": 80,
+      "prerequisite_id": "ach-item-obtain-20",
+      "track_type": "counter",
+      "track_key": "item:obtain:*",
+      "target_value": 200,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 2000
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 50
+        }
+      ],
+      "sort_weight": 625,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-collection-craft-triad",
+      "name": "丹器兼修",
+      "description": "完成回气丹、清灵丹与清风剑三种配方的制作",
+      "category": "collection",
+      "points": 110,
+      "track_type": "multi",
+      "track_key": "craft:recipe:*",
+      "target_list": [
+        "craft:recipe:recipe-hui-qi-dan",
+        "craft:recipe:recipe-qing-ling-dan",
+        "craft:recipe:recipe-qing-feng-jian"
+      ],
+      "target_value": 3,
+      "rewards": [
+        {
+          "type": "silver",
+          "amount": 1800
+        },
+        {
+          "type": "spirit_stones",
+          "amount": 60
+        }
+      ],
+      "sort_weight": 620,
+      "enabled": true,
+      "version": 1
+    },
+    {
+      "id": "ach-collection-set-4",
+      "name": "衣冠成阵",
+      "description": "首次凑齐任意 4 件套装效果",
+      "category": "collection",
+      "points": 125,
+      "track_type": "flag",
+      "track_key": "equipment:set:equipped:4:*",
+      "target_value": 1,
+      "rewards": [
+        {
+          "type": "spirit_stones",
+          "amount": 120
+        }
+      ],
+      "title_id": "title-raiment-adept",
+      "sort_weight": 615,
+      "enabled": true,
+      "version": 1
     }
   ]
 }

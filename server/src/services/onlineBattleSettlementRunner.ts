@@ -679,6 +679,7 @@ const settleDungeonClearInDbInTransaction = async (
       participant.characterId,
       dungeonSettlement.dungeonId,
       1,
+      rewardParticipants.length,
       dungeonSettlement.difficultyId,
     );
   }

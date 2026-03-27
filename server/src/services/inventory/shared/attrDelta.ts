@@ -37,6 +37,7 @@ import { resolveQualityRankFromName } from "../../shared/itemQuality.js";
 import type { CharacterAttrKey, InventoryLocation } from "./types.js";
 import { allowedCharacterAttrKeys } from "./types.js";
 import { safeNumber, getStaticItemDef } from "./helpers.js";
+import { getEquippedSetPieceCountMap } from "./equippedSetCount.js";
 
 /**
  * 向差分 map 添加属性值（仅白名单内的 key 生效）
@@ -220,22 +221,7 @@ export const applyEquipmentDiffIfEquipped = async (
 export const getEquippedSetBonusDelta = async (
   characterId: number,
 ): Promise<Map<CharacterAttrKey, number>> => {
-  const equippedResult = await query(
-    `
-      SELECT ii.item_def_id
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.location = 'equipped'
-    `,
-    [characterId],
-  );
-
-  const counts = new Map<string, number>();
-  for (const row of equippedResult.rows as Array<{ item_def_id?: unknown }>) {
-    const itemDef = getStaticItemDef(row.item_def_id);
-    const setId = String(itemDef?.set_id || "");
-    if (!setId) continue;
-    counts.set(setId, (counts.get(setId) || 0) + 1);
-  }
+  const counts = await getEquippedSetPieceCountMap(characterId);
 
   const setIds = [...counts.keys()];
   if (setIds.length === 0) return new Map();

@@ -73,6 +73,10 @@ import { restoreCharacterResourcesAfterVictoryByCharacterIds } from "./shared/re
 import { getTowerBattleRuntime } from "../tower/runtime.js";
 import { createScopedLogger } from "../../utils/logger.js";
 import { createSlowOperationLogger } from "../../utils/slowOperationLogger.js";
+import {
+  recordBattleOutcomeAchievements,
+  type AchievementBattleParticipantSnapshot,
+} from "../achievement/battleTracking.js";
 
 const battleSettlementLogger = createScopedLogger("battle.settlement");
 
@@ -203,6 +207,27 @@ const resolveSettlementParticipants = async (
   };
 };
 
+const buildBattleAchievementParticipants = (
+  state: BattleState,
+): AchievementBattleParticipantSnapshot[] => {
+  const snapshots: AchievementBattleParticipantSnapshot[] = [];
+
+  for (const unit of state.teams.attacker.units) {
+    if (unit.type !== 'player') continue;
+
+    const characterId = Math.floor(Number(unit.sourceId));
+    if (!Number.isFinite(characterId) || characterId <= 0) continue;
+
+    snapshots.push({
+      characterId,
+      finalQixue: Math.max(0, Math.floor(unit.qixue)),
+      finalMaxQixue: Math.max(1, Math.floor(unit.currentAttrs.max_qixue)),
+    });
+  }
+
+  return snapshots;
+};
+
 async function finishBattleCore(
   battleId: string,
   engine: BattleEngine,
@@ -225,6 +250,7 @@ async function finishBattleCore(
     state,
     participantUserIds,
   );
+  const battleAchievementParticipants = buildBattleAchievementParticipants(state);
   slowLogger.mark("resolveSettlementParticipants", {
     participantCount: participants.length,
     notificationUserCount: notificationUserIds.length,
@@ -392,6 +418,17 @@ async function finishBattleCore(
   }
 
   try {
+    if (battleAchievementParticipants.length > 0) {
+      await recordBattleOutcomeAchievements(
+        battleId,
+        result.result as "attacker_win" | "defender_win" | "draw",
+        battleAchievementParticipants,
+      );
+      slowLogger.mark("recordBattleOutcomeAchievements", {
+        trackedCharacterCount: battleAchievementParticipants.length,
+      });
+    }
+
     if (state.battleType === "pvp") {
       const challengerCharacterId = Math.floor(Number(state.teams.attacker.units[0]?.sourceId ?? 0));
       const opponentCharacterId = Math.floor(Number(state.teams.defender.units[0]?.sourceId ?? 0));

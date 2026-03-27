@@ -6,6 +6,7 @@ import { updateAchievementProgress } from './achievementService.js';
 import { Transactional } from '../decorators/transactional.js';
 import {
   getDungeonDefinitions,
+  getDungeonDifficultyById,
   getDungeonDifficultiesByDungeonId,
   getDungeonStagesByDifficultyId,
   getDungeonWavesByStageId,
@@ -1438,6 +1439,7 @@ export const recordDungeonClearEvent = async (
   characterId: number,
   dungeonId: string,
   count: number,
+  participantCount: number,
   difficultyId?: string,
 ): Promise<void> => {
   const did = asNonEmptyString(dungeonId);
@@ -1456,6 +1458,16 @@ export const recordDungeonClearEvent = async (
   await updateSectionProgress(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
 
   await updateAchievementProgress(characterId, `dungeon:clear:${did}`, c);
+  if (diffId) {
+    const difficultyDef = getDungeonDifficultyById(diffId);
+    const difficultyName = typeof difficultyDef?.name === 'string' ? difficultyDef.name.trim() : '';
+    if (difficultyName === '噩梦') {
+      await updateAchievementProgress(characterId, 'dungeon:clear:difficulty:nightmare', c);
+    }
+  }
+  if (participantCount > 1) {
+    await updateAchievementProgress(characterId, `team:dungeon:clear:${did}`, c);
+  }
   if (taskOverviewChanged) {
     await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
   }

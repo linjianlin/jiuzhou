@@ -64,6 +64,55 @@
       "version": 1
     },
     {
+      "id": "title-unbroken-edge",
+      "name": "破竹之锋",
+      "description": "连胜十战后仍锋芒不坠",
+      "color": "#fa8c16",
+      "effects": {
+        "wugong": 18,
+        "fagong": 18,
+        "max_qixue": 80
+      },
+      "source_type": "achievement",
+      "source_id": "ach-combat-win-streak-10",
+      "enabled": true,
+      "sort_weight": 45,
+      "version": 1
+    },
+    {
+      "id": "title-bonded-path",
+      "name": "同袍行者",
+      "description": "与队友并肩闯关的修士",
+      "color": "#4da6ff",
+      "effects": {
+        "max_qixue": 100,
+        "wufang": 12,
+        "fafang": 12
+      },
+      "source_type": "achievement",
+      "source_id": "ach-social-team-dungeon-5",
+      "enabled": true,
+      "sort_weight": 46,
+      "version": 1
+    },
+    {
+      "id": "title-raiment-adept",
+      "name": "衣阵初成",
+      "description": "以套装之势初成完整战阵",
+      "color": "#13c2c2",
+      "effects": {
+        "wugong": 10,
+        "fagong": 10,
+        "max_qixue": 60,
+        "max_lingqi": 60
+      },
+      "source_type": "achievement",
+      "source_id": "ach-collection-set-4",
+      "enabled": true,
+      "sort_weight": 47,
+      "version": 1
+    },
+    {
       "id": "title-pvp-weekly-champion",
       "name": "问鼎三界",
       "description": "竞技场周结算冠军专属称号（限时7天）",

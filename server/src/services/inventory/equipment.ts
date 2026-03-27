@@ -81,6 +81,8 @@ import { consumeMaterialByDefId, consumeCharacterCurrencies } from "./shared/con
 import { getEnhanceItemState, getRefineItemState, getRerollItemState } from "./shared/validation.js";
 import { clampInt, getStaticItemDef } from "./shared/helpers.js";
 import { refreshCharacterBattleStateAfterEquipmentChange } from "./shared/battleStateRefresh.js";
+import { getEquippedSetPieceCountMap } from "./shared/equippedSetCount.js";
+import { updateAchievementProgress } from "../achievementService.js";
 import { findEmptySlots } from "./bag.js";
 
 // ============================================
@@ -283,6 +285,11 @@ export const equipItem = async (
   mergeDelta(setBonusDelta, afterSetBonus);
   mergeDelta(setBonusDelta, invertDelta(beforeSetBonus));
   await applyCharacterAttrDelta(characterId, setBonusDelta);
+  const equippedSetPieceCountMap = await getEquippedSetPieceCountMap(characterId);
+  for (const [setId, pieceCount] of equippedSetPieceCountMap.entries()) {
+    if (pieceCount !== 4) continue;
+    await updateAchievementProgress(characterId, `equipment:set:equipped:4:${setId}`, 1);
+  }
   await refreshCharacterBattleStateAfterEquipmentChange(characterId);
   return {
     success: true,

@@ -50,6 +50,7 @@ import type {
   InventoryLocation,
 } from "./shared/types.js";
 import { getInventoryInfo, getInventoryItems } from "./bag.js";
+import { getEquippedSetPieceCountMap } from "./shared/equippedSetCount.js";
 
 type InventoryItemDefContext = {
   staticDefMap: Map<string, Record<string, unknown>>;
@@ -189,17 +190,10 @@ const buildInventoryItemDefContext = async (
       setBonusMap.set(setId, normalizedBonuses);
     }
 
-    const equippedDefIds = await getEquippedItemDefIds(characterId);
-    for (const equippedItemDefId of equippedDefIds) {
-      const equippedDef = getItemDefinitionById(equippedItemDefId);
-      const setId = String(
-        (equippedDef as Record<string, unknown> | null)?.set_id || "",
-      ).trim();
-      if (!setId || !setIdSet.has(setId)) continue;
-      equippedSetCountMap.set(
-        setId,
-        (equippedSetCountMap.get(setId) || 0) + 1,
-      );
+    const rawEquippedSetCountMap = await getEquippedSetPieceCountMap(characterId);
+    for (const [setId, pieceCount] of rawEquippedSetCountMap.entries()) {
+      if (!setIdSet.has(setId)) continue;
+      equippedSetCountMap.set(setId, pieceCount);
     }
   }
 
