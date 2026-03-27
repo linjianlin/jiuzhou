@@ -60,6 +60,7 @@ export type TechniqueResearchJobStateInput = {
   generationId: string;
   status: TechniqueResearchJobStatus;
   quality: TechniqueQuality;
+  modelName: string | null;
   burningWordPrompt: string | null;
   draftTechniqueId: string | null;
   draftExpireAt: string | null;
@@ -75,6 +76,7 @@ export type TechniqueResearchJobView = {
   generationId: string;
   status: TechniqueResearchJobStatus;
   quality: TechniqueQuality;
+  modelName: string | null;
   burningWordPrompt: string | null;
   draftTechniqueId: string | null;
   draftExpireAt: string | null;
@@ -109,6 +111,7 @@ export const buildTechniqueResearchJobState = (
     generationId: input.generationId,
     status: input.status,
     quality: input.quality,
+    modelName: input.modelName,
     burningWordPrompt: input.burningWordPrompt,
     draftTechniqueId: input.draftTechniqueId,
     draftExpireAt: input.draftExpireAt,

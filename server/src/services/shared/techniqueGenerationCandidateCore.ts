@@ -811,7 +811,10 @@ const tryCallExternalGenerator = async (params: {
 }): Promise<TechniqueGenerationAttemptResult> => {
   const { techniqueType, quality, maxLayer } = params;
   const request = buildTechniqueGenerationTextModelRequest(params);
-  const external = await callConfiguredTextModel(request);
+  const external = await callConfiguredTextModel({
+    modelScope: 'technique',
+    ...request,
+  });
   if (!external) {
     return buildTechniqueGenerationAttemptFailure({
       stage: 'config_missing',

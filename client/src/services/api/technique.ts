@@ -220,6 +220,7 @@ export type TechniqueResearchJobDto = {
   generationId: string;
   status: 'pending' | 'generated_draft' | 'published' | 'failed' | 'refunded';
   quality: '黄' | '玄' | '地' | '天';
+  modelName: string | null;
   burningWordPrompt: string | null;
   draftTechniqueId: string | null;
   startedAt: string;

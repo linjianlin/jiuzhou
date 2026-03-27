@@ -384,11 +384,14 @@ export const tryCallGeneratedPartnerTextModel = async (params: {
     ...params,
     requestedBaseModel: requestedBaseModelValidation.value,
   });
-  const external = await callConfiguredTextModel(request);
+  const external = await callConfiguredTextModel({
+    modelScope: 'partner',
+    ...request,
+  });
   if (!external) {
     return {
       success: false,
-      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
+      reason: '缺少 AI_PARTNER_MODEL_URL 或 AI_PARTNER_MODEL_KEY 配置',
       modelName: 'gpt-4o-mini',
     };
   }

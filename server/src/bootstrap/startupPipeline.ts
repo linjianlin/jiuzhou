@@ -89,7 +89,7 @@ const runStartupStep = async <T>(
 };
 
 /**
- * 服务启动流水线（连接检查 -> 数据准备 -> 启动恢复 -> 监听端口）
+ * 服务启动流水线（连接检查 -> 动态配置预热 -> 数据准备 -> 启动恢复 -> 监听端口）
  */
 export const startServerWithPipeline = async (
   options: StartServerOptions,
@@ -106,10 +106,10 @@ export const startServerWithPipeline = async (
     console.warn("⚠ Redis 连接失败，战斗状态将不会持久化");
   }
 
-  await runStartupStep("数据准备", initTables);
-  await runStartupStep("性能索引同步", ensurePerformanceIndexes);
   await runStartupStep("生成功法快照刷新", refreshGeneratedTechniqueSnapshots);
   await runStartupStep("动态伙伴快照失效", refreshGeneratedPartnerSnapshots);
+  await runStartupStep("数据准备", initTables);
+  await runStartupStep("性能索引同步", ensurePerformanceIndexes);
   await runStartupStep("头像清理检查", clearAllAvatarsOnce);
   await runStartupStep("异常物品数据清理", () => itemDataCleanupService.cleanupUndefinedItemDataOnStartup());
 

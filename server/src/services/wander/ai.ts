@@ -382,6 +382,7 @@ const requestWanderAiContent = async (params: {
   seed: number;
 }): Promise<string> => {
   const callResult = await callConfiguredTextModel({
+    modelScope: 'technique',
     responseFormat: params.responseFormat,
     systemMessage: params.systemMessage,
     userMessage: params.userMessage,
@@ -397,7 +398,7 @@ const requestWanderAiContent = async (params: {
 };
 
 export const isWanderAiAvailable = (): boolean => {
-  return readTextModelConfig() !== null;
+  return readTextModelConfig('technique') !== null;
 };
 
 export const generateWanderAiEpisodeDraft = async (

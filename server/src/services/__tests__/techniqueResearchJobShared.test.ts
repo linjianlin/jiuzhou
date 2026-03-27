@@ -29,6 +29,7 @@ const buildInput = (
   generationId: 'gen-1',
   status: 'pending',
   quality: '玄',
+  modelName: null,
   burningWordPrompt: null,
   draftTechniqueId: null,
   draftExpireAt: null,
@@ -45,6 +46,7 @@ test('generated_draft 且未查看时应返回成功结果红点', () => {
   const state = buildTechniqueResearchJobState(
     buildInput({
       status: 'generated_draft',
+      modelName: 'gpt-4o-mini',
       burningWordPrompt: '焰',
       draftTechniqueId: 'tech-gen-1',
       finishedAt: '2026-03-07T10:01:00.000Z',
@@ -65,6 +67,7 @@ test('generated_draft 且未查看时应返回成功结果红点', () => {
   assert.equal(state.hasUnreadResult, true);
   assert.equal(state.resultStatus, 'generated_draft');
   assert.equal(state.currentJob?.preview?.aiSuggestedName, '玄霜剑典');
+  assert.equal(state.currentJob?.modelName, 'gpt-4o-mini');
   assert.equal(state.currentJob?.burningWordPrompt, '焰');
 });
 

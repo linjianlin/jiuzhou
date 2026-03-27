@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1) 做什么：根据 TextModelConfig.provider 分流到 OpenAI SDK 或 Anthropic SDK，对外暴露统一的 `callConfiguredTextModel`。
- * 2) 做什么：让功法生成、伙伴招募等业务层只调用这一个入口，不感知底层 provider 差异。
+ * 2) 做什么：让功法生成、伙伴招募等业务层只调用这一个入口，并显式声明自己使用哪一套文本模型配置，不感知底层 provider 差异。
  * 3) 不做什么：不拼业务 prompt、不做业务 JSON 校验，也不吞掉请求异常。
  *
  * 输入/输出：
@@ -18,7 +18,7 @@
  * 2) Anthropic 的 seed 参数不支持，切换 provider 后 seed 会被忽略；responseFormat 会自动转换为 Anthropic 的 output_config.format。
  */
 import OpenAI from 'openai';
-import { readTextModelConfig } from './modelConfig.js';
+import { readTextModelConfig, type TextModelScope } from './modelConfig.js';
 import { callAnthropicTextModel } from './anthropicTextClient.js';
 import {
   buildTechniqueTextModelPayload,
@@ -49,6 +49,7 @@ const normalizeCompletionContent = (rawContent: unknown): string => {
 };
 
 export const callConfiguredTextModel = async (params: {
+  modelScope: TextModelScope;
   responseFormat?: TechniqueTextModelResponseFormat;
   systemMessage: string;
   userMessage: string;
@@ -56,7 +57,7 @@ export const callConfiguredTextModel = async (params: {
   temperature?: number;
   timeoutMs: number;
 }): Promise<OpenAITextModelCallResult | null> => {
-  const config = readTextModelConfig();
+  const config = readTextModelConfig(params.modelScope);
   if (!config) return null;
 
   // Anthropic provider：seed 不支持；responseFormat 会在 Anthropic 客户端内转换为 output_config

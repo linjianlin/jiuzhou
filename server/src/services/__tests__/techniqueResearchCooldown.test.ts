@@ -29,9 +29,10 @@ import {
 const NOW_ISO = '2026-03-08T12:00:00.000Z';
 const NOW = new Date(NOW_ISO);
 
-test('shouldBypassTechniqueResearchCooldown: 所有环境默认都应保留正式冷却', () => {
+test('shouldBypassTechniqueResearchCooldown: 仅本地开发环境应跳过正式冷却', () => {
   assert.equal(shouldBypassTechniqueResearchCooldown('production'), false);
-  assert.equal(shouldBypassTechniqueResearchCooldown('development'), false);
+  assert.equal(shouldBypassTechniqueResearchCooldown('development'), true);
+  assert.equal(shouldBypassTechniqueResearchCooldown('test'), false);
   assert.equal(shouldBypassTechniqueResearchCooldown(undefined), false);
 });
 

@@ -195,6 +195,7 @@ export type TechniqueResearchJobView = {
   generationId: string;
   status: TechniqueGenerationStatus;
   quality: TechniqueQuality;
+  modelName: string | null;
   burningWordPrompt: string | null;
   draftTechniqueId: string | null;
   startedAt: string;
@@ -718,6 +719,7 @@ class TechniqueGenerationService {
             j.id AS generation_id,
             j.status,
             j.quality_rolled,
+            j.model_name,
             j.burning_word_prompt,
             j.draft_technique_id,
             j.created_at,
@@ -799,6 +801,7 @@ class TechniqueGenerationService {
             generationId: asString(currentJobRow.generation_id),
             status: (asString(currentJobRow.status) as TechniqueGenerationStatus) || 'pending',
             quality: (asString(currentJobRow.quality_rolled) as TechniqueQuality) || '黄',
+            modelName: asString(currentJobRow.model_name) || null,
             burningWordPrompt: asString(currentJobRow.burning_word_prompt) || null,
             draftTechniqueId: asString(currentJobRow.draft_technique_id) || null,
             draftExpireAt: toIsoString(currentJobRow.draft_expire_at),

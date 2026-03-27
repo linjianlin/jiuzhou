@@ -572,6 +572,7 @@ model characters {
   bounty_claim                                                                      bounty_claim[]
   bounty_instance                                                                   bounty_instance[]
   character_achievement                                                             character_achievement[]
+  character_achievement_battle_state                                                character_achievement_battle_state?
   character_achievement_points                                                      character_achievement_points?
   character_insight_progress                                                        character_insight_progress?
   character_main_quest_progress                                                     character_main_quest_progress?

@@ -60,17 +60,18 @@ type TechniqueResearchCooldownOptions = {
 
 /**
  * 复用点：
- * - 当前由 `buildTechniqueResearchCooldownState` 默认消费，统一让状态接口与创建任务校验都遵守同一正式冷却口径。
+ * - 当前由 `buildTechniqueResearchCooldownState` 默认消费，统一让状态接口与创建任务校验都遵守同一环境口径。
  * - 若纯函数测试或未来批处理需要显式跳过冷却，可通过参数覆盖，避免业务主链再分叉出环境特判。
  *
  * 设计原因：
- * - 开发、测试、生产都默认走同一套正式冷却，避免本地联调看不到真实冷却分支。
+ * - 本地开发环境需要支持连续联调，因此直接在共享规则内关闭冷却，避免状态接口与创建校验口径分裂。
+ * - 测试与生产仍保留正式冷却，保证测试断言与线上规则一致。
  * - 将默认行为收敛在这里后，业务层只关注冷却状态，不再重复判断运行环境。
  */
 export const shouldBypassTechniqueResearchCooldown = (
-  _nodeEnv: string | undefined = process.env.NODE_ENV,
+  nodeEnv: string | undefined = process.env.NODE_ENV,
 ): boolean => {
-  return false;
+  return nodeEnv === 'development';
 };
 
 const buildTechniqueResearchIdleCooldownState = (

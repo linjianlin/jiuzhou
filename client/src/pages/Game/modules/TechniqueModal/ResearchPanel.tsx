@@ -66,6 +66,13 @@ const renderTechniqueResearchBurningWordTag = (
   return <Tag color="geekblue">{buildTechniqueResearchBurningWordTagText(burningWordPrompt)}</Tag>;
 };
 
+const renderTechniqueResearchModelTag = (
+  modelName: string | null | undefined,
+): React.ReactNode => {
+  if (!modelName) return null;
+  return <Tag color="default">本次模型：{modelName}</Tag>;
+};
+
 const ResearchPanel: React.FC<ResearchPanelProps> = ({
   status,
   loading,
@@ -189,6 +196,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
             <div className="tech-research-status-title">本次洞府研修未能成法</div>
             <div className="tech-research-status-meta">
               {renderTechniqueResearchBurningWordTag(panelView.job.burningWordPrompt)}
+              {renderTechniqueResearchModelTag(panelView.job.modelName)}
             </div>
             <div className="tech-research-status-desc">{panelView.errorMessage}</div>
             <div className="tech-research-status-foot">本次结果已结束，可在条件满足时重新开始领悟。</div>
@@ -205,6 +213,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
                   </Tag>
                   <Tag color="default">{panelView.preview.type}</Tag>
                   <Tag color="default">最高{panelView.preview.maxLayer}层</Tag>
+                  {renderTechniqueResearchModelTag(panelView.job.modelName)}
                   {renderTechniqueResearchBurningWordTag(panelView.job.burningWordPrompt)}
                 </div>
               </div>
