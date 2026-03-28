@@ -20,6 +20,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  IDLE_STOPPING_STALE_HEARTBEAT_MS,
   resolveOrphanStoppingSessionIds,
   type IdleSessionActivitySnapshot,
 } from '../idle/idleSessionActivity.js';
@@ -33,7 +34,8 @@ test('stopping 会话无执行循环承接时应识别为孤儿', () => {
 
   const orphanIds = resolveOrphanStoppingSessionIds(
     sessions,
-    (sessionId) => sessionId === 'session-stopping-live',
+    (sessionId) => (sessionId === 'session-stopping-live' ? 1_000 : null),
+    10_000,
   );
 
   assert.deepEqual(
@@ -48,7 +50,51 @@ test('active 会话即使没有执行循环也不能被误判为 stopping 孤儿
     { id: 'session-active', characterId: 99, status: 'active' },
   ];
 
-  const orphanIds = resolveOrphanStoppingSessionIds(sessions, () => false);
+  const orphanIds = resolveOrphanStoppingSessionIds(
+    sessions,
+    () => null,
+    10_000,
+  );
 
   assert.deepEqual(orphanIds, [], '只有 stopping 状态才参与 stopping 孤儿收敛');
+});
+
+test('已注册但心跳已失活的 stopping 会话也应被识别为孤儿', () => {
+  const now = 200_000;
+  const sessions: IdleSessionActivitySnapshot[] = [
+    { id: 'session-stale-loop', characterId: 7, status: 'stopping' },
+  ];
+
+  const orphanIds = resolveOrphanStoppingSessionIds(
+    sessions,
+    (sessionId) =>
+      sessionId === 'session-stale-loop'
+        ? now - IDLE_STOPPING_STALE_HEARTBEAT_MS - 1
+        : null,
+    now,
+  );
+
+  assert.deepEqual(
+    orphanIds,
+    ['session-stale-loop'],
+    '执行循环注册表若已失活，stopping 会话也必须被服务端收敛',
+  );
+});
+
+test('已注册且心跳仍新鲜的 stopping 会话不应被提前收敛', () => {
+  const now = 200_000;
+  const sessions: IdleSessionActivitySnapshot[] = [
+    { id: 'session-live-loop', characterId: 8, status: 'stopping' },
+  ];
+
+  const orphanIds = resolveOrphanStoppingSessionIds(
+    sessions,
+    (sessionId) =>
+      sessionId === 'session-live-loop'
+        ? now - IDLE_STOPPING_STALE_HEARTBEAT_MS + 1
+        : null,
+    now,
+  );
+
+  assert.deepEqual(orphanIds, [], '新鲜心跳的 stopping 会话仍应交给执行循环正常收尾');
 });

@@ -47,7 +47,7 @@ import {
   rowToIdleSessionRow,
 } from './rowMappers.js';
 import { replayIdleBattleLogs } from './idleBattleSimulationCore.js';
-import { hasRegisteredIdleExecutionLoop } from './idleExecutionRegistry.js';
+import { getIdleExecutionLoopHeartbeatAt } from './idleExecutionRegistry.js';
 import {
   resolveOrphanStoppingSessionIds,
   type IdleSessionActivitySnapshot,
@@ -140,7 +140,7 @@ async function settleOrphanStoppingSessions(characterIds: number[]): Promise<voi
   }));
   const orphanSessionIds = resolveOrphanStoppingSessionIds(
     stoppingSessions,
-    hasRegisteredIdleExecutionLoop,
+    getIdleExecutionLoopHeartbeatAt,
   );
 
   if (orphanSessionIds.length === 0) {

@@ -62,6 +62,7 @@ import {
 } from './idleRewardWindow.js';
 import {
   clearIdleExecutionLoopRegistry,
+  touchIdleExecutionLoop,
   registerIdleExecutionLoop,
   unregisterIdleExecutionLoop,
 } from './idleExecutionRegistry.js';
@@ -351,6 +352,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
   }
 
   function scheduleNext(delayMs: number): void {
+    touchIdleExecutionLoop(session.id);
     const handle = setTimeout(() => {
       void runSingleTick();
     }, delayMs);
@@ -359,6 +361,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
 
   function wakeNow(): void {
     runtime.wakeRequested = true;
+    touchIdleExecutionLoop(session.id);
     if (runtime.running) {
       return;
     }
@@ -381,6 +384,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
   }
 
   async function runSingleTick(): Promise<void> {
+    touchIdleExecutionLoop(session.id);
     runtime.running = true;
     try {
       // 先检查终止条件，确保 stop 能在下一轮立即生效。
@@ -492,6 +496,7 @@ export function requestImmediateStop(sessionId: string): void {
     runtime.stopRequested = true;
     runtime.wakeRequested = true;
   }
+  touchIdleExecutionLoop(sessionId);
   const wakeNow = loopWakeHandlers.get(sessionId);
   if (wakeNow) {
     wakeNow();

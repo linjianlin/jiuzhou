@@ -56,6 +56,7 @@ import {
 } from './idleSessionSummary.js';
 import {
   clearIdleExecutionLoopRegistry,
+  touchIdleExecutionLoop,
   registerIdleExecutionLoop,
   unregisterIdleExecutionLoop,
 } from './idleExecutionRegistry.js';
@@ -398,6 +399,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
 
   /** 递归调度下一场战斗，delayMs 为距下一场的等待时间 */
   function scheduleNext(delayMs: number): void {
+    touchIdleExecutionLoop(session.id);
     const handle = setTimeout(() => {
       void runSingleTick();
     }, delayMs);
@@ -406,6 +408,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
 
   function wakeNow(): void {
     runtime.wakeRequested = true;
+    touchIdleExecutionLoop(session.id);
     if (runtime.running) {
       return;
     }
@@ -418,6 +421,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
   }
 
   async function runSingleTick(): Promise<void> {
+    touchIdleExecutionLoop(session.id);
     runtime.running = true;
     try {
       // 先检查终止条件，保证 stop 后不会额外执行一场战斗。
@@ -485,6 +489,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
  *   3. 不直接改 DB 状态，状态持久化由 stopIdleSession 负责
  */
 export function requestImmediateStop(sessionId: string): void {
+  touchIdleExecutionLoop(sessionId);
   const wakeNow = loopWakeHandlers.get(sessionId);
   if (wakeNow) {
     wakeNow();
