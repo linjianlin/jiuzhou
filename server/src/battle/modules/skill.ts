@@ -59,6 +59,7 @@ import {
 } from '../utils/cooldown.js';
 import {
   DEFAULT_PERCENT_BUFF_ATTR_SET,
+  buildAuraHostRuntimeBuffKey,
   normalizeBuffApplyType,
   normalizeBuffAttrKey,
   normalizeBuffKind,
@@ -812,14 +813,16 @@ function executeSkillOnTarget(
   }
 
   // 再处理非伤害技能效果
-  for (const effect of skill.effects) {
+  for (let effectIndex = 0; effectIndex < skill.effects.length; effectIndex++) {
+    const effect = skill.effects[effectIndex];
+    if (!effect) continue;
     if (effect.type === 'damage' || effect.type === 'momentum') continue;
     // 控制效果走独立命中流程，避免重复概率判定
     if (effect.type !== 'control' && typeof effect.chance === 'number' && !rollChance(state, effect.chance)) {
       continue;
     }
 
-    executeEffect(state, caster, target, skill, effect, result, context);
+    executeEffect(state, caster, target, skill, effect, result, context, effectIndex);
   }
 
   return result;
@@ -836,6 +839,7 @@ function executeEffect(
   effect: SkillEffect,
   result: TargetResult,
   context: SkillExecutionContext,
+  effectIndex: number,
 ): void {
   switch (effect.type) {
     case 'damage':
@@ -852,7 +856,7 @@ function executeEffect(
 
     case 'buff':
     case 'debuff':
-      executeBuffEffect(caster, target, skill, effect as BuffOrDebuffEffect, result);
+      executeBuffEffect(caster, target, skill, effect as BuffOrDebuffEffect, result, effectIndex);
       break;
 
     case 'dispel':
@@ -1078,14 +1082,23 @@ function executeBuffEffect(
   target: BattleUnit,
   skill: BattleSkill,
   effect: BuffOrDebuffEffect,
-  result: TargetResult
+  result: TargetResult,
+  effectIndex: number,
 ): void {
-  const buffDefId = resolveBuffEffectKey(effect);
-  if (!buffDefId) return;
+  const baseBuffDefId = resolveBuffEffectKey(effect);
+  if (!baseBuffDefId) return;
 
   const buffType = effect.type === 'buff' ? 'buff' : 'debuff';
   const stacks = Math.max(1, Math.floor(toFiniteNumber(effect.stacks, 1)));
   const isAura = normalizeBuffKind(effect.buffKind) === 'aura';
+  const buffDefId = isAura
+    ? buildAuraHostRuntimeBuffKey({
+      sourceUnitId: caster.id,
+      skillId: skill.id,
+      effectIndex,
+      buffDefId: baseBuffDefId,
+    })
+    : baseBuffDefId;
   // 光环永久存在（duration=-1），不可驱散
   const duration = isAura ? -1 : Math.max(1, Math.floor(toFiniteNumber(effect.duration, 1)));
   const runtimeData = buildBuffRuntimeData(caster, target, skill, effect);
@@ -1094,7 +1107,7 @@ function executeBuffEffect(
   addBuff(target, {
     id: `${buffDefId}-${Date.now()}`,
     buffDefId,
-    name: buffDefId,
+    name: baseBuffDefId,
     type: buffType,
     category: 'skill',
     sourceUnitId: caster.id,
@@ -1117,7 +1130,7 @@ function executeBuffEffect(
     return;
   }
 
-  result.buffsApplied?.push(buffDefId);
+  result.buffsApplied?.push(baseBuffDefId);
 }
 
 function executeDelayedBurstEffect(

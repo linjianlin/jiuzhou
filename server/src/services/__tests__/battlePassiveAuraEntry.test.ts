@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BattleEngine } from '../../battle/battleEngine.js';
 import { createPVEBattle } from '../../battle/battleFactory.js';
 import { executeSkill, getAvailableSkills } from '../../battle/modules/skill.js';
-import type { BattleSkill } from '../../battle/types.js';
+import type { BattleSkill, SkillEffect } from '../../battle/types.js';
 import type { SkillData } from '../../battle/battleFactory.js';
 import type { SkillDefConfig } from '../staticConfigLoader.js';
 import { buildEffectiveTechniqueSkillData } from '../shared/techniqueSkillProgression.js';
@@ -79,6 +79,27 @@ const PASSIVE_AURA_SKILL: SkillData = {
   trigger_type: 'passive',
   ai_priority: 10,
 };
+
+const createPassiveAuraBattleSkill = (id: string, auraEffects: SkillEffect[]): BattleSkill => ({
+  id,
+  name: id,
+  source: 'technique',
+  cost: {},
+  cooldown: 0,
+  targetType: 'self',
+  targetCount: 1,
+  damageType: undefined,
+  element: 'none',
+  effects: [{
+    type: 'buff',
+    buffKind: 'aura',
+    buffKey: 'buff-aura',
+    auraTarget: 'all_ally',
+    auraEffects,
+  }],
+  triggerType: 'passive',
+  aiPriority: 10,
+});
 
 test('被动光环在进入战斗时立即生效，且不会进入主动技能轮转', () => {
   const player = createCharacterData(1);
@@ -206,6 +227,105 @@ test('光环获得摘要中的比率属性应按百分比显示，避免 flat �
     actionLog.targets[0]?.buffsApplied?.[0],
     '增益光环（全体友方：增伤提升+10%、法攻提升+6%、灵气+4）',
   );
+});
+
+test('同一施法者的多个不同光环应同时挂载并分别生效', () => {
+  const caster = createUnit({
+    id: 'player-aura-owner',
+    name: '灵阵师',
+  });
+  const ally = createUnit({
+    id: 'player-aura-target',
+    name: '同伴',
+    attrs: {
+      wugong: 120,
+      fagong: 180,
+    },
+  });
+  const enemy = createUnit({
+    id: 'monster-aura-target',
+    name: '敌人',
+    type: 'monster',
+  });
+
+  caster.skills = [
+    createPassiveAuraBattleSkill('skill-aura-wugong-up', [{
+      type: 'buff',
+      buffKind: 'attr',
+      buffKey: 'buff-wugong-up',
+      attrKey: 'wugong',
+      applyType: 'flat',
+      value: 20,
+    }]),
+    createPassiveAuraBattleSkill('skill-aura-fagong-up', [{
+      type: 'buff',
+      buffKind: 'attr',
+      buffKey: 'buff-fagong-up',
+      attrKey: 'fagong',
+      applyType: 'flat',
+      value: 30,
+    }]),
+  ];
+
+  const state = createState({
+    attacker: [caster, ally],
+    defender: [enemy],
+  });
+  const engine = new BattleEngine(state);
+
+  engine.startBattle();
+
+  assert.equal(caster.buffs.filter((buff) => buff.aura).length, 2, '两个光环宿主 Buff 都应保留');
+  assert.equal(ally.currentAttrs.wugong, ally.baseAttrs.wugong + 20);
+  assert.equal(ally.currentAttrs.fagong, ally.baseAttrs.fagong + 30);
+});
+
+test('同一施法者的多个同类光环应保留最强子效果，而不是被最后一条覆盖', () => {
+  const caster = createUnit({
+    id: 'player-aura-owner-2',
+    name: '灵阵师乙',
+  });
+  const ally = createUnit({
+    id: 'player-aura-target-2',
+    name: '同伴乙',
+    attrs: {
+      fagong: 200,
+    },
+  });
+  const enemy = createUnit({
+    id: 'monster-aura-target-2',
+    name: '敌人乙',
+    type: 'monster',
+  });
+
+  caster.skills = [
+    createPassiveAuraBattleSkill('skill-aura-fagong-strong', [{
+      type: 'buff',
+      buffKind: 'attr',
+      buffKey: 'buff-fagong-up',
+      attrKey: 'fagong',
+      applyType: 'percent',
+      value: 0.2,
+    }]),
+    createPassiveAuraBattleSkill('skill-aura-fagong-weak', [{
+      type: 'buff',
+      buffKind: 'attr',
+      buffKey: 'buff-fagong-up',
+      attrKey: 'fagong',
+      applyType: 'percent',
+      value: 0.1,
+    }]),
+  ];
+
+  const state = createState({
+    attacker: [caster, ally],
+    defender: [enemy],
+  });
+  const engine = new BattleEngine(state);
+
+  engine.startBattle();
+
+  assert.equal(ally.currentAttrs.fagong, 240, '应保留 20% 强光环，不应被后面的 10% 覆盖');
 });
 
 test('升级后的光环子效果进入战斗时应按升级值生效', () => {

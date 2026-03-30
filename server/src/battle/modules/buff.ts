@@ -25,9 +25,8 @@ import { applyHealing } from './healing.js';
 import { applySoulShackleRecoveryReduction } from './mark.js';
 import { appendBattleLog } from '../logStream.js';
 import { buildAuraSubEffectSummary } from '../utils/auraSummary.js';
+import { buildAuraSubRuntimeBuffKey, resolveAuraSubRuntimeGroupKey } from '../utils/buffSpec.js';
 import { CHARACTER_RATIO_ATTR_KEY_SET } from '../../services/shared/characterAttrRegistry.js';
-
-const AURA_SUB_EFFECT_BUFF_ID_PATTERN = /^aura:[^:]+:(.+)$/;
 
 /**
  * 计算 Buff 强度分值
@@ -97,10 +96,10 @@ function resolveAuraSubEffectGroupKey(buff: ActiveBuff): string | null {
   if (buff.category !== 'aura') return null;
   if (!buff.tags.includes('aura_sub')) return null;
 
-  const matched = AURA_SUB_EFFECT_BUFF_ID_PATTERN.exec(buff.buffDefId);
-  if (!matched) return null;
+  const groupKey = resolveAuraSubRuntimeGroupKey(buff.buffDefId);
+  if (!groupKey) return null;
 
-  return `${buff.type}:${matched[1]}`;
+  return `${buff.type}:${groupKey}`;
 }
 
 /**
@@ -497,7 +496,7 @@ function resolveAuraTargets(
  * 输出：AuraLog（若有有效目标和结果）或 null。
  *
  * 坑点：
- * 1) 子 Buff 的 buffDefId 加光环持有者 ID 前缀，避免不同光环源的子 Buff 互相刷新。
+ * 1) 子 Buff 的 buffDefId 必须包含“光环实例键”，避免同一施法者的多条光环互相刷新。
  * 2) 子 Buff 的 duration 固定为 1 回合，保证光环消失后子效果在当回合结束时自然清除。
  */
 function processAuraEffect(
@@ -586,8 +585,11 @@ function applyAuraSubEffect(
     case 'buff':
     case 'debuff': {
       if (!target.isAlive || !sub.buffDefId) break;
-      // 加光环持有者 ID 前缀，避免不同光环源的子 Buff 互相刷新
-      const isolatedBuffDefId = `aura:${auraOwner.id}:${sub.buffDefId}`;
+      const isolatedBuffDefId = buildAuraSubRuntimeBuffKey({
+        sourceUnitId: auraOwner.id,
+        auraHostBuffDefId: auraBuff.buffDefId,
+        subBuffDefId: sub.buffDefId,
+      });
       addBuff(target, {
         id: `${isolatedBuffDefId}-${Date.now()}`,
         buffDefId: isolatedBuffDefId,
