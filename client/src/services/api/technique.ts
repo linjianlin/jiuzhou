@@ -223,6 +223,12 @@ export type TechniqueResearchDraftDto = {
 
 export type TechniqueResearchResultStatusDto = 'generated_draft' | 'failed';
 
+export type TechniqueResearchQualityRateDto = {
+  quality: '黄' | '玄' | '地' | '天';
+  weight: number;
+  rate: number;
+};
+
 export type TechniqueResearchJobDto = {
   generationId: string;
   status: 'pending' | 'generated_draft' | 'published' | 'failed' | 'refunded';
@@ -286,6 +292,8 @@ export interface TechniqueResearchStatusResponse {
     currentJob: TechniqueResearchJobDto | null;
     hasUnreadResult: boolean;
     resultStatus: TechniqueResearchResultStatusDto | null;
+    remainingUntilGuaranteedHeaven: number;
+    qualityRates: TechniqueResearchQualityRateDto[];
   };
 }
 

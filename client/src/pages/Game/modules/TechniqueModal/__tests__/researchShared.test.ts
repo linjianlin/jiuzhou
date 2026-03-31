@@ -5,6 +5,8 @@ import {
   resolveTechniqueResearchActionState,
   resolveTechniqueResearchCooldownDisplay,
   resolveTechniqueResearchCurrentFragmentCost,
+  resolveTechniqueResearchGuaranteeText,
+  resolveTechniqueResearchQualityRateItems,
   resolveTechniqueResearchSubmitState,
 } from '../researchShared';
 
@@ -36,6 +38,13 @@ const buildStatus = (
   currentJob: null,
   hasUnreadResult: false,
   resultStatus: null,
+  remainingUntilGuaranteedHeaven: 20,
+  qualityRates: [
+    { quality: '黄', weight: 4, rate: 40 },
+    { quality: '玄', weight: 3, rate: 30 },
+    { quality: '地', weight: 2, rate: 20 },
+    { quality: '天', weight: 1, rate: 10 },
+  ],
   ...overrides,
 });
 
@@ -167,6 +176,37 @@ describe('researchShared', () => {
 
     expect(submitState.canSubmit).toBe(false);
     expect(submitState.disabledReason).toContain('顿悟符不足');
+  });
+
+  it('resolveTechniqueResearchQualityRateItems: 应把服务端下发的品质概率格式化为研修面板展示项', () => {
+    expect(resolveTechniqueResearchQualityRateItems(buildStatus())).toEqual([
+      { quality: '黄', rateText: '40%' },
+      { quality: '玄', rateText: '30%' },
+      { quality: '地', rateText: '20%' },
+      { quality: '天', rateText: '10%' },
+    ]);
+  });
+
+  it('resolveTechniqueResearchQualityRateItems: 保底态下应展示天阶 100% 概率', () => {
+    expect(resolveTechniqueResearchQualityRateItems(buildStatus({
+      qualityRates: [
+        { quality: '黄', weight: 0, rate: 0 },
+        { quality: '玄', weight: 0, rate: 0 },
+        { quality: '地', weight: 0, rate: 0 },
+        { quality: '天', weight: 1, rate: 100 },
+      ],
+    }))).toEqual([
+      { quality: '黄', rateText: '0%' },
+      { quality: '玄', rateText: '0%' },
+      { quality: '地', rateText: '0%' },
+      { quality: '天', rateText: '100%' },
+    ]);
+  });
+
+  it('resolveTechniqueResearchGuaranteeText: 应把服务端下发的保底剩余次数格式化为统一提示文案', () => {
+    expect(resolveTechniqueResearchGuaranteeText(buildStatus({
+      remainingUntilGuaranteedHeaven: 3,
+    }))).toBe('再 3 次成功生成，必得天阶功法');
   });
 
   it('formatTechniqueResearchCooldownRemaining: 应输出紧凑冷却文案', () => {

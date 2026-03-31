@@ -75,3 +75,11 @@ test('technique_generation_job: Prisma schema 应声明任务恢复依赖列', (
     'technique_generation_job 缺少 burning_word_prompt 列定义',
   );
 });
+
+test('characters: Prisma schema 应声明洞府研修连续未出天累计字段', () => {
+  assertModelHasField(
+    'characters',
+    /\btechnique_research_generated_non_heaven_count\s+Int\b/,
+    'characters 缺少 technique_research_generated_non_heaven_count 列定义',
+  );
+});

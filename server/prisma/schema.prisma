@@ -559,6 +559,7 @@ model characters {
   auto_disassemble_rules                                                            Json?                           @default("[]")
   dungeon_no_stamina_cost                                                           Boolean?                        @default(false)
   partner_recruit_generated_non_heaven_count                                        Int                             @default(0)
+  technique_research_generated_non_heaven_count                                     Int                             @default(0)
   created_at                                                                        DateTime?                       @default(now()) @db.Timestamp(6)
   updated_at                                                                        DateTime?                       @default(now()) @db.Timestamp(6)
   arena_battle_arena_battle_challenger_character_idTocharacters                     arena_battle[]                  @relation("arena_battle_challenger_character_idTocharacters")

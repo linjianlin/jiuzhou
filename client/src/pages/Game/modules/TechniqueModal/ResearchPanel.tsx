@@ -27,7 +27,9 @@ import {
   hasTechniqueResearchCooldownBypassToken,
   resolveTechniqueResearchCurrentFragmentCost,
   resolveTechniqueResearchCooldownDisplay,
+  resolveTechniqueResearchGuaranteeText,
   resolveTechniqueResearchPanelView,
+  resolveTechniqueResearchQualityRateItems,
 } from './researchShared';
 import {
   mapResearchPreviewSkillToDetail,
@@ -96,6 +98,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   const panelView = resolveTechniqueResearchPanelView(status);
   const cooldownDisplay = resolveTechniqueResearchCooldownDisplay(status, cooldownBypassEnabled);
   const currentFragmentCost = resolveTechniqueResearchCurrentFragmentCost(status, cooldownBypassEnabled);
+  const qualityRateItems = resolveTechniqueResearchQualityRateItems(status);
   const burningWordPromptInputDisabled = !status?.unlocked
     || panelView.kind === 'pending'
     || panelView.kind === 'draft'
@@ -129,6 +132,26 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
             </div>
             <strong>{cooldownDisplay.statusText}</strong>
           </div>
+        </div>
+
+        <div className="tech-research-quality-card">
+          <div className="tech-research-quality-head">
+            <span className="tech-research-quality-title">品质概率</span>
+            <span className="tech-research-quality-guarantee">{resolveTechniqueResearchGuaranteeText(status)}</span>
+          </div>
+          {qualityRateItems.length > 0 ? (
+            <div className="tech-research-quality-rate-list">
+              {qualityRateItems.map((entry) => (
+                <div key={entry.quality} className="tech-research-quality-rate-item">
+                  <Tag className={getItemQualityTagClassName(entry.quality)}>{entry.quality}阶</Tag>
+                  <span className="tech-research-quality-rate-text">{entry.rateText}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="tech-empty">暂无品质概率</div>
+          )}
+          <div className="tech-research-quality-note">当前展示的是本次洞府研修实际生效的品质概率。</div>
         </div>
 
         <div className="tech-research-actions">

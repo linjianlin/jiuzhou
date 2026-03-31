@@ -19,6 +19,7 @@
  */
 import type {
   TechniqueResearchJobDto,
+  TechniqueResearchQualityRateDto,
   TechniqueResearchResultStatusDto,
   TechniqueResearchStatusResponse,
 } from '../../../../services/api';
@@ -53,6 +54,11 @@ export type TechniqueResearchCooldownDisplay = {
   statusText: string;
   ruleText: string;
   bypassedByToken: boolean;
+};
+
+export type TechniqueResearchQualityRateItem = {
+  quality: TechniqueResearchQualityRateDto['quality'];
+  rateText: string;
 };
 
 export const buildTechniqueResearchIndicator = (
@@ -110,6 +116,26 @@ export const isTechniqueResearchCoolingDown = (
 export const formatTechniqueResearchCooldownRemaining = (
   cooldownRemainingSeconds: number,
 ): string => formatGameCooldownRemaining(cooldownRemainingSeconds);
+
+export const resolveTechniqueResearchQualityRateItems = (
+  status: TechniqueResearchStatusData | null,
+): TechniqueResearchQualityRateItem[] => {
+  if (!status) return [];
+  return status.qualityRates.map((entry) => ({
+    quality: entry.quality,
+    rateText: `${entry.rate}%`,
+  }));
+};
+
+export const resolveTechniqueResearchGuaranteeText = (
+  status: TechniqueResearchStatusData | null,
+): string => {
+  const remainingUntilGuaranteedHeaven = status?.remainingUntilGuaranteedHeaven;
+  if (typeof remainingUntilGuaranteedHeaven !== 'number' || !Number.isFinite(remainingUntilGuaranteedHeaven)) {
+    return '--';
+  }
+  return `再 ${Math.max(1, Math.floor(remainingUntilGuaranteedHeaven))} 次成功生成，必得天阶功法`;
+};
 
 export const shouldTechniqueResearchBypassCooldown = (
   status: TechniqueResearchStatusData | null,

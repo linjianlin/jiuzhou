@@ -414,6 +414,68 @@
   white-space: nowrap;
 }
 
+.tech-research-quality-card {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tech-research-quality-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tech-research-quality-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.tech-research-quality-guarantee {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.tech-research-quality-rate-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tech-research-quality-rate-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-bg) 72%, var(--panel-bg-soft));
+  border: 1px solid color-mix(in srgb, var(--border-color-soft) 78%, transparent);
+}
+
+.tech-research-quality-rate-item .ant-tag {
+  margin: 0;
+}
+
+.tech-research-quality-rate-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.tech-research-quality-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .tech-research-costs {
   display: flex;
   flex-wrap: wrap;
@@ -877,6 +939,18 @@
 
   .tech-research-stats .tech-research-stat:last-child {
     grid-column: 1 / -1;
+  }
+
+  .tech-research-quality-head {
+    flex-direction: column;
+  }
+
+  .tech-research-quality-guarantee {
+    text-align: left;
+  }
+
+  .tech-research-quality-rate-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .tech-research-stat-toggle {

@@ -51,6 +51,13 @@ import {
   TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES,
 } from './shared/techniqueResearchCooldown.js';
 import {
+  resolveTechniqueResearchHeavenGuaranteeState,
+  resolveTechniqueResearchQualityForGeneratedDraftSuccess,
+  resolveTechniqueResearchQualityRateEntries,
+  type TechniqueResearchQuality,
+  type TechniqueResearchQualityRateEntry,
+} from './shared/techniqueResearchGuarantee.js';
+import {
   TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_BYPASSES_COOLDOWN,
   TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST,
   TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID,
@@ -100,7 +107,7 @@ export type TechniqueGenerationStatus =
   | 'failed'
   | 'refunded';
 
-export type TechniqueQuality = '黄' | '玄' | '地' | '天';
+export type TechniqueQuality = TechniqueResearchQuality;
 
 export type ServiceResult<T = unknown> = {
   success: boolean;
@@ -231,6 +238,8 @@ type TechniqueResearchStatusData = {
   currentJob: TechniqueResearchJobView | null;
   hasUnreadResult: boolean;
   resultStatus: TechniqueResearchResultStatus | null;
+  remainingUntilGuaranteedHeaven: number;
+  qualityRates: TechniqueResearchQualityRateEntry[];
 };
 
 class TechniqueGenerationRollbackError extends Error {
@@ -287,13 +296,6 @@ const QUALITY_MAX_LAYER: Record<TechniqueQuality, number> = {
   天: 9,
 };
 
-const QUALITY_RANDOM_WEIGHT: Array<{ quality: TechniqueQuality; weight: number }> = [
-  { quality: '黄', weight: 4 },
-  { quality: '玄', weight: 3 },
-  { quality: '地', weight: 2 },
-  { quality: '天', weight: 1 },
-];
-
 const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
 const asNumber = (raw: unknown, fallback = 0): number => {
   const n = Number(raw);
@@ -308,18 +310,6 @@ const resolveWeekKey = (date: Date): string => {
   const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   const weekStr = String(weekNo).padStart(2, '0');
   return `${d.getUTCFullYear()}-W${weekStr}`;
-};
-
-const resolveQualityByWeight = (): TechniqueQuality => {
-  const totalWeight = QUALITY_RANDOM_WEIGHT.reduce((sum, row) => sum + row.weight, 0);
-  if (totalWeight <= 0) return '黄';
-  const roll = Math.random() * totalWeight;
-  let cursor = 0;
-  for (const row of QUALITY_RANDOM_WEIGHT) {
-    cursor += row.weight;
-    if (roll <= cursor) return row.quality;
-  }
-  return QUALITY_RANDOM_WEIGHT[QUALITY_RANDOM_WEIGHT.length - 1]?.quality ?? '黄';
 };
 
 const resolveTechniqueTypeByRandom = (): GeneratedTechniqueType => {
@@ -578,6 +568,28 @@ class TechniqueGenerationService {
     );
   }
 
+  private async loadTechniqueResearchGeneratedNonHeavenCount(
+    characterId: number,
+    forUpdate: boolean,
+  ): Promise<number | null> {
+    const lockSql = forUpdate ? 'FOR UPDATE' : '';
+    const result = await query(
+      `
+        SELECT technique_research_generated_non_heaven_count
+        FROM characters
+        WHERE id = $1
+        LIMIT 1
+        ${lockSql}
+      `,
+      [characterId],
+    );
+    if (result.rows.length <= 0) return null;
+    return Math.max(0, Math.floor(asNumber(
+      (result.rows[0] as Record<string, unknown>).technique_research_generated_non_heaven_count,
+      0,
+    )));
+  }
+
   private async loadCooldownBypassTokenAvailableQty(characterId: number, forUpdate: boolean): Promise<number> {
     const lockSql = forUpdate ? 'FOR UPDATE' : '';
     const tokenRes = await query(
@@ -762,6 +774,7 @@ class TechniqueGenerationService {
       currentJobRes,
       cooldownBypassTokenAvailableQty,
       cooldownStartedAt,
+      generatedNonHeavenCount,
     ] = await Promise.all([
       this.getTechniqueResearchUnlockStateTx(characterId),
       this.getResearchFragmentBalanceTx(characterId),
@@ -845,12 +858,16 @@ class TechniqueGenerationService {
         ),
       this.loadCooldownBypassTokenAvailableQty(characterId, false),
       this.loadLatestResearchCooldownStartedAt(characterId, false),
+      this.loadTechniqueResearchGeneratedNonHeavenCount(characterId, false),
     ]);
     if (!unlockRes.success) {
       return { success: false, message: unlockRes.message, code: unlockRes.code };
     }
     if (!unlockRes.data) {
       return { success: false, message: '获取研修解锁态失败', code: 'RESEARCH_UNLOCK_STATE_INVALID' };
+    }
+    if (generatedNonHeavenCount === null) {
+      return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
 
     const draftRow = draftRes.rows[0] as Record<string, unknown> | undefined;
@@ -895,6 +912,8 @@ class TechniqueGenerationService {
     const cooldownState = buildTechniqueResearchCooldownState(cooldownStartedAt, new Date(), {
       cooldownReductionRate,
     });
+    const guaranteeState = resolveTechniqueResearchHeavenGuaranteeState(generatedNonHeavenCount);
+    const qualityRates = resolveTechniqueResearchQualityRateEntries(generatedNonHeavenCount);
 
     return {
       success: true,
@@ -919,6 +938,8 @@ class TechniqueGenerationService {
         currentJob: currentJobState.currentJob,
         hasUnreadResult: currentJobState.hasUnreadResult,
         resultStatus: currentJobState.resultStatus,
+        remainingUntilGuaranteedHeaven: guaranteeState.remainingUntilGuaranteedHeaven,
+        qualityRates,
       },
     };
   }
@@ -1018,7 +1039,11 @@ class TechniqueGenerationService {
     const weekKey = resolveWeekKey(new Date());
 
     const techniqueType = resolveTechniqueTypeByRandom();
-    const quality = resolveQualityByWeight();
+    const generatedNonHeavenCount = await this.loadTechniqueResearchGeneratedNonHeavenCount(characterId, false);
+    if (generatedNonHeavenCount === null) {
+      return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
+    }
+    const quality = resolveTechniqueResearchQualityForGeneratedDraftSuccess(generatedNonHeavenCount);
     const costPoints = resolveTechniqueResearchFragmentCost(shouldUseCooldownBypassToken);
     const fragmentBalance = await this.getResearchFragmentBalanceTx(characterId);
     if (fragmentBalance < costPoints) {
@@ -1159,6 +1184,23 @@ class TechniqueGenerationService {
       nameLocked: false,
       techniqueIcon: DEFAULT_GENERATED_SKILL_ICON,
     });
+
+    const counterUpdateResult = await query(
+      `
+        UPDATE characters
+        SET technique_research_generated_non_heaven_count = CASE
+              WHEN $2 = '天' THEN 0
+              ELSE technique_research_generated_non_heaven_count + 1
+            END,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING technique_research_generated_non_heaven_count
+      `,
+      [characterId, quality],
+    );
+    if (counterUpdateResult.rows.length === 0) {
+      throw new Error('角色不存在');
+    }
 
     await query(
       `
