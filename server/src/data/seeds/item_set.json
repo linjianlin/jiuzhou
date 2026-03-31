@@ -3256,7 +3256,7 @@
     {
       "id": "set-tianyan",
       "name": "天衍套装",
-      "description": "天衍套装以法则烙印与连锁回响为核心，通过持续叠层与追击回声打出高频法术压制。",
+      "description": "天衍套装引动周天衍光，以分光铺场、归曜收束、两仪流照压制全场，是证道期法修的范围统治之器。",
       "quality_rank": 7,
       "min_realm": "炼虚合道·证道期",
       "pieces": [
@@ -3311,7 +3311,7 @@
               "effect_type": "buff",
               "params": {
                 "attr_key": "fagong",
-                "value": 30,
+                "value": 60,
                 "apply_type": "flat"
               }
             },
@@ -3321,7 +3321,7 @@
               "effect_type": "buff",
               "params": {
                 "attr_key": "lengque_rating",
-                "value": 180,
+                "value": 360,
                 "apply_type": "flat"
               }
             }
@@ -3332,14 +3332,14 @@
           "piece_count": 4,
           "effect_defs": [
             {
-              "trigger": "on_skill",
+              "trigger": "after_skill",
               "target": "enemy",
-              "effect_type": "mark",
+              "effect_type": "spell_projection",
               "params": {
-                "operation": "apply",
-                "mark_id": "mirror_crack",
-                "max_stacks": 4,
-                "chance": 0.45
+                "mode": "zhou_tian_yan_guang",
+                "projection_name": "周天衍光",
+                "single_split_rate": 0.42,
+                "multi_focus_rate": 0.78
               }
             }
           ],
@@ -3349,29 +3349,15 @@
           "piece_count": 6,
           "effect_defs": [
             {
-              "trigger": "equip",
-              "target": "self",
-              "effect_type": "buff",
-              "params": {
-                "attr_key": "zengshang",
-                "value": 0.06,
-                "apply_type": "flat"
-              }
-            },
-            {
-              "trigger": "on_skill",
+              "trigger": "after_skill",
               "target": "enemy",
-              "effect_type": "mark",
+              "effect_type": "spell_projection",
               "params": {
-                "operation": "consume",
-                "mark_id": "mirror_crack",
-                "consume_mode": "fixed",
-                "consume_stacks": 2,
-                "per_stack_rate": 0.88,
-                "result_type": "damage",
-                "value": 0,
-                "scale_key": "fagong",
-                "scale_rate": 0.34
+                "mode": "zhou_tian_yan_guang",
+                "projection_name": "周天衍光",
+                "single_split_rate": 0.55,
+                "multi_focus_rate": 1,
+                "ignore_fafang_rate": 0.25
               }
             }
           ],
@@ -3381,13 +3367,19 @@
           "piece_count": 8,
           "effect_defs": [
             {
-              "trigger": "on_skill",
+              "trigger": "after_skill",
               "target": "enemy",
-              "effect_type": "damage",
+              "effect_type": "spell_projection",
               "params": {
-                "damage_type": "echo",
-                "value": 0.26,
-                "chance": 0.32
+                "mode": "liang_yi_liu_zhao",
+                "projection_name": "周天衍光",
+                "single_split_rate": 0.55,
+                "multi_focus_rate": 1,
+                "single_return_rate": 0.72,
+                "multi_return_rate": 0.26,
+                "ignore_fafang_rate": 0.25,
+                "lingqi_restore": 12,
+                "cooldown_reduce_if_full": 1
               }
             }
           ],
@@ -3401,7 +3393,7 @@
     {
       "id": "set-xuanheng",
       "name": "玄衡套装",
-      "description": "玄衡套装以护盾稳场与减速反制为核心，通过受击回稳和镇压节奏扛住高压法则战。",
+      "description": "玄衡套装以承劫镇身，将重创化作劫痕回落，再借护盾承劫、还劫反震，是证道期稳场御敌的第一重器。",
       "quality_rank": 7,
       "min_realm": "炼虚合道·证道期",
       "pieces": [
@@ -3456,7 +3448,7 @@
               "effect_type": "buff",
               "params": {
                 "attr_key": "max_qixue",
-                "value": 620,
+                "value": 1240,
                 "apply_type": "flat"
               }
             },
@@ -3466,7 +3458,17 @@
               "effect_type": "buff",
               "params": {
                 "attr_key": "wufang",
-                "value": 32,
+                "value": 64,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fafang",
+                "value": 64,
                 "apply_type": "flat"
               }
             }
@@ -3478,14 +3480,15 @@
           "effect_defs": [
             {
               "trigger": "on_be_hit",
-              "target": "enemy",
-              "effect_type": "debuff",
-              "duration_round": 2,
+              "target": "self",
+              "effect_type": "defer_damage",
               "params": {
-                "attr_key": "sudu",
-                "value": 0.08,
-                "apply_type": "percent",
-                "chance": 0.38
+                "mode": "cheng_jie_convert",
+                "threshold_max_qixue_rate": 0.08,
+                "convert_rate": 0.4,
+                "settle_rate": 0.5,
+                "remaining_rounds": 2,
+                "round_limit": 1
               }
             }
           ],
@@ -3495,14 +3498,14 @@
           "piece_count": 6,
           "effect_defs": [
             {
-              "trigger": "on_be_hit",
+              "trigger": "on_turn_start",
               "target": "self",
-              "effect_type": "shield",
-              "duration_round": 2,
+              "effect_type": "defer_damage",
               "params": {
-                "shield_mode": "damage_echo",
-                "value": 0.48,
-                "chance": 0.38
+                "mode": "cheng_jie_guard",
+                "shield_rate": 0.35,
+                "settle_rate": 0.5,
+                "remaining_rounds": 2
               }
             }
           ],
@@ -3512,13 +3515,15 @@
           "piece_count": 8,
           "effect_defs": [
             {
-              "trigger": "on_be_hit",
-              "target": "enemy",
-              "effect_type": "damage",
+              "trigger": "on_turn_start",
+              "target": "self",
+              "effect_type": "defer_damage",
               "params": {
-                "damage_type": "reflect",
-                "value": 0.36,
-                "chance": 0.35
+                "mode": "cheng_jie_guard_reflect",
+                "shield_rate": 0.35,
+                "settle_rate": 0.5,
+                "remaining_rounds": 2,
+                "reflect_on_absorb": true
               }
             }
           ],
@@ -3532,7 +3537,7 @@
     {
       "id": "set-poxu",
       "name": "破虚套装",
-      "description": "破虚套装以破障追斩与持续压防为核心，通过重斩连携撕开道宫守御。",
+      "description": "破虚套装以踏虚追斩为骨，先以重击夺势，再凭踏虚连动续斩收命，是证道期物修的压血夺命之器。",
       "quality_rank": 7,
       "min_realm": "炼虚合道·证道期",
       "pieces": [
@@ -3587,7 +3592,7 @@
               "effect_type": "buff",
               "params": {
                 "attr_key": "wugong",
-                "value": 30,
+                "value": 60,
                 "apply_type": "flat"
               }
             },
@@ -3597,7 +3602,7 @@
               "effect_type": "buff",
               "params": {
                 "attr_key": "baoji_rating",
-                "value": 180,
+                "value": 360,
                 "apply_type": "flat"
               }
             }
@@ -3609,14 +3614,12 @@
           "effect_defs": [
             {
               "trigger": "on_hit",
-              "target": "enemy",
-              "effect_type": "debuff",
-              "duration_round": 2,
+              "target": "self",
+              "effect_type": "extra_action",
               "params": {
-                "attr_key": "wufang",
-                "value": 0.1,
-                "apply_type": "percent",
-                "chance": 0.38
+                "mode": "ta_xu_grant",
+                "damage_threshold_max_qixue_rate": 0.12,
+                "max_actions_per_round": 1
               }
             }
           ],
@@ -3626,25 +3629,15 @@
           "piece_count": 6,
           "effect_defs": [
             {
-              "trigger": "equip",
-              "target": "self",
-              "effect_type": "buff",
-              "params": {
-                "attr_key": "zengshang",
-                "value": 0.06,
-                "apply_type": "flat"
-              }
-            },
-            {
               "trigger": "on_hit",
-              "target": "enemy",
-              "effect_type": "damage",
+              "target": "self",
+              "effect_type": "extra_action",
               "params": {
-                "damage_type": "physical",
-                "value": 0,
-                "scale_key": "wugong",
-                "scale_rate": 0.32,
-                "chance": 0.34
+                "mode": "ta_xu_empowered",
+                "damage_threshold_max_qixue_rate": 0.12,
+                "max_actions_per_round": 1,
+                "free_cast": true,
+                "ignore_wufang_rate": 0.25
               }
             }
           ],
@@ -3654,15 +3647,17 @@
           "piece_count": 8,
           "effect_defs": [
             {
-              "trigger": "on_crit",
-              "target": "enemy",
-              "effect_type": "damage",
+              "trigger": "on_hit",
+              "target": "self",
+              "effect_type": "extra_action",
               "params": {
-                "damage_type": "physical",
-                "value": 0,
-                "scale_key": "wugong",
-                "scale_rate": 0.68,
-                "chance": 0.35
+                "mode": "ta_xu_heavenstep",
+                "damage_threshold_max_qixue_rate": 0.12,
+                "max_actions_per_round": 2,
+                "free_cast": true,
+                "ignore_wufang_rate": 0.25,
+                "kill_refund": true,
+                "low_qixue_refund_rate": 0.35
               }
             }
           ],

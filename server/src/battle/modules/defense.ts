@@ -31,11 +31,14 @@ function readDefenseByDamageType(unit: BattleUnit, damageType: DefenseDamageType
 
 export function calculateDefenseReductionRate(
   defender: BattleUnit,
-  damageType: DefenseDamageType
+  damageType: DefenseDamageType,
+  ignoreRate = 0,
 ): number {
   const defense = readDefenseByDamageType(defender, damageType);
-  const denominator = defense + BATTLE_CONSTANTS.DEFENSE_DAMAGE_K;
+  const safeIgnoreRate = Math.max(0, Math.min(1, ignoreRate));
+  const effectiveDefense = defense * (1 - safeIgnoreRate);
+  const denominator = effectiveDefense + BATTLE_CONSTANTS.DEFENSE_DAMAGE_K;
 
   if (denominator <= 0) return 0;
-  return defense / denominator;
+  return effectiveDefense / denominator;
 }

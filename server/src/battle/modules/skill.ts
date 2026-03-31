@@ -19,6 +19,7 @@ import type {
   ReflectDamageEffect,
   ActionLog,
   BattleLogEntry,
+  MagicSkillSnapshot,
   TargetHitResult,
   TargetResult
 } from '../types.js';
@@ -36,7 +37,7 @@ import {
 } from './buff.js';
 import { tryApplyControl, canUseSkill, isSilenced, isDisarmed } from './control.js';
 import { resolveTargets } from './target.js';
-import { triggerSetBonusEffects } from './setBonus.js';
+import { applySetDeferredDamageBeforeHit, triggerSetBonusEffects } from './setBonus.js';
 import {
   applyMarkStacks,
   applySoulShackleRecoveryReduction,
@@ -105,6 +106,7 @@ type SkillExecutionContext = {
   momentumGained: string[];
   momentumConsumed: string[];
   consumedNextSkillBuffIds: string[];
+  physicalDefenseIgnoreRate: number;
   affixTriggerRuntimeState: SkillAffixTriggerRuntimeState;
 };
 
@@ -135,6 +137,7 @@ function createSkillExecutionContext(): SkillExecutionContext {
     momentumGained: [],
     momentumConsumed: [],
     consumedNextSkillBuffIds: [],
+    physicalDefenseIgnoreRate: 0,
     affixTriggerRuntimeState: createSkillAffixTriggerRuntimeState(),
   };
 }
@@ -221,6 +224,43 @@ function getAttrValue(unit: BattleUnit, attrKey: string): number {
   const attrs = unit.currentAttrs as unknown as Record<string, unknown>;
   const value = attrs[attrKey];
   return toFiniteNumber(value, 0);
+}
+
+function hasActiveSetPieceCount(unit: BattleUnit, setId: string, minPieceCount: number): boolean {
+  return unit.setBonusEffects.some(
+    (effect) => effect.setId === setId && effect.pieceCount >= minPieceCount,
+  );
+}
+
+function isMagicDamageEffect(skill: BattleSkill, effect: SkillEffect): boolean {
+  if (effect.type !== 'damage') return false;
+  return resolveEffectDamageType(skill, effect) === 'magic';
+}
+
+function shouldSnapshotMagicSkill(skill: BattleSkill, targetResults: TargetResult[]): boolean {
+  if (skill.triggerType !== 'active') return false;
+  if (!skill.effects.some((effect) => isMagicDamageEffect(skill, effect))) return false;
+  return targetResults.some((result) => (result.hits ?? []).some((hit) => !hit.isMiss));
+}
+
+function buildMagicSkillSnapshot(
+  skill: BattleSkill,
+  targetResults: TargetResult[],
+): MagicSkillSnapshot | null {
+  if (!shouldSnapshotMagicSkill(skill, targetResults)) return null;
+
+  const landedResults = targetResults.filter((result) => (result.hits ?? []).some((hit) => !hit.isMiss));
+  if (landedResults.length <= 0) return null;
+
+  const totalDamage = landedResults.reduce((sum, result) => sum + Math.max(0, result.damage ?? 0), 0);
+  return {
+    skillId: skill.id,
+    element: skill.element || null,
+    hitTargetIds: landedResults.map((result) => result.targetId),
+    primaryTargetId: landedResults[0]?.targetId ?? null,
+    averageFinalDamage: totalDamage > 0 ? totalDamage / landedResults.length : 0,
+    hitCount: landedResults.length,
+  };
 }
 
 function resolveEffectValue(
@@ -521,6 +561,7 @@ function executeDamageEffect(
       damageType,
       element: resolveEffectDamageElement(skill, effect),
       baseDamage,
+      ignoreDefenseRate: damageType === 'physical' ? context.physicalDefenseIgnoreRate : 0,
     });
     if (damageResult.isMiss) {
       const missedHit: TargetHitResult = {
@@ -537,8 +578,21 @@ function executeDamageEffect(
     }
 
     landed = true;
+    const deferredDamageIntercept = applySetDeferredDamageBeforeHit(
+      state,
+      target,
+      caster,
+      damageResult.damage,
+      damageType,
+    );
+    if (deferredDamageIntercept.logs.length > 0) {
+      appendBattleLogs(state, deferredDamageIntercept.logs);
+    }
     const { actualDamage: damageApplied, shieldAbsorbed } = applyDamage(
-      state, target, damageResult.damage, damageType
+      state,
+      target,
+      deferredDamageIntercept.damage,
+      damageType,
     );
     const actualDamage = Math.max(0, damageApplied);
     const landedHit: TargetHitResult = {
@@ -697,6 +751,10 @@ export function executeSkill(
   skill: BattleSkill,
   selectedTargetIds?: string[]
 ): SkillExecutionResult {
+  const isPoxuExtraAction = Boolean(
+    caster.extraActionState?.currentActionIsExtra && hasActiveSetPieceCount(caster, 'set-poxu', 6),
+  );
+
   // 检查控制状态
   if (!canUseSkill(caster, skill.damageType)) {
     return { success: false, error: '被控制无法使用技能' };
@@ -717,7 +775,13 @@ export function executeSkill(
   }
 
   // 检查消耗
-  const cost = resolveCasterSkillCost(caster, skill);
+  const baseCost = resolveCasterSkillCost(caster, skill);
+  const cost = isPoxuExtraAction
+    ? {
+      ...baseCost,
+      totalLingqi: 0,
+    }
+    : baseCost;
   if (cost.totalLingqi > 0 && caster.lingqi < cost.totalLingqi) {
     return { success: false, error: '灵气不足' };
   }
@@ -745,6 +809,9 @@ export function executeSkill(
   }
 
   const context = createSkillExecutionContext();
+  if (isPoxuExtraAction && skill.damageType === 'physical') {
+    context.physicalDefenseIgnoreRate = 0.25;
+  }
 
   // 先落主动作日志，再按触发时机追加触发日志，保证日志顺序符合战斗时序
   const targetResults: TargetResult[] = [];
@@ -772,6 +839,14 @@ export function executeSkill(
 
   processMomentumEffectsByOperation(state, caster, skill, context, 'gain');
   clearConsumedNextSkillBonusBuffs(caster, context);
+
+  const magicSkillSnapshot = buildMagicSkillSnapshot(skill, targetResults);
+  const afterSkillLogs = triggerSetBonusEffects(state, 'after_skill', caster, {
+    skill,
+    magicSkillSnapshot,
+    affixTriggerRuntimeState: context.affixTriggerRuntimeState,
+  });
+  appendBattleLogs(state, afterSkillLogs);
 
   if (targetResults.length > 0) {
     if (context.momentumConsumed.length > 0) {
@@ -1445,12 +1520,21 @@ export function getNormalAttack(unit: BattleUnit): BattleSkill {
  * 获取可用技能列表
  */
 export function getAvailableSkills(unit: BattleUnit): BattleSkill[] {
+  const isPoxuExtraAction = Boolean(
+    unit.extraActionState?.currentActionIsExtra && hasActiveSetPieceCount(unit, 'set-poxu', 6),
+  );
   return unit.skills.filter(skill => {
     // 检查冷却
     if (getSkillCooldownRemainingRounds(unit, skill.id) > 0) return false;
 
     // 检查消耗
-    const cost = resolveCasterSkillCost(unit, skill);
+    const baseCost = resolveCasterSkillCost(unit, skill);
+    const cost = isPoxuExtraAction
+      ? {
+        ...baseCost,
+        totalLingqi: 0,
+      }
+      : baseCost;
     if (cost.totalLingqi > 0 && unit.lingqi < cost.totalLingqi) return false;
     if (cost.totalQixue > 0 && unit.qixue <= cost.totalQixue) return false;
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { consumeBattleLogDelta } from '../../battle/logStream.js';
-import { triggerSetBonusEffects } from '../../battle/modules/setBonus.js';
+import { applySetDeferredDamageBeforeHit, triggerSetBonusEffects } from '../../battle/modules/setBonus.js';
 import { executeSkill } from '../../battle/modules/skill.js';
 import type {
   BattleLogEntry,
@@ -616,4 +616,114 @@ test('协锋追击跨回合后应重置触发次数', () => {
 
   assert.equal(roundOneLogs.length, 1);
   assert.equal(roundTwoLogs.length, 1);
+});
+
+test('周天衍光应在法术结算后对未命中敌人触发分光', () => {
+  const projectionEffect: BattleSetBonusEffect = {
+    setId: 'set-tianyan',
+    setName: '天衍套装',
+    pieceCount: 4,
+    trigger: 'after_skill',
+    target: 'enemy',
+    effectType: 'spell_projection',
+    params: {
+      projection_name: '周天衍光',
+      single_split_rate: 0.42,
+      multi_focus_rate: 0.78,
+    },
+  };
+  const owner = createUnit('player-30', '测试法修', [projectionEffect]);
+  owner.currentAttrs.fagong = 500;
+  owner.baseAttrs.fagong = 500;
+  owner.currentAttrs.mingzhong = 1;
+  owner.baseAttrs.mingzhong = 1;
+  const target = createUnit('monster-30', '主目标', []);
+  const sideTarget = createUnit('monster-31', '侧目标', []);
+  target.currentAttrs.fafang = 0;
+  target.baseAttrs.fafang = 0;
+  sideTarget.currentAttrs.fafang = 0;
+  sideTarget.baseAttrs.fafang = 0;
+  const state = createTeamState([owner], [target, sideTarget]);
+  const skill: BattleSkill = {
+    id: 'skill-tianyan-projection',
+    name: '太衍流火',
+    source: 'innate',
+    cost: {},
+    cooldown: 0,
+    targetType: 'single_enemy',
+    targetCount: 1,
+    damageType: 'magic',
+    element: 'huo',
+    effects: [
+      {
+        type: 'damage',
+        value: 100,
+        valueType: 'flat',
+      },
+    ],
+    triggerType: 'active',
+    aiPriority: 50,
+  };
+
+  const result = executeSkill(state, owner, skill, [target.id]);
+  assert.equal(result.success, true);
+  const logs = consumeBattleLogDelta(state.battleId).logs;
+  assert.equal(logs.length >= 2, true);
+  const projectionLog = assertActionLog(logs[1]);
+  assert.equal(projectionLog.skillId, 'proc-set-tianyan-zhouyan');
+  assert.equal(projectionLog.skillName, '周天衍光');
+  assert.equal(projectionLog.targets[0]?.targetName, '侧目标');
+  assert.ok((projectionLog.targets[0]?.damage ?? 0) > 0);
+});
+
+test('承劫应在受击前将部分伤害转为劫痕', () => {
+  const deferEffect: BattleSetBonusEffect = {
+    setId: 'set-xuanheng',
+    setName: '玄衡套装',
+    pieceCount: 4,
+    trigger: 'on_be_hit',
+    target: 'self',
+    effectType: 'defer_damage',
+    params: {
+      threshold_max_qixue_rate: 0.08,
+      convert_rate: 0.4,
+      settle_rate: 0.5,
+      remaining_rounds: 2,
+      round_limit: 1,
+    },
+  };
+  const owner = createUnit('player-32', '测试盾修', [deferEffect]);
+  const attacker = createUnit('monster-32', '木桩妖', []);
+  const state = createState(attacker, owner);
+
+  const intercepted = applySetDeferredDamageBeforeHit(state, owner, attacker, 200, 'physical');
+  assert.equal(intercepted.damage, 120);
+  assert.equal(owner.deferredDamageState?.pool, 80);
+  assert.equal(intercepted.logs.length, 1);
+});
+
+test('踏虚应在高额命中后记录额外行动次数', () => {
+  const extraActionEffect: BattleSetBonusEffect = {
+    setId: 'set-poxu',
+    setName: '破虚套装',
+    pieceCount: 6,
+    trigger: 'on_hit',
+    target: 'self',
+    effectType: 'extra_action',
+    params: {
+      damage_threshold_max_qixue_rate: 0.12,
+      max_actions_per_round: 1,
+      free_cast: true,
+      ignore_wufang_rate: 0.25,
+    },
+  };
+  const owner = createUnit('player-33', '测试刀修', [extraActionEffect]);
+  const target = createUnit('monster-33', '木桩妖', []);
+  const state = createState(owner, target);
+
+  const logs = triggerSetBonusEffects(state, 'on_hit', owner, { target, damage: 200 });
+  assert.equal(logs.length, 1);
+  assert.equal(owner.extraActionState?.charges, 1);
+  const actionLog = assertActionLog(logs[0]);
+  assert.equal(actionLog.targets[0]?.buffsApplied?.includes('踏虚续步'), true);
 });

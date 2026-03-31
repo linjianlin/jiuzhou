@@ -13,6 +13,7 @@ interface DamageProfile {
   damageType: 'physical' | 'magic' | 'true';
   element?: string;
   baseDamage: number;
+  ignoreDefenseRate?: number;
 }
 
 const clamp = (value: number, min: number, max: number): number => {
@@ -71,7 +72,11 @@ export function calculateDamage(
 
   // 3. 防御减伤（真实伤害跳过）
   if (profile.damageType !== 'true') {
-    const defenseReduction = calculateDefenseReductionRate(defender, profile.damageType);
+    const defenseReduction = calculateDefenseReductionRate(
+      defender,
+      profile.damageType,
+      profile.ignoreDefenseRate ?? 0,
+    );
     damage *= (1 - defenseReduction);
   }
 

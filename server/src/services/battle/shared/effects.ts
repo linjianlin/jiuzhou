@@ -40,6 +40,7 @@ import { toNumber, toRecord, toText } from "./helpers.js";
 const BATTLE_SET_BONUS_TRIGGER_SET = new Set([
   "on_turn_start",
   "on_skill",
+  "after_skill",
   "on_hit",
   "on_crit",
   "on_be_hit",
@@ -54,6 +55,9 @@ const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
   "resource",
   "shield",
   "mark",
+  "spell_projection",
+  "defer_damage",
+  "extra_action",
 ]);
 
 const BATTLE_EFFECT_QUERY_BATCH_SIZE = 200;

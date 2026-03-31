@@ -21,7 +21,13 @@ import { addBuff, processRoundStartEffects, processRoundEndBuffs } from './modul
 import { executeSkill, getNormalAttack } from './modules/skill.js';
 import { makeAIDecision, makePartnerSkillPolicyDecision, selectTargets } from './modules/ai.js';
 import { isFeared, isStunned } from './modules/control.js';
-import { triggerSetBonusEffects } from './modules/setBonus.js';
+import {
+  clearCurrentExtraActionFlag,
+  consumeExtraActionCharge,
+  resetSetRuntimeStateForRound,
+  settleSetDeferredDamageAtRoundEnd,
+  triggerSetBonusEffects,
+} from './modules/setBonus.js';
 import { decayUnitMarksAtRoundStart } from './modules/mark.js';
 import { decayUnitMomentumAtRoundEnd } from './modules/momentum.js';
 import {
@@ -269,6 +275,7 @@ export class BattleEngine {
 
       // 每回合开始重置行动资格，确保召唤单位“下回合生效”
       unit.canAct = true;
+      resetSetRuntimeStateForRound(unit);
 
       // 统一回合开始印记衰减
       decayUnitMarksAtRoundStart(unit);
@@ -713,6 +720,12 @@ export class BattleEngine {
     if (currentUnit?.isAlive && currentUnit.canAct) {
       this.progressUnitCooldownsAfterAction(currentUnit, usedSkillId);
       currentUnit.canAct = false;
+      if (consumeExtraActionCharge(currentUnit)) {
+        currentUnit.canAct = true;
+        this.state.currentUnitId = currentUnit.id;
+        return;
+      }
+      clearCurrentExtraActionFlag(currentUnit);
     }
 
     // 在全量列表中找到当前单位的位置，向后找下一个可行动单位
@@ -763,6 +776,8 @@ export class BattleEngine {
       
       const buffLogs = processRoundEndBuffs(this.state, unit);
       buffLogs.forEach(log => this.logAppender(log));
+      const deferredLogs = settleSetDeferredDamageAtRoundEnd(this.state, unit);
+      deferredLogs.forEach(log => this.logAppender(log));
       decayUnitMomentumAtRoundEnd(unit);
     }
 

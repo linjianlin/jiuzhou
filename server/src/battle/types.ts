@@ -76,6 +76,10 @@ export interface BattleUnit {
   setBonusEffects: BattleSetBonusEffect[];
   // 词缀/套装按回合限次触发状态（如“同回合同词缀最多触发1次”）
   setBonusTriggerState?: BattleSetBonusTriggerState;
+  // 承劫：延后结算的劫痕池
+  deferredDamageState?: DeferredDamageState | null;
+  // 踏虚：额外行动运行时
+  extraActionState?: ExtraActionState | null;
 
   // 怪物AI配置（怪物/召唤物可选）
   aiProfile?: MonsterAIProfile;
@@ -136,6 +140,29 @@ export interface BattleStats {
   healingDone: number;
   healingReceived: number;
   killCount: number;
+}
+
+export interface DeferredDamageState {
+  pool: number;
+  remainingRounds: number;
+  settleRate: number;
+  lastSourceUnitId: string | null;
+  damageType: 'physical' | 'magic' | null;
+}
+
+export interface ExtraActionState {
+  charges: number;
+  grantedThisRound: number;
+  currentActionIsExtra: boolean;
+}
+
+export interface MagicSkillSnapshot {
+  skillId: string;
+  element: string | null;
+  hitTargetIds: string[];
+  primaryTargetId: string | null;
+  averageFinalDamage: number;
+  hitCount: number;
 }
 
 interface ControlDiminishing {
@@ -383,6 +410,7 @@ export interface BattleSetBonusTriggerState {
 export type BattleSetBonusTrigger =
   | 'on_turn_start'
   | 'on_skill'
+  | 'after_skill'
   | 'on_hit'
   | 'on_ally_hit'
   | 'on_crit'
@@ -395,7 +423,18 @@ export interface BattleSetBonusEffect {
   pieceCount: number;
   trigger: BattleSetBonusTrigger;
   target: 'self' | 'enemy';
-  effectType: 'buff' | 'debuff' | 'damage' | 'heal' | 'resource' | 'shield' | 'mark' | 'pursuit';
+  effectType:
+  | 'buff'
+  | 'debuff'
+  | 'damage'
+  | 'heal'
+  | 'resource'
+  | 'shield'
+  | 'mark'
+  | 'pursuit'
+  | 'spell_projection'
+  | 'defer_damage'
+  | 'extra_action';
   durationRound?: number;
   element?: string;
   params: Record<string, unknown>;

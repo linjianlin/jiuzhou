@@ -12,6 +12,11 @@ interface ValidationResult {
   error?: string;
 }
 
+function isPoxuExtraAction(unit: BattleUnit): boolean {
+  if (!unit.extraActionState?.currentActionIsExtra) return false;
+  return unit.setBonusEffects.some((effect) => effect.setId === 'set-poxu' && effect.pieceCount >= 6);
+}
+
 /**
  * 验证战斗状态完整性
  */
@@ -155,10 +160,16 @@ export function validateSkillUse(
   }
   
   // 检查消耗
-  const cost = resolveSkillCostForResourceState(skill.cost, {
+  const baseCost = resolveSkillCostForResourceState(skill.cost, {
     maxLingqi: unit.currentAttrs.max_lingqi,
     maxQixue: unit.currentAttrs.max_qixue,
   });
+  const cost = isPoxuExtraAction(unit)
+    ? {
+      ...baseCost,
+      totalLingqi: 0,
+    }
+    : baseCost;
   if (cost.totalLingqi > 0 && unit.lingqi < cost.totalLingqi) {
     return { valid: false, error: `灵气不足: 需要${cost.totalLingqi}，当前${unit.lingqi}` };
   }

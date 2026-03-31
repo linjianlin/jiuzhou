@@ -242,3 +242,27 @@ export const applySkillCooldownAfterCast = (
 
   return actualCooldown;
 };
+
+export const reduceSkillCooldownRemainingRounds = (
+  unit: BattleUnit,
+  skillId: string,
+  rounds: number,
+): number => {
+  ensureUnitSkillCooldownState(unit);
+  const discountRounds = Math.max(0, Math.floor(rounds));
+  if (discountRounds <= 0) {
+    return getSkillCooldownRemainingRounds(unit, skillId);
+  }
+
+  const remaining = getSkillCooldownRemainingRounds(unit, skillId);
+  if (remaining <= 0) return 0;
+
+  const nextRemaining = Math.max(0, remaining - discountRounds);
+  if (nextRemaining <= 0) {
+    delete unit.skillCooldowns[skillId];
+    return 0;
+  }
+
+  unit.skillCooldowns[skillId] = nextRemaining;
+  return nextRemaining;
+};

@@ -919,6 +919,7 @@ export const formatSetEffectLine = (raw: unknown): string | null => {
     equip: "穿戴",
     on_turn_start: "回合开始",
     on_skill: "施法",
+    after_skill: "结算后",
     on_hit: "命中",
     on_crit: "暴击",
     on_be_hit: "受击",
@@ -1031,6 +1032,64 @@ export const formatSetEffectLine = (raw: unknown): string | null => {
         ...params,
         duration_round: row.duration_round,
       }) ?? "印记效果";
+  } else if (effectType === "spell_projection") {
+    const singleSplitRate = Math.max(0, toFiniteNumber(params.single_split_rate) ?? 0);
+    const multiFocusRate = Math.max(0, toFiniteNumber(params.multi_focus_rate) ?? 0);
+    const singleReturnRate = Math.max(0, toFiniteNumber(params.single_return_rate) ?? 0);
+    const multiReturnRate = Math.max(0, toFiniteNumber(params.multi_return_rate) ?? 0);
+    const ignoreFafangRate = Math.max(0, toFiniteNumber(params.ignore_fafang_rate) ?? 0);
+    const lingqiRestore = Math.max(0, Math.floor(toFiniteNumber(params.lingqi_restore) ?? 0));
+    const cooldownReduceIfFull = Math.max(0, Math.floor(toFiniteNumber(params.cooldown_reduce_if_full) ?? 0));
+    const parts = [
+      `周天衍光：单体分光 ${formatPercent(singleSplitRate)}，群体归曜 ${formatPercent(multiFocusRate)}`,
+    ];
+    if (singleReturnRate > 0 || multiReturnRate > 0) {
+      parts.push(`两仪流照：回天照 ${formatPercent(singleReturnRate)}，流辉照 ${formatPercent(multiReturnRate)}`);
+    }
+    if (ignoreFafangRate > 0) {
+      parts.push(`衍光伤害无视 ${formatPercent(ignoreFafangRate)}法防`);
+    }
+    if (lingqiRestore > 0 || cooldownReduceIfFull > 0) {
+      parts.push(`衍光命中2个及以上目标时回灵 ${lingqiRestore}，灵气已满则当前技能冷却-${cooldownReduceIfFull}回合`);
+    }
+    main = parts.join("；");
+  } else if (effectType === "defer_damage") {
+    const thresholdRate = Math.max(0, toFiniteNumber(params.threshold_max_qixue_rate) ?? 0);
+    const convertRate = Math.max(0, toFiniteNumber(params.convert_rate) ?? 0);
+    const settleRate = Math.max(0, toFiniteNumber(params.settle_rate) ?? 0);
+    const shieldRate = Math.max(0, toFiniteNumber(params.shield_rate) ?? 0);
+    const remainingRounds = Math.max(0, Math.floor(toFiniteNumber(params.remaining_rounds) ?? 0));
+    const reflectOnAbsorb = Boolean(params.reflect_on_absorb);
+    if (convertRate > 0) {
+      main = `承劫：单次受击达到最大气血 ${formatPercent(thresholdRate)}时，将其中 ${formatPercent(convertRate)} 化为劫痕，${remainingRounds}回合内回落`;
+    } else {
+      const parts = [`承劫：回合开始获得相当于当前劫痕 ${formatPercent(shieldRate)} 的护盾`];
+      if (settleRate > 0) {
+        parts.push(`劫痕回落比例 ${formatPercent(settleRate)}`);
+      }
+      if (reflectOnAbsorb) {
+        parts.push("护盾承下劫痕时触发还劫反震");
+      }
+      main = parts.join("；");
+    }
+  } else if (effectType === "extra_action") {
+    const thresholdRate = Math.max(0, toFiniteNumber(params.damage_threshold_max_qixue_rate) ?? 0);
+    const maxActionsPerRound = Math.max(0, Math.floor(toFiniteNumber(params.max_actions_per_round) ?? 0));
+    const ignoreWufangRate = Math.max(0, toFiniteNumber(params.ignore_wufang_rate) ?? 0);
+    const lowQixueRefundRate = Math.max(0, toFiniteNumber(params.low_qixue_refund_rate) ?? 0);
+    const freeCast = Boolean(params.free_cast);
+    const killRefund = Boolean(params.kill_refund);
+    const parts = [`踏虚：单次命中达到目标最大气血 ${formatPercent(thresholdRate)} 时获得额外行动`];
+    if (freeCast || ignoreWufangRate > 0) {
+      parts.push(`踏虚行动${freeCast ? "不消耗灵气" : ""}${freeCast && ignoreWufangRate > 0 ? "，" : ""}${ignoreWufangRate > 0 ? `无视 ${formatPercent(ignoreWufangRate)} 物防` : ""}`);
+    }
+    if (killRefund || lowQixueRefundRate > 0) {
+      parts.push(`踏虚行动击杀或首次压至 ${formatPercent(lowQixueRefundRate)} 气血以下时返还 1 次踏虚`);
+    }
+    if (maxActionsPerRound > 0) {
+      parts.push(`每回合最多触发 ${maxActionsPerRound} 次`);
+    }
+    main = parts.join("；");
   } else {
     main = effectType;
   }
