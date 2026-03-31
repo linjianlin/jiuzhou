@@ -151,7 +151,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           ) : (
             <div className="tech-empty">暂无品质概率</div>
           )}
-          <div className="tech-research-quality-note">当前展示的是本次洞府研修实际生效的品质概率。</div>
+          {/* <div className="tech-research-quality-note">当前展示的是本次洞府研修实际生效的品质概率。</div> */}
         </div>
 
         <div className="tech-research-actions">
