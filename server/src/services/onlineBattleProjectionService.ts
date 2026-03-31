@@ -660,6 +660,35 @@ const persistCharacterSnapshotsBatch = async (
   await multi.exec();
 };
 
+/**
+ * 批量覆盖角色在线战斗快照。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：为已经持有完整快照的热点链路提供批量写投影入口，避免资源恢复、批量同步等场景逐角色 `sadd/set`。
+ * 2. 做什么：复用内部统一的内存索引 + Redis multi 写入逻辑，保证批量更新与预热路径使用同一份落盘规则。
+ * 3. 不做什么：不负责重新计算快照字段，也不替调用方补齐缺失角色。
+ *
+ * 输入/输出：
+ * - 输入：一批已经组装好的完整 `OnlineBattleCharacterSnapshot`。
+ * - 输出：无；副作用是把这批快照整体写入内存索引与 Redis。
+ *
+ * 数据流/状态流：
+ * 调用方先批量读取/变换角色快照 -> 本函数统一 multi 写入权威投影 -> 后续战斗链路直接读取最新快照。
+ *
+ * 复用设计说明：
+ * - 资源恢复、批量同步都需要“已拿到快照后统一回写”的能力；把入口放在投影层，可以避免上层重复维护 Redis key 与索引写法。
+ * - 后续若再有高频批量资源结算，只需要准备下一批快照并复用本入口，不必再写一套批量持久化。
+ *
+ * 关键边界条件与坑点：
+ * 1. 入参必须是完整且已归一化的快照；这里只做持久化，不兜底修正半成品数据。
+ * 2. 同一批里若包含重复 `characterId`，后出现的快照会覆盖前面的同角色结果；调用方需先收敛最终状态。
+ */
+export const persistOnlineBattleCharacterSnapshotsBatch = async (
+  snapshots: OnlineBattleCharacterSnapshot[],
+): Promise<void> => {
+  await persistCharacterSnapshotsBatch(snapshots);
+};
+
 const persistTeamProjectionsBatch = async (
   entries: Array<{ userId: number; projection: TeamMemberProjectionRecord }>,
 ): Promise<void> => {

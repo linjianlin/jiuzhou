@@ -27,7 +27,6 @@ import {
   type DistributeResult,
 } from "../battleDropService.js";
 import {
-  applyOnlineBattleCharacterResourceDelta,
   buildBattleRewardsPreviewFromDistributeResult,
   buildImmediateBattleResultWithProjectionPreview,
   createDeferredSettlementTask,
@@ -72,7 +71,10 @@ import {
   shouldApplyBattleSettlementCooldown,
   TOWER_PVE_BATTLE_START_POLICY,
 } from "./shared/startPolicy.js";
-import { restoreCharacterResourcesAfterVictoryByCharacterIds } from "./shared/resourceRecovery.js";
+import {
+  applyBattleFailureResourceLossByCharacterIds,
+  restoreCharacterResourcesAfterVictoryByCharacterIds,
+} from "./shared/resourceRecovery.js";
 import { getTowerBattleRuntime } from "../tower/runtime.js";
 import { createScopedLogger } from "../../utils/logger.js";
 import { createSlowOperationLogger } from "../../utils/slowOperationLogger.js";
@@ -344,17 +346,9 @@ async function finishBattleCore(
         );
       }
       if (!isTowerBattle) {
-        for (const participant of participants) {
-          const snapshotMap = await getOnlineBattleCharacterSnapshotsByCharacterIds([participant.characterId]);
-          const snapshot = snapshotMap.get(participant.characterId);
-          if (!snapshot) continue;
-          const battleLoss = Math.floor(snapshot.computed.max_qixue * 0.1);
-          await applyOnlineBattleCharacterResourceDelta(
-            participant.characterId,
-            { qixue: -battleLoss },
-            { minQixue: 1 },
-          );
-        }
+        await applyBattleFailureResourceLossByCharacterIds(
+          participants.map((participant) => participant.characterId),
+        );
         slowLogger.mark("applyFailureResourceLoss");
       }
     }

@@ -222,6 +222,25 @@ class AchievementProgressService {
     return progressByPair;
   }
 
+  private async ensureCharacterAchievementProgressRowsBatch(
+    rows: AchievementProgressSeedRow[],
+  ): Promise<void> {
+    if (rows.length <= 0) {
+      return;
+    }
+
+    await query(
+      `
+        INSERT INTO character_achievement (character_id, achievement_id, status, progress, progress_data)
+        SELECT tr.character_id, tr.achievement_id, 'in_progress', 0, '{}'::jsonb
+        FROM jsonb_to_recordset($1::jsonb)
+          AS tr(character_id int, achievement_id varchar(64))
+        ON CONFLICT (character_id, achievement_id) DO NOTHING
+      `,
+      [JSON.stringify(rows)],
+    );
+  }
+
   @Transactional
   async updateAchievementProgressBatch(inputs: AchievementProgressBatchInput[]): Promise<void> {
     const aggregatedInputs = new Map<string, NormalizedAchievementProgressBatchInput>();
@@ -333,25 +352,8 @@ class AchievementProgressService {
 
     const characterIds = Array.from(characterIdSet);
     await this.ensureCharacterAchievementPointsBatch(characterIds);
-
-    let progressByPair = await this.loadProgressRowsForUpdate(progressSeedRows);
-    const missingProgressSeedRows = progressSeedRows.filter((row) => {
-      return !progressByPair.has(this.buildProgressPairKey(row.character_id, row.achievement_id));
-    });
-
-    if (missingProgressSeedRows.length > 0) {
-      await query(
-        `
-          INSERT INTO character_achievement (character_id, achievement_id, status, progress, progress_data)
-          SELECT tr.character_id, tr.achievement_id, 'in_progress', 0, '{}'::jsonb
-          FROM jsonb_to_recordset($1::jsonb)
-            AS tr(character_id int, achievement_id varchar(64))
-          ON CONFLICT (character_id, achievement_id) DO NOTHING
-        `,
-        [JSON.stringify(missingProgressSeedRows)],
-      );
-      progressByPair = await this.loadProgressRowsForUpdate(progressSeedRows);
-    }
+    await this.ensureCharacterAchievementProgressRowsBatch(progressSeedRows);
+    const progressByPair = await this.loadProgressRowsForUpdate(progressSeedRows);
 
     const prerequisiteSeedRows: AchievementProgressSeedRow[] = [];
     const prerequisiteSeedKeySet = new Set<string>();

@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { CharacterComputedRow } from '../characterComputedService.js';
-import * as characterComputedService from '../characterComputedService.js';
+import type { OnlineBattleCharacterSnapshot } from '../onlineBattleProjectionService.js';
+import * as projectionService from '../onlineBattleProjectionService.js';
 import {
+  applyBattleFailureResourceLossByCharacterIds,
   buildBattleStartRecoveredResourceState,
+  buildFailureReducedResourceState,
   buildVictoryRecoveredResourceState,
   recoverBattleStartResourcesByUserIds,
   restoreCharacterResourcesAfterVictoryByCharacterIds,
@@ -72,6 +75,32 @@ const createComputedRow = (
   ...overrides,
 });
 
+const createSnapshot = (
+  overrides: Omit<Partial<OnlineBattleCharacterSnapshot>, 'computed' | 'loadout'> & {
+    computed?: Partial<CharacterComputedRow>;
+    loadout?: OnlineBattleCharacterSnapshot['loadout'];
+  },
+): OnlineBattleCharacterSnapshot => {
+  const computed = createComputedRow({
+    id: overrides.computed?.id ?? overrides.characterId ?? 2001,
+    user_id: overrides.computed?.user_id ?? overrides.userId ?? 1001,
+    ...overrides.computed,
+  });
+
+  return {
+    characterId: overrides.characterId ?? computed.id,
+    userId: overrides.userId ?? computed.user_id,
+    computed,
+    loadout: overrides.loadout ?? {
+      setBonusEffects: [],
+      skills: [],
+    },
+    activePartner: overrides.activePartner ?? null,
+    teamId: overrides.teamId ?? null,
+    isTeamLeader: overrides.isTeamLeader ?? false,
+  };
+};
+
 test('buildBattleStartRecoveredResourceState: 应把气血回满并把灵气抬到至少一半', () => {
   const nextState = buildBattleStartRecoveredResourceState(
     createComputedRow({
@@ -103,128 +132,238 @@ test('buildVictoryRecoveredResourceState: 应按最大气血的三成治疗且�
   });
 });
 
+test('buildFailureReducedResourceState: 应按最大气血一成扣减且保底剩余 1 点', () => {
+  const nextState = buildFailureReducedResourceState(
+    createComputedRow({
+      max_qixue: 95,
+      qixue: 8,
+      lingqi: 27,
+    }),
+  );
+
+  assert.deepEqual(nextState, {
+    qixue: 1,
+    lingqi: 27,
+  });
+});
+
 test('recoverBattleStartResourcesByUserIds: 应批量读取后统一写回战前资源', async (t) => {
   let batchCallCount = 0;
-  const writes: Array<{ characterId: number; next: { qixue: number; lingqi: number } }> = [];
+  let persistedSnapshots: OnlineBattleCharacterSnapshot[] = [];
 
   t.mock.method(
-    characterComputedService,
-    'getCharacterComputedBatchByUserIds',
+    projectionService,
+    'getOnlineBattleCharacterSnapshotsByUserIds',
     async () => {
       batchCallCount += 1;
-      return new Map<number, CharacterComputedRow>([
+      return new Map<number, OnlineBattleCharacterSnapshot>([
         [
           1001,
-          createComputedRow({
-            id: 2001,
-            user_id: 1001,
-            max_qixue: 120,
-            qixue: 50,
-            max_lingqi: 80,
-            lingqi: 10,
+          createSnapshot({
+            characterId: 2001,
+            userId: 1001,
+            computed: {
+              id: 2001,
+              user_id: 1001,
+              max_qixue: 120,
+              qixue: 50,
+              max_lingqi: 80,
+              lingqi: 10,
+            },
           }),
         ],
         [
           1002,
-          createComputedRow({
-            id: 2002,
-            user_id: 1002,
-            max_qixue: 90,
-            qixue: 88,
-            max_lingqi: 60,
-            lingqi: 40,
+          createSnapshot({
+            characterId: 2002,
+            userId: 1002,
+            computed: {
+              id: 2002,
+              user_id: 1002,
+              max_qixue: 90,
+              qixue: 88,
+              max_lingqi: 60,
+              lingqi: 40,
+            },
           }),
         ],
       ]);
     },
   );
   t.mock.method(
-    characterComputedService,
-    'setCharacterResourcesByComputedRow',
-    async (
-      computed: CharacterComputedRow,
-      next: { qixue: number; lingqi: number },
-    ) => {
-      writes.push({
-        characterId: computed.id,
-        next,
-      });
-      return next;
+    projectionService,
+    'persistOnlineBattleCharacterSnapshotsBatch',
+    async (snapshots: OnlineBattleCharacterSnapshot[]) => {
+      persistedSnapshots = snapshots;
     },
   );
 
   await recoverBattleStartResourcesByUserIds([1001, 1002, 1001]);
 
   assert.equal(batchCallCount, 1);
-  assert.deepEqual(writes, [
-    {
-      characterId: 2001,
-      next: { qixue: 120, lingqi: 40 },
-    },
-    {
-      characterId: 2002,
-      next: { qixue: 90, lingqi: 40 },
-    },
-  ]);
+  assert.deepEqual(
+    persistedSnapshots.map((snapshot) => ({
+      characterId: snapshot.characterId,
+      next: {
+        qixue: snapshot.computed.qixue,
+        lingqi: snapshot.computed.lingqi,
+      },
+    })),
+    [
+      {
+        characterId: 2001,
+        next: { qixue: 120, lingqi: 40 },
+      },
+      {
+        characterId: 2002,
+        next: { qixue: 90, lingqi: 40 },
+      },
+    ],
+  );
 });
 
-test('restoreCharacterResourcesAfterVictoryByCharacterIds: 应批量读取并按三成回血写回', async (t) => {
+test('restoreCharacterResourcesAfterVictoryByCharacterIds: 应批量读取并按三成回血后统一批量写回', async (t) => {
   let batchCallCount = 0;
-  const writes: Array<{ characterId: number; next: { qixue: number; lingqi: number } }> = [];
+  let persistedSnapshots: OnlineBattleCharacterSnapshot[] = [];
 
   t.mock.method(
-    characterComputedService,
-    'getCharacterComputedBatchByCharacterIds',
+    projectionService,
+    'getOnlineBattleCharacterSnapshotsByCharacterIds',
     async () => {
       batchCallCount += 1;
-      return new Map<number, CharacterComputedRow>([
+      return new Map<number, OnlineBattleCharacterSnapshot>([
         [
           2001,
-          createComputedRow({
-            id: 2001,
-            qixue: 20,
-            max_qixue: 100,
-            lingqi: 18,
+          createSnapshot({
+            characterId: 2001,
+            userId: 1001,
+            computed: {
+              id: 2001,
+              user_id: 1001,
+              qixue: 20,
+              max_qixue: 100,
+              lingqi: 18,
+            },
           }),
         ],
         [
           2002,
-          createComputedRow({
-            id: 2002,
-            qixue: 95,
-            max_qixue: 100,
-            lingqi: 55,
+          createSnapshot({
+            characterId: 2002,
+            userId: 1002,
+            computed: {
+              id: 2002,
+              user_id: 1002,
+              qixue: 95,
+              max_qixue: 100,
+              lingqi: 55,
+            },
           }),
         ],
       ]);
     },
   );
   t.mock.method(
-    characterComputedService,
-    'setCharacterResourcesByComputedRow',
-    async (
-      computed: CharacterComputedRow,
-      next: { qixue: number; lingqi: number },
-    ) => {
-      writes.push({
-        characterId: computed.id,
-        next,
-      });
-      return next;
+    projectionService,
+    'persistOnlineBattleCharacterSnapshotsBatch',
+    async (snapshots: OnlineBattleCharacterSnapshot[]) => {
+      persistedSnapshots = snapshots;
     },
   );
 
   await restoreCharacterResourcesAfterVictoryByCharacterIds([2001, 2002, 2001]);
 
   assert.equal(batchCallCount, 1);
-  assert.deepEqual(writes, [
-    {
-      characterId: 2001,
-      next: { qixue: 50, lingqi: 18 },
+  assert.deepEqual(
+    persistedSnapshots.map((snapshot) => ({
+      characterId: snapshot.characterId,
+      next: {
+        qixue: snapshot.computed.qixue,
+        lingqi: snapshot.computed.lingqi,
+      },
+    })),
+    [
+      {
+        characterId: 2001,
+        next: { qixue: 50, lingqi: 18 },
+      },
+      {
+        characterId: 2002,
+        next: { qixue: 100, lingqi: 55 },
+      },
+    ],
+  );
+});
+
+test('applyBattleFailureResourceLossByCharacterIds: 应批量读取后统一扣减失败惩罚气血', async (t) => {
+  let batchCallCount = 0;
+  let persistedSnapshots: OnlineBattleCharacterSnapshot[] = [];
+
+  t.mock.method(
+    projectionService,
+    'getOnlineBattleCharacterSnapshotsByCharacterIds',
+    async () => {
+      batchCallCount += 1;
+      return new Map<number, OnlineBattleCharacterSnapshot>([
+        [
+          2001,
+          createSnapshot({
+            characterId: 2001,
+            userId: 1001,
+            computed: {
+              id: 2001,
+              user_id: 1001,
+              qixue: 30,
+              max_qixue: 100,
+              lingqi: 18,
+            },
+          }),
+        ],
+        [
+          2002,
+          createSnapshot({
+            characterId: 2002,
+            userId: 1002,
+            computed: {
+              id: 2002,
+              user_id: 1002,
+              qixue: 7,
+              max_qixue: 80,
+              lingqi: 55,
+            },
+          }),
+        ],
+      ]);
     },
-    {
-      characterId: 2002,
-      next: { qixue: 100, lingqi: 55 },
+  );
+  t.mock.method(
+    projectionService,
+    'persistOnlineBattleCharacterSnapshotsBatch',
+    async (snapshots: OnlineBattleCharacterSnapshot[]) => {
+      persistedSnapshots = snapshots;
     },
-  ]);
+  );
+
+  await applyBattleFailureResourceLossByCharacterIds([2001, 2002, 2001]);
+
+  assert.equal(batchCallCount, 1);
+  assert.deepEqual(
+    persistedSnapshots.map((snapshot) => ({
+      characterId: snapshot.characterId,
+      next: {
+        qixue: snapshot.computed.qixue,
+        lingqi: snapshot.computed.lingqi,
+      },
+    })),
+    [
+      {
+        characterId: 2001,
+        next: { qixue: 20, lingqi: 18 },
+      },
+      {
+        characterId: 2002,
+        next: { qixue: 1, lingqi: 55 },
+      },
+    ],
+  );
 });
