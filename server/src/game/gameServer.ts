@@ -6,7 +6,11 @@ import { Server as SocketServer, Socket } from "socket.io";
 import { randomUUID } from "crypto";
 import type { CharacterAttributes } from "./gameState.js";
 import { dbToCharacterAttributes } from "./gameState.js";
-import { isDatabaseAccessForbidden, query } from "../config/database.js";
+import {
+  isDatabaseAccessForbidden,
+  query,
+  runWithDatabaseAccessAllowed,
+} from "../config/database.js";
 import { verifyToken, verifySession } from "../services/authService.js";
 import { applyStaminaRecoveryByUserId } from "../services/staminaService.js";
 import {
@@ -593,11 +597,7 @@ class GameServer {
       socket.on("disconnect", () => {
         const session = this.sessions.get(socket.id);
         if (session) {
-          if (!this.shutdownGate.isShuttingDown()) {
-            void this.runTrackedTask(async () => {
-              await this.touchCharacterLastOfflineAt(session.userId);
-            });
-          }
+          this.scheduleCharacterLastOfflinePersistence(session.userId);
           this.cancelQueuedCharacterPush(session.userId);
           this.clearCharacterSocketBinding(socket.id);
           this.userSocketMap.delete(session.userId);
@@ -767,6 +767,45 @@ class GameServer {
         this.scheduleEmitOnlinePlayers(false);
       }
     }, waitMs);
+  }
+
+  /**
+   * 异步回写角色离线时间。
+   *
+   * 作用（做什么 / 不做什么）：
+   * 1. 做什么：把 `disconnect` / `kickUser` 的离线落库统一收口到单一后台入口，避免断链场景各自散落 fire-and-forget 写法。
+   * 2. 做什么：在真正需要落库的异步子任务里显式切到 `runWithDatabaseAccessAllowed`，隔离上游 `api/battle/action` 这类禁 DB 请求上下文。
+   * 3. 不做什么：不绕过事务约束，不修改离线字段语义，也不在关闭态强行补写数据库。
+   *
+   * 输入/输出：
+   * - 输入：断线用户 ID。
+   * - 输出：无同步返回；离线时间更新在后台任务中执行。
+   *
+   * 数据流/状态流：
+   * disconnect / kickUser
+   * -> 本函数进入 shutdownGate 跟踪任务
+   * -> `runWithDatabaseAccessAllowed`
+   * -> `touchCharacterLastOfflineAt`
+   * -> characters.last_offline_at / updated_at。
+   *
+   * 复用设计说明：
+   * - 断线与踢下线现在共用同一条允许 DB 的后台链路，避免两处分别维护上下文隔离逻辑。
+   * - 高概率继续变化的是“哪些断链场景需要记录离线时间”，因此把触发与上下文切换集中到这里最容易维护。
+   *
+   * 关键边界条件与坑点：
+   * 1. 这里只能包装已确认需要落库的后台分支，不能拿去包同步首包逻辑，否则会绕开禁 DB 约束。
+   * 2. shutdown 已开始时不会再接收新任务，避免资源释放后仍继续访问数据库。
+   */
+  private scheduleCharacterLastOfflinePersistence(userId: number): void {
+    if (this.shutdownGate.isShuttingDown()) {
+      return;
+    }
+
+    void this.runTrackedTask(async () => {
+      await runWithDatabaseAccessAllowed(async () => {
+        await this.touchCharacterLastOfflineAt(userId);
+      });
+    });
   }
 
   private shouldRefreshOnlinePlayers(
@@ -1116,9 +1155,11 @@ class GameServer {
     if (this.shutdownGate.isShuttingDown()) return;
     const socketId = this.userSocketMap.get(userId);
     if (!socketId) return;
-    void this.touchCharacterLastOfflineAt(userId);
     this.cancelQueuedCharacterPush(userId);
     this.clearCharacterSocketBinding(socketId);
+    this.userSocketMap.delete(userId);
+    this.sessions.delete(socketId);
+    this.scheduleCharacterLastOfflinePersistence(userId);
 
     const socket = this.io.sockets.sockets.get(socketId);
     if (socket) {
@@ -1126,8 +1167,6 @@ class GameServer {
       socket.disconnect();
     }
 
-    this.sessions.delete(socketId);
-    this.userSocketMap.delete(userId);
     this.scheduleEmitOnlinePlayers(true);
   }
 
