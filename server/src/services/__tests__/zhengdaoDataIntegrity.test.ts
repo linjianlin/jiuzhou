@@ -227,6 +227,19 @@ test('第八章主线目标应只引用已存在地图/NPC/怪物/物品/秘境'
       }
     }
   }
+
+  const finalSection = asObject(sectionById.get('main-8-008'));
+  const finalObjectives = asArray(finalSection?.objectives).map((entry) => asObject(entry));
+  const finalCollectObjective = finalObjectives.find((objective) => asText(objective?.type) === 'collect');
+
+  assert.ok(finalCollectObjective, '第八章最终任务节必须通过收集目标收束章节，不应直接要求突破');
+  assert.equal(asText(asObject(finalCollectObjective?.params)?.item_id), ZHENGDAO_POOL_IDS.lingsha);
+  assert.equal(Number(finalCollectObjective?.target ?? 0), 30, '第八章最终任务节应要求收集30个天阙灵砂');
+  assert.equal(
+    finalObjectives.some((objective) => asText(objective?.type) === 'upgrade_realm'),
+    false,
+    '第八章最终任务节不应直接要求突破，否则会与突破前置互锁',
+  );
 });
 
 test('第八章主线对白的目标提示应与当前任务节一致', () => {
@@ -240,7 +253,7 @@ test('第八章主线对白的目标提示应与当前任务节一致', () => {
     ['dlg-main-8-005', '目标更新：击败镇章使2只、问天执炬2只。'],
     ['dlg-main-8-006', '目标更新：通关万法道宫（困难）2次。'],
     ['dlg-main-8-007', '目标更新：收集证道法印4个，并向执律天官复命。'],
-    ['dlg-main-8-008', '目标更新：突破到炼虚合道·证道期，并向执律天官复命。'],
+    ['dlg-main-8-008', '目标更新：收集天阙灵砂30个，并向执律天官复命。'],
   ]);
 
   for (const [dialogueId, expectedSystemText] of expectedSystemTextByDialogueId) {

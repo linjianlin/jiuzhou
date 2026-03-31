@@ -278,14 +278,17 @@ const isItemsCost = (cost: BreakthroughCost): cost is CostItems =>
 
 let cachedConfig: RealmBreakthroughConfigFile | null = null;
 let cachedConfigPath: string | null = null;
+let cachedConfigMtimeMs: number | null = null;
 
 const pickFirstExistingPath = async (
   candidates: string[],
-): Promise<string | null> => {
+): Promise<{ path: string; mtimeMs: number } | null> => {
   for (const p of candidates) {
     try {
       const s = await stat(p);
-      if (s.isFile()) return p;
+      if (s.isFile()) {
+        return { path: p, mtimeMs: s.mtimeMs };
+      }
     } catch (error) {
         // 如果是事务中止错误，必须重新抛出
         if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
@@ -298,8 +301,6 @@ const pickFirstExistingPath = async (
 };
 
 const loadConfig = async (): Promise<RealmBreakthroughConfigFile> => {
-  if (cachedConfig) return cachedConfig;
-
   const envPathRaw =
     typeof process.env.REALM_CONFIG_PATH === "string"
       ? process.env.REALM_CONFIG_PATH.trim()
@@ -317,12 +318,20 @@ const loadConfig = async (): Promise<RealmBreakthroughConfigFile> => {
     ),
   ].filter((p) => !!p);
 
-  const configPath = await pickFirstExistingPath(candidates);
-  if (!configPath) {
+  const configFile = await pickFirstExistingPath(candidates);
+  if (!configFile) {
     throw new Error("realm_breakthrough.json not found");
   }
 
-  const raw = await readFile(configPath, "utf-8");
+  if (
+    cachedConfig &&
+    cachedConfigPath === configFile.path &&
+    cachedConfigMtimeMs === configFile.mtimeMs
+  ) {
+    return cachedConfig;
+  }
+
+  const raw = await readFile(configFile.path, "utf-8");
   const parsed = JSON.parse(raw) as RealmBreakthroughConfigFile;
   if (
     !parsed ||
@@ -332,7 +341,8 @@ const loadConfig = async (): Promise<RealmBreakthroughConfigFile> => {
     throw new Error("realm_breakthrough.json invalid");
   }
   cachedConfig = parsed;
-  cachedConfigPath = configPath;
+  cachedConfigPath = configFile.path;
+  cachedConfigMtimeMs = configFile.mtimeMs;
   return parsed;
 };
 

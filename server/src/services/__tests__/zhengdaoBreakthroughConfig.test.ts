@@ -47,7 +47,7 @@ const loadSeed = (): RealmBreakthroughSeed => {
   return JSON.parse(readFileSync(seedPath, 'utf-8')) as RealmBreakthroughSeed;
 };
 
-test('合道->证道突破配置应满足证道期前置/消耗/奖励口径，并保留未开放版本锁', () => {
+test('合道->证道突破配置应满足证道期前置/消耗/奖励口径，并要求先完成第八章主线', () => {
   const seed = loadSeed();
   const entry = (seed.breakthroughs ?? []).find(
     (row) => row.from === '炼神返虚·合道期' && row.to === '炼虚合道·证道期',

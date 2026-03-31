@@ -356,9 +356,9 @@
       "id": "main-8-008",
       "chapter_id": "mq-chapter-8",
       "section_num": 8,
-      "name": "证道开阙",
-      "description": "在万法天阙完成最终突破，并向执律天官回报，正式迈入证道期。",
-      "brief": "突破到炼虚合道·证道期，并向执律天官复命。",
+      "name": "开阙留名",
+      "description": "收束足量天阙灵砂并向执律天官回报，正式完成证道问律，为后续突破开阙留名。",
+      "brief": "收集天阙灵砂30个，并向执律天官复命。",
       "npc_id": "npc-tianque-zhilv-tianguan",
       "map_id": "map-wanfa-tianque",
       "room_id": "room-tianque-daogong-gate",
@@ -367,11 +367,11 @@
       "objectives": [
         {
           "id": "obj-1",
-          "type": "upgrade_realm",
-          "text": "突破到炼虚合道·证道期",
-          "target": 1,
+          "type": "collect",
+          "text": "收集天阙灵砂",
+          "target": 30,
           "params": {
-            "realm": "炼虚合道·证道期"
+            "item_id": "mat-tianque-lingsha"
           }
         },
         {
