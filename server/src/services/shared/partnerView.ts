@@ -35,6 +35,7 @@ import {
   cloneSkillEffectList,
 } from './techniqueSkillProgression.js';
 import {
+  buildTechniqueUnlockedSkillIdSet,
   buildTechniqueSkillUpgradeCountMap,
   getTechniqueLayersByTechniqueIdStatic,
 } from './techniqueUpgradeRules.js';
@@ -425,15 +426,7 @@ const buildPartnerTechniqueStaticMeta = (
     maxLayer,
   );
   const activeLayerRows = layerRows.filter((entry) => entry.layer <= currentLayer);
-  const skillIds = [
-    ...new Set(
-      activeLayerRows.flatMap((entry) =>
-        entry.unlockSkillIds
-          .map((skillId) => normalizeText(skillId))
-          .filter((skillId) => skillId.length > 0),
-      ),
-    ),
-  ];
+  const skillIds = Array.from(buildTechniqueUnlockedSkillIdSet(activeLayerRows, currentLayer));
   const passiveAttrs = activeLayerRows.flatMap((entry) =>
     entry.passives
       .map((passive) => ({
