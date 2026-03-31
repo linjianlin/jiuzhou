@@ -482,7 +482,7 @@ export const TECHNIQUE_PROMPT_FIELD_SEMANTICS = {
     costMaterials: '升级材料数组，本系统固定要求 []',
     passives: '本层被动数组，key 必须来自 allowedPassiveKeys，数值必须遵守 passiveValueGuideByKey 的单层与累计预算',
     unlockSkillIds: '本层解锁技能ID数组（引用 skills[*].id）',
-    upgradeSkillIds: '本层强化技能ID数组（引用 skills[*].id）',
+    upgradeSkillIds: '本层强化技能ID数组（引用 skills[*].id）；若某技能此前未在 unlockSkillIds 出现，运行时会从本层开始视为已解锁',
     layerDesc: '层描述文案',
   },
 } as const;

@@ -220,6 +220,34 @@ export const buildTechniqueSkillUpgradeCountMap = (
   return upgradeCountBySkillId;
 };
 
+export const buildTechniqueUnlockedSkillIdSet = (
+  layerRows: readonly TechniqueLayerStaticRow[],
+  currentLayerRaw: number | string | bigint | null | undefined,
+): Set<string> => {
+  const currentLayer = Math.max(0, normalizeInteger(currentLayerRaw, 0));
+  const unlockedSkillIdSet = new Set<string>();
+  if (currentLayer <= 0) return unlockedSkillIdSet;
+
+  for (const row of layerRows) {
+    if (row.layer <= 0 || row.layer > currentLayer) continue;
+
+    for (const skillId of row.unlockSkillIds) {
+      const normalizedSkillId = String(skillId || '').trim();
+      if (!normalizedSkillId) continue;
+      unlockedSkillIdSet.add(normalizedSkillId);
+    }
+
+    // 首次仅出现在 upgradeSkillIds 的技能，也从该层开始进入正式解锁集合。
+    for (const skillId of row.upgradeSkillIds) {
+      const normalizedSkillId = String(skillId || '').trim();
+      if (!normalizedSkillId) continue;
+      unlockedSkillIdSet.add(normalizedSkillId);
+    }
+  }
+
+  return unlockedSkillIdSet;
+};
+
 export const getTechniqueLayerByTechniqueAndLayerStatic = (
   techniqueId: string,
   layer: number,

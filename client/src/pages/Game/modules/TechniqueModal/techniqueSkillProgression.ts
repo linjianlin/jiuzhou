@@ -15,7 +15,7 @@
  *
  * 关键边界条件与坑点：
  * 1. 同一技能在后续层被升级时，必须覆盖旧层展示值；否则列表和 tooltip 会一直停留在基础属性。
- * 2. 若某层同时解锁并升级同一技能，展示值要以“该层处理完升级后的结果”为准，避免出现层级说明与实战口径不一致。
+ * 2. 若某技能首次只出现在 `upgrade_skill_ids`，该层也必须把它当作已解锁技能展示，并以本层升级后的结果为准，避免展示和实战口径漂移。
  */
 
 import type { SkillDefDto, TechniqueLayerDto } from '../../../../services/api';
@@ -227,6 +227,7 @@ export const buildTechniqueLayerSkillProgression = (
     }
     for (const skillId of Array.isArray(layer.upgrade_skill_ids) ? layer.upgrade_skill_ids : []) {
       upgradeCountBySkillId.set(skillId, (upgradeCountBySkillId.get(skillId) ?? 0) + 1);
+      // upgrade 首次出现时，本层也视为正式解锁，保证展示口径与服务端一致。
       layerSkillIds.add(skillId);
     }
 

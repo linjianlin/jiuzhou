@@ -15,7 +15,7 @@
  * -> 本模块组装当前角色可用技能 -> 功法面板 / 挂机策略归一化复用。
  *
  * 关键边界条件与坑点：
- * 1. 只认“当前已装备功法且层数已解锁”的技能，未装备功法或更高层技能必须直接排除。
+ * 1. 只认“当前已装备功法且层数已解锁”的技能，未装备功法或更高层技能必须直接排除；若技能首次出现在 `upgradeSkillIds`，则从该层开始也视为已解锁。
  * 2. 功法定义与技能定义都要过滤 disabled/不可见项，避免不同消费方看到不一致的技能集合。
  */
 
@@ -30,6 +30,7 @@ import { createStaticDefinitionIndexGetter } from './staticDefinitionIndex.js';
 import { buildEffectiveTechniqueSkillData } from './techniqueSkillProgression.js';
 import { isCharacterVisibleTechniqueDefinition } from './techniqueUsageScope.js';
 import {
+  buildTechniqueUnlockedSkillIdSet,
   buildTechniqueSkillUpgradeCountMap,
   getTechniqueLayersByTechniqueIdsStatic,
   type TechniqueLayerStaticRow,
@@ -158,8 +159,6 @@ const buildCharacterUnlockedSkillEntriesFromEquipped = (
 
   const techniqueMap = getCharacterVisibleTechniqueDefMap();
   const skillMap = getEnabledSkillDefMap();
-  const maxLayerByTechnique = new Map(equipped.map((entry) => [entry.techniqueId, entry.currentLayer] as const));
-  const unlockedByTechnique = new Map<string, Set<string>>();
   const layerRowsByTechnique = new Map<string, TechniqueLayerStaticRow[]>();
   for (const row of layerRows) {
     const rows = layerRowsByTechnique.get(row.techniqueId) ?? [];
@@ -167,27 +166,20 @@ const buildCharacterUnlockedSkillEntriesFromEquipped = (
     layerRowsByTechnique.set(row.techniqueId, rows);
   }
   const upgradeCountByTechnique = new Map<string, Map<string, number>>();
+  const unlockedSkillIdSetByTechnique = new Map<string, Set<string>>();
   for (const equippedEntry of equipped) {
+    const techniqueLayerRows = layerRowsByTechnique.get(equippedEntry.techniqueId) ?? [];
     upgradeCountByTechnique.set(
       equippedEntry.techniqueId,
       buildTechniqueSkillUpgradeCountMap(
-        layerRowsByTechnique.get(equippedEntry.techniqueId) ?? [],
+        techniqueLayerRows,
         equippedEntry.currentLayer,
       ),
     );
-  }
-
-  for (const row of layerRows) {
-    const techniqueId = row.techniqueId;
-    const layer = row.layer;
-    const maxLayer = maxLayerByTechnique.get(techniqueId) ?? 0;
-    if (!techniqueId || layer <= 0 || layer > maxLayer) continue;
-    const unlockedSkillIds = row.unlockSkillIds;
-    const unlockedSet = unlockedByTechnique.get(techniqueId) ?? new Set<string>();
-    for (const skillId of unlockedSkillIds) {
-      unlockedSet.add(skillId);
-    }
-    unlockedByTechnique.set(techniqueId, unlockedSet);
+    unlockedSkillIdSetByTechnique.set(
+      equippedEntry.techniqueId,
+      buildTechniqueUnlockedSkillIdSet(techniqueLayerRows, equippedEntry.currentLayer),
+    );
   }
 
   const dedup = new Set<string>();
@@ -195,7 +187,7 @@ const buildCharacterUnlockedSkillEntriesFromEquipped = (
   for (const equippedEntry of equipped) {
     const techniqueDef = techniqueMap.get(equippedEntry.techniqueId);
     const techniqueName = String(techniqueDef?.name || equippedEntry.techniqueId);
-    const skillIds = Array.from(unlockedByTechnique.get(equippedEntry.techniqueId) ?? []);
+    const skillIds = Array.from(unlockedSkillIdSetByTechnique.get(equippedEntry.techniqueId) ?? []);
     for (const skillId of skillIds) {
       const skillDef = skillMap.get(skillId);
       if (!skillDef) continue;
