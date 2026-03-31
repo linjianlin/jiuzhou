@@ -66,6 +66,9 @@ const MAX_SETTLEMENT_TASKS_PER_TICK = MAX_CONCURRENT_SETTLEMENT_TASKS * 2;
 const settlementRunnerLogger = createScopedLogger('onlineBattle.settlementRunner');
 
 type DeferredSettlementMonsterSnapshot = DeferredSettlementTask['payload']['monsters'][number];
+type DeferredSettlementDungeonStartConsumption = NonNullable<
+  DeferredSettlementTask['payload']['dungeonStartConsumption']
+>;
 
 const collectUniqueParticipantCharacterIds = (
   participants: DeferredSettlementTask['payload']['participants'],
@@ -211,6 +214,134 @@ const pushCharacterUpdatesAfterDeferredSettlement = async (
   );
 };
 
+/**
+ * 批量回写秘境进入次数快照。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把同一轮 `dungeon-start` 的多名角色次数快照合并成单条 UPSERT，减少事务内逐行往返。
+ * 2. 做什么：保持与原先逐条写入一致的覆盖语义，仍然以 `(character_id, dungeon_id)` 为唯一键收敛。
+ * 3. 不做什么：不负责体力扣减、不校验次数合法性，也不决定秘境实例状态迁移。
+ *
+ * 输入/输出：
+ * - 输入：`entryCountSnapshots` 数组。
+ * - 输出：无；副作用是批量写入 `dungeon_entry_count`。
+ *
+ * 数据流/状态流：
+ * - `settleDungeonStartConsumptionInDb` 收到快照
+ * - 本函数把快照转成 JSON recordset
+ * - PostgreSQL 单条 `INSERT ... ON CONFLICT DO UPDATE` 完成整批覆盖。
+ *
+ * 复用设计说明：
+ * - 秘境开战与后续可能的批量恢复都依赖同一份 “角色-秘境次数快照” 写库语义，单独抽函数能避免再回到逐条 `await query`。
+ * - 高频变化点是快照数量，不是 SQL 结构，因此把批量写入固定成单一入口，后续扩容仍只改这一处。
+ *
+ * 关键边界条件与坑点：
+ * 1. 空数组必须直接返回，避免生成空 `jsonb_to_recordset` 调用。
+ * 2. 入参必须是已归一化快照；这里只做批量持久化，不额外兜底修正脏字段。
+ */
+const upsertDungeonEntryCountSnapshots = async (
+  entryCountSnapshots: DeferredSettlementDungeonStartConsumption['entryCountSnapshots'],
+): Promise<void> => {
+  if (entryCountSnapshots.length <= 0) {
+    return;
+  }
+
+  await query(
+    `
+      INSERT INTO dungeon_entry_count (
+        character_id,
+        dungeon_id,
+        daily_count,
+        weekly_count,
+        total_count,
+        last_daily_reset,
+        last_weekly_reset
+      )
+      SELECT
+        row.character_id,
+        row.dungeon_id,
+        row.daily_count,
+        row.weekly_count,
+        row.total_count,
+        row.last_daily_reset,
+        row.last_weekly_reset
+      FROM jsonb_to_recordset($1::jsonb) AS row(
+        character_id int,
+        dungeon_id text,
+        daily_count int,
+        weekly_count int,
+        total_count int,
+        last_daily_reset date,
+        last_weekly_reset date
+      )
+      ON CONFLICT (character_id, dungeon_id)
+      DO UPDATE
+      SET
+        daily_count = EXCLUDED.daily_count,
+        weekly_count = EXCLUDED.weekly_count,
+        total_count = EXCLUDED.total_count,
+        last_daily_reset = EXCLUDED.last_daily_reset,
+        last_weekly_reset = EXCLUDED.last_weekly_reset
+    `,
+    [JSON.stringify(entryCountSnapshots.map((snapshot) => ({
+      character_id: snapshot.characterId,
+      dungeon_id: snapshot.dungeonId,
+      daily_count: snapshot.dailyCount,
+      weekly_count: snapshot.weeklyCount,
+      total_count: snapshot.totalCount,
+      last_daily_reset: snapshot.lastDailyReset,
+      last_weekly_reset: snapshot.lastWeeklyReset,
+    })))],
+  );
+};
+
+/**
+ * 并发推进同一场战斗涉及的怪物击杀任务。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把同一场战斗的多角色击杀事件推进改成按角色并发执行，减少延迟结算在任务系统上的串行等待。
+ * 2. 做什么：先提取唯一角色 ID，避免 `rewardParticipants` 重复成员导致重复推进。
+ * 3. 不做什么：不构建击杀事件，不决定胜利资格，也不处理秘境通关任务。
+ *
+ * 输入/输出：
+ * - 输入：可领奖角色列表、怪物击杀事件列表。
+ * - 输出：无；副作用是推进任务、主线和成就进度。
+ *
+ * 数据流/状态流：
+ * - PVE 结算构建 `killMonsterEvents`
+ * - 本函数提取唯一角色 ID
+ * - 并发调用 `recordKillMonsterEvents`，每个角色独立推进自己的任务链路。
+ *
+ * 复用设计说明：
+ * - 普通 PVE、组队秘境和后续需要“同战斗多角色共享同一击杀快照”的链路都能复用这一入口，避免继续在调用点手写串行 for-loop。
+ * - 高频变化点是参与角色数量，因此把“去重 + 并发”固定在这里，调用方只关心事件本身。
+ *
+ * 关键边界条件与坑点：
+ * 1. 空事件或空角色列表必须直接返回，避免发起无意义 Promise/查询。
+ * 2. 这里只能用于角色间彼此独立的任务推进；若未来出现共享事务约束，不能直接照搬到事务内链路。
+ */
+const recordKillMonsterEventsForParticipants = async (
+  rewardParticipants: DeferredSettlementTask['payload']['rewardParticipants'],
+  killMonsterEvents: Array<{ monsterId: string; count: number }>,
+): Promise<void> => {
+  if (rewardParticipants.length <= 0 || killMonsterEvents.length <= 0) {
+    return;
+  }
+
+  const participantCharacterIds = [...new Set(
+    rewardParticipants
+      .map((participant) => Math.floor(Number(participant.characterId)))
+      .filter((characterId) => Number.isFinite(characterId) && characterId > 0),
+  )];
+  if (participantCharacterIds.length <= 0) {
+    return;
+  }
+
+  await Promise.all(
+    participantCharacterIds.map((characterId) => recordKillMonsterEvents(characterId, killMonsterEvents)),
+  );
+};
+
 const settleDungeonStartConsumptionInDb = async (
   task: DeferredSettlementTask,
 ): Promise<void> => {
@@ -299,39 +430,7 @@ const settleDungeonStartConsumptionInDb = async (
       return;
     }
 
-    for (const entryCountSnapshot of dungeonStartConsumption.entryCountSnapshots) {
-      await query(
-        `
-          INSERT INTO dungeon_entry_count (
-            character_id,
-            dungeon_id,
-            daily_count,
-            weekly_count,
-            total_count,
-            last_daily_reset,
-            last_weekly_reset
-          )
-          VALUES ($1, $2, $3, $4, $5, $6::date, $7::date)
-          ON CONFLICT (character_id, dungeon_id)
-          DO UPDATE
-          SET
-            daily_count = EXCLUDED.daily_count,
-            weekly_count = EXCLUDED.weekly_count,
-            total_count = EXCLUDED.total_count,
-            last_daily_reset = EXCLUDED.last_daily_reset,
-            last_weekly_reset = EXCLUDED.last_weekly_reset
-        `,
-        [
-          entryCountSnapshot.characterId,
-          entryCountSnapshot.dungeonId,
-          entryCountSnapshot.dailyCount,
-          entryCountSnapshot.weeklyCount,
-          entryCountSnapshot.totalCount,
-          entryCountSnapshot.lastDailyReset,
-          entryCountSnapshot.lastWeeklyReset,
-        ],
-      );
-    }
+    await upsertDungeonEntryCountSnapshots(dungeonStartConsumption.entryCountSnapshots);
 
     for (const staminaConsumption of dungeonStartConsumption.staminaConsumptions) {
       const safeAmount = Math.max(0, Math.floor(Number(staminaConsumption.amount) || 0));
@@ -356,18 +455,11 @@ const settleArenaBattleInDb = async (
   await query(
     `
       INSERT INTO arena_rating(character_id, rating, win_count, lose_count)
-      VALUES ($1, 1000, 0, 0)
+      SELECT character_id, 1000, 0, 0
+      FROM unnest($1::int[]) AS character_id
       ON CONFLICT (character_id) DO NOTHING
     `,
-    [arenaDelta.challengerCharacterId],
-  );
-  await query(
-    `
-      INSERT INTO arena_rating(character_id, rating, win_count, lose_count)
-      VALUES ($1, 1000, 0, 0)
-      ON CONFLICT (character_id) DO NOTHING
-    `,
-    [arenaDelta.opponentCharacterId],
+    [[arenaDelta.challengerCharacterId, arenaDelta.opponentCharacterId]],
   );
 
   await query(
@@ -787,9 +879,7 @@ const executeDeferredSettlementTask = async (
 
     if (task.payload.result === 'attacker_win' && task.payload.rewardParticipants.length > 0) {
       const killMonsterEvents = buildKillMonsterEventsFromSnapshots(task.payload.monsters);
-      for (const participant of task.payload.rewardParticipants) {
-        await recordKillMonsterEvents(participant.characterId, killMonsterEvents);
-      }
+      await recordKillMonsterEventsForParticipants(task.payload.rewardParticipants, killMonsterEvents);
     }
 
     if (task.payload.dungeonSettlement && task.payload.result === 'attacker_win') {
