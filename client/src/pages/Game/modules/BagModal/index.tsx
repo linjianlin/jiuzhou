@@ -61,6 +61,8 @@ import { getItemQualityMeta } from '../../shared/itemQuality';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
 import { SetBonusDisplay } from './SetBonusDisplay';
+import BatchDisassembleConfirmContent from './BatchDisassembleConfirmContent';
+import { buildBatchDisassembleConfirmViewModel } from './batchDisassembleConfirmShared';
 import { formatDisassembleSuccessMessage } from './disassembleRewardText';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import { useTechniqueBookSkills } from './useTechniqueBookSkills';
@@ -77,7 +79,7 @@ interface BagModalProps {
 }
 
 const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   useGameItemTaxonomy(open);
   const [category, setCategory] = useState<BagCategory>('all');
   const [query, setQuery] = useState('');
@@ -851,6 +853,41 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     const qty = batchCandidates.reduce((sum, it) => sum + Math.max(0, it.qty || 0), 0);
     return `共${qty}件`;
   }, [batchCandidates]);
+  const submitBatchDisassemble = useCallback(async () => {
+    setBatchSubmitting(true);
+    try {
+      const payloadItems = buildBatchDisassemblePayloadItems(batchCandidates);
+      if (payloadItems.length === 0) {
+        message.info('没有可分解的物品');
+        return;
+      }
+
+      const res = await disassembleInventoryEquipmentBatch(payloadItems);
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '分解失败'));
+      message.success(formatDisassembleSuccessMessage(res.message || '分解成功', res.rewards));
+      await refresh();
+      setBatchOpen(false);
+    } catch (error: unknown) {
+      void 0;
+    } finally {
+      setBatchSubmitting(false);
+    }
+  }, [batchCandidates, message, refresh]);
+  const openBatchDisassembleConfirm = useCallback(() => {
+    if (batchCandidates.length === 0) return;
+
+    const viewModel = buildBatchDisassembleConfirmViewModel(batchCandidates);
+    modal.confirm({
+      title: viewModel.title,
+      content: <BatchDisassembleConfirmContent viewModel={viewModel} />,
+      okText: '确认分解',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      width: 520,
+      centered: true,
+      onOk: submitBatchDisassemble,
+    });
+  }, [batchCandidates, modal, submitBatchDisassemble]);
   const useActionDisabled = loading || actionDisabled('use');
   const growthHeader = (
     <div className="bag-growth-header">
@@ -1916,24 +1953,17 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               disabled={batchCandidates.length === 0}
               onClick={async () => {
                 if (batchCandidates.length === 0) return;
+                if (batchMode === 'disassemble') {
+                  openBatchDisassembleConfirm();
+                  return;
+                }
+
                 setBatchSubmitting(true);
                 try {
-                  if (batchMode === 'disassemble') {
-                    const payloadItems = buildBatchDisassemblePayloadItems(batchCandidates);
-                    if (payloadItems.length === 0) {
-                      message.info('没有可分解的物品');
-                      return;
-                    }
-
-                    const res = await disassembleInventoryEquipmentBatch(payloadItems);
-                    if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '分解失败'));
-                    message.success(formatDisassembleSuccessMessage(res.message || '分解成功', res.rewards));
-                  } else {
-                    const ids = batchCandidates.map((x) => x.id);
-                    const res = await removeInventoryItemsBatch(ids);
-                    if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '丢弃失败'));
-                    message.success(res.message || '丢弃成功');
-                  }
+                  const ids = batchCandidates.map((x) => x.id);
+                  const res = await removeInventoryItemsBatch(ids);
+                  if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '丢弃失败'));
+                  message.success(res.message || '丢弃成功');
                   await refresh();
                   setBatchOpen(false);
                 } catch (error: unknown) {
