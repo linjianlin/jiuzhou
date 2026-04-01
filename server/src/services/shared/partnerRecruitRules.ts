@@ -816,7 +816,8 @@ const buildPartnerRecruitQualityStrengthConstraints = (
     '核心战斗面板至少包括 max_qixue、max_lingqi、wugong、fagong、wufang、fafang、sudu；禁止出现高品质伙伴只把描述写得华丽，但综合面板与成长反而弱于低品质参考模板',
     '允许围绕 combatStyle 做正常偏科：physical 可偏武道、magic 可偏术法；但这种流派倾向只能影响主副攻方向，不得把高品质整体强度写到低于黄品参考模板',
     `本次程序已为当前 quality=${quality} 稳定随机出主攻成长目标值 primaryAttackGrowthTarget=${normalizedPrimaryAttackGrowthTarget}；该值只用于双攻中的主攻项，不代表双攻都取这个值`,
-    `由你自行判断 partner.combatStyle；若最终 combatStyle=physical，则 levelAttrGains.wugong 必须精确等于 ${normalizedPrimaryAttackGrowthTarget}，levelAttrGains.fagong 由你按定位自行推断且不得高于 ${normalizedPrimaryAttackGrowthTarget}；若最终 combatStyle=magic，则 levelAttrGains.fagong 必须精确等于 ${normalizedPrimaryAttackGrowthTarget}，levelAttrGains.wugong 由你按定位自行推断且不得高于 ${normalizedPrimaryAttackGrowthTarget}`,
+    `由你自行判断 partner.combatStyle；若伙伴定位明显偏输出、爆发、刺杀、突进，才需要参考 primaryAttackGrowthTarget：combatStyle=physical 时优先让 levelAttrGains.wugong 取 ${normalizedPrimaryAttackGrowthTarget}，combatStyle=magic 时优先让 levelAttrGains.fagong 取 ${normalizedPrimaryAttackGrowthTarget}，另一项副攻成长不得高于该值`,
+    `若伙伴定位明显偏护卫、守御、治疗、辅助、控制等非输出风格，则可以不参考 primaryAttackGrowthTarget；即使 combatStyle=physical 或 magic，也允许把双攻成长压低，并把成长重点转到 max_qixue、双防、sudu、治疗、回复或功能性相关属性上`,
     '除主攻成长目标值外，max_qixue、max_lingqi、双防、sudu、回复与副攻成长等其他属性全部由你自行推断，但综合强度必须与当前品质匹配，不能出现主攻成长确定后其余核心面板明显塌陷',
   ];
 

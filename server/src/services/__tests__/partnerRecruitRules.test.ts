@@ -475,7 +475,7 @@ test('buildPartnerRecruitPromptInput: 应注入程序随机出的主攻成长目
     );
     assert.equal(
       promptInput.constraints?.includes(
-        `由你自行判断 partner.combatStyle；若最终 combatStyle=physical，则 levelAttrGains.wugong 必须精确等于 ${target}，levelAttrGains.fagong 由你按定位自行推断且不得高于 ${target}；若最终 combatStyle=magic，则 levelAttrGains.fagong 必须精确等于 ${target}，levelAttrGains.wugong 由你按定位自行推断且不得高于 ${target}`,
+        `由你自行判断 partner.combatStyle；若伙伴定位明显偏输出、爆发、刺杀、突进，才需要参考 primaryAttackGrowthTarget：combatStyle=physical 时优先让 levelAttrGains.wugong 取 ${target}，combatStyle=magic 时优先让 levelAttrGains.fagong 取 ${target}，另一项副攻成长不得高于该值`,
       ),
       true,
     );
@@ -490,7 +490,13 @@ test('buildPartnerRecruitPromptInput: 应注入程序随机出的主攻成长目
 
   assert.equal(
     earthPromptInput.constraints?.includes(
-      '除主攻成长目标值外，max_qixue、max_lingqi、双防、sudu、回复与副攻成长等其他属性全部由 AI 按 role、attributeElement、description 与 combatStyle 自行推断，但综合强度必须与当前品质匹配，不能出现主攻成长确定后其余核心面板明显塌陷',
+      '若伙伴定位明显偏护卫、守御、治疗、辅助、控制等非输出风格，则可以不参考 primaryAttackGrowthTarget；即使 combatStyle=physical 或 magic，也允许把双攻成长压低，并把成长重点转到 max_qixue、双防、sudu、治疗、回复或功能性相关属性上',
+    ),
+    true,
+  );
+  assert.equal(
+    earthPromptInput.constraints?.includes(
+      '除主攻成长目标值外，max_qixue、max_lingqi、双防、sudu、回复与副攻成长等其他属性全部由你自行推断，但综合强度必须与当前品质匹配，不能出现主攻成长确定后其余核心面板明显塌陷',
     ),
     true,
   );
