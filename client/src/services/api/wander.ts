@@ -5,7 +5,7 @@ import type { AxiosRequestConfig } from 'axios';
  * 云游奇遇接口模块
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：集中封装云游奇遇概览、今日生成与选项确认请求，供百业入口弹窗复用。
+ * 1. 做什么：集中封装云游奇遇概览、生成与选项确认请求，供奇遇入口弹窗复用。
  * 2. 做什么：复用后端正式 DTO 结构，让弹窗与后续可能的首页提示共享同一份类型。
  * 3. 不做什么：不处理本地状态机，不拼接按钮文案，也不替代正式称号列表接口。
  *
@@ -83,8 +83,10 @@ export interface WanderOverviewDto {
   today: string;
   aiAvailable: boolean;
   hasPendingEpisode: boolean;
-  canGenerateToday: boolean;
-  todayCompleted: boolean;
+  canGenerate: boolean;
+  isCoolingDown: boolean;
+  cooldownUntil: string | null;
+  cooldownRemainingSeconds: number;
   currentGenerationJob: WanderGenerationJobDto | null;
   activeStory: WanderStoryDto | null;
   currentEpisode: WanderEpisodeDto | null;

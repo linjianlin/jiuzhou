@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：集中声明云游奇遇服务、AI 输出和接口 DTO 需要的类型，避免 route、service、AI 模块各自复制字段定义。
- * 2. 做什么：把“每日一幕、三选一、结局称号”的结构约束固化到类型层，减少后续扩展时的漂移。
+ * 2. 做什么：把“冷却推进、三选一、结局称号”的结构约束固化到类型层，减少后续扩展时的漂移。
  * 3. 不做什么：不处理数据库查询，不做 AI 调用，也不拼接展示文案。
  *
  * 输入/输出：
@@ -81,8 +81,10 @@ export interface WanderOverviewDto {
   today: string;
   aiAvailable: boolean;
   hasPendingEpisode: boolean;
-  canGenerateToday: boolean;
-  todayCompleted: boolean;
+  canGenerate: boolean;
+  isCoolingDown: boolean;
+  cooldownUntil: string | null;
+  cooldownRemainingSeconds: number;
   currentGenerationJob: WanderGenerationJobDto | null;
   activeStory: WanderStoryDto | null;
   currentEpisode: WanderEpisodeDto | null;

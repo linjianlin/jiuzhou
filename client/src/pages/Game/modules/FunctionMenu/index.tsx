@@ -68,7 +68,7 @@ const FunctionMenu: React.FC<FunctionMenuProps> = ({ onAction, indicators, itemS
       { key: 'partner', icon: <UsergroupAddOutlined />, label: '伙伴' },
       { key: 'technique', icon: <BookOutlined />, label: '功法' },
       { key: 'realm', icon: <ExperimentOutlined />, label: '境界' },
-      { key: 'life', icon: <ToolOutlined />, label: '百业' },
+      { key: 'life', icon: <ToolOutlined />, label: '奇遇' },
       { key: 'task', icon: <ProfileOutlined />, label: '任务' },
       { key: 'sect', icon: <TeamOutlined />, label: '宗门' },
       { key: 'market', icon: <ShopOutlined />, label: '坊市' },

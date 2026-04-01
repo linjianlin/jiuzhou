@@ -7,26 +7,32 @@ import {
   type WanderOverviewDto,
 } from '../../../../services/api';
 import { SILENT_API_REQUEST_CONFIG } from '../../../../services/api/requestConfig';
+import { formatGameCooldownRemaining } from '../../shared/cooldownText';
 import './index.scss';
 
 /**
  * 云游奇遇弹窗
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：承接百业入口的云游奇遇交互，负责展示今日剧情、提交选项与回顾故事。
- * 2. 做什么：把“概览读取 / 今日生成 / 选项确认”三条请求集中在单个弹窗里，避免 Game 页维护额外状态机。
- * 3. 不做什么：不重复实现后端每日限制，不接管正式称号装备逻辑，也不处理全局红点。
+ * 1. 做什么：承接奇遇入口的云游交互，负责展示当前幕次、提交选项、冷却状态与故事回顾。
+ * 2. 做什么：把“概览读取 / 发起生成 / 选项确认”三条请求集中在单个弹窗里，避免 Game 页维护额外状态机。
+ * 3. 不做什么：不重复实现后端冷却限制，不接管正式称号装备逻辑，也不处理全局红点。
  *
  * 输入/输出：
  * - 输入：`open`、`onClose`。
- * - 输出：用户关闭弹窗或完成当日奇遇交互后的界面更新。
+ * - 输出：用户关闭弹窗或完成当前奇遇交互后的界面更新。
  *
  * 数据流/状态流：
- * 打开弹窗 -> 读取 overview -> 若今日未触发则点击“今日云游”生成一幕 -> 选择选项 -> 刷新 overview。
+ * 打开弹窗 -> 读取 overview -> 若当前可用则点击“开始云游”生成一幕 -> 选择选项 -> 刷新 overview。
+ *
+ * 复用设计说明：
+ * 1. 所有可见状态都直接消费 `WanderOverviewDto`，让按钮、标签、空态与轮询共用同一份服务端状态，避免页面侧再次推导冷却分支。
+ * 2. 冷却剩余时间格式化只在本组件保留一份，防止标题区、结果区、空态区各自手写时间文案。
+ * 3. 入口文案已改为“奇遇”，但功能实体仍然是云游奇遇，因此菜单与弹窗文案在这里统一收口。
  *
  * 关键边界条件与坑点：
  * 1. 自动错误 toast 仍由统一请求拦截器负责，本组件只补成功提示，避免失败提示重复弹两次。
- * 2. 当前幕次未选择前不能再次生成；按钮状态必须直接绑定 overview 的 `hasPendingEpisode/canGenerateToday`，不能本地猜测。
+ * 2. 当前幕次未选择前不能再次生成；按钮状态必须直接绑定 overview 的 `hasPendingEpisode/canGenerate`，不能本地猜测。
  */
 
 interface WanderModalProps {
@@ -69,12 +75,14 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
         return {
           ...current,
           hasPendingEpisode: false,
-          canGenerateToday: false,
-          todayCompleted: false,
+          canGenerate: false,
+          isCoolingDown: false,
+          cooldownUntil: null,
+          cooldownRemainingSeconds: 0,
           currentGenerationJob: response.data.job,
         };
       });
-      message.success('今日云游已开始推演');
+      message.success('当前云游已开始推演');
       await refreshOverview('background');
     } finally {
       setActionKey('');
@@ -89,7 +97,7 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
       if (awardedTitle) {
         message.success(`奇遇已完结，获得正式称号「${awardedTitle.name}」`);
       } else {
-        message.success('今日抉择已落定');
+        message.success('本幕抉择已落定');
       }
       await refreshOverview();
     } finally {
@@ -139,9 +147,9 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
         <div className="wander-header">
           <div>
             <div className="wander-title">云游奇遇</div>
-            <div className="wander-subtitle">每日一幕，由 AI 延续你的修行缘法，并在结局时铸成正式称号。</div>
+            <div className="wander-subtitle">每次推演完成后冷却 1 小时，由 AI 延续你的修行缘法，并在结局时铸成正式称号。</div>
           </div>
-          {overview ? <Tag color="default">今日日期 {overview.today}</Tag> : null}
+          {overview ? <Tag color="default">当前日期 {overview.today}</Tag> : null}
         </div>
 
         <div className="wander-body">
@@ -155,10 +163,10 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
             <>
               <section className="wander-panel wander-panel-highlight">
                 <div className="wander-panel-head">
-                  <div className="wander-panel-title">今日缘法</div>
+                  <div className="wander-panel-title">当前缘法</div>
                   {!overview.aiAvailable ? <Tag color="red">AI 未配置</Tag> : null}
-                  {overview.todayCompleted ? <Tag color="green">今日已完成</Tag> : null}
                   {overview.hasPendingEpisode ? <Tag color="gold">等待抉择</Tag> : null}
+                  {overview.isCoolingDown ? <Tag color="green">冷却中</Tag> : null}
                   {currentGenerationJob?.status === 'pending' ? <Tag color="processing">生成中</Tag> : null}
                   {currentGenerationJob?.status === 'failed' ? <Tag color="red">生成失败</Tag> : null}
                 </div>
@@ -170,9 +178,9 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                 {overview.aiAvailable && !currentEpisode && currentGenerationJob?.status === 'pending' ? (
                   <div className="wander-generate-card">
                     <div className="wander-generate-main">
-                      <div className="wander-generate-title">今日云游推演中</div>
+                      <div className="wander-generate-title">当前云游推演中</div>
                       <div className="wander-generate-desc">
-                        <Spin size="small" /> AI 正在整理你今日的缘法脉络，剧情生成完成后会自动出现在这里。
+                        <Spin size="small" /> AI 正在整理你当前的缘法脉络，剧情生成完成后会自动出现在这里。
                       </div>
                     </div>
                     <Tag color="processing">任务 #{currentGenerationJob.generationId}</Tag>
@@ -182,9 +190,9 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                 {overview.aiAvailable && !currentEpisode && currentGenerationJob?.status === 'failed' ? (
                   <div className="wander-generate-card">
                     <div className="wander-generate-main">
-                      <div className="wander-generate-title">今日云游推演失败</div>
+                      <div className="wander-generate-title">当前云游推演失败</div>
                       <div className="wander-generate-desc">
-                        {currentGenerationJob.errorMessage || '本次奇遇未能顺利成形，你可以立即重新推演今日剧情。'}
+                        {currentGenerationJob.errorMessage || '本次奇遇未能顺利成形，你可以立即重新推演当前剧情。'}
                       </div>
                     </div>
                     <Button
@@ -198,12 +206,12 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                   </div>
                 ) : null}
 
-                {overview.aiAvailable && !currentEpisode && overview.canGenerateToday && currentGenerationJob === null ? (
+                {overview.aiAvailable && !currentEpisode && overview.canGenerate && currentGenerationJob === null ? (
                   <div className="wander-generate-card">
                     <div className="wander-generate-main">
-                      <div className="wander-generate-title">今日尚未云游</div>
+                      <div className="wander-generate-title">当前可开启云游</div>
                       <div className="wander-generate-desc">
-                        点击后将生成今天这一幕剧情。AI 会参考你最近的奇遇走向继续推进，并在结局时产出正式称号。
+                        点击后将生成下一幕剧情。AI 会参考你最近的奇遇走向继续推进，并在结局时产出正式称号。
                       </div>
                     </div>
                     <Button
@@ -212,7 +220,7 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                       loading={actionKey === 'generate'}
                       onClick={() => void generateToday()}
                     >
-                      今日云游
+                      开始云游
                     </Button>
                   </div>
                 ) : null}
@@ -242,8 +250,13 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                       </div>
                     ) : (
                       <div className="wander-choice-result">
-                        <div className="wander-choice-label">今日选择</div>
+                        <div className="wander-choice-label">本幕选择</div>
                         <div className="wander-choice-text">{currentEpisode.chosenOptionText}</div>
+                        {overview.isCoolingDown ? (
+                          <div className="wander-choice-reward">
+                            下一幕冷却：还需等待 {formatGameCooldownRemaining(overview.cooldownRemainingSeconds)}
+                          </div>
+                        ) : null}
                         {currentEpisode.isEnding && currentEpisode.rewardTitleName ? (
                           <div className="wander-choice-reward">
                             结局称号：{currentEpisode.rewardTitleName}
@@ -253,10 +266,6 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                       </div>
                     )}
                   </div>
-                ) : null}
-
-                {overview.aiAvailable && !currentEpisode && !overview.canGenerateToday && currentGenerationJob === null ? (
-                  <div className="wander-empty">今日云游已经结束，明日再来续写新的缘法。</div>
                 ) : null}
               </section>
 

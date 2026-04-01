@@ -183,7 +183,6 @@ const EQUIP_QUALITY_COLOR: Record<string, string> = {
   黄: 'var(--rarity-huang)',
 };
 const TECHNIQUE_RESEARCH_ENABLED = !import.meta.env.PROD;
-const WANDER_FEATURE_ENABLED = !import.meta.env.PROD;
 
 const EQUIP_QUALITY_TEXT: Record<string, string> = {
   天: '天品',
@@ -2267,7 +2266,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }
     if (key === 'technique') setTechniqueModalOpen(true);
     if (key === 'realm') setRealmModalOpen(true);
-    if (key === 'life' && WANDER_FEATURE_ENABLED) setWanderModalOpen(true);
+    if (key === 'life') setWanderModalOpen(true);
     if (key === 'task') {
       setTaskModalOpen(true);
     }
@@ -2343,9 +2342,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
   const functionItemStates = useMemo(
     () => ({
-      life: {
-        hidden: !WANDER_FEATURE_ENABLED,
-      },
       partner: {
         locked: !partnerUnlocked,
         tooltip: partnerUnlocked ? undefined : PARTNER_FEATURE_UNLOCK_HINT,
@@ -3175,7 +3171,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       />
       <BagModal open={bagModalOpen} onClose={() => setBagModalOpen(false)} />
       <PartnerModal open={partnerModalOpen} onClose={() => setPartnerModalOpen(false)} />
-      {WANDER_FEATURE_ENABLED ? <WanderModal open={wanderModalOpen} onClose={() => setWanderModalOpen(false)} /> : null}
+      <WanderModal open={wanderModalOpen} onClose={() => setWanderModalOpen(false)} />
       {warehouseModalOpen && (
         <WarehouseModal open={warehouseModalOpen} onClose={() => setWarehouseModalOpen(false)} />
       )}
