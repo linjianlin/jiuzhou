@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import {
   compressTechniqueSkillImageBuffer,
   generateTechniqueSkillIconMap,
+  shouldBypassTechniqueSkillImageGeneration,
   TECHNIQUE_SKILL_IMAGE_OUTPUT_MAX_EDGE,
 } from '../shared/techniqueSkillImageGenerator.js';
 
@@ -43,8 +44,57 @@ test('compressTechniqueSkillImageBuffer: 应统一压缩为受限尺寸的 webp'
   assert.equal(metadata.height, 288);
 });
 
+test('shouldBypassTechniqueSkillImageGeneration: 仅 development 环境应跳过功法技能生图', () => {
+  assert.equal(shouldBypassTechniqueSkillImageGeneration('development'), true);
+  assert.equal(shouldBypassTechniqueSkillImageGeneration('production'), false);
+  assert.equal(shouldBypassTechniqueSkillImageGeneration(undefined), false);
+});
+
+test('generateTechniqueSkillIconMap: development 环境下应直接跳过图片请求', async () => {
+  const originalEnv = {
+    NODE_ENV: process.env.NODE_ENV,
+    AI_TECHNIQUE_IMAGE_MODEL_URL: process.env.AI_TECHNIQUE_IMAGE_MODEL_URL,
+    AI_TECHNIQUE_IMAGE_MODEL_KEY: process.env.AI_TECHNIQUE_IMAGE_MODEL_KEY,
+  };
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+
+  process.env.NODE_ENV = 'development';
+  process.env.AI_TECHNIQUE_IMAGE_MODEL_URL = 'https://dashscope.test';
+  process.env.AI_TECHNIQUE_IMAGE_MODEL_KEY = 'test-key';
+
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('development 环境不应发起功法技能生图请求');
+  };
+
+  try {
+    const iconMap = await generateTechniqueSkillIconMap([
+      {
+        skillId: 'skill-dev',
+        techniqueName: '太虚引雷诀',
+        techniqueType: 'spell',
+        techniqueQuality: 'legendary',
+        techniqueElement: 'thunder',
+        skillName: '雷息一式',
+        skillDescription: '落雷轰击前方敌人。',
+        skillEffects: [],
+      },
+    ]);
+
+    assert.equal(iconMap.size, 0);
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnvValue('NODE_ENV', originalEnv.NODE_ENV);
+    restoreEnvValue('AI_TECHNIQUE_IMAGE_MODEL_URL', originalEnv.AI_TECHNIQUE_IMAGE_MODEL_URL);
+    restoreEnvValue('AI_TECHNIQUE_IMAGE_MODEL_KEY', originalEnv.AI_TECHNIQUE_IMAGE_MODEL_KEY);
+  }
+});
+
 test('generateTechniqueSkillIconMap: 批量生图应将并发峰值固定为 3', async () => {
   const originalEnv = {
+    NODE_ENV: process.env.NODE_ENV,
     AI_TECHNIQUE_IMAGE_MODEL_URL: process.env.AI_TECHNIQUE_IMAGE_MODEL_URL,
     AI_TECHNIQUE_IMAGE_MODEL_KEY: process.env.AI_TECHNIQUE_IMAGE_MODEL_KEY,
     AI_TECHNIQUE_IMAGE_MODEL_NAME: process.env.AI_TECHNIQUE_IMAGE_MODEL_NAME,
@@ -54,6 +104,7 @@ test('generateTechniqueSkillIconMap: 批量生图应将并发峰值固定为 3',
   const originalFetch = globalThis.fetch;
   const generatedLocalPaths: string[] = [];
 
+  process.env.NODE_ENV = 'test';
   process.env.AI_TECHNIQUE_IMAGE_MODEL_URL = 'https://dashscope.test';
   process.env.AI_TECHNIQUE_IMAGE_MODEL_KEY = 'test-key';
   process.env.AI_TECHNIQUE_IMAGE_MODEL_NAME = 'qwen-image-2.0';
@@ -149,6 +200,7 @@ test('generateTechniqueSkillIconMap: 批量生图应将并发峰值固定为 3',
     }
   } finally {
     globalThis.fetch = originalFetch;
+    restoreEnvValue('NODE_ENV', originalEnv.NODE_ENV);
     restoreEnvValue('AI_TECHNIQUE_IMAGE_MODEL_URL', originalEnv.AI_TECHNIQUE_IMAGE_MODEL_URL);
     restoreEnvValue('AI_TECHNIQUE_IMAGE_MODEL_KEY', originalEnv.AI_TECHNIQUE_IMAGE_MODEL_KEY);
     restoreEnvValue('AI_TECHNIQUE_IMAGE_MODEL_NAME', originalEnv.AI_TECHNIQUE_IMAGE_MODEL_NAME);

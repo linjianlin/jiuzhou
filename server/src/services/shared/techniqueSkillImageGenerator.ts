@@ -45,6 +45,31 @@ export const TECHNIQUE_SKILL_IMAGE_CONCURRENCY = 5;
 export const TECHNIQUE_SKILL_IMAGE_OUTPUT_MAX_EDGE = 256;
 export const TECHNIQUE_SKILL_IMAGE_OUTPUT_WEBP_QUALITY = 82;
 
+/**
+ * 本地开发环境功法技能生图开关
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：集中定义 AI 生成功法在本地开发环境下是否跳过技能图标生成，避免环境判断散落到执行链各处。
+ * 2) 做什么：让洞府研修与伙伴天生功法这两条复用同一图标生成链的业务，在本地联调时共享同一禁用口径。
+ * 3) 不做什么：不处理默认图标回退、不读取图片模型配置，也不决定正式环境的并发与重试策略。
+ *
+ * 输入/输出：
+ * - 输入：可选运行环境字符串，默认读取 `process.env.NODE_ENV`。
+ * - 输出：`true` 表示跳过功法技能图片生成；`false` 表示允许继续走图片生成链。
+ *
+ * 数据流/状态流：
+ * 环境变量 -> shouldBypassTechniqueSkillImageGeneration -> generateTechniqueSkillIcon / generateTechniqueSkillIconMap -> 上层默认图标回退。
+ *
+ * 关键边界条件与坑点：
+ * 1) 这里只影响“AI 生成功法技能图标”，不影响伙伴头像等其他图片链路，否则本地联调范围会被误扩大。
+ * 2) development 环境必须在共享入口统一跳过；如果让调用方各自判断，洞府研修、伙伴预览与测试会再次分叉。
+ */
+export const shouldBypassTechniqueSkillImageGeneration = (
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): boolean => {
+  return nodeEnv === 'development';
+};
+
 export const buildTechniqueSkillImagePrompt = (input: TechniqueSkillImageInput): string => {
   return [
     ` - 生成2D中国仙侠游戏《九州修仙录》技能图标《${input.skillName}》`,
@@ -126,6 +151,11 @@ const persistTechniqueSkillB64 = async (b64: string, skillId: string): Promise<s
 };
 
 export const generateTechniqueSkillIcon = async (input: TechniqueSkillImageInput): Promise<string | null> => {
+  if (shouldBypassTechniqueSkillImageGeneration()) {
+    debugImageGenerationLog('technique-image', 'skip: bypass in development env', 'skillId=', input.skillId);
+    return null;
+  }
+
   const cfg = readImageModelConfig();
   if (!cfg) return null;
 
@@ -236,6 +266,11 @@ const generateTechniqueSkillIconEntries = async (
 export const generateTechniqueSkillIconMap = async (
   inputs: TechniqueSkillImageInput[],
 ): Promise<Map<string, string>> => {
+  if (shouldBypassTechniqueSkillImageGeneration()) {
+    debugImageGenerationLog('technique-image', 'skip batch: bypass in development env');
+    return new Map();
+  }
+
   const cfg = readImageModelConfig();
   if (!cfg) return new Map();
 
