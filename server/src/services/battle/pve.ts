@@ -48,6 +48,7 @@ import {
   shouldValidateBattleStarterCooldown,
   type PveBattleStartPolicy,
 } from "./shared/startPolicy.js";
+import { applyDungeonDifficultyToMonsters } from "../dungeon/shared/difficulty.js";
 import { uniqueStringIds, randomIntInclusive } from "./shared/helpers.js";
 import { buildBattleSnapshotState } from "./runtime/realtime.js";
 import { createScopedLogger } from "../../utils/logger.js";
@@ -64,6 +65,7 @@ export type PveBattleRegisteredPayload = {
 export type StartPVEBattleOptions = {
   onBattleRegistered?: (payload: PveBattleRegisteredPayload) => void;
   deferBattleActivation?: boolean;
+  dungeonDifficultyMonsterAttrMultiplier?: number;
   fixedTeamContext?: {
     starterSnapshot: OnlineBattleCharacterSnapshot;
     participants: FixedBattleParticipant[];
@@ -518,11 +520,15 @@ const startDungeonPVEBattleByPolicy = async (
     if (!monsterResolveResult.success) {
       return { success: false, message: monsterResolveResult.error };
     }
+    const scaledMonsters = applyDungeonDifficultyToMonsters(
+      monsterResolveResult.monsters,
+      options?.dungeonDifficultyMonsterAttrMultiplier,
+    );
     const battleId = `dungeon-battle-${userId}-${Date.now()}`;
     return startResolvedPVEBattleByPolicy({
       userId,
       battleId,
-      monsters: monsterResolveResult.monsters,
+      monsters: scaledMonsters,
       monsterSkillsMap: monsterResolveResult.monsterSkillsMap,
       startPolicy,
       allowTeamBattle: true,

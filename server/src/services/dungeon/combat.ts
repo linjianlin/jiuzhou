@@ -57,6 +57,7 @@ import type {
 import { getDungeonDefById } from './shared/configLoader.js';
 import { createScopedLogger } from '../../utils/logger.js';
 import { createSlowOperationLogger } from '../../utils/slowOperationLogger.js';
+import { resolveDungeonMonsterAttrMultiplier } from './shared/difficulty.js';
 
 const dungeonCombatLogger = createScopedLogger('dungeon.combat');
 
@@ -169,6 +170,7 @@ export const startDungeonInstance = async (
   if (!difficultyDef) {
     return { success: false, message: '秘境难度不存在' };
   }
+  const difficultyMonsterAttrMultiplier = resolveDungeonMonsterAttrMultiplier(difficultyDef.monster_attr_mult);
 
   const participants = projection.participants.slice();
   const participantNicknameMap = await getParticipantNicknameMap(participants);
@@ -240,6 +242,7 @@ export const startDungeonInstance = async (
   return runDungeonStartFlow({
     startBattle: () => startDungeonPVEBattleForDungeonFlow(userId, monsterDefIds, {
       onBattleRegistered: options?.onBattleRegistered,
+      dungeonDifficultyMonsterAttrMultiplier: difficultyMonsterAttrMultiplier,
       fixedTeamContext: buildDungeonFixedTeamContext({
         starterCharacterId: user.characterId,
         participants,
@@ -380,6 +383,11 @@ export const nextDungeonInstance = async (
   if (!projection.participants.some((participant) => participant.userId === userId)) {
     return flushAndReturn({ success: false, message: '无权访问该秘境' }, { reason: 'participant_forbidden' });
   }
+  const difficultyDef = getDungeonDifficultyById(projection.difficultyId);
+  if (!difficultyDef) {
+    return flushAndReturn({ success: false, message: '秘境难度不存在' }, { reason: 'difficulty_missing' });
+  }
+  const difficultyMonsterAttrMultiplier = resolveDungeonMonsterAttrMultiplier(difficultyDef.monster_attr_mult);
 
   const rewardEligibleParticipants = selectDungeonRewardEligibleParticipants(
     projection.participants,
@@ -548,6 +556,7 @@ export const nextDungeonInstance = async (
   const response = await runDungeonStartFlow({
     startBattle: () => startDungeonPVEBattleForDungeonFlow(userId, monsterDefIds, {
       onBattleRegistered: options?.onBattleRegistered,
+      dungeonDifficultyMonsterAttrMultiplier: difficultyMonsterAttrMultiplier,
       fixedTeamContext,
     }),
     commitOnBattleStarted: async ({ battleId, state }) => {

@@ -41,6 +41,7 @@ import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { lockCharacterRewardSettlementTargets } from './shared/characterRewardTargetLock.js';
 import { getDungeonDifficultyById, getItemDefinitionById } from './staticConfigLoader.js';
 import { rollDungeonRewardBundle, mergeDungeonRewardBundle } from './dungeon/shared/rewards.js';
+import { resolveDungeonRewardMultiplier } from './dungeon/shared/difficulty.js';
 import { asNumber } from './dungeon/shared/typeUtils.js';
 import type { DungeonRewardBundle } from './dungeon/types.js';
 import { applyStaminaDeltaByCharacterId } from './staminaService.js';
@@ -546,6 +547,7 @@ const settleDungeonClearInDbInTransaction = async (
 
   const difficultyDef = getDungeonDifficultyById(dungeonSettlement.difficultyId);
   const firstClearRewardConfig = difficultyDef?.first_clear_rewards ?? {};
+  const rewardMultiplier = resolveDungeonRewardMultiplier(difficultyDef?.reward_mult);
   const rewardParticipants = task.payload.rewardParticipants;
   const participantCharacterIds = collectUniqueParticipantCharacterIds(rewardParticipants);
   const teamClearParticipantCount = collectUniqueParticipantCharacterIds(task.payload.participants).length;
@@ -707,7 +709,7 @@ const settleDungeonClearInDbInTransaction = async (
     if (isFirstClear) {
       rewardBundle = mergeDungeonRewardBundle(
         rewardBundle,
-        rollDungeonRewardBundle(firstClearRewardConfig, 1),
+        rollDungeonRewardBundle(firstClearRewardConfig, rewardMultiplier),
       );
     }
 

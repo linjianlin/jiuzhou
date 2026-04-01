@@ -29,6 +29,7 @@ import {
 } from '../shared/dropRateMultiplier.js';
 import { getAdjustedDropQuantityRange } from '../shared/dropQuantityMultiplier.js';
 import { getOnlineBattleCharacterSnapshotByUserId } from '../onlineBattleProjectionService.js';
+import { resolveDungeonRewardMultiplier } from './shared/difficulty.js';
 import {
   getEnabledDungeonDefs,
   getDungeonDefById,
@@ -168,6 +169,7 @@ export const getDungeonPreview = async (
   if (!diffRow) {
     return { dungeon, difficulty: null, entry, stages: [], drop_items: [], drop_sources: [] };
   }
+  const dungeonRewardMultiplier = resolveDungeonRewardMultiplier(diffRow.reward_mult);
 
   const stages = getEnabledDungeonStagesByDifficultyId(diffRow.id);
 
@@ -352,7 +354,12 @@ export const getDungeonPreview = async (
     qty_max: number;
   }> => {
     const kind = normalizeMonsterKind(monsterKind);
-    const options = { isDungeonBattle: true, monsterKind: kind, monsterRealm };
+    const options = {
+      isDungeonBattle: true,
+      monsterKind: kind,
+      monsterRealm,
+      dungeonRewardMultiplier,
+    };
     return rows
       .map((r) => {
         const quantityRange = getAdjustedDropQuantityRange({

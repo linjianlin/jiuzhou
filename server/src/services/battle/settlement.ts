@@ -39,7 +39,7 @@ import {
 import { getArenaStatus } from "../arenaService.js";
 import { getGameServer } from "../../game/gameServer.js";
 import { normalizeRealmKeepingUnknown } from "../shared/realmRules.js";
-import { getMonsterDefinitions } from "../staticConfigLoader.js";
+import { getDungeonDifficultyById, getMonsterDefinitions } from "../staticConfigLoader.js";
 import type { BattleResult } from "./battleTypes.js";
 import {
   activeBattles,
@@ -82,6 +82,7 @@ import {
   recordBattleOutcomeAchievements,
   type AchievementBattleParticipantSnapshot,
 } from "../achievement/battleTracking.js";
+import { resolveDungeonRewardMultiplier } from "../dungeon/shared/difficulty.js";
 
 const battleSettlementLogger = createScopedLogger("battle.settlement");
 
@@ -267,6 +268,9 @@ async function finishBattleCore(
   const dungeonProjection = isDungeonBattle
     ? await getDungeonProjectionByBattleId(battleId)
     : null;
+  const dungeonRewardMultiplier = dungeonProjection
+    ? resolveDungeonRewardMultiplier(getDungeonDifficultyById(dungeonProjection.difficultyId)?.reward_mult)
+    : 1;
   const rewardEligibleCharacterIdSet = isDungeonBattle
     ? await loadDungeonBattleRewardEligibleCharacterIdSet(battleId)
     : null;
@@ -325,7 +329,7 @@ async function finishBattleCore(
           monsters,
           rewardParticipants,
           true,
-          { isDungeonBattle },
+          { isDungeonBattle, dungeonRewardMultiplier },
         );
         dropResult = battleDropService.previewBattleRewardPlan(battleRewardPlan);
         slowLogger.mark("distributeBattleRewards", {

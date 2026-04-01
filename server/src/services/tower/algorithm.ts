@@ -23,6 +23,7 @@ import type { MonsterData } from '../../battle/battleFactory.js';
 import { getMonsterDefinitions, type MonsterDefConfig } from '../staticConfigLoader.js';
 import { REALM_ORDER, normalizeRealmStrict } from '../shared/realmRules.js';
 import { pickDeterministicIndex, pickDeterministicItems } from '../shared/deterministicHash.js';
+import { scaleMonsterBaseAttrs } from '../shared/monsterBaseAttrScaling.js';
 import { resolveTowerAttrMultiplier } from './difficulty.js';
 import type { ResolvedTowerFloor, TowerFloorKind, TowerMonsterPoolState } from './types.js';
 
@@ -48,45 +49,6 @@ const getTowerFloorKind = (floor: number): TowerFloorKind => {
   if (floor % 10 === 0) return 'boss';
   if (floor % 5 === 0) return 'elite';
   return 'normal';
-};
-
-const cloneMonsterBaseAttrs = (
-  raw: MonsterData['base_attrs'] | undefined,
-  multiplier: number,
-): MonsterData['base_attrs'] => {
-  const source = raw ?? {};
-  const next: MonsterData['base_attrs'] = {};
-  for (const [attrKey, attrValue] of Object.entries(source)) {
-    const value = Number(attrValue);
-    if (!Number.isFinite(value) || value <= 0) continue;
-    const isRatioAttr =
-      attrKey === 'mingzhong'
-      || attrKey === 'shanbi'
-      || attrKey === 'zhaojia'
-      || attrKey === 'baoji'
-      || attrKey === 'baoshang'
-      || attrKey === 'jianbaoshang'
-      || attrKey === 'jianfantan'
-      || attrKey === 'kangbao'
-      || attrKey === 'zengshang'
-      || attrKey === 'zhiliao'
-      || attrKey === 'jianliao'
-      || attrKey === 'xixue'
-      || attrKey === 'lengque'
-      || attrKey === 'kongzhi_kangxing'
-      || attrKey === 'jin_kangxing'
-      || attrKey === 'mu_kangxing'
-      || attrKey === 'shui_kangxing'
-      || attrKey === 'huo_kangxing'
-      || attrKey === 'tu_kangxing'
-      || attrKey === 'qixue_huifu'
-      || attrKey === 'lingqi_huifu';
-    const scaled = value * multiplier;
-    next[attrKey as keyof MonsterData['base_attrs']] = isRatioAttr
-      ? Number(scaled.toFixed(6))
-      : Math.max(1, Math.round(scaled));
-  }
-  return next;
 };
 
 export const buildTowerMonsterPoolsFromDefinitions = (
@@ -262,7 +224,7 @@ const buildTowerMonsterForFloor = (params: {
   kind: TowerFloorKind;
   attrMultiplier: number;
 }): MonsterData => {
-  const baseAttrs = cloneMonsterBaseAttrs(
+  const baseAttrs = scaleMonsterBaseAttrs(
     (params.monster.base_attrs ?? {}) as MonsterData['base_attrs'],
     params.attrMultiplier,
   );

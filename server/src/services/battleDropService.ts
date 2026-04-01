@@ -84,10 +84,12 @@ type RollDropsOptions = {
   monsterRealm?: string | null;
   playerRealm?: string | null;
   realmSuppressionMultiplier?: number;
+  dungeonRewardMultiplier?: number;
 };
 
 type DistributeBattleRewardsOptions = {
   isDungeonBattle?: boolean;
+  dungeonRewardMultiplier?: number;
 };
 
 type RewardItemMeta = {
@@ -435,6 +437,7 @@ class BattleDropService {
     const monsterKind = normalizeMonsterKind(options.monsterKind);
     const monsterRealm = typeof options.monsterRealm === 'string' ? options.monsterRealm : null;
     const realmSuppressionMultiplier = this.getDropRealmSuppressionMultiplier(options);
+    const dungeonRewardMultiplier = options.dungeonRewardMultiplier;
 
     if (dropPool.mode === 'prob') {
       // 概率模式：每个条目独立判定
@@ -445,6 +448,7 @@ class BattleDropService {
             monsterKind,
             monsterRealm,
             chanceAddByMonsterRealm: entry.chance_add_by_monster_realm,
+            dungeonRewardMultiplier,
           }) * realmSuppressionMultiplier,
         );
         if (Math.random() < effectiveChance) {
@@ -481,6 +485,7 @@ class BattleDropService {
         return sum + getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
           isDungeonBattle,
           monsterKind,
+          dungeonRewardMultiplier,
         });
       }, 0);
       if (totalWeight > 0) {
@@ -491,6 +496,7 @@ class BattleDropService {
           roll -= getAdjustedWeight(entry.weight, entry.sourceType, entry.sourcePoolId, {
             isDungeonBattle,
             monsterKind,
+            dungeonRewardMultiplier,
           });
           if (roll <= 0) {
             const baseQuantityRange = getMonsterRealmAdjustedBaseQuantityRange({
@@ -582,6 +588,7 @@ class BattleDropService {
     options: DistributeBattleRewardsOptions = {},
   ): Promise<IdleBattleRewardSettlementPlan> {
     const isDungeonBattle = options.isDungeonBattle === true;
+    const dungeonRewardMultiplier = options.dungeonRewardMultiplier;
     const participantFuyuan = (() => {
       const raw = Number(participant.fuyuan ?? 1);
       return Number.isFinite(raw) ? raw : 1;
@@ -618,6 +625,7 @@ class BattleDropService {
         monsterRealm: monster.realm,
         playerRealm: participant.realm,
         realmSuppressionMultiplier: suppressionMultiplier,
+        dungeonRewardMultiplier,
       });
 
       for (const drop of drops) {
@@ -928,6 +936,7 @@ class BattleDropService {
     const teamAverageFuyuan =
       participants.reduce((sum, participant) => sum + resolveParticipantFuyuan(participant), 0) / participantCount;
     const isDungeonBattle = options.isDungeonBattle === true;
+    const dungeonRewardMultiplier = options.dungeonRewardMultiplier;
     const baseExpAcc = new Map<number, number>();
     const baseSilverAcc = new Map<number, number>();
     for (const participant of participants) {
@@ -975,6 +984,7 @@ class BattleDropService {
         monsterKind: normalizeMonsterKind(monster.kind),
         monsterRealm: monster.realm,
         realmSuppressionMultiplier: teamRealmSuppressionMultiplier,
+        dungeonRewardMultiplier,
       });
       for (const drop of drops) {
         const dropQty = Math.max(0, Math.floor(Number(drop.quantity) || 0));
