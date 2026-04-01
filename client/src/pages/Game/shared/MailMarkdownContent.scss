@@ -1,0 +1,81 @@
+.mail-markdown-root {
+  color: var(--text-color);
+  line-height: 1.75;
+}
+
+.mail-markdown-root > :first-child {
+  margin-top: 0;
+}
+
+.mail-markdown-root > :last-child {
+  margin-bottom: 0;
+}
+
+.mail-markdown-heading {
+  color: var(--text-color);
+  font-weight: 800;
+  line-height: 1.4;
+  margin: 0 0 12px;
+}
+
+.mail-markdown-heading-level-1 {
+  font-size: 22px;
+}
+
+.mail-markdown-heading-level-2 {
+  font-size: 18px;
+}
+
+.mail-markdown-heading-level-3 {
+  font-size: 16px;
+}
+
+.mail-markdown-heading-level-4 {
+  font-size: 15px;
+}
+
+.mail-markdown-paragraph {
+  margin: 0 0 12px;
+}
+
+.mail-markdown-list {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.mail-markdown-list-item + .mail-markdown-list-item {
+  margin-top: 6px;
+}
+
+.mail-markdown-blockquote {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--primary-color);
+  border-radius: 8px;
+  background: var(--panel-bg-soft);
+  color: var(--text-secondary);
+}
+
+.mail-markdown-divider {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--border-color-soft);
+}
+
+.mail-markdown-code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--panel-bg-soft);
+  color: var(--warning-color, var(--text-color));
+  font-size: 0.92em;
+}
+
+.mail-markdown-link {
+  color: var(--primary-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mail-markdown-link:hover {
+  color: var(--primary-color-hover, var(--primary-color));
+}

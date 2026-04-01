@@ -214,9 +214,7 @@
 }
 
 .mail-content {
-  margin-bottom: 0;
-  color: var(--text-color);
-  line-height: 1.7;
+  min-width: 0;
 }
 
 .mail-detail-footer {

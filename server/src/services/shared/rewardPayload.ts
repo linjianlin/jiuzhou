@@ -25,6 +25,8 @@ import type { RewardResult } from '../mainQuest/types.js';
 export type GrantedRewardItemPayload = {
   itemDefId: string;
   quantity: number;
+  itemName?: string;
+  itemIcon?: string | null;
 };
 
 export type GrantedRewardPayload = {
@@ -65,7 +67,14 @@ const normalizeGrantedRewardItems = (raw: unknown): GrantedRewardItemPayload[] =
     const itemDefId = asString(source.itemDefId ?? source.item_def_id).trim();
     const quantity = Math.max(0, Math.floor(asNumber(source.quantity ?? source.qty, 0)));
     if (!itemDefId || quantity <= 0) continue;
-    normalized.push({ itemDefId, quantity });
+    const itemName = asString(source.itemName ?? source.item_name).trim();
+    const itemIcon = asString(source.itemIcon ?? source.item_icon).trim();
+    normalized.push({
+      itemDefId,
+      quantity,
+      ...(itemName ? { itemName } : {}),
+      ...(itemIcon ? { itemIcon } : {}),
+    });
   }
   return normalized;
 };
@@ -165,12 +174,14 @@ export const buildGrantedRewardPreview = (
   }
   for (const item of payload.items ?? []) {
     const meta = resolveRewardItemDisplayMeta(item.itemDefId);
+    const itemName = asString(item.itemName).trim() || meta.name || undefined;
+    const itemIcon = asString(item.itemIcon).trim() || meta.icon || undefined;
     rewards.push({
       type: 'item',
       itemDefId: item.itemDefId,
       quantity: item.quantity,
-      itemName: meta.name || undefined,
-      itemIcon: meta.icon || undefined,
+      itemName,
+      itemIcon,
     });
   }
   for (const techniqueId of payload.techniques ?? []) {

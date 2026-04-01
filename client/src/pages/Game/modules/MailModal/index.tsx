@@ -34,6 +34,7 @@ import type { MailDto } from "../../../../services/api";
 import { useIsMobile } from "../../shared/responsive";
 import { formatGrantedRewardTexts } from "../../shared/grantedRewardText";
 import { formatDateTimeToMinute } from "../../shared/time";
+import MailMarkdownContent from "../../shared/MailMarkdownContent";
 import { runMailBatchClaim } from "./mailBatchClaim";
 import {
   buildMailClaimCharacterCurrencyPatch,
@@ -585,9 +586,10 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
                 </div>
 
                 <div className="mail-detail-body">
-                  <Typography.Paragraph className="mail-content">
-                    {activeMail.content}
-                  </Typography.Paragraph>
+                  <MailMarkdownContent
+                    className="mail-content"
+                    content={activeMail.content}
+                  />
                 </div>
 
                 <div className="mail-detail-footer">
