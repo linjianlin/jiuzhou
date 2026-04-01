@@ -31,6 +31,7 @@ import {
   type MonsterDefConfig,
   type SkillDefConfig,
 } from '../staticConfigLoader.js';
+import { ATTACK_ATTR_KEY_SET } from './characterAttrRegistry.js';
 
 type TechniqueBuffEffectType = 'buff' | 'debuff';
 
@@ -72,12 +73,17 @@ export type TechniqueStructuredBuffValidationResult =
 let techniqueBuffCatalogCache: TechniqueBuffCatalogCache | null = null;
 
 const SUPPORTED_BUFF_KIND_SET: ReadonlySet<string> = new Set<string>(STRUCTURED_BUFF_KIND_LIST);
-const BUILT_IN_AURA_ATTR_KEY_LIST = [
+const BUILT_IN_AURA_EXTRA_ATTR_KEY_LIST = [
   'max_qixue',
-  'baoji',
   'kangbao',
   'lengque',
 ] as const;
+const BUILT_IN_AURA_ATTR_KEY_LIST = Object.freeze(
+  Array.from(new Set<string>([
+    ...ATTACK_ATTR_KEY_SET,
+    ...BUILT_IN_AURA_EXTRA_ATTR_KEY_LIST,
+  ])).sort(),
+);
 
 const toNonEmptyText = (value: string | null | undefined): string => {
   if (typeof value !== 'string') return '';

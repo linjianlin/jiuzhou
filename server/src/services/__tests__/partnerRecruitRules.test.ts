@@ -326,6 +326,30 @@ test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供
     true,
   );
   assert.equal(
+    promptInput.constraints?.includes(
+      'referencePartnerExample.partner（青木小偶）是现有黄品伙伴参考模板，代表系统内“正常黄品伙伴”的基础量级与成长写法，不是可被高品质写得更弱的空泛示意',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '伙伴品质强度必须严格符合 黄 < 玄 < 地 < 天；品质越高，partner.baseAttrs、partner.levelAttrGains 与 innateTechniques 的综合战斗强度都必须整体更强',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '允许围绕 combatStyle 做正常偏科：physical 可偏武道、magic 可偏术法；但这种流派倾向只能影响主副攻方向，不得把高品质整体强度写到低于黄品参考模板',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '当前 quality=黄，结果应与 referencePartnerExample.partner（青木小偶）处于同一正常黄品量级，不得明显弱于该黄品参考模板',
+    ),
+    true,
+  );
+  assert.equal(
     promptInput.constraints?.includes('innateTechniques 必须且只能生成 1 门天生功法，禁止多生成'),
     true,
   );
@@ -343,6 +367,21 @@ test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供
   );
   assert.equal(
     promptInput.constraints?.includes(`本次伙伴基础类型固定为「${DEFAULT_BASE_MODEL}」；伙伴主体形态、种族特征与描述必须围绕该基础类型展开，可做仙侠化变体，但禁止偏离成其他基础类型`),
+    true,
+  );
+});
+
+test('buildPartnerRecruitPromptInput: 天品应被要求明显强于黄品参考模板', () => {
+  const promptInput = buildPartnerRecruitPromptInput('天', {
+    baseModel: DEFAULT_BASE_MODEL,
+  }) as {
+    constraints?: string[];
+  };
+
+  assert.equal(
+    promptInput.constraints?.includes(
+      '当前 quality=天，结果必须明显强于 referencePartnerExample.partner（青木小偶）这个黄品基线；除流派偏科允许的非主攻项外，不得出现核心基础属性或每级成长反而弱于该黄品参考模板',
+    ),
     true,
   );
 });

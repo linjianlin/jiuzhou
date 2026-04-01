@@ -734,6 +734,30 @@ const buildPartnerRecruitReferenceExample = (): Record<string, unknown> | null =
   };
 };
 
+const buildPartnerRecruitQualityStrengthConstraints = (
+  quality: PartnerRecruitQuality,
+  referencePartnerName: string,
+): string[] => {
+  const sharedRules = [
+    `referencePartnerExample.partner（${referencePartnerName}）是现有黄品伙伴参考模板，代表系统内“正常黄品伙伴”的基础量级与成长写法，不是可被高品质写得更弱的空泛示意`,
+    '伙伴品质强度必须严格符合 黄 < 玄 < 地 < 天；品质越高，partner.baseAttrs、partner.levelAttrGains 与 innateTechniques 的综合战斗强度都必须整体更强',
+    '核心战斗面板至少包括 max_qixue、max_lingqi、wugong、fagong、wufang、fafang、sudu；禁止出现高品质伙伴只把描述写得华丽，但综合面板与成长反而弱于低品质参考模板',
+    '允许围绕 combatStyle 做正常偏科：physical 可偏武道、magic 可偏术法；但这种流派倾向只能影响主副攻方向，不得把高品质整体强度写到低于黄品参考模板',
+  ];
+
+  if (quality === '黄') {
+    return [
+      ...sharedRules,
+      `当前 quality=黄，结果应与 referencePartnerExample.partner（${referencePartnerName}）处于同一正常黄品量级，不得明显弱于该黄品参考模板`,
+    ];
+  }
+
+  return [
+    ...sharedRules,
+    `当前 quality=${quality}，结果必须明显强于 referencePartnerExample.partner（${referencePartnerName}）这个黄品基线；除流派偏科允许的非主攻项外，不得出现核心基础属性或每级成长反而弱于该黄品参考模板`,
+  ];
+};
+
 export const buildPartnerRecruitPromptInput = (
   quality: PartnerRecruitQuality,
   options: PartnerRecruitPromptInputOptions,
@@ -741,6 +765,9 @@ export const buildPartnerRecruitPromptInput = (
   const percentAttrKeys = PARTNER_RECRUIT_BASE_ATTR_KEYS.filter((key) => !PARTNER_INTEGER_ATTR_KEYS.has(key));
   const passiveValueGuideByKey = buildPartnerRecruitPassiveValueGuideByKey(quality);
   const referencePartnerExample = buildPartnerRecruitReferenceExample();
+  const referencePartnerName = typeof referencePartnerExample?.partner === 'object' && referencePartnerExample.partner
+    ? asString((referencePartnerExample.partner as Record<string, unknown>).name)
+    : '';
   const promptNoiseHash = normalizeTextModelPromptNoiseHash(options.promptNoiseHash);
   const techniqueSlotCount = resolvePartnerRecruitTechniqueSlotCount(quality);
   const fusionReferencePartners = options.fusionReferencePartners && options.fusionReferencePartners.length > 0
@@ -799,6 +826,7 @@ export const buildPartnerRecruitPromptInput = (
       'partner.baseAttrs 中 integerAttrKeys 的属性必须使用非负整数；partner.levelAttrGains 的全部属性都使用非负数字，允许按参考模板写小数成长',
       'percentAttrKeys 中的属性必须使用非负数字，小数表示百分比，例如 0.18 表示 18%',
       '品质高低顺序固定为 黄 < 玄 < 地 < 天；referencePartnerExample 中青木小偶的 quality=黄，表示它是最低品质参考模板，最终强度与风格仍必须以当前 quality 字段为准',
+      ...buildPartnerRecruitQualityStrengthConstraints(quality, referencePartnerName || '黄品参考伙伴'),
       'referencePartnerExample 是现有伙伴模板示例，只用于参考数值量级、字段完整度与成长写法，禁止照抄名字、描述或功法列表',
       '若提供 fusionReferencePartners，则表示本次为三魂归契生成；每项 templateName、description、role、quality、attributeElement 都是素材伙伴的基础描述与种类参考。新伙伴必须综合吸收这些素材的共同特征与互补气质进行重组创作，可以融合演化，但禁止直接照抄任一素材的 templateName、完整 description 或 role',
       TEXT_MODEL_PROMPT_NOISE_CONSTRAINT,
