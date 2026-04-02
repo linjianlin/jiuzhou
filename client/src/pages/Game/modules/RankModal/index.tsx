@@ -22,9 +22,8 @@
  * 1. 伙伴榜等级维度只展示真实等级，不能把生效等级拼进文案，否则会和榜单排序口径不一致。
  * 2. 移动端头部空间很紧，伙伴维度切换必须压在榜单头部而不是左侧导航里，否则会出现横向滚动和点击目标过密。
  */
-import { UserOutlined } from '@ant-design/icons';
-import { Avatar, Button, Modal, Segmented, Table, Tag } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Modal, Segmented, Table, Tag } from 'antd';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   ArenaRankRowDto,
   MapObjectDto,
@@ -54,6 +53,7 @@ import {
   type PartnerRankMetric,
   type RankTab,
 } from './rankShared';
+import { RankViewportPartnerAvatar, RankViewportPlayerAvatar } from './ViewportAvatar';
 import './index.scss';
 
 interface RankModalProps {
@@ -69,6 +69,7 @@ type CharacterRankRow = RealmRankRowDto | WealthRankRowDto | ArenaRankRowDto;
 const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) => {
   const [tab, setTab] = useState<RankTab>('realm');
   const [partnerMetric, setPartnerMetric] = useState<PartnerRankMetric>('level');
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
   const {
     previewPartner,
@@ -127,10 +128,14 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
     }));
   }, [onSelectPlayer]);
 
+  const handlePaneBodyRef = useCallback((node: HTMLDivElement | null) => {
+    setScrollRoot(node);
+  }, []);
+
   const renderPaneTop = (
     title: string,
     subtitle: string,
-    extra?: React.ReactNode,
+    extra?: ReactNode,
   ) => (
     <div className="rank-pane-top">
       <div className="rank-top-row">
@@ -138,6 +143,12 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
         {extra}
       </div>
       <div className="rank-subtitle">{subtitle}</div>
+    </div>
+  );
+
+  const renderPaneBody = (content: ReactNode) => (
+    <div ref={handlePaneBodyRef} className="rank-pane-body">
+      {content}
     </div>
   );
 
@@ -149,53 +160,64 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
     </div>
   );
 
-  const renderPartnerIdentity = (row: PartnerRankRowDto) => (
-    <div className="rank-partner-main">
-      <img
-        className="rank-partner-avatar"
-        src={resolvePartnerAvatar(row.avatar)}
-        alt={row.partnerName}
-      />
-      <div className="rank-partner-copy">
+  const renderPartnerIdentity = (row: PartnerRankRowDto) => {
+    const avatarUrl = resolvePartnerAvatar(row.avatar);
+
+    return (
+      <div className="rank-partner-main">
+        <RankViewportPartnerAvatar
+          className="rank-partner-avatar"
+          alt={row.partnerName}
+          avatarKey={`partner:${avatarUrl}`}
+          scrollRoot={scrollRoot}
+          src={avatarUrl}
+        />
+        <div className="rank-partner-copy">
+          <button
+            type="button"
+            className="rank-partner-name-button"
+            onClick={() => handleOpenPartnerPreview(row.partnerId)}
+            title={`查看${row.partnerName}详情`}
+          >
+            {row.partnerName}
+          </button>
+          {renderPartnerTags(row)}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCharacterIdentity = (row: CharacterRankRow, options?: { mobile?: boolean }) => {
+    const avatarUrl = resolveAvatarUrl(row.avatar ?? undefined);
+
+    return (
+      <div className={`rank-player-main${options?.mobile ? ' rank-player-main--mobile' : ''}`}>
+        <RankViewportPlayerAvatar
+          avatarKey={`player:${avatarUrl ?? ''}`}
+          className="rank-player-avatar"
+          scrollRoot={scrollRoot}
+          size={options?.mobile ? 40 : 44}
+          src={avatarUrl}
+        />
         <button
           type="button"
-          className="rank-partner-name-button"
-          onClick={() => handleOpenPartnerPreview(row.partnerId)}
-          title={`查看${row.partnerName}详情`}
+          className="rank-player-name-button"
+          onClick={() => handleOpenPlayerInfo(row)}
+          title={`查看${row.name}详情`}
         >
-          {row.partnerName}
+          <div className="rank-player-copy">
+            <PlayerName
+              name={row.name}
+              monthCardActive={row.monthCardActive}
+              ellipsis
+              className={options?.mobile ? 'rank-mobile-name' : 'rank-player-name'}
+            />
+            {row.title ? <Tag className="rank-player-title-tag">{row.title}</Tag> : null}
+          </div>
         </button>
-        {renderPartnerTags(row)}
       </div>
-    </div>
-  );
-
-  const renderCharacterIdentity = (row: CharacterRankRow, options?: { mobile?: boolean }) => (
-    <div className={`rank-player-main${options?.mobile ? ' rank-player-main--mobile' : ''}`}>
-      <Avatar
-        className="rank-player-avatar"
-        size={options?.mobile ? 40 : 44}
-        src={resolveAvatarUrl(row.avatar ?? undefined)}
-        icon={<UserOutlined />}
-      />
-      <button
-        type="button"
-        className="rank-player-name-button"
-        onClick={() => handleOpenPlayerInfo(row)}
-        title={`查看${row.name}详情`}
-      >
-        <div className="rank-player-copy">
-          <PlayerName
-            name={row.name}
-            monthCardActive={row.monthCardActive}
-            ellipsis
-            className={options?.mobile ? 'rank-mobile-name' : 'rank-player-name'}
-          />
-          {row.title ? <Tag className="rank-player-title-tag">{row.title}</Tag> : null}
-        </div>
-      </button>
-    </div>
-  );
+    );
+  };
 
   const renderRealmRank = () => (
     <div className="rank-pane">
@@ -203,8 +225,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
         RANK_TAB_META_MAP.realm.label,
         RANK_TAB_META_MAP.realm.subtitle,
       )}
-      <div className="rank-pane-body">
-        {isMobile ? (
+      {renderPaneBody(isMobile ? (
           <div className="rank-mobile-list">
             {loading ? <div className="rank-empty">加载中...</div> : null}
             {!loading
@@ -249,8 +270,8 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
             ]}
             dataSource={realmRanks}
           />
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 
@@ -260,8 +281,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
         RANK_TAB_META_MAP.sect.label,
         RANK_TAB_META_MAP.sect.subtitle,
       )}
-      <div className="rank-pane-body">
-        {isMobile ? (
+      {renderPaneBody(isMobile ? (
           <div className="rank-mobile-list">
             {loading ? <div className="rank-empty">加载中...</div> : null}
             {!loading
@@ -315,8 +335,8 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
             ]}
             dataSource={sectRanks}
           />
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 
@@ -326,8 +346,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
         RANK_TAB_META_MAP.wealth.label,
         RANK_TAB_META_MAP.wealth.subtitle,
       )}
-      <div className="rank-pane-body">
-        {isMobile ? (
+      {renderPaneBody(isMobile ? (
           <div className="rank-mobile-list">
             {loading ? <div className="rank-empty">加载中...</div> : null}
             {!loading
@@ -396,8 +415,8 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
             ]}
             dataSource={wealthRanks}
           />
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 
@@ -407,8 +426,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
         RANK_TAB_META_MAP.arena.label,
         RANK_TAB_META_MAP.arena.subtitle,
       )}
-      <div className="rank-pane-body">
-        {isMobile ? (
+      {renderPaneBody(isMobile ? (
           <div className="rank-mobile-list">
             {loading ? <div className="rank-empty">加载中...</div> : null}
             {!loading
@@ -462,8 +480,8 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
             ]}
             dataSource={arenaRanks}
           />
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 
@@ -483,8 +501,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
           }}
         />,
       )}
-      <div className="rank-pane-body">
-        {isMobile ? (
+      {renderPaneBody(isMobile ? (
           <div className="rank-mobile-list">
             {loading ? <div className="rank-empty">加载中...</div> : null}
             {!loading
@@ -558,8 +575,8 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
             ]}
             dataSource={partnerRanks}
           />
-        )}
-      </div>
+        )
+      )}
     </div>
   );
 

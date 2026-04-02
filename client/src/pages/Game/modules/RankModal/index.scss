@@ -161,6 +161,12 @@
   gap: 10px;
 }
 
+.rank-viewport-avatar-anchor {
+  flex: 0 0 auto;
+  display: block;
+  line-height: 0;
+}
+
 .rank-player-main--mobile {
   width: 100%;
 }
@@ -226,6 +232,10 @@
   display: block;
   border: 1px solid var(--border-color-soft);
   background: var(--panel-bg-soft);
+}
+
+.rank-partner-avatar--placeholder {
+  display: block;
 }
 
 .rank-partner-copy {
