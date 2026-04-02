@@ -7,6 +7,7 @@ import { parseBattleLootLine } from '../../shared/battleLoot';
 import PartnerPreviewOverlay from '../../shared/PartnerPreviewOverlay';
 import PhoneBindingDialog from '../../shared/PhoneBindingDialog';
 import PlayerName from '../../shared/PlayerName';
+import { buildPlayerInfoTarget } from '../../shared/playerInfoTarget';
 import { useDeferredGameRequest } from '../../shared/useDeferredGameRequest';
 import { usePartnerPreview } from '../../shared/usePartnerPreview';
 import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
@@ -731,22 +732,13 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     senderMonthCardActive?: boolean,
   ): InfoTarget => {
     const name = senderName?.trim() || '未知';
-    const title = senderTitle?.trim() || '';
     const id = senderCharacterId && senderCharacterId > 0 ? String(senderCharacterId) : `chat-player-${name}`;
-    return {
-      type: 'player',
+    return buildPlayerInfoTarget({
       id,
       name,
+      title: senderTitle?.trim() || '',
       monthCardActive: senderMonthCardActive === true,
-      title,
-      gender: '-',
-      realm: '-',
-      equipment: [
-        { slot: '武器', name: '未鉴定武器', quality: '普通' },
-        { slot: '衣甲', name: '未鉴定衣甲', quality: '普通' },
-      ],
-      techniques: [{ name: '未知功法', level: '-', type: '功法' }],
-    };
+    });
   };
 
   const activePrivateTarget = privateTargets.find((t) => t.id === activePrivateTargetId) ?? null;

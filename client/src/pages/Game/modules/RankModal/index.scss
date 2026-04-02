@@ -154,6 +154,62 @@
   display: block;
 }
 
+.rank-player-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rank-player-main--mobile {
+  width: 100%;
+}
+
+.rank-player-avatar.ant-avatar {
+  flex: 0 0 auto;
+  border-radius: 12px;
+  border: 1px solid var(--border-color-soft);
+  background: var(--panel-bg-soft);
+}
+
+.rank-player-name,
+.rank-player-name-button {
+  min-width: 0;
+}
+
+.rank-player-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.rank-player-name-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.rank-player-name-button:hover {
+  color: var(--primary-color);
+}
+
+.rank-player-name-button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.rank-player-title-tag.ant-tag {
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
+
 .rank-partner-main {
   min-width: 0;
   display: flex;
@@ -242,6 +298,14 @@
 }
 
 .rank-mobile-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rank-mobile-player-head {
+  min-width: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;

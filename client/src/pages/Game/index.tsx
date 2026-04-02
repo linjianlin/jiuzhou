@@ -97,6 +97,7 @@ import {
   IMG_EQUIP_FEMALE as equipFemale,
 } from './shared/imageAssets';
 import { resolveIconUrl } from './shared/resolveIcon';
+import { buildPlayerInfoTarget } from './shared/playerInfoTarget';
 import './index.scss';
 import { useIsMobile } from './shared/responsive';
 import { coerceAffixes } from './shared/itemMetaFormat';
@@ -665,21 +666,13 @@ const buildAllyGroup = (character: CharacterData | null): BattleUnit[] => {
 };
 
 const buildTeamInfoTarget = (m: TeamMember): InfoTarget => {
-  return {
-    type: 'player',
+  return buildPlayerInfoTarget({
     id: m.id,
     name: m.name,
     title: m.title || '队员',
-    gender: '-',
     realm: m.realm || '-',
     avatar: m.avatar ?? null,
-    equipment: [
-      { slot: '武器', name: '制式武器', quality: '普通' },
-      { slot: '衣甲', name: '制式衣甲', quality: '普通' },
-      { slot: '饰品', name: '队伍徽记', quality: '精良' },
-    ],
-    techniques: [{ name: '基础心法', level: '一重', type: '心法' }],
-  };
+  });
 };
 
 const Game: FC<GameProps> = ({ onLogout }) => {
@@ -3305,7 +3298,11 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         />
       )}
       {rankModalOpen && (
-        <RankModal open={rankModalOpen} onClose={() => setRankModalOpen(false)} />
+        <RankModal
+          open={rankModalOpen}
+          onClose={() => setRankModalOpen(false)}
+          onSelectPlayer={setInfoTarget}
+        />
       )}
       {signInModalOpen && (
         <SignInModal

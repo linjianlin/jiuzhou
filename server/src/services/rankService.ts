@@ -21,7 +21,10 @@ const RANK_CACHE_MEMORY_TTL_MS = 5_000;
 
 export type RealmRankRow = {
   rank: number;
+  characterId: number;
   name: string;
+  title: string;
+  avatar: string | null;
   monthCardActive: boolean;
   realm: string;
   power: number;
@@ -40,7 +43,10 @@ export type SectRankRow = {
 
 export type WealthRankRow = {
   rank: number;
+  characterId: number;
   name: string;
+  title: string;
+  avatar: string | null;
   monthCardActive: boolean;
   realm: string;
   spiritStones: number;
@@ -49,7 +55,10 @@ export type WealthRankRow = {
 
 export type ArenaRankRow = {
   rank: number;
+  characterId: number;
   name: string;
+  title: string;
+  avatar: string | null;
   monthCardActive: boolean;
   realm: string;
   score: number;
@@ -78,6 +87,8 @@ type RealmRankQueryRow = {
   rank: number | string;
   character_id: number | string;
   name: string;
+  title: string | null;
+  avatar: string | null;
   realm: string;
   power: string | number;
 };
@@ -86,6 +97,8 @@ type WealthRankQueryRow = {
   rank: number | string;
   character_id: number | string;
   name: string;
+  title: string | null;
+  avatar: string | null;
   realm: string;
   spiritStones: number | string;
   silver: number | string;
@@ -106,6 +119,8 @@ type ArenaRankQueryRow = {
   rank: number | string;
   character_id: number | string;
   name: string;
+  title: string | null;
+  avatar: string | null;
   realm: string;
   score: number | string;
   winCount: number | string;
@@ -131,12 +146,15 @@ const loadRealmRanks = async (limit: number): Promise<RealmRankRow[]> => {
     `
       SELECT
         ROW_NUMBER() OVER (ORDER BY realm_rank DESC, power DESC, character_id ASC)::int AS rank,
-        character_id,
-        nickname AS name,
-        realm,
-        power
-      FROM character_rank_snapshot
-      WHERE nickname <> ''
+        crs.character_id,
+        crs.nickname AS name,
+        c.title,
+        c.avatar,
+        crs.realm,
+        crs.power
+      FROM character_rank_snapshot crs
+      JOIN characters c ON c.id = crs.character_id
+      WHERE crs.nickname <> ''
       ORDER BY rank
       LIMIT $1
     `,
@@ -150,7 +168,10 @@ const loadRealmRanks = async (limit: number): Promise<RealmRankRow[]> => {
 
   return rows.map((row) => ({
     rank: Number(row.rank),
+    characterId: Number(row.character_id),
     name: String(row.name),
+    title: typeof row.title === 'string' ? row.title : '',
+    avatar: typeof row.avatar === 'string' && row.avatar.trim().length > 0 ? row.avatar : null,
     monthCardActive: monthCardActiveMap.get(Number(row.character_id)) ?? false,
     realm: String(row.realm),
     power: Number(row.power),
@@ -164,6 +185,8 @@ const loadWealthRanks = async (limit: number): Promise<WealthRankRow[]> => {
         ROW_NUMBER() OVER (ORDER BY spirit_stones DESC, silver DESC, id ASC)::int AS rank,
         id AS character_id,
         nickname AS name,
+        title,
+        avatar,
         realm,
         COALESCE(spirit_stones, 0)::int AS "spiritStones",
         COALESCE(silver, 0)::int AS silver
@@ -182,7 +205,10 @@ const loadWealthRanks = async (limit: number): Promise<WealthRankRow[]> => {
 
   return rows.map((row) => ({
     rank: Number(row.rank),
+    characterId: Number(row.character_id),
     name: String(row.name),
+    title: typeof row.title === 'string' ? row.title : '',
+    avatar: typeof row.avatar === 'string' && row.avatar.trim().length > 0 ? row.avatar : null,
     monthCardActive: monthCardActiveMap.get(Number(row.character_id)) ?? false,
     realm: String(row.realm),
     spiritStones: Number(row.spiritStones),
@@ -249,6 +275,8 @@ const loadArenaRanks = async (limit: number): Promise<ArenaRankRow[]> => {
         SELECT
           c.id AS character_id,
           COALESCE(NULLIF(c.nickname, ''), CONCAT('修士', c.id::text)) AS name,
+          c.title,
+          c.avatar,
           c.realm,
           COALESCE(ar.rating, 1000)::int AS score,
           COALESCE(ar.win_count, 0)::int AS win_count,
@@ -269,7 +297,10 @@ const loadArenaRanks = async (limit: number): Promise<ArenaRankRow[]> => {
 
   return rows.map((row) => ({
     rank: Number(row.rank),
+    characterId: Number(row.character_id),
     name: String(row.name),
+    title: typeof row.title === 'string' ? row.title : '',
+    avatar: typeof row.avatar === 'string' && row.avatar.trim().length > 0 ? row.avatar : null,
     monthCardActive: monthCardActiveMap.get(Number(row.character_id)) ?? false,
     realm: String(row.realm),
     score: Number(row.score),

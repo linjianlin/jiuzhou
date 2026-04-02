@@ -3,7 +3,10 @@ import api from './core';
 
 export type RealmRankRowDto = {
   rank: number;
+  characterId: number;
   name: string;
+  title: string;
+  avatar: string | null;
   monthCardActive: boolean;
   realm: string;
   power: number;
@@ -22,7 +25,10 @@ export type SectRankRowDto = {
 
 export type WealthRankRowDto = {
   rank: number;
+  characterId: number;
   name: string;
+  title: string;
+  avatar: string | null;
   monthCardActive: boolean;
   realm: string;
   spiritStones: number;
@@ -31,7 +37,10 @@ export type WealthRankRowDto = {
 
 export type ArenaRankRowDto = {
   rank: number;
+  characterId: number;
   name: string;
+  title: string;
+  avatar: string | null;
   monthCardActive: boolean;
   realm: string;
   score: number;

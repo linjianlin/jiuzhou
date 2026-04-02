@@ -22,21 +22,25 @@
  * 1. 伙伴榜等级维度只展示真实等级，不能把生效等级拼进文案，否则会和榜单排序口径不一致。
  * 2. 移动端头部空间很紧，伙伴维度切换必须压在榜单头部而不是左侧导航里，否则会出现横向滚动和点击目标过密。
  */
-import { Button, Modal, Segmented, Table, Tag } from 'antd';
+import { UserOutlined } from '@ant-design/icons';
+import { Avatar, Button, Modal, Segmented, Table, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ArenaRankRowDto,
+  MapObjectDto,
   PartnerRankRowDto,
   RealmRankRowDto,
   SectRankRowDto,
   WealthRankRowDto,
 } from '../../../../services/api';
+import { resolveAvatarUrl } from '../../../../services/api';
 import { IMG_COIN as coin01 } from '../../shared/imageAssets';
 import PartnerPreviewOverlay from '../../shared/PartnerPreviewOverlay';
 import { getElementToneClassName } from '../../shared/elementTheme';
 import { getItemQualityTagClassName } from '../../shared/itemQuality';
 import PlayerName from '../../shared/PlayerName';
 import { formatPartnerElementLabel, resolvePartnerAvatar } from '../../shared/partnerDisplay';
+import { buildPlayerInfoTarget } from '../../shared/playerInfoTarget';
 import { useIsMobile } from '../../shared/responsive';
 import { usePartnerPreview } from '../../shared/usePartnerPreview';
 import {
@@ -55,11 +59,14 @@ import './index.scss';
 interface RankModalProps {
   open: boolean;
   onClose: () => void;
+  onSelectPlayer?: (target: Extract<MapObjectDto, { type: 'player' }>) => void;
 }
 
 const formatPartnerRankLevelText = (row: Pick<PartnerRankRowDto, 'level'>): string => `Lv.${row.level}`;
 
-const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
+type CharacterRankRow = RealmRankRowDto | WealthRankRowDto | ArenaRankRowDto;
+
+const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) => {
   const [tab, setTab] = useState<RankTab>('realm');
   const [partnerMetric, setPartnerMetric] = useState<PartnerRankMetric>('level');
   const isMobile = useIsMobile();
@@ -109,6 +116,17 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
     void openPartnerPreviewById(partnerId);
   }, [openPartnerPreviewById]);
 
+  const handleOpenPlayerInfo = useCallback((row: CharacterRankRow) => {
+    onSelectPlayer?.(buildPlayerInfoTarget({
+      id: String(row.characterId),
+      name: row.name,
+      title: row.title,
+      monthCardActive: row.monthCardActive,
+      realm: row.realm,
+      avatar: row.avatar,
+    }));
+  }, [onSelectPlayer]);
+
   const renderPaneTop = (
     title: string,
     subtitle: string,
@@ -152,6 +170,33 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
     </div>
   );
 
+  const renderCharacterIdentity = (row: CharacterRankRow, options?: { mobile?: boolean }) => (
+    <div className={`rank-player-main${options?.mobile ? ' rank-player-main--mobile' : ''}`}>
+      <Avatar
+        className="rank-player-avatar"
+        size={options?.mobile ? 40 : 44}
+        src={resolveAvatarUrl(row.avatar ?? undefined)}
+        icon={<UserOutlined />}
+      />
+      <button
+        type="button"
+        className="rank-player-name-button"
+        onClick={() => handleOpenPlayerInfo(row)}
+        title={`查看${row.name}详情`}
+      >
+        <div className="rank-player-copy">
+          <PlayerName
+            name={row.name}
+            monthCardActive={row.monthCardActive}
+            ellipsis
+            className={options?.mobile ? 'rank-mobile-name' : 'rank-player-name'}
+          />
+          {row.title ? <Tag className="rank-player-title-tag">{row.title}</Tag> : null}
+        </div>
+      </button>
+    </div>
+  );
+
   const renderRealmRank = () => (
     <div className="rank-pane">
       {renderPaneTop(
@@ -167,8 +212,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
                   <div key={row.rank} className="rank-mobile-card">
                     <div className="rank-mobile-card-head">
                       <div className="rank-mobile-rank">#{row.rank}</div>
-                      <PlayerName name={row.name} monthCardActive={row.monthCardActive} ellipsis className="rank-mobile-name" />
-                      <Tag color="green">{row.realm}</Tag>
+                      <div className="rank-mobile-player-head">
+                        {renderCharacterIdentity(row, { mobile: true })}
+                        <Tag color="green">{row.realm}</Tag>
+                      </div>
                     </div>
                     <div className="rank-mobile-meta">
                       <span className="rank-mobile-meta-item">
@@ -191,11 +238,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
               { title: '名次', dataIndex: 'rank', key: 'rank', width: 80, render: (v: number) => `#${v}` },
               {
                 title: '玩家',
-                dataIndex: 'name',
                 key: 'name',
-                width: 180,
-                render: (value: string, row: RealmRankRowDto) => (
-                  <PlayerName name={value} monthCardActive={row.monthCardActive} ellipsis />
+                width: 260,
+                render: (_value: unknown, row: RealmRankRowDto) => (
+                  renderCharacterIdentity(row)
                 ),
               },
               { title: '境界', dataIndex: 'realm', key: 'realm', width: 120, render: (v: string) => <Tag color="green">{v}</Tag> },
@@ -289,8 +335,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
                   <div key={row.rank} className="rank-mobile-card">
                     <div className="rank-mobile-card-head">
                       <div className="rank-mobile-rank">#{row.rank}</div>
-                      <PlayerName name={row.name} monthCardActive={row.monthCardActive} ellipsis className="rank-mobile-name" />
-                      <Tag color="green">{row.realm}</Tag>
+                      <div className="rank-mobile-player-head">
+                        {renderCharacterIdentity(row, { mobile: true })}
+                        <Tag color="green">{row.realm}</Tag>
+                      </div>
                     </div>
                     <div className="rank-mobile-meta">
                       <span className="rank-mobile-meta-item">
@@ -320,11 +368,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
               { title: '名次', dataIndex: 'rank', key: 'rank', width: 80, render: (v: number) => `#${v}` },
               {
                 title: '玩家',
-                dataIndex: 'name',
                 key: 'name',
-                width: 180,
-                render: (value: string, row: WealthRankRowDto) => (
-                  <PlayerName name={value} monthCardActive={row.monthCardActive} ellipsis />
+                width: 260,
+                render: (_value: unknown, row: WealthRankRowDto) => (
+                  renderCharacterIdentity(row)
                 ),
               },
               { title: '境界', dataIndex: 'realm', key: 'realm', width: 120, render: (v: string) => <Tag color="green">{v}</Tag> },
@@ -369,8 +416,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
                   <div key={row.rank} className="rank-mobile-card">
                     <div className="rank-mobile-card-head">
                       <div className="rank-mobile-rank">#{row.rank}</div>
-                      <PlayerName name={row.name} monthCardActive={row.monthCardActive} ellipsis className="rank-mobile-name" />
-                      <Tag color="green">{row.realm}</Tag>
+                      <div className="rank-mobile-player-head">
+                        {renderCharacterIdentity(row, { mobile: true })}
+                        <Tag color="green">{row.realm}</Tag>
+                      </div>
                     </div>
                     <div className="rank-mobile-meta">
                       <span className="rank-mobile-meta-item">
@@ -397,11 +446,10 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
               { title: '名次', dataIndex: 'rank', key: 'rank', width: 80, render: (v: number) => `#${v}` },
               {
                 title: '玩家',
-                dataIndex: 'name',
                 key: 'name',
-                width: 180,
-                render: (value: string, row: ArenaRankRowDto) => (
-                  <PlayerName name={value} monthCardActive={row.monthCardActive} ellipsis />
+                width: 260,
+                render: (_value: unknown, row: ArenaRankRowDto) => (
+                  renderCharacterIdentity(row)
                 ),
               },
               { title: '境界', dataIndex: 'realm', key: 'realm', width: 120, render: (v: string) => <Tag color="green">{v}</Tag> },
