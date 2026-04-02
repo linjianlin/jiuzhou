@@ -66,6 +66,26 @@ router.post('/choose', asyncHandler(async (req, res) => {
   const episodeId = typeof body.episodeId === 'string' ? body.episodeId.trim() : '';
   const optionIndex = typeof body.optionIndex === 'string' ? Number(body.optionIndex) : Number(body.optionIndex);
   const result = await wanderService.chooseEpisode(characterId, episodeId, optionIndex);
+  if (!result.success || !result.data) {
+    sendResult(res, result);
+    return;
+  }
+
+  try {
+    await enqueueWanderGenerationJob({
+      characterId,
+      generationId: result.data.job.generationId,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '未知异常';
+    await wanderService.markGenerationJobFailed(characterId, result.data.job.generationId, `云游结算任务投递失败：${reason}`);
+    sendResult(res, {
+      ...result,
+      message: '抉择已记录，但尾声推演启动失败，可稍后重试',
+    });
+    return;
+  }
+
   sendResult(res, result);
 }));
 

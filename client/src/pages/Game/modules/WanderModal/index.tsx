@@ -100,13 +100,8 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
     setActionKey(`choose:${episodeId}:${optionIndex}`);
     try {
       const response = await chooseWanderEpisodeOption({ episodeId, optionIndex });
-      const awardedTitle = response.data?.awardedTitle ?? null;
-      if (awardedTitle) {
-        message.success(`奇遇已完结，获得正式称号「${awardedTitle.name}」`);
-      } else {
-        message.success('本幕抉择已落定');
-      }
-      await refreshOverview();
+      message.success(response.message || '本幕抉择已落定');
+      await refreshOverview('background');
     } finally {
       setActionKey('');
     }
@@ -117,6 +112,10 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
   const activeStory = overview?.activeStory ?? null;
   const latestFinishedStory = overview?.latestFinishedStory ?? null;
   const storyForHistory = activeStory ?? latestFinishedStory;
+  const isCurrentEpisodeResolving = currentEpisode?.chosenOptionIndex !== null && currentEpisode?.chosenAt === null;
+  const isCurrentEpisodeResolutionFailed = isCurrentEpisodeResolving && currentGenerationJob?.status === 'failed';
+  const isCurrentEpisodeResolutionPending = isCurrentEpisodeResolving && currentGenerationJob?.status === 'pending';
+  const currentEpisodeAftermath = currentEpisode?.summary.trim() ?? '';
   const storyReader = useMemo(() => {
     if (!storyForHistory) {
       return null;
@@ -179,9 +178,11 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
                   <div className="wander-panel-title">当前缘法</div>
                   {!overview.aiAvailable ? <Tag color="red">AI 未配置</Tag> : null}
                   {overview.hasPendingEpisode ? <Tag color="gold">等待抉择</Tag> : null}
+                  {overview.isResolvingEpisode ? <Tag color="cyan">结算中</Tag> : null}
                   {overview.isCoolingDown ? <Tag color="green">冷却中</Tag> : null}
-                  {currentGenerationJob?.status === 'pending' ? <Tag color="processing">生成中</Tag> : null}
-                  {currentGenerationJob?.status === 'failed' ? <Tag color="red">生成失败</Tag> : null}
+                  {currentGenerationJob?.status === 'pending' && !overview.isResolvingEpisode ? <Tag color="processing">生成中</Tag> : null}
+                  {currentGenerationJob?.status === 'failed' && !overview.isResolvingEpisode ? <Tag color="red">生成失败</Tag> : null}
+                  {currentGenerationJob?.status === 'failed' && overview.isResolvingEpisode ? <Tag color="red">结算失败</Tag> : null}
                 </div>
 
                 {!overview.aiAvailable ? (
@@ -265,12 +266,35 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
                       <div className="wander-choice-result">
                         <div className="wander-choice-label">本幕选择</div>
                         <div className="wander-choice-text">{currentEpisode.chosenOptionText}</div>
-                        {overview.isCoolingDown ? (
+                        {isCurrentEpisodeResolutionPending ? (
+                          <div className="wander-choice-reward">
+                            <Spin size="small" /> 正在推演后续结果
+                          </div>
+                        ) : null}
+                        {isCurrentEpisodeResolutionFailed ? (
+                          <div className="wander-choice-retry">
+                            <div className="wander-choice-reward">
+                              {currentGenerationJob?.errorMessage || '本次尾声推演失败，可按原选择继续推演。'}
+                            </div>
+                            <Button
+                              onClick={() => void chooseOption(currentEpisode.id, currentEpisode.chosenOptionIndex ?? 0)}
+                              loading={actionKey === `choose:${currentEpisode.id}:${currentEpisode.chosenOptionIndex ?? 0}`}
+                            >
+                              继续推演
+                            </Button>
+                          </div>
+                        ) : null}
+                        {currentEpisodeAftermath && !isCurrentEpisodeResolving ? (
+                          <div className="wander-choice-aftermath">
+                            <div className="wander-choice-aftermath-text">{currentEpisodeAftermath}</div>
+                          </div>
+                        ) : null}
+                        {overview.isCoolingDown && !isCurrentEpisodeResolving ? (
                           <div className="wander-choice-reward">
                             下一幕冷却：还需等待 {formatGameCooldownRemaining(overview.cooldownRemainingSeconds)}
                           </div>
                         ) : null}
-                        {currentEpisode.isEnding && currentEpisode.rewardTitleName ? (
+                        {currentEpisode.isEnding && currentEpisode.rewardTitleName && !isCurrentEpisodeResolving ? (
                           <div className="wander-choice-reward">
                             结局称号：{currentEpisode.rewardTitleName}
                             {currentEpisode.rewardTitleDesc ? ` · ${currentEpisode.rewardTitleDesc}` : ''}
@@ -302,6 +326,11 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
                           <p className={`wander-story-choice-line${entry.isChoicePending ? ' is-pending' : ''}`}>
                             {entry.choiceLine}
                           </p>
+                          {entry.aftermath ? (
+                            <div className="wander-story-aftermath">
+                              <p className="wander-story-aftermath-text">{entry.aftermath}</p>
+                            </div>
+                          ) : null}
                         </article>
                       ))}
                     </div>

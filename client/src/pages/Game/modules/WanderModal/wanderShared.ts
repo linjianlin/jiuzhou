@@ -48,7 +48,7 @@ export const buildWanderIndicator = (
   if (overview.currentGenerationJob?.status === 'failed') {
     return {
       badgeDot: true,
-      tooltip: '云游推演失败，可立即重新推演',
+      tooltip: overview.isResolvingEpisode ? '云游尾声推演失败，可继续推演' : '云游推演失败，可立即重新推演',
     };
   }
   if (overview.canGenerate && !overview.isCoolingDown && overview.currentGenerationJob === null) {

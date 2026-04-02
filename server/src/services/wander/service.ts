@@ -25,7 +25,12 @@ import { getMapDefinitions } from '../staticConfigLoader.js';
 import { normalizeTitleEffects } from '../achievement/shared.js';
 import { grantPermanentTitleTx } from '../achievement/titleOwnership.js';
 import { lockWanderGenerationCreationMutex } from '../shared/characterOperationMutex.js';
-import { generateWanderAiEpisodeDraft, isWanderAiAvailable, type WanderAiPreviousEpisodeContext } from './ai.js';
+import {
+  generateWanderAiEpisodeResolutionDraft,
+  generateWanderAiEpisodeSetupDraft,
+  isWanderAiAvailable,
+  type WanderAiPreviousEpisodeContext,
+} from './ai.js';
 import { resolveWanderTargetEpisodeCount } from './episodePlan.js';
 import {
   buildDateKey,
@@ -41,7 +46,8 @@ import type {
   WanderGenerationJobDto,
   WanderGenerationJobStatus,
   WanderGeneratedTitleDto,
-  WanderAiEpisodeDraft,
+  WanderAiEpisodeResolutionDraft,
+  WanderAiEpisodeSetupDraft,
   WanderOverviewDto,
   WanderStoryDto,
   WanderStoryStatus,
@@ -120,7 +126,7 @@ type WanderGenerationJobRow = {
   finished_at: Date | string | null;
 };
 
-const WANDER_MAX_CONTEXT_EPISODES = 5;
+const WANDER_MAX_CONTEXT_EPISODES = 10;
 const WANDER_SOURCE_TYPE = 'wander_story';
 
 const toIsoString = (value: Date | string | null): string | null => {
@@ -253,11 +259,19 @@ const buildOverview = (params: {
   generatedTitles: WanderGeneratedTitleDto[];
 }): WanderOverviewDto => {
   const hasPendingEpisode = params.currentEpisode !== null && params.currentEpisode.chosenOptionIndex === null;
+  const isResolvingEpisode = params.currentEpisode !== null
+    && params.currentEpisode.chosenOptionIndex !== null
+    && params.currentEpisode.chosenAt === null;
   return {
     today: params.today,
     aiAvailable: params.aiAvailable,
     hasPendingEpisode,
-    canGenerate: params.aiAvailable && !hasPendingEpisode && !params.isCoolingDown && params.currentGenerationJob?.status !== 'pending',
+    isResolvingEpisode,
+    canGenerate: params.aiAvailable
+      && !hasPendingEpisode
+      && !isResolvingEpisode
+      && !params.isCoolingDown
+      && params.currentGenerationJob?.status !== 'pending',
     isCoolingDown: params.isCoolingDown,
     cooldownUntil: params.cooldownUntil,
     cooldownRemainingSeconds: params.cooldownRemainingSeconds,
@@ -312,6 +326,22 @@ class WanderService {
         LIMIT 1
       `,
       [characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadEpisodeRowById(characterId: number, episodeId: string): Promise<WanderEpisodeRow | null> {
+    const result = await query<WanderEpisodeRow>(
+      `
+        SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
+               chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
+        FROM character_wander_story_episode
+        WHERE id = $1
+          AND character_id = $2
+        LIMIT 1
+      `,
+      [episodeId, characterId],
     );
     return result.rows[0] ?? null;
   }
@@ -404,6 +434,24 @@ class WanderService {
         LIMIT 1
       `,
       [characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadLatestGenerationJobRowByEpisodeId(
+    characterId: number,
+    episodeId: string,
+  ): Promise<WanderGenerationJobRow | null> {
+    const result = await query<WanderGenerationJobRow>(
+      `
+        SELECT id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+        FROM character_wander_generation_job
+        WHERE character_id = $1
+          AND generated_episode_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [characterId, episodeId],
     );
     return result.rows[0] ?? null;
   }
@@ -520,7 +568,11 @@ class WanderService {
     ]);
     const cooldownState = buildWanderCooldownState(latestEpisodeRow ? toRequiredIsoString(latestEpisodeRow.created_at) : null);
     const currentEpisodeRow = latestEpisodeRow
-      && (latestEpisodeRow.chosen_option_index === null || cooldownState.isCoolingDown)
+      && (
+        latestEpisodeRow.chosen_option_index === null
+        || latestEpisodeRow.chosen_at === null
+        || cooldownState.isCoolingDown
+      )
       ? latestEpisodeRow
       : null;
 
@@ -532,10 +584,15 @@ class WanderService {
     const currentEpisode = currentEpisodeRow ? buildEpisodeDto(currentEpisodeRow) : null;
     const latestEpisodeCreatedAtMs = latestEpisodeRow ? new Date(latestEpisodeRow.created_at).getTime() : Number.NaN;
     const latestGenerationJobCreatedAtMs = latestGenerationJobRow ? new Date(latestGenerationJobRow.created_at).getTime() : Number.NaN;
-    const shouldExposeGenerationJob = currentEpisode === null
-      && latestGenerationJobRow !== null
+    const shouldExposeGenerationJob = latestGenerationJobRow !== null
       && (latestGenerationJobRow.status === 'pending' || latestGenerationJobRow.status === 'failed')
-      && (!Number.isFinite(latestEpisodeCreatedAtMs) || latestGenerationJobCreatedAtMs >= latestEpisodeCreatedAtMs);
+      && (
+        (currentEpisodeRow !== null
+          && latestGenerationJobRow.generated_episode_id === currentEpisodeRow.id
+          && currentEpisodeRow.chosen_at === null)
+        || !Number.isFinite(latestEpisodeCreatedAtMs)
+        || latestGenerationJobCreatedAtMs >= latestEpisodeCreatedAtMs
+      );
     const currentGenerationJob = shouldExposeGenerationJob && latestGenerationJobRow
       ? buildGenerationJobDto(latestGenerationJobRow)
       : null;
@@ -587,26 +644,19 @@ class WanderService {
     const nextEpisodeIndex = activeStory ? activeStory.episode_count + 1 : 1;
     const storySeed = activeStory?.story_seed ?? Math.max(1, Math.floor(Date.now() % 2_147_483_647));
     const targetEpisodeCount = resolveWanderTargetEpisodeCount(storySeed);
-    const aiDraft = await generateWanderAiEpisodeDraft({
+    const aiDraft = await generateWanderAiEpisodeSetupDraft({
       nickname: character.nickname,
       realm: buildRealmText(character.realm, character.sub_realm),
       mapName: getMapName(character.current_map_id),
       hasTeam: character.has_team,
       activeTheme: activeStory?.story_theme ?? null,
       activePremise: activeStory?.story_premise ?? null,
-      storySummary: activeStory?.story_summary ?? null,
+      storySummary: activeStory?.story_summary.trim() ? activeStory.story_summary : null,
       nextEpisodeIndex,
       maxEpisodeIndex: targetEpisodeCount,
-      canEndThisEpisode: nextEpisodeIndex >= targetEpisodeCount,
+      isEndingEpisode: nextEpisodeIndex >= targetEpisodeCount,
       previousEpisodes,
     });
-
-    if (nextEpisodeIndex < targetEpisodeCount && aiDraft.isEnding) {
-      throw new Error('云游奇遇模型未按既定总幕数继续推进剧情');
-    }
-    if (nextEpisodeIndex >= targetEpisodeCount && !aiDraft.isEnding) {
-      throw new Error('云游奇遇模型未按既定总幕数收束剧情');
-    }
 
     return this.persistEpisodeForDayKeyTx({
       characterId,
@@ -620,7 +670,7 @@ class WanderService {
   private async persistEpisodeForDayKeyTx(params: {
     characterId: number;
     dayKey: string;
-    aiDraft: WanderAiEpisodeDraft;
+    aiDraft: WanderAiEpisodeSetupDraft;
     storySeed: number;
   }): Promise<ServiceResult<{ story: WanderStoryDto; episode: WanderEpisodeDto }>> {
     const { characterId, dayKey, aiDraft, storySeed } = params;
@@ -649,7 +699,7 @@ class WanderService {
           )
           VALUES ($1, $2, 'active', $3, $4, $5, 1, $6, NULL, NULL, NOW(), NOW())
         `,
-        [storyId, characterId, aiDraft.storyTheme, aiDraft.storyPremise, aiDraft.summary, storySeed],
+        [storyId, characterId, aiDraft.storyTheme, aiDraft.storyPremise, '', storySeed],
       );
     } else {
       await query(
@@ -657,12 +707,11 @@ class WanderService {
           UPDATE character_wander_story
           SET story_theme = $2,
               story_premise = $3,
-              story_summary = $4,
-              episode_count = $5,
+              episode_count = $4,
               updated_at = NOW()
           WHERE id = $1
         `,
-        [storyId, aiDraft.storyTheme, aiDraft.storyPremise, aiDraft.summary, nextEpisodeIndex],
+        [storyId, aiDraft.storyTheme, aiDraft.storyPremise, nextEpisodeIndex],
       );
     }
 
@@ -675,7 +724,7 @@ class WanderService {
         )
         VALUES (
           $1, $2, $3, $4::date, $5, $6, $7, $8::jsonb,
-          NULL, NULL, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW(), NULL
+          NULL, NULL, $9, $10, $11, NULL, NULL, NULL, NULL, NOW(), NULL
         )
       `,
       [
@@ -687,13 +736,9 @@ class WanderService {
         aiDraft.episodeTitle,
         aiDraft.opening,
         JSON.stringify(aiDraft.optionTexts),
-        aiDraft.summary,
-        aiDraft.isEnding,
-        aiDraft.endingType,
-        aiDraft.rewardTitleName || null,
-        aiDraft.rewardTitleDesc || null,
-        aiDraft.rewardTitleColor || null,
-        JSON.stringify(aiDraft.rewardTitleEffects),
+        '',
+        nextEpisodeIndex >= resolveWanderTargetEpisodeCount(storySeed),
+        'none',
       ],
     );
 
@@ -824,6 +869,134 @@ class WanderService {
       };
     }
 
+    if (job.generated_episode_id) {
+      const targetEpisode = await this.loadEpisodeRowById(characterId, job.generated_episode_id);
+      if (!targetEpisode) {
+        const reason = '云游结算幕次不存在';
+        await this.updateGenerationJobAsFailed(generationId, reason);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'failed',
+            episodeId: null,
+            errorMessage: reason,
+          },
+        };
+      }
+      if (targetEpisode.chosen_at !== null) {
+        await this.updateGenerationJobAsGenerated(generationId, targetEpisode.id);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'generated',
+            episodeId: targetEpisode.id,
+            errorMessage: null,
+          },
+        };
+      }
+      if (targetEpisode.chosen_option_index === null || targetEpisode.chosen_option_text === null) {
+        const reason = '云游结算缺少已确认的选项';
+        await this.updateGenerationJobAsFailed(generationId, reason);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'failed',
+            episodeId: null,
+            errorMessage: reason,
+          },
+        };
+      }
+
+      const [character, storyRow, previousEpisodes] = await Promise.all([
+        this.loadCharacterContext(characterId),
+        this.loadStoryRowById(targetEpisode.story_id),
+        this.loadRecentEpisodeContext(targetEpisode.story_id),
+      ]);
+
+      const resolvedPreviousEpisodes = previousEpisodes.filter((entry) => entry.dayIndex !== targetEpisode.day_index);
+
+      if (!character || !storyRow) {
+        const reason = !character ? '角色不存在' : '奇遇故事不存在';
+        await this.updateGenerationJobAsFailed(generationId, reason);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'failed',
+            episodeId: null,
+            errorMessage: reason,
+          },
+        };
+      }
+
+      try {
+        const resolutionDraft = await generateWanderAiEpisodeResolutionDraft({
+          nickname: character.nickname,
+          realm: buildRealmText(character.realm, character.sub_realm),
+          mapName: getMapName(character.current_map_id),
+          hasTeam: character.has_team,
+          activeTheme: storyRow.story_theme,
+          activePremise: storyRow.story_premise,
+          storySummary: storyRow.story_summary.trim() ? storyRow.story_summary : null,
+          currentEpisodeIndex: targetEpisode.day_index,
+          maxEpisodeIndex: storyRow.episode_count,
+          currentEpisodeTitle: targetEpisode.episode_title,
+          currentEpisodeOpening: targetEpisode.opening,
+          chosenOptionText: targetEpisode.chosen_option_text,
+          isEndingEpisode: targetEpisode.is_ending,
+          previousEpisodes: resolvedPreviousEpisodes,
+        });
+
+        const resolutionResult = await this.persistEpisodeChoiceResolutionTx({
+          characterId,
+          episodeId: targetEpisode.id,
+          optionIndex: targetEpisode.chosen_option_index,
+          chosenOptionText: targetEpisode.chosen_option_text,
+          resolutionDraft,
+        });
+
+        if (!resolutionResult.success) {
+          const reason = resolutionResult.message || '云游奇遇结算失败';
+          await this.updateGenerationJobAsFailed(generationId, reason);
+          return {
+            success: true,
+            message: 'ok',
+            data: {
+              status: 'failed',
+              episodeId: null,
+              errorMessage: reason,
+            },
+          };
+        }
+
+        await this.updateGenerationJobAsGenerated(generationId, targetEpisode.id);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'generated',
+            episodeId: targetEpisode.id,
+            errorMessage: null,
+          },
+        };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : '云游奇遇结算失败';
+        await this.updateGenerationJobAsFailed(generationId, reason);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'failed',
+            episodeId: null,
+            errorMessage: reason,
+          },
+        };
+      }
+    }
+
     const dayKey = buildDateKey(new Date(job.day_key));
     const existingEpisode = await this.loadEpisodeRowByDayKey(characterId, dayKey);
     if (existingEpisode) {
@@ -881,15 +1054,15 @@ class WanderService {
   }
 
   @Transactional
-  async chooseEpisode(
-    characterId: number,
-    episodeId: string,
-    optionIndex: number,
-  ): Promise<ServiceResult<WanderChooseResultDto>> {
+  private async persistEpisodeChoiceResolutionTx(params: {
+    characterId: number;
+    episodeId: string;
+    optionIndex: number;
+    chosenOptionText: string;
+    resolutionDraft: WanderAiEpisodeResolutionDraft;
+  }): Promise<ServiceResult<{ story: WanderStoryDto }>> {
+    const { characterId, episodeId, optionIndex, chosenOptionText, resolutionDraft } = params;
     const normalizedOptionIndex = Math.floor(optionIndex);
-    if (!Number.isFinite(normalizedOptionIndex) || normalizedOptionIndex < 0 || normalizedOptionIndex > 2) {
-      return { success: false, message: '选项参数错误' };
-    }
 
     const episodeResult = await query<WanderEpisodeRow>(
       `
@@ -909,34 +1082,53 @@ class WanderService {
     if (!episode) {
       return { success: false, message: '奇遇幕次不存在' };
     }
-    if (episode.chosen_option_index !== null) {
+    if (episode.chosen_option_index !== null && episode.chosen_at !== null) {
       return { success: false, message: '本幕已作出选择' };
     }
-    if (!episode.option_texts[normalizedOptionIndex]) {
+    if (episode.chosen_option_index !== null && episode.chosen_option_index !== normalizedOptionIndex) {
+      return { success: false, message: '本幕已锁定其他选择' };
+    }
+    if (episode.option_texts[normalizedOptionIndex] !== chosenOptionText) {
       return { success: false, message: '所选选项不存在' };
     }
-
-    const chosenOptionText = episode.option_texts[normalizedOptionIndex];
+    if (episode.is_ending !== resolutionDraft.isEnding) {
+      return { success: false, message: '奇遇终幕状态异常' };
+    }
 
     await query(
       `
         UPDATE character_wander_story_episode
         SET chosen_option_index = $2,
             chosen_option_text = $3,
+            episode_summary = $4,
+            ending_type = $5,
+            reward_title_name = $6,
+            reward_title_desc = $7,
+            reward_title_color = $8,
+            reward_title_effects = $9::jsonb,
             chosen_at = NOW()
         WHERE id = $1
       `,
-      [episode.id, normalizedOptionIndex, chosenOptionText],
+      [
+        episode.id,
+        normalizedOptionIndex,
+        chosenOptionText,
+        resolutionDraft.summary,
+        resolutionDraft.endingType,
+        resolutionDraft.rewardTitleName || null,
+        resolutionDraft.rewardTitleDesc || null,
+        resolutionDraft.rewardTitleColor || null,
+        JSON.stringify(resolutionDraft.rewardTitleEffects),
+      ],
     );
 
-    let awardedTitle: WanderGeneratedTitleDto | null = null;
     let rewardTitleId: string | null = null;
 
     if (episode.is_ending) {
-      const rewardTitleName = (episode.reward_title_name ?? '').trim();
-      const rewardTitleDesc = (episode.reward_title_desc ?? '').trim();
-      const rewardTitleColor = normalizeGeneratedTitleColor(episode.reward_title_color);
-      const effects = normalizeGeneratedTitleEffects(episode.reward_title_effects);
+      const rewardTitleName = resolutionDraft.rewardTitleName.trim();
+      const rewardTitleDesc = resolutionDraft.rewardTitleDesc.trim();
+      const rewardTitleColor = normalizeGeneratedTitleColor(resolutionDraft.rewardTitleColor);
+      const effects = normalizeGeneratedTitleEffects(resolutionDraft.rewardTitleEffects);
       if (!rewardTitleName || !rewardTitleDesc || !rewardTitleColor || Object.keys(effects).length <= 0) {
         return { success: false, message: '结局称号数据缺失' };
       }
@@ -962,16 +1154,6 @@ class WanderService {
       );
 
       await grantPermanentTitleTx(characterId, titleId);
-
-      awardedTitle = {
-        id: titleId,
-        name: rewardTitleName,
-        description: rewardTitleDesc,
-        color: rewardTitleColor,
-        effects,
-        isEquipped: false,
-        obtainedAt: new Date().toISOString(),
-      };
     }
 
     const nextStoryStatus: WanderStoryStatus = episode.is_ending ? 'finished' : 'active';
@@ -986,7 +1168,7 @@ class WanderService {
             updated_at = NOW()
         WHERE id = $1
       `,
-      [episode.story_id, nextStoryStatus, episode.episode_summary, rewardTitleId],
+      [episode.story_id, nextStoryStatus, resolutionDraft.summary, rewardTitleId],
     );
 
     const storyResult = await query<WanderStoryRow>(
@@ -1015,9 +1197,128 @@ class WanderService {
       message: 'ok',
       data: {
         story,
-        awardedTitle,
       },
     };
+  }
+
+  @Transactional
+  private async createChoiceResolutionJobTx(
+    characterId: number,
+    episodeId: string,
+    optionIndex: number,
+  ): Promise<ServiceResult<WanderChooseResultDto>> {
+    await lockWanderGenerationCreationMutex(characterId);
+
+    const normalizedOptionIndex = Math.floor(optionIndex);
+    const episodeResult = await query<WanderEpisodeRow>(
+      `
+        SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
+               chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
+        FROM character_wander_story_episode
+        WHERE id = $1
+          AND character_id = $2
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [episodeId, characterId],
+    );
+
+    const episode = episodeResult.rows[0] ?? null;
+    if (!episode) {
+      return { success: false, message: '奇遇幕次不存在' };
+    }
+
+    let chosenOptionText = episode.chosen_option_text;
+    if (episode.chosen_option_index === null) {
+      if (!episode.option_texts[normalizedOptionIndex]) {
+        return { success: false, message: '所选选项不存在' };
+      }
+      chosenOptionText = episode.option_texts[normalizedOptionIndex];
+      await query(
+        `
+          UPDATE character_wander_story_episode
+          SET chosen_option_index = $2,
+              chosen_option_text = $3,
+              chosen_at = NULL
+          WHERE id = $1
+        `,
+        [episode.id, normalizedOptionIndex, chosenOptionText],
+      );
+    } else {
+      if (episode.chosen_at !== null) {
+        return { success: false, message: '本幕已作出选择' };
+      }
+      if (episode.chosen_option_index !== normalizedOptionIndex) {
+        return { success: false, message: '本幕已锁定其他选择' };
+      }
+      if (!chosenOptionText) {
+        return { success: false, message: '本幕已记录的选择缺失' };
+      }
+    }
+
+    const latestJob = await this.loadLatestGenerationJobRowByEpisodeId(characterId, episode.id);
+    if (latestJob?.status === 'pending') {
+      const storyRow = await this.loadStoryRowById(episode.story_id);
+      if (!storyRow) {
+        return { success: false, message: '奇遇故事不存在' };
+      }
+      const story = await this.buildStoryDtoOrNull(storyRow);
+      if (!story) {
+        return { success: false, message: '奇遇故事读取失败' };
+      }
+      return {
+        success: true,
+        message: '当前云游正在推演余波',
+        data: {
+          story,
+          job: buildGenerationJobDto(latestJob),
+        },
+      };
+    }
+
+    const generationId = buildGenerationId();
+    const jobResult = await query<WanderGenerationJobRow>(
+      `
+        INSERT INTO character_wander_generation_job (
+          id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+        )
+        VALUES ($1, $2, $3::date, 'pending', NULL, $4, NOW(), NULL)
+        RETURNING id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+      `,
+      [generationId, characterId, buildDateKey(new Date(episode.day_key)), episode.id],
+    );
+
+    const storyRow = await this.loadStoryRowById(episode.story_id);
+    if (!storyRow) {
+      return { success: false, message: '奇遇故事不存在' };
+    }
+    const story = await this.buildStoryDtoOrNull(storyRow);
+    if (!story) {
+      return { success: false, message: '奇遇故事读取失败' };
+    }
+
+    const job = jobResult.rows[0];
+    return {
+      success: true,
+      message: episode.is_ending ? '终幕抉择已落定，正在推演结局' : '本幕抉择已落定，正在推演余波',
+      data: {
+        story,
+        job: buildGenerationJobDto(job),
+      },
+    };
+  }
+
+  async chooseEpisode(
+    characterId: number,
+    episodeId: string,
+    optionIndex: number,
+  ): Promise<ServiceResult<WanderChooseResultDto>> {
+    const normalizedOptionIndex = Math.floor(optionIndex);
+    if (!Number.isFinite(normalizedOptionIndex) || normalizedOptionIndex < 0 || normalizedOptionIndex > 2) {
+      return { success: false, message: '选项参数错误' };
+    }
+    return this.createChoiceResolutionJobTx(characterId, episodeId, normalizedOptionIndex);
   }
 }
 

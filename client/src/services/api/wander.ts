@@ -83,6 +83,7 @@ export interface WanderOverviewDto {
   today: string;
   aiAvailable: boolean;
   hasPendingEpisode: boolean;
+  isResolvingEpisode: boolean;
   canGenerate: boolean;
   isCoolingDown: boolean;
   cooldownUntil: string | null;
@@ -96,7 +97,7 @@ export interface WanderOverviewDto {
 
 export interface WanderChooseResultDto {
   story: WanderStoryDto;
-  awardedTitle: WanderGeneratedTitleDto | null;
+  job: WanderGenerationJobDto;
 }
 
 export interface WanderGenerateQueueResultDto {
