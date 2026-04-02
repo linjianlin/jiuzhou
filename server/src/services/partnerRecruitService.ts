@@ -82,6 +82,7 @@ import {
 import { lockPartnerRecruitCreationMutex } from './shared/characterOperationMutex.js';
 import { loadCharacterRealmSnapshot } from './shared/characterRealm.js';
 import { broadcastHeavenPartnerAcquired } from './shared/partnerWorldBroadcast.js';
+import { reviewPartnerRecruitCustomBaseModel } from './shared/partnerRecruitBaseModelReview.js';
 
 export type ServiceResult<T = undefined> = {
   success: boolean;
@@ -881,6 +882,24 @@ class PartnerRecruitService {
     }
 
     const requestedBaseModel = asString(jobRow.requested_base_model) || null;
+    const baseModelReviewResult = await reviewPartnerRecruitCustomBaseModel(
+      requestedBaseModel,
+    );
+    if (!baseModelReviewResult.success) {
+      const finalReason = baseModelReviewResult.message;
+      const finalErrorMessage = appendPartnerRecruitRefundHint(finalReason);
+      await this.refundRecruitJobTx(args.characterId, args.generationId, finalReason, 'refunded');
+      return {
+        success: true,
+        message: finalErrorMessage,
+        data: {
+          status: 'refunded',
+          preview: null,
+          errorMessage: finalErrorMessage,
+        },
+      };
+    }
+
     const maxAttempts = 3;
     let lastFailure = '伙伴生成失败';
     let lastModelName = '';
