@@ -1198,6 +1198,7 @@ class TechniqueGenerationService {
       techniqueId: draftTechniqueId,
       createdByCharacterId: characterId,
       candidate: normalizedCandidate,
+      modelName,
       usageScope: 'character_only',
       isPublished: false,
       publishedAt: null,

@@ -807,6 +807,7 @@ model generated_technique_def {
   tags                    Json       @default("[]")
   description             String?
   long_desc               String?
+  model_name              String?    @db.VarChar(64)
   icon                    String?    @db.VarChar(255)
   is_published            Boolean    @default(false)
   published_at            DateTime?  @db.Timestamptz(6)

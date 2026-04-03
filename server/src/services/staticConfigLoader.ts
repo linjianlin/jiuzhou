@@ -379,6 +379,7 @@ export type TechniqueDefConfig = {
   id: string;
   code?: string;
   name: string;
+  model_name?: string | null;
   type: string;
   quality: string;
   max_layer?: number;

@@ -26,6 +26,7 @@ export const persistGeneratedTechniqueCandidateTx = async (params: {
   techniqueId: string;
   createdByCharacterId: number;
   candidate: TechniqueGenerationCandidate;
+  modelName: string;
   usageScope: TechniqueUsageScope;
   isPublished: boolean;
   publishedAt: Date | null;
@@ -41,6 +42,7 @@ export const persistGeneratedTechniqueCandidateTx = async (params: {
     techniqueId,
     createdByCharacterId,
     candidate,
+    modelName,
     usageScope,
     isPublished,
     publishedAt,
@@ -73,6 +75,7 @@ export const persistGeneratedTechniqueCandidateTx = async (params: {
         tags,
         description,
         long_desc,
+        model_name,
         icon,
         is_published,
         published_at,
@@ -87,8 +90,8 @@ export const persistGeneratedTechniqueCandidateTx = async (params: {
         $7, $8, $9, $10,
         $11, $12, $13,
         $14::jsonb,
-        $15, $16, $17,
-        $18, $19, $20, true, 1, NOW(), NOW()
+        $15, $16, $17, $18,
+        $19, $20, $21, true, 1, NOW(), NOW()
       )
     `,
     [
@@ -108,6 +111,7 @@ export const persistGeneratedTechniqueCandidateTx = async (params: {
       JSON.stringify(candidate.technique.tags),
       candidate.technique.description,
       resolvedLongDesc || null,
+      modelName,
       techniqueIcon,
       isPublished,
       publishedAt,

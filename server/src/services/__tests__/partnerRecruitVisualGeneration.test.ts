@@ -70,6 +70,7 @@ const draft: PartnerRecruitDraft = {
 const techniques: GeneratedRecruitTechniqueDraft[] = [
   {
     techniqueId: 'tech-partner-1',
+    modelName: 'gpt-5.4',
     candidate: {
       technique: {
         name: '听泉护心诀',

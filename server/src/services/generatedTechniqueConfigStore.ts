@@ -15,6 +15,7 @@ export type GeneratedTechniqueDefLite = {
   id: string;
   code?: string;
   name: string;
+  model_name?: string | null;
   type: string;
   quality: string;
   max_layer?: number;
@@ -139,6 +140,7 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
             tags,
             description,
             long_desc,
+            model_name,
             icon,
             enabled,
             version,
@@ -213,6 +215,7 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
       const def: GeneratedTechniqueDefLite = {
         id,
         name: displayName || baseName || id,
+        model_name: typeof row.model_name === 'string' ? row.model_name : null,
         type: asString(row.type) || '武技',
         quality: asString(row.quality) || '黄',
         max_layer: Math.max(1, Math.floor(asNumber(row.max_layer, 1))),

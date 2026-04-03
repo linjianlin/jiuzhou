@@ -43,6 +43,11 @@ test('generated_technique_def: Prisma schema 应声明 usage_scope 列', () => {
     /\busage_scope\s+String\b/,
     'generated_technique_def 缺少 usage_scope 列定义',
   );
+  assertModelHasField(
+    'generated_technique_def',
+    /\bmodel_name\s+String\?\s+@db\.VarChar\(64\)/,
+    'generated_technique_def 缺少 model_name 列定义',
+  );
 });
 
 test('generated_skill_def: Prisma schema 应声明比例消耗列', () => {

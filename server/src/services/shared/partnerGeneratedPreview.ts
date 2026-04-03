@@ -100,6 +100,7 @@ export type GeneratedPartnerPreviewDto = {
 export type GeneratedPartnerTechniqueDraft = {
   techniqueId: string;
   candidate: TechniqueGenerationCandidate;
+  modelName: string;
 };
 
 export type GeneratedPartnerTextAttemptFailure = {
@@ -472,6 +473,7 @@ const generateGeneratedPartnerTechniqueDrafts = async (params: {
     generatedTechniques.push({
       techniqueId: buildGeneratedTechniqueId(),
       candidate: normalizedCandidate,
+      modelName: generated.modelName,
     });
   }
 
@@ -913,6 +915,7 @@ export const persistGeneratedPartnerPreviewTx = async (params: {
       techniqueId: technique.techniqueId,
       createdByCharacterId: characterId,
       candidate: technique.candidate,
+      modelName: technique.modelName,
       usageScope: 'partner_only',
       isPublished: true,
       publishedAt: new Date(),
