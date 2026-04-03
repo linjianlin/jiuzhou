@@ -115,6 +115,101 @@ const isUndefinedTableError = (error: unknown): boolean => {
 };
 
 /**
+ * 已发布生成功法技能加载 SQL
+ *
+ * 设计说明：
+ * 1) 先用 `published_technique_ids` 物化已发布功法 ID，避免后续重复扫整行定义；
+ * 2) 再用 `ordered_skill_keys` 只按 `id / sort_weight / source_id` 这类窄列完成过滤与排序，
+ *    把原本对宽 JSON 行的外部排序收敛成窄键排序；
+ * 3) 最后按主键回表取完整技能定义，保持结果字段与顺序不变。
+ *
+ * 边界条件：
+ * 1) 这里不改变业务可见范围，仍然只读取 `d.is_published = true AND d.enabled = true AND s.enabled = true`。
+ * 2) `MATERIALIZED` 不能删除，否则 PostgreSQL 可能重新内联成宽行排序，优化会失效。
+ */
+const LOAD_PUBLISHED_GENERATED_SKILLS_SQL = `
+  WITH published_technique_ids AS MATERIALIZED (
+    SELECT id
+    FROM generated_technique_def
+    WHERE is_published = true
+      AND enabled = true
+  ),
+  ordered_skill_keys AS MATERIALIZED (
+    SELECT s.id, s.sort_weight
+    FROM generated_skill_def s
+    JOIN published_technique_ids d ON d.id = s.source_id
+    WHERE s.enabled = true
+    ORDER BY s.sort_weight DESC, s.id ASC
+  )
+  SELECT
+    s.id,
+    s.code,
+    s.name,
+    s.description,
+    s.icon,
+    s.source_type,
+    s.source_id,
+    s.cost_lingqi,
+    s.cost_lingqi_rate,
+    s.cost_qixue,
+    s.cost_qixue_rate,
+    s.cooldown,
+    s.target_type,
+    s.target_count,
+    s.damage_type,
+    s.element,
+    s.effects,
+    s.trigger_type,
+    s.conditions,
+    s.ai_priority,
+    s.ai_conditions,
+    s.upgrades,
+    s.sort_weight,
+    s.version,
+    s.enabled
+  FROM ordered_skill_keys k
+  JOIN generated_skill_def s ON s.id = k.id
+  ORDER BY k.sort_weight DESC, k.id ASC
+`;
+
+/**
+ * 已发布生成功法层级加载 SQL
+ *
+ * 设计说明：
+ * 1) 先物化已发布功法 ID，避免 `generated_technique_layer` 查询链路携带不必要的定义列；
+ * 2) 排序仍保持 `technique_id, layer`，与现有唯一索引/业务输出完全一致。
+ *
+ * 边界条件：
+ * 1) 这里只收窄 join 输入，不改变层级筛选规则与返回字段。
+ * 2) `enabled = true` 保持在层级表侧，避免把禁用层级误带回内存快照。
+ */
+const LOAD_PUBLISHED_GENERATED_LAYERS_SQL = `
+  WITH published_technique_ids AS MATERIALIZED (
+    SELECT id
+    FROM generated_technique_def
+    WHERE is_published = true
+      AND enabled = true
+  )
+  SELECT
+    l.technique_id,
+    l.layer,
+    l.cost_spirit_stones,
+    l.cost_exp,
+    l.cost_materials,
+    l.passives,
+    l.unlock_skill_ids,
+    l.upgrade_skill_ids,
+    l.required_realm,
+    l.required_quest_id,
+    l.layer_desc,
+    l.enabled
+  FROM generated_technique_layer l
+  JOIN published_technique_ids d ON d.id = l.technique_id
+  WHERE l.enabled = true
+  ORDER BY l.technique_id ASC, l.layer ASC
+`;
+
+/**
  * 刷新 AI 生成功法缓存。
  *
  * 边界：
@@ -151,59 +246,10 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
         `,
       ),
       query(
-        `
-          SELECT
-            s.id,
-            s.code,
-            s.name,
-            s.description,
-            s.icon,
-            s.source_type,
-            s.source_id,
-            s.cost_lingqi,
-            s.cost_lingqi_rate,
-            s.cost_qixue,
-            s.cost_qixue_rate,
-            s.cooldown,
-            s.target_type,
-            s.target_count,
-            s.damage_type,
-            s.element,
-            s.effects,
-            s.trigger_type,
-            s.conditions,
-            s.ai_priority,
-            s.ai_conditions,
-            s.upgrades,
-            s.sort_weight,
-            s.version,
-            s.enabled
-          FROM generated_skill_def s
-          JOIN generated_technique_def d ON d.id = s.source_id
-          WHERE d.is_published = true AND d.enabled = true AND s.enabled = true
-          ORDER BY s.sort_weight DESC, s.id ASC
-        `,
+        LOAD_PUBLISHED_GENERATED_SKILLS_SQL,
       ),
       query(
-        `
-          SELECT
-            l.technique_id,
-            l.layer,
-            l.cost_spirit_stones,
-            l.cost_exp,
-            l.cost_materials,
-            l.passives,
-            l.unlock_skill_ids,
-            l.upgrade_skill_ids,
-            l.required_realm,
-            l.required_quest_id,
-            l.layer_desc,
-            l.enabled
-          FROM generated_technique_layer l
-          JOIN generated_technique_def d ON d.id = l.technique_id
-          WHERE d.is_published = true AND d.enabled = true AND l.enabled = true
-          ORDER BY l.technique_id ASC, l.layer ASC
-        `,
+        LOAD_PUBLISHED_GENERATED_LAYERS_SQL,
       ),
     ]);
 

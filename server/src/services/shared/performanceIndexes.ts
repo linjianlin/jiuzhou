@@ -33,6 +33,9 @@ export const MAIL_DELETED_HISTORY_CLEANUP_INDEX_NAME = 'idx_mail_deleted_history
 export const MAIL_EXPIRED_HISTORY_CLEANUP_INDEX_NAME = 'idx_mail_expired_history_cleanup';
 export const ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME = 'idx_item_instance_stackable_lookup';
 export const MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME = 'idx_market_listing_item_instance_id';
+export const GENERATED_TECHNIQUE_PUBLISHED_ID_INDEX_NAME = 'idx_generated_technique_def_published_id';
+export const GENERATED_SKILL_ENABLED_SORT_SOURCE_INDEX_NAME = 'idx_generated_skill_def_enabled_sort_source';
+export const GENERATED_TECHNIQUE_LAYER_ENABLED_ORDER_INDEX_NAME = 'idx_generated_technique_layer_enabled_order';
 
 const ITEM_INSTANCE_STACKABLE_LOOKUP_BIND_TYPE_SQL = buildNormalizedItemBindTypeSql('bind_type');
 const ITEM_INSTANCE_STACKABLE_LOOKUP_PREDICATE_SQL = buildPlainStackingSqlPredicate({
@@ -240,6 +243,51 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
     matchFragments: [
       'item_instance_id',
       'item_instance_id IS NOT NULL',
+    ],
+  },
+  {
+    name: GENERATED_TECHNIQUE_PUBLISHED_ID_INDEX_NAME,
+    createSql: `
+      CREATE INDEX IF NOT EXISTS ${GENERATED_TECHNIQUE_PUBLISHED_ID_INDEX_NAME}
+      ON generated_technique_def (id)
+      WHERE is_published = true
+        AND enabled = true
+    `,
+    matchFragments: [
+      'generated_technique_def',
+      'id',
+      'is_published = true',
+      'enabled = true',
+    ],
+  },
+  {
+    name: GENERATED_SKILL_ENABLED_SORT_SOURCE_INDEX_NAME,
+    createSql: `
+      CREATE INDEX IF NOT EXISTS ${GENERATED_SKILL_ENABLED_SORT_SOURCE_INDEX_NAME}
+      ON generated_skill_def (sort_weight DESC, id ASC)
+      INCLUDE (source_id)
+      WHERE enabled = true
+    `,
+    matchFragments: [
+      'generated_skill_def',
+      'sort_weight DESC',
+      'id',
+      'include (source_id)',
+      'enabled = true',
+    ],
+  },
+  {
+    name: GENERATED_TECHNIQUE_LAYER_ENABLED_ORDER_INDEX_NAME,
+    createSql: `
+      CREATE INDEX IF NOT EXISTS ${GENERATED_TECHNIQUE_LAYER_ENABLED_ORDER_INDEX_NAME}
+      ON generated_technique_layer (technique_id, layer ASC)
+      WHERE enabled = true
+    `,
+    matchFragments: [
+      'generated_technique_layer',
+      'technique_id',
+      'layer',
+      'enabled = true',
     ],
   },
 ];
