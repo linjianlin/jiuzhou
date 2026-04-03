@@ -310,7 +310,7 @@
         {
           "id": "tech-count-4-layer-7",
           "type": "techniques_count_min_layer",
-          "minCount": 4,
+          "minCount": 3,
           "minLayer": 7,
           "title": "功法融会贯通"
         },
@@ -396,7 +396,7 @@
         {
           "id": "tech-count-4-layer-8",
           "type": "techniques_count_min_layer",
-          "minCount": 4,
+          "minCount": 2,
           "minLayer": 8,
           "title": "功法八重圆满"
         },
@@ -482,7 +482,7 @@
         {
           "id": "tech-count-2-layer-9",
           "type": "techniques_count_min_layer",
-          "minCount": 2,
+          "minCount": 1,
           "minLayer": 9,
           "title": "九重功法圆满"
         },
