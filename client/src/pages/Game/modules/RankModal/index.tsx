@@ -33,7 +33,7 @@ import type {
   WealthRankRowDto,
 } from '../../../../services/api';
 import { resolveAvatarUrl } from '../../../../services/api';
-import { IMG_COIN as coin01 } from '../../shared/imageAssets';
+import { IMG_COIN as rankIcon, IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../shared/imageAssets';
 import PartnerPreviewOverlay from '../../shared/PartnerPreviewOverlay';
 import { getElementToneClassName } from '../../shared/elementTheme';
 import { getItemQualityTagClassName } from '../../shared/itemQuality';
@@ -63,6 +63,13 @@ interface RankModalProps {
 }
 
 const formatPartnerRankLevelText = (row: Pick<PartnerRankRowDto, 'level'>): string => `Lv.${row.level}`;
+
+const renderCurrencyBadge = (icon: string, alt: string, value?: number): ReactNode => (
+  <span className="rank-money">
+    <img className="rank-money-icon" src={icon} alt={alt} />
+    {value === undefined ? null : value.toLocaleString()}
+  </span>
+);
 
 type CharacterRankRow = RealmRankRowDto | WealthRankRowDto | ArenaRankRowDto;
 
@@ -361,14 +368,15 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
                     </div>
                     <div className="rank-mobile-meta">
                       <span className="rank-mobile-meta-item">
-                        <span className="rank-mobile-meta-k">灵石</span>
-                        <span className="rank-mobile-meta-v rank-money">
-                          <img className="rank-money-icon" src={coin01} alt="灵石" />
-                          {row.spiritStones.toLocaleString()}
+                        <span className="rank-mobile-meta-k rank-mobile-meta-k--icon">
+                          <img className="rank-money-icon" src={lingshiIcon} alt="灵石" />
                         </span>
+                        <span className="rank-mobile-meta-v">{row.spiritStones.toLocaleString()}</span>
                       </span>
                       <span className="rank-mobile-meta-item">
-                        <span className="rank-mobile-meta-k">银两</span>
+                        <span className="rank-mobile-meta-k rank-mobile-meta-k--icon">
+                          <img className="rank-money-icon" src={tongqianIcon} alt="银两" />
+                        </span>
                         <span className="rank-mobile-meta-v">{row.silver.toLocaleString()}</span>
                       </span>
                     </div>
@@ -395,22 +403,17 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
               },
               { title: '境界', dataIndex: 'realm', key: 'realm', width: 120, render: (v: string) => <Tag color="green">{v}</Tag> },
               {
-                title: '灵石',
+                title: renderCurrencyBadge(lingshiIcon, '灵石'),
                 dataIndex: 'spiritStones',
                 key: 'spiritStones',
                 width: 160,
-                render: (v: number) => (
-                  <span className="rank-money">
-                    <img className="rank-money-icon" src={coin01} alt="灵石" />
-                    {v.toLocaleString()}
-                  </span>
-                ),
+                render: (v: number) => renderCurrencyBadge(lingshiIcon, '灵石', v),
               },
               {
-                title: '银两',
+                title: renderCurrencyBadge(tongqianIcon, '银两'),
                 dataIndex: 'silver',
                 key: 'silver',
-                render: (v: number) => v.toLocaleString(),
+                render: (v: number) => renderCurrencyBadge(tongqianIcon, '银两', v),
               },
             ]}
             dataSource={wealthRanks}
@@ -609,7 +612,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose, onSelectPlayer }) 
         <div className="rank-shell">
           <div className="rank-left">
             <div className="rank-left-title">
-              <img className="rank-left-icon" src={coin01} alt="排行" />
+              <img className="rank-left-icon" src={rankIcon} alt="排行" />
               <div className="rank-left-name">排行</div>
             </div>
             {isMobile ? (
