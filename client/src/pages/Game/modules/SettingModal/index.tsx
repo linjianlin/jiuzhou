@@ -99,10 +99,14 @@ const clampQualityRank = (value: unknown): number => {
   return Math.max(1, Math.min(4, n));
 };
 
+const normalizeCommaSeparatedText = (raw: string): string => {
+  return raw.replace(/，/gu, ',');
+};
+
 const parseCommaList = (raw: string, toLower: boolean = false): string[] => {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const token of raw.split(',')) {
+  for (const token of normalizeCommaSeparatedText(raw).split(',')) {
     const value = toLower ? token.trim().toLowerCase() : token.trim();
     if (!value || seen.has(value)) continue;
     seen.add(value);
@@ -116,7 +120,41 @@ const stringifyList = (raw: unknown): string => {
   return raw
     .map((v) => String(v ?? '').trim())
     .filter((v) => v.length > 0)
-    .join(', ');
+    .join(',');
+};
+
+const normalizeKeywordText = (raw: string): string => {
+  return stringifyList(parseCommaList(raw));
+};
+
+const normalizeAutoDisassembleRuleDraftKeywords = (
+  rule: AutoDisassembleRuleDraft
+): AutoDisassembleRuleDraft => {
+  const includeNameKeywordsText = normalizeKeywordText(rule.includeNameKeywordsText);
+  const excludeNameKeywordsText = normalizeKeywordText(rule.excludeNameKeywordsText);
+  if (
+    includeNameKeywordsText === rule.includeNameKeywordsText &&
+    excludeNameKeywordsText === rule.excludeNameKeywordsText
+  ) {
+    return rule;
+  }
+  return {
+    ...rule,
+    includeNameKeywordsText,
+    excludeNameKeywordsText,
+  };
+};
+
+const normalizeAutoDisassembleRuleDraftList = (
+  rules: AutoDisassembleRuleDraft[],
+): AutoDisassembleRuleDraft[] => {
+  let changed = false;
+  const nextRules = rules.map((rule) => {
+    const normalizedRule = normalizeAutoDisassembleRuleDraftKeywords(rule);
+    if (normalizedRule !== rule) changed = true;
+    return normalizedRule;
+  });
+  return changed ? nextRules : rules;
 };
 
 const normalizeAutoDisassembleRuleDraftContent = (raw: unknown): AutoDisassembleRuleDraftContent => {
@@ -357,15 +395,23 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   const handleAutoDisassembleEnabledChange = (next: boolean) => {
     if (autoDisassembleLoading || autoDisassembleSaving) return;
     const prevEnabled = autoDisassembleEnabled;
+    const normalizedRules = normalizeAutoDisassembleRuleDraftList(autoDisassembleRules);
+    if (normalizedRules !== autoDisassembleRules) {
+      setAutoDisassembleRules(normalizedRules);
+    }
     setAutoDisassembleEnabled(next);
-    void saveAutoDisassemble(next, buildAutoDisassembleRulesPayload(), () =>
+    void saveAutoDisassemble(next, buildAutoDisassembleRulesPayload({ rules: normalizedRules }), () =>
       setAutoDisassembleEnabled(prevEnabled)
     );
   };
 
   const handleSaveAdvancedRules = () => {
     if (autoDisassembleLoading || autoDisassembleSaving) return;
-    const rules = buildAutoDisassembleRulesPayload();
+    const normalizedRules = normalizeAutoDisassembleRuleDraftList(autoDisassembleRules);
+    if (normalizedRules !== autoDisassembleRules) {
+      setAutoDisassembleRules(normalizedRules);
+    }
+    const rules = buildAutoDisassembleRulesPayload({ rules: normalizedRules });
     void saveAutoDisassemble(autoDisassembleEnabled, rules, () => undefined);
   };
 
@@ -664,7 +710,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
                             includeNameKeywordsText: e.target.value,
                           })
                         }
-                        placeholder="如：丹, 剑, 残页"
+                        placeholder="如：丹,剑,残页"
                       />
                     </div>
 
@@ -678,7 +724,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
                             excludeNameKeywordsText: e.target.value,
                           })
                         }
-                        placeholder="如：任务, 钥匙"
+                        placeholder="如：任务,钥匙"
                       />
                     </div>
                   </div>
