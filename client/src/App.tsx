@@ -5,6 +5,7 @@ import Auth from './pages/Auth';
 import { getAuthBootstrap, API_ERROR_TOAST_EVENT, type ApiErrorToastDetail } from './services/api';
 import { gameSocket } from './services/gameSocket';
 import { THEME_EVENT_NAME, applyThemeModeToDocument, type ThemeMode } from './constants/theme';
+import AppUpdateNotifier from './components/AppUpdateNotifier';
 import './App.css';
 import './App.scss';
 
@@ -160,6 +161,7 @@ function App({ initialThemeMode }: AppProps) {
     >
       <AntdApp>
         <ApiErrorToastBridge />
+        <AppUpdateNotifier />
         {isLoggedIn ? (
           <Suspense
             fallback={

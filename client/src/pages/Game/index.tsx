@@ -75,6 +75,7 @@ import {
   updateCharacterPositionKeepalive,
 } from '../../services/api';
 import { getUnifiedApiErrorMessage } from '../../services/api';
+import { CURRENT_APP_VERSION_LABEL } from '../../services/appVersion';
 import type {
   GameHomeOverviewDto,
   InventoryItemDto,
@@ -674,7 +675,6 @@ const buildTeamInfoTarget = (m: TeamMember): InfoTarget => {
 };
 
 const Game: FC<GameProps> = ({ onLogout }) => {
-  const version = '1.0.0';
   const { message } = App.useApp();
   const messageRef = useRef(message);
   const initialCharacterPosition = readCharacterWorldPosition(gameSocket.getCharacter());
@@ -2515,7 +2515,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       />
       <GameHeader
         isMobile={isMobile}
-        version={version}
+        version={CURRENT_APP_VERSION_LABEL}
         spiritStones={spiritStones}
         silver={silver}
         gatherStatusNode={gatherAction.running ? <GatherProgressHeader gatherAction={gatherAction} onStop={stopGatherLoop} /> : null}
