@@ -30,7 +30,7 @@
           "text": "目标更新：抵达万法天阙，并与引痕使交谈。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-002",
@@ -56,7 +56,7 @@
           "text": "目标更新：击败天阙巡狩6只、律纹游魂6只。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-003",
@@ -82,7 +82,7 @@
           "text": "目标更新：收集天阙灵砂12个，并向铸纹师复命。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-004",
@@ -108,7 +108,7 @@
           "text": "目标更新：通关万法道宫（普通）1次。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-005",
@@ -134,7 +134,7 @@
           "text": "目标更新：击败镇章使2只、问天执炬2只。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-006",
@@ -160,7 +160,7 @@
           "text": "目标更新：通关万法道宫（困难）2次。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-007",
@@ -186,7 +186,7 @@
           "text": "目标更新：收集证道法印4个，并向执律天官复命。"
         }
       ],
-      "enabled": false
+      "enabled": true
     },
     {
       "id": "dlg-main-8-008",
@@ -212,7 +212,7 @@
           "text": "目标更新：收集天阙灵砂30个，并向执律天官复命。"
         }
       ],
-      "enabled": false
+      "enabled": true
     }
   ]
 }

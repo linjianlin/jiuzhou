@@ -2,13 +2,13 @@
  * 证道期数据完整性测试
  *
  * 作用（做什么 / 不做什么）：
- * - 做什么：锁定第八章、万法天阙、万法道宫、证道期材料、掉落池与三套套装的关键引用关系，避免新增 seed 后出现断链。
+ * - 做什么：锁定第八章、万法天阙、万法道宫、证道期材料、掉落池与三套套装的关键引用关系，避免开放后出现断链。
  * - 做什么：额外校验“野外不掉套装、装备只从秘境链路掉落”的唯一口径，防止后续把套装误塞回公共池或地图怪掉落。
  * - 不做什么：不执行真实战斗，不验证随机掉率统计，也不覆盖 UI 文案排版。
  *
  * 输入/输出：
  * - 输入：chapter8 / dialogue8 / dungeon15 / map / npc / monster / item / equipment / drop_pool / item_set 等种子。
- * - 输出：章节关闭态、跨文件引用存在性、套装闭环与掉落来源唯一性断言。
+ * - 输出：章节开放态、跨文件引用存在性、套装闭环与掉落来源唯一性断言。
  *
  * 数据流/状态流：
  * - 先通过 seedTestUtils 统一加载并构建对象索引；
@@ -120,7 +120,7 @@ const ZHENGDAO_DUNGEON_MONSTER_IDS = [
   ZHENGDAO_BOSS_ID,
 ] as const;
 
-test('证道期主线、地图、秘境与任务应统一处于关闭态', async () => {
+test('证道期主线、地图、秘境与任务应统一处于开放态', async () => {
   const mainQuestSeed = loadSeed('main_quest_chapter8.json');
   const dialogueSeed = loadSeed('dialogue_main_chapter8.json');
   const mapSeed = loadSeed('map_def.json');
@@ -139,31 +139,31 @@ test('证道期主线、地图、秘境与任务应统一处于关闭态', async
   const weeklyTask = taskById.get('task-zhengdao-weekly-001');
 
   assert.ok(chapter, '缺少第八章章节定义');
-  assert.equal(chapter?.enabled, false, '第八章应关闭');
-  assert.equal(getEnabledMainQuestChapterById('mq-chapter-8'), null, '运行时不应暴露第八章章节');
+  assert.equal(chapter?.enabled, true, '第八章应开放');
+  assert.notEqual(getEnabledMainQuestChapterById('mq-chapter-8'), null, '运行时应暴露第八章章节');
 
   assert.ok(openingDialogue, '缺少第八章对白定义');
-  assert.equal(openingDialogue?.enabled, false, '第八章对白应关闭');
-  assert.equal(await loadDialogue('dlg-main-8-001'), null, '运行时不应暴露第八章对白');
+  assert.equal(openingDialogue?.enabled, true, '第八章对白应开放');
+  assert.notEqual(await loadDialogue('dlg-main-8-001'), null, '运行时应暴露第八章对白');
 
   assert.ok(map, '缺少万法天阙地图定义');
-  assert.equal(map?.enabled, false, '万法天阙地图应关闭');
-  assert.equal(isMapEnabled(map as { enabled?: boolean | null }), false, '地图可用性判定应识别万法天阙为关闭态');
-  assert.notEqual(await getMapDefById('map-wanfa-tianque'), null, '运行时内部仍应可读取关闭地图原始定义');
-  assert.equal((await getRoomsInMap('map-wanfa-tianque')).length, 0, '关闭地图后不应返回房间列表');
-  assert.equal(await getRoomInMap('map-wanfa-tianque', 'room-tianque-outer-gate'), null, '关闭地图后不应返回外庭房间');
+  assert.equal(map?.enabled, true, '万法天阙地图应开放');
+  assert.equal(isMapEnabled(map as { enabled?: boolean | null }), true, '地图可用性判定应识别万法天阙为开放态');
+  assert.notEqual(await getMapDefById('map-wanfa-tianque'), null, '运行时应可读取万法天阙地图');
+  assert.notEqual((await getRoomsInMap('map-wanfa-tianque')).length, 0, '开放地图后应返回房间列表');
+  assert.notEqual(await getRoomInMap('map-wanfa-tianque', 'room-tianque-outer-gate'), null, '开放地图后应返回外庭房间');
 
   assert.ok(dungeonDef, '缺少万法道宫秘境定义');
-  assert.equal(dungeonDef?.enabled, false, '万法道宫秘境应关闭');
-  assert.equal(getDungeonDefById(ZHENGDAO_DUNGEON_ID), null, '运行时不应暴露万法道宫秘境');
+  assert.equal(dungeonDef?.enabled, true, '万法道宫秘境应开放');
+  assert.notEqual(getDungeonDefById(ZHENGDAO_DUNGEON_ID), null, '运行时应暴露万法道宫秘境');
 
   assert.ok(dailyTask, '缺少证道期日常任务定义');
-  assert.equal(dailyTask?.enabled, false, '证道期日常任务应关闭');
-  assert.equal(await getTaskDefinitionById('task-zhengdao-daily-001'), null, '运行时不应暴露证道期日常任务');
+  assert.equal(dailyTask?.enabled, true, '证道期日常任务应开放');
+  assert.notEqual(await getTaskDefinitionById('task-zhengdao-daily-001'), null, '运行时应暴露证道期日常任务');
 
   assert.ok(weeklyTask, '缺少证道期周常任务定义');
-  assert.equal(weeklyTask?.enabled, false, '证道期周常任务应关闭');
-  assert.equal(await getTaskDefinitionById('task-zhengdao-weekly-001'), null, '运行时不应暴露证道期周常任务');
+  assert.equal(weeklyTask?.enabled, true, '证道期周常任务应开放');
+  assert.notEqual(await getTaskDefinitionById('task-zhengdao-weekly-001'), null, '运行时应暴露证道期周常任务');
 });
 
 test('第八章主线目标应只引用已存在地图/NPC/怪物/物品/秘境', () => {

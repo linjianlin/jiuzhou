@@ -27,7 +27,7 @@
         "dungeon-lianxu-wanfa-daogong"
       ],
       "sort_weight": 920,
-      "enabled": false
+      "enabled": true
     }
   ],
   "sections": [

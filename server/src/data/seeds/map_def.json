@@ -3517,7 +3517,7 @@
       "revive_map_id": "map-wanfa-tianque",
       "revive_room_id": "room-tianque-outer-gate",
       "sort_weight": 600,
-      "enabled": false,
+      "enabled": true,
       "rooms": [
         {
           "id": "room-tianque-outer-gate",
