@@ -5382,7 +5382,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/01-weapon-set-pojun-weapon.webp",
+      "icon": "/assets/set-poxu/01-weapon-set-poxu-weapon.webp",
       "equip_slot": "weapon",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5410,7 +5410,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/02-head-set-pojun-head.webp",
+      "icon": "/assets/set-poxu/02-head-set-poxu-head.webp",
       "equip_slot": "head",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5439,7 +5439,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/03-clothes-set-pojun-clothes.webp",
+      "icon": "/assets/set-poxu/03-clothes-set-poxu-clothes.webp",
       "equip_slot": "clothes",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5467,7 +5467,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/04-gloves-set-pojun-gloves.webp",
+      "icon": "/assets/set-poxu/04-gloves-set-poxu-gloves.webp",
       "equip_slot": "gloves",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5494,7 +5494,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/05-pants-set-pojun-pants.webp",
+      "icon": "/assets/set-poxu/05-pants-set-poxu-pants.webp",
       "equip_slot": "pants",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5522,7 +5522,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/06-necklace-set-pojun-necklace.webp",
+      "icon": "/assets/set-poxu/06-necklace-set-poxu-necklace.webp",
       "equip_slot": "necklace",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5550,7 +5550,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/07-accessory-set-pojun-accessory.webp",
+      "icon": "/assets/set-poxu/07-accessory-set-poxu-accessory.webp",
       "equip_slot": "accessory",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5578,7 +5578,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-pojun/08-artifact-set-pojun-artifact.webp",
+      "icon": "/assets/set-poxu/08-artifact-set-poxu-artifact.webp",
       "equip_slot": "artifact",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
