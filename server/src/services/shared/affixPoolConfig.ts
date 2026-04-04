@@ -19,7 +19,7 @@
 
 import { formatAffixDisplayNumber, roundAffixResultValue } from './affixPrecision.js';
 
-export const DEFAULT_AFFIX_MAX_TIER = 10;
+export const DEFAULT_AFFIX_MAX_TIER = 11;
 
 export type AffixAllowedSlot =
   | 'weapon'
