@@ -14,7 +14,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "凡人",
       "base_attrs": {
-        "wugong": 4
+        "wugong": 8
       },
       "implicit_attrs": {
         "wugong": 3
@@ -39,7 +39,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "wugong": 11,
+        "wugong": 22,
         "sudu": 1
       },
       "implicit_attrs": {
@@ -64,7 +64,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
-        "wugong": 16,
+        "wugong": 32,
         "baoji_rating": 141
       },
       "implicit_attrs": {
@@ -319,7 +319,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "wugong": 8,
+        "wugong": 16,
         "baoji_rating": 73
       },
       "implicit_attrs": {
@@ -404,7 +404,7 @@
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
         "wufang": 3,
-        "wugong": 2
+        "wugong": 4
       },
       "implicit_attrs": {
         "baoji_rating": 52,
@@ -460,7 +460,7 @@
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
         "max_lingqi": 11,
-        "wugong": 3
+        "wugong": 6
       },
       "implicit_attrs": {
         "baoshang_rating": 61,
@@ -487,7 +487,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "wugong": 4,
+        "wugong": 8,
         "baoji_rating": 46
       },
       "implicit_attrs": {
@@ -515,7 +515,7 @@
       "equip_slot": "artifact",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "wugong": 4,
+        "wugong": 8,
         "sudu": 1
       },
       "implicit_attrs": {
@@ -546,7 +546,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "wugong": 11,
+        "wugong": 22,
         "zhaojia_rating": 55
       },
       "implicit_attrs": {
@@ -631,7 +631,7 @@
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
         "wufang": 4,
-        "wugong": 4
+        "wugong": 8
       },
       "implicit_attrs": {
         "wugong": 4,
@@ -714,7 +714,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "wugong": 4,
+        "wugong": 8,
         "wufang": 2
       },
       "implicit_attrs": {
@@ -773,7 +773,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "fagong": 10,
+        "fagong": 20,
         "baoji_rating": 55
       },
       "implicit_attrs": {
@@ -858,7 +858,7 @@
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
         "fafang": 3,
-        "fagong": 3
+        "fagong": 6
       },
       "implicit_attrs": {
         "fagong": 3,
@@ -914,7 +914,7 @@
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
         "max_lingqi": 18,
-        "fagong": 4
+        "fagong": 8
       },
       "implicit_attrs": {
         "baoshang_rating": 61,
@@ -941,7 +941,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "fagong": 4,
+        "fagong": 8,
         "baoji_rating": 46
       },
       "implicit_attrs": {
@@ -969,7 +969,7 @@
       "equip_slot": "artifact",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "fagong": 6,
+        "fagong": 12,
         "baoji_rating": 55
       },
       "implicit_attrs": {
@@ -1000,7 +1000,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "fagong": 8,
+        "fagong": 16,
         "zhiliao_rating": 91
       },
       "implicit_attrs": {
@@ -1085,7 +1085,7 @@
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
         "fafang": 3,
-        "fagong": 2
+        "fagong": 4
       },
       "implicit_attrs": {
         "zhiliao_rating": 104,
@@ -1168,7 +1168,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "fagong": 4,
+        "fagong": 8,
         "max_lingqi": 11
       },
       "implicit_attrs": {
@@ -1196,7 +1196,7 @@
       "equip_slot": "artifact",
       "equip_req_realm": "炼精化炁·养气期",
       "base_attrs": {
-        "fagong": 4,
+        "fagong": 8,
         "zhiliao_rating": 110
       },
       "implicit_attrs": {
@@ -1227,7 +1227,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
-        "wugong": 15,
+        "wugong": 30,
         "mingzhong_rating": 127
       },
       "implicit_attrs": {
@@ -1311,7 +1311,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
-        "wugong": 6,
+        "wugong": 12,
         "wufang": 4
       },
       "implicit_attrs": {
@@ -1395,7 +1395,7 @@
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
         "max_lingqi": 18,
-        "wugong": 5
+        "wugong": 10
       },
       "implicit_attrs": {
         "lingqi_huifu": 2,
@@ -1422,7 +1422,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼精化炁·通脉期",
       "base_attrs": {
-        "fagong": 8,
+        "fagong": 16,
         "max_lingqi": 15
       },
       "implicit_attrs": {
@@ -1450,7 +1450,7 @@
       "equip_slot": "artifact",
       "equip_req_realm": "炼精化炁·凝炁期",
       "base_attrs": {
-        "fagong": 11,
+        "fagong": 22,
         "sudu": 2
       },
       "implicit_attrs": {
@@ -1477,7 +1477,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼精化炁·凝炁期",
       "base_attrs": {
-        "wugong": 17,
+        "wugong": 34,
         "mingzhong_rating": 143
       },
       "implicit_attrs": {
@@ -1531,7 +1531,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼精化炁·凝炁期",
       "base_attrs": {
-        "wugong": 8,
+        "wugong": 16,
         "wufang": 4
       },
       "implicit_attrs": {
@@ -1586,7 +1586,7 @@
       "equip_req_realm": "炼精化炁·凝炁期",
       "base_attrs": {
         "max_lingqi": 22,
-        "fagong": 7
+        "fagong": 14
       },
       "implicit_attrs": {
         "lingqi_huifu": 2,
@@ -1612,7 +1612,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼精化炁·凝炁期",
       "base_attrs": {
-        "fagong": 9,
+        "fagong": 18,
         "max_lingqi": 17
       },
       "implicit_attrs": {
@@ -1642,7 +1642,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "wugong": 16,
+        "wugong": 32,
         "baoji_rating": 194
       },
       "implicit_attrs": {
@@ -1726,7 +1726,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "wugong": 10,
+        "wugong": 20,
         "baoji_rating": 129
       },
       "implicit_attrs": {
@@ -1781,7 +1781,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "wugong": 8,
+        "wugong": 16,
         "baoshang_rating": 120
       },
       "implicit_attrs": {
@@ -1865,7 +1865,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "wugong": 12,
+        "wugong": 24,
         "wufang": 12
       },
       "implicit_attrs": {
@@ -2087,7 +2087,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "fagong": 18,
+        "fagong": 36,
         "baoji_rating": 145
       },
       "implicit_attrs": {
@@ -2171,7 +2171,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "fagong": 10,
+        "fagong": 20,
         "baoji_rating": 129
       },
       "implicit_attrs": {
@@ -2226,7 +2226,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
-        "fagong": 9,
+        "fagong": 18,
         "max_lingqi": 80
       },
       "implicit_attrs": {
@@ -2311,7 +2311,7 @@
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
         "zhiliao_rating": 357,
-        "fagong": 10
+        "fagong": 20
       },
       "implicit_attrs": {
         "zhiliao_rating": 194
@@ -2530,7 +2530,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
-        "wugong": 20,
+        "wugong": 40,
         "baoji_rating": 240
       },
       "implicit_attrs": {
@@ -2611,7 +2611,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
-        "wugong": 14,
+        "wugong": 28,
         "baoji_rating": 171
       },
       "implicit_attrs": {
@@ -2664,7 +2664,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
-        "wugong": 11,
+        "wugong": 22,
         "baoshang_rating": 144
       },
       "implicit_attrs": {
@@ -2745,7 +2745,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
-        "fagong": 22,
+        "fagong": 44,
         "baoji_rating": 206
       },
       "implicit_attrs": {
@@ -2826,7 +2826,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
-        "fagong": 12,
+        "fagong": 24,
         "baoji_rating": 171
       },
       "implicit_attrs": {
@@ -2879,7 +2879,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·采药期",
       "base_attrs": {
-        "fagong": 12,
+        "fagong": 24,
         "max_lingqi": 90
       },
       "implicit_attrs": {
@@ -2960,7 +2960,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
-        "wugong": 22,
+        "wugong": 44,
         "wufang": 23
       },
       "implicit_attrs": {
@@ -3174,7 +3174,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
-        "fagong": 24,
+        "fagong": 48,
         "lengque_rating": 72
       },
       "implicit_attrs": {
@@ -3203,7 +3203,7 @@
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
         "max_lingqi": 360,
-        "fagong": 16,
+        "fagong": 32,
         "kongzhi_kangxing_rating": 218
       },
       "implicit_attrs": {
@@ -3232,7 +3232,7 @@
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
         "max_lingqi": 520,
-        "fagong": 20,
+        "fagong": 40,
         "fafang": 18
       },
       "implicit_attrs": {
@@ -3259,7 +3259,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
-        "fagong": 16,
+        "fagong": 32,
         "lengque_rating": 328
       },
       "implicit_attrs": {
@@ -3288,7 +3288,7 @@
       "base_attrs": {
         "max_qixue": 260,
         "fafang": 20,
-        "fagong": 10
+        "fagong": 20
       },
       "implicit_attrs": {
         "fafang": 10
@@ -3314,7 +3314,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
-        "fagong": 14,
+        "fagong": 28,
         "kongzhi_kangxing_rating": 218
       },
       "implicit_attrs": {
@@ -3342,7 +3342,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
-        "fagong": 18,
+        "fagong": 36,
         "zengshang_rating": 328
       },
       "implicit_attrs": {
@@ -3400,7 +3400,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
-        "wugong": 26,
+        "wugong": 52,
         "wufang": 27
       },
       "implicit_attrs": {
@@ -3614,7 +3614,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
-        "fagong": 30,
+        "fagong": 60,
         "lengque_rating": 90
       },
       "implicit_attrs": {
@@ -3643,7 +3643,7 @@
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
         "max_lingqi": 440,
-        "fagong": 20,
+        "fagong": 40,
         "kongzhi_kangxing_rating": 268
       },
       "implicit_attrs": {
@@ -3672,7 +3672,7 @@
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
         "max_lingqi": 640,
-        "fagong": 24,
+        "fagong": 48,
         "fafang": 22
       },
       "implicit_attrs": {
@@ -3699,7 +3699,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
-        "fagong": 20,
+        "fagong": 40,
         "lengque_rating": 400
       },
       "implicit_attrs": {
@@ -3728,7 +3728,7 @@
       "base_attrs": {
         "max_qixue": 320,
         "fafang": 24,
-        "fagong": 12
+        "fagong": 24
       },
       "implicit_attrs": {
         "fafang": 12
@@ -3754,7 +3754,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
-        "fagong": 18,
+        "fagong": 36,
         "kongzhi_kangxing_rating": 268
       },
       "implicit_attrs": {
@@ -3782,7 +3782,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼神返虚·养神期",
       "base_attrs": {
-        "fagong": 22,
+        "fagong": 44,
         "zengshang_rating": 400
       },
       "implicit_attrs": {
@@ -3840,7 +3840,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
-        "fagong": 34,
+        "fagong": 68,
         "lengque_rating": 103
       },
       "implicit_attrs": {
@@ -3869,7 +3869,7 @@
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
         "max_lingqi": 502,
-        "fagong": 23,
+        "fagong": 46,
         "kongzhi_kangxing_rating": 306
       },
       "implicit_attrs": {
@@ -3898,7 +3898,7 @@
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
         "max_lingqi": 730,
-        "fagong": 27,
+        "fagong": 54,
         "fafang": 25
       },
       "implicit_attrs": {
@@ -3925,7 +3925,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
-        "fagong": 23,
+        "fagong": 46,
         "lengque_rating": 456
       },
       "implicit_attrs": {
@@ -3954,7 +3954,7 @@
       "base_attrs": {
         "max_qixue": 365,
         "fafang": 27,
-        "fagong": 14
+        "fagong": 28
       },
       "implicit_attrs": {
         "fafang": 14
@@ -3980,7 +3980,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
-        "fagong": 21,
+        "fagong": 42,
         "kongzhi_kangxing_rating": 306
       },
       "implicit_attrs": {
@@ -4008,7 +4008,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
-        "fagong": 25,
+        "fagong": 50,
         "zengshang_rating": 456
       },
       "implicit_attrs": {
@@ -4066,7 +4066,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·还虚期",
       "base_attrs": {
-        "wugong": 30,
+        "wugong": 60,
         "wufang": 31
       },
       "implicit_attrs": {
@@ -4280,7 +4280,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "fagong": 38,
+        "fagong": 76,
         "lengque_rating": 118
       },
       "implicit_attrs": {
@@ -4309,7 +4309,7 @@
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
         "max_lingqi": 564,
-        "fagong": 26,
+        "fagong": 52,
         "kongzhi_kangxing_rating": 338
       },
       "implicit_attrs": {
@@ -4338,7 +4338,7 @@
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
         "max_lingqi": 828,
-        "fagong": 31,
+        "fagong": 62,
         "fafang": 29
       },
       "implicit_attrs": {
@@ -4365,7 +4365,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "fagong": 26,
+        "fagong": 52,
         "lengque_rating": 512
       },
       "implicit_attrs": {
@@ -4394,7 +4394,7 @@
       "base_attrs": {
         "max_qixue": 420,
         "fafang": 31,
-        "fagong": 18
+        "fagong": 36
       },
       "implicit_attrs": {
         "fafang": 16
@@ -4420,7 +4420,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "fagong": 24,
+        "fagong": 48,
         "kongzhi_kangxing_rating": 338
       },
       "implicit_attrs": {
@@ -4448,7 +4448,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "fagong": 28,
+        "fagong": 56,
         "lengque_rating": 280
       },
       "implicit_attrs": {
@@ -4506,7 +4506,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "wugong": 34,
+        "wugong": 68,
         "wufang": 36
       },
       "implicit_attrs": {
@@ -4720,7 +4720,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "wugong": 38,
+        "wugong": 76,
         "baoji_rating": 118
       },
       "implicit_attrs": {
@@ -4749,7 +4749,7 @@
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
         "max_qixue": 564,
-        "wugong": 26,
+        "wugong": 52,
         "baoji_rating": 338
       },
       "implicit_attrs": {
@@ -4778,7 +4778,7 @@
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
         "max_qixue": 828,
-        "wugong": 31,
+        "wugong": 62,
         "wufang": 29
       },
       "implicit_attrs": {
@@ -4805,7 +4805,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "wugong": 26,
+        "wugong": 52,
         "baoshang_rating": 512
       },
       "implicit_attrs": {
@@ -4834,7 +4834,7 @@
       "base_attrs": {
         "max_qixue": 420,
         "wufang": 31,
-        "wugong": 18
+        "wugong": 36
       },
       "implicit_attrs": {
         "wufang": 16
@@ -4860,7 +4860,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "wugong": 24,
+        "wugong": 48,
         "mingzhong_rating": 338
       },
       "implicit_attrs": {
@@ -4888,7 +4888,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
-        "wugong": 28,
+        "wugong": 56,
         "baoji_rating": 280
       },
       "implicit_attrs": {
@@ -4946,7 +4946,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "fagong": 43,
+        "fagong": 86,
         "lengque_rating": 132
       },
       "implicit_attrs": {
@@ -4975,7 +4975,7 @@
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
         "max_lingqi": 632,
-        "fagong": 29,
+        "fagong": 58,
         "kongzhi_kangxing_rating": 379
       },
       "implicit_attrs": {
@@ -5004,7 +5004,7 @@
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
         "max_lingqi": 927,
-        "fagong": 35,
+        "fagong": 70,
         "fafang": 32
       },
       "implicit_attrs": {
@@ -5031,7 +5031,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "fagong": 29,
+        "fagong": 58,
         "lengque_rating": 573
       },
       "implicit_attrs": {
@@ -5060,7 +5060,7 @@
       "base_attrs": {
         "max_qixue": 470,
         "fafang": 35,
-        "fagong": 20
+        "fagong": 40
       },
       "implicit_attrs": {
         "fafang": 18
@@ -5086,7 +5086,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "fagong": 27,
+        "fagong": 54,
         "kongzhi_kangxing_rating": 379
       },
       "implicit_attrs": {
@@ -5114,7 +5114,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "fagong": 31,
+        "fagong": 62,
         "lengque_rating": 314
       },
       "implicit_attrs": {
@@ -5172,7 +5172,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "wugong": 38,
+        "wugong": 76,
         "wufang": 40
       },
       "implicit_attrs": {
@@ -5386,7 +5386,7 @@
       "equip_slot": "weapon",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "wugong": 43,
+        "wugong": 86,
         "baoji_rating": 132
       },
       "implicit_attrs": {
@@ -5415,7 +5415,7 @@
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
         "max_qixue": 632,
-        "wugong": 29,
+        "wugong": 58,
         "baoji_rating": 379
       },
       "implicit_attrs": {
@@ -5444,7 +5444,7 @@
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
         "max_qixue": 927,
-        "wugong": 35,
+        "wugong": 70,
         "wufang": 32
       },
       "implicit_attrs": {
@@ -5471,7 +5471,7 @@
       "equip_slot": "gloves",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "wugong": 29,
+        "wugong": 58,
         "baoshang_rating": 573
       },
       "implicit_attrs": {
@@ -5500,7 +5500,7 @@
       "base_attrs": {
         "max_qixue": 470,
         "wufang": 35,
-        "wugong": 20
+        "wugong": 40
       },
       "implicit_attrs": {
         "wufang": 18
@@ -5526,7 +5526,7 @@
       "equip_slot": "necklace",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "wugong": 27,
+        "wugong": 54,
         "mingzhong_rating": 379
       },
       "implicit_attrs": {
@@ -5554,7 +5554,7 @@
       "equip_slot": "accessory",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
-        "wugong": 31,
+        "wugong": 62,
         "baoji_rating": 314
       },
       "implicit_attrs": {
