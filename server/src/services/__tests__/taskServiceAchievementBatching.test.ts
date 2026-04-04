@@ -30,6 +30,7 @@ import * as taskDefinitionService from '../taskDefinitionService.js';
 import * as taskOverviewPush from '../taskOverviewPush.js';
 import {
   recordDungeonClearEvent,
+  recordCollectItemEvents,
   recordKillMonsterEvents,
 } from '../taskService.js';
 
@@ -82,6 +83,154 @@ test('recordKillMonsterEvents: 应把多种怪物成就推进合并成一次批�
       increment: 3,
     },
   ]);
+});
+
+test('recordKillMonsterEvents: 应把任务推进链路收敛为一次角色读取与一次批量写回', async (t) => {
+  let characterRealmQueryCount = 0;
+  let taskProgressQueryCount = 0;
+  let taskProgressUpdateCount = 0;
+
+  const recurringTaskDefs = [
+    {
+      id: 'daily-kill-wolf-a',
+      category: 'daily',
+      realm: '炼气期',
+      enabled: true,
+      objectives: [
+        {
+          id: 'kill-wolf-a',
+          type: 'kill_monster',
+          target: 2,
+          params: { monster_id: 'wolf-a' },
+        },
+      ],
+    },
+    {
+      id: 'daily-kill-wolf-b',
+      category: 'daily',
+      realm: '炼气期',
+      enabled: true,
+      objectives: [
+        {
+          id: 'kill-wolf-b',
+          type: 'kill_monster',
+          target: 3,
+          params: { monster_id: 'wolf-b' },
+        },
+      ],
+    },
+  ] as ReturnType<typeof taskDefinitionService.getStaticTaskDefinitions>;
+
+  t.mock.method(database, 'query', async (...args: Parameters<typeof database.query>) => {
+    const [sql] = args;
+    if (sql.includes('FROM characters')) {
+      characterRealmQueryCount += 1;
+      return {
+        rows: [
+          {
+            realm: '炼气期',
+            sub_realm: '初期',
+          },
+        ],
+        rowCount: 1,
+      };
+    }
+    if (sql.includes('INSERT INTO character_task_progress')) {
+      return { rows: [], rowCount: 0 };
+    }
+    if (sql.includes('FROM character_task_progress p')) {
+      taskProgressQueryCount += 1;
+      return {
+        rows: [
+          {
+            task_id: 'daily-kill-wolf-a',
+            status: 'ongoing',
+            progress: {},
+          },
+          {
+            task_id: 'daily-kill-wolf-b',
+            status: 'ongoing',
+            progress: {},
+          },
+        ],
+        rowCount: 2,
+      };
+    }
+    if (sql.includes('jsonb_to_recordset($2::jsonb)')) {
+      taskProgressUpdateCount += 1;
+      return { rows: [], rowCount: 2 };
+    }
+    return { rows: [], rowCount: 0 };
+  });
+  t.mock.method(taskDefinitionService, 'getStaticTaskDefinitions', () => recurringTaskDefs);
+  t.mock.method(
+    taskDefinitionService,
+    'getTaskDefinitionsByIds',
+    async () => new Map(recurringTaskDefs.map((taskDef) => [taskDef.id, taskDef])),
+  );
+  t.mock.method(mainQuestService, 'updateSectionProgressBatch', async () => undefined);
+  t.mock.method(taskOverviewPush, 'notifyTaskOverviewUpdate', async () => undefined);
+  t.mock.method(achievementProgress, 'updateAchievementProgressBatch', async () => undefined);
+
+  await recordKillMonsterEvents(1001, [
+    { monsterId: 'wolf-a', count: 2 },
+    { monsterId: 'wolf-b', count: 3 },
+  ]);
+
+  assert.equal(characterRealmQueryCount, 1);
+  assert.equal(taskProgressQueryCount, 1);
+  assert.equal(taskProgressUpdateCount, 1);
+});
+
+test('recordCollectItemEvents: 应按 itemId 聚合后批量推进主线与成就', async (t) => {
+  const sectionBatchCalls: Array<Parameters<typeof mainQuestService.updateSectionProgressBatch>[1]> = [];
+  const achievementBatchCalls: Array<Parameters<typeof achievementProgress.updateAchievementProgressBatch>[0]> = [];
+
+  t.mock.method(
+    mainQuestService,
+    'updateSectionProgressBatch',
+    async (_characterId: number, events: Parameters<typeof mainQuestService.updateSectionProgressBatch>[1]) => {
+      sectionBatchCalls.push(events);
+    },
+  );
+  t.mock.method(
+    achievementProgress,
+    'updateAchievementProgressBatch',
+    async (inputs: Parameters<typeof achievementProgress.updateAchievementProgressBatch>[0]) => {
+      achievementBatchCalls.push(inputs);
+    },
+  );
+
+  await recordCollectItemEvents(1001, [
+    { itemId: 'herb-a', count: 1 },
+    { itemId: 'herb-a', count: 2 },
+    { itemId: 'ore-b', count: 3 },
+  ]);
+
+  assert.deepEqual(sectionBatchCalls, [[
+    {
+      type: 'collect',
+      itemId: 'herb-a',
+      count: 3,
+    },
+    {
+      type: 'collect',
+      itemId: 'ore-b',
+      count: 3,
+    },
+  ]]);
+  assert.deepEqual(achievementBatchCalls, [[
+    {
+      characterId: 1001,
+      trackKey: 'item:obtain:herb-a',
+      increment: 3,
+    },
+    {
+      characterId: 1001,
+      trackKey: 'item:obtain:ore-b',
+      increment: 3,
+    },
+  ]]);
 });
 
 test('recordDungeonClearEvent: 应把秘境相关成就推进合并成一次批量更新', async (t) => {

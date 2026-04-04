@@ -120,7 +120,7 @@ test('battleDropService.settleBattleRewardPlan: 应输出真实发奖分段慢�
     gainedSilver: 0,
     warnings: [],
   }));
-  t.mock.method(taskService, 'recordCollectItemEvent', async () => undefined);
+  t.mock.method(taskService, 'recordCollectItemEvents', async () => undefined);
   t.mock.method(characterRewardSettlement, 'applyCharacterRewardDeltas', async () => undefined);
 
   await battleDropService.settleBattleRewardPlan(plan);
@@ -146,6 +146,104 @@ test('battleDropService.settleBattleRewardPlan: 应输出真实发奖分段慢�
       dropCount: 1,
       collectEventCount: 1,
       pendingMailCount: 0,
+    },
+  ]);
+});
+
+test('battleDropService.settleBattleRewardPlan: 应按角色批量记录收集事件', async (t) => {
+  const collectEventCalls: Array<{
+    characterId: number;
+    events: Array<{ itemId: string; count: number }>;
+  }> = [];
+  const plan: BattleRewardSettlementPlan = {
+    totalExp: 120,
+    totalSilver: 36,
+    drops: [
+      {
+        receiverCharacterId: 1001,
+        receiverUserId: 101,
+        receiverFuyuan: 1,
+        itemDefId: 'material_herb',
+        quantity: 1,
+        bindType: 'bound',
+      },
+      {
+        receiverCharacterId: 1001,
+        receiverUserId: 101,
+        receiverFuyuan: 1,
+        itemDefId: 'material_herb',
+        quantity: 2,
+        bindType: 'bound',
+      },
+    ],
+    perPlayerRewards: [
+      {
+        characterId: 1001,
+        userId: 101,
+        exp: 120,
+        silver: 36,
+        drops: [],
+      },
+    ],
+  };
+
+  t.mock.method(database, 'withTransactionAuto', async <T>(callback: () => Promise<T>) => callback());
+  t.mock.method(characterRewardTargetLock, 'lockCharacterRewardSettlementTargets', async () => undefined);
+  t.mock.method(database, 'query', async () => ({
+    rows: [
+      {
+        id: 1001,
+        auto_disassemble_enabled: false,
+        auto_disassemble_rules: null,
+      },
+    ],
+    rowCount: 1,
+  }));
+  t.mock.method(staticConfigLoader, 'getItemDefinitionById', () => ({
+    id: 'material_herb',
+    name: '灵草',
+    category: 'material',
+    subCategory: 'material',
+    effectDefs: [],
+    quality: '黄',
+    disassemblable: false,
+  }) as never);
+  t.mock.method(
+    autoDisassembleRewardService,
+    'grantRewardItemWithAutoDisassemble',
+    async (input: Parameters<typeof autoDisassembleRewardService.grantRewardItemWithAutoDisassemble>[0]) => ({
+      grantedItems: [
+        {
+          itemDefId: input.itemDefId,
+          qty: input.qty,
+          itemIds: [],
+        },
+      ],
+      pendingMailItems: [],
+      gainedSilver: 0,
+      warnings: [],
+    }),
+  );
+  t.mock.method(
+    taskService,
+    'recordCollectItemEvents',
+    async (characterId: number, events: Array<{ itemId: string; count: number }>) => {
+      collectEventCalls.push({ characterId, events });
+    },
+  );
+  t.mock.method(characterRewardSettlement, 'applyCharacterRewardDeltas', async () => undefined);
+
+  await battleDropService.settleBattleRewardPlan(plan);
+
+  assert.deepEqual(collectEventCalls, [
+    {
+      characterId: 1001,
+      events: [
+        {
+          itemId: 'material_herb',
+          count: 3,
+        },
+      ],
     },
   ]);
 });

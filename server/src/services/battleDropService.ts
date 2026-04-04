@@ -10,7 +10,7 @@
 import { query, withTransactionAuto } from '../config/database.js';
 import { itemService, CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
-import { recordCollectItemEvent } from './taskService.js';
+import { recordCollectItemEvent, recordCollectItemEvents } from './taskService.js';
 import {
   grantRewardItemWithAutoDisassemble,
   type AutoDisassembleSetting,
@@ -184,6 +184,20 @@ export interface SinglePlayerRewardSettlementResult {
   itemsGained: RewardItemEntry[];
   bagFullFlag: boolean;
 }
+
+type PendingMailBucket = {
+  userId: number;
+  items: MailAttachItem[];
+  itemByKey: Map<string, MailAttachItem>;
+};
+
+const buildPendingMailItemMergeKey = (item: MailAttachItem): string => {
+  return [
+    item.item_def_id,
+    item.options?.bindType || 'none',
+    JSON.stringify(item.options?.equipOptions || null),
+  ].join('|');
+};
 
 /**
  * BattleDropService
@@ -1093,6 +1107,9 @@ class BattleDropService {
       silver: reward.silver,
       items: [],
     }));
+    const perPlayerRewardByCharacterId = new Map(
+      perPlayerRewards.map((reward) => [reward.characterId, reward] as const),
+    );
     const allItems: DistributeResult['rewards']['items'] = [];
 
     for (const drop of plan.drops) {
@@ -1104,7 +1121,7 @@ class BattleDropService {
         instanceIds: [],
         receiverId: drop.receiverCharacterId,
       });
-      const playerReward = perPlayerRewards.find((reward) => reward.characterId === drop.receiverCharacterId);
+      const playerReward = perPlayerRewardByCharacterId.get(drop.receiverCharacterId);
       if (!playerReward) continue;
       playerReward.items.push({
         itemDefId: drop.itemDefId,
@@ -1146,8 +1163,8 @@ class BattleDropService {
       };
     }
 
-    const pendingMailByReceiver = new Map<number, { userId: number; items: MailAttachItem[] }>();
-    const collectCounts = new Map<string, { characterId: number; itemDefId: string; qty: number }>();
+    const pendingMailByReceiver = new Map<number, PendingMailBucket>();
+    const collectEventMapByCharacter = new Map<number, Map<string, number>>();
     const pendingCharacterRewardDeltas = new Map<number, CharacterRewardDelta>();
     const participantCharacterIds = normalizeCharacterRewardTargetIds(
       plan.perPlayerRewards.map((reward) => Number(reward.characterId)),
@@ -1213,16 +1230,15 @@ class BattleDropService {
       }
 
       const result = this.buildDistributeResultFromBattleRewardPlan(plan);
+      const perPlayerRewardByCharacterId = new Map(
+        (result.perPlayerRewards ?? []).map((reward) => [reward.characterId, reward] as const),
+      );
       let totalSilver = plan.totalSilver;
 
       const appendCollectCount = (characterId: number, itemDefId: string, qty: number): void => {
-        const key = `${characterId}|${itemDefId}`;
-        const existing = collectCounts.get(key);
-        if (existing) {
-          existing.qty += qty;
-        } else {
-          collectCounts.set(key, { characterId, itemDefId, qty });
-        }
+        const collectEventMap = collectEventMapByCharacter.get(characterId) ?? new Map<string, number>();
+        collectEventMap.set(itemDefId, (collectEventMap.get(itemDefId) ?? 0) + qty);
+        collectEventMapByCharacter.set(characterId, collectEventMap);
       };
 
       const appendRewardRecord = (
@@ -1233,7 +1249,7 @@ class BattleDropService {
         instanceIds: number[],
       ): void => {
         result.rewards.items.push({ itemDefId, itemName, quantity, instanceIds, receiverId: characterId });
-        const playerReward = result.perPlayerRewards?.find((reward) => reward.characterId === characterId);
+        const playerReward = perPlayerRewardByCharacterId.get(characterId);
         if (playerReward) {
           playerReward.items.push({ itemDefId, itemName, quantity, instanceIds });
         }
@@ -1247,18 +1263,18 @@ class BattleDropService {
         const existing = pendingMailByReceiver.get(receiverCharacterId) ?? {
           userId: receiverUserId,
           items: [],
+          itemByKey: new Map<string, MailAttachItem>(),
         };
-        const keyA = JSON.stringify(attachItem.options?.equipOptions || null);
-        const found = existing.items.find((entry) => {
-          const keyB = JSON.stringify(entry.options?.equipOptions || null);
-          return entry.item_def_id === attachItem.item_def_id
-            && (entry.options?.bindType || 'none') === (attachItem.options?.bindType || 'none')
-            && keyB === keyA;
-        });
+        const found = existing.itemByKey.get(buildPendingMailItemMergeKey(attachItem));
         if (found) {
           found.qty += attachItem.qty;
         } else {
-          existing.items.push(attachItem);
+          const mailItem: MailAttachItem = {
+            ...attachItem,
+            ...(attachItem.options ? { options: { ...attachItem.options } } : {}),
+          };
+          existing.items.push(mailItem);
+          existing.itemByKey.set(buildPendingMailItemMergeKey(mailItem), mailItem);
         }
         pendingMailByReceiver.set(receiverCharacterId, existing);
       };
@@ -1339,7 +1355,7 @@ class BattleDropService {
         if (grantResult.gainedSilver > 0) {
           totalSilver += grantResult.gainedSilver;
           result.rewards.silver += grantResult.gainedSilver;
-          const playerReward = result.perPlayerRewards?.find((reward) => reward.characterId === receiverCharacterId);
+          const playerReward = perPlayerRewardByCharacterId.get(receiverCharacterId);
           if (playerReward) {
             playerReward.silver += grantResult.gainedSilver;
           }
@@ -1360,9 +1376,18 @@ class BattleDropService {
         pendingMailReceiverCount: pendingMailByReceiver.size,
       });
 
-      collectEventCount = collectCounts.size;
-      for (const entry of collectCounts.values()) {
-        await recordCollectItemEvent(entry.characterId, entry.itemDefId, entry.qty);
+      collectEventCount = [...collectEventMapByCharacter.values()].reduce(
+        (total, collectEventMap) => total + collectEventMap.size,
+        0,
+      );
+      for (const [characterId, collectEventMap] of collectEventMapByCharacter.entries()) {
+        await recordCollectItemEvents(
+          characterId,
+          [...collectEventMap.entries()].map(([itemId, count]) => ({
+            itemId,
+            count,
+          })),
+        );
       }
       slowLogger.mark('recordCollectItemEvents', {
         collectEventCount,

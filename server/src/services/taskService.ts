@@ -1196,6 +1196,40 @@ const applyTaskEvent = async (
   characterId: number,
   event: TaskEvent,
 ): Promise<boolean> => {
+  return applyTaskEvents(characterId, [event]);
+};
+
+type TaskProgressEventMutation = {
+  taskId: string;
+  progress: TaskProgressRecord;
+  nextStatus: TaskProgressStatusDb;
+};
+
+/**
+ * 批量推进任务事件，供同一角色的一组战斗/收集事件复用。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把同一角色的一组任务事件收敛为“一次境界读取、一次任务进度读取、一次批量写回”，避免热路径重复扫全量任务进度。
+ * 2. 做什么：保留 recurring 任务自动补齐、目标命中、交付 NPC 直达 claimable 等既有语义。
+ * 3. 不做什么：不处理主线批量推进，也不负责成就更新；这些仍由调用方在外层统一调度。
+ *
+ * 输入/输出：
+ * - 输入：`characterId` 与一组已归一化的 `TaskEvent`。
+ * - 输出：是否有任务概览相关数据发生变化。
+ *
+ * 数据流/状态流：
+ * 事件数组 -> recurring 任务命中收敛 -> 补齐缺失进度行 -> 一次性读取角色任务进度
+ * -> 内存合并所有事件命中 -> 批量 UPDATE 落库。
+ *
+ * 关键边界条件与坑点：
+ * 1. `talk_npc` 必须允许与同批次里的“已完成目标”组合后直接进入 `claimable`，否则会把原本同链路可交付的任务错误卡在 `turnin`。
+ * 2. 这里只对单角色做批量；多角色仍应由上层按角色拆分，避免把不同角色的任务锁和推送口径混在一起。
+ */
+const applyTaskEvents = async (
+  characterId: number,
+  events: readonly TaskEvent[],
+): Promise<boolean> => {
+  if (events.length <= 0) return false;
   const cid = Number(characterId);
   if (!Number.isFinite(cid) || cid <= 0) return false;
   const characterRealmState = await loadCharacterTaskRealmState(cid);
@@ -1208,8 +1242,23 @@ const applyTaskEvent = async (
     enabled: def.enabled,
     objectives: parseObjectives(def.objectives),
   }));
-  const matchedRecurringTaskIds = collectMatchedRecurringTaskIds(recurringTaskDefs, characterRealmState, event);
-  const insertedRecurringTask = await insertMissingTaskProgressRows({ query }, cid, matchedRecurringTaskIds, false);
+  const matchedRecurringTaskIdSet = new Set<string>();
+  for (const event of events) {
+    const matchedRecurringTaskIds = collectMatchedRecurringTaskIds(
+      recurringTaskDefs,
+      characterRealmState,
+      event,
+    );
+    for (const taskId of matchedRecurringTaskIds) {
+      matchedRecurringTaskIdSet.add(taskId);
+    }
+  }
+  const insertedRecurringTask = await insertMissingTaskProgressRows(
+    { query },
+    cid,
+    Array.from(matchedRecurringTaskIdSet),
+    false,
+  );
 
   const res = await query(
     `
@@ -1230,6 +1279,7 @@ const applyTaskEvent = async (
       .filter((taskId): taskId is string => Boolean(taskId)),
   );
 
+  const taskProgressMutations: TaskProgressEventMutation[] = [];
   let changedAnyTask = insertedRecurringTask;
   for (const row of res.rows ?? []) {
     const taskId = asNonEmptyString(row?.task_id);
@@ -1243,54 +1293,97 @@ const applyTaskEvent = async (
     const objectives = parseObjectives(taskDef.objectives);
     const progressRecord = parseProgressRecord(row?.progress);
     const category = normalizeTaskCategory(taskDef.category) ?? 'main';
+    const giverNpcId = asNonEmptyString(taskDef.giver_npc_id);
+
+    const normalizedObjectives = objectives
+      .map((objective) => {
+        const objectiveId = asNonEmptyString(objective?.id);
+        if (!objectiveId) return null;
+        return {
+          objective,
+          objectiveId,
+          target: Math.max(1, asFiniteNonNegativeInt(objective?.target, 1)),
+        };
+      })
+      .filter((objective): objective is {
+        objective: TaskObjectiveLike;
+        objectiveId: string;
+        target: number;
+      } => objective !== null);
 
     let changed = false;
-    for (const o of objectives) {
-      const oid = asNonEmptyString(o?.id);
-      if (!oid) continue;
-      const match = objectiveMatchesTaskEvent(o, event);
-      if (!match.matched) continue;
-      const target = Math.max(1, asFiniteNonNegativeInt(o?.target, 1));
-      const cur = asFiniteNonNegativeInt(progressRecord[oid], 0);
-      const next = Math.min(target, cur + match.delta);
-      if (next !== cur) {
-        progressRecord[oid] = next;
-        changed = true;
+    let giverTalkMatched = false;
+    for (const event of events) {
+      if (event.type === 'talk_npc' && giverNpcId && giverNpcId === event.npcId) {
+        giverTalkMatched = true;
+      }
+      for (const objectiveEntry of normalizedObjectives) {
+        const match = objectiveMatchesTaskEvent(objectiveEntry.objective, event);
+        if (!match.matched) continue;
+        const current = asFiniteNonNegativeInt(progressRecord[objectiveEntry.objectiveId], 0);
+        const next = Math.min(objectiveEntry.target, current + match.delta);
+        if (next !== current) {
+          progressRecord[objectiveEntry.objectiveId] = next;
+          changed = true;
+        }
       }
     }
 
-    const giverNpcId = asNonEmptyString(taskDef.giver_npc_id);
     const allDone = computeAllObjectivesDone(objectives, progressRecord);
 
     let nextStatus: TaskProgressStatusDb = status;
-    let promoteToClaimable = false;
-    if (event.type === 'talk_npc' && giverNpcId && giverNpcId === event.npcId) {
-      if (status === 'turnin' && allDone) promoteToClaimable = true;
-    }
     if (allDone) {
       if (category === 'event') {
         nextStatus = 'claimable';
       } else {
         if (status === 'ongoing') nextStatus = 'turnin';
-        if (promoteToClaimable) nextStatus = 'claimable';
+        if (giverTalkMatched && (status === 'turnin' || nextStatus === 'turnin' || status === 'claimable')) {
+          nextStatus = 'claimable';
+        }
       }
     }
 
     if (!changed && nextStatus === status) continue;
-
-    await query(
-      `
-        UPDATE character_task_progress
-        SET progress = $3::jsonb,
-            status = $4::varchar(16),
-            completed_at = CASE WHEN $4::varchar(16) = 'claimable'::varchar(16) THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
-            updated_at = NOW()
-        WHERE character_id = $1 AND task_id = $2
-      `,
-      [cid, taskId, JSON.stringify(progressRecord), nextStatus],
-    );
+    taskProgressMutations.push({
+      taskId,
+      progress: progressRecord,
+      nextStatus,
+    });
     changedAnyTask = true;
   }
+
+  if (taskProgressMutations.length > 0) {
+    await query(
+      `
+        WITH next_rows AS (
+          SELECT *
+          FROM jsonb_to_recordset($2::jsonb)
+            AS x(task_id varchar(64), progress jsonb, next_status varchar(16))
+        )
+        UPDATE character_task_progress AS progress_row
+        SET progress = next_rows.progress,
+            status = next_rows.next_status,
+            completed_at = CASE
+              WHEN next_rows.next_status = 'claimable'::varchar(16)
+                THEN COALESCE(progress_row.completed_at, NOW())
+              ELSE progress_row.completed_at
+            END,
+            updated_at = NOW()
+        FROM next_rows
+        WHERE progress_row.character_id = $1
+          AND progress_row.task_id = next_rows.task_id
+      `,
+      [
+        cid,
+        JSON.stringify(taskProgressMutations.map((mutation) => ({
+          task_id: mutation.taskId,
+          progress: mutation.progress,
+          next_status: mutation.nextStatus,
+        }))),
+      ],
+    );
+  }
+
   return changedAnyTask;
 };
 
@@ -1372,7 +1465,7 @@ export const recordKillMonsterEvent = async (characterId: number, monsterId: str
  * - 输出：无；副作用是更新任务/主线/成就并按需推送任务总览。
  *
  * 数据流/状态流：
- * - 战斗结算拿到怪物列表 -> 本函数聚合 -> applyTaskEvent/updateSectionProgressBatch/updateAchievementProgress。
+ * - 战斗结算拿到怪物列表 -> 本函数聚合 -> applyTaskEvents/updateSectionProgressBatch/updateAchievementProgress。
  *
  * 关键边界条件与坑点：
  * 1. 必须先聚合同怪多次击杀，否则同一场战斗会产生多次任务总览刷新。
@@ -1385,15 +1478,14 @@ export const recordKillMonsterEvents = async (
   const normalizedEvents = normalizeKillMonsterEvents(events);
   if (normalizedEvents.length <= 0) return;
 
-  let taskOverviewChanged = false;
-  for (const event of normalizedEvents) {
-    const changed = await applyTaskEvent(characterId, {
+  const taskOverviewChanged = await applyTaskEvents(
+    characterId,
+    normalizedEvents.map((event) => ({
       type: 'kill_monster',
       monsterId: event.monsterId,
       count: event.count,
-    });
-    taskOverviewChanged = taskOverviewChanged || changed;
-  }
+    })),
+  );
 
   await updateSectionProgressBatch(
     characterId,
@@ -1438,6 +1530,54 @@ export const recordGatherResourceEvent = async (characterId: number, resourceId:
 
 export const recordCollectItemEvent = async (characterId: number, itemId: string, count: number): Promise<void> => {
   return taskService.recordCollectItemEvent(characterId, itemId, count);
+};
+
+type CollectItemEventInput = {
+  itemId: string;
+  count: number;
+};
+
+const normalizeCollectItemEvents = (
+  events: CollectItemEventInput[],
+): CollectItemEventInput[] => {
+  const countByItemId = new Map<string, number>();
+
+  for (const event of events) {
+    const itemId = asNonEmptyString(event.itemId);
+    if (!itemId) continue;
+    const count = normalizePositiveInt(event.count, 1);
+    countByItemId.set(itemId, (countByItemId.get(itemId) ?? 0) + count);
+  }
+
+  return [...countByItemId.entries()].map(([itemId, count]) => ({
+    itemId,
+    count,
+  }));
+};
+
+/**
+ * 批量记录收集物品事件，供掉落/邮件等多物品入口复用。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把同一角色的一批收集事件聚合成一次主线批量推进和一次成就批量推进，减少逐物品事务开销。
+ * 2. 不做什么：不处理 recurring 任务，也不主动推送任务总览；收集事件当前只影响主线与成就。
+ *
+ * 输入/输出：
+ * - 输入：`characterId` 与一组物品收集事件。
+ * - 输出：无；副作用是批量更新主线与成就。
+ *
+ * 数据流/状态流：
+ * 多条 collect 事件 -> 先按 itemId 聚合 -> updateSectionProgressBatch -> updateAchievementProgressBatch。
+ *
+ * 关键边界条件与坑点：
+ * 1. 同一批里重复 itemId 必须先合并，避免主线与成就各自重复累加。
+ * 2. 空 itemId 或非法 count 会被丢弃，保持和单条入口一致的脏数据处理语义。
+ */
+export const recordCollectItemEvents = async (
+  characterId: number,
+  events: CollectItemEventInput[],
+): Promise<void> => {
+  return taskService.recordCollectItemEvents(characterId, events);
 };
 
 export const recordDungeonClearEvent = async (
@@ -1899,13 +2039,41 @@ class TaskService {
    */
   @Transactional
   async recordCollectItemEvent(characterId: number, itemId: string, count: number): Promise<void> {
-    const iid = asNonEmptyString(itemId);
-    if (!iid) return;
-    const c = normalizePositiveInt(count, 1);
+    await this.recordCollectItemEvents(characterId, [{ itemId, count }]);
+  }
 
-    await updateSectionProgress(characterId, { type: 'collect', itemId: iid, count: c });
+  /**
+   * 批量记录收集物品事件。
+   *
+   * 作用：
+   * 1. 把同一角色的一批收集事件聚合成一次主线推进和一次成就推进。
+   * 2. 保持在同一事务中完成，避免结算链路里出现“主线已写、成就未写”的半成功状态。
+   *
+   * 边界条件：
+   * 1. 重复 itemId 必须先合并，避免同一批次重复更新同一目标。
+   * 2. 空事件或非法 itemId 直接忽略，和单条入口保持同一口径。
+   */
+  @Transactional
+  async recordCollectItemEvents(characterId: number, events: CollectItemEventInput[]): Promise<void> {
+    const normalizedEvents = normalizeCollectItemEvents(events);
+    if (normalizedEvents.length <= 0) return;
 
-    await updateAchievementProgress(characterId, `item:obtain:${iid}`, c);
+    await updateSectionProgressBatch(
+      characterId,
+      normalizedEvents.map((event) => ({
+        type: 'collect' as const,
+        itemId: event.itemId,
+        count: event.count,
+      })),
+    );
+
+    await updateAchievementProgressBatch(
+      normalizedEvents.map((event) => ({
+        characterId,
+        trackKey: `item:obtain:${event.itemId}`,
+        increment: event.count,
+      })),
+    );
   }
 }
 
