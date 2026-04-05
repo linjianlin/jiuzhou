@@ -32,6 +32,8 @@ export const CHANGE_LOG_ENTRIES: readonly ChangeLogEntrySource[] = [
   {
     releasedAt: '2026-04-05',
     sections: [
+      '洞府研修模型调整，停用 KIMI 2.5、Grok 4.20 Beta，目前暂时仅剩 Gemini 3.1 Pro',
+      '<div class="my-4 border-t border-gray-200 dark:border-gray-700"></div>',
       '优化成就界面，称号单独成一个菜单项展示，增加称号搜索功能',
       '优化伙伴列表界面，按品阶分组显示',
       '<div class="my-4 border-t border-gray-200 dark:border-gray-700"></div>',
