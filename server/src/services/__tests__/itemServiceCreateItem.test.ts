@@ -21,6 +21,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { GeneratedEquipment } from '../equipmentService.js';
 import { equipmentService } from '../equipmentService.js';
 import { itemService } from '../itemService.js';
 import { inventoryService } from '../inventory/service.js';
@@ -70,4 +71,62 @@ test('普通物品创建应复用 inventoryService 事务入口', async (t) => {
       obtainedFrom: 'battle_drop',
     },
   ]);
+});
+
+test('装备创建命中预生成结果时应直接复用实例而不是再次随机生成', async (t) => {
+  const preGeneratedEquipment: GeneratedEquipment = {
+    itemDefId: 'equip-weapon-001',
+    name: '预生成青锋剑',
+    quality: '地',
+    qualityRank: 3,
+    baseAttrs: {
+      atk: 128,
+    },
+    affixes: [],
+    affixGenVersion: 5,
+    setId: null,
+    seed: 9527,
+  };
+
+  const inventoryMock = t.mock.method(
+    inventoryService,
+    'addItemToInventory',
+    async () => {
+      throw new Error('装备创建不应调用普通物品入包入口');
+    },
+  );
+  const equipmentMock = t.mock.method(
+    equipmentService,
+    'createEquipmentInstance',
+    async () => ({
+      success: true,
+      instanceId: 7788,
+      message: 'ok',
+    }),
+  );
+
+  const result = await itemService.createItem(3001, 4002, 'equip-weapon-001', 1, {
+    location: 'bag',
+    bindType: 'bound',
+    obtainedFrom: 'battle_drop',
+    equipOptions: {
+      preGeneratedEquipment,
+    },
+  });
+
+  assert.deepEqual(result, {
+    success: true,
+    message: '成功创建1件装备',
+    itemIds: [7788],
+    equipment: preGeneratedEquipment,
+  });
+  assert.equal(inventoryMock.mock.callCount(), 0);
+  assert.equal(equipmentMock.mock.callCount(), 1);
+  assert.strictEqual(equipmentMock.mock.calls[0]?.arguments[2], preGeneratedEquipment);
+  assert.deepEqual(equipmentMock.mock.calls[0]?.arguments.slice(0, 2), [3001, 4002]);
+  assert.deepEqual(equipmentMock.mock.calls[0]?.arguments[3], {
+    location: 'bag',
+    bindType: 'bound',
+    obtainedFrom: 'battle_drop',
+  });
 });

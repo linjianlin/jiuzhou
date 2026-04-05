@@ -61,7 +61,29 @@ export interface CreateItemOptions {
   bindType?: string;
   obtainedFrom?: string;
   // 装备专用选项
-  equipOptions?: GenerateOptions;
+  equipOptions?: GenerateOptions & {
+    /**
+     * 作用：
+     * - 复用上游已经完成品质/词条判定的预生成装备，避免奖励热路径里重复随机生成同一件装备。
+     * - 不负责缓存多件装备；仅用于“单件已预生成、随后立刻落库”的链路。
+     *
+     * 输入 / 输出：
+     * - 输入：由上游生成好的装备快照。
+     * - 输出：createItem 在命中时直接把该快照传给装备实例创建入口。
+     *
+     * 数据流 / 状态流：
+     * - 奖励服务预生成装备 -> 通过 equipOptions 透传到 itemService -> createEquipmentInstance 落库。
+     *
+     * 复用设计说明：
+     * - 继续复用 itemService 这个统一物品创建边界，不额外新增“奖励专用创建装备”入口，避免装备落库逻辑再分叉一套。
+     * - 当前主要被自动分解奖励链路复用，后续其他需要“先判定后落库”的装备奖励也可复用同一入口。
+     *
+     * 关键边界条件与坑点：
+     * 1. 仅首件装备允许消费该预生成结果，批量创建其余件仍需独立随机生成，避免多件装备复用同一随机种子。
+     * 2. 预生成结果只解决“重复生成”，不绕开 createEquipmentInstance 的背包锁与落格校验。
+     */
+    preGeneratedEquipment?: GeneratedEquipment;
+  };
 }
 
 // 创建物品结果
@@ -264,10 +286,14 @@ const createEquipmentItem = async (
 ): Promise<CreateItemResult> => {
   const itemIds: number[] = [];
   let lastEquipment: GeneratedEquipment | undefined;
+  const preGeneratedEquipment = options.equipOptions?.preGeneratedEquipment;
 
   // 装备不可堆叠，逐个生成
   for (let i = 0; i < qty; i++) {
-    const generated = await generateEquipment(itemDefId, options.equipOptions);
+    const generated =
+      i === 0 && preGeneratedEquipment
+        ? preGeneratedEquipment
+        : await generateEquipment(itemDefId, options.equipOptions);
     if (!generated) {
       return { success: false, message: '装备生成失败' };
     }

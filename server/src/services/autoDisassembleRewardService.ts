@@ -282,6 +282,7 @@ export const grantRewardItemWithAutoDisassemble = async (
 
   for (let i = 0; i < normalizedQty; i++) {
     let sourceEquipOptionsForCreate = input.sourceEquipOptions;
+    let sourceEquipOptionsForMail = input.sourceEquipOptions;
     let generatedQualityRank = baseQualityRank;
 
     const createSourceItem = async () => {
@@ -300,10 +301,10 @@ export const grantRewardItemWithAutoDisassemble = async (
 
       if (sourceCreateResult.message === '背包已满') {
         const options =
-          input.bindType || sourceEquipOptionsForCreate !== undefined
+          input.bindType || sourceEquipOptionsForMail !== undefined
             ? {
                 ...(input.bindType ? { bindType: input.bindType } : {}),
-                ...(sourceEquipOptionsForCreate !== undefined ? { equipOptions: sourceEquipOptionsForCreate } : {}),
+                ...(sourceEquipOptionsForMail !== undefined ? { equipOptions: sourceEquipOptionsForMail } : {}),
               }
             : undefined;
         appendPendingMailItem(result, {
@@ -324,9 +325,13 @@ export const grantRewardItemWithAutoDisassemble = async (
      */
     if (category === 'equipment') {
       const equipRollOptions = buildEquipRollOptionsForAttempt(input.sourceEquipOptions, i + 1);
-      sourceEquipOptionsForCreate = equipRollOptions;
       const generated = await generateEquipment(input.itemDefId, equipRollOptions);
       if (generated) {
+        sourceEquipOptionsForMail = equipRollOptions;
+        sourceEquipOptionsForCreate = {
+          ...equipRollOptions,
+          preGeneratedEquipment: generated,
+        };
         generatedQualityRank = Number.isInteger(generated.qualityRank) && generated.qualityRank > 0
           ? generated.qualityRank
           : baseQualityRank;
