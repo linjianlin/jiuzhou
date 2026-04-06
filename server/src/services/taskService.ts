@@ -38,6 +38,10 @@ import {
   type RewardItemDisplayMeta,
 } from './shared/rewardDisplay.js';
 import { resolveNpcTalkGreetingLines } from './shared/npcTalkGreeting.js';
+import {
+  getTaskStaticIndex,
+  normalizeTaskObjectives,
+} from './shared/taskStaticIndex.js';
 import { buildTaskRecurringUnlockState } from './shared/taskRecurringUnlock.js';
 import { notifyTaskOverviewUpdate } from './taskOverviewPush.js';
 import {
@@ -1042,7 +1046,7 @@ const parseProgressRecord = (progress: unknown): Record<string, number> => {
   return out;
 };
 
-const computeAllObjectivesDone = (objectives: RawObjective[], progressRecord: Record<string, number>): boolean => {
+const computeAllObjectivesDone = (objectives: readonly RawObjective[], progressRecord: Record<string, number>): boolean => {
   const list = objectives.filter((o) => asNonEmptyString(o?.id));
   if (list.length === 0) return false;
   for (const o of list) {
@@ -1237,17 +1241,11 @@ const applyTaskEvents = async (
   const resolvedCharacterRealmState = characterRealmState ?? await loadCharacterTaskRealmState(cid);
   if (!resolvedCharacterRealmState) return false;
 
-  const recurringTaskDefs = getStaticTaskDefinitions().map((def) => ({
-    id: def.id,
-    category: def.category,
-    realm: def.realm,
-    enabled: def.enabled,
-    objectives: parseObjectives(def.objectives),
-  }));
+  const taskStaticIndex = getTaskStaticIndex();
   const matchedRecurringTaskIdSet = new Set<string>();
   for (const event of events) {
     const matchedRecurringTaskIds = collectMatchedRecurringTaskIds(
-      recurringTaskDefs,
+      taskStaticIndex.recurringTaskDefinitions,
       resolvedCharacterRealmState,
       event,
     );
@@ -1292,26 +1290,16 @@ const applyTaskEvents = async (
     const status = asTaskProgressStatusDb(row?.status);
     if (status === 'claimed') continue;
 
-    const objectives = parseObjectives(taskDef.objectives);
+    const objectives = taskDef.source === 'static'
+      ? (taskStaticIndex.objectivesByTaskId.get(taskId) ?? [])
+      : parseObjectives(taskDef.objectives);
     const progressRecord = parseProgressRecord(row?.progress);
     const category = normalizeTaskCategory(taskDef.category) ?? 'main';
     const giverNpcId = asNonEmptyString(taskDef.giver_npc_id);
 
-    const normalizedObjectives = objectives
-      .map((objective) => {
-        const objectiveId = asNonEmptyString(objective?.id);
-        if (!objectiveId) return null;
-        return {
-          objective,
-          objectiveId,
-          target: Math.max(1, asFiniteNonNegativeInt(objective?.target, 1)),
-        };
-      })
-      .filter((objective): objective is {
-        objective: TaskObjectiveLike;
-        objectiveId: string;
-        target: number;
-      } => objective !== null);
+    const normalizedObjectives = taskDef.source === 'static'
+      ? (taskStaticIndex.normalizedObjectivesByTaskId.get(taskId) ?? [])
+      : normalizeTaskObjectives(objectives);
 
     let changed = false;
     let giverTalkMatched = false;

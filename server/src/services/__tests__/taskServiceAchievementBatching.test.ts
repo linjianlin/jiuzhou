@@ -28,11 +28,16 @@ import * as mainQuestService from '../mainQuest/index.js';
 import * as staticConfigLoader from '../staticConfigLoader.js';
 import * as taskDefinitionService from '../taskDefinitionService.js';
 import * as taskOverviewPush from '../taskOverviewPush.js';
+import { resetTaskStaticIndexCacheForTest } from '../shared/taskStaticIndex.js';
 import {
   recordDungeonClearEvent,
   recordCollectItemEvents,
   recordKillMonsterEvents,
 } from '../taskService.js';
+
+test.beforeEach(() => {
+  resetTaskStaticIndexCacheForTest();
+});
 
 test('recordKillMonsterEvents: 应把多种怪物成就推进合并成一次批量更新', async (t) => {
   const achievementBatchCalls: Array<Parameters<typeof achievementProgress.updateAchievementProgressBatch>[0]> = [];

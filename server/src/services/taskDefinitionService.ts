@@ -22,7 +22,15 @@ export type TaskDefinition = {
 
 type QueryRunner = Pick<PoolClient, 'query'>;
 
+type StaticTaskDefinitionSnapshot = {
+  source: readonly TaskDefConfig[];
+  enabledMap: Map<string, TaskDefinition>;
+  allIds: Set<string>;
+  sortedEnabledList: TaskDefinition[];
+};
+
 const DYNAMIC_TASK_ID_PREFIX = 'task-bounty-';
+let staticTaskDefinitionSnapshotCache: StaticTaskDefinitionSnapshot | null = null;
 
 const isDynamicTaskId = (taskId: string): boolean => taskId.startsWith(DYNAMIC_TASK_ID_PREFIX);
 
@@ -71,22 +79,41 @@ const toDynamicTaskDefinition = (row: Record<string, unknown>): TaskDefinition =
 };
 
 const getStaticTaskDefinitionSnapshot = (): { enabledMap: Map<string, TaskDefinition>; allIds: Set<string> } => {
+  const sourceDefinitions = getTaskDefinitions();
+  if (staticTaskDefinitionSnapshotCache?.source === sourceDefinitions) {
+    return {
+      enabledMap: staticTaskDefinitionSnapshotCache.enabledMap,
+      allIds: staticTaskDefinitionSnapshotCache.allIds,
+    };
+  }
+
   const enabledMap = new Map<string, TaskDefinition>();
   const allIds = new Set<string>();
-  for (const task of getTaskDefinitions()) {
+  for (const task of sourceDefinitions) {
     const normalized = toStaticTaskDefinition(task);
     if (!normalized.id) continue;
     allIds.add(normalized.id);
     if (!normalized.enabled) continue;
     enabledMap.set(normalized.id, normalized);
   }
+  const sortedEnabledList = Array.from(enabledMap.values()).sort(
+    (left, right) => right.sort_weight - left.sort_weight || left.id.localeCompare(right.id),
+  );
+  staticTaskDefinitionSnapshotCache = {
+    source: sourceDefinitions,
+    enabledMap,
+    allIds,
+    sortedEnabledList,
+  };
   return { enabledMap, allIds };
 };
 
 export const getStaticTaskDefinitions = (): TaskDefinition[] => {
-  return Array.from(getStaticTaskDefinitionSnapshot().enabledMap.values()).sort(
-    (left, right) => right.sort_weight - left.sort_weight || left.id.localeCompare(right.id),
-  );
+  const sourceDefinitions = getTaskDefinitions();
+  if (staticTaskDefinitionSnapshotCache?.source !== sourceDefinitions) {
+    getStaticTaskDefinitionSnapshot();
+  }
+  return staticTaskDefinitionSnapshotCache?.sortedEnabledList ?? [];
 };
 
 export const getTaskDefinitionById = async (

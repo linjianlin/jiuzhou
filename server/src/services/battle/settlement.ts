@@ -14,6 +14,7 @@
  */
 
 import { BattleEngine } from "../../battle/battleEngine.js";
+import { runWithDatabaseAccessAllowed } from "../../config/database.js";
 import {
   consumeBattleLogDelta,
   getBattleLogCursor,
@@ -239,6 +240,31 @@ const buildBattleAchievementParticipants = (
   return snapshots;
 };
 
+const scheduleBattleOutcomeAchievements = (
+  battleId: string,
+  battleResult: "attacker_win" | "defender_win" | "draw",
+  snapshots: AchievementBattleParticipantSnapshot[],
+): void => {
+  if (snapshots.length <= 0) {
+    return;
+  }
+
+  void Promise.resolve().then(async () => {
+    try {
+      await runWithDatabaseAccessAllowed(async () => {
+        await recordBattleOutcomeAchievements(battleId, battleResult, snapshots);
+      });
+    } catch (error) {
+      battleSettlementLogger.warn({
+        battleId,
+        trackedCharacterCount: snapshots.length,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      }, "战斗成就异步结算失败");
+    }
+  });
+};
+
 async function finishBattleCore(
   battleId: string,
   engine: BattleEngine,
@@ -427,18 +453,18 @@ async function finishBattleCore(
     session: sessionSnapshot,
   });
 
-  try {
-    if (battleAchievementParticipants.length > 0) {
-      await recordBattleOutcomeAchievements(
-        battleId,
-        result.result as "attacker_win" | "defender_win" | "draw",
-        battleAchievementParticipants,
-      );
-      slowLogger.mark("recordBattleOutcomeAchievements", {
-        trackedCharacterCount: battleAchievementParticipants.length,
-      });
-    }
+  if (battleAchievementParticipants.length > 0) {
+    scheduleBattleOutcomeAchievements(
+      battleId,
+      result.result as "attacker_win" | "defender_win" | "draw",
+      battleAchievementParticipants,
+    );
+    slowLogger.mark("scheduleBattleOutcomeAchievements", {
+      trackedCharacterCount: battleAchievementParticipants.length,
+    });
+  }
 
+  try {
     if (arenaSettlementContext) {
       const beforeProjection = await getArenaProjection(
         arenaSettlementContext.challengerCharacterId,
