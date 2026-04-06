@@ -25,7 +25,8 @@
  *
  * 关键边界条件与坑点：
  * 1. 本脚本默认禁止技能生图，即使图片模型环境变量已配置，也不会触发图片生成，避免测试范围被放大。
- * 2. 若传入 `--seed-start`，每本书会按顺序递增 seed；若不传，则每次调用共享请求构造时各自生成独立 seed。
+ * 2. 只有显式传入 `--review-model-name` 时才会启用复评；未指定时即使环境里存在复评模型配置，也必须直接跳过复评。
+ * 3. 若传入 `--seed-start`，每本书会按顺序递增 seed；若不传，则每次调用共享请求构造时各自生成独立 seed。
  */
 
 import '../bootstrap/installConsoleLogger.js';
@@ -71,6 +72,7 @@ type BatchSummaryEntry = {
   techniqueType: GeneratedTechniqueType;
   skillCount: number;
   layerCount: number;
+  balanceReviewEnabled: boolean;
   balanceReviewModelName: string;
   balanceAdjusted: boolean;
   balanceReason: string;
@@ -154,6 +156,7 @@ async function main(): Promise<void> {
       seed,
       baseModel: options.baseModel,
       includeSkillIcons: false,
+      enableReview: options.reviewModelName !== undefined,
       reviewModelName: options.reviewModelName,
     });
 
@@ -184,6 +187,7 @@ async function main(): Promise<void> {
       techniqueType: result.summary.techniqueType,
       skillCount: result.summary.skillCount,
       layerCount: result.summary.layerCount,
+      balanceReviewEnabled: result.balanceReview.enabled,
       balanceReviewModelName: result.balanceReview.modelName,
       balanceAdjusted: result.balanceReview.adjusted,
       balanceReason: result.balanceReview.reason,
@@ -193,7 +197,9 @@ async function main(): Promise<void> {
     console.log(
       `[${index + 1}/${options.count}] ${result.summary.techniqueName} ` +
       `(${requestedQuality}/${result.summary.techniqueType}${result.baseModel ? `/${result.baseModel}` : ''}) ` +
-      `${result.balanceReview.adjusted ? ' [已按复评调整]' : ' [复评通过]'} ` +
+      `${result.balanceReview.enabled
+        ? (result.balanceReview.adjusted ? ' [已按复评调整]' : ' [复评通过]')
+        : ' [未启用复评]'} ` +
       `seed=${result.seed} -> ${fileName}`,
     );
   }

@@ -26,6 +26,7 @@ import {
 import {
   buildTechniqueAuraAttackPercentSoftRangePromptRule,
   buildTechniqueAuraPolarityPromptRule,
+  TECHNIQUE_PROMPT_QIXUE_ATTACK_RATIO_RULE,
 } from '../shared/techniqueGenerationConstraints.js';
 import {
   TECHNIQUE_BURNING_WORD_PROMPT_GENERAL_RULE,
@@ -215,6 +216,12 @@ test('buildTechniqueGenerationTextModelRequest: 洞府研修专属创作方向�
   assert.equal(
     parsedUserMessage.constraints?.generalRules?.includes(
       TECHNIQUE_RESEARCH_CREATIVE_DIRECTION_GENERAL_RULE,
+    ),
+    true,
+  );
+  assert.equal(
+    parsedUserMessage.constraints?.generalRules?.includes(
+      TECHNIQUE_PROMPT_QIXUE_ATTACK_RATIO_RULE,
     ),
     true,
   );

@@ -15,8 +15,8 @@
  * -> 本模块解析质量/类型/seed
  * -> 功法文本模型请求构造
  * -> 主模型生成 candidate
- * -> 第二模型复评数值平衡
- * -> 必要时按修正规则再次生成
+ * -> 可选第二模型复评数值平衡
+ * -> 复评启用且需要调整时按修正规则再次生成
  * -> 共享清洗与校验
  * -> 调用方决定打印或落盘。
  *
@@ -27,6 +27,7 @@
  * 关键边界条件与坑点：
  * 1. `server/tsconfig.json` 只编译 `src` 目录下的 TypeScript 文件，所以共享核心必须放在 `src` 下，才能被 `tsc -b` 实际校验。
  * 2. 批量测试默认不生成图片；是否挂技能图标必须由调用方显式声明，避免脚本因环境变量存在而偷偷扩大测试范围。
+ * 3. 是否启用复评必须由调用方显式传入，避免“未指定复评模型”与“沿用环境默认复评模型”被混成同一条链路。
  */
 
 import { readTextModelConfig } from '../../services/ai/modelConfig.js';
@@ -60,6 +61,7 @@ export type TechniqueModelDebugSummary = {
 };
 
 export type TechniqueModelDebugBalanceReviewSummary = {
+  enabled: boolean;
   modelName: string;
   adjusted: boolean;
   reason: string;
@@ -80,6 +82,7 @@ export type TechniqueModelDebugGenerationTrace = {
 };
 
 export type TechniqueModelDebugReviewTrace = {
+  enabled: boolean;
   modelName: string;
   elapsedMs: number;
   promptSnapshotBytes: number;
@@ -109,6 +112,7 @@ export type TechniqueModelDebugGenerateParams = {
   seed?: number;
   baseModel?: string;
   includeSkillIcons: boolean;
+  enableReview: boolean;
   reviewModelName?: string;
 };
 
@@ -500,6 +504,7 @@ const buildTechniqueModelDebugBalanceReviewSummary = (
   reviewResponse: TechniqueBalanceReviewResponse,
 ): TechniqueModelDebugBalanceReviewSummary => {
   return {
+    enabled: true,
     modelName: reviewResponse.modelName,
     adjusted: reviewResponse.review.needsAdjustment,
     reason: reviewResponse.review.reason,
@@ -508,11 +513,23 @@ const buildTechniqueModelDebugBalanceReviewSummary = (
   };
 };
 
+const buildTechniqueModelDebugSkippedBalanceReviewSummary = (): TechniqueModelDebugBalanceReviewSummary => {
+  return {
+    enabled: false,
+    modelName: '未启用',
+    adjusted: false,
+    reason: '未启用复评',
+    riskTags: [],
+    adjustmentGuidance: [],
+  };
+};
+
 const buildTechniqueModelDebugReviewTrace = (params: {
   reviewResponse: TechniqueBalanceReviewResponse;
   elapsedMs: number;
 }): TechniqueModelDebugReviewTrace => {
   return {
+    enabled: true,
     modelName: params.reviewResponse.modelName,
     elapsedMs: params.elapsedMs,
     promptSnapshotBytes: params.reviewResponse.promptSnapshot.length,
@@ -520,6 +537,19 @@ const buildTechniqueModelDebugReviewTrace = (params: {
     reason: params.reviewResponse.review.reason,
     riskTags: [...params.reviewResponse.review.riskTags],
     adjustmentGuidance: [...params.reviewResponse.review.adjustmentGuidance],
+  };
+};
+
+const buildTechniqueModelDebugSkippedReviewTrace = (): TechniqueModelDebugReviewTrace => {
+  return {
+    enabled: false,
+    modelName: '未启用',
+    elapsedMs: 0,
+    promptSnapshotBytes: 0,
+    adjusted: false,
+    reason: '未启用复评',
+    riskTags: [],
+    adjustmentGuidance: [],
   };
 };
 
@@ -531,15 +561,19 @@ export const generateTechniqueModelDebugResult = async (
   if (!resolvedTechniqueModelConfig) {
     throw new Error('缺少功法文本模型配置，请检查 AI_TECHNIQUE_MODEL_PROVIDER/URL/KEY/NAME');
   }
-  const resolvedReviewModelConfig = readTextModelConfig('partner');
-  if (!resolvedReviewModelConfig) {
+  const resolvedReviewModelConfig = params.enableReview
+    ? readTextModelConfig('partner')
+    : null;
+  if (params.enableReview && !resolvedReviewModelConfig) {
     throw new Error('缺少功法平衡复评模型配置，请检查 AI_PARTNER_MODEL_PROVIDER/URL/KEY/NAME');
   }
 
   const originalTechniqueModelName = process.env.AI_TECHNIQUE_MODEL_NAME;
   const originalReviewModelName = process.env.AI_PARTNER_MODEL_NAME;
   process.env.AI_TECHNIQUE_MODEL_NAME = resolvedTechniqueModelConfig.modelName;
-  process.env.AI_PARTNER_MODEL_NAME = params.reviewModelName?.trim() || resolvedReviewModelConfig.modelName;
+  if (params.enableReview && resolvedReviewModelConfig) {
+    process.env.AI_PARTNER_MODEL_NAME = params.reviewModelName?.trim() || resolvedReviewModelConfig.modelName;
+  }
 
   try {
     const debugPromptContext = buildTechniqueModelDebugPromptContext(params.baseModel);
@@ -549,17 +583,21 @@ export const generateTechniqueModelDebugResult = async (
       seed: params.seed,
       basePromptContext: debugPromptContext,
     });
-    const reviewStartedAt = Date.now();
-    const reviewResponse = await reviewTechniqueBalanceCandidate({
-      candidate: initialGeneration.candidate,
-      quality: params.quality,
-      techniqueType: params.techniqueType,
-      maxLayer: QUALITY_MAX_LAYER[params.quality],
-      baseModel: debugPromptContext?.techniqueBaseModel ?? null,
-    });
-    const reviewElapsedMs = Date.now() - reviewStartedAt;
+    const reviewStartedAt = params.enableReview ? Date.now() : 0;
+    const reviewResponse = params.enableReview
+      ? await reviewTechniqueBalanceCandidate({
+          candidate: initialGeneration.candidate,
+          quality: params.quality,
+          techniqueType: params.techniqueType,
+          maxLayer: QUALITY_MAX_LAYER[params.quality],
+          baseModel: debugPromptContext?.techniqueBaseModel ?? null,
+        })
+      : null;
+    const reviewElapsedMs = params.enableReview
+      ? Date.now() - reviewStartedAt
+      : 0;
 
-    const finalGeneration = reviewResponse.review.needsAdjustment
+    const finalGeneration = reviewResponse?.review.needsAdjustment
       ? await generateTechniqueCandidateForDebug({
           quality: params.quality,
           techniqueType: params.techniqueType,
@@ -588,13 +626,17 @@ export const generateTechniqueModelDebugResult = async (
       baseModel: debugPromptContext?.techniqueBaseModel ?? null,
       candidate,
       summary: buildTechniqueModelDebugSummary(candidate),
-      balanceReview: buildTechniqueModelDebugBalanceReviewSummary(reviewResponse),
+      balanceReview: reviewResponse
+        ? buildTechniqueModelDebugBalanceReviewSummary(reviewResponse)
+        : buildTechniqueModelDebugSkippedBalanceReviewSummary(),
       trace: {
         initialGeneration: buildTechniqueModelDebugGenerationTrace(initialGeneration),
-        balanceReview: buildTechniqueModelDebugReviewTrace({
-          reviewResponse,
-          elapsedMs: reviewElapsedMs,
-        }),
+        balanceReview: reviewResponse
+          ? buildTechniqueModelDebugReviewTrace({
+              reviewResponse,
+              elapsedMs: reviewElapsedMs,
+            })
+          : buildTechniqueModelDebugSkippedReviewTrace(),
         finalGeneration: buildTechniqueModelDebugGenerationTrace(finalGeneration),
         skillIcons: {
           enabled: params.includeSkillIcons,

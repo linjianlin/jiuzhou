@@ -179,6 +179,9 @@ export const TECHNIQUE_PROMPT_CREATIVE_DIRECTION_RULES = [
   '命名、description、longDesc、layerDesc 与 skill.description 可以更有门派感、人物气质和招式辨识度，避免模板化套话。',
 ] as const;
 
+export const TECHNIQUE_PROMPT_QIXUE_ATTACK_RATIO_RULE =
+  '当前数值环境可近似理解为：max_qixue 与 wugong/fagong 的量级比例约为 3:1；生成涉及气血倍率、气血百分比伤害或基于双攻的伤害时，请以这个相对量级作为数值参考。';
+
 export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   '仅输出单个 JSON 对象，不要输出代码块与解释文本',
   '所有字段必须使用 camelCase，禁止 snake_case 与中文 key',
@@ -189,6 +192,7 @@ export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_GENERAL_RULE,
   TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_SCOPE_GENERAL_RULE,
   TECHNIQUE_RESEARCH_CREATIVE_DIRECTION_GENERAL_RULE,
+  TECHNIQUE_PROMPT_QIXUE_ATTACK_RATIO_RULE,
   ...TECHNIQUE_PROMPT_CREATIVE_DIRECTION_RULES,
   'skills 必须为数组，长度必须满足 skillCountRange',
   'layers 必须与 maxLayer 一致，按 layer 从小到大给出',

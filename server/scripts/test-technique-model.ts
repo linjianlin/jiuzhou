@@ -91,6 +91,7 @@ const main = async (): Promise<void> => {
     seed,
     baseModel,
     includeSkillIcons: imageEnabled,
+    enableReview: true,
     reviewModelName: args['review-model-name'],
   });
 
