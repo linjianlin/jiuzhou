@@ -1243,6 +1243,17 @@ class BattleDropService {
         (result.perPlayerRewards ?? []).map((reward) => [reward.characterId, reward] as const),
       );
       let totalSilver = plan.totalSilver;
+      let grantRewardMetaCostMs = 0;
+      let grantRewardCreateCostMs = 0;
+      let grantRewardWarningCostMs = 0;
+      let grantRewardPendingMailCostMs = 0;
+      let grantRewardApplyResultCostMs = 0;
+      let equipmentDropCount = 0;
+      let nonEquipmentDropCount = 0;
+      let autoDisassembleEnabledDropCount = 0;
+      let grantedItemEntryCount = 0;
+      let pendingMailItemCount = 0;
+      let grantWarningCount = 0;
 
       const appendCollectCount = (characterId: number, itemDefId: string, qty: number): void => {
         const collectEventMap = collectEventMapByCharacter.get(characterId) ?? new Map<string, number>();
@@ -1302,6 +1313,7 @@ class BattleDropService {
           continue;
         }
 
+        const metaStartedAt = Date.now();
         const sourceMeta = this.getRewardItemMeta(drop.itemDefId);
         const createOptions: CreateItemOptions = {
           location: 'bag',
@@ -1318,7 +1330,17 @@ class BattleDropService {
         const receiverAutoDisassemble =
           autoDisassembleSettings.get(receiverCharacterId)
           ?? normalizeAutoDisassembleSetting({ enabled: false, rules: undefined });
+        grantRewardMetaCostMs += Date.now() - metaStartedAt;
+        if (sourceMeta.category === 'equipment') {
+          equipmentDropCount += 1;
+        } else {
+          nonEquipmentDropCount += 1;
+        }
+        if (receiverAutoDisassemble.enabled) {
+          autoDisassembleEnabledDropCount += 1;
+        }
 
+        const grantStartedAt = Date.now();
         const grantResult = await grantRewardItemWithAutoDisassemble({
           characterId: receiverCharacterId,
           itemDefId: drop.itemDefId,
@@ -1354,15 +1376,23 @@ class BattleDropService {
             return { success: true, message: '银两增加成功' };
           },
           });
+        grantRewardCreateCostMs += Date.now() - grantStartedAt;
 
+        const warningStartedAt = Date.now();
         for (const warning of grantResult.warnings) {
           console.warn(`战斗掉落自动分解失败: ${warning}`);
         }
+        grantWarningCount += grantResult.warnings.length;
+        grantRewardWarningCostMs += Date.now() - warningStartedAt;
 
+        const pendingMailStartedAt = Date.now();
         for (const mailItem of grantResult.pendingMailItems) {
           queuePendingMailItem(drop.receiverUserId, receiverCharacterId, mailItem);
         }
+        pendingMailItemCount += grantResult.pendingMailItems.length;
+        grantRewardPendingMailCostMs += Date.now() - pendingMailStartedAt;
 
+        const applyResultStartedAt = Date.now();
         if (grantResult.gainedSilver > 0) {
           totalSilver += grantResult.gainedSilver;
           result.rewards.silver += grantResult.gainedSilver;
@@ -1373,6 +1403,7 @@ class BattleDropService {
         }
 
         for (const granted of grantResult.grantedItems) {
+          grantedItemEntryCount += 1;
           const grantedMeta =
             granted.itemDefId === drop.itemDefId
               ? sourceMeta
@@ -1380,11 +1411,23 @@ class BattleDropService {
           appendCollectCount(receiverCharacterId, granted.itemDefId, granted.qty);
           appendRewardRecord(receiverCharacterId, granted.itemDefId, grantedMeta.name, granted.qty, granted.itemIds);
         }
+        grantRewardApplyResultCostMs += Date.now() - applyResultStartedAt;
       }
 
       slowLogger.mark('grantRewardDrops', {
         grantedDropCount: result.rewards.items.length,
         pendingMailReceiverCount: pendingMailByReceiver.size,
+        grantRewardMetaCostMs,
+        grantRewardCreateCostMs,
+        grantRewardWarningCostMs,
+        grantRewardPendingMailCostMs,
+        grantRewardApplyResultCostMs,
+        equipmentDropCount,
+        nonEquipmentDropCount,
+        autoDisassembleEnabledDropCount,
+        grantedItemEntryCount,
+        pendingMailItemCount,
+        grantWarningCount,
       });
 
       collectEventCount = [...collectEventMapByCharacter.values()].reduce(
