@@ -338,6 +338,139 @@ export interface OnlinePlayersPayloadDto {
 
 type OnlinePlayersListener = (payload: OnlinePlayersPayloadDto) => void;
 
+/**
+ * 作用：统一归一化角色快照里的数组字段，确保 Socket 全量包、增量包与本地补丁都只流入稳定结构。
+ * 不做什么：不修正数值属性，不为非法字符串生成业务默认值，也不吞掉其它字段的真实变化。
+ * 输入/输出：输入为角色全量快照、增量补丁或全局 Buff 原始列表，输出为可直接进入页面状态的规范化结果。
+ * 数据流/状态流：Socket `game:character` / `updateCharacterLocal`
+ * -> 归一化 `featureUnlocks` 与 `globalBuffs`
+ * -> 写入 `currentCharacter`
+ * -> 分发给所有角色订阅者。
+ * 复用设计说明：
+ * 1. 把角色数组字段归一化集中在服务层，避免 `PlayerInfo`、地图、背包等消费方重复判断空数组。
+ * 2. 全量包、增量包、本地补丁共用同一入口，后续角色快照再新增数组字段时只需要改一个地方。
+ * 关键边界条件与坑点：
+ * 1. `delta` 补丁里未出现的字段不能被强行补默认值，否则会把已有状态误覆盖。
+ * 2. `globalBuffs` 中的非法条目必须在进入 React 树前剔除，避免渲染期直接读取缺失字段导致白屏。
+ */
+const normalizeCharacterFeatureUnlocks = (
+  featureUnlocks: CharacterData["featureUnlocks"] | null | undefined,
+): CharacterFeatureCode[] => {
+  if (!Array.isArray(featureUnlocks)) {
+    return [];
+  }
+
+  return featureUnlocks.filter(
+    (featureUnlock): featureUnlock is CharacterFeatureCode =>
+      typeof featureUnlock === "string" && featureUnlock.trim().length > 0,
+  );
+};
+
+const normalizeCharacterGlobalBuffs = (
+  globalBuffs:
+    | ReadonlyArray<Partial<CharacterGlobalBuffData> | null | undefined>
+    | null
+    | undefined,
+): CharacterGlobalBuffData[] => {
+  if (!Array.isArray(globalBuffs)) {
+    return [];
+  }
+
+  const normalizedBuffs: CharacterGlobalBuffData[] = [];
+  for (const globalBuff of globalBuffs) {
+    if (!globalBuff) continue;
+
+    const id =
+      typeof globalBuff.id === "string" ? globalBuff.id.trim() : "";
+    const buffKey =
+      typeof globalBuff.buffKey === "string" ? globalBuff.buffKey.trim() : "";
+    const label =
+      typeof globalBuff.label === "string" ? globalBuff.label.trim() : "";
+    const iconText =
+      typeof globalBuff.iconText === "string"
+        ? globalBuff.iconText.trim()
+        : "";
+    const effectText =
+      typeof globalBuff.effectText === "string"
+        ? globalBuff.effectText.trim()
+        : "";
+    const startedAt =
+      typeof globalBuff.startedAt === "string"
+        ? globalBuff.startedAt.trim()
+        : "";
+    const expireAt =
+      typeof globalBuff.expireAt === "string"
+        ? globalBuff.expireAt.trim()
+        : "";
+    const totalDurationMs = Math.max(
+      0,
+      Math.floor(Number(globalBuff.totalDurationMs) || 0),
+    );
+
+    if (
+      id.length === 0 ||
+      buffKey.length === 0 ||
+      label.length === 0 ||
+      iconText.length === 0 ||
+      effectText.length === 0 ||
+      startedAt.length === 0 ||
+      expireAt.length === 0
+    ) {
+      continue;
+    }
+
+    normalizedBuffs.push({
+      id,
+      buffKey,
+      label,
+      iconText,
+      effectText,
+      startedAt,
+      expireAt,
+      totalDurationMs,
+    });
+  }
+
+  return normalizedBuffs;
+};
+
+const normalizeCharacterPatch = (
+  patch: Partial<CharacterData>,
+): Partial<CharacterData> => {
+  const normalizedPatch: Partial<CharacterData> = { ...patch };
+
+  if ("featureUnlocks" in patch) {
+    normalizedPatch.featureUnlocks = normalizeCharacterFeatureUnlocks(
+      patch.featureUnlocks,
+    );
+  }
+
+  if ("globalBuffs" in patch) {
+    normalizedPatch.globalBuffs = normalizeCharacterGlobalBuffs(
+      patch.globalBuffs,
+    );
+  }
+
+  return normalizedPatch;
+};
+
+const normalizeCharacterSnapshot = (
+  character: CharacterData | null | undefined,
+): CharacterData | null => {
+  if (!character) {
+    return null;
+  }
+
+  const normalizedPatch = normalizeCharacterPatch(character);
+  return {
+    ...character,
+    featureUnlocks:
+      normalizedPatch.featureUnlocks ?? normalizeCharacterFeatureUnlocks(null),
+    globalBuffs:
+      normalizedPatch.globalBuffs ?? normalizeCharacterGlobalBuffs(null),
+  };
+};
+
 class GameSocketService {
   private socket: Socket | null = null;
   private characterListeners: Set<CharacterListener> = new Set();
@@ -441,10 +574,14 @@ class GameSocketService {
       }) => {
         if (data.type === "delta" && data.delta && this.currentCharacter) {
           // 增量合并：仅更新变化字段
-          this.currentCharacter = { ...this.currentCharacter, ...data.delta };
+          const normalizedDelta = normalizeCharacterPatch(data.delta);
+          this.currentCharacter = {
+            ...this.currentCharacter,
+            ...normalizedDelta,
+          };
         } else {
           // 全量替换（含 type="full" 及无 type 的兼容场景）
-          this.currentCharacter = data.character ?? null;
+          this.currentCharacter = normalizeCharacterSnapshot(data.character);
         }
         this.notifyCharacterListeners(this.currentCharacter);
       },
@@ -970,7 +1107,8 @@ class GameSocketService {
 
   updateCharacterLocal(patch: Partial<CharacterData>): void {
     if (!this.currentCharacter) return;
-    const entries = Object.entries(patch) as Array<
+    const normalizedPatch = normalizeCharacterPatch(patch);
+    const entries = Object.entries(normalizedPatch) as Array<
       [keyof CharacterData, CharacterData[keyof CharacterData] | undefined]
     >;
     if (entries.length === 0) return;
