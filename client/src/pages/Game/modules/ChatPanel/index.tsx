@@ -805,7 +805,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                 className="message-entity-preview-name"
                 style={{ color: HEAVEN_TECHNIQUE_PREVIEW_COLOR }}
                 onClick={() => void openTechniquePreviewByChatEntityId(segment.entityId)}
-                title="查看功法详情"
+                title="查看功法书详情"
               >
                 {segment.label}
               </button>

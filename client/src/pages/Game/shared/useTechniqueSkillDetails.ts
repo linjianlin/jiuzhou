@@ -19,8 +19,9 @@
  */
 import { useEffect, useState } from 'react';
 import { getUnifiedApiErrorMessage } from '../../../services/api';
-import { getTechniqueDetail, type SkillDefDto } from '../../../services/api/technique';
+import { getTechniqueDetail } from '../../../services/api/technique';
 import type { TechniqueSkillDetailLike } from '../modules/TechniqueModal/skillDetailShared';
+import { mapTechniqueApiSkillToDetail } from './techniqueBookPreview';
 
 type TechniqueSkillDetailsState = {
   skills: TechniqueSkillDetailLike[];
@@ -32,23 +33,6 @@ type UseTechniqueSkillDetailsOptions = {
   techniqueId: string | null;
   enabled: boolean;
 };
-
-const mapSkillToDetail = (skill: SkillDefDto): TechniqueSkillDetailLike => ({
-  id: skill.id,
-  name: skill.name,
-  icon: skill.icon || '',
-  description: skill.description || undefined,
-  cost_lingqi: skill.cost_lingqi || undefined,
-  cost_lingqi_rate: skill.cost_lingqi_rate || undefined,
-  cost_qixue: skill.cost_qixue || undefined,
-  cost_qixue_rate: skill.cost_qixue_rate || undefined,
-  cooldown: skill.cooldown || undefined,
-  target_type: skill.target_type || undefined,
-  target_count: skill.target_count || undefined,
-  damage_type: skill.damage_type || undefined,
-  element: skill.element || undefined,
-  effects: Array.isArray(skill.effects) ? skill.effects : undefined,
-});
 
 export const useTechniqueSkillDetails = ({
   techniqueId,
@@ -76,7 +60,7 @@ export const useTechniqueSkillDetails = ({
         if (!response.success || !response.data) {
           throw new Error(response.message || '加载功法详情失败');
         }
-        setSkills(response.data.skills.map(mapSkillToDetail));
+        setSkills(response.data.skills.map(mapTechniqueApiSkillToDetail));
         setLoading(false);
       })
       .catch((error) => {

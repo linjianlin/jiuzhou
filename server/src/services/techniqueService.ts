@@ -143,12 +143,15 @@ export const applyTechniqueLayerVisibility = (
   if (visibility === 'learned') return layers;
 
   // 把“未学习只能看预览”的裁剪规则收敛在这里，避免坊市、背包和详情页各自维护一套敏感字段判断。
+  // 预览态只允许保留公开基础信息；层级消耗、被动与技能解锁进度都视为敏感成长数据，不能继续外露。
   return layers.map((layer) => ({
     ...layer,
     cost_spirit_stones: 0,
     cost_exp: 0,
     cost_materials: [],
     passives: [],
+    unlock_skill_ids: [],
+    upgrade_skill_ids: [],
   }));
 };
 

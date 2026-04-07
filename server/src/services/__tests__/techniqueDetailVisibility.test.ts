@@ -14,7 +14,7 @@
  * 路由解析查看者角色 -> 服务层判定是否已学 -> applyTechniqueLayerVisibility -> 前端详情页 / tooltip 消费统一结构。
  *
  * 关键边界条件与坑点：
- * 1. `preview` 只能裁掉被动和升级消耗，不能误伤层级、技能解锁、突破要求等公共信息，否则已存在的功法书技能预览会失真。
+ * 1. `preview` 只能保留公开基础信息；被动、升级消耗和每层技能解锁进度都必须裁掉，避免功法书预览接口泄露成长路线。
  * 2. `learned` 必须原样透传，避免角色已学后详情页仍被错误裁剪，导致修炼面板看不到真实成长信息。
  */
 import assert from 'node:assert/strict';
@@ -39,15 +39,15 @@ const buildLayer = (): TechniqueLayerRow => ({
   layer_desc: '测试层描述',
 });
 
-test('applyTechniqueLayerVisibility: 未学习预览应裁掉被动与升级消耗', () => {
+test('applyTechniqueLayerVisibility: 未学习预览应裁掉被动、升级消耗与技能解锁进度', () => {
   const [layer] = applyTechniqueLayerVisibility([buildLayer()], 'preview');
 
   assert.equal(layer.cost_spirit_stones, 0);
   assert.equal(layer.cost_exp, 0);
   assert.deepEqual(layer.cost_materials, []);
   assert.deepEqual(layer.passives, []);
-  assert.deepEqual(layer.unlock_skill_ids, ['skill-a']);
-  assert.deepEqual(layer.upgrade_skill_ids, ['skill-b']);
+  assert.deepEqual(layer.unlock_skill_ids, []);
+  assert.deepEqual(layer.upgrade_skill_ids, []);
   assert.equal(layer.required_realm, '筑基');
 });
 

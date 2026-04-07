@@ -1,0 +1,7 @@
+@use './techniqueSkillSection' as techniqueSkill;
+
+@include techniqueSkill.technique-skill-section();
+
+.tech-book-preview {
+  min-width: 0;
+}
