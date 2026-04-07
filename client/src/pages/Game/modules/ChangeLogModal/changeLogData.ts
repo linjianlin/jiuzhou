@@ -30,6 +30,17 @@ export interface ChangeLogEntrySource {
 
 export const CHANGE_LOG_ENTRIES: readonly ChangeLogEntrySource[] = [
   {
+    releasedAt: '2026-04-07',
+    sections: [
+      '优化了云游系统提示词，避免出现其他体系的境界',
+      '修复了称号装备部分属性未及时刷新的问题',
+      '增加了洞府研修冷却完成、伙伴招募冷却完成、月卡每日奖励领取的红点提醒',
+      '增加了宗门铁匠铺建筑、宗门祈福殿建筑',
+      '调整了真实伤害的机制，现在真实伤害不可暴击',
+      '调整了洞府研修抄写天品时的世界频道广播，现在支持点击广播内容直接查看功法详情了'
+    ]
+  },
+  {
     releasedAt: '2026-04-06',
     sections: [
       '组队现在伙伴也会出战了',
