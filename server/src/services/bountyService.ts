@@ -469,7 +469,7 @@ class BountyService {
     const title = asNonEmptyString(payload.title) ?? '';
     if (!title) return { success: false, message: '标题不能为空' };
 
-    const claimPolicy = ((asNonEmptyString(payload.claimPolicy) ?? 'limited') as BountyClaimPolicy) ?? 'limited';
+    const claimPolicy = (asNonEmptyString(payload.claimPolicy) ?? 'limited') as BountyClaimPolicy;
     const maxClaimsRaw = asFiniteNonNegativeInt(payload.maxClaims, 0);
     const maxClaims = claimPolicy === 'limited' ? maxClaimsRaw : 0;
     if (claimPolicy === 'limited' && maxClaims <= 0) return { success: false, message: '限次接取必须设置最大次数' };
