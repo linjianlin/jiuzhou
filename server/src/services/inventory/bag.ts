@@ -577,7 +577,9 @@ export const getInventoryItems = async (
 ): Promise<{ items: InventoryItem[]; total: number }> => {
   const info = await loadBaseInventoryInfo(characterId);
   if (location === "bag") {
-    const rawItems = await loadProjectedInventoryItemsByLocation(characterId, location);
+    const rawItems = sortInventoryItemsForDisplay(
+      await loadProjectedInventoryItemsByLocation(characterId, location),
+    );
     const overlayItems = await applyPendingBagGrantOverlay(rawItems, characterId, Number(info.bag_capacity) || 0);
     const offset = (page - 1) * pageSize;
     return {

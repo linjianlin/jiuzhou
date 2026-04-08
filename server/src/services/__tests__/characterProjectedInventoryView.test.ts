@@ -24,9 +24,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as database from '../../config/database.js';
+import * as characterItemGrantDeltaService from '../shared/characterItemGrantDeltaService.js';
 import * as characterItemInstanceMutationService from '../shared/characterItemInstanceMutationService.js';
 import { createCharacterBagSlotAllocator } from '../shared/characterBagSlotAllocator.js';
 import { createCharacterInventoryMutationContext } from '../shared/characterInventoryMutationContext.js';
+import { getInventoryItems } from '../inventory/bag.js';
 
 test('bag slot allocator 应基于 projected 视图跳过待 flush 占位槽', async (t) => {
   t.mock.method(database, 'query', async (sql: string) => {
@@ -212,5 +214,136 @@ test('inventory mutation context 应基于 projected 视图建立普通堆叠承
       bindType: 'none',
     }),
     [{ id: 201, qty: 7 }],
+  );
+});
+
+test('getInventoryItems(bag) 应按槽位顺序返回 projected 背包物品', async (t) => {
+  t.mock.method(database, 'query', async (sql: string) => {
+    if (sql.includes('INSERT INTO inventory')) {
+      return { rows: [] };
+    }
+    if (sql.includes('SELECT') && sql.includes('FROM inventory i')) {
+      return {
+        rows: [
+          {
+            bag_capacity: 30,
+            warehouse_capacity: 100,
+            bag_used: 3,
+            warehouse_used: 0,
+          },
+        ],
+      };
+    }
+    assert.fail(`未预期的 SQL: ${sql}`);
+  });
+
+  t.mock.method(characterItemGrantDeltaService, 'loadCharacterPendingItemGrants', async () => []);
+
+  t.mock.method(
+    characterItemInstanceMutationService,
+    'loadProjectedCharacterItemInstances',
+    async () => ([
+      {
+        id: 301,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'mat-003',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 2,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T10:03:00.000Z'),
+      },
+      {
+        id: 302,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'mat-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 0,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T10:01:00.000Z'),
+      },
+      {
+        id: 303,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'mat-002',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 1,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T10:02:00.000Z'),
+      },
+    ]),
+  );
+
+  const result = await getInventoryItems(1, 'bag', 1, 30);
+
+  assert.deepEqual(
+    result.items.map((item) => ({ id: item.id, location_slot: item.location_slot })),
+    [
+      { id: 302, location_slot: 0 },
+      { id: 303, location_slot: 1 },
+      { id: 301, location_slot: 2 },
+    ],
   );
 });
