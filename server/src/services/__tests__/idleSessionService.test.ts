@@ -5,7 +5,7 @@
  *   验证 IdleSessionService 的核心业务规则，包括：
  *   - 属性 5：会话互斥不变量（同一角色最多一个活跃会话）
  *   - 属性 3：Stamina 不足时禁止启动
- *   - 属性 12：历史记录容量限制（最多 30 条）
+ *   - 属性 12：历史记录容量限制（最多 3 条）
  *   - 属性 13：历史记录时间倒序
  *   - 单元测试：mergeRewardItems 纯函数边界条件
  *
@@ -264,9 +264,9 @@ test('属性 3：Stamina 不足时禁止启动（numRuns: 100）', () => {
 test('属性 12：历史记录容量限制（numRuns: 100）', () => {
   // Feature: offline-idle-battle, Property 12: 历史记录容量限制
   // 验证：需求 7.1, 7.4
-  // 属性：历史记录数量始终 ≤ 30；超出时删除 started_at 最早的记录
+  // 属性：历史记录数量始终 ≤ 3；超出时删除 started_at 最早的记录
 
-  const MAX_HISTORY = 30;
+  const MAX_HISTORY = 3;
   const numRuns = 100;
   let failCount = 0;
   const failures: string[] = [];
@@ -299,7 +299,7 @@ test('属性 12：历史记录容量限制（numRuns: 100）', () => {
 
     const result = applyHistoryCapLimit(sessions);
 
-    // 结果数量不超过 30
+    // 结果数量不超过 3
     if (result.length > MAX_HISTORY) {
       failCount++;
       if (failures.length < 3) {

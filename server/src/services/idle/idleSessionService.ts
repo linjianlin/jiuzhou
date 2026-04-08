@@ -9,7 +9,7 @@
  *   - startIdleSession：创建新会话，含互斥锁检查、Stamina 检查、快照写入
  *   - stopIdleSession：将会话标记为 stopping（幂等），并返回被停止的会话 ID 列表
  *   - getActiveIdleSession：查询当前活跃会话（用于断线续战）
- *   - getIdleHistory：最近 30 条历史记录（倒序）
+ *   - getIdleHistory：最近 3 条历史记录（倒序）
  *   - markSessionViewed：标记会话已查看（幂等）
  *   - getSessionBatchSummaries：查询会话内所有 Battle_Batch 摘要（用于回放列表）
  *   - getSessionBatchDetail：查询单个 Battle_Batch 详情（用于回放日志）
@@ -22,7 +22,7 @@
  * 关键边界条件：
  *   1. Redis 互斥锁键：`idle:lock:{characterId}`，TTL = 本次 maxDurationMs + 5min 缓冲（有上下限）
  *      SET NX EX + compare-and-del 保证并发场景下不会误删他人锁
- *   2. getIdleHistory 超过 30 条时自动删除最旧记录（按 started_at 升序取最旧）
+ *   2. getIdleHistory 超过 3 条时自动删除最旧记录（按 started_at 升序取最旧）
  *   3. markSessionViewed 幂等：已设置 viewed_at 时不重复更新
  *   4. stopIdleSession 仅负责状态持久化；执行器收到 stop 信号后会被立即唤醒做终止检查
  */
@@ -58,6 +58,10 @@ import {
   type IdleSessionSummaryDelta,
   type IdleSessionSummarySnapshot,
 } from './idleSessionSummary.js';
+import {
+  IDLE_FINISHED_SESSION_STATUSES,
+  IDLE_HISTORY_KEEP_SESSION_COUNT,
+} from './idleHistoryRetention.js';
 
 // ============================================
 // 常量
@@ -74,9 +78,6 @@ const IDLE_LOCK_TTL_MIN_SECONDS = 60;
 
 /** 互斥锁 TTL 最大值（秒，按当前最高挂机上限 + 5min 计算） */
 const IDLE_LOCK_TTL_MAX_SECONDS = (resolveIdleMaxDurationMs(true) + IDLE_LOCK_TTL_BUFFER_MS) / 1000;
-
-/** 历史记录最大保留条数 */
-const MAX_HISTORY_COUNT = 30;
 
 // ============================================
 // 内部工具
@@ -543,42 +544,42 @@ class IdleSessionService {
   }
 
   /**
-   * 查询历史记录（最近 30 条，按 started_at 倒序）
+   * 查询历史记录（最近 3 条，按 started_at 倒序）
    *
-   * 超过 30 条时自动删除最旧记录（在同一事务内完成，保证原子性）。
+   * 超过 3 条时自动删除最旧记录（在同一事务内完成，保证原子性）。
    */
   @Transactional
   async getIdleHistory(characterId: number): Promise<IdleSessionRow[]> {
     // 查询总数
     const countRes = await query(
       `SELECT COUNT(*) AS cnt FROM idle_sessions
-       WHERE character_id = $1 AND status IN ('completed', 'interrupted')`,
-      [characterId]
+       WHERE character_id = $1 AND status = ANY($2::varchar[])`,
+      [characterId, IDLE_FINISHED_SESSION_STATUSES]
     );
     const total = Number(countRes.rows[0]?.cnt ?? 0);
 
     // 超出上限时删除最旧记录
-    if (total > MAX_HISTORY_COUNT) {
-      const deleteCount = total - MAX_HISTORY_COUNT;
+    if (total > IDLE_HISTORY_KEEP_SESSION_COUNT) {
+      const deleteCount = total - IDLE_HISTORY_KEEP_SESSION_COUNT;
       await query(
         `DELETE FROM idle_sessions
          WHERE id IN (
            SELECT id FROM idle_sessions
-           WHERE character_id = $1 AND status IN ('completed', 'interrupted')
-           ORDER BY started_at ASC
-           LIMIT $2
+           WHERE character_id = $1 AND status = ANY($2::varchar[])
+           ORDER BY started_at ASC, id ASC
+           LIMIT $3
          )`,
-        [characterId, deleteCount]
+        [characterId, IDLE_FINISHED_SESSION_STATUSES, deleteCount]
       );
     }
 
-    // 查询最近 30 条（倒序）
+    // 查询最近 3 条（倒序）
     const res = await query(
       `SELECT * FROM idle_sessions
-       WHERE character_id = $1 AND status IN ('completed', 'interrupted')
-       ORDER BY started_at DESC
-       LIMIT $2`,
-      [characterId, MAX_HISTORY_COUNT]
+       WHERE character_id = $1 AND status = ANY($2::varchar[])
+       ORDER BY started_at DESC, id DESC
+       LIMIT $3`,
+      [characterId, IDLE_FINISHED_SESSION_STATUSES, IDLE_HISTORY_KEEP_SESSION_COUNT]
     );
     return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
   }

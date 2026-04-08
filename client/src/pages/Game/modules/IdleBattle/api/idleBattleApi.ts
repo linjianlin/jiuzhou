@@ -64,7 +64,7 @@ export const getIdleStatus = (
 ): Promise<IdleStatusResponse> =>
   unwrapData<IdleStatusResponse>(api.get("/idle/status", requestConfig));
 
-/** 查询历史记录（最近 30 条） */
+/** 查询历史记录（最近 3 条） */
 export const getIdleHistory = (): Promise<IdleHistoryResponse> =>
   unwrapData<IdleHistoryResponse>(api.get("/idle/history"));
 

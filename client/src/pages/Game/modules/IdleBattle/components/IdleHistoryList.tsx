@@ -2,12 +2,12 @@
  * IdleHistoryList — 挂机历史记录列表
  *
  * 作用：
- *   按时间倒序展示最近 30 条挂机会话记录。
+ *   按时间倒序展示最近 3 条挂机会话记录。
  *   点击任意记录触发 onSelectSession，由外层打开 ReplayViewer。
  *   不包含数据请求逻辑，所有数据通过 props 传入。
  *
  * 输入/输出：
- *   - history: 历史会话列表（已由 useIdleBattle 保证倒序、最多 30 条）
+ *   - history: 历史会话列表（已由 useIdleBattle 保证倒序、最多 3 条）
  *   - isLoading: 加载状态
  *   - onSelectSession: 点击记录时的回调，传入 sessionId
  *   - onRefresh: 手动刷新回调（可选）

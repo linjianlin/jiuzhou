@@ -10,7 +10,7 @@ import { mailHistoryCleanupService } from '../services/mailHistoryCleanupService
  * 清理 Worker（单进程内的统一清理调度器）
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：统一承载“清理类”定时任务的调度（战斗过期状态、过期秘境实例、挂机批次历史、邮件热表历史）。
+ * 1. 做什么：统一承载“清理类”定时任务的调度（战斗过期状态、过期秘境实例、挂机会话历史、邮件热表历史）。
  * 2. 做什么：统一负责任务首轮执行、周期执行、并发互斥和停机清理。
  * 3. 不做什么：不实现具体业务清理 SQL/算法，具体清理由各 service 提供。
  *
@@ -71,7 +71,7 @@ class CleanupWorker {
       },
       {
         id: 'idle-batch-history-cleanup',
-        label: '挂机战斗批次清理',
+        label: '挂机会话历史清理',
         enabled: idleBatchSchedule.enabled,
         intervalMs: idleBatchSchedule.intervalMs,
         run: async () => {

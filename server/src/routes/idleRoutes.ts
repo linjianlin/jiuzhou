@@ -9,7 +9,7 @@
  *   POST   /api/idle/start              → 启动挂机会话
  *   POST   /api/idle/stop               → 停止挂机会话
  *   GET    /api/idle/status             → 查询当前活跃会话
- *   GET    /api/idle/history            → 查询历史记录（最近 30 条）
+ *   GET    /api/idle/history            → 查询历史记录（最近 3 条）
  *   GET    /api/idle/history/:id/batches → 查询会话内战斗批次摘要（回放列表）
  *   GET    /api/idle/history/:id/batches/:batchId → 查询单个战斗批次详情（回放日志）
  *   POST   /api/idle/history/:id/viewed → 标记会话已查看
