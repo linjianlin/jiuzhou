@@ -46,6 +46,7 @@ import {
   loadProjectedCharacterItemInstanceById,
   reserveItemInstanceIds,
   type CharacterItemInstanceSnapshot,
+  upsertCharacterItemInstanceSnapshot,
 } from "./shared/characterItemInstanceMutationService.js";
 
 export type MarketSort = "timeDesc" | "priceAsc" | "priceDesc" | "qtyDesc";
@@ -633,6 +634,7 @@ class MarketService {
     }
 
     let listingItemInstanceId = itemInstanceId;
+    let listingItemSnapshot: CharacterItemInstanceSnapshot;
 
     if (qty < curQty) {
       const clonedItem = await cloneItemInstanceWithQty({
@@ -642,6 +644,7 @@ class MarketService {
         qty,
         location: "auction",
       });
+      listingItemSnapshot = clonedItem;
       listingItemInstanceId = clonedItem.id;
       await bufferCharacterItemInstanceMutations([
         {
@@ -665,6 +668,12 @@ class MarketService {
         },
       ]);
     } else {
+      listingItemSnapshot = {
+        ...row,
+        location: "auction",
+        location_slot: null,
+        equipped_slot: null,
+      };
       await bufferCharacterItemInstanceMutations([
         {
           opId: `market-listing-move:${itemInstanceId}:${Date.now()}`,
@@ -672,15 +681,11 @@ class MarketService {
           itemId: itemInstanceId,
           createdAt: Date.now(),
           kind: "upsert",
-          snapshot: {
-            ...row,
-            location: "auction",
-            location_slot: null,
-            equipped_slot: null,
-          },
+          snapshot: listingItemSnapshot,
         },
       ]);
     }
+    await upsertCharacterItemInstanceSnapshot(listingItemSnapshot);
     const listingResult = await query(
       `
         INSERT INTO market_listing (

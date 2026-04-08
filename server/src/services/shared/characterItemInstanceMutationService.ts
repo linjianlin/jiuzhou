@@ -865,6 +865,114 @@ const toDbJson = (value: JsonValue | CharacterItemInstanceMetadata): string | nu
   return JSON.stringify(value);
 };
 
+/**
+ * 在当前事务内立即落库单个实例快照，供需要真实外键约束的链路复用。
+ * 这里只负责真实表 upsert，不负责 Redis mutation 同步；调用方若仍依赖投影覆盖，
+ * 需要自行继续写入 bufferCharacterItemInstanceMutations。
+ */
+export const upsertCharacterItemInstanceSnapshot = async (
+  snapshot: CharacterItemInstanceSnapshot,
+): Promise<void> => {
+  await query(
+    `
+      INSERT INTO item_instance (
+        id,
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        metadata,
+        location,
+        location_slot,
+        equipped_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        affixes,
+        identified,
+        locked,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        random_seed,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
+        $14::jsonb, $15::jsonb, $16, $17, $18, $19, $20, $21, $22,
+        $23::jsonb, $24, $25, $26, $27, $28, NOW()
+      )
+      ON CONFLICT (id) DO UPDATE
+      SET owner_user_id = EXCLUDED.owner_user_id,
+          owner_character_id = EXCLUDED.owner_character_id,
+          item_def_id = EXCLUDED.item_def_id,
+          qty = EXCLUDED.qty,
+          quality = EXCLUDED.quality,
+          quality_rank = EXCLUDED.quality_rank,
+          metadata = EXCLUDED.metadata,
+          location = EXCLUDED.location,
+          location_slot = EXCLUDED.location_slot,
+          equipped_slot = EXCLUDED.equipped_slot,
+          strengthen_level = EXCLUDED.strengthen_level,
+          refine_level = EXCLUDED.refine_level,
+          socketed_gems = EXCLUDED.socketed_gems,
+          affixes = EXCLUDED.affixes,
+          identified = EXCLUDED.identified,
+          locked = EXCLUDED.locked,
+          bind_type = EXCLUDED.bind_type,
+          bind_owner_user_id = EXCLUDED.bind_owner_user_id,
+          bind_owner_character_id = EXCLUDED.bind_owner_character_id,
+          random_seed = EXCLUDED.random_seed,
+          affix_gen_version = EXCLUDED.affix_gen_version,
+          affix_roll_meta = EXCLUDED.affix_roll_meta,
+          custom_name = EXCLUDED.custom_name,
+          expire_at = EXCLUDED.expire_at,
+          obtained_from = EXCLUDED.obtained_from,
+          obtained_ref_id = EXCLUDED.obtained_ref_id,
+          created_at = EXCLUDED.created_at,
+          updated_at = NOW()
+    `,
+    [
+      snapshot.id,
+      snapshot.owner_user_id,
+      snapshot.owner_character_id,
+      snapshot.item_def_id,
+      snapshot.qty,
+      snapshot.quality,
+      snapshot.quality_rank,
+      toDbJson(snapshot.metadata),
+      snapshot.location,
+      snapshot.location_slot,
+      snapshot.equipped_slot,
+      snapshot.strengthen_level,
+      snapshot.refine_level,
+      toDbJson(snapshot.socketed_gems),
+      toDbJson(snapshot.affixes),
+      snapshot.identified,
+      snapshot.locked,
+      snapshot.bind_type,
+      snapshot.bind_owner_user_id,
+      snapshot.bind_owner_character_id,
+      snapshot.random_seed,
+      snapshot.affix_gen_version,
+      toDbJson(snapshot.affix_roll_meta),
+      snapshot.custom_name,
+      snapshot.expire_at,
+      snapshot.obtained_from,
+      snapshot.obtained_ref_id,
+      snapshot.created_at,
+    ],
+  );
+};
+
 export const reserveItemInstanceIds = async (count: number): Promise<number[]> => {
   const normalizedCount = Math.max(0, Math.floor(count));
   if (normalizedCount <= 0) return [];
@@ -936,104 +1044,7 @@ const flushSingleCharacterItemInstanceMutations = async (
         continue;
       }
       if (!mutation.snapshot) continue;
-      await query(
-        `
-          INSERT INTO item_instance (
-            id,
-            owner_user_id,
-            owner_character_id,
-            item_def_id,
-            qty,
-            quality,
-            quality_rank,
-            metadata,
-            location,
-            location_slot,
-            equipped_slot,
-            strengthen_level,
-            refine_level,
-            socketed_gems,
-            affixes,
-            identified,
-            locked,
-            bind_type,
-            bind_owner_user_id,
-            bind_owner_character_id,
-            random_seed,
-            affix_gen_version,
-            affix_roll_meta,
-            custom_name,
-            expire_at,
-            obtained_from,
-            obtained_ref_id,
-            created_at,
-            updated_at
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
-            $14::jsonb, $15::jsonb, $16, $17, $18, $19, $20, $21, $22,
-            $23::jsonb, $24, $25, $26, $27, $28, NOW()
-          )
-          ON CONFLICT (id) DO UPDATE
-          SET owner_user_id = EXCLUDED.owner_user_id,
-              owner_character_id = EXCLUDED.owner_character_id,
-              item_def_id = EXCLUDED.item_def_id,
-              qty = EXCLUDED.qty,
-              quality = EXCLUDED.quality,
-              quality_rank = EXCLUDED.quality_rank,
-              metadata = EXCLUDED.metadata,
-              location = EXCLUDED.location,
-              location_slot = EXCLUDED.location_slot,
-              equipped_slot = EXCLUDED.equipped_slot,
-              strengthen_level = EXCLUDED.strengthen_level,
-              refine_level = EXCLUDED.refine_level,
-              socketed_gems = EXCLUDED.socketed_gems,
-              affixes = EXCLUDED.affixes,
-              identified = EXCLUDED.identified,
-              locked = EXCLUDED.locked,
-              bind_type = EXCLUDED.bind_type,
-              bind_owner_user_id = EXCLUDED.bind_owner_user_id,
-              bind_owner_character_id = EXCLUDED.bind_owner_character_id,
-              random_seed = EXCLUDED.random_seed,
-              affix_gen_version = EXCLUDED.affix_gen_version,
-              affix_roll_meta = EXCLUDED.affix_roll_meta,
-              custom_name = EXCLUDED.custom_name,
-              expire_at = EXCLUDED.expire_at,
-              obtained_from = EXCLUDED.obtained_from,
-              obtained_ref_id = EXCLUDED.obtained_ref_id,
-              created_at = EXCLUDED.created_at,
-              updated_at = NOW()
-        `,
-        [
-          mutation.snapshot.id,
-          mutation.snapshot.owner_user_id,
-          mutation.snapshot.owner_character_id,
-          mutation.snapshot.item_def_id,
-          mutation.snapshot.qty,
-          mutation.snapshot.quality,
-          mutation.snapshot.quality_rank,
-          toDbJson(mutation.snapshot.metadata),
-          mutation.snapshot.location,
-          mutation.snapshot.location_slot,
-          mutation.snapshot.equipped_slot,
-          mutation.snapshot.strengthen_level,
-          mutation.snapshot.refine_level,
-          toDbJson(mutation.snapshot.socketed_gems),
-          toDbJson(mutation.snapshot.affixes),
-          mutation.snapshot.identified,
-          mutation.snapshot.locked,
-          mutation.snapshot.bind_type,
-          mutation.snapshot.bind_owner_user_id,
-          mutation.snapshot.bind_owner_character_id,
-          mutation.snapshot.random_seed,
-          mutation.snapshot.affix_gen_version,
-          toDbJson(mutation.snapshot.affix_roll_meta),
-          mutation.snapshot.custom_name,
-          mutation.snapshot.expire_at,
-          mutation.snapshot.obtained_from,
-          mutation.snapshot.obtained_ref_id,
-          mutation.snapshot.created_at,
-        ],
-      );
+      await upsertCharacterItemInstanceSnapshot(mutation.snapshot);
     }
   });
 };
