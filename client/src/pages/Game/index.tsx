@@ -526,6 +526,15 @@ const GatherProgressHeader: FC<GatherProgressHeaderProps> = memo(({ gatherAction
 
 GatherProgressHeader.displayName = 'GatherProgressHeader';
 
+const resolveGatherNextDelayMs = (gatherUntilMs: number, cooldownSec: number): number => {
+  const now = Date.now();
+  if (Number.isFinite(gatherUntilMs) && gatherUntilMs > now) {
+    // 采集请求改为在服务端给出的完成时间点后再触发，避免临界点前探测导致 80ms 高频重试。
+    return Math.max(120, Math.ceil(gatherUntilMs - now) + 120);
+  }
+  return Math.max(120, Math.ceil(Math.max(0, cooldownSec) * 1000));
+};
+
 const rollMonsterBaseAttrs = (
   baseAttrs: Record<string, number>,
   opts?: { variance?: number; multMin?: number; multMax?: number },
@@ -1277,13 +1286,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
             return { ...prev, actionSec, gatherUntilMs, remaining };
           });
 
-          const now = Date.now();
-          const delayMs = (() => {
-            if (!(Number.isFinite(gatherUntilMs) && gatherUntilMs > now)) return 80;
-            const leftMs = gatherUntilMs - now;
-            if (leftMs > 260) return Math.max(80, leftMs - 180);
-            return 80;
-          })();
+          const delayMs = resolveGatherNextDelayMs(gatherUntilMs, cooldownSec);
           gatherTickTimerRef.current = window.setTimeout(() => void tick(), delayMs);
         } catch (error: unknown) {
           if (gatherActionKeyRef.current !== key) return;

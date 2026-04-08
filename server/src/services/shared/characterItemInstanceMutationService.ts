@@ -38,15 +38,26 @@ export type BufferedCharacterItemInstanceMutation = {
 };
 
 type ExistingItemInstanceLocationRow = {
-  id: number;
-  owner_character_id: number;
+  id: number | string;
+  owner_character_id: number | string;
   location: string;
-  location_slot: number | null;
+  location_slot: number | string | null;
 };
 
 type ItemInstanceMutationFlushPlan = {
   slotReleaseItemIds: number[];
   duplicateTargetKeys: string[];
+};
+
+type ResolvedItemInstanceFlushInput = {
+  effectiveMutations: BufferedCharacterItemInstanceMutation[];
+  flushPlan: ItemInstanceMutationFlushPlan;
+  droppedSortInventoryMutations: boolean;
+};
+
+type NormalizedItemInstanceMutations = {
+  mutations: BufferedCharacterItemInstanceMutation[];
+  droppedSortInventoryMutations: boolean;
 };
 
 export const buildItemInstanceIdArrayParam = (itemIds: readonly number[]): string[] => {
@@ -96,13 +107,98 @@ export const pruneStaleSortInventoryMutations = (
   ));
 };
 
+const buildSlotTargetKey = (
+  mutation: BufferedCharacterItemInstanceMutation,
+): string | null => {
+  if (mutation.kind !== 'upsert' || !mutation.snapshot) {
+    return null;
+  }
+  const locationSlot = mutation.snapshot.location_slot;
+  if (!isSlotConstrainedLocation(mutation.snapshot.location, locationSlot)) {
+    return null;
+  }
+  return `${mutation.snapshot.owner_character_id}:${mutation.snapshot.location}:${locationSlot}`;
+};
+
+export const pruneSlotConflictingSortInventoryMutations = (
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+): NormalizedItemInstanceMutations => {
+  const mutationsByTargetKey = new Map<string, BufferedCharacterItemInstanceMutation[]>();
+  for (const mutation of mutations) {
+    const targetKey = buildSlotTargetKey(mutation);
+    if (!targetKey) {
+      continue;
+    }
+    const group = mutationsByTargetKey.get(targetKey) ?? [];
+    group.push(mutation);
+    mutationsByTargetKey.set(targetKey, group);
+  }
+
+  const keptSortMutationIds = new Set<string>();
+  const droppedSortMutationIds = new Set<string>();
+  for (const group of mutationsByTargetKey.values()) {
+    const sortUpserts = group.filter((mutation) => getItemInstanceMutationPrefix(mutation.opId) === 'sort-inventory');
+    if (sortUpserts.length <= 0) {
+      continue;
+    }
+    const nonSortUpserts = group.filter((mutation) => getItemInstanceMutationPrefix(mutation.opId) !== 'sort-inventory');
+    if (nonSortUpserts.length >= 1) {
+      for (const mutation of sortUpserts) {
+        droppedSortMutationIds.add(`${mutation.itemId}:${mutation.opId}:${mutation.createdAt}`);
+      }
+      continue;
+    }
+    if (sortUpserts.length <= 1) {
+      continue;
+    }
+    const latestSortMutation = [...sortUpserts].sort(
+      (left, right) => left.createdAt - right.createdAt || left.opId.localeCompare(right.opId),
+    )[sortUpserts.length - 1];
+    if (!latestSortMutation) {
+      continue;
+    }
+    keptSortMutationIds.add(`${latestSortMutation.itemId}:${latestSortMutation.opId}:${latestSortMutation.createdAt}`);
+    for (const mutation of sortUpserts) {
+      const mutationKey = `${mutation.itemId}:${mutation.opId}:${mutation.createdAt}`;
+      if (mutationKey === `${latestSortMutation.itemId}:${latestSortMutation.opId}:${latestSortMutation.createdAt}`) {
+        continue;
+      }
+      droppedSortMutationIds.add(mutationKey);
+    }
+  }
+
+  if (droppedSortMutationIds.size <= 0) {
+    return {
+      mutations: [...mutations],
+      droppedSortInventoryMutations: false,
+    };
+  }
+
+  return {
+    mutations: mutations.filter((mutation) => {
+      const mutationKey = `${mutation.itemId}:${mutation.opId}:${mutation.createdAt}`;
+      if (keptSortMutationIds.has(mutationKey)) {
+        return true;
+      }
+      return !droppedSortMutationIds.has(mutationKey);
+    }),
+    droppedSortInventoryMutations: true,
+  };
+};
+
+const normalizeBufferedCharacterItemInstanceMutations = (
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+): NormalizedItemInstanceMutations => {
+  const prunedSortMutations = pruneStaleSortInventoryMutations(mutations);
+  const collapsedMutations = collapseBufferedCharacterItemInstanceMutations(prunedSortMutations);
+  return pruneSlotConflictingSortInventoryMutations(collapsedMutations);
+};
+
 export const buildCanonicalItemInstanceMutationHash = (
   mutations: readonly BufferedCharacterItemInstanceMutation[],
 ): Record<string, string> => {
   const canonicalHash: Record<string, string> = {};
-  for (const mutation of collapseBufferedCharacterItemInstanceMutations(
-    pruneStaleSortInventoryMutations(mutations),
-  )) {
+  for (const mutation of normalizeBufferedCharacterItemInstanceMutations(mutations).mutations) {
     canonicalHash[buildItemInstanceMutationHashField(mutation.itemId)] = encodeMutation(mutation);
   }
   return canonicalHash;
@@ -132,9 +228,7 @@ const compactItemInstanceMutationHash = async (key: string): Promise<BufferedCha
     await multi.exec();
   }
 
-  return collapseBufferedCharacterItemInstanceMutations(
-    pruneStaleSortInventoryMutations(mutations),
-  );
+  return normalizeBufferedCharacterItemInstanceMutations(mutations).mutations;
 };
 
 const ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY = 'character:item-instance-mutation:index';
@@ -505,33 +599,64 @@ export const buildItemInstanceMutationFlushPlan = (
   }
 
   const existingRowByItemId = new Map<number, ExistingItemInstanceLocationRow>();
-  const existingOccupantByTargetKey = new Map<string, number>();
   for (const row of existingRows) {
-    existingRowByItemId.set(row.id, row);
-    if (isSlotConstrainedLocation(row.location, row.location_slot)) {
-      existingOccupantByTargetKey.set(`${row.owner_character_id}:${row.location}:${row.location_slot}`, row.id);
+    const normalizedItemId = normalizePositiveInt(Number(row.id));
+    if (normalizedItemId <= 0) {
+      continue;
     }
+    existingRowByItemId.set(normalizedItemId, row);
   }
 
   const slotReleaseItemIds = new Set<number>();
-  const targetKeyByItemId = new Map<number, string>();
+  const remainingOccupantByTargetKey = new Map<string, number>();
+  const targetOwnerByKey = new Map<string, number>();
   const duplicateTargetKeys = new Set<string>();
 
   for (const [itemId, mutation] of latestMutationByItemId.entries()) {
     const existingRow = existingRowByItemId.get(itemId);
+    const normalizedExistingOwnerCharacterId = existingRow
+      ? normalizePositiveInt(Number(existingRow.owner_character_id))
+      : 0;
+    const normalizedExistingLocationSlot = existingRow
+      ? normalizeOptionalInt(
+        existingRow.location_slot === null ? null : Number(existingRow.location_slot),
+      )
+      : null;
     if (
       existingRow
-      && isSlotConstrainedLocation(existingRow.location, existingRow.location_slot)
+      && normalizedExistingOwnerCharacterId > 0
+      && isSlotConstrainedLocation(existingRow.location, normalizedExistingLocationSlot)
     ) {
       const keepsCurrentSlot = mutation.kind === 'upsert'
         && mutation.snapshot !== null
-        && mutation.snapshot.owner_character_id === existingRow.owner_character_id
+        && mutation.snapshot.owner_character_id === normalizedExistingOwnerCharacterId
         && mutation.snapshot.location === existingRow.location
-        && mutation.snapshot.location_slot === existingRow.location_slot;
+        && mutation.snapshot.location_slot === normalizedExistingLocationSlot;
       if (!keepsCurrentSlot) {
         slotReleaseItemIds.add(itemId);
       }
     }
+  }
+
+  for (const row of existingRows) {
+    const normalizedItemId = normalizePositiveInt(Number(row.id));
+    const normalizedOwnerCharacterId = normalizePositiveInt(Number(row.owner_character_id));
+    const normalizedLocationSlot = normalizeOptionalInt(
+      row.location_slot === null ? null : Number(row.location_slot),
+    );
+    if (normalizedItemId <= 0 || normalizedOwnerCharacterId <= 0) {
+      continue;
+    }
+    if (!isSlotConstrainedLocation(row.location, normalizedLocationSlot)) {
+      continue;
+    }
+    if (slotReleaseItemIds.has(normalizedItemId)) {
+      continue;
+    }
+    remainingOccupantByTargetKey.set(
+      `${normalizedOwnerCharacterId}:${row.location}:${normalizedLocationSlot}`,
+      normalizedItemId,
+    );
   }
 
   for (const [itemId, mutation] of latestMutationByItemId.entries()) {
@@ -543,26 +668,67 @@ export const buildItemInstanceMutationFlushPlan = (
       continue;
     }
     const targetKey = `${mutation.snapshot.owner_character_id}:${mutation.snapshot.location}:${locationSlot}`;
-    const existingOccupantId = existingOccupantByTargetKey.get(targetKey) ?? null;
+    const existingOccupantId = remainingOccupantByTargetKey.get(targetKey) ?? null;
     if (
       existingOccupantId !== null
       && existingOccupantId !== itemId
-      && !slotReleaseItemIds.has(existingOccupantId)
     ) {
       duplicateTargetKeys.add(targetKey);
       continue;
     }
-    const existingTargetOwner = [...targetKeyByItemId.entries()].find(([, key]) => key === targetKey)?.[0] ?? null;
+    const existingTargetOwner = targetOwnerByKey.get(targetKey) ?? null;
     if (existingTargetOwner !== null && existingTargetOwner !== itemId) {
       duplicateTargetKeys.add(targetKey);
       continue;
     }
-    targetKeyByItemId.set(itemId, targetKey);
+    targetOwnerByKey.set(targetKey, itemId);
   }
 
   return {
     slotReleaseItemIds: [...slotReleaseItemIds].sort((left, right) => left - right),
     duplicateTargetKeys: [...duplicateTargetKeys].sort(),
+  };
+};
+
+export const resolveItemInstanceFlushInput = (
+  existingRows: readonly ExistingItemInstanceLocationRow[],
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+): ResolvedItemInstanceFlushInput => {
+  const normalizedMutations = normalizeBufferedCharacterItemInstanceMutations(mutations);
+  const effectiveMutations = normalizedMutations.mutations;
+  const flushPlan = buildItemInstanceMutationFlushPlan(existingRows, effectiveMutations);
+  if (flushPlan.duplicateTargetKeys.length <= 0) {
+    return {
+      effectiveMutations,
+      flushPlan,
+      droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+    };
+  }
+
+  const nonSortMutations = effectiveMutations.filter((mutation) => (
+    getItemInstanceMutationPrefix(mutation.opId) !== 'sort-inventory'
+  ));
+  if (nonSortMutations.length === effectiveMutations.length) {
+    return {
+      effectiveMutations,
+      flushPlan,
+      droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+    };
+  }
+
+  const nonSortFlushPlan = buildItemInstanceMutationFlushPlan(existingRows, nonSortMutations);
+  if (nonSortFlushPlan.duplicateTargetKeys.length > 0) {
+    return {
+      effectiveMutations,
+      flushPlan,
+      droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+    };
+  }
+
+  return {
+    effectiveMutations: nonSortMutations,
+    flushPlan: nonSortFlushPlan,
+    droppedSortInventoryMutations: true,
   };
 };
 
@@ -720,7 +886,6 @@ const flushSingleCharacterItemInstanceMutations = async (
 ): Promise<void> => {
   if (mutations.length <= 0) return;
   await withTransaction(async () => {
-    const effectiveMutations = collapseBufferedCharacterItemInstanceMutations(mutations);
     const existingRowsResult = await query<ExistingItemInstanceLocationRow>(
       `
         SELECT id, owner_character_id, location, location_slot
@@ -731,7 +896,17 @@ const flushSingleCharacterItemInstanceMutations = async (
       `,
       [characterId],
     );
-    const flushPlan = buildItemInstanceMutationFlushPlan(existingRowsResult.rows, effectiveMutations);
+    const {
+      effectiveMutations,
+      flushPlan,
+      droppedSortInventoryMutations,
+    } = resolveItemInstanceFlushInput(existingRowsResult.rows, mutations);
+    if (droppedSortInventoryMutations) {
+      itemInstanceMutationLogger.warn(
+        { characterId, droppedMutationCount: mutations.length - effectiveMutations.length },
+        '实例 mutation flush 检测到过期整理快照冲突，已丢弃 sort-inventory mutation',
+      );
+    }
     if (flushPlan.duplicateTargetKeys.length > 0) {
       throw new Error(`实例 mutation 目标槽位冲突: ${flushPlan.duplicateTargetKeys.join(', ')}`);
     }

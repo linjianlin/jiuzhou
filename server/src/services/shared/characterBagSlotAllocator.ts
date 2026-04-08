@@ -1,5 +1,6 @@
 import { query } from '../../config/database.js';
 import { normalizeCharacterRewardTargetIds } from './characterRewardTargetLock.js';
+import { loadProjectedCharacterItemInstances } from './characterItemInstanceMutationService.js';
 
 /**
  * CharacterBagSlotAllocator - 奖励链路背包空槽预分配器
@@ -14,7 +15,7 @@ import { normalizeCharacterRewardTargetIds } from './characterRewardTargetLock.j
  *
  * 数据流 / 状态流：
  * - 奖励服务先统一锁定角色背包；
- * - 本模块补齐 `inventory` 行并批量读取容量、已占用槽位；
+ * - 本模块补齐 `inventory` 行并批量读取容量，再结合 projected item instance 视图收敛已占用槽位；
  * - 后续所有奖励入包只向本模块申请新槽位，避免每次创建物品都重新扫描一次 `item_instance.location_slot`。
  *
  * 复用设计说明：
@@ -32,11 +33,6 @@ export interface CharacterBagSlotAllocator {
 type InventoryCapacityRow = {
   character_id: number;
   bag_capacity: number;
-};
-
-type UsedBagSlotRow = {
-  owner_character_id: number;
-  location_slot: number;
 };
 
 type CharacterBagSlotState = {
@@ -73,28 +69,27 @@ export const createCharacterBagSlotAllocator = async (
     `,
     [normalizedCharacterIds],
   );
-  const usedSlotResult = await query<UsedBagSlotRow>(
-    `
-      SELECT owner_character_id, location_slot
-      FROM item_instance
-      WHERE owner_character_id = ANY($1)
-        AND location = 'bag'
-        AND location_slot IS NOT NULL
-        AND location_slot >= 0
-      ORDER BY owner_character_id ASC, location_slot ASC
-    `,
-    [normalizedCharacterIds],
+  const projectedItemGroups = await Promise.all(
+    normalizedCharacterIds.map(async (characterId) => ({
+      characterId,
+      items: await loadProjectedCharacterItemInstances(characterId),
+    })),
   );
 
   const usedSlotsByCharacter = new Map<number, Set<number>>();
-  for (const row of usedSlotResult.rows) {
-    const characterId = Number(row.owner_character_id);
-    const slot = Number(row.location_slot);
-    if (!Number.isInteger(characterId) || characterId <= 0) continue;
-    if (!Number.isInteger(slot) || slot < 0) continue;
-    const usedSlots = usedSlotsByCharacter.get(characterId) ?? new Set<number>();
-    usedSlots.add(slot);
-    usedSlotsByCharacter.set(characterId, usedSlots);
+  for (const group of projectedItemGroups) {
+    const usedSlots = new Set<number>();
+    for (const item of group.items) {
+      if (item.location !== 'bag') {
+        continue;
+      }
+      const slot = Number(item.location_slot);
+      if (!Number.isInteger(slot) || slot < 0) {
+        continue;
+      }
+      usedSlots.add(slot);
+    }
+    usedSlotsByCharacter.set(group.characterId, usedSlots);
   }
 
   const slotStateByCharacter = new Map<number, CharacterBagSlotState>();

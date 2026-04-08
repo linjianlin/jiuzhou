@@ -1,8 +1,9 @@
 import { query } from '../../config/database.js';
 import type { SlottedInventoryLocation } from '../inventory/shared/types.js';
-import { buildPlainStackingSqlPredicate } from '../inventory/shared/stacking.js';
-import { buildNormalizedItemBindTypeSql } from './itemBindType.js';
+import { isPlainStackingState } from '../inventory/shared/stacking.js';
+import { normalizeItemBindType } from './itemBindType.js';
 import { normalizeCharacterRewardTargetIds } from './characterRewardTargetLock.js';
+import { loadProjectedCharacterItemInstances } from './characterItemInstanceMutationService.js';
 
 /**
  * CharacterInventoryMutationContext - 奖励事务库存视图缓存
@@ -20,7 +21,7 @@ import { normalizeCharacterRewardTargetIds } from './characterRewardTargetLock.j
  * 2. `getSlottedCapacity/getPlainAutoStackRows/applyPlainAutoStackDelta/registerPlainAutoStackRow` 负责读取和更新内存态视图。
  *
  * 数据流 / 状态流：
- * 角色列表 -> 一次批量读取容量与可堆叠实例
+ * 角色列表 -> 一次批量读取容量与 projected 可堆叠实例
  * -> 奖励链路多次 createItem 复用同一份内存索引
  * -> 每次成功堆叠/插入后同步回写内存态，保证后续调用看到最新视图。
  *
@@ -51,15 +52,6 @@ type InventoryCapacityRow = {
   character_id: number;
   bag_capacity: number;
   warehouse_capacity: number;
-};
-
-type PlainAutoStackStateRow = {
-  id: number;
-  owner_character_id: number;
-  item_def_id: string;
-  qty: number;
-  location: string;
-  normalized_bind_type: string;
 };
 
 type PlainAutoStackState = {
@@ -94,15 +86,6 @@ const EMPTY_CONTEXT: CharacterInventoryMutationContext = {
   applyPlainAutoStackDelta: () => undefined,
   registerPlainAutoStackRow: () => undefined,
 };
-
-const ITEM_INSTANCE_STACKABLE_BIND_TYPE_SQL = buildNormalizedItemBindTypeSql(
-  'ii.bind_type',
-);
-const ITEM_INSTANCE_STACKABLE_PREDICATE_SQL = buildPlainStackingSqlPredicate({
-  metadata: 'ii.metadata',
-  quality: 'ii.quality',
-  qualityRank: 'ii.quality_rank',
-});
 
 const buildCapacityKey = (
   characterId: number,
@@ -142,7 +125,7 @@ export const createCharacterInventoryMutationContext = async (
     [normalizedCharacterIds],
   );
 
-  const [capacityResult, stackStateResult] = await Promise.all([
+  const [capacityResult, projectedItemGroups] = await Promise.all([
     query<InventoryCapacityRow>(
       `
         SELECT character_id, bag_capacity, warehouse_capacity
@@ -151,22 +134,11 @@ export const createCharacterInventoryMutationContext = async (
       `,
       [normalizedCharacterIds],
     ),
-    query<PlainAutoStackStateRow>(
-      `
-        SELECT
-          ii.id,
-          ii.owner_character_id,
-          ii.item_def_id,
-          ii.qty,
-          ii.location,
-          ${ITEM_INSTANCE_STACKABLE_BIND_TYPE_SQL} AS normalized_bind_type
-        FROM item_instance ii
-        WHERE ii.owner_character_id = ANY($1)
-          AND ii.location IN ('bag', 'warehouse')
-          AND ${ITEM_INSTANCE_STACKABLE_PREDICATE_SQL}
-        ORDER BY ii.owner_character_id ASC, ii.location ASC, ii.item_def_id ASC, ii.id ASC
-      `,
-      [normalizedCharacterIds],
+    Promise.all(
+      normalizedCharacterIds.map(async (characterId) => ({
+        characterId,
+        items: await loadProjectedCharacterItemInstances(characterId),
+      })),
     ),
   ]);
 
@@ -185,28 +157,35 @@ export const createCharacterInventoryMutationContext = async (
   }
 
   const plainAutoStackRowsByKey = new Map<string, PlainAutoStackState[]>();
-  for (const row of stackStateResult.rows) {
-    const characterId = Number(row.owner_character_id);
-    const itemId = Number(row.id);
-    const qty = Math.max(0, Math.floor(Number(row.qty) || 0));
-    const itemDefId = String(row.item_def_id || '').trim();
-    const location = String(row.location || '').trim();
-    const bindType = String(row.normalized_bind_type || '').trim();
-    if (!Number.isInteger(characterId) || characterId <= 0) continue;
-    if (!Number.isInteger(itemId) || itemId <= 0) continue;
-    if (!itemDefId) continue;
-    if (location !== 'bag' && location !== 'warehouse') continue;
-    if (!bindType) continue;
+  for (const group of projectedItemGroups) {
+    for (const item of group.items) {
+      const itemId = Number(item.id);
+      const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
+      const itemDefId = String(item.item_def_id || '').trim();
+      const location = String(item.location || '').trim();
+      const bindType = normalizeItemBindType(item.bind_type);
+      if (!Number.isInteger(itemId) || itemId <= 0) continue;
+      if (!itemDefId) continue;
+      if (location !== 'bag' && location !== 'warehouse') continue;
+      if (!bindType) continue;
+      if (!isPlainStackingState({
+        metadataText: item.metadata === null ? null : JSON.stringify(item.metadata),
+        quality: item.quality,
+        qualityRank: item.quality_rank,
+      })) {
+        continue;
+      }
 
-    const key = buildPlainAutoStackKey(
-      characterId,
-      itemDefId,
-      location,
-      bindType,
-    );
-    const rows = plainAutoStackRowsByKey.get(key) ?? [];
-    rows.push({ id: itemId, qty });
-    plainAutoStackRowsByKey.set(key, rows);
+      const key = buildPlainAutoStackKey(
+        group.characterId,
+        itemDefId,
+        location,
+        bindType,
+      );
+      const rows = plainAutoStackRowsByKey.get(key) ?? [];
+      rows.push({ id: itemId, qty });
+      plainAutoStackRowsByKey.set(key, rows);
+    }
   }
 
   for (const rows of plainAutoStackRowsByKey.values()) {

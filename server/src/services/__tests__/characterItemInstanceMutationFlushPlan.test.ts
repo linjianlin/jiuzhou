@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildItemInstanceMutationFlushPlan,
   collapseBufferedCharacterItemInstanceMutations,
+  resolveItemInstanceFlushInput,
   type BufferedCharacterItemInstanceMutation,
 } from '../shared/characterItemInstanceMutationService.js';
 
@@ -236,4 +237,342 @@ test('flush plan 应识别目标槽位与未改动旧实例的直接冲突', () 
   );
 
   assert.deepEqual(plan.duplicateTargetKeys, ['1:bag:1']);
+});
+
+test('flush plan 应允许同一批 mutation 完成整包换位', () => {
+  const plan = buildItemInstanceMutationFlushPlan(
+    [
+      { id: 101, owner_character_id: 1, location: 'bag', location_slot: 0 },
+      { id: 102, owner_character_id: 1, location: 'bag', location_slot: 1 },
+      { id: 103, owner_character_id: 1, location: 'bag', location_slot: 2 },
+    ],
+    [
+      buildMutation({ itemId: 101, characterId: 1, opId: 'sort-a', createdAt: 1, kind: 'upsert', snapshot: {
+        id: 101,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 1,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+      buildMutation({ itemId: 102, characterId: 1, opId: 'sort-b', createdAt: 2, kind: 'upsert', snapshot: {
+        id: 102,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-002',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 2,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+      buildMutation({ itemId: 103, characterId: 1, opId: 'sort-c', createdAt: 3, kind: 'upsert', snapshot: {
+        id: 103,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-003',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 0,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+    ],
+  );
+
+  assert.deepEqual(plan.slotReleaseItemIds, [101, 102, 103]);
+  assert.deepEqual(plan.duplicateTargetKeys, []);
+});
+
+test('flush 应在整理快照与当前库存冲突时丢弃 sort-inventory mutation', () => {
+  const resolved = resolveItemInstanceFlushInput(
+    [
+      { id: 301, owner_character_id: 1, location: 'bag', location_slot: 0 },
+      { id: 302, owner_character_id: 1, location: 'bag', location_slot: 1 },
+    ],
+    [
+      buildMutation({ itemId: 301, characterId: 1, opId: 'sort-inventory:1:100:0', createdAt: 100, kind: 'upsert', snapshot: {
+        id: 301,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 1,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'sort',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+    ],
+  );
+
+  assert.equal(resolved.droppedSortInventoryMutations, true);
+  assert.deepEqual(resolved.effectiveMutations, []);
+  assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
+});
+
+test('flush 应在同槽存在非 sort upsert 时保留非 sort 并裁掉 sort', () => {
+  const resolved = resolveItemInstanceFlushInput(
+    [],
+    [
+      buildMutation({ itemId: 401, characterId: 1, opId: 'sort-inventory:401:100:0', createdAt: 100, kind: 'upsert', snapshot: {
+        id: 401,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'sort',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+      buildMutation({ itemId: 402, characterId: 1, opId: 'move-item:402:200:0', createdAt: 200, kind: 'upsert', snapshot: {
+        id: 402,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-002',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'mail',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+    ],
+  );
+
+  assert.equal(resolved.droppedSortInventoryMutations, true);
+  assert.equal(resolved.effectiveMutations.length, 1);
+  assert.equal(resolved.effectiveMutations[0]?.itemId, 402);
+  assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
+});
+
+test('flush 遇到两个非 sort upsert 同槽时仍应报冲突', () => {
+  const resolved = resolveItemInstanceFlushInput(
+    [],
+    [
+      buildMutation({ itemId: 501, characterId: 1, opId: 'move-item:501:100:0', createdAt: 100, kind: 'upsert', snapshot: {
+        id: 501,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'mail',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+      buildMutation({ itemId: 502, characterId: 1, opId: 'grant-item:502:200:0', createdAt: 200, kind: 'upsert', snapshot: {
+        id: 502,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-002',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'grant',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+    ],
+  );
+
+  assert.equal(resolved.droppedSortInventoryMutations, false);
+  assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, ['1:bag:11']);
+});
+
+test('flush plan 应把数据库字符串 id 视为同一实例的原地更新', () => {
+  const resolved = resolveItemInstanceFlushInput(
+    [
+      { id: '21', owner_character_id: '1', location: 'bag', location_slot: '11' },
+    ],
+    [
+      buildMutation({ itemId: 21, characterId: 1, opId: 'consume-item-instance:21:100:0', createdAt: 100, kind: 'upsert', snapshot: {
+        id: 21,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'mat-gongfa-canye',
+        qty: 9666,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 1,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'technique_research_refund:gen-mmivgme6-a2ec790f',
+        obtained_ref_id: null,
+        created_at: new Date('2026-03-10T08:02:58.186Z'),
+      } }),
+    ],
+  );
+
+  assert.equal(resolved.droppedSortInventoryMutations, false);
+  assert.deepEqual(resolved.flushPlan.slotReleaseItemIds, []);
+  assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
 });
