@@ -12,6 +12,7 @@ import { registerRoutes } from './bootstrap/registerRoutes.js';
 import { registerGracefulShutdown, startServerWithPipeline } from './bootstrap/startupPipeline.js';
 import { isTransactionRollbackOnlyError } from './config/database.js';
 import { isTransientPgError } from './config/databaseRuntimeError.js';
+import { httpSlowRequestLogger } from './middleware/httpSlowRequestLogger.js';
 import { setGameTimeSnapshotBroadcaster } from './services/gameTimeService.js';
 
 dotenv.config();
@@ -36,6 +37,9 @@ app.use(express.json());
 
 // 静态文件服务（头像）
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// 全局 HTTP 慢请求日志（仅覆盖真实接口，不统计静态资源）
+app.use(httpSlowRequestLogger);
 
 // 初始化Socket.io（聊天等）
 initSocket(httpServer, corsOriginOption);
