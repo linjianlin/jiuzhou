@@ -26,9 +26,10 @@ import test from 'node:test';
 import * as database from '../../config/database.js';
 import * as characterItemGrantDeltaService from '../shared/characterItemGrantDeltaService.js';
 import * as characterItemInstanceMutationService from '../shared/characterItemInstanceMutationService.js';
+import * as staticConfigLoader from '../staticConfigLoader.js';
 import { createCharacterBagSlotAllocator } from '../shared/characterBagSlotAllocator.js';
 import { createCharacterInventoryMutationContext } from '../shared/characterInventoryMutationContext.js';
-import { getInventoryItems } from '../inventory/bag.js';
+import { getInventoryInfo, getInventoryItems } from '../inventory/bag.js';
 
 test('bag slot allocator 应基于 projected 视图跳过待 flush 占位槽', async (t) => {
   t.mock.method(database, 'query', async (sql: string) => {
@@ -346,4 +347,237 @@ test('getInventoryItems(bag) 应按槽位顺序返回 projected 背包物品', a
       { id: 301, location_slot: 2 },
     ],
   );
+});
+
+test('getInventoryItems(bag) 不应为待 flush 装备奖励生成错误的临时 overlay', async (t) => {
+  t.mock.method(database, 'query', async (sql: string) => {
+    if (sql.includes('INSERT INTO inventory')) {
+      return { rows: [] };
+    }
+    if (sql.includes('SELECT') && sql.includes('FROM inventory i')) {
+      return {
+        rows: [
+          {
+            bag_capacity: 30,
+            warehouse_capacity: 100,
+            bag_used: 1,
+            warehouse_used: 0,
+          },
+        ],
+      };
+    }
+    assert.fail(`未预期的 SQL: ${sql}`);
+  });
+
+  t.mock.method(staticConfigLoader, 'getItemDefinitionsByIds', (itemDefIds: string[]) => {
+    const map = new Map<string, {
+      category: string;
+      sub_category: string | null;
+      quality: string | null;
+      stack_max: number;
+    }>();
+    for (const itemDefId of itemDefIds) {
+      if (itemDefId === 'equip-test-001') {
+        map.set(itemDefId, {
+          category: 'equipment',
+          sub_category: 'weapon',
+          quality: '黄',
+          stack_max: 1,
+        });
+      }
+      if (itemDefId === 'mat-test-001') {
+        map.set(itemDefId, {
+          category: 'material',
+          sub_category: 'ore',
+          quality: null,
+          stack_max: 99,
+        });
+      }
+    }
+    return map;
+  });
+
+  t.mock.method(characterItemGrantDeltaService, 'loadCharacterPendingItemGrants', async () => ([
+    {
+      itemDefId: 'equip-test-001',
+      qty: 1,
+      bindType: 'none',
+      obtainedFrom: 'battle_drop',
+      idleSessionId: 'idle-1',
+      metadata: null,
+      quality: null,
+      qualityRank: null,
+    },
+    {
+      itemDefId: 'mat-test-001',
+      qty: 5,
+      bindType: 'none',
+      obtainedFrom: 'battle_drop',
+      idleSessionId: 'idle-1',
+      metadata: null,
+      quality: null,
+      qualityRank: null,
+    },
+  ]));
+
+  t.mock.method(
+    characterItemInstanceMutationService,
+    'loadProjectedCharacterItemInstances',
+    async () => ([
+      {
+        id: 401,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'mat-base-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 0,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T10:05:00.000Z'),
+      },
+    ]),
+  );
+
+  const result = await getInventoryItems(1, 'bag', 1, 30);
+
+  assert.deepEqual(
+    result.items.map((item) => ({ id: item.id, item_def_id: item.item_def_id, qty: item.qty, location_slot: item.location_slot })),
+    [
+      { id: 401, item_def_id: 'mat-base-001', qty: 1, location_slot: 0 },
+      { id: -1, item_def_id: 'mat-test-001', qty: 5, location_slot: 1 },
+    ],
+  );
+});
+
+test('getInventoryInfo 应把待 flush 装备按数量计入 bag_used 且不影响非装备 overlay 语义', async (t) => {
+  t.mock.method(database, 'query', async (sql: string) => {
+    if (sql.includes('INSERT INTO inventory')) {
+      return { rows: [] };
+    }
+    if (sql.includes('SELECT') && sql.includes('FROM inventory i')) {
+      return {
+        rows: [
+          {
+            bag_capacity: 30,
+            warehouse_capacity: 100,
+            bag_used: 1,
+            warehouse_used: 0,
+          },
+        ],
+      };
+    }
+    assert.fail(`未预期的 SQL: ${sql}`);
+  });
+
+  t.mock.method(staticConfigLoader, 'getItemDefinitionsByIds', (itemDefIds: string[]) => {
+    const map = new Map<string, {
+      category: string;
+      sub_category: string | null;
+      quality: string | null;
+      stack_max: number;
+    }>();
+    for (const itemDefId of itemDefIds) {
+      if (itemDefId === 'equip-test-001') {
+        map.set(itemDefId, {
+          category: 'equipment',
+          sub_category: 'weapon',
+          quality: '黄',
+          stack_max: 1,
+        });
+      }
+      if (itemDefId === 'mat-test-001') {
+        map.set(itemDefId, {
+          category: 'material',
+          sub_category: 'ore',
+          quality: null,
+          stack_max: 99,
+        });
+      }
+    }
+    return map;
+  });
+
+  t.mock.method(characterItemGrantDeltaService, 'loadCharacterPendingItemGrants', async () => ([
+    {
+      itemDefId: 'equip-test-001',
+      qty: 2,
+      bindType: 'none',
+      obtainedFrom: 'battle_drop',
+      idleSessionId: 'idle-1',
+      metadata: null,
+      quality: null,
+      qualityRank: null,
+    },
+    {
+      itemDefId: 'mat-test-001',
+      qty: 5,
+      bindType: 'none',
+      obtainedFrom: 'battle_drop',
+      idleSessionId: 'idle-1',
+      metadata: null,
+      quality: null,
+      qualityRank: null,
+    },
+  ]));
+
+  t.mock.method(
+    characterItemInstanceMutationService,
+    'loadProjectedCharacterItemInstances',
+    async () => ([
+      {
+        id: 501,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'mat-base-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 0,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'bag',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T10:06:00.000Z'),
+      },
+    ]),
+  );
+
+  const result = await getInventoryInfo(1);
+
+  assert.equal(result.bag_used, 4);
+  assert.equal(result.warehouse_used, 0);
 });

@@ -437,16 +437,9 @@ const findFirstEmptyProjectedSlot = (
   return null;
 };
 
-const applyPendingBagGrantOverlay = async (
-  baseItems: InventoryItem[],
-  characterId: number,
-  bagCapacity: number,
-): Promise<InventoryItem[]> => {
-  const pendingGrants = await loadCharacterPendingItemGrants(characterId);
-  if (pendingGrants.length <= 0) {
-    return baseItems;
-  }
-
+const buildPendingGrantItemDefMap = (
+  pendingGrants: Array<{ itemDefId: string }>,
+) => {
   const itemDefIds = [
     ...new Set(
       pendingGrants
@@ -454,7 +447,30 @@ const applyPendingBagGrantOverlay = async (
         .filter((itemDefId) => itemDefId.length > 0),
     ),
   ];
-  const itemDefMap = getItemDefinitionsByIds(itemDefIds);
+  return getItemDefinitionsByIds(itemDefIds);
+};
+
+const countPendingEquipmentSlots = (
+  pendingGrants: Array<{ itemDefId: string; qty: number }>,
+  itemDefMap: ReturnType<typeof getItemDefinitionsByIds>,
+): number => {
+  let pendingEquipmentSlots = 0;
+  for (const grant of pendingGrants) {
+    if (itemDefMap.get(grant.itemDefId)?.category !== "equipment") continue;
+    pendingEquipmentSlots += Math.max(0, Math.floor(Number(grant.qty) || 0));
+  }
+  return pendingEquipmentSlots;
+};
+
+const applyPendingBagGrantOverlay = (
+  baseItems: InventoryItem[],
+  pendingGrants: Awaited<ReturnType<typeof loadCharacterPendingItemGrants>>,
+  bagCapacity: number,
+  itemDefMap: ReturnType<typeof getItemDefinitionsByIds>,
+): InventoryItem[] => {
+  if (pendingGrants.length <= 0) {
+    return baseItems;
+  }
   const overlayItems = sortInventoryItemsForDisplay(baseItems);
   const usedSlots = new Set(
     overlayItems
@@ -477,6 +493,9 @@ const applyPendingBagGrantOverlay = async (
     if (remainingQty <= 0) continue;
 
     const itemDef = itemDefMap.get(grant.itemDefId);
+    if (itemDef?.category === "equipment") {
+      continue;
+    }
     const stackMax = Math.max(1, Math.floor(Number(itemDef?.stack_max) || 1));
     const canAutoStack =
       stackMax > 1 &&
@@ -540,6 +559,7 @@ export const getInventoryInfo = async (
     loadProjectedCharacterItemInstances(characterId),
     loadCharacterPendingItemGrants(characterId),
   ]);
+  const itemDefMap = buildPendingGrantItemDefMap(pendingGrants);
   const projectedBagItems = projectedItems
     .filter((item) => item.location === "bag")
     .map((item) => mapProjectedSnapshotToInventoryItem(item));
@@ -553,14 +573,17 @@ export const getInventoryInfo = async (
       warehouse_used: projectedWarehouseItems.filter((item) => item.location_slot !== null && item.location_slot >= 0).length,
     };
   }
-  const overlayBagItems = await applyPendingBagGrantOverlay(
+  const overlayBagItems = applyPendingBagGrantOverlay(
     projectedBagItems,
-    characterId,
+    pendingGrants,
     Number(info.bag_capacity) || 0,
+    itemDefMap,
   );
   return {
     ...info,
-    bag_used: overlayBagItems.filter((item) => item.location_slot !== null && item.location_slot >= 0).length,
+    bag_used:
+      overlayBagItems.filter((item) => item.location_slot !== null && item.location_slot >= 0).length +
+      countPendingEquipmentSlots(pendingGrants, itemDefMap),
     warehouse_used: projectedWarehouseItems.filter((item) => item.location_slot !== null && item.location_slot >= 0).length,
   };
 };
@@ -580,7 +603,14 @@ export const getInventoryItems = async (
     const rawItems = sortInventoryItemsForDisplay(
       await loadProjectedInventoryItemsByLocation(characterId, location),
     );
-    const overlayItems = await applyPendingBagGrantOverlay(rawItems, characterId, Number(info.bag_capacity) || 0);
+    const pendingGrants = await loadCharacterPendingItemGrants(characterId);
+    const itemDefMap = buildPendingGrantItemDefMap(pendingGrants);
+    const overlayItems = applyPendingBagGrantOverlay(
+      rawItems,
+      pendingGrants,
+      Number(info.bag_capacity) || 0,
+      itemDefMap,
+    );
     const offset = (page - 1) * pageSize;
     return {
       items: overlayItems.slice(offset, offset + pageSize),
