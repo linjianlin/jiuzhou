@@ -81,7 +81,9 @@ import {
 } from './shared/partnerView.js';
 import { ensurePartnerInnateTechniquesVisible } from './shared/partnerInnateTechniqueVisibility.js';
 import { loadPartnerMarketTradeStateMap, loadActivePartnerMarketListing } from './shared/partnerMarketState.js';
-import { consumeCharacterStoredResources, consumeMaterialByDefId } from './inventory/shared/consume.js';
+import {
+  consumeCharacterStoredResourcesAndMaterialsAtomically,
+} from './inventory/shared/consume.js';
 import {
   loadActivePartnerFusionMaterial,
   loadPartnerFusionLockStateMap,
@@ -2015,52 +2017,13 @@ class PartnerService {
         return { success: false, message: '已达最高层数' };
       }
 
-      if (character.spiritStones < cost.spiritStones) {
-        return {
-          success: false,
-          message: `灵石不足，需要${cost.spiritStones}，当前${character.spiritStones}`,
-        };
-      }
-      if (character.exp < cost.exp) {
-        return {
-          success: false,
-          message: `经验不足，需要${cost.exp}，当前${character.exp}`,
-        };
-      }
-
-      for (const material of cost.materials) {
-        const materialResult = await query(
-          `
-            SELECT COALESCE(SUM(qty), 0) AS total
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND item_def_id = $2
-              AND location IN ('bag', 'warehouse')
-          `,
-          [characterId, material.itemId],
-        );
-        const totalQty = normalizeInteger(materialResult.rows[0]?.total);
-        if (totalQty < material.qty) {
-          return {
-            success: false,
-            message: `材料不足：${material.itemName ?? material.itemId}，需要${material.qty}，当前${totalQty}`,
-          };
-        }
-      }
-
-      const consumeResourceResult = await consumeCharacterStoredResources(characterId, {
+      const consumeResourceResult = await consumeCharacterStoredResourcesAndMaterialsAtomically(characterId, {
         spiritStones: cost.spiritStones,
         exp: cost.exp,
+        materials: cost.materials,
       });
       if (!consumeResourceResult.success) {
         return { success: false, message: consumeResourceResult.message };
-      }
-
-      for (const material of cost.materials) {
-        const consumeResult = await consumeMaterialByDefId(characterId, material.itemId, material.qty);
-        if (!consumeResult.success) {
-          return { success: false, message: consumeResult.message };
-        }
       }
 
       if (techniqueEntry.row) {

@@ -215,6 +215,9 @@ const encodeItemGrantPayload = (payload: EncodedCharacterItemGrantPayload): stri
     bindType: payload.bindType,
     obtainedFrom: payload.obtainedFrom,
     idleSessionId: payload.idleSessionId,
+    metadata: payload.metadata,
+    quality: payload.quality,
+    qualityRank: payload.qualityRank,
     equipOptions: payload.equipOptions,
   });
 };
@@ -292,6 +295,9 @@ const buildMailMergeKey = (mailItem: MailAttachItem): string => {
   return JSON.stringify({
     itemDefId: String(mailItem.item_def_id || '').trim(),
     bindType: String(mailItem.options?.bindType || '').trim(),
+    metadata: mailItem.options?.metadata ?? null,
+    quality: mailItem.options?.quality ?? null,
+    qualityRank: mailItem.options?.qualityRank ?? null,
     equipOptions: mailItem.options?.equipOptions ?? null,
   });
 };
@@ -531,6 +537,9 @@ const flushSingleCharacterItemGrants = async (
           qty: grant.qty,
           options: {
             bindType: grant.payload.bindType,
+            ...(grant.payload.metadata ? { metadata: grant.payload.metadata } : {}),
+            ...(grant.payload.quality ? { quality: grant.payload.quality } : {}),
+            ...(grant.payload.qualityRank !== null ? { qualityRank: grant.payload.qualityRank } : {}),
             ...(grant.payload.equipOptions ? { equipOptions: grant.payload.equipOptions } : {}),
           },
         });

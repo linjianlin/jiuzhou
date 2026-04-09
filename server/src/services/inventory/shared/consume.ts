@@ -39,6 +39,7 @@ import {
   loadProjectedCharacterItemInstances,
   type BufferedCharacterItemInstanceMutation,
 } from "../../shared/characterItemInstanceMutationService.js";
+import { getItemDefinitionById } from "../../staticConfigLoader.js";
 
 type CharacterStoredResourceSnapshot = {
   silver: number;
@@ -50,6 +51,23 @@ type CharacterCurrencyExactSnapshot = {
   silver: bigint;
   spiritStones: bigint;
 };
+
+export type MaterialConsumeRequirement = {
+  itemId: string;
+  qty: number;
+  itemName?: string | null;
+};
+
+type MaterialConsumePlanResult =
+  | {
+      success: true;
+      message: string;
+      mutations: BufferedCharacterItemInstanceMutation[];
+    }
+  | {
+      success: false;
+      message: string;
+    };
 
 export type ConsumeCharacterStoredResourcesResult =
   | {
@@ -123,6 +141,123 @@ const buildItemMutation = (
   };
 };
 
+const normalizeMaterialConsumeRequirements = (
+  requirements: readonly MaterialConsumeRequirement[],
+): MaterialConsumeRequirement[] => {
+  const requirementMap = new Map<string, MaterialConsumeRequirement>();
+  for (const requirement of requirements) {
+    const itemId = String(requirement.itemId || '').trim();
+    const normalizedQty = clampInt(requirement.qty, 0, 999999);
+    if (!itemId || normalizedQty <= 0) {
+      continue;
+    }
+
+    const existing = requirementMap.get(itemId);
+    if (existing) {
+      existing.qty += normalizedQty;
+      if (!existing.itemName && requirement.itemName) {
+        existing.itemName = requirement.itemName;
+      }
+      continue;
+    }
+
+    requirementMap.set(itemId, {
+      itemId,
+      qty: normalizedQty,
+      itemName: requirement.itemName,
+    });
+  }
+
+  return [...requirementMap.values()];
+};
+
+const buildMaterialConsumePlan = async (
+  characterId: number,
+  requirements: readonly MaterialConsumeRequirement[],
+): Promise<MaterialConsumePlanResult> => {
+  const normalizedRequirements = normalizeMaterialConsumeRequirements(requirements);
+  if (normalizedRequirements.length <= 0) {
+    return { success: true, message: '无需校验材料', mutations: [] };
+  }
+
+  const projectedItems = await loadProjectedCharacterItemInstances(characterId);
+  const materialRowsByItemId = new Map<string, Array<{ id: number; qty: number; locked: boolean }>>();
+  const materialSnapshotMap = new Map<string, { totalQty: number; unlockedQty: number }>();
+
+  for (const item of projectedItems) {
+    if (item.location !== 'bag' && item.location !== 'warehouse') {
+      continue;
+    }
+
+    const itemId = String(item.item_def_id);
+    const qty = Math.max(0, Number(item.qty) || 0);
+    if (qty <= 0) {
+      continue;
+    }
+
+    const rows = materialRowsByItemId.get(itemId) ?? [];
+    rows.push({ id: item.id, qty, locked: item.locked });
+    materialRowsByItemId.set(itemId, rows);
+
+    const snapshot = materialSnapshotMap.get(itemId) ?? { totalQty: 0, unlockedQty: 0 };
+    snapshot.totalQty += qty;
+    if (!item.locked) {
+      snapshot.unlockedQty += qty;
+    }
+    materialSnapshotMap.set(itemId, snapshot);
+  }
+
+  const mutations: BufferedCharacterItemInstanceMutation[] = [];
+  for (const requirement of normalizedRequirements) {
+    const snapshot = materialSnapshotMap.get(requirement.itemId) ?? { totalQty: 0, unlockedQty: 0 };
+    const itemName = requirement.itemName ?? getItemDefinitionById(requirement.itemId)?.name ?? requirement.itemId;
+    if (snapshot.totalQty < requirement.qty) {
+      return {
+        success: false,
+        message: `材料不足：${itemName}，需要${requirement.qty}，当前${snapshot.totalQty}`,
+      };
+    }
+    if (snapshot.unlockedQty < requirement.qty) {
+      return {
+        success: false,
+        message: `材料已锁定：${itemName}`,
+      };
+    }
+
+    const unlockedRows = [...(materialRowsByItemId.get(requirement.itemId) ?? [])]
+      .filter((row) => !row.locked && row.qty > 0)
+      .sort((left, right) => right.qty - left.qty || left.id - right.id);
+
+    let remaining = requirement.qty;
+    for (const row of unlockedRows) {
+      if (remaining <= 0) {
+        break;
+      }
+      const consumeQty = Math.min(row.qty, remaining);
+      const snapshotRow = await loadProjectedCharacterItemInstanceById(characterId, row.id);
+      mutations.push(buildItemMutation(
+        'consume-material',
+        characterId,
+        row.id,
+        mutations.length,
+        row.qty - consumeQty,
+        snapshotRow,
+      ));
+      remaining -= consumeQty;
+    }
+  }
+
+  return { success: true, message: '材料校验通过', mutations };
+};
+
+export const validateMaterialConsumeRequirements = async (
+  characterId: number,
+  requirements: readonly MaterialConsumeRequirement[],
+): Promise<{ success: boolean; message: string }> => {
+  const result = await buildMaterialConsumePlan(characterId, requirements);
+  return { success: result.success, message: result.message };
+};
+
 /**
  * 按物品定义 ID 消耗指定数量的材料
  * 从 bag/warehouse 位置的未锁定行中按数量降序扣除
@@ -132,53 +267,76 @@ export const consumeMaterialByDefId = async (
   materialItemDefId: string,
   qty: number,
 ): Promise<{ success: boolean; message: string }> => {
-  const need = clampInt(qty, 1, 999999);
-  const rows = (await loadProjectedCharacterItemInstances(characterId))
-    .filter((row) => row.item_def_id === materialItemDefId && (row.location === "bag" || row.location === "warehouse"))
-    .sort((left, right) => right.qty - left.qty || left.id - right.id)
-    .map((row) => ({ id: row.id, qty: row.qty, locked: row.locked }));
-
-  if (rows.length === 0) {
-    return { success: false, message: "材料不足" };
-  }
-  const unlockedRows = rows.filter(
-    (row) => !row.locked && (Number(row.qty) || 0) > 0,
-  );
-  const unlockedTotal = unlockedRows.reduce(
-    (sum, row) => sum + Math.max(0, Number(row.qty) || 0),
-    0,
-  );
-
-  if (unlockedTotal < need) {
-    if (unlockedTotal <= 0 && rows.some((row) => row.locked)) {
-      return { success: false, message: "材料已锁定" };
-    }
-    return { success: false, message: "材料不足" };
+  const result = await buildMaterialConsumePlan(characterId, [{
+    itemId: materialItemDefId,
+    qty,
+  }]);
+  if (!result.success) {
+    return result;
   }
 
-  let remaining = need;
-  const mutations: BufferedCharacterItemInstanceMutation[] = [];
-  for (const row of unlockedRows) {
-    if (remaining <= 0) break;
-    const rowQty = Math.max(0, Number(row.qty) || 0);
-    if (rowQty <= 0) continue;
+  await bufferCharacterItemInstanceMutations(result.mutations);
+  return { success: true, message: '扣除成功' };
+};
 
-    const consume = Math.min(rowQty, remaining);
-    const snapshot = await loadProjectedCharacterItemInstanceById(characterId, row.id);
-    mutations.push(buildItemMutation(
-      "consume-material",
+export const consumeCharacterStoredResourcesAndMaterialsAtomically = async (
+  characterId: number,
+  costs: {
+    silver?: number;
+    spiritStones?: number;
+    exp?: number;
+    materials?: readonly MaterialConsumeRequirement[];
+  },
+): Promise<ConsumeCharacterStoredResourcesResult> => {
+  const silverCost = Math.max(0, Math.floor(Number(costs.silver) || 0));
+  const spiritCost = Math.max(0, Math.floor(Number(costs.spiritStones) || 0));
+  const expCost = Math.max(0, Math.floor(Number(costs.exp) || 0));
+  const materialRequirements = normalizeMaterialConsumeRequirements(costs.materials ?? []);
+
+  const materialPlanResult = await buildMaterialConsumePlan(characterId, materialRequirements);
+  if (!materialPlanResult.success) {
+    return materialPlanResult;
+  }
+
+  const resourceSnapshot = await loadCharacterSettlementResourceSnapshot(characterId, {
+    forUpdate: true,
+  });
+  if (!resourceSnapshot) {
+    return { success: false, message: '角色不存在' };
+  }
+  if (resourceSnapshot.silver < silverCost) {
+    return { success: false, message: `银两不足，需要${silverCost}` };
+  }
+  if (resourceSnapshot.spiritStones < spiritCost) {
+    return { success: false, message: `灵石不足，需要${spiritCost}` };
+  }
+  if (resourceSnapshot.exp < expCost) {
+    return { success: false, message: `经验不足，需要${expCost}` };
+  }
+
+  if (materialPlanResult.mutations.length > 0) {
+    await bufferCharacterItemInstanceMutations(materialPlanResult.mutations);
+  }
+  if (silverCost > 0 || spiritCost > 0 || expCost > 0) {
+    await applyCharacterRewardDeltas(new Map([[
       characterId,
-      row.id,
-      mutations.length,
-      rowQty - consume,
-      snapshot,
-    ));
-    remaining -= consume;
+      {
+        silver: -silverCost,
+        spiritStones: -spiritCost,
+        exp: -expCost,
+      },
+    ]]));
   }
 
-  await bufferCharacterItemInstanceMutations(mutations);
-
-  return { success: true, message: "扣除成功" };
+  return {
+    success: true,
+    message: '扣除成功',
+    remaining: {
+      silver: resourceSnapshot.silver - silverCost,
+      spiritStones: resourceSnapshot.spiritStones - spiritCost,
+      exp: resourceSnapshot.exp - expCost,
+    },
+  };
 };
 
 /**

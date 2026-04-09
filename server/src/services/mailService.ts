@@ -77,7 +77,10 @@ export interface MailAttachItem {
   qty: number;
   options?: {
     bindType?: string;
-    equipOptions?: any;
+    equipOptions?: GenerateOptions;
+    metadata?: Record<string, string | number | boolean | null | undefined>;
+    quality?: string;
+    qualityRank?: number;
   };
 }
 
@@ -1155,13 +1158,39 @@ class MailService {
       const optionsRaw = source.options;
       const normalizedOptions =
         optionsRaw && typeof optionsRaw === 'object'
-          ? {
+          ? (() => {
+              const optionsSource = optionsRaw as Record<string, string | number | boolean | object | null | undefined>;
+              return {
               bindType:
-                typeof (optionsRaw as Record<string, unknown>).bindType === 'string'
-                  ? String((optionsRaw as Record<string, unknown>).bindType).trim()
+                typeof optionsSource.bindType === 'string'
+                  ? String(optionsSource.bindType).trim()
                   : undefined,
-              equipOptions: (optionsRaw as Record<string, unknown>).equipOptions,
-            }
+              equipOptions: optionsSource.equipOptions as GenerateOptions | undefined,
+              metadata:
+                (() => {
+                  const metadata = optionsSource.metadata;
+                  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+                  const metadataSource = metadata as Record<string, string | number | boolean | null | undefined>;
+                  const entries = Object.entries(metadataSource)
+                    .filter(([, value]) => value !== undefined)
+                    .sort(([left], [right]) => left.localeCompare(right));
+                  return entries.length > 0
+                    ? Object.fromEntries(entries) as Record<string, string | number | boolean | null>
+                    : undefined;
+                })(),
+              quality:
+                typeof optionsSource.quality === 'string'
+                  ? String(optionsSource.quality).trim() || undefined
+                  : undefined,
+              qualityRank:
+                (() => {
+                  const value = Number(optionsSource.qualityRank);
+                  if (!Number.isFinite(value)) return undefined;
+                  const normalizedValue = Math.max(1, Math.floor(value));
+                  return normalizedValue;
+                })(),
+            };
+            })()
           : undefined;
 
       normalized.push({
@@ -2079,6 +2108,11 @@ class MailService {
                   qty: params.qty,
                   obtainedFrom: params.obtainedFrom,
                   ...(params.bindType ? { bindType: params.bindType } : {}),
+                  ...(attachItem.options?.metadata ? { metadata: attachItem.options.metadata } : {}),
+                  ...(attachItem.options?.quality ? { quality: attachItem.options.quality } : {}),
+                  ...(attachItem.options?.qualityRank !== undefined
+                    ? { qualityRank: attachItem.options.qualityRank }
+                    : {}),
                   ...(params.equipOptions !== undefined
                     ? { equipOptions: params.equipOptions as GenerateOptions }
                     : {}),
@@ -2126,6 +2160,11 @@ class MailService {
             qty: attachItem.qty,
             obtainedFrom: 'mail',
             ...(attachItem.options?.bindType ? { bindType: attachItem.options.bindType } : {}),
+            ...(attachItem.options?.metadata ? { metadata: attachItem.options.metadata } : {}),
+            ...(attachItem.options?.quality ? { quality: attachItem.options.quality } : {}),
+            ...(attachItem.options?.qualityRank !== undefined
+              ? { qualityRank: attachItem.options.qualityRank }
+              : {}),
             ...(attachItem.options?.equipOptions
               ? { equipOptions: attachItem.options.equipOptions as GenerateOptions }
               : {}),

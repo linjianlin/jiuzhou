@@ -25,10 +25,10 @@ const readSource = (relativePath: string): string => {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 };
 
-test('功法升级应复用共享资源扣减入口', () => {
+test('功法升级应复用共享原子扣费入口', () => {
   const source = readSource('../characterTechniqueService.ts');
 
-  assert.match(source, /consumeCharacterStoredResources\(characterId,\s*\{/u);
+  assert.match(source, /consumeCharacterStoredResourcesAndMaterialsAtomically\(characterId,\s*\{/u);
   assert.doesNotMatch(source, /UPDATE characters\s+SET spirit_stones = spirit_stones -/u);
   assert.doesNotMatch(source, /SELECT spirit_stones,\s*exp FROM characters WHERE id = \$1 FOR UPDATE/u);
 });

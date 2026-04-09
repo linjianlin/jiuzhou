@@ -4,7 +4,9 @@
  */
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
-import { consumeCharacterStoredResources, consumeMaterialByDefId } from './inventory/shared/consume.js';
+import {
+  consumeCharacterStoredResourcesAndMaterialsAtomically,
+} from './inventory/shared/consume.js';
 import { updateSectionProgress } from './mainQuest/index.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { isCharacterInBattle } from './battle/index.js';
@@ -20,7 +22,6 @@ import {
   scaleTechniqueBaseCostByQuality,
   type TechniqueLayerStaticRow,
 } from './shared/techniqueUpgradeRules.js';
-import { loadProjectedCharacterItemInstances } from './shared/characterItemInstanceMutationService.js';
 import {
   cleanupPersistedIdleConfigAutoSkillPolicy,
 } from './idle/idleAutoSkillPolicy.js';
@@ -402,35 +403,17 @@ class CharacterTechniqueService {
     const costExp = scaleTechniqueBaseCostByQuality(layer.costExp, qualityMultiplier);
     const costMaterials = layer.costMaterials;
 
-    // 检查并扣除材料
-    const projectedItems = await loadProjectedCharacterItemInstances(characterId);
-    for (const mat of costMaterials) {
-      const totalQty = projectedItems
-        .filter((item) => item.item_def_id === mat.itemId && (item.location === 'bag' || item.location === 'warehouse'))
-        .reduce((sum, item) => sum + Math.max(0, Number(item.qty) || 0), 0);
-      if (totalQty < mat.qty) {
-        // 获取材料名称
-        const matName = getItemDefinitionById(mat.itemId)?.name || mat.itemId;
-        return { success: false, message: `材料不足：${matName}，需要${mat.qty}，当前${totalQty}` };
-      }
-    }
-
-    // 扣除灵石和经验
-    const consumeResourceResult = await consumeCharacterStoredResources(characterId, {
+    const consumeResourceResult = await consumeCharacterStoredResourcesAndMaterialsAtomically(characterId, {
       spiritStones: costStones,
       exp: costExp,
+      materials: costMaterials.map((mat) => ({
+        itemId: mat.itemId,
+        qty: mat.qty,
+        itemName: getItemDefinitionById(mat.itemId)?.name ?? mat.itemId,
+      })),
     });
     if (!consumeResourceResult.success) {
       return { success: false, message: consumeResourceResult.message };
-    }
-
-    // 扣除材料
-    for (const mat of costMaterials) {
-      const consumeResult = await consumeMaterialByDefId(characterId, mat.itemId, mat.qty);
-      if (!consumeResult.success) {
-        const matName = getItemDefinitionById(mat.itemId)?.name || mat.itemId;
-        return { success: false, message: `材料不足：${matName}，需要${mat.qty}` };
-      }
     }
 
     // 升级功法层数
