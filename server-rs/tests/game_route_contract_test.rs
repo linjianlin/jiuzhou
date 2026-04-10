@@ -17,8 +17,11 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::game::{
-    GameHomeAchievementView, GameHomeMainQuestProgressView, GameHomeOverviewView,
-    GameHomeSignInView, GameHomeTaskSummaryView, GameHomeTeamOverviewView, GameRouteServices,
+    GameActionResult, GameHomeAchievementView, GameHomeMainQuestChapterView,
+    GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
+    GameHomeSignInView,
+    GameHomeTaskSummaryItemView, GameHomeTaskSummaryView, GameHomeTeamOverviewView,
+    GameMainQuestTrackDataView, GameRouteServices, GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -116,6 +119,243 @@ async fn game_home_overview_route_returns_success_payload() {
                     "dialogueState": null,
                     "tracked": true
                 }
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_overview_summary_route_returns_success_payload_and_forwards_category() {
+    let requested_categories = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_summary(requested_categories.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/task/overview/summary?category=daily")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("task summary request"),
+        )
+        .await
+        .expect("task summary response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        requested_categories
+            .lock()
+            .expect("task requested categories")
+            .as_slice(),
+        &[(3002_i64, Some("daily".to_string()))]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "tasks": [
+                    {
+                        "id": "daily-1",
+                        "category": "daily",
+                        "mapId": "map-1",
+                        "roomId": "room-1",
+                        "status": "ongoing",
+                        "tracked": true
+                    }
+                ]
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_track_route_preserves_send_result_shape() {
+    let track_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_track_calls(track_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/task/track")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"taskId":"daily-1","tracked":true}"#))
+                .expect("task track request"),
+        )
+        .await
+        .expect("task track response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        track_calls.lock().expect("task track calls").as_slice(),
+        &[(3002_i64, "daily-1".to_string(), true)]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "taskId": "daily-1",
+                "tracked": true
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn main_quest_progress_and_chapters_routes_return_success_payloads() {
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_main_quest_views(),
+    ));
+
+    let progress_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/main-quest/progress")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("main quest progress request"),
+        )
+        .await
+        .expect("main quest progress response");
+    let (progress_status, progress_json) = response_json(progress_response).await;
+    assert_eq!(progress_status, StatusCode::OK);
+    assert_eq!(
+        progress_json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "currentChapter": null,
+                "currentSection": null,
+                "completedChapters": ["chapter-1"],
+                "completedSections": ["section-1"],
+                "dialogueState": null,
+                "tracked": true
+            }
+        })
+    );
+
+    let chapters_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/main-quest/chapters")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("main quest chapters request"),
+        )
+        .await
+        .expect("main quest chapters response");
+    let (chapters_status, chapters_json) = response_json(chapters_response).await;
+    assert_eq!(chapters_status, StatusCode::OK);
+    assert_eq!(
+        chapters_json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "chapters": [
+                    {
+                        "id": "chapter-1",
+                        "chapterNum": 1,
+                        "name": "初入仙途",
+                        "description": "踏上修行",
+                        "background": null,
+                        "minRealm": "凡人",
+                        "isCompleted": true
+                    }
+                ]
+            }
+        })
+    );
+
+    let sections_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/main-quest/chapters/chapter-1/sections")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("main quest sections request"),
+        )
+        .await
+        .expect("main quest sections response");
+    let (sections_status, sections_json) = response_json(sections_response).await;
+    assert_eq!(sections_status, StatusCode::OK);
+    assert_eq!(
+        sections_json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "sections": [
+                    {
+                        "id": "section-1",
+                        "chapterId": "chapter-1",
+                        "sectionNum": 1,
+                        "name": "拜入山门",
+                        "description": "完成入门试炼",
+                        "brief": "去找长老",
+                        "npcId": "npc-1",
+                        "mapId": "map-1",
+                        "roomId": "room-1",
+                        "status": "completed",
+                        "objectives": [],
+                        "rewards": {},
+                        "isChapterFinal": false
+                    }
+                ]
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn main_quest_track_route_preserves_send_result_shape() {
+    let track_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_main_quest_track_calls(track_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/main-quest/track")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"tracked":false}"#))
+                .expect("main quest track request"),
+        )
+        .await
+        .expect("main quest track response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        track_calls
+            .lock()
+            .expect("main quest track calls")
+            .as_slice(),
+        &[(3002_i64, false)]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "tracked": false
             }
         })
     );
@@ -351,7 +591,14 @@ impl AuthRouteServices for FakeAuthServices {
 #[derive(Clone)]
 struct FakeGameServices {
     overview: GameHomeOverviewView,
+    task_summary: GameHomeTaskSummaryView,
+    main_quest_progress: GameHomeMainQuestProgressView,
+    main_quest_chapters: Vec<GameHomeMainQuestChapterView>,
+    main_quest_sections: Vec<GameHomeMainQuestSectionView>,
     requested_ids: Arc<Mutex<Vec<(i64, i64)>>>,
+    task_summary_requests: Arc<Mutex<Vec<(i64, Option<String>)>>>,
+    task_track_calls: Arc<Mutex<Vec<(i64, String, bool)>>>,
+    main_quest_track_calls: Arc<Mutex<Vec<(i64, bool)>>>,
 }
 
 impl FakeGameServices {
@@ -391,8 +638,75 @@ impl FakeGameServices {
                     tracked: true,
                 },
             },
+            task_summary: GameHomeTaskSummaryView {
+                tasks: vec![GameHomeTaskSummaryItemView {
+                    id: "daily-1".to_string(),
+                    category: "daily".to_string(),
+                    map_id: Some("map-1".to_string()),
+                    room_id: Some("room-1".to_string()),
+                    status: "ongoing".to_string(),
+                    tracked: true,
+                }],
+            },
+            main_quest_progress: GameHomeMainQuestProgressView {
+                current_chapter: None,
+                current_section: None,
+                completed_chapters: vec!["chapter-1".to_string()],
+                completed_sections: vec!["section-1".to_string()],
+                dialogue_state: None,
+                tracked: true,
+            },
+            main_quest_chapters: vec![GameHomeMainQuestChapterView {
+                id: "chapter-1".to_string(),
+                chapter_num: 1,
+                name: Some("初入仙途".to_string()),
+                description: Some("踏上修行".to_string()),
+                background: None,
+                min_realm: "凡人".to_string(),
+                is_completed: true,
+            }],
+            main_quest_sections: vec![GameHomeMainQuestSectionView {
+                id: "section-1".to_string(),
+                chapter_id: Some("chapter-1".to_string()),
+                section_num: 1,
+                name: Some("拜入山门".to_string()),
+                description: Some("完成入门试炼".to_string()),
+                brief: Some("去找长老".to_string()),
+                npc_id: Some("npc-1".to_string()),
+                map_id: Some("map-1".to_string()),
+                room_id: Some("room-1".to_string()),
+                status: "completed".to_string(),
+                objectives: Vec::new(),
+                rewards: serde_json::json!({}),
+                is_chapter_final: false,
+            }],
             requested_ids,
+            task_summary_requests: Arc::new(Mutex::new(Vec::new())),
+            task_track_calls: Arc::new(Mutex::new(Vec::new())),
+            main_quest_track_calls: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    fn with_task_summary(requested_categories: Arc<Mutex<Vec<(i64, Option<String>)>>>) -> Self {
+        let mut services = Self::new();
+        services.task_summary_requests = requested_categories;
+        services
+    }
+
+    fn with_task_track_calls(track_calls: Arc<Mutex<Vec<(i64, String, bool)>>>) -> Self {
+        let mut services = Self::new();
+        services.task_track_calls = track_calls;
+        services
+    }
+
+    fn with_main_quest_views() -> Self {
+        Self::new()
+    }
+
+    fn with_main_quest_track_calls(track_calls: Arc<Mutex<Vec<(i64, bool)>>>) -> Self {
+        let mut services = Self::new();
+        services.main_quest_track_calls = track_calls;
+        services
     }
 }
 
@@ -411,6 +725,114 @@ impl GameRouteServices for FakeGameServices {
                 .expect("record requested ids")
                 .push((user_id, character_id));
             Ok(overview)
+        })
+    }
+
+    fn get_task_overview_summary<'a>(
+        &'a self,
+        character_id: i64,
+        category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameHomeTaskSummaryView, BusinessError>> + Send + 'a>>
+    {
+        let task_summary = self.task_summary.clone();
+        let requests = self.task_summary_requests.clone();
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("record task summary request")
+                .push((character_id, category));
+            Ok(task_summary)
+        })
+    }
+
+    fn set_task_tracked<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskTrackDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.task_track_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record task track call")
+                .push((character_id, task_id.clone(), tracked));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskTrackDataView { task_id, tracked }),
+            })
+        })
+    }
+
+    fn get_main_quest_progress<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<GameHomeMainQuestProgressView, BusinessError>> + Send + 'a>,
+    > {
+        let progress = self.main_quest_progress.clone();
+        Box::pin(async move { Ok(progress) })
+    }
+
+    fn get_main_quest_chapters<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestChapterView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let chapters = self.main_quest_chapters.clone();
+        Box::pin(async move { Ok(chapters) })
+    }
+
+    fn get_main_quest_sections<'a>(
+        &'a self,
+        _character_id: i64,
+        _chapter_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestSectionView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let sections = self.main_quest_sections.clone();
+        Box::pin(async move { Ok(sections) })
+    }
+
+    fn set_main_quest_tracked<'a>(
+        &'a self,
+        character_id: i64,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.main_quest_track_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record main quest track call")
+                .push((character_id, tracked));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestTrackDataView { tracked }),
+            })
         })
     }
 }

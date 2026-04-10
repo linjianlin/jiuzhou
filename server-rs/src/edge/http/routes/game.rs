@@ -7,13 +7,13 @@ use axum::routing::get;
 use axum::Router;
 use serde::Serialize;
 
+use crate::application::account::service::PhoneBindingStatusDto;
+use crate::application::inventory::service::InventoryItemView;
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::require_authenticated_character_context;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::success;
-use crate::edge::http::routes::account::PhoneBindingStatusDto;
 use crate::edge::http::routes::idle::IdleSessionView;
-use crate::edge::http::routes::inventory::InventoryItemView;
 use crate::edge::http::routes::realm::RealmOverviewView;
 
 /**
@@ -199,12 +199,93 @@ pub struct GameHomeOverviewView {
     pub main_quest: GameHomeMainQuestProgressView,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameActionResult<T> {
+    pub success: bool,
+    pub message: String,
+    pub data: Option<T>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTaskTrackDataView {
+    pub task_id: String,
+    pub tracked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GameMainQuestTrackDataView {
+    pub tracked: bool,
+}
+
 pub trait GameRouteServices: Send + Sync {
     fn get_home_overview<'a>(
         &'a self,
         user_id: i64,
         character_id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<GameHomeOverviewView, BusinessError>> + Send + 'a>>;
+
+    fn get_task_overview_summary<'a>(
+        &'a self,
+        character_id: i64,
+        category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameHomeTaskSummaryView, BusinessError>> + Send + 'a>>;
+
+    fn set_task_tracked<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskTrackDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn get_main_quest_progress<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<GameHomeMainQuestProgressView, BusinessError>> + Send + 'a>,
+    >;
+
+    fn get_main_quest_chapters<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestChapterView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn get_main_quest_sections<'a>(
+        &'a self,
+        character_id: i64,
+        chapter_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestSectionView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn set_main_quest_tracked<'a>(
+        &'a self,
+        character_id: i64,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    >;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -246,6 +327,102 @@ impl GameRouteServices for NoopGameRouteServices {
                     dialogue_state: None,
                     tracked: true,
                 },
+            })
+        })
+    }
+
+    fn get_task_overview_summary<'a>(
+        &'a self,
+        _character_id: i64,
+        _category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameHomeTaskSummaryView, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(GameHomeTaskSummaryView { tasks: Vec::new() }) })
+    }
+
+    fn set_task_tracked<'a>(
+        &'a self,
+        _character_id: i64,
+        task_id: String,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskTrackDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskTrackDataView { task_id, tracked }),
+            })
+        })
+    }
+
+    fn get_main_quest_progress<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<GameHomeMainQuestProgressView, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Ok(GameHomeMainQuestProgressView {
+                current_chapter: None,
+                current_section: None,
+                completed_chapters: Vec::new(),
+                completed_sections: Vec::new(),
+                dialogue_state: None,
+                tracked: true,
+            })
+        })
+    }
+
+    fn get_main_quest_chapters<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestChapterView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+
+    fn get_main_quest_sections<'a>(
+        &'a self,
+        _character_id: i64,
+        _chapter_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestSectionView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+
+    fn set_main_quest_tracked<'a>(
+        &'a self,
+        _character_id: i64,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestTrackDataView { tracked }),
             })
         })
     }

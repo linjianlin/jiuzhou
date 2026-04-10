@@ -20,11 +20,13 @@ use crate::application::static_data::seed::{list_seed_files_with_prefix, read_se
 use crate::bootstrap::app::SharedRuntimeServices;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::game::{
-    GameHomeAchievementView, GameHomeDialogueStateView, GameHomeMainQuestChapterView,
-    GameHomeMainQuestProgressView, GameHomeMainQuestSectionObjectiveView,
-    GameHomeMainQuestSectionView, GameHomeOverviewView, GameHomeSignInView,
-    GameHomeTaskSummaryItemView, GameHomeTaskSummaryView, GameHomeTeamApplicationView,
-    GameHomeTeamInfoView, GameHomeTeamMemberView, GameHomeTeamOverviewView, GameRouteServices,
+    GameActionResult, GameHomeAchievementView, GameHomeDialogueStateView,
+    GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
+    GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
+    GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
+    GameHomeTeamApplicationView, GameHomeTeamInfoView, GameHomeTeamMemberView,
+    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
+    GameTaskTrackDataView,
 };
 use crate::edge::http::routes::inventory::InventoryRouteServices;
 use crate::edge::http::routes::realm::RealmRouteServices;
@@ -194,7 +196,7 @@ impl RustGameRouteService {
             ),
             self.idle_service.get_active_idle_session(character_id),
             self.load_team_overview(character_id),
-            self.load_task_summary(character_id),
+            self.load_task_summary(character_id, None),
             self.load_main_quest_progress(character_id),
             self.load_achievement_claimable_count(character_id),
         )?;
@@ -484,6 +486,7 @@ impl RustGameRouteService {
     async fn load_task_summary(
         &self,
         character_id: i64,
+        category: Option<&str>,
     ) -> Result<GameHomeTaskSummaryView, BusinessError> {
         let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
         else {
@@ -493,6 +496,11 @@ impl RustGameRouteService {
         let task_defs = task_seed_catalog()?
             .iter()
             .filter(|task| task.enabled != Some(false))
+            .filter(|task| {
+                category
+                    .map(|value| task.category == value.trim())
+                    .unwrap_or(true)
+            })
             .filter(|task| is_task_visible_for_realm(task, &character_realm_state))
             .cloned()
             .collect::<Vec<_>>();
@@ -597,6 +605,79 @@ impl RustGameRouteService {
                     }
                 })
                 .collect(),
+        })
+    }
+
+    async fn set_task_tracked_impl(
+        &self,
+        character_id: i64,
+        task_id: String,
+        tracked: bool,
+    ) -> Result<GameActionResult<GameTaskTrackDataView>, BusinessError> {
+        let normalized_task_id = task_id.trim().to_string();
+        if normalized_task_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务ID不能为空".to_string(),
+                data: None,
+            });
+        }
+
+        let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "角色不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let task_def = task_seed_catalog()?
+            .iter()
+            .find(|task| task.enabled != Some(false) && task.id == normalized_task_id)
+            .cloned();
+        let Some(task_def) = task_def else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务不存在".to_string(),
+                data: None,
+            });
+        };
+
+        if let Some(required_realm) =
+            build_task_unlock_failure_message(&task_def, &character_realm_state)
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message: required_realm,
+                data: None,
+            });
+        }
+
+        let row = sqlx::query(
+            r#"
+            INSERT INTO character_task_progress (character_id, task_id, tracked)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (character_id, task_id) DO UPDATE SET
+              tracked = EXCLUDED.tracked,
+              updated_at = NOW()
+            RETURNING tracked
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .bind(tracked)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameTaskTrackDataView {
+                task_id: normalized_task_id,
+                tracked: row.get::<bool, _>("tracked"),
+            }),
         })
     }
 
@@ -778,6 +859,189 @@ impl RustGameRouteService {
         })
     }
 
+    async fn load_main_quest_chapters(
+        &self,
+        character_id: i64,
+    ) -> Result<Vec<GameHomeMainQuestChapterView>, BusinessError> {
+        let completed_chapters = sqlx::query(
+            "SELECT completed_chapters FROM character_main_quest_progress WHERE character_id = $1 LIMIT 1",
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?
+        .and_then(|row| row.try_get::<Option<Value>, _>("completed_chapters").ok().flatten());
+
+        let completed_chapter_ids = value_to_string_vec(completed_chapters);
+        let catalog = main_quest_catalog()?;
+        let section_count_by_chapter = build_enabled_section_count_by_chapter(catalog);
+        let mut chapters = catalog
+            .chapter_by_id
+            .values()
+            .filter(|chapter| chapter.enabled != Some(false))
+            .filter_map(|chapter| {
+                let chapter_id = chapter.id.trim().to_string();
+                let chapter_num = chapter.chapter_num;
+                if chapter_id.is_empty() || chapter_num <= 0 {
+                    return None;
+                }
+                Some((
+                    chapter_num,
+                    *section_count_by_chapter.get(&chapter_id).unwrap_or(&0_i32),
+                    GameHomeMainQuestChapterView {
+                        id: chapter_id.clone(),
+                        chapter_num,
+                        name: chapter.name.clone(),
+                        description: chapter.description.clone(),
+                        background: chapter.background.clone(),
+                        min_realm: chapter
+                            .min_realm
+                            .clone()
+                            .unwrap_or_else(|| "凡人".to_string()),
+                        is_completed: completed_chapter_ids.iter().any(|value| value == &chapter_id),
+                    },
+                ))
+            })
+            .collect::<Vec<_>>();
+        chapters.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| right.1.cmp(&left.1))
+                .then_with(|| left.2.id.cmp(&right.2.id))
+        });
+        chapters.dedup_by(|left, right| left.0 == right.0);
+        Ok(chapters.into_iter().map(|(_, _, chapter)| chapter).collect())
+    }
+
+    async fn load_main_quest_sections(
+        &self,
+        character_id: i64,
+        chapter_id: &str,
+    ) -> Result<Vec<GameHomeMainQuestSectionView>, BusinessError> {
+        let normalized_chapter_id = chapter_id.trim();
+        if normalized_chapter_id.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let _ = self.load_main_quest_progress(character_id).await?;
+        let row = sqlx::query(
+            r#"
+            SELECT
+              current_section_id,
+              section_status,
+              objectives_progress,
+              completed_sections
+            FROM character_main_quest_progress
+            WHERE character_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        let completed_sections = value_to_string_vec(
+            row.as_ref()
+                .and_then(|value| value.try_get::<Option<Value>, _>("completed_sections").ok())
+                .flatten(),
+        );
+        let current_section_id = row
+            .as_ref()
+            .and_then(|value| value.try_get::<Option<String>, _>("current_section_id").ok())
+            .flatten();
+        let current_status = row
+            .as_ref()
+            .and_then(|value| value.try_get::<Option<String>, _>("section_status").ok())
+            .flatten()
+            .unwrap_or_else(|| "not_started".to_string());
+        let current_progress = row
+            .as_ref()
+            .and_then(|value| value.try_get::<Option<Value>, _>("objectives_progress").ok())
+            .flatten()
+            .unwrap_or(Value::Null);
+
+        let catalog = main_quest_catalog()?;
+        let mut sections = catalog
+            .section_by_id
+            .values()
+            .filter(|section| section.chapter_id == normalized_chapter_id)
+            .filter(|section| section.enabled != Some(false))
+            .map(|section| {
+                let is_current = current_section_id.as_deref() == Some(section.id.as_str());
+                let is_completed = completed_sections.iter().any(|value| value == &section.id);
+                let status = if is_completed {
+                    "completed".to_string()
+                } else if is_current {
+                    current_status.clone()
+                } else {
+                    "not_started".to_string()
+                };
+                GameHomeMainQuestSectionView {
+                    id: section.id.clone(),
+                    chapter_id: Some(section.chapter_id.clone()),
+                    section_num: section.section_num,
+                    name: section.name.clone(),
+                    description: section.description.clone(),
+                    brief: section.brief.clone(),
+                    npc_id: section.npc_id.clone(),
+                    map_id: section.map_id.clone(),
+                    room_id: if is_current {
+                        resolve_main_quest_room_id(section, &status, &current_progress)
+                    } else {
+                        section.room_id.clone()
+                    },
+                    status,
+                    objectives: if is_current {
+                        build_main_quest_objectives(section, &current_progress)
+                    } else if is_completed {
+                        build_completed_main_quest_objectives(section)
+                    } else {
+                        build_main_quest_objectives(section, &Value::Null)
+                    },
+                    rewards: section
+                        .rewards
+                        .clone()
+                        .unwrap_or(Value::Object(serde_json::Map::new())),
+                    is_chapter_final: section.is_chapter_final == Some(true),
+                }
+            })
+            .collect::<Vec<_>>();
+        sections.sort_by(|left, right| left.section_num.cmp(&right.section_num));
+        Ok(sections)
+    }
+
+    async fn set_main_quest_tracked_impl(
+        &self,
+        character_id: i64,
+        tracked: bool,
+    ) -> Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError> {
+        let progress = self.load_main_quest_progress(character_id).await?;
+        let _ = progress;
+
+        let row = sqlx::query(
+            r#"
+            UPDATE character_main_quest_progress
+            SET tracked = $2, updated_at = NOW()
+            WHERE character_id = $1
+            RETURNING tracked
+            "#,
+        )
+        .bind(character_id)
+        .bind(tracked)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameMainQuestTrackDataView {
+                tracked: row.get::<bool, _>("tracked"),
+            }),
+        })
+    }
+
     async fn load_character_realm_state(
         &self,
         character_id: i64,
@@ -855,6 +1119,88 @@ impl GameRouteServices for RustGameRouteService {
     ) -> Pin<Box<dyn Future<Output = Result<GameHomeOverviewView, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move { self.get_home_overview_impl(user_id, character_id).await })
+    }
+
+    fn get_task_overview_summary<'a>(
+        &'a self,
+        character_id: i64,
+        category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameHomeTaskSummaryView, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.load_task_summary(character_id, category.as_deref()).await
+        })
+    }
+
+    fn set_task_tracked<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskTrackDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.set_task_tracked_impl(character_id, task_id, tracked).await })
+    }
+
+    fn get_main_quest_progress<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<GameHomeMainQuestProgressView, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move { self.load_main_quest_progress(character_id).await })
+    }
+
+    fn get_main_quest_chapters<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestChapterView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.load_main_quest_chapters(character_id).await })
+    }
+
+    fn get_main_quest_sections<'a>(
+        &'a self,
+        character_id: i64,
+        chapter_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<GameHomeMainQuestSectionView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.load_main_quest_sections(character_id, chapter_id.as_str())
+                .await
+        })
+    }
+
+    fn set_main_quest_tracked<'a>(
+        &'a self,
+        character_id: i64,
+        tracked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.set_main_quest_tracked_impl(character_id, tracked).await
+        })
     }
 }
 
@@ -943,6 +1289,20 @@ fn normalize_character_ids(values: Vec<i64>) -> Vec<i64> {
     values
 }
 
+fn build_task_unlock_failure_message(
+    task: &GameTaskSeed,
+    state: &CharacterRealmState,
+) -> Option<String> {
+    if task.category != "daily" && task.category != "event" {
+        return None;
+    }
+    let required_realm = task.realm.trim();
+    if required_realm.is_empty() || is_task_visible_for_realm(task, state) {
+        return None;
+    }
+    Some(format!("需达到{required_realm}后开放"))
+}
+
 fn is_task_visible_for_realm(task: &GameTaskSeed, state: &CharacterRealmState) -> bool {
     if task.category != "daily" && task.category != "event" {
         return true;
@@ -977,6 +1337,25 @@ fn empty_team_overview() -> GameHomeTeamOverviewView {
         role: None,
         applications: Vec::new(),
     }
+}
+
+fn build_enabled_section_count_by_chapter(catalog: &MainQuestCatalog) -> HashMap<String, i32> {
+    let mut result = HashMap::new();
+    for section in catalog.section_by_id.values() {
+        if section.enabled == Some(false) {
+            continue;
+        }
+        let chapter_enabled = catalog
+            .chapter_by_id
+            .get(&section.chapter_id)
+            .map(|chapter| chapter.enabled != Some(false))
+            .unwrap_or(false);
+        if !chapter_enabled {
+            continue;
+        }
+        *result.entry(section.chapter_id.clone()).or_insert(0) += 1;
+    }
+    result
 }
 
 fn empty_main_quest_progress() -> GameHomeMainQuestProgressView {
@@ -1022,6 +1401,23 @@ fn build_main_quest_objectives(
                 done,
                 params: objective.params.clone(),
             }
+        })
+        .collect()
+}
+
+fn build_completed_main_quest_objectives(
+    section: &MainQuestSectionSeed,
+) -> Vec<GameHomeMainQuestSectionObjectiveView> {
+    section
+        .objectives
+        .iter()
+        .map(|objective| GameHomeMainQuestSectionObjectiveView {
+            id: objective.id.clone(),
+            r#type: objective.objective_type.clone(),
+            text: objective.text.clone(),
+            target: objective.target.unwrap_or(1),
+            done: objective.target.unwrap_or(1),
+            params: objective.params.clone(),
         })
         .collect()
 }

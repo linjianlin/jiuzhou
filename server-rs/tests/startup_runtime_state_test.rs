@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use jiuzhou_server_rs::application::character::service::CheckCharacterResult;
 use jiuzhou_server_rs::bootstrap::app::AppState;

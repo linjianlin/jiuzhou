@@ -20,12 +20,14 @@ use crate::edge::http::routes::idle::{build_idle_router, IdleRouteServices};
 use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
 use crate::edge::http::routes::insight::{build_insight_router, InsightRouteServices};
 use crate::edge::http::routes::inventory::{build_inventory_router, InventoryRouteServices};
+use crate::edge::http::routes::main_quest::build_main_quest_router;
 use crate::edge::http::routes::map::build_map_router;
 use crate::edge::http::routes::month_card::{build_month_card_router, MonthCardRouteServices};
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
 use crate::edge::http::routes::realm::{build_realm_router, RealmRouteServices};
 use crate::edge::http::routes::redeem_code::{build_redeem_code_router, RedeemCodeRouteServices};
 use crate::edge::http::routes::sign_in::build_sign_in_router;
+use crate::edge::http::routes::task::build_task_router;
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
 use crate::edge::http::routes::title::{build_title_router, TitleRouteServices};
@@ -134,12 +136,14 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/info", build_info_router())
         .nest("/api/insight", build_insight_router())
         .nest("/api/inventory", build_inventory_router())
+        .nest("/api/main-quest", build_main_quest_router())
         .nest("/api/map", build_map_router())
         .nest("/api/monthcard", build_month_card_router())
         .nest("/api/rank", build_rank_router())
         .nest("/api/realm", build_realm_router())
         .nest("/api/redeem-code", build_redeem_code_router())
         .nest("/api/signin", build_sign_in_router())
+        .nest("/api/task", build_task_router())
         .nest("/api/technique", build_technique_router())
         .nest("/api/title", build_title_router())
         .nest("/api/upload", build_upload_router())

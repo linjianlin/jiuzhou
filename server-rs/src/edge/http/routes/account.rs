@@ -5,6 +5,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
 
+pub use crate::application::account::service::PhoneBindingStatusDto;
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::{require_authenticated_user_id, resolve_request_ip};
 use crate::edge::http::error::BusinessError;
