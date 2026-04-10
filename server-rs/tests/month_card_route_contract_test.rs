@@ -22,8 +22,8 @@ use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
 use jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices;
 use jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices;
 use jiuzhou_server_rs::edge::http::routes::month_card::{
-    MonthCardBenefitValuesView, MonthCardClaimDataView, MonthCardRouteServices, MonthCardStatusView,
-    MonthCardUseItemDataView,
+    MonthCardBenefitValuesView, MonthCardClaimDataView, MonthCardRouteServices,
+    MonthCardStatusView, MonthCardUseItemDataView,
 };
 use jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices;
 use jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices;
@@ -219,11 +219,7 @@ async fn month_card_claim_route_preserves_business_failure_shape() {
         FakeAuthServices::authorized(3203),
         FakeMonthCardRouteServices {
             requested_claim_ids: requested_claim_ids.clone(),
-            claim_result: ServiceResultResponse::new(
-                false,
-                Some("今日已领取".to_string()),
-                None,
-            ),
+            claim_result: ServiceResultResponse::new(false, Some("今日已领取".to_string()), None),
             ..FakeMonthCardRouteServices::default()
         },
     ));
@@ -325,7 +321,10 @@ impl Default for FakeMonthCardRouteServices {
     }
 }
 
-fn build_app_state<TAuth, TMonthCard>(auth_services: TAuth, month_card_services: TMonthCard) -> AppState
+fn build_app_state<TAuth, TMonthCard>(
+    auth_services: TAuth,
+    month_card_services: TMonthCard,
+) -> AppState
 where
     TAuth: AuthRouteServices + 'static,
     TMonthCard: MonthCardRouteServices + 'static,
@@ -371,9 +370,8 @@ impl MonthCardRouteServices for FakeMonthCardRouteServices {
         month_card_id: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -526,9 +524,7 @@ impl GameSocketAuthServices for FakeGameSocketServices {
         &'a self,
         _token: &'a str,
     ) -> Pin<
-        Box<
-            dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a,
-        >,
+        Box<dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a>,
     > {
         Box::pin(async move {
             Ok(GameSocketAuthProfile {

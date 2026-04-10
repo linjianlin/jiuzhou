@@ -1063,9 +1063,8 @@ fn get_adjusted_chance(
         return 0.0;
     }
     let multiplied = chance * get_common_pool_multiplier(source_type, source_pool_id, monster_kind);
-    let realm_bonus =
-        chance_add_by_monster_realm.max(0.0)
-            * f64::from(get_realm_rank_zero_based(monster_realm, None) as i32);
+    let realm_bonus = chance_add_by_monster_realm.max(0.0)
+        * f64::from(get_realm_rank_zero_based(monster_realm, None) as i32);
     ((multiplied + realm_bonus)
         * get_dungeon_reward_rate_multiplier(source_pool_id, reward_multiplier))
     .clamp(0.0, 1.0)

@@ -18,9 +18,8 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::battle_pass::{
-    BattlePassRewardItemView, BattlePassRewardView, BattlePassRouteServices,
-    BattlePassStatusView, BattlePassTaskView, BattlePassTasksOverviewView,
-    CompleteBattlePassTaskDataView,
+    BattlePassRewardItemView, BattlePassRewardView, BattlePassRouteServices, BattlePassStatusView,
+    BattlePassTaskView, BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
 use jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices;
@@ -54,9 +53,18 @@ async fn battle_pass_tasks_route_returns_grouped_tasks() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["success"], serde_json::json!(true));
     assert_eq!(json["data"]["seasonId"], serde_json::json!("bp-season-001"));
-    assert_eq!(json["data"]["daily"][0]["taskType"], serde_json::json!("daily"));
-    assert_eq!(json["data"]["weekly"][0]["name"], serde_json::json!("周常胜利"));
-    assert_eq!(json["data"]["season"][0]["rewardExp"], serde_json::json!(6000));
+    assert_eq!(
+        json["data"]["daily"][0]["taskType"],
+        serde_json::json!("daily")
+    );
+    assert_eq!(
+        json["data"]["weekly"][0]["name"],
+        serde_json::json!("周常胜利")
+    );
+    assert_eq!(
+        json["data"]["season"][0]["rewardExp"],
+        serde_json::json!(6000)
+    );
 }
 
 #[tokio::test]
@@ -82,7 +90,10 @@ async fn battle_pass_complete_route_returns_service_result_shape() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["success"], serde_json::json!(true));
     assert_eq!(json["message"], serde_json::json!("任务完成"));
-    assert_eq!(json["data"]["taskId"], serde_json::json!("bp-task-daily-001"));
+    assert_eq!(
+        json["data"]["taskId"],
+        serde_json::json!("bp-task-daily-001")
+    );
     assert_eq!(json["data"]["gainedExp"], serde_json::json!(100));
 }
 
@@ -151,7 +162,9 @@ where
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
         ),
         time_services: Arc::new(NoopTimeRouteServices),
-        title_services: Arc::new(jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices),
+        title_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
+        ),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
@@ -252,7 +265,10 @@ impl BattlePassRouteServices for FakeBattlePassServices {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<CompleteBattlePassTaskDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<CompleteBattlePassTaskDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -277,8 +293,9 @@ impl BattlePassRouteServices for FakeBattlePassServices {
     fn get_status<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>>
-    {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             if !self.include_status {
                 return Ok(None);
@@ -398,7 +415,8 @@ impl AuthRouteServices for FakeAuthServices {
     fn check_character<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CheckCharacterResult {
                 has_character: true,
@@ -425,7 +443,8 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _nickname: String,
         _gender: String,
-    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CreateCharacterResult {
                 success: false,
@@ -440,12 +459,14 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _item_instance_id: i64,
         _nickname: String,
-    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::RenameCharacterWithCardResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::RenameCharacterWithCardResult, BusinessError>> + Send + 'a>>{
         Box::pin(async move {
-            Ok(jiuzhou_server_rs::application::character::service::RenameCharacterWithCardResult {
-                success: false,
-                message: "unused".to_string(),
-            })
+            Ok(
+                jiuzhou_server_rs::application::character::service::RenameCharacterWithCardResult {
+                    success: false,
+                    message: "unused".to_string(),
+                },
+            )
         })
     }
 
@@ -454,7 +475,9 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _current_map_id: String,
         _current_room_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             Ok(UpdateCharacterPositionResult {
                 success: false,
@@ -467,12 +490,14 @@ impl AuthRouteServices for FakeAuthServices {
         &'a self,
         _user_id: i64,
         _enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult, BusinessError>> + Send + 'a>>{
         Box::pin(async move {
-            Ok(jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult {
-                success: false,
-                message: "unused".to_string(),
-            })
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult {
+                    success: false,
+                    message: "unused".to_string(),
+                },
+            )
         })
     }
 
@@ -481,12 +506,14 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _enabled: bool,
         _rules: Option<Vec<serde_json::Value>>,
-    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult, BusinessError>> + Send + 'a>>{
         Box::pin(async move {
-            Ok(jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult {
-                success: false,
-                message: "unused".to_string(),
-            })
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult {
+                    success: false,
+                    message: "unused".to_string(),
+                },
+            )
         })
     }
 
@@ -494,15 +521,16 @@ impl AuthRouteServices for FakeAuthServices {
         &'a self,
         _user_id: i64,
         _enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult, BusinessError>> + Send + 'a>>{
         Box::pin(async move {
-            Ok(jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult {
-                success: false,
-                message: "unused".to_string(),
-            })
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterSettingResult {
+                    success: false,
+                    message: "unused".to_string(),
+                },
+            )
         })
     }
-
 }
 
 struct FakeGameSocketServices;
@@ -511,7 +539,9 @@ impl GameSocketAuthServices for FakeGameSocketServices {
     fn resolve_game_socket_auth<'a>(
         &'a self,
         _token: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a>,
+    > {
         Box::pin(async move {
             Err(GameSocketAuthFailure {
                 event: "game:error",

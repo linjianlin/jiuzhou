@@ -159,7 +159,10 @@ impl UploadRouteServices for NoopUploadRouteServices {
 pub fn build_upload_router() -> Router<AppState> {
     Router::new()
         .route("/avatar/sts", post(create_avatar_sts_handler))
-        .route("/avatar", post(upload_avatar_handler).delete(delete_avatar_handler))
+        .route(
+            "/avatar",
+            post(upload_avatar_handler).delete(delete_avatar_handler),
+        )
         .route("/avatar/confirm", post(confirm_avatar_handler))
         .route("/avatar-asset/sts", post(create_avatar_asset_sts_handler))
         .route("/avatar-asset", post(upload_avatar_asset_handler))
@@ -252,7 +255,10 @@ async fn delete_avatar_handler(
     headers: HeaderMap,
 ) -> Result<Response, BusinessError> {
     let user_id = ensure_authenticated_user_id(&state, &headers).await?;
-    state.upload_services.delete_character_avatar(user_id).await?;
+    state
+        .upload_services
+        .delete_character_avatar(user_id)
+        .await?;
     Ok(upload_action_response(
         true,
         AVATAR_DELETE_SUCCESS_MESSAGE,
@@ -371,9 +377,7 @@ async fn ensure_authenticated_user_id(
         };
     }
 
-    result
-        .user_id
-        .ok_or_else(unauthorized_business_error)
+    result.user_id.ok_or_else(unauthorized_business_error)
 }
 
 fn validate_image_contract(content_type: &str, file_size: usize) -> Result<(), BusinessError> {

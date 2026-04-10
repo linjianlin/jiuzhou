@@ -12,6 +12,7 @@ use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices
 use crate::edge::http::routes::attribute::{build_attribute_router, AttributeRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
 use crate::edge::http::routes::battle_pass::{build_battle_pass_router, BattlePassRouteServices};
+use crate::edge::http::routes::battle_session::build_battle_session_router;
 use crate::edge::http::routes::captcha::build_captcha_router;
 use crate::edge::http::routes::character::build_character_router;
 use crate::edge::http::routes::dungeon::build_dungeon_router;
@@ -23,9 +24,7 @@ use crate::edge::http::routes::map::build_map_router;
 use crate::edge::http::routes::month_card::{build_month_card_router, MonthCardRouteServices};
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
 use crate::edge::http::routes::realm::{build_realm_router, RealmRouteServices};
-use crate::edge::http::routes::redeem_code::{
-    build_redeem_code_router, RedeemCodeRouteServices,
-};
+use crate::edge::http::routes::redeem_code::{build_redeem_code_router, RedeemCodeRouteServices};
 use crate::edge::http::routes::sign_in::build_sign_in_router;
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
@@ -125,6 +124,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/afdian", build_afdian_router())
         .nest("/api/attribute", build_attribute_router())
         .nest("/api/auth", build_auth_router())
+        .nest("/api/battle-session", build_battle_session_router())
         .nest("/api/battlepass", build_battle_pass_router())
         .nest("/api/character", build_character_router())
         .nest("/api/dungeon", build_dungeon_router())

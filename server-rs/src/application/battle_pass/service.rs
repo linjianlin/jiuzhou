@@ -11,9 +11,8 @@ use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::battle_pass::{
-    BattlePassRewardItemView, BattlePassRewardView, BattlePassRouteServices,
-    BattlePassStatusView, BattlePassTaskView, BattlePassTasksOverviewView,
-    CompleteBattlePassTaskDataView,
+    BattlePassRewardItemView, BattlePassRewardView, BattlePassRouteServices, BattlePassStatusView,
+    BattlePassTaskView, BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
 };
 use crate::shared::error::AppError;
 
@@ -107,10 +106,7 @@ enum BattlePassRewardEntry {
     #[serde(rename = "currency")]
     Currency { currency: String, amount: i64 },
     #[serde(rename = "item")]
-    Item {
-        item_def_id: String,
-        qty: i64,
-    },
+    Item { item_def_id: String, qty: i64 },
 }
 
 #[derive(Debug, Clone)]
@@ -214,7 +210,9 @@ impl RustBattlePassRouteService {
                 TaskProgressSnapshot {
                     progress_value: row.get::<i64, _>("progress_value"),
                     completed: row.get::<bool, _>("completed"),
-                    completed_day: trim_optional_string(row.try_get("completed_day").ok().flatten()),
+                    completed_day: trim_optional_string(
+                        row.try_get("completed_day").ok().flatten(),
+                    ),
                     claimed: row.get::<bool, _>("claimed"),
                     claimed_day: trim_optional_string(row.try_get("claimed_day").ok().flatten()),
                     updated_day: trim_optional_string(row.try_get("updated_day").ok().flatten()),
@@ -334,9 +332,8 @@ impl RustBattlePassRouteService {
             ));
         };
 
-        let task_type = normalize_task_type(task.task_type.as_str()).ok_or_else(|| {
-            BusinessError::new("任务类型不支持")
-        })?;
+        let task_type = normalize_task_type(task.task_type.as_str())
+            .ok_or_else(|| BusinessError::new("任务类型不支持"))?;
         let target_value = task.target_value.max(1);
         let reward_exp = task.reward_exp.max(0);
         let max_level = config.season.max_level.max(1);
@@ -369,7 +366,11 @@ impl RustBattlePassRouteService {
         let completed_in_cycle = progress_row
             .as_ref()
             .filter(|row| row.get::<bool, _>("completed"))
-            .and_then(|row| row.try_get::<Option<String>, _>("completed_day").ok().flatten())
+            .and_then(|row| {
+                row.try_get::<Option<String>, _>("completed_day")
+                    .ok()
+                    .flatten()
+            })
             .map(|day| is_in_current_cycle(task_type, Some(day.as_str()), today))
             .unwrap_or(false);
         if completed_in_cycle {
@@ -382,7 +383,12 @@ impl RustBattlePassRouteService {
 
         let current_progress_value = progress_row
             .as_ref()
-            .and_then(|row| row.try_get::<Option<String>, _>("updated_day").ok().flatten().map(|day| (row, day)))
+            .and_then(|row| {
+                row.try_get::<Option<String>, _>("updated_day")
+                    .ok()
+                    .flatten()
+                    .map(|day| (row, day))
+            })
             .filter(|(_, day)| is_in_current_cycle(task_type, Some(day.as_str()), today))
             .map(|(row, _)| row.get::<i64, _>("progress_value").max(0))
             .unwrap_or(0);
@@ -446,7 +452,10 @@ impl RustBattlePassRouteService {
         .await
         .map_err(internal_business_error)?;
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
 
         Ok(ServiceResultResponse::new(
             true,
@@ -580,7 +589,10 @@ impl BattlePassRouteServices for RustBattlePassRouteService {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<CompleteBattlePassTaskDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<CompleteBattlePassTaskDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -591,8 +603,9 @@ impl BattlePassRouteServices for RustBattlePassRouteService {
     fn get_status<'a>(
         &'a self,
         user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>>
-    {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move { self.get_status_impl(user_id).await })
     }
 
@@ -606,18 +619,17 @@ impl BattlePassRouteServices for RustBattlePassRouteService {
 }
 
 fn battle_pass_static_config() -> Result<&'static BattlePassStaticConfig, AppError> {
-    match BATTLE_PASS_STATIC_CONFIG.get_or_init(|| {
-        load_battle_pass_static_config().map_err(|error| error.to_string())
-    }) {
+    match BATTLE_PASS_STATIC_CONFIG
+        .get_or_init(|| load_battle_pass_static_config().map_err(|error| error.to_string()))
+    {
         Ok(config) => Ok(config),
         Err(message) => Err(AppError::Config(message.clone())),
     }
 }
 
 fn battle_pass_item_meta() -> Result<&'static HashMap<String, ItemDisplayMeta>, AppError> {
-    match BATTLE_PASS_ITEM_META.get_or_init(|| {
-        load_item_meta().map_err(|error| error.to_string())
-    }) {
+    match BATTLE_PASS_ITEM_META.get_or_init(|| load_item_meta().map_err(|error| error.to_string()))
+    {
         Ok(index) => Ok(index),
         Err(message) => Err(AppError::Config(message.clone())),
     }
@@ -714,7 +726,9 @@ fn season_is_active(config: &BattlePassStaticConfig) -> bool {
     let end_at = chrono::DateTime::parse_from_rfc3339(config.season.end_at.as_str()).ok();
     let now = chrono::Utc::now();
     match (start_at, end_at) {
-        (Some(start), Some(end)) => start.with_timezone(&chrono::Utc) <= now && end.with_timezone(&chrono::Utc) > now,
+        (Some(start), Some(end)) => {
+            start.with_timezone(&chrono::Utc) <= now && end.with_timezone(&chrono::Utc) > now
+        }
         _ => false,
     }
 }
@@ -837,8 +851,5 @@ fn trim_optional_string(value: Option<String>) -> Option<String> {
 
 fn internal_business_error(error: impl std::fmt::Display) -> BusinessError {
     let _ = error;
-    BusinessError::with_status(
-        "服务器错误",
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-    )
+    BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }

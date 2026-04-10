@@ -204,10 +204,14 @@ where
         inventory_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),
-        month_card_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices),
+        month_card_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
+        ),
 
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
-        realm_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices),
+        realm_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices,
+        ),
 
         redeem_code_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
@@ -258,9 +262,8 @@ impl InsightRouteServices for FakeInsightServices {
         _user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -374,9 +377,7 @@ impl AuthRouteServices for FakeAuthServices {
     fn verify_token_and_session<'a>(
         &'a self,
         _token: &'a str,
-    ) -> Pin<
-        Box<dyn Future<Output = VerifyTokenAndSessionResult> + Send + 'a>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = VerifyTokenAndSessionResult> + Send + 'a>> {
         Box::pin(async move {
             VerifyTokenAndSessionResult {
                 valid: true,
@@ -433,9 +434,7 @@ impl AuthRouteServices for FakeAuthServices {
         _current_map_id: String,
         _current_room_id: String,
     ) -> Pin<
-        Box<
-            dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a,
-        >,
+        Box<dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a>,
     > {
         Box::pin(async move {
             Err(BusinessError::with_status(
@@ -506,7 +505,7 @@ impl AuthRouteServices for FakeAuthServices {
                 > + Send
                 + 'a,
         >,
-    > {
+    >{
         Box::pin(async move {
             Ok(
                 jiuzhou_server_rs::application::character::service::RenameCharacterWithCardResult {
@@ -548,9 +547,7 @@ impl GameSocketAuthServices for FakeGameSocketServices {
         &'a self,
         _token: &'a str,
     ) -> Pin<
-        Box<
-            dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a,
-        >,
+        Box<dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a>,
     > {
         Box::pin(async move {
             Err(GameSocketAuthFailure {

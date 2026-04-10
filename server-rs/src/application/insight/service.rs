@@ -97,7 +97,10 @@ impl RustInsightRouteService {
         user_id: i64,
     ) -> Result<ServiceResultResponse<InsightOverviewView>, BusinessError> {
         let config = load_insight_growth_config()?;
-        let Some(character) = load_character_insight_row(&self.pool, user_id).await.map_err(internal_business_error)? else {
+        let Some(character) = load_character_insight_row(&self.pool, user_id)
+            .await
+            .map_err(internal_business_error)?
+        else {
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("角色不存在".to_string()),
@@ -147,10 +150,9 @@ impl RustInsightRouteService {
         }
 
         let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
-        let Some(character) =
-            load_character_insight_row_for_update(&mut transaction, user_id)
-                .await
-                .map_err(internal_business_error)?
+        let Some(character) = load_character_insight_row_for_update(&mut transaction, user_id)
+            .await
+            .map_err(internal_business_error)?
         else {
             return Ok(ServiceResultResponse::new(
                 false,
@@ -222,7 +224,10 @@ impl RustInsightRouteService {
         .await
         .map_err(internal_business_error)?;
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
 
         Ok(ServiceResultResponse::new(
             true,
@@ -247,9 +252,8 @@ impl InsightRouteServices for RustInsightRouteService {
         user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -523,8 +527,8 @@ fn internal_business_error<E>(_error: E) -> BusinessError {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_insight_pct_bonus_by_level, calc_insight_cost_by_level,
-        resolve_insight_inject_plan, InsightGrowthConfig,
+        build_insight_pct_bonus_by_level, calc_insight_cost_by_level, resolve_insight_inject_plan,
+        InsightGrowthConfig,
     };
 
     fn mock_config() -> InsightGrowthConfig {

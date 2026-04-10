@@ -33,6 +33,8 @@ use crate::shared::error::AppError;
 pub struct BattleSessionRuntimeRegistry {
     sessions: BTreeMap<String, OnlineBattleSessionSnapshotRedis>,
     session_id_by_battle_id: BTreeMap<String, String>,
+    session_ids_by_user_id: BTreeMap<i64, Vec<String>>,
+    active_session_id_by_user_id: BTreeMap<i64, String>,
 }
 
 impl BattleSessionRuntimeRegistry {
@@ -66,11 +68,40 @@ impl BattleSessionRuntimeRegistry {
             .and_then(|session_id| self.get(session_id))
     }
 
+    pub fn find_session_ids_by_user_id(&self, user_id: i64) -> Vec<String> {
+        self.session_ids_by_user_id
+            .get(&user_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn find_active_session_id_by_user_id(&self, user_id: i64) -> Option<&str> {
+        self.active_session_id_by_user_id
+            .get(&user_id)
+            .map(String::as_str)
+    }
+
+    pub fn find_active_session_by_user_id(
+        &self,
+        user_id: i64,
+    ) -> Option<&OnlineBattleSessionSnapshotRedis> {
+        self.find_active_session_id_by_user_id(user_id)
+            .and_then(|session_id| self.get(session_id))
+    }
+
     fn insert(&mut self, session: OnlineBattleSessionSnapshotRedis) {
+        let user_ids = session.user_ids();
         if let Some(battle_id) = session.current_battle_id.clone() {
             self.session_id_by_battle_id
                 .insert(battle_id, session.session_id.clone());
         }
+        for user_id in &user_ids {
+            self.session_ids_by_user_id
+                .entry(*user_id)
+                .or_default()
+                .push(session.session_id.clone());
+        }
+        self.update_active_session_indexes(&session, &user_ids);
         self.sessions.insert(session.session_id.clone(), session);
     }
 
@@ -80,6 +111,29 @@ impl BattleSessionRuntimeRegistry {
                 .insert(battle_id.to_string(), session_id.to_string());
         }
     }
+
+    fn update_active_session_indexes(
+        &mut self,
+        session: &OnlineBattleSessionSnapshotRedis,
+        user_ids: &[i64],
+    ) {
+        if !is_active_session(session) {
+            return;
+        }
+
+        for user_id in user_ids {
+            let should_replace = self
+                .active_session_id_by_user_id
+                .get(user_id)
+                .and_then(|session_id| self.sessions.get(session_id))
+                .map(|current| prefer_newer_active_session(current, session))
+                .unwrap_or(true);
+            if should_replace {
+                self.active_session_id_by_user_id
+                    .insert(*user_id, session.session_id.clone());
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -87,6 +141,22 @@ impl BattleSessionRuntimeRegistry {
 pub struct BattleSessionStatusPayload {
     pub session: OnlineBattleSessionSnapshotRedis,
     pub authoritative: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BattleSessionSnapshotView {
+    pub session_id: String,
+    #[serde(rename = "type")]
+    pub session_type: String,
+    pub owner_user_id: i64,
+    pub participant_user_ids: Vec<i64>,
+    pub current_battle_id: Option<String>,
+    pub status: String,
+    pub next_action: String,
+    pub can_advance: bool,
+    pub last_result: Option<String>,
+    pub context: serde_json::Value,
 }
 
 pub fn build_battle_session_registry_from_snapshot(
@@ -113,4 +183,34 @@ pub fn build_battle_session_status_payload(
         session: session.clone(),
         authoritative,
     }
+}
+
+pub fn build_battle_session_snapshot_view(
+    session: &OnlineBattleSessionSnapshotRedis,
+) -> BattleSessionSnapshotView {
+    BattleSessionSnapshotView {
+        session_id: session.session_id.clone(),
+        session_type: session.session_type.clone(),
+        owner_user_id: session.owner_user_id,
+        participant_user_ids: session.participant_user_ids.clone(),
+        current_battle_id: session.current_battle_id.clone(),
+        status: session.status.clone(),
+        next_action: session.next_action.clone(),
+        can_advance: session.can_advance,
+        last_result: session.last_result.clone(),
+        context: session.context.clone(),
+    }
+}
+
+fn is_active_session(session: &OnlineBattleSessionSnapshotRedis) -> bool {
+    matches!(session.status.as_str(), "running" | "waiting_transition")
+}
+
+fn prefer_newer_active_session(
+    current: &OnlineBattleSessionSnapshotRedis,
+    candidate: &OnlineBattleSessionSnapshotRedis,
+) -> bool {
+    candidate.updated_at > current.updated_at
+        || (candidate.updated_at == current.updated_at
+            && candidate.session_id.as_str() > current.session_id.as_str())
 }

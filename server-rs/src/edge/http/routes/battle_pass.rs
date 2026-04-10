@@ -143,7 +143,10 @@ pub trait BattlePassRouteServices: Send + Sync {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<CompleteBattlePassTaskDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<CompleteBattlePassTaskDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -152,7 +155,9 @@ pub trait BattlePassRouteServices: Send + Sync {
     fn get_status<'a>(
         &'a self,
         user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>>;
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>,
+    >;
 
     fn get_rewards<'a>(
         &'a self,
@@ -187,7 +192,10 @@ impl BattlePassRouteServices for NoopBattlePassRouteServices {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<CompleteBattlePassTaskDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<CompleteBattlePassTaskDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -204,8 +212,9 @@ impl BattlePassRouteServices for NoopBattlePassRouteServices {
     fn get_status<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>>
-    {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Option<BattlePassStatusView>, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move { Ok(None) })
     }
 

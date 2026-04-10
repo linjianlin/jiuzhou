@@ -50,10 +50,14 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
-        month_card_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices),
+        month_card_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
+        ),
 
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
-        realm_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices),
+        realm_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices,
+        ),
 
         redeem_code_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,

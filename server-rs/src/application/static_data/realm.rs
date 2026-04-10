@@ -37,7 +37,10 @@ pub const REALM_ORDER: [&str; 13] = [
     "炼虚合道·成圣期",
 ];
 
-pub fn normalize_realm_keeping_unknown(realm_raw: Option<&str>, sub_realm_raw: Option<&str>) -> String {
+pub fn normalize_realm_keeping_unknown(
+    realm_raw: Option<&str>,
+    sub_realm_raw: Option<&str>,
+) -> String {
     let realm = realm_raw.unwrap_or_default().trim();
     let sub_realm = sub_realm_raw.unwrap_or_default().trim();
     if realm.is_empty() && sub_realm.is_empty() {
@@ -78,7 +81,10 @@ pub fn get_realm_rank_zero_based(realm_raw: Option<&str>, sub_realm_raw: Option<
         .unwrap_or(0)
 }
 
-pub fn get_realm_rank_one_based_strict(realm_raw: Option<&str>, sub_realm_raw: Option<&str>) -> i32 {
+pub fn get_realm_rank_one_based_strict(
+    realm_raw: Option<&str>,
+    sub_realm_raw: Option<&str>,
+) -> i32 {
     let normalized = normalize_realm_keeping_unknown(realm_raw, sub_realm_raw);
     REALM_ORDER
         .iter()

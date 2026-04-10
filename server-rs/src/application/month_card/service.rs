@@ -10,8 +10,8 @@ use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::month_card::{
-    MonthCardBenefitValuesView, MonthCardClaimDataView, MonthCardRouteServices, MonthCardStatusView,
-    MonthCardUseItemDataView,
+    MonthCardBenefitValuesView, MonthCardClaimDataView, MonthCardRouteServices,
+    MonthCardStatusView, MonthCardUseItemDataView,
 };
 
 const DEFAULT_MONTH_CARD_ID: &str = "monthcard-001";
@@ -473,7 +473,9 @@ impl RustMonthCardRouteService {
         .map(|row| {
             row.map(|value| OwnershipSnapshot {
                 ownership_id: value.get::<i64, _>("id"),
-                expire_at_ms: value.try_get::<Option<i64>, _>("expire_at_ms").unwrap_or(None),
+                expire_at_ms: value
+                    .try_get::<Option<i64>, _>("expire_at_ms")
+                    .unwrap_or(None),
                 last_claim_date: value
                     .try_get::<Option<String>, _>("last_claim_date")
                     .unwrap_or(None),
@@ -569,9 +571,8 @@ impl MonthCardRouteServices for RustMonthCardRouteService {
         month_card_id: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -624,9 +625,8 @@ fn month_card_definition(
 }
 
 fn load_month_card_definitions() -> Result<HashMap<String, MonthCardDefinition>, String> {
-    let file = read_seed_json::<MonthCardSeedFile>("month_card.json").map_err(|error| {
-        format!("failed to read month card seed: {error}")
-    })?;
+    let file = read_seed_json::<MonthCardSeedFile>("month_card.json")
+        .map_err(|error| format!("failed to read month card seed: {error}"))?;
     let mut definitions = HashMap::with_capacity(file.month_cards.len());
     for entry in file.month_cards {
         if entry.enabled == Some(false) {
@@ -649,7 +649,9 @@ fn load_month_card_definitions() -> Result<HashMap<String, MonthCardDefinition>,
                     .max(0),
                 price_spirit_stones: entry.price_spirit_stones.unwrap_or(0).max(0),
                 benefits: MonthCardBenefitValuesView {
-                    cooldown_reduction_rate: clamp_rate(entry.cooldown_reduction_rate.unwrap_or(0.0)),
+                    cooldown_reduction_rate: clamp_rate(
+                        entry.cooldown_reduction_rate.unwrap_or(0.0),
+                    ),
                     stamina_recovery_rate: clamp_rate(entry.stamina_recovery_rate.unwrap_or(0.0)),
                     fuyuan_bonus: entry.fuyuan_bonus.unwrap_or(0).max(0),
                     idle_max_duration_hours: entry.idle_max_duration_hours.unwrap_or(0).max(0),

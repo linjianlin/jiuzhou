@@ -142,22 +142,18 @@ pub async fn require_authenticated_character_context(
         Err(error) => return Err(error.into_response()),
     };
     let Some(character) = character_result.character else {
-        return Err(
-            crate::edge::http::error::BusinessError::with_status(
-                "角色不存在",
-                StatusCode::NOT_FOUND,
-            )
-            .into_response(),
-        );
+        return Err(crate::edge::http::error::BusinessError::with_status(
+            "角色不存在",
+            StatusCode::NOT_FOUND,
+        )
+        .into_response());
     };
     if !character_result.has_character || character.id <= 0 {
-        return Err(
-            crate::edge::http::error::BusinessError::with_status(
-                "角色不存在",
-                StatusCode::NOT_FOUND,
-            )
-            .into_response(),
-        );
+        return Err(crate::edge::http::error::BusinessError::with_status(
+            "角色不存在",
+            StatusCode::NOT_FOUND,
+        )
+        .into_response());
     }
 
     Ok(AuthenticatedCharacterContext { user_id, character })

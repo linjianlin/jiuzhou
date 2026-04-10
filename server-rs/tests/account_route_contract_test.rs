@@ -5,8 +5,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jiuzhou_server_rs::application::account::service::{
-    BindPhoneNumberResult, ChangePasswordResult, PhoneBindingStatusDto,
-    SendPhoneBindingCodeResult,
+    BindPhoneNumberResult, ChangePasswordResult, PhoneBindingStatusDto, SendPhoneBindingCodeResult,
 };
 use jiuzhou_server_rs::application::character::service::{
     CharacterBasicInfo, CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
@@ -373,10 +372,14 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
-        month_card_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices),
+        month_card_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
+        ),
 
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
-        realm_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices),
+        realm_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices,
+        ),
 
         redeem_code_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
@@ -525,11 +528,8 @@ impl AuthRouteServices for FakeAuthServices {
         phone_number: String,
         user_ip: String,
         captcha: jiuzhou_server_rs::edge::http::routes::auth::CaptchaVerifyPayload,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<SendPhoneBindingCodeResult, BusinessError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<SendPhoneBindingCodeResult, BusinessError>> + Send + 'a>>
+    {
         let requested_payloads = self.requested_send_code_payloads.clone();
         let result = self.send_code_result.clone();
         Box::pin(async move {

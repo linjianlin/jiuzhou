@@ -77,9 +77,8 @@ pub trait InsightRouteServices: Send + Sync {
         user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     >;
@@ -107,9 +106,8 @@ impl InsightRouteServices for NoopInsightRouteServices {
         _user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<InsightOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -172,7 +170,9 @@ async fn inject_handler(
         Err(response) => return Ok(response),
     };
     let Some(exp) = parse_positive_integer_like(body.exp.as_ref()) else {
-        return Ok(service_result(ServiceResultResponse::<InsightInjectResultView>::new(
+        return Ok(service_result(ServiceResultResponse::<
+            InsightInjectResultView,
+        >::new(
             false,
             Some("exp 参数无效，需为大于 0 的整数".to_string()),
             None,

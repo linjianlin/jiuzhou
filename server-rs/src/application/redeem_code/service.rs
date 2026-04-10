@@ -173,7 +173,10 @@ impl RustRedeemCodeRouteService {
         .map_err(internal_business_error)?;
 
         let Some(row) = row else {
-            transaction.commit().await.map_err(internal_business_error)?;
+            transaction
+                .commit()
+                .await
+                .map_err(internal_business_error)?;
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("兑换码不存在".to_string()),
@@ -183,7 +186,10 @@ impl RustRedeemCodeRouteService {
 
         let status = row.get::<String, _>("status");
         if status == "redeemed" {
-            transaction.commit().await.map_err(internal_business_error)?;
+            transaction
+                .commit()
+                .await
+                .map_err(internal_business_error)?;
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("兑换码已使用".to_string()),
@@ -192,7 +198,8 @@ impl RustRedeemCodeRouteService {
         }
 
         let code = row.get::<String, _>("code");
-        let reward_payload = normalize_reward_payload(row.try_get::<Value, _>("reward_payload").ok());
+        let reward_payload =
+            normalize_reward_payload(row.try_get::<Value, _>("reward_payload").ok());
         let rewards = build_reward_preview(&reward_payload);
         let reward_payload_value = build_reward_payload_json(&reward_payload);
         let metadata = json!({
@@ -254,7 +261,10 @@ impl RustRedeemCodeRouteService {
         .await
         .map_err(internal_business_error)?;
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
 
         Ok(ServiceResultResponse::new(
             true,
@@ -302,9 +312,8 @@ impl RedeemCodeRouteServices for RustRedeemCodeRouteService {
         request_ip: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {

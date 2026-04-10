@@ -108,9 +108,8 @@ pub trait MonthCardRouteServices: Send + Sync {
         month_card_id: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     >;
@@ -153,9 +152,8 @@ impl MonthCardRouteServices for NoopMonthCardRouteServices {
         _month_card_id: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<MonthCardStatusView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -280,7 +278,9 @@ fn normalize_month_card_id(raw: Option<String>) -> String {
 fn normalize_item_instance_id(raw: Option<MonthCardBodyNumber>) -> Option<i64> {
     match raw {
         Some(MonthCardBodyNumber::Number(value)) if value > 0 => Some(value),
-        Some(MonthCardBodyNumber::String(value)) => value.trim().parse::<i64>().ok().filter(|id| *id > 0),
+        Some(MonthCardBodyNumber::String(value)) => {
+            value.trim().parse::<i64>().ok().filter(|id| *id > 0)
+        }
         _ => None,
     }
 }

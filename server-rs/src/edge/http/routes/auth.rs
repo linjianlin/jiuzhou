@@ -8,8 +8,7 @@ use axum::Router;
 use serde::{Deserialize, Serialize};
 
 use crate::application::account::service::{
-    BindPhoneNumberResult, ChangePasswordResult, PhoneBindingStatusDto,
-    SendPhoneBindingCodeResult,
+    BindPhoneNumberResult, ChangePasswordResult, PhoneBindingStatusDto, SendPhoneBindingCodeResult,
 };
 use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
@@ -159,9 +158,8 @@ pub trait AuthRouteServices: Send + Sync {
         _phone_number: String,
         _user_ip: String,
         _captcha: CaptchaVerifyPayload,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<SendPhoneBindingCodeResult, BusinessError>> + Send + 'a>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<SendPhoneBindingCodeResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Err(BusinessError::with_status(
                 "服务器错误",

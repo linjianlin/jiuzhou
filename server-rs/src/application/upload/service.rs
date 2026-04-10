@@ -115,12 +115,13 @@ impl RustUploadService {
             return Ok(avatar_url.to_string());
         };
 
-        let previous_avatar = sqlx::query("SELECT avatar FROM characters WHERE user_id = $1 LIMIT 1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|_| upload_failed_error())?
-            .and_then(|row| row.try_get::<Option<String>, _>("avatar").ok().flatten());
+        let previous_avatar =
+            sqlx::query("SELECT avatar FROM characters WHERE user_id = $1 LIMIT 1")
+                .bind(user_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| upload_failed_error())?
+                .and_then(|row| row.try_get::<Option<String>, _>("avatar").ok().flatten());
 
         sqlx::query(
             "UPDATE characters SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
@@ -140,12 +141,13 @@ impl RustUploadService {
             return Ok(());
         };
 
-        let current_avatar = sqlx::query("SELECT avatar FROM characters WHERE user_id = $1 LIMIT 1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|_| upload_failed_error())?
-            .and_then(|row| row.try_get::<Option<String>, _>("avatar").ok().flatten());
+        let current_avatar =
+            sqlx::query("SELECT avatar FROM characters WHERE user_id = $1 LIMIT 1")
+                .bind(user_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|_| upload_failed_error())?
+                .and_then(|row| row.try_get::<Option<String>, _>("avatar").ok().flatten());
 
         if let Some(avatar) = current_avatar.as_deref() {
             self.delete_managed_avatar(avatar)?;
@@ -242,7 +244,10 @@ impl UploadRouteServices for RustUploadService {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<String, BusinessError>> + Send + 'a>,
     > {
-        Box::pin(async move { self.assign_character_avatar_internal(user_id, &avatar_url).await })
+        Box::pin(async move {
+            self.assign_character_avatar_internal(user_id, &avatar_url)
+                .await
+        })
     }
 
     fn delete_character_avatar<'a>(

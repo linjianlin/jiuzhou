@@ -7,7 +7,9 @@ use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 
 use crate::application::static_data::realm::normalize_realm_keeping_unknown;
-use crate::application::static_data::seed::{list_seed_files_with_prefix, read_seed_json, seed_file_path};
+use crate::application::static_data::seed::{
+    list_seed_files_with_prefix, read_seed_json, seed_file_path,
+};
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::realm::{
@@ -31,8 +33,7 @@ const BREAKTHROUGH_NUMERIC_REWARD_DEFS: [(&str, &str); 6] = [
     ("wufang", "物防"),
     ("fafang", "法防"),
 ];
-const BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS: [(&str, &str); 1] =
-    [("kongzhi_kangxing", "控制抗性")];
+const BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS: [(&str, &str); 1] = [("kongzhi_kangxing", "控制抗性")];
 
 /**
  * realm 境界突破应用服务。
@@ -86,17 +87,9 @@ struct BreakthroughConfig {
 #[serde(tag = "type")]
 enum BreakthroughRequirement {
     #[serde(rename = "exp_min")]
-    ExpMin {
-        id: String,
-        title: String,
-        min: i64,
-    },
+    ExpMin { id: String, title: String, min: i64 },
     #[serde(rename = "spirit_stones_min")]
-    SpiritStonesMin {
-        id: String,
-        title: String,
-        min: i64,
-    },
+    SpiritStonesMin { id: String, title: String, min: i64 },
     #[serde(rename = "technique_layer_min")]
     TechniqueLayerMin {
         id: String,
@@ -290,7 +283,10 @@ impl RustRealmRouteService {
         user_id: i64,
     ) -> Result<ServiceResultResponse<RealmOverviewView>, BusinessError> {
         let config = load_realm_breakthrough_config().map_err(internal_business_error)?;
-        let Some(state) = load_character_state(&self.pool, user_id).await.map_err(internal_business_error)? else {
+        let Some(state) = load_character_state(&self.pool, user_id)
+            .await
+            .map_err(internal_business_error)?
+        else {
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("角色不存在".to_string()),
@@ -298,9 +294,11 @@ impl RustRealmRouteService {
             ));
         };
         let next_realm = get_next_realm_name(&config.realm_order, state.current_realm.as_str());
-        let breakthrough = next_realm
-            .as_ref()
-            .and_then(|_| config.breakthroughs_by_from.get(state.current_realm.as_str()));
+        let breakthrough = next_realm.as_ref().and_then(|_| {
+            config
+                .breakthroughs_by_from
+                .get(state.current_realm.as_str())
+        });
         let requirements = if let Some(rule) = breakthrough {
             evaluate_requirements(&self.pool, &state, &rule.requirements)
                 .await
@@ -357,8 +355,9 @@ impl RustRealmRouteService {
         user_id: i64,
     ) -> Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError> {
         let config = load_realm_breakthrough_config().map_err(internal_business_error)?;
-        let Some(preview_state) =
-            load_character_state(&self.pool, user_id).await.map_err(internal_business_error)?
+        let Some(preview_state) = load_character_state(&self.pool, user_id)
+            .await
+            .map_err(internal_business_error)?
         else {
             return Ok(ServiceResultResponse::new(
                 false,
@@ -375,7 +374,10 @@ impl RustRealmRouteService {
                 None,
             ));
         };
-        let Some(rule) = config.breakthroughs_by_from.get(preview_state.current_realm.as_str()) else {
+        let Some(rule) = config
+            .breakthroughs_by_from
+            .get(preview_state.current_realm.as_str())
+        else {
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("下一境界配置不存在".to_string()),
@@ -390,9 +392,10 @@ impl RustRealmRouteService {
             ));
         }
 
-        let preview_requirements = evaluate_requirements(&self.pool, &preview_state, &rule.requirements)
-            .await
-            .map_err(internal_business_error)?;
+        let preview_requirements =
+            evaluate_requirements(&self.pool, &preview_state, &rule.requirements)
+                .await
+                .map_err(internal_business_error)?;
         if let Some(unmet) = preview_requirements
             .iter()
             .find(|requirement| requirement.status != RealmRequirementStatus::Done)
@@ -461,8 +464,12 @@ impl RustRealmRouteService {
             ));
         }
 
-        consume_cost_items(&mut transaction, locked_state.character_id, &preview_costs.items)
-            .await?;
+        consume_cost_items(
+            &mut transaction,
+            locked_state.character_id,
+            &preview_costs.items,
+        )
+        .await?;
 
         let reward_attribute_points = rule
             .rewards
@@ -505,7 +512,8 @@ impl RustRealmRouteService {
                 new_realm: rule.to.clone(),
                 spent_exp: preview_costs.exp,
                 spent_spirit_stones: preview_costs.spirit_stones,
-                spent_items: build_spent_item_views(&preview_costs.items).map_err(internal_business_error)?,
+                spent_items: build_spent_item_views(&preview_costs.items)
+                    .map_err(internal_business_error)?,
                 gained_attribute_points: reward_attribute_points,
                 current_exp: new_exp,
                 current_spirit_stones: new_spirit_stones,
@@ -527,14 +535,21 @@ impl RustRealmRouteService {
             ));
         }
         let config = load_realm_breakthrough_config().map_err(internal_business_error)?;
-        if !config.realm_order.iter().any(|realm| realm == &normalized_target) {
+        if !config
+            .realm_order
+            .iter()
+            .any(|realm| realm == &normalized_target)
+        {
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("目标境界未开放".to_string()),
                 None,
             ));
         }
-        let Some(state) = load_character_state(&self.pool, user_id).await.map_err(internal_business_error)? else {
+        let Some(state) = load_character_state(&self.pool, user_id)
+            .await
+            .map_err(internal_business_error)?
+        else {
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("角色不存在".to_string()),
@@ -567,9 +582,8 @@ impl RealmRouteServices for RustRealmRouteService {
         user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RealmOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RealmOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -582,7 +596,10 @@ impl RealmRouteServices for RustRealmRouteService {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<RealmBreakthroughDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -597,17 +614,24 @@ impl RealmRouteServices for RustRealmRouteService {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<RealmBreakthroughDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
     > {
-        Box::pin(async move { self.breakthrough_to_target_realm_impl(user_id, target_realm).await })
+        Box::pin(async move {
+            self.breakthrough_to_target_realm_impl(user_id, target_realm)
+                .await
+        })
     }
 }
 
 fn load_realm_breakthrough_config() -> Result<&'static RealmBreakthroughConfig, AppError> {
-    let result = REALM_BREAKTHROUGH_CONFIG.get_or_init(|| build_realm_breakthrough_config().map_err(|error| error.to_string()));
+    let result = REALM_BREAKTHROUGH_CONFIG
+        .get_or_init(|| build_realm_breakthrough_config().map_err(|error| error.to_string()));
     result
         .as_ref()
         .map_err(|message| AppError::Config(message.clone()))
@@ -628,7 +652,8 @@ fn build_realm_breakthrough_config() -> Result<RealmBreakthroughConfig, AppError
 }
 
 fn load_item_meta_map() -> Result<&'static HashMap<String, ItemMeta>, AppError> {
-    let result = REALM_ITEM_META_MAP.get_or_init(|| build_item_meta_map().map_err(|error| error.to_string()));
+    let result = REALM_ITEM_META_MAP
+        .get_or_init(|| build_item_meta_map().map_err(|error| error.to_string()));
     result
         .as_ref()
         .map_err(|message| AppError::Config(message.clone()))
@@ -653,8 +678,8 @@ fn build_item_meta_map() -> Result<HashMap<String, ItemMeta>, AppError> {
 }
 
 fn load_technique_name_map() -> Result<&'static HashMap<String, String>, AppError> {
-    let result =
-        REALM_TECHNIQUE_NAME_MAP.get_or_init(|| build_technique_name_map().map_err(|error| error.to_string()));
+    let result = REALM_TECHNIQUE_NAME_MAP
+        .get_or_init(|| build_technique_name_map().map_err(|error| error.to_string()));
     result
         .as_ref()
         .map_err(|message| AppError::Config(message.clone()))
@@ -673,7 +698,8 @@ fn build_technique_name_map() -> Result<HashMap<String, String>, AppError> {
 }
 
 fn load_dungeon_meta_catalog() -> Result<&'static DungeonMetaCatalog, AppError> {
-    let result = REALM_DUNGEON_META.get_or_init(|| build_dungeon_meta_catalog().map_err(|error| error.to_string()));
+    let result = REALM_DUNGEON_META
+        .get_or_init(|| build_dungeon_meta_catalog().map_err(|error| error.to_string()));
     result
         .as_ref()
         .map_err(|message| AppError::Config(message.clone()))
@@ -712,7 +738,10 @@ fn build_dungeon_meta_catalog() -> Result<DungeonMetaCatalog, AppError> {
     })
 }
 
-async fn load_character_state(pool: &sqlx::PgPool, user_id: i64) -> Result<Option<CharacterRealmState>, AppError> {
+async fn load_character_state(
+    pool: &sqlx::PgPool,
+    user_id: i64,
+) -> Result<Option<CharacterRealmState>, AppError> {
     let row = sqlx::query(
         r#"
         SELECT id, realm, sub_realm, exp, spirit_stones, attribute_points
@@ -752,7 +781,11 @@ fn build_character_state(row: sqlx::postgres::PgRow) -> CharacterRealmState {
     CharacterRealmState {
         character_id: row.get("id"),
         current_realm: normalize_realm_keeping_unknown(realm.as_deref(), sub_realm.as_deref()),
-        exp: row.try_get::<Option<i64>, _>("exp").ok().flatten().unwrap_or(0),
+        exp: row
+            .try_get::<Option<i64>, _>("exp")
+            .ok()
+            .flatten()
+            .unwrap_or(0),
         spirit_stones: row
             .try_get::<Option<i64>, _>("spirit_stones")
             .ok()
@@ -826,17 +859,32 @@ async fn evaluate_requirements(
         }
     }
 
-    let technique_layers = load_technique_layers(pool, state.character_id, &technique_ids.into_iter().collect::<Vec<_>>()).await?;
+    let technique_layers = load_technique_layers(
+        pool,
+        state.character_id,
+        &technique_ids.into_iter().collect::<Vec<_>>(),
+    )
+    .await?;
     let main_technique = load_main_technique(pool, state.character_id).await?;
     let sub_techniques = if need_sub_techniques {
         load_sub_techniques(pool, state.character_id).await?
     } else {
         Vec::new()
     };
-    let technique_count_cache = load_technique_count_cache(pool, state.character_id, requirements).await?;
-    let item_qty_map = load_item_qty_map(pool, state.character_id, &item_ids.into_iter().collect::<Vec<_>>()).await?;
-    let dungeon_clear_count_map =
-        load_dungeon_clear_count_map(pool, state.character_id, &dungeon_keys.into_iter().collect::<Vec<_>>()).await?;
+    let technique_count_cache =
+        load_technique_count_cache(pool, state.character_id, requirements).await?;
+    let item_qty_map = load_item_qty_map(
+        pool,
+        state.character_id,
+        &item_ids.into_iter().collect::<Vec<_>>(),
+    )
+    .await?;
+    let dungeon_clear_count_map = load_dungeon_clear_count_map(
+        pool,
+        state.character_id,
+        &dungeon_keys.into_iter().collect::<Vec<_>>(),
+    )
+    .await?;
     let completed_chapters = if need_completed_chapters {
         load_completed_chapters(pool, state.character_id).await?
     } else {
@@ -890,7 +938,10 @@ async fn evaluate_requirements(
                 RealmRequirementView {
                     id: id.clone(),
                     title: title.clone(),
-                    detail: format!("{technique_name} ≥ {} 层（当前 {}）", min_layer, current_layer),
+                    detail: format!(
+                        "{technique_name} ≥ {} 层（当前 {}）",
+                        min_layer, current_layer
+                    ),
                     status: if current_layer >= *min_layer {
                         RealmRequirementStatus::Done
                     } else {
@@ -905,9 +956,15 @@ async fn evaluate_requirements(
                 title,
                 min_layer,
             } => {
-                let current_layer = main_technique.as_ref().map(|entry| entry.layer).unwrap_or(0);
+                let current_layer = main_technique
+                    .as_ref()
+                    .map(|entry| entry.layer)
+                    .unwrap_or(0);
                 let detail = if let Some(main) = &main_technique {
-                    format!("{}（主功法）≥ {} 层（当前 {}）", main.name, min_layer, current_layer)
+                    format!(
+                        "{}（主功法）≥ {} 层（当前 {}）",
+                        main.name, min_layer, current_layer
+                    )
                 } else {
                     format!("未装备主功法（需要 ≥ {} 层）", min_layer)
                 };
@@ -929,21 +986,31 @@ async fn evaluate_requirements(
                 title,
                 min_layer,
             } => {
-                let best_sub = sub_techniques.iter().max_by_key(|technique| technique.layer);
+                let best_sub = sub_techniques
+                    .iter()
+                    .max_by_key(|technique| technique.layer);
                 let main_ok = main_technique
                     .as_ref()
                     .map(|technique| technique.layer >= *min_layer)
                     .unwrap_or(false);
-                let sub_ok = sub_techniques.iter().any(|technique| technique.layer >= *min_layer);
+                let sub_ok = sub_techniques
+                    .iter()
+                    .any(|technique| technique.layer >= *min_layer);
                 let detail = if let Some(main) = &main_technique {
                     let sub_text = if let Some(sub) = best_sub {
                         format!("{}（副{} 当前 {}）", sub.name, sub.slot_index, sub.layer)
                     } else {
                         "未装备副功法".to_string()
                     };
-                    format!("{}（主 当前 {}）≥{}；{} ≥{}", main.name, main.layer, min_layer, sub_text, min_layer)
+                    format!(
+                        "{}（主 当前 {}）≥{}；{} ≥{}",
+                        main.name, main.layer, min_layer, sub_text, min_layer
+                    )
                 } else {
-                    format!("未装备主功法（需要主功法≥{}且副功法≥{}）", min_layer, min_layer)
+                    format!(
+                        "未装备主功法（需要主功法≥{}且副功法≥{}）",
+                        min_layer, min_layer
+                    )
                 };
                 RealmRequirementView {
                     id: id.clone(),
@@ -968,7 +1035,10 @@ async fn evaluate_requirements(
                 RealmRequirementView {
                     id: id.clone(),
                     title: title.clone(),
-                    detail: format!("至少 {} 门功法 ≥ {} 层（当前 {}）", min_count, min_layer, current_count),
+                    detail: format!(
+                        "至少 {} 门功法 ≥ {} 层（当前 {}）",
+                        min_count, min_layer, current_count
+                    ),
                     status: if current_count >= *min_count {
                         RealmRequirementStatus::Done
                     } else {
@@ -1013,19 +1083,32 @@ async fn evaluate_requirements(
                     dungeon_id.clone().unwrap_or_default(),
                     difficulty_id.clone().unwrap_or_default(),
                 );
-                let clear_count = dungeon_clear_count_map.get(&dungeon_key).copied().unwrap_or(0);
-                let scope_text = build_dungeon_scope_text(dungeon_meta, dungeon_id.as_deref(), difficulty_id.as_deref());
+                let clear_count = dungeon_clear_count_map
+                    .get(&dungeon_key)
+                    .copied()
+                    .unwrap_or(0);
+                let scope_text = build_dungeon_scope_text(
+                    dungeon_meta,
+                    dungeon_id.as_deref(),
+                    difficulty_id.as_deref(),
+                );
                 RealmRequirementView {
                     id: id.clone(),
                     title: title.clone(),
-                    detail: format!("{scope_text} 通关 ≥ {} 次（当前 {}）", min_count, clear_count),
+                    detail: format!(
+                        "{scope_text} 通关 ≥ {} 次（当前 {}）",
+                        min_count, clear_count
+                    ),
                     status: if clear_count >= *min_count {
                         RealmRequirementStatus::Done
                     } else {
                         RealmRequirementStatus::Todo
                     },
                     source_type: Some("dungeon_record".to_string()),
-                    source_ref: Some(build_dungeon_source_ref(dungeon_id.as_deref(), difficulty_id.as_deref())),
+                    source_ref: Some(build_dungeon_source_ref(
+                        dungeon_id.as_deref(),
+                        difficulty_id.as_deref(),
+                    )),
                 }
             }
             BreakthroughRequirement::MainQuestChapterCompleted {
@@ -1038,7 +1121,11 @@ async fn evaluate_requirements(
                 detail: format!(
                     "{}（当前{}）",
                     chapter_id,
-                    if completed_chapters.contains(chapter_id) { "已完成" } else { "未完成" }
+                    if completed_chapters.contains(chapter_id) {
+                        "已完成"
+                    } else {
+                        "未完成"
+                    }
                 ),
                 status: if completed_chapters.contains(chapter_id) {
                     RealmRequirementStatus::Done
@@ -1098,7 +1185,10 @@ async fn load_technique_layers(
     for row in rows {
         map.insert(
             row.get::<String, _>("technique_id"),
-            row.try_get::<Option<i32>, _>("current_layer").ok().flatten().unwrap_or(0),
+            row.try_get::<Option<i32>, _>("current_layer")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
         );
     }
     Ok(map)
@@ -1136,7 +1226,11 @@ async fn load_main_technique(
                 .get(&technique_id)
                 .cloned()
                 .unwrap_or(technique_id),
-            layer: row.try_get::<Option<i32>, _>("current_layer").ok().flatten().unwrap_or(0),
+            layer: row
+                .try_get::<Option<i32>, _>("current_layer")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
             slot_index: 0,
         }
     }))
@@ -1167,8 +1261,16 @@ async fn load_sub_techniques(
                 .get(&technique_id)
                 .cloned()
                 .unwrap_or(technique_id),
-            layer: row.try_get::<Option<i32>, _>("current_layer").ok().flatten().unwrap_or(0),
-            slot_index: row.try_get::<Option<i32>, _>("slot_index").ok().flatten().unwrap_or(0),
+            layer: row
+                .try_get::<Option<i32>, _>("current_layer")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
+            slot_index: row
+                .try_get::<Option<i32>, _>("slot_index")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
         });
     }
     Ok(techniques)
@@ -1200,7 +1302,12 @@ async fn load_technique_count_cache(
     .await?;
     let mut levels = Vec::with_capacity(rows.len());
     for row in rows {
-        levels.push(row.try_get::<Option<i32>, _>("current_layer").ok().flatten().unwrap_or(0));
+        levels.push(
+            row.try_get::<Option<i32>, _>("current_layer")
+                .ok()
+                .flatten()
+                .unwrap_or(0),
+        );
     }
     let mut cache = HashMap::with_capacity(target_layers.len());
     for target in target_layers {
@@ -1234,7 +1341,10 @@ async fn load_item_qty_map(
     .await?;
     let mut map = HashMap::with_capacity(rows.len());
     for row in rows {
-        map.insert(row.get::<String, _>("item_def_id"), row.get::<i32, _>("qty"));
+        map.insert(
+            row.get::<String, _>("item_def_id"),
+            row.get::<i32, _>("qty"),
+        );
     }
     Ok(map)
 }
@@ -1311,11 +1421,18 @@ async fn load_completed_chapters(
     let Some(row) = row else {
         return Ok(BTreeSet::new());
     };
-    let raw = row.try_get::<Option<Value>, _>("completed_chapters").ok().flatten();
+    let raw = row
+        .try_get::<Option<Value>, _>("completed_chapters")
+        .ok()
+        .flatten();
     let mut chapters = BTreeSet::new();
     if let Some(Value::Array(entries)) = raw {
         for entry in entries {
-            if let Some(chapter_id) = entry.as_str().map(str::trim).filter(|value| !value.is_empty()) {
+            if let Some(chapter_id) = entry
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
                 chapters.insert(chapter_id.to_string());
             }
         }
@@ -1361,7 +1478,13 @@ async fn resolve_costs(
     };
 
     let mut view = Vec::with_capacity(2 + item_totals.len());
-    let exp_status = current_exp.map(|value| if value >= exp { RealmRequirementStatus::Done } else { RealmRequirementStatus::Todo });
+    let exp_status = current_exp.map(|value| {
+        if value >= exp {
+            RealmRequirementStatus::Done
+        } else {
+            RealmRequirementStatus::Todo
+        }
+    });
     if exp > 0 {
         view.push(RealmCostView {
             id: "cost-exp".to_string(),
@@ -1378,7 +1501,13 @@ async fn resolve_costs(
             qty: None,
         });
     }
-    let spirit_status = current_spirit_stones.map(|value| if value >= spirit_stones { RealmRequirementStatus::Done } else { RealmRequirementStatus::Todo });
+    let spirit_status = current_spirit_stones.map(|value| {
+        if value >= spirit_stones {
+            RealmRequirementStatus::Done
+        } else {
+            RealmRequirementStatus::Todo
+        }
+    });
     if spirit_stones > 0 {
         view.push(RealmCostView {
             id: "cost-spirit-stones".to_string(),
@@ -1398,7 +1527,13 @@ async fn resolve_costs(
     for (item_def_id, qty) in item_totals {
         let item = item_meta.get(&item_def_id);
         let current_qty = item_qty_map.get(&item_def_id).copied();
-        let status = current_qty.map(|value| if value >= qty { RealmRequirementStatus::Done } else { RealmRequirementStatus::Todo });
+        let status = current_qty.map(|value| {
+            if value >= qty {
+                RealmRequirementStatus::Done
+            } else {
+                RealmRequirementStatus::Todo
+            }
+        });
         view.push(RealmCostView {
             id: format!("cost-item-{item_def_id}"),
             title: item
@@ -1416,7 +1551,9 @@ async fn resolve_costs(
             qty: Some(qty),
         });
     }
-    let affordable = view.iter().all(|cost| cost.status != Some(RealmRequirementStatus::Todo));
+    let affordable = view
+        .iter()
+        .all(|cost| cost.status != Some(RealmRequirementStatus::Todo));
     let items = view
         .iter()
         .filter_map(|cost| {
@@ -1636,7 +1773,9 @@ fn build_dungeon_source_ref(dungeon_id: Option<&str>, difficulty_id: Option<&str
     }
 }
 
-fn build_spent_item_views(items: &[BreakthroughItemCost]) -> Result<Vec<RealmSpentItemView>, AppError> {
+fn build_spent_item_views(
+    items: &[BreakthroughItemCost],
+) -> Result<Vec<RealmSpentItemView>, AppError> {
     let item_meta = load_item_meta_map()?;
     Ok(items
         .iter()
@@ -1644,7 +1783,9 @@ fn build_spent_item_views(items: &[BreakthroughItemCost]) -> Result<Vec<RealmSpe
         .map(|item| RealmSpentItemView {
             item_def_id: item.item_def_id.clone(),
             qty: item.qty,
-            name: item_meta.get(&item.item_def_id).map(|meta| meta.name.clone()),
+            name: item_meta
+                .get(&item.item_def_id)
+                .map(|meta| meta.name.clone()),
             icon: item_meta
                 .get(&item.item_def_id)
                 .and_then(|meta| meta.icon.clone()),

@@ -8,9 +8,7 @@ use axum::Router;
 use serde::{Deserialize, Serialize};
 
 use crate::bootstrap::app::AppState;
-use crate::edge::http::auth::{
-    require_authenticated_character_context, resolve_request_ip,
-};
+use crate::edge::http::auth::{require_authenticated_character_context, resolve_request_ip};
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, ServiceResultResponse};
 
@@ -102,9 +100,8 @@ pub trait RedeemCodeRouteServices: Send + Sync {
         request_ip: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>>
+                + Send
                 + 'a,
         >,
     >;
@@ -122,9 +119,8 @@ impl RedeemCodeRouteServices for NoopRedeemCodeRouteServices {
         _request_ip: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {

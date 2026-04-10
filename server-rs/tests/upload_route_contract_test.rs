@@ -397,9 +397,9 @@ async fn uploads_avatar_static_route_serves_uploaded_file() {
 }
 
 fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
-    build_app_state_with_upload_services(Arc::new(
-        RustUploadService::with_local_storage_root(upload_dir),
-    ))
+    build_app_state_with_upload_services(Arc::new(RustUploadService::with_local_storage_root(
+        upload_dir,
+    )))
 }
 
 fn build_app_state_with_upload_services(upload_services: Arc<dyn UploadRouteServices>) -> AppState {
@@ -426,10 +426,14 @@ fn build_app_state_with_upload_services(upload_services: Arc<dyn UploadRouteServ
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
-        month_card_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices),
+        month_card_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
+        ),
 
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
-        realm_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices),
+        realm_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices,
+        ),
 
         redeem_code_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,

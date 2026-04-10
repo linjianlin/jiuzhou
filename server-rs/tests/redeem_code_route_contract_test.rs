@@ -127,7 +127,9 @@ async fn redeem_code_route_returns_404_when_character_missing() {
                 .method("POST")
                 .header("authorization", "Bearer redeem-token")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::json!({ "code": "JZGIFT" }).to_string()))
+                .body(Body::from(
+                    serde_json::json!({ "code": "JZGIFT" }).to_string(),
+                ))
                 .expect("redeem request"),
         )
         .await
@@ -158,7 +160,9 @@ async fn redeem_code_route_returns_401_when_session_invalid() {
                 .method("POST")
                 .header("authorization", "Bearer redeem-token")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::json!({ "code": "JZGIFT" }).to_string()))
+                .body(Body::from(
+                    serde_json::json!({ "code": "JZGIFT" }).to_string(),
+                ))
                 .expect("redeem request"),
         )
         .await
@@ -199,14 +203,20 @@ where
         inventory_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),
-        month_card_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices),
+        month_card_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
+        ),
 
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
-        realm_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices),
+        realm_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices,
+        ),
 
         redeem_code_services: Arc::new(redeem_code_services),
         time_services: Arc::new(NoopTimeRouteServices),
-        title_services: Arc::new(jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices),
+        title_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
+        ),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
@@ -237,17 +247,13 @@ impl RedeemCodeRouteServices for FakeRedeemCodeRouteServices {
         request_ip: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RedeemCodeSuccessData>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
         Box::pin(async move {
-            *self
-                .recorded_request_ip
-                .lock()
-                .expect("request ip lock") = Some(request_ip);
+            *self.recorded_request_ip.lock().expect("request ip lock") = Some(request_ip);
             Ok(ServiceResultResponse::new(
                 true,
                 Some("兑换成功，奖励已通过邮件发放".to_string()),

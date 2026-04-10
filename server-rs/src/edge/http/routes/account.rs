@@ -65,7 +65,10 @@ struct ChangePasswordPayload {
 pub fn build_account_router() -> Router<AppState> {
     Router::new()
         .route("/current-ip", get(current_ip_handler))
-        .route("/phone-binding/send-code", post(phone_binding_send_code_handler))
+        .route(
+            "/phone-binding/send-code",
+            post(phone_binding_send_code_handler),
+        )
         .route("/phone-binding/bind", post(bind_phone_number_handler))
         .route("/phone-binding/status", get(phone_binding_status_handler))
         .route("/password/change", post(change_password_handler))
@@ -120,8 +123,7 @@ async fn phone_binding_send_code_handler(
         return Err(BusinessError::new("手机号不能为空"));
     }
 
-    let captcha =
-        parse_captcha_verify_payload(state.auth_services.captcha_provider(), &payload)?;
+    let captcha = parse_captcha_verify_payload(state.auth_services.captcha_provider(), &payload)?;
     let result = state
         .auth_services
         .send_phone_binding_code(user_id, phone_number, resolve_request_ip(&headers), captcha)
@@ -204,10 +206,12 @@ fn parse_captcha_verify_payload(
             if captcha_id.trim().is_empty() || captcha_code.trim().is_empty() {
                 return Err(BusinessError::new("图片验证码不能为空"));
             }
-            Ok(crate::edge::http::routes::auth::CaptchaVerifyPayload::Local {
-                captcha_id,
-                captcha_code,
-            })
+            Ok(
+                crate::edge::http::routes::auth::CaptchaVerifyPayload::Local {
+                    captcha_id,
+                    captcha_code,
+                },
+            )
         }
         crate::edge::http::routes::auth::CaptchaProvider::Tencent => {
             let ticket = payload.ticket.clone().unwrap_or_default();

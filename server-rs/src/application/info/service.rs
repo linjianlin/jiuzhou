@@ -6,10 +6,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::application::static_data::realm::get_realm_rank_zero_based;
 use crate::application::static_data::catalog::{
     GameItemTaxonomyDto, ItemTaxonomyCategoryDto, ItemTaxonomyOptionDto, ItemTaxonomySubCategoryDto,
 };
+use crate::application::static_data::realm::get_realm_rank_zero_based;
 use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::info::{

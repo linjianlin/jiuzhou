@@ -140,9 +140,8 @@ pub trait RealmRouteServices: Send + Sync {
         user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RealmOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RealmOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     >;
@@ -153,7 +152,10 @@ pub trait RealmRouteServices: Send + Sync {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<RealmBreakthroughDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -166,7 +168,10 @@ pub trait RealmRouteServices: Send + Sync {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<RealmBreakthroughDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -182,9 +187,8 @@ impl RealmRouteServices for NoopRealmRouteServices {
         _user_id: i64,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<RealmOverviewView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<RealmOverviewView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
@@ -203,7 +207,10 @@ impl RealmRouteServices for NoopRealmRouteServices {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<RealmBreakthroughDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -224,7 +231,10 @@ impl RealmRouteServices for NoopRealmRouteServices {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = Result<ServiceResultResponse<RealmBreakthroughDataView>, BusinessError>,
+                    Output = Result<
+                        ServiceResultResponse<RealmBreakthroughDataView>,
+                        BusinessError,
+                    >,
                 > + Send
                 + 'a,
         >,
@@ -274,7 +284,10 @@ async fn breakthrough_handler(
             .breakthrough_to_target_realm(user_id, target_realm)
             .await?
     } else if direction.is_empty() || direction == "next" {
-        state.realm_services.breakthrough_to_next_realm(user_id).await?
+        state
+            .realm_services
+            .breakthrough_to_next_realm(user_id)
+            .await?
     } else {
         ServiceResultResponse::new(false, Some("突破方向无效".to_string()), None)
     };

@@ -100,15 +100,22 @@ impl AttemptGuardService {
             policy.failure_window_ms,
         )
         .await?;
-        let subject =
-            touch_failure_counter(&mut redis, &keys.subject_failure_key, policy.failure_window_ms)
-                .await?;
-        let ip =
-            touch_failure_counter(&mut redis, &keys.ip_failure_key, policy.failure_window_ms)
-                .await?;
+        let subject = touch_failure_counter(
+            &mut redis,
+            &keys.subject_failure_key,
+            policy.failure_window_ms,
+        )
+        .await?;
+        let ip = touch_failure_counter(&mut redis, &keys.ip_failure_key, policy.failure_window_ms)
+            .await?;
 
         if subject_ip >= policy.subject_ip_failure_limit {
-            write_block_key(&mut redis, &keys.subject_ip_block_key, policy.block_window_ms).await?;
+            write_block_key(
+                &mut redis,
+                &keys.subject_ip_block_key,
+                policy.block_window_ms,
+            )
+            .await?;
         }
         if subject >= policy.subject_failure_limit {
             write_block_key(&mut redis, &keys.subject_block_key, policy.block_window_ms).await?;
