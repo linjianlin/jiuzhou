@@ -14,7 +14,7 @@ use crate::application::game::service::RustGameRouteService;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::info::service::RustInfoService;
 use crate::application::insight::service::RustInsightRouteService;
-use crate::application::inventory::service::RustInventoryReadService;
+use crate::application::inventory::service::RustInventoryRouteService;
 use crate::application::mail::service::RustMailRouteService;
 use crate::application::month_card::service::RustMonthCardRouteService;
 use crate::application::rank::service::RustRankRouteService;
@@ -22,8 +22,8 @@ use crate::application::realm::service::RustRealmRouteService;
 use crate::application::redeem_code::service::RustRedeemCodeRouteService;
 use crate::application::team::service::RustTeamRouteService;
 use crate::application::time::service::RustTimeService;
-use crate::application::tower::service::RustTowerRouteService;
 use crate::application::title::service::RustTitleRouteService;
+use crate::application::tower::service::RustTowerRouteService;
 use crate::application::upload::service::RustUploadService;
 use crate::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
@@ -96,9 +96,9 @@ pub async fn run_application() -> Result<(), AppError> {
         battle_pass_services: std::sync::Arc::new(RustBattlePassRouteService::new(
             postgres.pool.clone(),
         )),
-        character_technique_service: std::sync::Arc::new(
-            RustCharacterTechniqueReadService::new(postgres.pool.clone()),
-        ),
+        character_technique_service: std::sync::Arc::new(RustCharacterTechniqueReadService::new(
+            postgres.pool.clone(),
+        )),
         game_services: std::sync::Arc::new(RustGameRouteService::new(
             postgres.pool.clone(),
             redis.client.clone(),
@@ -108,7 +108,7 @@ pub async fn run_application() -> Result<(), AppError> {
         idle_services,
         info_services: std::sync::Arc::new(RustInfoService::new(postgres.pool.clone())),
         insight_services: std::sync::Arc::new(RustInsightRouteService::new(postgres.pool.clone())),
-        inventory_services: std::sync::Arc::new(RustInventoryReadService::new(
+        inventory_services: std::sync::Arc::new(RustInventoryRouteService::new(
             postgres.pool.clone(),
         )),
         mail_services: std::sync::Arc::new(RustMailRouteService::new(postgres.pool.clone())),

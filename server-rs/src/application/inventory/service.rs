@@ -9,10 +9,11 @@ use sqlx::Row;
 
 use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
-use crate::edge::http::routes::inventory::InventoryRouteServices;
+use crate::edge::http::response::ServiceResultResponse;
+use crate::edge::http::routes::inventory::{InventoryLockDataView, InventoryRouteServices};
 
 static INVENTORY_ITEM_DEF_INDEX: OnceLock<
-    Result<HashMap<String, InventoryItemDefinitionView>, String>,
+    Result<HashMap<String, InventoryItemDefinitionRecord>, String>,
 > = OnceLock::new();
 
 const DEFAULT_BAG_CAPACITY: i32 = 100;
@@ -20,32 +21,35 @@ const DEFAULT_WAREHOUSE_CAPACITY: i32 = 1000;
 const INVENTORY_ITEMS_PAGE_SIZE_MAX: i64 = 200;
 
 /**
- * inventory 最小只读应用服务。
+ * inventory 最小读写应用服务。
  *
  * 作用：
- * 1. 做什么：为 `/api/inventory/info`、`/api/inventory/bag/snapshot`、`/api/inventory/items` 提供统一只读查询入口。
- * 2. 做什么：实例数据走 PostgreSQL，静态物品定义走 Node 权威 `item_def.json` 并做模块级缓存，避免每次请求重复解析种子。
- * 3. 不做什么：不实现 inventory mutation，不补套装/词条 roll/生成功法等更大富化链路，也不伪造不存在的字段。
+ * 1. 做什么：为 `/api/inventory/info`、`/api/inventory/bag/snapshot`、`/api/inventory/items`、`/api/inventory/remove` 与 `/api/inventory/lock` 提供统一的最小背包读写入口。
+ * 2. 做什么：实例数据走 PostgreSQL，静态物品定义走 Node 权威 `item_def.json` 并做模块级缓存；物品移除/锁定沿用数据库行锁与 Node 现有约束。
+ * 3. 不做什么：不补更重的 inventory mutation，不扩展套装/词条 roll/生成功法等富化链路，也不伪造不存在的字段。
  *
  * 输入 / 输出：
  * - 输入：`character_id`，以及列表查询额外接收 `location/page/page_size`。
  * - 输出：`InventoryInfoView`、`InventoryBagSnapshotView`、`InventoryItemsPageView`。
  *
  * 数据流 / 状态流：
- * - 路由层完成鉴权与角色解析 -> 本服务查询 `inventory/item_instance`
+ * - 路由层完成鉴权与角色解析 -> 本服务查询或更新 `inventory/item_instance`
  * - -> 统一按 `item_def_id` 从静态索引补最小定义视图
  * - -> 路由层继续包装为 Node 兼容 success envelope。
  *
  * 复用设计说明：
  * - `info/items/bag snapshot` 共用同一套实例查询与静态定义富化，避免三个 handler 各自重复拼 SQL、重复构建 `item_def_id -> def` 映射。
+ * - 物品移除、锁定与只读查询共用同一个服务边界，后续继续补 `move/remove-batch/sort` 时可以直接复用这里的行锁、位置校验和错误映射，不必另起一套背包写服务。
  * - 静态定义索引放在模块级 `OnceLock`，高频打开背包时不会重复读大 JSON 文件；背包快照也复用同一索引，减少双列表重复工作。
  *
  * 关键边界条件与坑点：
  * 1. `location` 合法性由路由层维持 Node 文案；服务层只接受已经归一化的枚举，避免校验逻辑分散。
  * 2. 静态定义缺失时必须继续返回物品实例本体并让 `def` 为 `null/缺失`，不能为了凑字段伪造定义。
+ * 3. 物品锁定必须继续禁止 `auction` 和其它非 `bag/warehouse/equipped` 位置，不能为了偷懒直接按 `owner_character_id` 一把更新。
+ * 4. 单个物品移除需要和 Node 一样只校验存在/锁定/数量，不能擅自把批量删除的 `destroyable/location` 规则提前套到单删上。
  */
 #[derive(Debug, Clone)]
-pub struct RustInventoryReadService {
+pub struct RustInventoryRouteService {
     pool: sqlx::PgPool,
 }
 
@@ -212,7 +216,19 @@ struct InventoryItemRow {
     total: i64,
 }
 
-impl RustInventoryReadService {
+#[derive(Debug, Clone)]
+struct InventoryItemDefinitionRecord {
+    view: InventoryItemDefinitionView,
+}
+
+#[derive(Debug, Clone)]
+struct MutableInventoryItemRow {
+    qty: i32,
+    location: String,
+    locked: bool,
+}
+
+impl RustInventoryRouteService {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
     }
@@ -373,7 +389,9 @@ impl RustInventoryReadService {
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
             let item_def_id = row.get::<String, _>("item_def_id");
-            let def = static_index.get(item_def_id.as_str()).cloned();
+            let def = static_index
+                .get(item_def_id.as_str())
+                .map(|record| record.view.clone());
             items.push(InventoryItemRow {
                 item: InventoryItemView {
                     id: row.get("id"),
@@ -411,9 +429,168 @@ impl RustInventoryReadService {
         }
         Ok(items)
     }
+
+    async fn set_item_locked_impl(
+        &self,
+        character_id: i64,
+        item_instance_id: i64,
+        locked: bool,
+    ) -> Result<ServiceResultResponse<InventoryLockDataView>, BusinessError> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(internal_sql_business_error)?;
+        let item_row = load_mutable_inventory_item_for_update(
+            &mut transaction,
+            character_id,
+            item_instance_id,
+        )
+        .await?;
+
+        let Some(item_row) = item_row else {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("物品不存在".to_string()),
+                None,
+            ));
+        };
+
+        let location = item_row.location;
+        if location == "auction" || !matches!(location.as_str(), "bag" | "warehouse" | "equipped") {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("该物品当前位置不可锁定".to_string()),
+                None,
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE item_instance
+            SET locked = $1,
+                updated_at = NOW()
+            WHERE id = $2
+              AND owner_character_id = $3
+            "#,
+        )
+        .bind(locked)
+        .bind(item_instance_id)
+        .bind(character_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(ServiceResultResponse::new(
+            true,
+            Some(if locked { "已锁定" } else { "已解锁" }.to_string()),
+            Some(InventoryLockDataView {
+                item_id: item_instance_id,
+                locked,
+            }),
+        ))
+    }
+
+    async fn remove_item_impl(
+        &self,
+        character_id: i64,
+        item_instance_id: i64,
+        qty: i32,
+    ) -> Result<ServiceResultResponse<()>, BusinessError> {
+        if qty <= 0 {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("数量参数错误".to_string()),
+                None,
+            ));
+        }
+
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(internal_sql_business_error)?;
+        let item_row = load_mutable_inventory_item_for_update(
+            &mut transaction,
+            character_id,
+            item_instance_id,
+        )
+        .await?;
+
+        let Some(item_row) = item_row else {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("物品不存在".to_string()),
+                None,
+            ));
+        };
+
+        if item_row.locked {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("物品已锁定".to_string()),
+                None,
+            ));
+        }
+
+        if item_row.qty < qty {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("数量不足".to_string()),
+                None,
+            ));
+        }
+
+        if item_row.qty == qty {
+            sqlx::query(
+                r#"
+                DELETE FROM item_instance
+                WHERE id = $1
+                  AND owner_character_id = $2
+                "#,
+            )
+            .bind(item_instance_id)
+            .bind(character_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+        } else {
+            sqlx::query(
+                r#"
+                UPDATE item_instance
+                SET qty = $1,
+                    updated_at = NOW()
+                WHERE id = $2
+                  AND owner_character_id = $3
+                "#,
+            )
+            .bind(item_row.qty - qty)
+            .bind(item_instance_id)
+            .bind(character_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(ServiceResultResponse::new(
+            true,
+            Some("移除成功".to_string()),
+            None,
+        ))
+    }
 }
 
-impl InventoryRouteServices for RustInventoryReadService {
+impl InventoryRouteServices for RustInventoryRouteService {
     fn get_inventory_info<'a>(
         &'a self,
         character_id: i64,
@@ -442,10 +619,41 @@ impl InventoryRouteServices for RustInventoryReadService {
                 .await
         })
     }
+
+    fn set_item_locked<'a>(
+        &'a self,
+        character_id: i64,
+        item_instance_id: i64,
+        locked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ServiceResultResponse<InventoryLockDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.set_item_locked_impl(character_id, item_instance_id, locked)
+                .await
+        })
+    }
+
+    fn remove_item<'a>(
+        &'a self,
+        character_id: i64,
+        item_instance_id: i64,
+        qty: i32,
+    ) -> Pin<Box<dyn Future<Output = Result<ServiceResultResponse<()>, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.remove_item_impl(character_id, item_instance_id, qty)
+                .await
+        })
+    }
 }
 
 fn inventory_item_def_index(
-) -> Result<&'static HashMap<String, InventoryItemDefinitionView>, BusinessError> {
+) -> Result<&'static HashMap<String, InventoryItemDefinitionRecord>, BusinessError> {
     let result = INVENTORY_ITEM_DEF_INDEX.get_or_init(|| {
         read_seed_json::<StaticItemDefFile>("item_def.json")
             .map(|file| {
@@ -457,31 +665,33 @@ fn inventory_item_def_index(
                 {
                     map.insert(
                         item.id.clone(),
-                        InventoryItemDefinitionView {
-                            id: item.id,
-                            name: item.name,
-                            icon: item.icon,
-                            quality: item.quality,
-                            category: item.category,
-                            sub_category: item.sub_category,
-                            can_disassemble: item.disassemblable != Some(false),
-                            stack_max: item.stack_max,
-                            description: item.description,
-                            long_desc: item.long_desc,
-                            tags: item.tags.unwrap_or(Value::Null),
-                            effect_defs: item.effect_defs.unwrap_or(Value::Null),
-                            base_attrs: item.base_attrs.unwrap_or(Value::Null),
-                            equip_slot: item.equip_slot,
-                            use_type: item.use_type,
-                            use_req_realm: item.use_req_realm,
-                            equip_req_realm: item.equip_req_realm,
-                            use_req_level: item.use_req_level,
-                            use_limit_daily: item.use_limit_daily,
-                            use_limit_total: item.use_limit_total,
-                            socket_max: item.socket_max,
-                            gem_slot_types: item.gem_slot_types.unwrap_or(Value::Null),
-                            gem_level: item.gem_level,
-                            set_id: item.set_id,
+                        InventoryItemDefinitionRecord {
+                            view: InventoryItemDefinitionView {
+                                id: item.id,
+                                name: item.name,
+                                icon: item.icon,
+                                quality: item.quality,
+                                category: item.category,
+                                sub_category: item.sub_category,
+                                can_disassemble: item.disassemblable != Some(false),
+                                stack_max: item.stack_max,
+                                description: item.description,
+                                long_desc: item.long_desc,
+                                tags: item.tags.unwrap_or(Value::Null),
+                                effect_defs: item.effect_defs.unwrap_or(Value::Null),
+                                base_attrs: item.base_attrs.unwrap_or(Value::Null),
+                                equip_slot: item.equip_slot,
+                                use_type: item.use_type,
+                                use_req_realm: item.use_req_realm,
+                                equip_req_realm: item.equip_req_realm,
+                                use_req_level: item.use_req_level,
+                                use_limit_daily: item.use_limit_daily,
+                                use_limit_total: item.use_limit_total,
+                                socket_max: item.socket_max,
+                                gem_slot_types: item.gem_slot_types.unwrap_or(Value::Null),
+                                gem_level: item.gem_level,
+                                set_id: item.set_id,
+                            },
                         },
                     );
                 }
@@ -504,4 +714,31 @@ fn internal_sql_business_error(error: sqlx::Error) -> BusinessError {
 fn internal_string_business_error(error: String) -> BusinessError {
     let _ = error;
     BusinessError::with_status("服务器错误", StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+async fn load_mutable_inventory_item_for_update(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    character_id: i64,
+    item_instance_id: i64,
+) -> Result<Option<MutableInventoryItemRow>, BusinessError> {
+    let item_row = sqlx::query(
+        r#"
+        SELECT qty, location, COALESCE(locked, FALSE) AS locked
+        FROM item_instance
+        WHERE id = $1
+          AND owner_character_id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(item_instance_id)
+    .bind(character_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_sql_business_error)?;
+
+    Ok(item_row.map(|row| MutableInventoryItemRow {
+        qty: row.get("qty"),
+        location: row.get("location"),
+        locked: row.get("locked"),
+    }))
 }

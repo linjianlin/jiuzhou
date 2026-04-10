@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{future::Future, pin::Pin};
 
 use axum::body::Body;
@@ -16,12 +16,15 @@ use jiuzhou_server_rs::bootstrap::app::{
 };
 use jiuzhou_server_rs::bootstrap::readiness::ReadinessGate;
 use jiuzhou_server_rs::edge::http::error::BusinessError;
+use jiuzhou_server_rs::edge::http::response::ServiceResultResponse;
 use jiuzhou_server_rs::edge::http::routes::auth::{
     AuthActionResult, AuthRouteServices, CaptchaChallenge, CaptchaProvider, LoginInput,
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
-use jiuzhou_server_rs::edge::http::routes::inventory::InventoryRouteServices;
+use jiuzhou_server_rs::edge::http::routes::inventory::{
+    InventoryLockDataView, InventoryRouteServices,
+};
 use jiuzhou_server_rs::edge::http::routes::upload::NoopUploadRouteServices;
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -147,6 +150,210 @@ async fn inventory_bag_snapshot_route_keeps_combined_success_shape() {
     );
 }
 
+#[tokio::test]
+async fn inventory_lock_route_preserves_send_result_shape_and_item_instance_alias() {
+    let lock_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(FakeInventoryServices::with_lock_calls(
+        lock_calls.clone(),
+    )));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/lock")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"itemInstanceId":321,"locked":true}"#))
+                .expect("inventory lock request"),
+        )
+        .await
+        .expect("inventory lock response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        lock_calls.lock().expect("inventory lock calls").as_slice(),
+        &[(1001_i64, 321_i64, true)]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "已锁定",
+            "data": {
+                "itemId": 321,
+                "locked": true,
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn inventory_lock_route_keeps_node_validation_messages() {
+    let app = build_router(build_app_state(FakeInventoryServices::sample()));
+
+    let missing_item_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/lock")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"locked":true}"#))
+                .expect("inventory lock missing item request"),
+        )
+        .await
+        .expect("inventory lock missing item response");
+    let (missing_item_status, missing_item_json) = response_json(missing_item_response).await;
+    assert_eq!(missing_item_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        missing_item_json,
+        serde_json::json!({
+            "success": false,
+            "message": "参数不完整",
+        })
+    );
+
+    let invalid_locked_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/lock")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"itemId":1,"locked":"true"}"#))
+                .expect("inventory lock invalid locked request"),
+        )
+        .await
+        .expect("inventory lock invalid locked response");
+    let (invalid_locked_status, invalid_locked_json) = response_json(invalid_locked_response).await;
+    assert_eq!(invalid_locked_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid_locked_json,
+        serde_json::json!({
+            "success": false,
+            "message": "locked参数错误",
+        })
+    );
+}
+
+#[tokio::test]
+async fn inventory_remove_route_preserves_send_result_shape_and_default_qty() {
+    let remove_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(FakeInventoryServices::with_remove_calls(
+        remove_calls.clone(),
+    )));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/remove")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"instanceId":654}"#))
+                .expect("inventory remove request"),
+        )
+        .await
+        .expect("inventory remove response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        remove_calls
+            .lock()
+            .expect("inventory remove calls")
+            .as_slice(),
+        &[(1001_i64, 654_i64, 1_i32)]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "移除成功",
+        })
+    );
+}
+
+#[tokio::test]
+async fn inventory_remove_route_keeps_node_validation_messages() {
+    let app = build_router(build_app_state(FakeInventoryServices::sample()));
+
+    let missing_item_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/remove")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"qty":1}"#))
+                .expect("inventory remove missing item request"),
+        )
+        .await
+        .expect("inventory remove missing item response");
+    let (missing_item_status, missing_item_json) = response_json(missing_item_response).await;
+    assert_eq!(missing_item_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        missing_item_json,
+        serde_json::json!({
+            "success": false,
+            "message": "参数不完整",
+        })
+    );
+
+    let invalid_qty_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/remove")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"itemId":1,"qty":"abc"}"#))
+                .expect("inventory remove invalid qty request"),
+        )
+        .await
+        .expect("inventory remove invalid qty response");
+    let (invalid_qty_status, invalid_qty_json) = response_json(invalid_qty_response).await;
+    assert_eq!(invalid_qty_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid_qty_json,
+        serde_json::json!({
+            "success": false,
+            "message": "qty参数错误",
+        })
+    );
+}
+
+#[tokio::test]
+async fn inventory_expand_route_keeps_node_forbidden_message() {
+    let app = build_router(build_app_state(FakeInventoryServices::sample()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/inventory/expand")
+                .header(header::AUTHORIZATION, "Bearer token")
+                .body(Body::from("{}"))
+                .expect("inventory expand request"),
+        )
+        .await
+        .expect("inventory expand response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "请通过使用扩容道具进行扩容",
+        })
+    );
+}
+
 fn build_app_state<T>(inventory_services: T) -> AppState
 where
     T: InventoryRouteServices + 'static,
@@ -183,7 +390,9 @@ where
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
-        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
+        mail_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices,
+        ),
         month_card_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
         ),
@@ -215,6 +424,8 @@ struct FakeInventoryServices {
     info: InventoryInfoView,
     items: InventoryItemsPageView,
     snapshot: InventoryBagSnapshotView,
+    lock_calls: Arc<Mutex<Vec<(i64, i64, bool)>>>,
+    remove_calls: Arc<Mutex<Vec<(i64, i64, i32)>>>,
 }
 
 impl FakeInventoryServices {
@@ -245,7 +456,21 @@ impl FakeInventoryServices {
                 bag_items: vec![bag_item],
                 equipped_items: vec![equipped_item],
             },
+            lock_calls: Arc::new(Mutex::new(Vec::new())),
+            remove_calls: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    fn with_lock_calls(lock_calls: Arc<Mutex<Vec<(i64, i64, bool)>>>) -> Self {
+        let mut services = Self::sample();
+        services.lock_calls = lock_calls;
+        services
+    }
+
+    fn with_remove_calls(remove_calls: Arc<Mutex<Vec<(i64, i64, i32)>>>) -> Self {
+        let mut services = Self::sample();
+        services.remove_calls = remove_calls;
+        services
     }
 }
 
@@ -290,6 +515,56 @@ impl InventoryRouteServices for FakeInventoryServices {
     ) -> Pin<Box<dyn Future<Output = Result<InventoryItemsPageView, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move { Ok(self.items.clone()) })
+    }
+
+    fn set_item_locked<'a>(
+        &'a self,
+        character_id: i64,
+        item_instance_id: i64,
+        locked: bool,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ServiceResultResponse<InventoryLockDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let lock_calls = self.lock_calls.clone();
+        Box::pin(async move {
+            lock_calls
+                .lock()
+                .expect("record inventory lock call")
+                .push((character_id, item_instance_id, locked));
+            Ok(ServiceResultResponse::new(
+                true,
+                Some(if locked { "已锁定" } else { "已解锁" }.to_string()),
+                Some(InventoryLockDataView {
+                    item_id: item_instance_id,
+                    locked,
+                }),
+            ))
+        })
+    }
+
+    fn remove_item<'a>(
+        &'a self,
+        character_id: i64,
+        item_instance_id: i64,
+        qty: i32,
+    ) -> Pin<Box<dyn Future<Output = Result<ServiceResultResponse<()>, BusinessError>> + Send + 'a>>
+    {
+        let remove_calls = self.remove_calls.clone();
+        Box::pin(async move {
+            remove_calls
+                .lock()
+                .expect("record inventory remove call")
+                .push((character_id, item_instance_id, qty));
+            Ok(ServiceResultResponse::new(
+                true,
+                Some("移除成功".to_string()),
+                None,
+            ))
+        })
     }
 }
 

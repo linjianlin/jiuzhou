@@ -11,7 +11,7 @@ use sqlx::{Postgres, Row, Transaction};
 use crate::application::account::service::RustAccountService;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::inventory::grant::{grant_items_to_bag, BagGrantEntry, BagGrantItemMeta};
-use crate::application::inventory::service::{InventoryLocation, RustInventoryReadService};
+use crate::application::inventory::service::{InventoryLocation, RustInventoryRouteService};
 use crate::application::realm::service::RustRealmRouteService;
 use crate::application::reward_payload::normalize_reward_payload;
 use crate::application::sign_in::service::RustSignInService;
@@ -24,15 +24,15 @@ use crate::bootstrap::app::SharedRuntimeServices;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::game::{
     GameActionResult, GameHomeAchievementView, GameHomeDialogueStateView,
-    GameMainQuestDialogueActionDataView,
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameNpcTalkDataView,
+    GameHomeTeamOverviewView, GameMainQuestDialogueActionDataView,
+    GameMainQuestSectionCompleteDataView, GameMainQuestTrackDataView, GameNpcTalkDataView,
     GameNpcTalkMainQuestOptionView, GameNpcTalkTaskOptionView, GameRouteServices,
     GameTaskClaimDataView, GameTaskClaimRewardView, GameTaskMutationDataView,
     GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
-    GameTaskTrackDataView, GameMainQuestSectionCompleteDataView,
+    GameTaskTrackDataView,
 };
 use crate::edge::http::routes::inventory::InventoryRouteServices;
 use crate::edge::http::routes::realm::RealmRouteServices;
@@ -73,7 +73,7 @@ pub struct RustGameRouteService {
     sign_in_service: RustSignInService,
     account_service: RustAccountService,
     realm_service: RustRealmRouteService,
-    inventory_service: RustInventoryReadService,
+    inventory_service: RustInventoryRouteService,
     idle_service: RustIdleRouteService,
     team_service: RustTeamRouteService,
 }
@@ -319,7 +319,7 @@ impl RustGameRouteService {
             sign_in_service: RustSignInService::new(pool.clone()),
             account_service: RustAccountService::new(pool.clone()),
             realm_service: RustRealmRouteService::new(pool.clone()),
-            inventory_service: RustInventoryReadService::new(pool.clone()),
+            inventory_service: RustInventoryRouteService::new(pool.clone()),
             idle_service: RustIdleRouteService::new(pool.clone(), redis, runtime_services),
             team_service: RustTeamRouteService::new(pool.clone(), session_registry),
             pool,
@@ -349,7 +349,7 @@ impl RustGameRouteService {
                 &self.realm_service,
                 user_id
             ),
-            <RustInventoryReadService as InventoryRouteServices>::get_inventory_items(
+            <RustInventoryRouteService as InventoryRouteServices>::get_inventory_items(
                 &self.inventory_service,
                 character_id,
                 InventoryLocation::Equipped,
@@ -1856,15 +1856,15 @@ impl RustGameRouteService {
             .flatten()
             .unwrap_or_else(|| "not_started".to_string());
         let dialogue_state = parse_dialogue_state(
-            progress_row.try_get::<Option<Value>, _>("dialogue_state").ok().flatten(),
+            progress_row
+                .try_get::<Option<Value>, _>("dialogue_state")
+                .ok()
+                .flatten(),
         );
         if section_status == "dialogue" {
             if let Some(dialogue_state) = dialogue_state {
                 if !dialogue_state.is_complete {
-                    return Ok(main_quest_dialogue_success(
-                        dialogue_state,
-                        None,
-                    ));
+                    return Ok(main_quest_dialogue_success(dialogue_state, None));
                 }
             }
         }
@@ -1883,7 +1883,10 @@ impl RustGameRouteService {
             return Ok(main_quest_dialogue_failure("没有可用的对话"));
         };
 
-        let Some(dialogue) = auxiliary_catalog.dialogue_by_id.get(resolved_dialogue_id.as_str()) else {
+        let Some(dialogue) = auxiliary_catalog
+            .dialogue_by_id
+            .get(resolved_dialogue_id.as_str())
+        else {
             return Ok(main_quest_dialogue_failure("对话不存在"));
         };
 
@@ -1952,16 +1955,28 @@ impl RustGameRouteService {
             .flatten()
             .unwrap_or_else(|| "not_started".to_string());
         let mut dialogue_state = parse_dialogue_state(
-            progress_row.try_get::<Option<Value>, _>("dialogue_state").ok().flatten(),
+            progress_row
+                .try_get::<Option<Value>, _>("dialogue_state")
+                .ok()
+                .flatten(),
         );
-        let mut dialogue_id = dialogue_state.as_ref().map(|value| value.dialogue_id.clone());
+        let mut dialogue_id = dialogue_state
+            .as_ref()
+            .map(|value| value.dialogue_id.clone());
 
         if dialogue_id.is_none() {
-            dialogue_id = resolve_main_quest_dialogue_id(catalog, section_id.as_str(), section_status.as_str());
+            dialogue_id = resolve_main_quest_dialogue_id(
+                catalog,
+                section_id.as_str(),
+                section_status.as_str(),
+            );
             let Some(resolved_dialogue_id) = dialogue_id.clone() else {
                 return Ok(main_quest_dialogue_failure("没有进行中的对话"));
             };
-            let Some(dialogue) = auxiliary_catalog.dialogue_by_id.get(resolved_dialogue_id.as_str()) else {
+            let Some(dialogue) = auxiliary_catalog
+                .dialogue_by_id
+                .get(resolved_dialogue_id.as_str())
+            else {
                 return Ok(main_quest_dialogue_failure("对话不存在"));
             };
             dialogue_state = Some(build_dialogue_state_from_seed(dialogue));
@@ -1986,7 +2001,9 @@ impl RustGameRouteService {
         .await?;
         current_state.pending_effects = Vec::new();
 
-        let Some(current_node) = find_dialogue_node(dialogue, current_state.current_node_id.as_str()) else {
+        let Some(current_node) =
+            find_dialogue_node(dialogue, current_state.current_node_id.as_str())
+        else {
             return Ok(main_quest_dialogue_failure("对话节点不存在"));
         };
         if current_node.node_type.as_deref() == Some("choice") {
@@ -2042,7 +2059,10 @@ impl RustGameRouteService {
             .commit()
             .await
             .map_err(internal_sql_business_error)?;
-        Ok(main_quest_dialogue_success(next_state, Some(effect_results)))
+        Ok(main_quest_dialogue_success(
+            next_state,
+            Some(effect_results),
+        ))
     }
 
     async fn choose_main_quest_dialogue_impl(
@@ -2091,7 +2111,10 @@ impl RustGameRouteService {
             .flatten()
             .unwrap_or_default();
         let Some(current_state) = parse_dialogue_state(
-            progress_row.try_get::<Option<Value>, _>("dialogue_state").ok().flatten(),
+            progress_row
+                .try_get::<Option<Value>, _>("dialogue_state")
+                .ok()
+                .flatten(),
         ) else {
             return Ok(main_quest_dialogue_failure("没有进行中的对话"));
         };
@@ -2138,7 +2161,10 @@ impl RustGameRouteService {
             .commit()
             .await
             .map_err(internal_sql_business_error)?;
-        Ok(main_quest_dialogue_success(next_state, Some(effect_results)))
+        Ok(main_quest_dialogue_success(
+            next_state,
+            Some(effect_results),
+        ))
     }
 
     async fn complete_main_quest_section_impl(
@@ -2866,9 +2892,7 @@ fn build_dialogue_state_from_seed(dialogue: &DialogueSeed) -> GameHomeDialogueSt
             .as_ref()
             .map(|node| node.id.clone())
             .unwrap_or_default(),
-        current_node: start_node
-            .as_ref()
-            .map(dialogue_node_to_value),
+        current_node: start_node.as_ref().map(dialogue_node_to_value),
         selected_choices: Vec::new(),
         is_complete: start_node.is_none(),
         pending_effects,
@@ -3676,7 +3700,9 @@ fn build_decorated_main_quest_rewards(
                     .items
                     .iter()
                     .map(|item| {
-                        let meta = auxiliary_catalog.item_meta_by_id.get(item.item_def_id.as_str());
+                        let meta = auxiliary_catalog
+                            .item_meta_by_id
+                            .get(item.item_def_id.as_str());
                         serde_json::json!({
                             "item_def_id": item.item_def_id,
                             "quantity": item.quantity,
@@ -3794,7 +3820,9 @@ async fn apply_main_quest_reward_payload_tx(
         .await?;
     }
     for item in &payload.items {
-        let meta = auxiliary_catalog.item_meta_by_id.get(item.item_def_id.as_str());
+        let meta = auxiliary_catalog
+            .item_meta_by_id
+            .get(item.item_def_id.as_str());
         reward_results.push(serde_json::json!({
             "type": "item",
             "itemDefId": item.item_def_id,
