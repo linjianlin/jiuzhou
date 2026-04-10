@@ -1,0 +1,13 @@
+{
+  "active": true,
+  "iteration": 1,
+  "minIterations": 1,
+  "maxIterations": 10,
+  "completionPromise": "COMPLETE",
+  "tasksMode": false,
+  "taskPromise": "READY_FOR_NEXT_TASK",
+  "prompt": "根据Node版本的后端完成RUST版本后端的开发",
+  "startedAt": "2026-04-10T01:06:00.782Z",
+  "model": "",
+  "agent": "codex"
+}

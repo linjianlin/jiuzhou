@@ -1,0 +1,8 @@
+pub mod auth;
+pub mod captcha;
+pub mod character;
+pub mod idle;
+pub mod info;
+pub mod map;
+pub mod technique;
+pub mod upload;

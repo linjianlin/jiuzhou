@@ -1,0 +1,27 @@
+[package]
+name = "jiuzhou-server-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros", "multipart"] }
+base64 = "0.22"
+bcrypt = "0.16"
+config = { version = "0.15", default-features = false, features = ["toml"] }
+hex = "0.4"
+jsonwebtoken = "9"
+redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "net"] }
+socketioxide = { version = "0.18.2", features = ["state", "tracing"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+urlencoding = "2.1"
+
+[dev-dependencies]
+http-body-util = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tower = { version = "0.5", features = ["util"] }
