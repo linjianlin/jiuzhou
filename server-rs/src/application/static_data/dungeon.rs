@@ -199,7 +199,9 @@ struct ItemSeedFile {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ItemSeed {
+    #[serde(default)]
     id: String,
+    #[serde(default)]
     name: String,
     quality: Option<String>,
     icon: Option<String>,
@@ -216,7 +218,9 @@ struct MonsterSeedFile {
 
 #[derive(Debug, Clone, Deserialize)]
 struct MonsterSeed {
+    #[serde(default)]
     id: String,
+    #[serde(default)]
     name: String,
     realm: Option<String>,
     level: Option<i32>,
@@ -309,6 +313,7 @@ struct DropPoolSeedFile {
 
 #[derive(Debug, Clone, Deserialize)]
 struct DropPoolSeed {
+    #[serde(default)]
     id: String,
     name: Option<String>,
     mode: Option<String>,
@@ -464,12 +469,19 @@ fn build_dungeon_static_catalog() -> Result<DungeonStaticCatalog, AppError> {
     let item_meta_by_id = read_seed_json::<ItemSeedFile>("item_def.json")?
         .items
         .into_iter()
-        .filter(|entry| is_enabled(entry.enabled))
-        .map(|entry| {
+        .filter_map(|entry| {
+            if !is_enabled(entry.enabled) {
+                return None;
+            }
+            let item_id = entry.id.trim().to_string();
+            let item_name = entry.name.trim().to_string();
+            if item_id.is_empty() || item_name.is_empty() {
+                return None;
+            }
             (
-                entry.id.clone(),
+                item_id,
                 ItemMeta {
-                    name: entry.name,
+                    name: item_name,
                     quality: entry.quality,
                     icon: entry.icon,
                     category: normalize_token(entry.category.as_deref()),
@@ -477,18 +489,26 @@ fn build_dungeon_static_catalog() -> Result<DungeonStaticCatalog, AppError> {
                     effect_defs: entry.effect_defs.unwrap_or_default(),
                 },
             )
+                .into()
         })
         .collect::<HashMap<_, _>>();
 
     let monster_meta_by_id = read_seed_json::<MonsterSeedFile>("monster_def.json")?
         .monsters
         .into_iter()
-        .filter(|entry| is_enabled(entry.enabled))
-        .map(|entry| {
+        .filter_map(|entry| {
+            if !is_enabled(entry.enabled) {
+                return None;
+            }
+            let monster_id = entry.id.trim().to_string();
+            let monster_name = entry.name.trim().to_string();
+            if monster_id.is_empty() || monster_name.is_empty() {
+                return None;
+            }
             (
-                entry.id.clone(),
+                monster_id,
                 MonsterMeta {
-                    name: entry.name,
+                    name: monster_name,
                     realm: entry.realm,
                     level: entry.level.unwrap_or(0),
                     avatar: entry.avatar,
@@ -496,6 +516,7 @@ fn build_dungeon_static_catalog() -> Result<DungeonStaticCatalog, AppError> {
                     drop_pool_id: entry.drop_pool_id,
                 },
             )
+                .into()
         })
         .collect::<HashMap<_, _>>();
 
@@ -812,8 +833,16 @@ fn read_enabled_drop_pool_map(file_name: &str) -> Result<HashMap<String, DropPoo
     Ok(read_seed_json::<DropPoolSeedFile>(file_name)?
         .pools
         .into_iter()
-        .filter(|entry| is_enabled(entry.enabled))
-        .map(|entry| (entry.id.clone(), entry))
+        .filter_map(|entry| {
+            if !is_enabled(entry.enabled) {
+                return None;
+            }
+            let pool_id = entry.id.trim().to_string();
+            if pool_id.is_empty() {
+                return None;
+            }
+            Some((pool_id, entry))
+        })
         .collect())
 }
 

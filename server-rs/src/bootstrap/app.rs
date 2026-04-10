@@ -14,9 +14,12 @@ use crate::edge::http::routes::character::build_character_router;
 use crate::edge::http::routes::dungeon::build_dungeon_router;
 use crate::edge::http::routes::idle::{build_idle_router, IdleRouteServices};
 use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
+use crate::edge::http::routes::inventory::{build_inventory_router, InventoryRouteServices};
 use crate::edge::http::routes::map::build_map_router;
+use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
+use crate::edge::http::routes::title::{build_title_router, TitleRouteServices};
 use crate::edge::http::routes::upload::{build_upload_router, UploadRouteServices};
 use crate::edge::socket::default_socket::attach_default_socket_layer;
 use crate::edge::socket::game_socket::{attach_game_socket_layer, GameSocketAuthServices};
@@ -70,7 +73,10 @@ pub struct AppState {
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub info_services: Arc<dyn InfoRouteServices>,
+    pub inventory_services: Arc<dyn InventoryRouteServices>,
+    pub rank_services: Arc<dyn RankRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
+    pub title_services: Arc<dyn TitleRouteServices>,
     pub upload_services: Arc<dyn UploadRouteServices>,
     pub game_socket_services: Arc<dyn GameSocketAuthServices>,
     pub settings: Settings,
@@ -105,8 +111,11 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/idle", build_idle_router())
         .nest("/api/captcha", build_captcha_router())
         .nest("/api/info", build_info_router())
+        .nest("/api/inventory", build_inventory_router())
         .nest("/api/map", build_map_router())
+        .nest("/api/rank", build_rank_router())
         .nest("/api/technique", build_technique_router())
+        .nest("/api/title", build_title_router())
         .nest("/api/upload", build_upload_router())
         .merge(build_time_router())
         .with_state(state.clone());

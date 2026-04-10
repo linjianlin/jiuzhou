@@ -339,6 +339,14 @@ fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
         auth_services: Arc::new(FakeAuthServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
+        info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
+        inventory_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
+        ),
+        title_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
+        ),
+        rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
         upload_services: Arc::new(RustUploadService::with_local_storage_root(upload_dir)),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),

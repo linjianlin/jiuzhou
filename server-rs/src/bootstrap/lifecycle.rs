@@ -6,9 +6,12 @@ use tracing::info;
 
 use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::auth::service::RustAuthServices;
-use crate::application::info::service::RustInfoService;
 use crate::application::idle::service::RustIdleRouteService;
+use crate::application::info::service::RustInfoService;
+use crate::application::inventory::service::RustInventoryReadService;
+use crate::application::rank::service::RustRankRouteService;
 use crate::application::time::service::RustTimeService;
+use crate::application::title::service::RustTitleRouteService;
 use crate::application::upload::service::RustUploadService;
 use crate::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
@@ -73,7 +76,12 @@ pub async fn run_application() -> Result<(), AppError> {
         auth_services,
         idle_services,
         info_services: std::sync::Arc::new(RustInfoService::new(postgres.pool.clone())),
+        inventory_services: std::sync::Arc::new(RustInventoryReadService::new(
+            postgres.pool.clone(),
+        )),
+        rank_services: std::sync::Arc::new(RustRankRouteService::new(postgres.pool.clone())),
         time_services: std::sync::Arc::new(RustTimeService::new()),
+        title_services: std::sync::Arc::new(RustTitleRouteService::new(postgres.pool.clone())),
         upload_services,
         game_socket_services,
         settings,

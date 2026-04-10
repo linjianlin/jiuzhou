@@ -34,6 +34,14 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         auth_services: auth_services.clone(),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
+        info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
+        inventory_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
+        ),
+        title_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
+        ),
+        rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: auth_services,
         settings: Settings::from_map(Default::default()).expect("settings"),

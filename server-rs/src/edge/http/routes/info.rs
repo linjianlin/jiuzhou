@@ -211,7 +211,8 @@ impl InfoRouteServices for NoopInfoRouteServices {
         &'a self,
         target_type: InfoTargetType,
         id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<InfoTargetView>, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<InfoTargetView>, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move { get_static_target_detail(target_type, id) })
     }
 }
@@ -224,9 +225,7 @@ pub fn build_info_router() -> Router<AppState> {
 
 async fn item_taxonomy_handler(State(state): State<AppState>) -> Result<Response, BusinessError> {
     let taxonomy = state.info_services.get_item_taxonomy().await?;
-    Ok(success(ItemTaxonomyPayload {
-        taxonomy,
-    }))
+    Ok(success(ItemTaxonomyPayload { taxonomy }))
 }
 
 async fn info_target_detail_handler(
@@ -236,8 +235,15 @@ async fn info_target_detail_handler(
     let Some(target_type) = InfoTargetType::parse(target_type.as_str()) else {
         return Err(BusinessError::new("参数错误"));
     };
-    let Some(target) = state.info_services.get_target_detail(target_type, id.as_str()).await? else {
-        return Err(BusinessError::with_status("对象不存在", StatusCode::NOT_FOUND));
+    let Some(target) = state
+        .info_services
+        .get_target_detail(target_type, id.as_str())
+        .await?
+    else {
+        return Err(BusinessError::with_status(
+            "对象不存在",
+            StatusCode::NOT_FOUND,
+        ));
     };
     Ok(success(InfoTargetPayload { target }))
 }

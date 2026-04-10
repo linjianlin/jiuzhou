@@ -27,8 +27,15 @@ const CATEGORY_LABEL_FALLBACK: [(&str, &str); 6] = [
     ("quest", "任务"),
     ("other", "其他"),
 ];
-const CATEGORY_PREFERRED_ORDER: [&str; 6] = ["consumable", "material", "gem", "equipment", "quest", "other"];
-const SUB_CATEGORY_LABEL_FALLBACK: [(&str, &str); 42] = [
+const CATEGORY_PREFERRED_ORDER: [&str; 6] = [
+    "consumable",
+    "material",
+    "gem",
+    "equipment",
+    "quest",
+    "other",
+];
+const SUB_CATEGORY_LABEL_FALLBACK: [(&str, &str); 43] = [
     ("accessory", "饰品"),
     ("armor", "护甲"),
     ("battle_pass", "战令道具"),
@@ -73,7 +80,8 @@ const SUB_CATEGORY_LABEL_FALLBACK: [(&str, &str); 42] = [
     ("sword", "剑"),
     ("talisman", "法宝（护符）"),
 ];
-const EXTRA_SUB_CATEGORY_LABEL_FALLBACK: [(&str, &str); 2] = [("technique", "功法材料"), ("technique_book", "功法书")];
+const EXTRA_SUB_CATEGORY_LABEL_FALLBACK: [(&str, &str); 2] =
+    [("technique", "功法材料"), ("technique_book", "功法书")];
 
 const RATIO_ATTR_KEYS: [&str; 12] = [
     "mingzhong",
@@ -127,7 +135,7 @@ const REALM_ORDER: [&str; 13] = [
     "炼虚合道·成圣期",
 ];
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RustInfoService {
     pool: sqlx::PgPool,
 }
@@ -218,8 +226,8 @@ struct DropPoolSeedFile {
 
 #[derive(Debug, Clone, Deserialize)]
 struct ItemSeed {
-    id: String,
-    name: String,
+    id: Option<String>,
+    name: Option<String>,
     category: Option<String>,
     sub_category: Option<String>,
     quality: Option<String>,
@@ -234,8 +242,8 @@ struct ItemSeed {
 
 #[derive(Debug, Clone, Deserialize)]
 struct NpcSeed {
-    id: String,
-    name: String,
+    id: Option<String>,
+    name: Option<String>,
     title: Option<String>,
     gender: Option<String>,
     realm: Option<String>,
@@ -247,8 +255,8 @@ struct NpcSeed {
 
 #[derive(Debug, Clone, Deserialize)]
 struct MonsterSeed {
-    id: String,
-    name: String,
+    id: Option<String>,
+    name: Option<String>,
     title: Option<String>,
     realm: Option<String>,
     avatar: Option<String>,
@@ -263,8 +271,8 @@ struct MonsterSeed {
 
 #[derive(Debug, Clone, Deserialize)]
 struct TechniqueSeed {
-    id: String,
-    name: String,
+    id: Option<String>,
+    name: Option<String>,
     #[serde(rename = "type")]
     technique_type: Option<String>,
     enabled: Option<bool>,
@@ -272,7 +280,7 @@ struct TechniqueSeed {
 
 #[derive(Debug, Clone, Deserialize)]
 struct DropPoolSeed {
-    id: String,
+    id: Option<String>,
     mode: Option<String>,
     common_pool_ids: Option<Vec<String>>,
     entries: Option<Vec<DropPoolEntrySeed>>,
@@ -316,7 +324,10 @@ impl RustInfoService {
         Self { pool }
     }
 
-    async fn get_player_target_detail(&self, id: &str) -> Result<Option<InfoTargetView>, BusinessError> {
+    async fn get_player_target_detail(
+        &self,
+        id: &str,
+    ) -> Result<Option<InfoTargetView>, BusinessError> {
         let character_id = id.trim().parse::<i64>().ok().filter(|value| *value > 0);
         let Some(character_id) = character_id else {
             return Ok(None);
@@ -333,7 +344,7 @@ impl RustInfoService {
         .bind(character_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(internal_business_error)?;
+        .map_err(sqlx_business_error)?;
 
         let Some(row) = row else {
             return Ok(None);
@@ -351,20 +362,32 @@ impl RustInfoService {
         .bind(character_id)
         .fetch_all(&self.pool)
         .await
-        .map_err(internal_business_error)?;
+        .map_err(sqlx_business_error)?;
 
         let techniques = technique_rows
             .into_iter()
             .filter_map(|entry| {
-                let technique_id = entry.try_get::<String, _>("technique_id").ok()?.trim().to_string();
+                let technique_id = entry
+                    .try_get::<String, _>("technique_id")
+                    .ok()?
+                    .trim()
+                    .to_string();
                 if technique_id.is_empty() {
                     return None;
                 }
                 let meta = index.techniques_by_id.get(technique_id.as_str())?;
-                let current_layer = entry.try_get::<Option<i32>, _>("current_layer").ok().flatten().unwrap_or(0);
+                let current_layer = entry
+                    .try_get::<Option<i32>, _>("current_layer")
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0);
                 Some(InfoTargetTechniqueEntry {
                     name: meta.name.clone(),
-                    level: if current_layer > 0 { format!("{current_layer}重") } else { "-".to_string() },
+                    level: if current_layer > 0 {
+                        format!("{current_layer}重")
+                    } else {
+                        "-".to_string()
+                    },
                     technique_type: if meta.technique_type.trim().is_empty() {
                         "功法".to_string()
                     } else {
@@ -390,9 +413,15 @@ impl RustInfoService {
                 nickname.trim().to_string()
             },
             month_card_active: None,
-            title: Some(if resolved_title.is_empty() { "散修".to_string() } else { resolved_title.to_string() }),
+            title: Some(if resolved_title.is_empty() {
+                "散修".to_string()
+            } else {
+                resolved_title.to_string()
+            }),
             title_description: None,
-            gender: Some(normalize_gender(Some(gender.as_str())).unwrap_or_else(|| "-".to_string())),
+            gender: Some(
+                normalize_gender(Some(gender.as_str())).unwrap_or_else(|| "-".to_string()),
+            ),
             realm: Some(build_full_realm(Some(realm.as_str()), sub_realm.as_deref())),
             avatar,
             stats: None,
@@ -413,7 +442,8 @@ impl InfoRouteServices for RustInfoService {
         &'a self,
         target_type: InfoTargetType,
         id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<InfoTargetView>, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<InfoTargetView>, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             match target_type {
                 InfoTargetType::Player => self.get_player_target_detail(id).await,
@@ -424,7 +454,10 @@ impl InfoRouteServices for RustInfoService {
 }
 
 pub fn get_item_taxonomy_snapshot() -> Result<GameItemTaxonomyDto, BusinessError> {
-    Ok(info_static_index().map_err(internal_business_error)?.taxonomy.clone())
+    Ok(info_static_index()
+        .map_err(internal_business_error)?
+        .taxonomy
+        .clone())
 }
 
 pub fn get_static_target_detail(
@@ -438,7 +471,10 @@ pub fn get_static_target_detail(
 
     let index = info_static_index().map_err(internal_business_error)?;
     let detail = match target_type {
-        InfoTargetType::Npc => index.npcs_by_id.get(target_id).map(|entry| build_npc_target(entry, index)),
+        InfoTargetType::Npc => index
+            .npcs_by_id
+            .get(target_id)
+            .map(|entry| build_npc_target(entry, index)),
         InfoTargetType::Monster => index
             .monsters_by_id
             .get(target_id)
@@ -450,7 +486,8 @@ pub fn get_static_target_detail(
 }
 
 fn info_static_index() -> Result<&'static InfoStaticIndex, AppError> {
-    let result = INFO_STATIC_INDEX.get_or_init(|| build_info_static_index().map_err(|error| error.to_string()));
+    let result = INFO_STATIC_INDEX
+        .get_or_init(|| build_info_static_index().map_err(|error| error.to_string()));
     match result {
         Ok(index) => Ok(index),
         Err(message) => Err(AppError::Config(message.clone())),
@@ -465,20 +502,33 @@ fn build_info_static_index() -> Result<InfoStaticIndex, AppError> {
     let exclusive_pools = read_seed_json::<DropPoolSeedFile>("drop_pool.json")?.pools;
     let common_pools = read_seed_json::<DropPoolSeedFile>("drop_pool_common.json")?.pools;
 
-    let enabled_items = items.into_iter().filter(|entry| is_enabled(entry.enabled)).collect::<Vec<_>>();
-    let enabled_npcs = npcs.into_iter().filter(|entry| is_enabled(entry.enabled)).collect::<Vec<_>>();
-    let enabled_monsters = monsters.into_iter().filter(|entry| is_enabled(entry.enabled)).collect::<Vec<_>>();
+    let enabled_items = items
+        .into_iter()
+        .filter(|entry| is_enabled(entry.enabled))
+        .collect::<Vec<_>>();
+    let enabled_npcs = npcs
+        .into_iter()
+        .filter(|entry| is_enabled(entry.enabled))
+        .collect::<Vec<_>>();
+    let enabled_monsters = monsters
+        .into_iter()
+        .filter(|entry| is_enabled(entry.enabled))
+        .collect::<Vec<_>>();
 
     let taxonomy = build_item_taxonomy(&enabled_items);
     let items_by_id = enabled_items
         .into_iter()
-        .map(|entry| {
-            let id = entry.id.trim().to_string();
-            (
+        .filter_map(|entry| {
+            let id = entry.id.unwrap_or_default().trim().to_string();
+            let name = entry.name.unwrap_or_default().trim().to_string();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some((
                 id.clone(),
                 ItemStaticMeta {
                     id,
-                    name: entry.name,
+                    name,
                     category: normalize_optional_text(entry.category),
                     sub_category: normalize_optional_text(entry.sub_category),
                     quality: normalize_optional_text(entry.quality),
@@ -489,18 +539,22 @@ fn build_info_static_index() -> Result<InfoStaticIndex, AppError> {
                     use_req_realm: normalize_optional_text(entry.use_req_realm),
                     base_attrs: entry.base_attrs,
                 },
-            )
+            ))
         })
         .collect::<HashMap<_, _>>();
     let npcs_by_id = enabled_npcs
         .into_iter()
-        .map(|entry| {
-            let id = entry.id.trim().to_string();
-            (
+        .filter_map(|entry| {
+            let id = entry.id.unwrap_or_default().trim().to_string();
+            let name = entry.name.unwrap_or_default().trim().to_string();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some((
                 id.clone(),
                 NpcStaticMeta {
                     id,
-                    name: entry.name,
+                    name,
                     title: normalize_optional_text(entry.title),
                     gender: normalize_optional_text(entry.gender),
                     realm: normalize_optional_text(entry.realm),
@@ -508,18 +562,22 @@ fn build_info_static_index() -> Result<InfoStaticIndex, AppError> {
                     description: normalize_optional_text(entry.description),
                     drop_pool_id: normalize_optional_text(entry.drop_pool_id),
                 },
-            )
+            ))
         })
         .collect::<HashMap<_, _>>();
     let monsters_by_id = enabled_monsters
         .into_iter()
-        .map(|entry| {
-            let id = entry.id.trim().to_string();
-            (
+        .filter_map(|entry| {
+            let id = entry.id.unwrap_or_default().trim().to_string();
+            let name = entry.name.unwrap_or_default().trim().to_string();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some((
                 id.clone(),
                 MonsterStaticMeta {
                     id,
-                    name: entry.name,
+                    name,
                     title: normalize_optional_text(entry.title),
                     realm: normalize_optional_text(entry.realm),
                     avatar: normalize_optional_text(entry.avatar),
@@ -530,31 +588,43 @@ fn build_info_static_index() -> Result<InfoStaticIndex, AppError> {
                     attr_multiplier_max: entry.attr_multiplier_max,
                     drop_pool_id: normalize_optional_text(entry.drop_pool_id),
                 },
-            )
+            ))
         })
         .collect::<HashMap<_, _>>();
     let techniques_by_id = techniques
         .into_iter()
         .filter(|entry| is_enabled(entry.enabled))
-        .map(|entry| {
-            (
-                entry.id.trim().to_string(),
+        .filter_map(|entry| {
+            let id = entry.id.unwrap_or_default().trim().to_string();
+            let name = entry.name.unwrap_or_default().trim().to_string();
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some((
+                id,
                 TechniqueStaticMeta {
-                    name: entry.name.trim().to_string(),
-                    technique_type: normalize_optional_text(entry.technique_type).unwrap_or_else(|| "功法".to_string()),
+                    name,
+                    technique_type: normalize_optional_text(entry.technique_type)
+                        .unwrap_or_else(|| "功法".to_string()),
                 },
-            )
+            ))
         })
         .collect::<HashMap<_, _>>();
     let exclusive_pools_by_id = exclusive_pools
         .into_iter()
         .filter(|entry| is_enabled(entry.enabled))
-        .map(|entry| (entry.id.trim().to_string(), entry))
+        .filter_map(|entry| {
+            let id = entry.id.clone().unwrap_or_default().trim().to_string();
+            (!id.is_empty()).then_some((id, entry))
+        })
         .collect::<HashMap<_, _>>();
     let common_pools_by_id = common_pools
         .into_iter()
         .filter(|entry| is_enabled(entry.enabled))
-        .map(|entry| (entry.id.trim().to_string(), entry))
+        .filter_map(|entry| {
+            let id = entry.id.clone().unwrap_or_default().trim().to_string();
+            (!id.is_empty()).then_some((id, entry))
+        })
         .collect::<HashMap<_, _>>();
 
     Ok(InfoStaticIndex {
@@ -571,13 +641,16 @@ fn build_info_static_index() -> Result<InfoStaticIndex, AppError> {
 fn build_item_taxonomy(items: &[ItemSeed]) -> GameItemTaxonomyDto {
     let mut category_set = BTreeSet::<String>::new();
     let mut sub_category_labels = BTreeMap::<String, String>::new();
-    let mut sub_category_by_category = BTreeMap::<String, Vec<String>>::from([("all".to_string(), Vec::new())]);
+    let mut sub_category_by_category =
+        BTreeMap::<String, Vec<String>>::from([("all".to_string(), Vec::new())]);
 
     for item in items {
         let category = normalize_token(item.category.as_deref());
         if let Some(category) = category.as_ref() {
             category_set.insert(category.clone());
-            sub_category_by_category.entry(category.clone()).or_default();
+            sub_category_by_category
+                .entry(category.clone())
+                .or_default();
         }
 
         let Some(sub_category) = normalize_token(item.sub_category.as_deref()) else {
@@ -588,24 +661,43 @@ fn build_item_taxonomy(items: &[ItemSeed]) -> GameItemTaxonomyDto {
             let label = lookup_sub_category_label(sub_category.as_str());
             sub_category_labels.insert(sub_category.clone(), label.to_string());
         }
-        push_unique(sub_category_by_category.entry("all".to_string()).or_default(), sub_category.as_str());
+        push_unique(
+            sub_category_by_category
+                .entry("all".to_string())
+                .or_default(),
+            sub_category.as_str(),
+        );
         if let Some(category) = category.as_ref() {
-            push_unique(sub_category_by_category.entry(category.clone()).or_default(), sub_category.as_str());
+            push_unique(
+                sub_category_by_category
+                    .entry(category.clone())
+                    .or_default(),
+                sub_category.as_str(),
+            );
         }
     }
 
     let category_values = sort_category_values(category_set.into_iter().collect());
-    let mut category_labels = BTreeMap::<String, String>::from([("all".to_string(), "全部".to_string())]);
+    let mut category_labels =
+        BTreeMap::<String, String>::from([("all".to_string(), "全部".to_string())]);
     for category in &category_values {
-        category_labels.insert(category.clone(), lookup_category_label(category).to_string());
-        sub_category_by_category.entry(category.clone()).or_default();
+        category_labels.insert(
+            category.clone(),
+            lookup_category_label(category).to_string(),
+        );
+        sub_category_by_category
+            .entry(category.clone())
+            .or_default();
     }
 
     let category_options = category_values
         .iter()
         .map(|value| ItemTaxonomyOptionDto {
             value: value.clone(),
-            label: category_labels.get(value).cloned().unwrap_or_else(|| value.clone()),
+            label: category_labels
+                .get(value)
+                .cloned()
+                .unwrap_or_else(|| value.clone()),
         })
         .collect::<Vec<_>>();
     let sub_category_options = sub_category_labels
@@ -689,7 +781,10 @@ fn build_monster_target(entry: &MonsterStaticMeta, index: &InfoStaticIndex) -> I
 }
 
 fn build_item_target(entry: &ItemStaticMeta) -> InfoTargetView {
-    let desc = entry.long_desc.clone().or_else(|| entry.description.clone());
+    let desc = entry
+        .long_desc
+        .clone()
+        .or_else(|| entry.description.clone());
     let realm = entry
         .equip_req_realm
         .clone()
@@ -768,20 +863,34 @@ fn resolve_drop_pool(drop_pool_id: &str, index: &InfoStaticIndex) -> Option<Reso
             continue;
         };
         for entry in common_pool.entries.clone().unwrap_or_default() {
-            let Some(normalized) = normalize_drop_entry(entry, common_pool.mode.as_deref().unwrap_or("prob"), "common", common_pool_id) else {
+            let Some(normalized) = normalize_drop_entry(
+                entry,
+                common_pool.mode.as_deref().unwrap_or("prob"),
+                "common",
+                common_pool_id,
+            ) else {
                 continue;
             };
             merged.insert(normalized.item_def_id.clone(), normalized);
         }
     }
     for entry in exclusive.entries.clone().unwrap_or_default() {
-        let Some(normalized) = normalize_drop_entry(entry, exclusive.mode.as_deref().unwrap_or("prob"), "exclusive", pool_id) else {
+        let Some(normalized) = normalize_drop_entry(
+            entry,
+            exclusive.mode.as_deref().unwrap_or("prob"),
+            "exclusive",
+            pool_id,
+        ) else {
             continue;
         };
         merged.insert(normalized.item_def_id.clone(), normalized);
     }
     let mut entries = merged.into_values().collect::<Vec<_>>();
-    entries.sort_by(|left, right| left.sort_order.cmp(&right.sort_order).then_with(|| left.item_def_id.cmp(&right.item_def_id)));
+    entries.sort_by(|left, right| {
+        left.sort_order
+            .cmp(&right.sort_order)
+            .then_with(|| left.item_def_id.cmp(&right.item_def_id))
+    });
     Some(ResolvedDropPoolView {
         mode: exclusive.mode.clone().unwrap_or_else(|| "prob".to_string()),
         entries,
@@ -810,7 +919,11 @@ fn normalize_drop_entry(
     let qty_min = entry.qty_min.unwrap_or(1).max(1);
     let qty_max = entry.qty_max.unwrap_or(qty_min).max(qty_min);
     Some(ResolvedDropEntry {
-        mode: if mode == "weight" { "weight".to_string() } else { "prob".to_string() },
+        mode: if mode == "weight" {
+            "weight".to_string()
+        } else {
+            "prob".to_string()
+        },
         item_def_id,
         chance: entry.chance.unwrap_or(0.0).max(0.0),
         weight: entry.weight.unwrap_or(0.0).max(0.0),
@@ -818,7 +931,10 @@ fn normalize_drop_entry(
         qty_min,
         qty_max,
         qty_min_add_by_monster_realm: entry.qty_min_add_by_monster_realm.unwrap_or(0.0).max(0.0),
-        qty_max_add_by_monster_realm: entry.qty_max_add_by_monster_realm.unwrap_or(entry.qty_min_add_by_monster_realm.unwrap_or(0.0)).max(entry.qty_min_add_by_monster_realm.unwrap_or(0.0)),
+        qty_max_add_by_monster_realm: entry
+            .qty_max_add_by_monster_realm
+            .unwrap_or(entry.qty_min_add_by_monster_realm.unwrap_or(0.0))
+            .max(entry.qty_min_add_by_monster_realm.unwrap_or(0.0)),
         qty_multiply_by_monster_realm: entry.qty_multiply_by_monster_realm.unwrap_or(1.0).max(1.0),
         sort_order: entry.sort_order.unwrap_or(0).max(0),
         source_type: source_type.to_string(),
@@ -828,7 +944,10 @@ fn normalize_drop_entry(
 
 fn adjusted_chance(entry: &ResolvedDropEntry, monster: Option<&MonsterStaticMeta>) -> f64 {
     let realm_bonus = monster
-        .map(|meta| get_realm_rank_zero_based(meta.realm.as_deref()) as f64 * entry.chance_add_by_monster_realm)
+        .map(|meta| {
+            get_realm_rank_zero_based(meta.realm.as_deref()) as f64
+                * entry.chance_add_by_monster_realm
+        })
         .unwrap_or(0.0);
     let common_multiplier = if entry.source_type == "common" {
         get_common_pool_multiplier(entry.source_pool_id.as_str(), monster)
@@ -852,8 +971,12 @@ fn adjusted_quantity_range(
     item: &ItemStaticMeta,
     monster: Option<&MonsterStaticMeta>,
 ) -> (i32, i32) {
-    let realm_rank = monster.map(|meta| get_realm_rank_zero_based(meta.realm.as_deref()) as f64).unwrap_or(0.0);
-    let base_min = (entry.qty_min as f64 + realm_rank * entry.qty_min_add_by_monster_realm).floor().max(1.0) as i32;
+    let realm_rank = monster
+        .map(|meta| get_realm_rank_zero_based(meta.realm.as_deref()) as f64)
+        .unwrap_or(0.0);
+    let base_min = (entry.qty_min as f64 + realm_rank * entry.qty_min_add_by_monster_realm)
+        .floor()
+        .max(1.0) as i32;
     let base_max = (entry.qty_max as f64 + realm_rank * entry.qty_max_add_by_monster_realm)
         .floor()
         .max(base_min as f64) as i32;
@@ -866,14 +989,20 @@ fn adjusted_quantity_range(
         1.0
     };
     let min_after_common = ((base_min as f64) * common_multiplier).floor().max(1.0) as i32;
-    let max_after_common = ((base_max as f64) * common_multiplier).floor().max(min_after_common as f64) as i32;
+    let max_after_common = ((base_max as f64) * common_multiplier)
+        .floor()
+        .max(min_after_common as f64) as i32;
     let realm_multiplier = if entry.qty_multiply_by_monster_realm <= 1.0 {
         1.0
     } else {
         1.0 + (entry.qty_multiply_by_monster_realm - 1.0) * (realm_rank + 1.0)
     };
-    let final_min = ((min_after_common as f64) * realm_multiplier).floor().max(1.0) as i32;
-    let final_max = ((max_after_common as f64) * realm_multiplier).floor().max(final_min as f64) as i32;
+    let final_min = ((min_after_common as f64) * realm_multiplier)
+        .floor()
+        .max(1.0) as i32;
+    let final_max = ((max_after_common as f64) * realm_multiplier)
+        .floor()
+        .max(final_min as f64) as i32;
     (final_min, final_max)
 }
 
@@ -986,7 +1115,10 @@ fn format_percent(value: f64) -> String {
 
 fn get_realm_rank_zero_based(realm: Option<&str>) -> usize {
     let normalized = realm.unwrap_or("凡人").trim();
-    REALM_ORDER.iter().position(|entry| *entry == normalized).unwrap_or(0)
+    REALM_ORDER
+        .iter()
+        .position(|entry| *entry == normalized)
+        .unwrap_or(0)
 }
 
 fn is_enabled(value: Option<bool>) -> bool {
@@ -1026,8 +1158,14 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
 
 fn sort_category_values(mut values: Vec<String>) -> Vec<String> {
     values.sort_by(|left, right| {
-        let left_index = CATEGORY_PREFERRED_ORDER.iter().position(|value| *value == left).unwrap_or(usize::MAX);
-        let right_index = CATEGORY_PREFERRED_ORDER.iter().position(|value| *value == right).unwrap_or(usize::MAX);
+        let left_index = CATEGORY_PREFERRED_ORDER
+            .iter()
+            .position(|value| *value == left)
+            .unwrap_or(usize::MAX);
+        let right_index = CATEGORY_PREFERRED_ORDER
+            .iter()
+            .position(|value| *value == right)
+            .unwrap_or(usize::MAX);
         left_index.cmp(&right_index).then_with(|| left.cmp(right))
     });
     values
@@ -1044,6 +1182,11 @@ fn is_ratio_attr(value: &str) -> bool {
 }
 
 fn internal_business_error(error: AppError) -> BusinessError {
+    let _ = error;
+    BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn sqlx_business_error(error: sqlx::Error) -> BusinessError {
     let _ = error;
     BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }

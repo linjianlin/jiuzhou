@@ -93,7 +93,15 @@ pub fn build_runtime_services(
 
 pub async fn execute_with_runtime(context: &StartupContext) -> Result<StartupExecution, AppError> {
     let recovery = load_runtime_recovery(context).await?;
-    execute_with_recovery(context, recovery).await
+    let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
+    execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        |_| {},
+        true,
+    )
+    .await
 }
 
 pub async fn execute_with_runtime_target(
@@ -101,7 +109,14 @@ pub async fn execute_with_runtime_target(
     runtime_services: SharedRuntimeServices,
 ) -> Result<StartupExecution, AppError> {
     let recovery = load_runtime_recovery(context).await?;
-    execute_with_recovery_target(context, recovery, runtime_services).await
+    execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        |_| {},
+        true,
+    )
+    .await
 }
 
 pub async fn execute_with_recovery(
@@ -109,7 +124,14 @@ pub async fn execute_with_recovery(
     recovery: RuntimeRecoverySnapshot,
 ) -> Result<StartupExecution, AppError> {
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
-    execute_with_recovery_target_and_observer(context, recovery, runtime_services, |_| {}).await
+    execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        |_| {},
+        false,
+    )
+    .await
 }
 
 pub async fn execute_with_recovery_target(
@@ -117,7 +139,14 @@ pub async fn execute_with_recovery_target(
     recovery: RuntimeRecoverySnapshot,
     runtime_services: SharedRuntimeServices,
 ) -> Result<StartupExecution, AppError> {
-    execute_with_recovery_target_and_observer(context, recovery, runtime_services, |_| {}).await
+    execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        |_| {},
+        false,
+    )
+    .await
 }
 
 pub async fn execute_with_recovery_and_observer<F>(
@@ -129,21 +158,54 @@ where
     F: FnMut(StartupStage),
 {
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
-    execute_with_recovery_target_and_observer(context, recovery, runtime_services, &mut observer)
-        .await
+    execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        &mut observer,
+        false,
+    )
+    .await
 }
 
 pub async fn execute_with_recovery_target_and_observer<F>(
     context: &StartupContext,
     recovery: RuntimeRecoverySnapshot,
     runtime_services: SharedRuntimeServices,
+    observer: F,
+) -> Result<StartupExecution, AppError>
+where
+    F: FnMut(StartupStage),
+{
+    execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        observer,
+        false,
+    )
+    .await
+}
+
+async fn execute_with_recovery_target_and_observer_internal<F>(
+    context: &StartupContext,
+    recovery: RuntimeRecoverySnapshot,
+    runtime_services: SharedRuntimeServices,
     mut observer: F,
+    verify_dependencies: bool,
 ) -> Result<StartupExecution, AppError>
 where
     F: FnMut(StartupStage),
 {
     let runtime_state = build_runtime_services(context, &recovery)?;
-    execute_prepared(context, runtime_services, runtime_state, &mut observer).await
+    execute_prepared(
+        context,
+        runtime_services,
+        runtime_state,
+        &mut observer,
+        verify_dependencies,
+    )
+    .await
 }
 
 pub async fn execute_with_observer<F>(
@@ -154,11 +216,16 @@ where
     F: FnMut(StartupStage),
 {
     let recovery = load_runtime_recovery(context).await?;
-    Ok(
-        execute_with_recovery_and_observer(context, recovery, |stage| observer(stage))
-            .await?
-            .stages,
+    let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
+    Ok(execute_with_recovery_target_and_observer_internal(
+        context,
+        recovery,
+        runtime_services,
+        |stage| observer(stage),
+        true,
     )
+    .await?
+    .stages)
 }
 
 async fn execute_prepared<F>(
@@ -166,6 +233,7 @@ async fn execute_prepared<F>(
     runtime_services: SharedRuntimeServices,
     runtime_state: RuntimeServicesState,
     observer: &mut F,
+    verify_dependencies: bool,
 ) -> Result<StartupExecution, AppError>
 where
     F: FnMut(StartupStage),
@@ -175,7 +243,9 @@ where
     observer(StartupStage::ConfigLoaded);
     executed.push(StartupStage::ConfigLoaded);
 
-    verify_postgres(&context.postgres).await?;
+    if verify_dependencies {
+        verify_postgres(&context.postgres).await?;
+    }
     observer(StartupStage::PostgresReady);
     executed.push(StartupStage::PostgresReady);
 
