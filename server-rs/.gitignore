@@ -1,0 +1,8 @@
+# Rust 构建产物
+/target/
+
+# 本地调试与性能分析产物
+*.profraw
+*.profdata
+*.pdb
+*.rs.bk
