@@ -14,13 +14,13 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  * task 独立路由。
  *
  * 作用：
- * 1. 做什么：补齐 Node `/api/task/overview/summary` 与 `/api/task/track` 两个已被首页/任务面板复用的最小 HTTP 合同。
+ * 1. 做什么：补齐 Node `/api/task/overview`、`/api/task/overview/summary` 与 `/api/task/track` 三个已被首页/任务面板复用的任务 HTTP 合同。
  * 2. 做什么：统一复用 `require_authenticated_character_context`，保持 requireCharacter 的鉴权与 `404 角色不存在` 语义一致。
  * 3. 不做什么：不在这里扩展 NPC 接取、提交、领奖等完整任务写链路；这些仍等待后续领域迁移。
  *
  * 输入 / 输出：
- * - 输入：Authorization Bearer token；summary 可带 `category` query；track 接收 `{ taskId, tracked }`。
- * - 输出：summary 返回 `{ success:true, data:{ tasks } }`；track 返回 Node 兼容 `sendResult` 包体。
+ * - 输入：Authorization Bearer token；overview/summary 可带 `category` query；track 接收 `{ taskId, tracked }`。
+ * - 输出：overview/summary 返回 `{ success:true, data:{ tasks } }`；track 返回 Node 兼容 `sendResult` 包体。
  *
  * 数据流 / 状态流：
  * - HTTP -> 鉴权/角色解析 -> `GameRouteServices` 任务摘要/追踪接口 -> 统一 envelope。
@@ -34,7 +34,7 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  * 2. `taskId` 为空时不能在路由层改造成异常包，必须继续走 `sendResult` 的业务失败形状。
  */
 #[derive(Debug, Deserialize)]
-struct TaskOverviewSummaryQuery {
+struct TaskOverviewQuery {
     category: Option<String>,
 }
 
@@ -47,14 +47,31 @@ struct TaskTrackPayload {
 
 pub fn build_task_router() -> Router<AppState> {
     Router::new()
+        .route("/overview", get(task_overview_handler))
         .route("/overview/summary", get(task_overview_summary_handler))
         .route("/track", post(task_track_handler))
+}
+
+async fn task_overview_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TaskOverviewQuery>,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let data = state
+        .game_services
+        .get_task_overview(context.character.id, query.category)
+        .await?;
+    Ok(success(data))
 }
 
 async fn task_overview_summary_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<TaskOverviewSummaryQuery>,
+    Query(query): Query<TaskOverviewQuery>,
 ) -> Result<Response, BusinessError> {
     let context = match require_authenticated_character_context(&state, &headers).await {
         Ok(context) => context,

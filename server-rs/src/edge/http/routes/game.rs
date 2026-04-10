@@ -123,6 +123,57 @@ pub struct GameHomeTaskSummaryView {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct GameTaskObjectiveView {
+    pub id: String,
+    pub r#type: String,
+    pub text: String,
+    pub done: i32,
+    pub target: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+    pub map_name: Option<String>,
+    pub map_name_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTaskRewardView {
+    pub r#type: String,
+    pub name: String,
+    pub amount: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_def_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount_max: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTaskOverviewItemView {
+    pub id: String,
+    pub category: String,
+    pub title: String,
+    pub realm: String,
+    pub giver_npc_id: Option<String>,
+    pub map_id: Option<String>,
+    pub map_name: Option<String>,
+    pub room_id: Option<String>,
+    pub status: String,
+    pub tracked: bool,
+    pub description: String,
+    pub objectives: Vec<GameTaskObjectiveView>,
+    pub rewards: Vec<GameTaskRewardView>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct GameTaskOverviewView {
+    pub tasks: Vec<GameTaskOverviewItemView>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct GameHomeDialogueStateView {
     pub dialogue_id: String,
     pub current_node_id: String,
@@ -224,6 +275,12 @@ pub trait GameRouteServices: Send + Sync {
         user_id: i64,
         character_id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<GameHomeOverviewView, BusinessError>> + Send + 'a>>;
+
+    fn get_task_overview<'a>(
+        &'a self,
+        character_id: i64,
+        category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameTaskOverviewView, BusinessError>> + Send + 'a>>;
 
     fn get_task_overview_summary<'a>(
         &'a self,
@@ -329,6 +386,15 @@ impl GameRouteServices for NoopGameRouteServices {
                 },
             })
         })
+    }
+
+    fn get_task_overview<'a>(
+        &'a self,
+        _character_id: i64,
+        _category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameTaskOverviewView, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(GameTaskOverviewView { tasks: Vec::new() }) })
     }
 
     fn get_task_overview_summary<'a>(

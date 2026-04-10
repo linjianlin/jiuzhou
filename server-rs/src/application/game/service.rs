@@ -13,6 +13,8 @@ use crate::application::inventory::service::{InventoryLocation, RustInventoryRea
 use crate::application::month_card::service::default_month_card_id;
 use crate::application::realm::service::RustRealmRouteService;
 use crate::application::sign_in::service::RustSignInService;
+use crate::application::static_data::catalog::get_static_data_catalog;
+use crate::application::static_data::dungeon::{get_dungeon_static_catalog, DungeonListFilter};
 use crate::application::static_data::realm::{
     get_realm_rank_zero_based, normalize_realm_keeping_unknown,
 };
@@ -24,6 +26,7 @@ use crate::edge::http::routes::game::{
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
+    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
     GameHomeTeamApplicationView, GameHomeTeamInfoView, GameHomeTeamMemberView,
     GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
     GameTaskTrackDataView,
@@ -34,6 +37,7 @@ use crate::runtime::connection::session_registry::SharedSessionRegistry;
 
 static TASK_SEED_CATALOG: OnceLock<Result<Vec<GameTaskSeed>, String>> = OnceLock::new();
 static MAIN_QUEST_CATALOG: OnceLock<Result<MainQuestCatalog, String>> = OnceLock::new();
+static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = OnceLock::new();
 
 /**
  * 首页聚合应用服务。
@@ -78,12 +82,53 @@ struct TaskSeedFile {
 struct GameTaskSeed {
     id: String,
     category: String,
+    title: Option<String>,
     realm: String,
+    description: Option<String>,
+    giver_npc_id: Option<String>,
     map_id: Option<String>,
     room_id: Option<String>,
+    #[serde(default)]
+    objectives: Vec<GameTaskObjectiveSeed>,
+    #[serde(default)]
+    rewards: Vec<GameTaskRewardSeed>,
     enabled: Option<bool>,
     #[serde(default)]
     sort_weight: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GameTaskObjectiveSeed {
+    id: Option<String>,
+    #[serde(rename = "type")]
+    objective_type: Option<String>,
+    text: Option<String>,
+    target: Option<i32>,
+    params: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GameTaskRewardSeed {
+    #[serde(rename = "type")]
+    reward_type: Option<String>,
+    item_def_id: Option<String>,
+    qty: Option<i32>,
+    qty_min: Option<i32>,
+    qty_max: Option<i32>,
+    amount: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TaskItemSeedFile {
+    items: Vec<TaskItemSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TaskItemSeed {
+    id: String,
+    name: String,
+    icon: Option<String>,
+    enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -144,6 +189,28 @@ struct MainQuestCatalog {
 struct CharacterRealmState {
     realm: String,
     sub_realm: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedTaskEntry {
+    seed: GameTaskSeed,
+    status: String,
+    tracked: bool,
+    progress: HashMap<String, i32>,
+}
+
+#[derive(Debug, Clone)]
+struct TaskRewardItemMeta {
+    name: String,
+    icon: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TaskAuxiliaryCatalog {
+    map_name_by_id: HashMap<String, String>,
+    dungeon_name_by_id: HashMap<String, String>,
+    entity_map_name_by_id: HashMap<String, String>,
+    item_meta_by_id: HashMap<String, TaskRewardItemMeta>,
 }
 
 impl RustGameRouteService {
@@ -483,14 +550,14 @@ impl RustGameRouteService {
             .collect())
     }
 
-    async fn load_task_summary(
+    async fn load_prepared_task_entries(
         &self,
         character_id: i64,
         category: Option<&str>,
-    ) -> Result<GameHomeTaskSummaryView, BusinessError> {
+    ) -> Result<Vec<PreparedTaskEntry>, BusinessError> {
         let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
         else {
-            return Ok(GameHomeTaskSummaryView { tasks: Vec::new() });
+            return Ok(Vec::new());
         };
 
         let task_defs = task_seed_catalog()?
@@ -506,7 +573,7 @@ impl RustGameRouteService {
             .collect::<Vec<_>>();
 
         if task_defs.is_empty() {
-            return Ok(GameHomeTaskSummaryView { tasks: Vec::new() });
+            return Ok(Vec::new());
         }
 
         let daily_ids = task_defs
@@ -552,7 +619,7 @@ impl RustGameRouteService {
             .collect::<Vec<_>>();
         let progress_rows = sqlx::query(
             r#"
-            SELECT task_id, status, tracked
+            SELECT task_id, status, tracked, progress
             FROM character_task_progress
             WHERE character_id = $1
               AND task_id = ANY($2::varchar[])
@@ -575,6 +642,9 @@ impl RustGameRouteService {
                         .ok()
                         .flatten()
                         .unwrap_or(false),
+                    parse_task_progress_map(
+                        row.try_get::<Option<Value>, _>("progress").ok().flatten(),
+                    ),
                 ),
             );
         }
@@ -587,21 +657,99 @@ impl RustGameRouteService {
                 .then_with(|| left.id.cmp(&right.id))
         });
 
+        Ok(sorted_task_defs
+            .into_iter()
+            .map(|task| {
+                let (status_raw, tracked, progress) = progress_by_task_id
+                    .remove(&task.id)
+                    .unwrap_or((None, false, HashMap::new()));
+                PreparedTaskEntry {
+                    seed: task,
+                    status: map_task_status(status_raw.as_deref()),
+                    tracked,
+                    progress,
+                }
+            })
+            .collect())
+    }
+
+    async fn load_task_summary(
+        &self,
+        character_id: i64,
+        category: Option<&str>,
+    ) -> Result<GameHomeTaskSummaryView, BusinessError> {
+        let entries = self.load_prepared_task_entries(character_id, category).await?;
         Ok(GameHomeTaskSummaryView {
-            tasks: sorted_task_defs
+            tasks: entries
                 .into_iter()
-                .map(|task| {
-                    let (status_raw, tracked) = progress_by_task_id
-                        .get(&task.id)
-                        .cloned()
-                        .unwrap_or((None, false));
+                .map(|entry| {
                     GameHomeTaskSummaryItemView {
-                        id: task.id,
-                        category: task.category,
-                        map_id: normalize_optional_text(task.map_id.as_deref()),
-                        room_id: normalize_optional_text(task.room_id.as_deref()),
-                        status: map_task_status(status_raw.as_deref()),
+                        id: entry.seed.id,
+                        category: entry.seed.category,
+                        map_id: normalize_optional_text(entry.seed.map_id.as_deref()),
+                        room_id: normalize_optional_text(entry.seed.room_id.as_deref()),
+                        status: entry.status,
+                        tracked: entry.tracked,
+                    }
+                })
+                .collect(),
+        })
+    }
+
+    async fn load_task_overview(
+        &self,
+        character_id: i64,
+        category: Option<&str>,
+    ) -> Result<GameTaskOverviewView, BusinessError> {
+        let entries = self.load_prepared_task_entries(character_id, category).await?;
+        if entries.is_empty() {
+            return Ok(GameTaskOverviewView { tasks: Vec::new() });
+        }
+
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        Ok(GameTaskOverviewView {
+            tasks: entries
+                .into_iter()
+                .map(|entry| {
+                    let PreparedTaskEntry {
+                        seed,
+                        status,
                         tracked,
+                        progress,
+                    } = entry;
+                    GameTaskOverviewItemView {
+                        id: seed.id,
+                        category: seed.category,
+                        title: seed
+                            .title
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or_default()
+                            .to_string(),
+                        realm: seed.realm,
+                        giver_npc_id: normalize_optional_text(seed.giver_npc_id.as_deref()),
+                        map_id: normalize_optional_text(seed.map_id.as_deref()),
+                        map_name: resolve_task_map_name(
+                            auxiliary_catalog,
+                            seed.map_id.as_deref(),
+                        ),
+                        room_id: normalize_optional_text(seed.room_id.as_deref()),
+                        status,
+                        tracked,
+                        description: seed
+                            .description
+                            .as_deref()
+                            .map(str::trim)
+                            .unwrap_or_default()
+                            .to_string(),
+                        objectives: build_task_objective_views(
+                            &seed.objectives,
+                            &progress,
+                            seed.map_id.as_deref(),
+                            auxiliary_catalog,
+                        ),
+                        rewards: build_task_reward_views(&seed.rewards, auxiliary_catalog),
                     }
                 })
                 .collect(),
@@ -1121,6 +1269,18 @@ impl GameRouteServices for RustGameRouteService {
         Box::pin(async move { self.get_home_overview_impl(user_id, character_id).await })
     }
 
+    fn get_task_overview<'a>(
+        &'a self,
+        character_id: i64,
+        category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameTaskOverviewView, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.load_task_overview(character_id, category.as_deref())
+                .await
+        })
+    }
+
     fn get_task_overview_summary<'a>(
         &'a self,
         character_id: i64,
@@ -1204,6 +1364,78 @@ impl GameRouteServices for RustGameRouteService {
     }
 }
 
+fn task_auxiliary_catalog() -> Result<&'static TaskAuxiliaryCatalog, BusinessError> {
+    let result = TASK_AUXILIARY_CATALOG.get_or_init(|| {
+        build_task_auxiliary_catalog().map_err(|error| error.to_string())
+    });
+    match result {
+        Ok(catalog) => Ok(catalog),
+        Err(error) => Err(internal_string_business_error(error.clone())),
+    }
+}
+
+fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared::error::AppError> {
+    let static_catalog = get_static_data_catalog()?;
+    let dungeon_catalog = get_dungeon_static_catalog()?;
+
+    let map_name_by_id = static_catalog
+        .maps()
+        .iter()
+        .map(|entry| (entry.id.clone(), entry.name.clone()))
+        .collect::<HashMap<_, _>>();
+
+    let mut entity_map_name_by_id = HashMap::new();
+    for map in static_catalog.maps() {
+        let Some(detail) = static_catalog.map_detail(map.id.as_str()) else {
+            continue;
+        };
+        for room in &detail.rooms {
+            if let Some(monsters) = room.monsters.as_ref() {
+                for monster in monsters {
+                    entity_map_name_by_id
+                        .entry(monster.monster_def_id.clone())
+                        .or_insert_with(|| map.name.clone());
+                }
+            }
+            if let Some(resources) = room.resources.as_ref() {
+                for resource in resources {
+                    entity_map_name_by_id
+                        .entry(resource.resource_id.clone())
+                        .or_insert_with(|| map.name.clone());
+                }
+            }
+        }
+    }
+
+    let dungeon_name_by_id = dungeon_catalog
+        .list(&DungeonListFilter::default())
+        .into_iter()
+        .map(|entry| (entry.id, entry.name))
+        .collect::<HashMap<_, _>>();
+
+    let item_meta_by_id = read_seed_json::<TaskItemSeedFile>("item_def.json")?
+        .items
+        .into_iter()
+        .filter(|entry| entry.enabled != Some(false))
+        .map(|entry| {
+            (
+                entry.id,
+                TaskRewardItemMeta {
+                    name: entry.name,
+                    icon: entry.icon,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    Ok(TaskAuxiliaryCatalog {
+        map_name_by_id,
+        dungeon_name_by_id,
+        entity_map_name_by_id,
+        item_meta_by_id,
+    })
+}
+
 fn task_seed_catalog() -> Result<&'static Vec<GameTaskSeed>, BusinessError> {
     let result = TASK_SEED_CATALOG.get_or_init(|| {
         read_seed_json::<TaskSeedFile>("task_def.json")
@@ -1272,6 +1504,205 @@ fn load_main_quest_catalog() -> Result<MainQuestCatalog, crate::shared::error::A
         section_by_id,
         sorted_section_ids,
     })
+}
+
+fn parse_task_progress_map(value: Option<Value>) -> HashMap<String, i32> {
+    let Some(Value::Object(entries)) = value else {
+        return HashMap::new();
+    };
+    entries
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let number = value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|item| i64::try_from(item).ok()))
+                .unwrap_or(0);
+            let normalized = number.max(0).min(i64::from(i32::MAX)) as i32;
+            if key.trim().is_empty() {
+                None
+            } else {
+                Some((key, normalized))
+            }
+        })
+        .collect()
+}
+
+fn resolve_task_map_name(
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+    map_id: Option<&str>,
+) -> Option<String> {
+    let normalized_map_id = map_id?.trim();
+    if normalized_map_id.is_empty() {
+        return None;
+    }
+    auxiliary_catalog
+        .map_name_by_id
+        .get(normalized_map_id)
+        .cloned()
+}
+
+fn resolve_task_objective_map_binding(
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+    task_map_id: Option<&str>,
+    params: Option<&Value>,
+) -> (Option<String>, Option<String>) {
+    if let Some(Value::Object(entries)) = params {
+        if let Some(dungeon_id) = entries.get("dungeon_id").and_then(Value::as_str) {
+            let normalized_dungeon_id = dungeon_id.trim();
+            if !normalized_dungeon_id.is_empty() {
+                if let Some(name) = auxiliary_catalog
+                    .dungeon_name_by_id
+                    .get(normalized_dungeon_id)
+                    .cloned()
+                {
+                    return (Some(name), Some("dungeon".to_string()));
+                }
+            }
+        }
+
+        for key in ["monster_id", "resource_id"] {
+            if let Some(entity_id) = entries.get(key).and_then(Value::as_str) {
+                let normalized_entity_id = entity_id.trim();
+                if !normalized_entity_id.is_empty() {
+                    if let Some(name) = auxiliary_catalog
+                        .entity_map_name_by_id
+                        .get(normalized_entity_id)
+                        .cloned()
+                    {
+                        return (Some(name), Some("map".to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    match resolve_task_map_name(auxiliary_catalog, task_map_id) {
+        Some(name) => (Some(name), Some("map".to_string())),
+        None => (None, None),
+    }
+}
+
+fn build_task_objective_views(
+    objectives: &[GameTaskObjectiveSeed],
+    progress: &HashMap<String, i32>,
+    task_map_id: Option<&str>,
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+) -> Vec<GameTaskObjectiveView> {
+    objectives
+        .iter()
+        .filter_map(|objective| {
+            let text = objective
+                .text
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())?
+                .to_string();
+            let id = objective
+                .id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_default()
+                .to_string();
+            let target = objective.target.unwrap_or(1).max(1);
+            let done = progress.get(id.as_str()).copied().unwrap_or(0).clamp(0, target);
+            let (map_name, map_name_type) = resolve_task_objective_map_binding(
+                auxiliary_catalog,
+                task_map_id,
+                objective.params.as_ref(),
+            );
+            Some(GameTaskObjectiveView {
+                id,
+                r#type: objective
+                    .objective_type
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                text,
+                done,
+                target,
+                params: objective.params.clone(),
+                map_name,
+                map_name_type,
+            })
+        })
+        .collect()
+}
+
+fn normalize_task_reward_amount(value: Option<i32>, fallback: i32) -> i32 {
+    value.unwrap_or(fallback).max(0)
+}
+
+fn build_task_reward_views(
+    rewards: &[GameTaskRewardSeed],
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+) -> Vec<GameTaskRewardView> {
+    rewards
+        .iter()
+        .filter_map(|reward| {
+            let reward_type = reward
+                .reward_type
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())?;
+            match reward_type {
+                "silver" => {
+                    let amount = normalize_task_reward_amount(reward.amount, 0);
+                    (amount > 0).then(|| GameTaskRewardView {
+                        r#type: "silver".to_string(),
+                        name: "银两".to_string(),
+                        amount,
+                        item_def_id: None,
+                        icon: None,
+                        amount_max: None,
+                    })
+                }
+                "spirit_stones" => {
+                    let amount = normalize_task_reward_amount(reward.amount, 0);
+                    (amount > 0).then(|| GameTaskRewardView {
+                        r#type: "spirit_stones".to_string(),
+                        name: "灵石".to_string(),
+                        amount,
+                        item_def_id: None,
+                        icon: None,
+                        amount_max: None,
+                    })
+                }
+                "item" => {
+                    let item_def_id = reward
+                        .item_def_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())?;
+                    let amount = normalize_task_reward_amount(
+                        reward.qty.or(reward.qty_min),
+                        0,
+                    );
+                    if amount <= 0 {
+                        return None;
+                    }
+                    let amount_max = reward
+                        .qty_max
+                        .map(|value| value.max(amount))
+                        .filter(|value| *value > amount);
+                    let meta = auxiliary_catalog.item_meta_by_id.get(item_def_id);
+                    Some(GameTaskRewardView {
+                        r#type: "item".to_string(),
+                        name: meta
+                            .map(|entry| entry.name.clone())
+                            .unwrap_or_else(|| item_def_id.to_string()),
+                        amount,
+                        item_def_id: Some(item_def_id.to_string()),
+                        icon: meta.and_then(|entry| entry.icon.clone()),
+                        amount_max,
+                    })
+                }
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn build_current_month() -> String {

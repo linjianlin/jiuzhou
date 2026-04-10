@@ -21,7 +21,8 @@ use jiuzhou_server_rs::edge::http::routes::game::{
     GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView,
     GameHomeTaskSummaryItemView, GameHomeTaskSummaryView, GameHomeTeamOverviewView,
-    GameMainQuestTrackDataView, GameRouteServices, GameTaskTrackDataView,
+    GameMainQuestTrackDataView, GameRouteServices, GameTaskObjectiveView,
+    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -165,6 +166,88 @@ async fn task_overview_summary_route_returns_success_payload_and_forwards_catego
                         "roomId": "room-1",
                         "status": "ongoing",
                         "tracked": true
+                    }
+                ]
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_overview_route_returns_full_payload_and_forwards_category() {
+    let requested_categories = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_summary(requested_categories.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/task/overview?category=main")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("task overview request"),
+        )
+        .await
+        .expect("task overview response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        requested_categories
+            .lock()
+            .expect("task overview requested categories")
+            .as_slice(),
+        &[(3002_i64, Some("main".to_string()))]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "tasks": [
+                    {
+                        "id": "task-main-001",
+                        "category": "main",
+                        "title": "初入青云村",
+                        "realm": "凡人",
+                        "giverNpcId": "npc-guide",
+                        "mapId": "map-1",
+                        "mapName": "青云村",
+                        "roomId": "room-1",
+                        "status": "ongoing",
+                        "tracked": true,
+                        "description": "与引路童子交谈。",
+                        "objectives": [
+                            {
+                                "id": "obj-1",
+                                "type": "talk_npc",
+                                "text": "与引路童子交谈",
+                                "done": 1,
+                                "target": 1,
+                                "params": {
+                                    "npc_id": "npc-guide"
+                                },
+                                "mapName": "青云村",
+                                "mapNameType": "map"
+                            }
+                        ],
+                        "rewards": [
+                            {
+                                "type": "silver",
+                                "name": "银两",
+                                "amount": 100
+                            },
+                            {
+                                "type": "item",
+                                "name": "养气散",
+                                "amount": 1,
+                                "itemDefId": "item-1",
+                                "icon": "/items/item-1.webp",
+                                "amountMax": 2
+                            }
+                        ]
                     }
                 ]
             }
@@ -592,6 +675,7 @@ impl AuthRouteServices for FakeAuthServices {
 #[derive(Clone)]
 struct FakeGameServices {
     overview: GameHomeOverviewView,
+    task_overview: GameTaskOverviewView,
     task_summary: GameHomeTaskSummaryView,
     main_quest_progress: GameHomeMainQuestProgressView,
     main_quest_chapters: Vec<GameHomeMainQuestChapterView>,
@@ -638,6 +722,51 @@ impl FakeGameServices {
                     dialogue_state: None,
                     tracked: true,
                 },
+            },
+            task_overview: GameTaskOverviewView {
+                tasks: vec![GameTaskOverviewItemView {
+                    id: "task-main-001".to_string(),
+                    category: "main".to_string(),
+                    title: "初入青云村".to_string(),
+                    realm: "凡人".to_string(),
+                    giver_npc_id: Some("npc-guide".to_string()),
+                    map_id: Some("map-1".to_string()),
+                    map_name: Some("青云村".to_string()),
+                    room_id: Some("room-1".to_string()),
+                    status: "ongoing".to_string(),
+                    tracked: true,
+                    description: "与引路童子交谈。".to_string(),
+                    objectives: vec![GameTaskObjectiveView {
+                        id: "obj-1".to_string(),
+                        r#type: "talk_npc".to_string(),
+                        text: "与引路童子交谈".to_string(),
+                        done: 1,
+                        target: 1,
+                        params: Some(serde_json::json!({
+                            "npc_id": "npc-guide"
+                        })),
+                        map_name: Some("青云村".to_string()),
+                        map_name_type: Some("map".to_string()),
+                    }],
+                    rewards: vec![
+                        GameTaskRewardView {
+                            r#type: "silver".to_string(),
+                            name: "银两".to_string(),
+                            amount: 100,
+                            item_def_id: None,
+                            icon: None,
+                            amount_max: None,
+                        },
+                        GameTaskRewardView {
+                            r#type: "item".to_string(),
+                            name: "养气散".to_string(),
+                            amount: 1,
+                            item_def_id: Some("item-1".to_string()),
+                            icon: Some("/items/item-1.webp".to_string()),
+                            amount_max: Some(2),
+                        },
+                    ],
+                }],
             },
             task_summary: GameHomeTaskSummaryView {
                 tasks: vec![GameHomeTaskSummaryItemView {
@@ -743,6 +872,23 @@ impl GameRouteServices for FakeGameServices {
                 .expect("record task summary request")
                 .push((character_id, category));
             Ok(task_summary)
+        })
+    }
+
+    fn get_task_overview<'a>(
+        &'a self,
+        character_id: i64,
+        category: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<GameTaskOverviewView, BusinessError>> + Send + 'a>>
+    {
+        let task_overview = self.task_overview.clone();
+        let requests = self.task_summary_requests.clone();
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("record task overview request")
+                .push((character_id, category));
+            Ok(task_overview)
         })
     }
 
