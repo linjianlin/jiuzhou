@@ -407,6 +407,7 @@ fn build_app_state_with_upload_services(upload_services: Arc<dyn UploadRouteServ
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
+        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
         auth_services: Arc::new(FakeAuthServices),
         attribute_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,

@@ -6,6 +6,9 @@ use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 
 use crate::bootstrap::readiness::ReadinessGate;
+use crate::edge::http::routes::achievement::{
+    build_achievement_router, AchievementRouteServices,
+};
 use crate::edge::http::routes::account::build_account_router;
 use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
 use crate::edge::http::routes::attribute::{build_attribute_router, AttributeRouteServices};
@@ -81,6 +84,7 @@ pub fn new_shared_runtime_services(services: RuntimeServicesState) -> SharedRunt
 #[derive(Clone)]
 pub struct AppState {
     pub afdian_services: Arc<dyn AfdianRouteServices>,
+    pub achievement_services: Arc<dyn AchievementRouteServices>,
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub attribute_services: Arc<dyn AttributeRouteServices>,
     pub battle_pass_services: Arc<dyn BattlePassRouteServices>,
@@ -124,6 +128,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest_service("/uploads/avatars", ServeDir::new(uploads_avatar_root))
         .nest("/api/account", build_account_router())
         .nest("/api/afdian", build_afdian_router())
+        .nest("/api/achievement", build_achievement_router())
         .nest("/api/attribute", build_attribute_router())
         .nest("/api/auth", build_auth_router())
         .nest("/api/battle-session", build_battle_session_router())

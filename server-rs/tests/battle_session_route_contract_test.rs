@@ -297,6 +297,7 @@ fn build_recovery_source() -> RecoverySourceData {
 }
 
 fn build_app_state(
+        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
     auth_services: FakeAuthServices,
     runtime_services: Option<jiuzhou_server_rs::bootstrap::app::SharedRuntimeServices>,
 ) -> AppState {

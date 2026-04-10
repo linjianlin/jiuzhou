@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing::info;
 
+use crate::application::achievement::service::RustAchievementRouteService;
 use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::attribute::service::RustAttributeRouteService;
 use crate::application::auth::service::RustAuthServices;
@@ -81,6 +82,9 @@ pub async fn run_application() -> Result<(), AppError> {
 
     let state = AppState {
         afdian_services,
+        achievement_services: std::sync::Arc::new(RustAchievementRouteService::new(
+            postgres.pool.clone(),
+        )),
         auth_services,
         attribute_services: std::sync::Arc::new(RustAttributeRouteService::new(
             postgres.pool.clone(),

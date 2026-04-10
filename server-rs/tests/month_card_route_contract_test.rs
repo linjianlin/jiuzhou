@@ -322,6 +322,7 @@ impl Default for FakeMonthCardRouteServices {
 }
 
 fn build_app_state<TAuth, TMonthCard>(
+        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
     auth_services: TAuth,
     month_card_services: TMonthCard,
 ) -> AppState

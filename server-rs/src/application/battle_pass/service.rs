@@ -7,6 +7,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 
+use crate::application::inventory::grant::{
+    grant_items_to_bag, BagGrantEntry, BagGrantItemMeta,
+};
 use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
@@ -24,8 +27,6 @@ static BATTLE_PASS_ITEM_META: OnceLock<Result<HashMap<String, ItemDisplayMeta>, 
 
 const DEFAULT_MAX_LEVEL: i64 = 30;
 const DEFAULT_EXP_PER_LEVEL: i64 = 1_000;
-const DEFAULT_BAG_CAPACITY: i32 = 100;
-
 /**
  * 战令应用服务。
  *
@@ -171,13 +172,6 @@ struct CharacterWallet {
     character_id: i64,
     silver: i64,
     spirit_stones: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct StackableBagRow {
-    id: i64,
-    qty: i64,
-    location_slot: i32,
 }
 
 impl RustBattlePassRouteService {
@@ -850,7 +844,10 @@ impl RustBattlePassRouteService {
                     if normalized_item_def_id.is_empty() || normalized_qty <= 0 {
                         return None;
                     }
-                    Some((normalized_item_def_id, normalized_qty))
+                    Some(BagGrantEntry {
+                        item_def_id: normalized_item_def_id,
+                        qty: normalized_qty,
+                    })
                 }
                 BattlePassRewardEntry::Currency { .. } => None,
             })
@@ -858,177 +855,29 @@ impl RustBattlePassRouteService {
         if reward_items.is_empty() {
             return Ok(());
         }
+        let item_grant_meta = reward_items
+            .iter()
+            .filter_map(|entry| {
+                let meta = item_meta.get(entry.item_def_id.as_str())?;
+                Some((
+                    entry.item_def_id.clone(),
+                    BagGrantItemMeta {
+                        bind_type: meta.bind_type.clone(),
+                        stack_max: meta.stack_max,
+                    },
+                ))
+            })
+            .collect::<HashMap<_, _>>();
 
-        let bag_capacity = sqlx::query_scalar::<_, i32>(
-            r#"
-            SELECT COALESCE(bag_capacity, $2)::int AS bag_capacity
-            FROM inventory
-            WHERE character_id = $1
-            "#,
+        grant_items_to_bag(
+            transaction,
+            user_id,
+            character_id,
+            "battle_pass",
+            &reward_items,
+            &item_grant_meta,
         )
-        .bind(character_id)
-        .bind(DEFAULT_BAG_CAPACITY)
-        .fetch_optional(&mut **transaction)
         .await
-        .map_err(internal_business_error)?
-        .unwrap_or(DEFAULT_BAG_CAPACITY)
-        .max(0);
-
-        let occupied_slot_rows = sqlx::query(
-            r#"
-            SELECT location_slot
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND location = 'bag'
-              AND location_slot IS NOT NULL
-              AND location_slot >= 0
-            ORDER BY location_slot ASC
-            FOR UPDATE
-            "#,
-        )
-        .bind(character_id)
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(internal_business_error)?;
-        let mut occupied_slots = occupied_slot_rows
-            .into_iter()
-            .map(|row| row.get::<i32, _>("location_slot"))
-            .collect::<Vec<_>>();
-        occupied_slots.sort_unstable();
-        occupied_slots.dedup();
-
-        let stackable_rows = sqlx::query(
-            r#"
-            SELECT
-              id,
-              item_def_id,
-              COALESCE(qty, 0)::bigint AS qty,
-              location_slot,
-              COALESCE(NULLIF(BTRIM(bind_type), ''), 'none') AS bind_type
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND location = 'bag'
-              AND location_slot IS NOT NULL
-              AND location_slot >= 0
-              AND (metadata IS NULL OR metadata = 'null'::jsonb)
-              AND (affixes IS NULL OR affixes = 'null'::jsonb)
-              AND quality IS NULL
-              AND (quality_rank IS NULL OR quality_rank <= 0)
-              AND (equipped_slot IS NULL OR equipped_slot = '')
-              AND COALESCE(strengthen_level, 0) = 0
-              AND COALESCE(refine_level, 0) = 0
-              AND COALESCE(locked, FALSE) = FALSE
-            FOR UPDATE
-            "#,
-        )
-        .bind(character_id)
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(internal_business_error)?;
-
-        let mut stackable_rows_by_key: HashMap<(String, String), Vec<StackableBagRow>> =
-            HashMap::new();
-        for row in stackable_rows {
-            let key = (
-                row.get::<String, _>("item_def_id"),
-                normalize_item_bind_type(row.get::<String, _>("bind_type")),
-            );
-            stackable_rows_by_key
-                .entry(key)
-                .or_default()
-                .push(StackableBagRow {
-                    id: row.get::<i64, _>("id"),
-                    qty: row.get::<i64, _>("qty").max(0),
-                    location_slot: row.get::<i32, _>("location_slot"),
-                });
-        }
-        for rows in stackable_rows_by_key.values_mut() {
-            rows.sort_by(|left, right| {
-                left.location_slot
-                    .cmp(&right.location_slot)
-                    .then_with(|| left.id.cmp(&right.id))
-            });
-        }
-
-        for (item_def_id, quantity) in reward_items {
-            let Some(meta) = item_meta.get(item_def_id.as_str()) else {
-                return Err(internal_business_error(
-                    "missing battle pass item definition",
-                ));
-            };
-            let bind_type = normalize_item_bind_type(meta.bind_type.clone());
-            let stack_max = meta.stack_max.max(1) as i64;
-            let key = (item_def_id.clone(), bind_type.clone());
-            let stack_rows = stackable_rows_by_key.entry(key).or_default();
-            let mut remaining = quantity;
-
-            if stack_max > 1 {
-                for row in stack_rows.iter_mut() {
-                    if remaining <= 0 {
-                        break;
-                    }
-                    let available = (stack_max - row.qty).max(0);
-                    if available <= 0 {
-                        continue;
-                    }
-                    let add_qty = remaining.min(available);
-                    sqlx::query(
-                        r#"
-                        UPDATE item_instance
-                        SET qty = qty + $2, updated_at = NOW()
-                        WHERE id = $1
-                        "#,
-                    )
-                    .bind(row.id)
-                    .bind(add_qty)
-                    .execute(&mut **transaction)
-                    .await
-                    .map_err(internal_business_error)?;
-                    row.qty += add_qty;
-                    remaining -= add_qty;
-                }
-            }
-
-            while remaining > 0 {
-                let Some(slot) = take_next_free_bag_slot(&mut occupied_slots, bag_capacity) else {
-                    return Err(BusinessError::new("背包已满"));
-                };
-                let add_qty = remaining.min(stack_max);
-                let inserted_id = sqlx::query_scalar::<_, i64>(
-                    r#"
-                    INSERT INTO item_instance (
-                      owner_user_id,
-                      owner_character_id,
-                      item_def_id,
-                      qty,
-                      location,
-                      location_slot,
-                      bind_type,
-                      obtained_from
-                    )
-                    VALUES ($1, $2, $3, $4, 'bag', $5, $6, 'battle_pass')
-                    RETURNING id
-                    "#,
-                )
-                .bind(user_id)
-                .bind(character_id)
-                .bind(item_def_id.as_str())
-                .bind(add_qty)
-                .bind(slot)
-                .bind(bind_type.as_str())
-                .fetch_one(&mut **transaction)
-                .await
-                .map_err(internal_business_error)?;
-                stack_rows.push(StackableBagRow {
-                    id: inserted_id,
-                    qty: add_qty,
-                    location_slot: slot,
-                });
-                remaining -= add_qty;
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -1335,34 +1184,6 @@ fn normalize_item_bind_type(value: impl Into<String>) -> String {
         "none".to_string()
     } else {
         normalized
-    }
-}
-
-fn take_next_free_bag_slot(occupied_slots: &mut Vec<i32>, bag_capacity: i32) -> Option<i32> {
-    let mut expected = 0_i32;
-    let max_capacity = bag_capacity.max(0);
-    for slot in occupied_slots.iter().copied() {
-        if expected >= max_capacity {
-            return None;
-        }
-        if slot < expected {
-            continue;
-        }
-        if slot == expected {
-            expected += 1;
-            continue;
-        }
-        break;
-    }
-    if expected >= max_capacity {
-        return None;
-    }
-    match occupied_slots.binary_search(&expected) {
-        Ok(_) => None,
-        Err(index) => {
-            occupied_slots.insert(index, expected);
-            Some(expected)
-        }
     }
 }
 

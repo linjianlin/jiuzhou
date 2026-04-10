@@ -201,6 +201,7 @@ async fn battle_pass_claim_route_rejects_non_numeric_level() {
 }
 
 fn build_app_state<TAuth, TBattlePass>(
+        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
     auth_services: TAuth,
     battle_pass_services: TBattlePass,
 ) -> AppState

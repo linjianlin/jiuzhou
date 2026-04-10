@@ -1,3 +1,4 @@
+pub mod achievement;
 pub mod account;
 pub mod afdian;
 pub mod attribute;

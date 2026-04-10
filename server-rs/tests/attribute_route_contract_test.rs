@@ -224,6 +224,7 @@ async fn attribute_routes_require_authentication() {
 }
 
 fn build_app_state<TAuth, TAttribute>(
+        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
     auth_services: TAuth,
     attribute_services: TAttribute,
 ) -> AppState
