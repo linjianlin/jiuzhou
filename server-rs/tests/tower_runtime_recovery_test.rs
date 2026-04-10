@@ -65,7 +65,10 @@ async fn tower_runtime_registry_recovers_progress_and_runtime_indexes() {
     assert_eq!(registry.len_progressions(), 1);
     assert_eq!(registry.len_runtimes(), 1);
     assert_eq!(registry.progress_character_ids(), vec![9001]);
-    assert_eq!(registry.runtime_battle_ids(), vec!["tower-battle-1".to_string()]);
+    assert_eq!(
+        registry.runtime_battle_ids(),
+        vec!["tower-battle-1".to_string()]
+    );
     assert_eq!(
         registry
             .get_progress(9001)

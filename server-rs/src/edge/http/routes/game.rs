@@ -270,6 +270,33 @@ pub struct GameTaskMutationDataView {
     pub task_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum GameTaskClaimRewardView {
+    Silver {
+        amount: i64,
+    },
+    SpiritStones {
+        amount: i64,
+    },
+    #[serde(rename_all = "camelCase")]
+    Item {
+        item_def_id: String,
+        qty: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        item_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        item_icon: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTaskClaimDataView {
+    pub task_id: String,
+    pub rewards: Vec<GameTaskClaimRewardView>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GameMainQuestTrackDataView {
     pub tracked: bool,
@@ -315,6 +342,19 @@ pub trait GameRouteServices: Send + Sync {
     ) -> Pin<
         Box<
             dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn claim_task_reward<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        task_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskClaimDataView>, BusinessError>>
                 + Send
                 + 'a,
         >,
@@ -475,6 +515,30 @@ impl GameRouteServices for NoopGameRouteServices {
                 success: true,
                 message: "ok".to_string(),
                 data: Some(GameTaskMutationDataView { task_id }),
+            })
+        })
+    }
+
+    fn claim_task_reward<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+        task_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskClaimDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskClaimDataView {
+                    task_id,
+                    rewards: Vec::new(),
+                }),
             })
         })
     }

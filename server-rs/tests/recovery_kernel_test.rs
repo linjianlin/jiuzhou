@@ -164,8 +164,14 @@ async fn recovery_kernel_groups_runtime_state_by_subsystem() {
     assert_eq!(recovered.online_projection.team_members.len(), 1);
     assert_eq!(recovered.online_projection.session_battle_links.len(), 1);
     assert_eq!(recovered.online_projection.tower_progressions.len(), 1);
-    assert_eq!(recovered.online_projection.tower_runtime_projections.len(), 1);
-    assert_eq!(recovered.online_projection.tower_progressions[0].best_floor, 18);
+    assert_eq!(
+        recovered.online_projection.tower_runtime_projections.len(),
+        1
+    );
+    assert_eq!(
+        recovered.online_projection.tower_progressions[0].best_floor,
+        18
+    );
     assert_eq!(
         recovered.online_projection.tower_runtime_projections[0]
             .preview

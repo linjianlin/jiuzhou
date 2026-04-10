@@ -38,9 +38,7 @@ use crate::runtime::idle::lock::{load_idle_locks_from_source, RecoveredIdleLockS
 use crate::runtime::session::projection::{
     load_session_projections_from_source, OnlineBattleSessionSnapshotRedis,
 };
-use crate::runtime::tower::{
-    TowerBattleRuntimeProjectionRedis, TowerProgressProjectionRedis,
-};
+use crate::runtime::tower::{TowerBattleRuntimeProjectionRedis, TowerProgressProjectionRedis};
 use crate::shared::error::AppError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

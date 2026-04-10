@@ -20,9 +20,9 @@ use jiuzhou_server_rs::edge::http::routes::game::{
     GameActionResult, GameHomeAchievementView, GameHomeMainQuestChapterView,
     GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
-    GameTaskMutationDataView, GameTaskObjectiveView, GameTaskOverviewItemView,
-    GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
+    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices, GameTaskClaimDataView,
+    GameTaskClaimRewardView, GameTaskMutationDataView, GameTaskObjectiveView,
+    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -386,6 +386,58 @@ async fn task_npc_submit_route_preserves_send_result_shape() {
             "message": "ok",
             "data": {
                 "taskId": "task-main-003"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_claim_route_preserves_send_result_shape() {
+    let claim_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_claim_calls(claim_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/task/claim")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"taskId":"task-main-001"}"#))
+                .expect("task claim request"),
+        )
+        .await
+        .expect("task claim response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        claim_calls.lock().expect("task claim calls").as_slice(),
+        &[(9001_i64, 3002_i64, "task-main-001".to_string())]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "taskId": "task-main-001",
+                "rewards": [
+                    {
+                        "type": "silver",
+                        "amount": 100
+                    },
+                    {
+                        "type": "item",
+                        "itemDefId": "item-1",
+                        "qty": 2,
+                        "itemName": "养气散",
+                        "itemIcon": "/items/item-1.webp"
+                    }
+                ]
             }
         })
     );
@@ -785,6 +837,7 @@ struct FakeGameServices {
     task_summary_requests: Arc<Mutex<Vec<(i64, Option<String>)>>>,
     task_track_calls: Arc<Mutex<Vec<(i64, String, bool)>>>,
     task_accept_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
+    task_claim_calls: Arc<Mutex<Vec<(i64, i64, String)>>>,
     task_submit_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
     main_quest_track_calls: Arc<Mutex<Vec<(i64, bool)>>>,
 }
@@ -917,6 +970,7 @@ impl FakeGameServices {
             task_summary_requests: Arc::new(Mutex::new(Vec::new())),
             task_track_calls: Arc::new(Mutex::new(Vec::new())),
             task_accept_calls: Arc::new(Mutex::new(Vec::new())),
+            task_claim_calls: Arc::new(Mutex::new(Vec::new())),
             task_submit_calls: Arc::new(Mutex::new(Vec::new())),
             main_quest_track_calls: Arc::new(Mutex::new(Vec::new())),
         }
@@ -937,6 +991,12 @@ impl FakeGameServices {
     fn with_task_accept_calls(accept_calls: Arc<Mutex<Vec<(i64, String, String)>>>) -> Self {
         let mut services = Self::new();
         services.task_accept_calls = accept_calls;
+        services
+    }
+
+    fn with_task_claim_calls(claim_calls: Arc<Mutex<Vec<(i64, i64, String)>>>) -> Self {
+        let mut services = Self::new();
+        services.task_claim_calls = claim_calls;
         services
     }
 
@@ -1059,6 +1119,44 @@ impl GameRouteServices for FakeGameServices {
                 success: true,
                 message: "ok".to_string(),
                 data: Some(GameTaskMutationDataView { task_id }),
+            })
+        })
+    }
+
+    fn claim_task_reward<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        task_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskClaimDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.task_claim_calls.clone();
+        Box::pin(async move {
+            calls.lock().expect("record task claim call").push((
+                user_id,
+                character_id,
+                task_id.clone(),
+            ));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskClaimDataView {
+                    task_id,
+                    rewards: vec![
+                        GameTaskClaimRewardView::Silver { amount: 100 },
+                        GameTaskClaimRewardView::Item {
+                            item_def_id: "item-1".to_string(),
+                            qty: 2,
+                            item_name: Some("养气散".to_string()),
+                            item_icon: Some("/items/item-1.webp".to_string()),
+                        },
+                    ],
+                }),
             })
         })
     }

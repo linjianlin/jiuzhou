@@ -3,12 +3,14 @@ use std::sync::OnceLock;
 use std::{future::Future, pin::Pin};
 
 use chrono::{Datelike, Local};
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 
 use crate::application::account::service::RustAccountService;
 use crate::application::idle::service::RustIdleRouteService;
+use crate::application::inventory::grant::{grant_items_to_bag, BagGrantEntry, BagGrantItemMeta};
 use crate::application::inventory::service::{InventoryLocation, RustInventoryReadService};
 use crate::application::realm::service::RustRealmRouteService;
 use crate::application::sign_in::service::RustSignInService;
@@ -24,9 +26,9 @@ use crate::edge::http::routes::game::{
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
-    GameTaskMutationDataView, GameTaskObjectiveView, GameTaskOverviewItemView,
-    GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
+    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices, GameTaskClaimDataView,
+    GameTaskClaimRewardView, GameTaskMutationDataView, GameTaskObjectiveView,
+    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
 };
 use crate::edge::http::routes::inventory::InventoryRouteServices;
 use crate::edge::http::routes::realm::RealmRouteServices;
@@ -42,7 +44,7 @@ static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = 
  * 作用：
  * 1. 做什么：对齐 Node `gameHomeOverviewService` 的首页首屏聚合读取，并补齐 task/main-quest 独立路由复用的最小读写能力。
  * 2. 做什么：优先复用现有 sign_in/account/realm/inventory/idle 应用服务，把未迁移领域只保留为首页与任务面板所需的最小摘要查询与轻量写入，避免重复实现整套路由。
- * 3. 不做什么：不承担完整队伍、副本或任务领奖副作用链，也不伪造尚未迁移的重型战斗/奖励流程。
+ * 3. 不做什么：不承担完整队伍、副本或 NPC 对话树推进，也不伪造尚未迁移的重型战斗/奖励流程。
  *
  * 输入 / 输出：
  * - 输入：`user_id`、`character_id`。
@@ -50,7 +52,7 @@ static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = 
  *
  * 数据流 / 状态流：
  * - 首页请求 -> 本服务并发调用已迁移服务 + PostgreSQL/seed 摘要查询 -> 聚合为首页快照 -> HTTP 路由直接返回。
- * - task/main-quest 独立路由 -> 本服务复用同一批任务与主线索引 -> 返回摘要或落轻量 tracked / NPC 接取提交状态。
+ * - task/main-quest 独立路由 -> 本服务复用同一批任务与主线索引 -> 返回摘要或落 tracked / 领奖 / NPC 接取提交状态。
  *
  * 复用设计说明：
  * - 签到、手机号、境界、背包、挂机都直接复用现有服务，避免首页聚合复制领域规则；未迁移的任务/主线/队伍只在这里维护最小只读查询，等完整路由迁移后仍可继续复用。
@@ -59,7 +61,7 @@ static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = 
  * 关键边界条件与坑点：
  * 1. 签到概览是首页红点真值来源，若读取失败必须直接报错，不能静默回退成“未签到”，否则会把真实异常伪装成业务状态。
  * 2. 主线快照当前只对齐首页追踪所需的最小字段；`dialogue.currentNode` 与奖励富化不在这一轮扩展，避免为了首页读接口把未迁移详情逻辑硬塞进来。
- * 3. 任务 NPC 接取/提交只覆盖状态迁移，不在这里偷带领奖、副本推进或角色推送，避免把高副作用链路混进首页聚合服务。
+ * 3. 任务领奖只补齐 `claimable -> claimed` 与奖励落库，不在这里偷带 NPC 对话、副本推进或角色推送，避免把高副作用链路混进首页聚合服务。
  */
 #[derive(Clone)]
 pub struct RustGameRouteService {
@@ -129,6 +131,8 @@ struct TaskItemSeed {
     id: String,
     name: String,
     icon: Option<String>,
+    bind_type: Option<String>,
+    stack_max: Option<i32>,
     enabled: Option<bool>,
 }
 
@@ -212,6 +216,14 @@ struct TaskAuxiliaryCatalog {
     dungeon_name_by_id: HashMap<String, String>,
     entity_map_name_by_id: HashMap<String, String>,
     item_meta_by_id: HashMap<String, TaskRewardItemMeta>,
+    item_grant_meta_by_id: HashMap<String, BagGrantItemMeta>,
+}
+
+#[derive(Debug, Default)]
+struct TaskClaimRewardGrantResult {
+    rewards: Vec<GameTaskClaimRewardView>,
+    silver_delta: i64,
+    spirit_stones_delta: i64,
 }
 
 impl RustGameRouteService {
@@ -866,6 +878,167 @@ impl RustGameRouteService {
         })
     }
 
+    async fn claim_task_reward_impl(
+        &self,
+        user_id: i64,
+        character_id: i64,
+        task_id: String,
+    ) -> Result<GameActionResult<GameTaskClaimDataView>, BusinessError> {
+        if user_id <= 0 {
+            return Ok(GameActionResult {
+                success: false,
+                message: "未登录".to_string(),
+                data: None,
+            });
+        }
+
+        let normalized_task_id = task_id.trim().to_string();
+        if normalized_task_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务ID不能为空".to_string(),
+                data: None,
+            });
+        }
+
+        let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "角色不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let Some(task_def) = task_seed_catalog()?
+            .iter()
+            .find(|task| task.enabled != Some(false) && task.id == normalized_task_id)
+            .cloned()
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务不存在".to_string(),
+                data: None,
+            });
+        };
+
+        if let Some(message) = build_task_unlock_failure_message(&task_def, &character_realm_state)
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message,
+                data: None,
+            });
+        }
+
+        self.refresh_recurring_task_progress(character_id, std::slice::from_ref(&task_def))
+            .await?;
+
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(internal_sql_business_error)?;
+        let progress_row = sqlx::query(
+            r#"
+            SELECT status
+            FROM character_task_progress
+            WHERE character_id = $1
+              AND task_id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        let Some(progress_row) = progress_row else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务未接取".to_string(),
+                data: None,
+            });
+        };
+
+        let status = normalize_task_progress_status_db(
+            progress_row
+                .try_get::<Option<String>, _>("status")
+                .ok()
+                .flatten()
+                .as_deref(),
+        );
+        if status != "claimable" {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务不可领取".to_string(),
+                data: None,
+            });
+        }
+
+        let mut reward_result = collect_task_claim_rewards_tx(
+            &mut transaction,
+            user_id,
+            character_id,
+            &task_def.rewards,
+            auxiliary_catalog,
+        )
+        .await?;
+        let bounty_reward_result = apply_bounty_reward_on_task_claim_tx(
+            &mut transaction,
+            character_id,
+            normalized_task_id.as_str(),
+        )
+        .await?;
+        reward_result.silver_delta += bounty_reward_result.silver_delta;
+        reward_result.spirit_stones_delta += bounty_reward_result.spirit_stones_delta;
+        reward_result.rewards.extend(bounty_reward_result.rewards);
+
+        if reward_result.silver_delta > 0 || reward_result.spirit_stones_delta > 0 {
+            apply_task_currency_reward_delta_tx(
+                &mut transaction,
+                character_id,
+                reward_result.silver_delta,
+                reward_result.spirit_stones_delta,
+            )
+            .await?;
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE character_task_progress
+            SET status = 'claimed',
+                completed_at = COALESCE(completed_at, NOW()),
+                claimed_at = NOW(),
+                tracked = FALSE,
+                updated_at = NOW()
+            WHERE character_id = $1
+              AND task_id = $2
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameTaskClaimDataView {
+                task_id: normalized_task_id,
+                rewards: reward_result.rewards,
+            }),
+        })
+    }
+
     async fn load_main_quest_progress(
         &self,
         character_id: i64,
@@ -1445,6 +1618,24 @@ impl GameRouteServices for RustGameRouteService {
         })
     }
 
+    fn claim_task_reward<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        task_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskClaimDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.claim_task_reward_impl(user_id, character_id, task_id)
+                .await
+        })
+    }
+
     fn get_main_quest_progress<'a>(
         &'a self,
         character_id: i64,
@@ -1550,26 +1741,34 @@ fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared:
         .map(|entry| (entry.id, entry.name))
         .collect::<HashMap<_, _>>();
 
-    let item_meta_by_id = read_seed_json::<TaskItemSeedFile>("item_def.json")?
-        .items
-        .into_iter()
-        .filter(|entry| entry.enabled != Some(false))
-        .map(|entry| {
-            (
-                entry.id,
-                TaskRewardItemMeta {
-                    name: entry.name,
-                    icon: entry.icon,
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
+    let mut item_meta_by_id = HashMap::new();
+    let mut item_grant_meta_by_id = HashMap::new();
+    for entry in read_seed_json::<TaskItemSeedFile>("item_def.json")?.items {
+        if entry.enabled == Some(false) {
+            continue;
+        }
+        item_grant_meta_by_id.insert(
+            entry.id.clone(),
+            BagGrantItemMeta {
+                bind_type: entry.bind_type.unwrap_or_else(|| "none".to_string()),
+                stack_max: entry.stack_max.unwrap_or(1).max(1),
+            },
+        );
+        item_meta_by_id.insert(
+            entry.id,
+            TaskRewardItemMeta {
+                name: entry.name,
+                icon: entry.icon,
+            },
+        );
+    }
 
     Ok(TaskAuxiliaryCatalog {
         map_name_by_id,
         dungeon_name_by_id,
         entity_map_name_by_id,
         item_meta_by_id,
+        item_grant_meta_by_id,
     })
 }
 
@@ -1865,6 +2064,201 @@ fn build_task_reward_views(
         .collect()
 }
 
+fn resolve_task_reward_qty_range(reward: &GameTaskRewardSeed) -> Option<(i64, i64)> {
+    if let Some(qty) = reward.qty {
+        let normalized_qty = qty.max(0);
+        return (normalized_qty > 0)
+            .then_some((i64::from(normalized_qty), i64::from(normalized_qty)));
+    }
+
+    let min_qty = reward.qty_min.unwrap_or(1).max(1);
+    let max_qty = reward.qty_max.unwrap_or(min_qty).max(min_qty);
+    Some((i64::from(min_qty), i64::from(max_qty)))
+}
+
+async fn collect_task_claim_rewards_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+    character_id: i64,
+    rewards: &[GameTaskRewardSeed],
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+) -> Result<TaskClaimRewardGrantResult, BusinessError> {
+    let mut result = TaskClaimRewardGrantResult::default();
+    let mut item_entries = Vec::new();
+
+    for reward in rewards {
+        let Some(reward_type) = reward
+            .reward_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+
+        match reward_type {
+            "silver" => {
+                let amount = i64::from(reward.amount.unwrap_or(0).max(0));
+                if amount <= 0 {
+                    continue;
+                }
+                result.silver_delta += amount;
+                result
+                    .rewards
+                    .push(GameTaskClaimRewardView::Silver { amount });
+            }
+            "spirit_stones" => {
+                let amount = i64::from(reward.amount.unwrap_or(0).max(0));
+                if amount <= 0 {
+                    continue;
+                }
+                result.spirit_stones_delta += amount;
+                result
+                    .rewards
+                    .push(GameTaskClaimRewardView::SpiritStones { amount });
+            }
+            "item" => {
+                let Some(item_def_id) = reward
+                    .item_def_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToString::to_string)
+                else {
+                    continue;
+                };
+                let Some((min_qty, max_qty)) = resolve_task_reward_qty_range(reward) else {
+                    continue;
+                };
+                let qty = if max_qty > min_qty {
+                    rand::thread_rng().gen_range(min_qty..=max_qty)
+                } else {
+                    min_qty
+                };
+                if qty <= 0 {
+                    continue;
+                }
+
+                item_entries.push(BagGrantEntry {
+                    item_def_id: item_def_id.clone(),
+                    qty,
+                });
+                let display_meta = auxiliary_catalog.item_meta_by_id.get(item_def_id.as_str());
+                result.rewards.push(GameTaskClaimRewardView::Item {
+                    item_def_id,
+                    qty,
+                    item_name: display_meta.map(|entry| entry.name.clone()),
+                    item_icon: display_meta.and_then(|entry| entry.icon.clone()),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    if !item_entries.is_empty() {
+        grant_items_to_bag(
+            transaction,
+            user_id,
+            character_id,
+            "task_reward",
+            &item_entries,
+            &auxiliary_catalog.item_grant_meta_by_id,
+        )
+        .await?;
+    }
+
+    Ok(result)
+}
+
+async fn apply_bounty_reward_on_task_claim_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    task_id: &str,
+) -> Result<TaskClaimRewardGrantResult, BusinessError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+          c.id AS claim_id,
+          COALESCE(i.spirit_stones_reward, 0)::bigint AS spirit_stones_reward,
+          COALESCE(i.silver_reward, 0)::bigint AS silver_reward
+        FROM bounty_claim c
+        JOIN bounty_instance i ON i.id = c.bounty_instance_id
+        WHERE c.character_id = $1
+          AND i.task_id = $2
+          AND c.status IN ('claimed', 'completed')
+        LIMIT 1
+        FOR UPDATE
+        "#,
+    )
+    .bind(character_id)
+    .bind(task_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_sql_business_error)?;
+
+    let Some(row) = row else {
+        return Ok(TaskClaimRewardGrantResult::default());
+    };
+
+    let claim_id = row.get::<i64, _>("claim_id");
+    let silver_delta = row.get::<i64, _>("silver_reward").max(0);
+    let spirit_stones_delta = row.get::<i64, _>("spirit_stones_reward").max(0);
+    let mut rewards = Vec::new();
+    if spirit_stones_delta > 0 {
+        rewards.push(GameTaskClaimRewardView::SpiritStones {
+            amount: spirit_stones_delta,
+        });
+    }
+    if silver_delta > 0 {
+        rewards.push(GameTaskClaimRewardView::Silver {
+            amount: silver_delta,
+        });
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE bounty_claim
+        SET status = 'rewarded',
+            updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(claim_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(internal_sql_business_error)?;
+
+    Ok(TaskClaimRewardGrantResult {
+        rewards,
+        silver_delta,
+        spirit_stones_delta,
+    })
+}
+
+async fn apply_task_currency_reward_delta_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    silver_delta: i64,
+    spirit_stones_delta: i64,
+) -> Result<(), BusinessError> {
+    sqlx::query(
+        r#"
+        UPDATE characters
+        SET silver = COALESCE(silver, 0) + $2,
+            spirit_stones = COALESCE(spirit_stones, 0) + $3,
+            updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(character_id)
+    .bind(silver_delta.max(0))
+    .bind(spirit_stones_delta.max(0))
+    .execute(&mut **transaction)
+    .await
+    .map_err(internal_sql_business_error)?;
+    Ok(())
+}
+
 fn build_current_month() -> String {
     let now = Local::now();
     format!("{:04}-{:02}", now.year(), now.month())
@@ -1892,6 +2286,15 @@ fn build_task_unlock_failure_message(
         return None;
     }
     Some(format!("需达到{required_realm}后开放"))
+}
+
+fn normalize_task_progress_status_db(value: Option<&str>) -> &'static str {
+    match value.unwrap_or("ongoing") {
+        "turnin" => "turnin",
+        "claimable" => "claimable",
+        "claimed" => "claimed",
+        _ => "ongoing",
+    }
 }
 
 fn is_task_visible_for_realm(task: &GameTaskSeed, state: &CharacterRealmState) -> bool {
