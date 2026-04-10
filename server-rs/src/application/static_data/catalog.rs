@@ -111,6 +111,32 @@ pub struct StaticItemMetaDto {
     pub id: String,
     pub name: String,
     pub icon: Option<String>,
+    pub quality: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaticNpcMetaDto {
+    pub id: String,
+    pub name: String,
+    pub title: Option<String>,
+    pub gender: Option<String>,
+    pub realm: Option<String>,
+    pub avatar: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StaticMonsterMetaDto {
+    pub id: String,
+    pub name: String,
+    pub title: Option<String>,
+    pub realm: Option<String>,
+    pub avatar: Option<String>,
+    pub base_attrs: Option<Value>,
+    pub attr_variance: Option<f64>,
+    pub attr_multiplier_min: Option<f64>,
+    pub attr_multiplier_max: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -351,6 +377,8 @@ pub struct MapDetailDto {
 pub struct StaticDataCatalog {
     item_taxonomy: GameItemTaxonomyDto,
     item_meta_by_id: BTreeMap<String, StaticItemMetaDto>,
+    npc_meta_by_id: BTreeMap<String, StaticNpcMetaDto>,
+    monster_meta_by_id: BTreeMap<String, StaticMonsterMetaDto>,
     skill_by_id: BTreeMap<String, SkillDefDto>,
     techniques: Vec<TechniqueDefDto>,
     technique_details_by_id: BTreeMap<String, TechniqueDetailDto>,
@@ -366,6 +394,14 @@ impl StaticDataCatalog {
 
     pub fn item_meta(&self, item_id: &str) -> Option<&StaticItemMetaDto> {
         self.item_meta_by_id.get(item_id)
+    }
+
+    pub fn npc_meta(&self, npc_id: &str) -> Option<&StaticNpcMetaDto> {
+        self.npc_meta_by_id.get(npc_id)
+    }
+
+    pub fn monster_meta(&self, monster_id: &str) -> Option<&StaticMonsterMetaDto> {
+        self.monster_meta_by_id.get(monster_id)
     }
 
     pub fn skill(&self, skill_id: &str) -> Option<&SkillDefDto> {
@@ -412,6 +448,7 @@ struct ItemDefinitionSeed {
     sub_category: Option<String>,
     quality: Option<String>,
     icon: Option<String>,
+    description: Option<String>,
     enabled: Option<bool>,
 }
 
@@ -515,6 +552,31 @@ struct MonsterSeedFile {
 struct MonsterDefinitionSeed {
     id: String,
     name: String,
+    title: Option<String>,
+    realm: Option<String>,
+    avatar: Option<String>,
+    base_attrs: Option<Value>,
+    attr_variance: Option<f64>,
+    attr_multiplier_min: Option<f64>,
+    attr_multiplier_max: Option<f64>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NpcSeedFile {
+    npcs: Vec<NpcDefinitionSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NpcDefinitionSeed {
+    id: String,
+    name: String,
+    title: Option<String>,
+    gender: Option<String>,
+    realm: Option<String>,
+    avatar: Option<String>,
+    description: Option<String>,
+    enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -562,16 +624,19 @@ fn build_static_data_catalog() -> Result<StaticDataCatalog, AppError> {
     let skills = read_seed_json::<SkillSeedFile>("skill_def.json")?.skills;
     let map_definitions = read_seed_json::<MapSeedFile>("map_def.json")?.maps;
     let monsters = read_seed_json::<MonsterSeedFile>("monster_def.json")?.monsters;
+    let npcs = read_seed_json::<NpcSeedFile>("npc_def.json")?.npcs;
 
     let item_taxonomy = build_item_taxonomy(&items);
     let item_meta_by_id = build_item_meta_index(&items);
+    let npc_meta_by_id = build_npc_meta_index(&npcs);
+    let monster_meta_by_id = build_monster_meta_index(&monsters);
     let skill_by_id = build_skill_index(&skills);
     let technique_dtos = build_technique_list(&techniques);
     let technique_details_by_id =
         build_technique_detail_index(&techniques, &layers, &skills, &item_meta_by_id);
-    let monster_name_by_id = monsters
-        .into_iter()
-        .map(|monster| (monster.id, monster.name))
+    let monster_name_by_id = monster_meta_by_id
+        .iter()
+        .map(|(monster_id, meta)| (monster_id.clone(), meta.name.clone()))
         .collect::<HashMap<_, _>>();
     let world_map = build_world_map();
     let maps = build_enabled_map_summaries(&map_definitions);
@@ -580,6 +645,8 @@ fn build_static_data_catalog() -> Result<StaticDataCatalog, AppError> {
     Ok(StaticDataCatalog {
         item_taxonomy,
         item_meta_by_id,
+        npc_meta_by_id,
+        monster_meta_by_id,
         skill_by_id,
         techniques: technique_dtos,
         technique_details_by_id,
@@ -711,6 +778,53 @@ fn build_item_meta_index(
                     id: item.id.clone(),
                     name: item.name.clone(),
                     icon: item.icon.clone(),
+                    quality: item.quality.clone(),
+                    description: item.description.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn build_npc_meta_index(npcs: &[NpcDefinitionSeed]) -> BTreeMap<String, StaticNpcMetaDto> {
+    npcs.iter()
+        .filter(|npc| is_enabled(npc.enabled))
+        .map(|npc| {
+            (
+                npc.id.clone(),
+                StaticNpcMetaDto {
+                    id: npc.id.clone(),
+                    name: npc.name.clone(),
+                    title: npc.title.clone(),
+                    gender: npc.gender.clone(),
+                    realm: npc.realm.clone(),
+                    avatar: npc.avatar.clone(),
+                    description: npc.description.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn build_monster_meta_index(
+    monsters: &[MonsterDefinitionSeed],
+) -> BTreeMap<String, StaticMonsterMetaDto> {
+    monsters
+        .iter()
+        .filter(|monster| is_enabled(monster.enabled))
+        .map(|monster| {
+            (
+                monster.id.clone(),
+                StaticMonsterMetaDto {
+                    id: monster.id.clone(),
+                    name: monster.name.clone(),
+                    title: monster.title.clone(),
+                    realm: monster.realm.clone(),
+                    avatar: monster.avatar.clone(),
+                    base_attrs: monster.base_attrs.clone(),
+                    attr_variance: monster.attr_variance,
+                    attr_multiplier_min: monster.attr_multiplier_min,
+                    attr_multiplier_max: monster.attr_multiplier_max,
                 },
             )
         })
