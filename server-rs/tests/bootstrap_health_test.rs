@@ -46,8 +46,14 @@ async fn root_and_health_routes_match_current_contract_shape() {
     let runtime_snapshot = runtime_services.read().await;
     assert!(runtime_snapshot.battle_registry.is_empty());
     assert!(runtime_snapshot.session_registry.is_empty());
-    assert!(runtime_snapshot.online_projection_registry.character_ids().is_empty());
-    assert!(runtime_snapshot.idle_runtime_service.locked_character_ids().is_empty());
+    assert!(runtime_snapshot
+        .online_projection_registry
+        .character_ids()
+        .is_empty());
+    assert!(runtime_snapshot
+        .idle_runtime_service
+        .locked_character_ids()
+        .is_empty());
 
     let root_response = app
         .clone()
@@ -243,7 +249,8 @@ impl AuthRouteServices for NoopAuthServices {
     fn check_character<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CheckCharacterResult {
                 has_character: false,
@@ -257,7 +264,8 @@ impl AuthRouteServices for NoopAuthServices {
         _user_id: i64,
         _nickname: String,
         _gender: String,
-    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CreateCharacterResult {
                 success: false,

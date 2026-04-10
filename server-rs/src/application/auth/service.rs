@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::application::character::service::{
-    CheckCharacterResult, CreateCharacterResult, RustCharacterReadService,
-    UpdateCharacterPositionResult, UpdateCharacterSettingResult,
+    CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
+    RustCharacterReadService, UpdateCharacterPositionResult, UpdateCharacterSettingResult,
 };
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::auth::{
@@ -452,6 +452,17 @@ impl RustAuthServices {
             .await
     }
 
+    async fn rename_character_with_card_impl(
+        &self,
+        user_id: i64,
+        item_instance_id: i64,
+        nickname: String,
+    ) -> Result<RenameCharacterWithCardResult, BusinessError> {
+        self.character_read_service
+            .rename_character_with_card(user_id, item_instance_id, &nickname)
+            .await
+    }
+
     async fn update_auto_cast_skills_impl(
         &self,
         user_id: i64,
@@ -689,11 +700,27 @@ impl AuthRouteServices for RustAuthServices {
         })
     }
 
+    fn rename_character_with_card<'a>(
+        &'a self,
+        user_id: i64,
+        item_instance_id: i64,
+        nickname: String,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<RenameCharacterWithCardResult, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            self.rename_character_with_card_impl(user_id, item_instance_id, nickname)
+                .await
+        })
+    }
+
     fn update_auto_cast_skills<'a>(
         &'a self,
         user_id: i64,
         enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move { self.update_auto_cast_skills_impl(user_id, enabled).await })
     }
 
@@ -702,7 +729,9 @@ impl AuthRouteServices for RustAuthServices {
         user_id: i64,
         enabled: bool,
         rules: Option<Vec<serde_json::Value>>,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             self.update_auto_disassemble_impl(user_id, enabled, rules)
                 .await
@@ -713,7 +742,9 @@ impl AuthRouteServices for RustAuthServices {
         &'a self,
         user_id: i64,
         enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             self.update_dungeon_no_stamina_cost_impl(user_id, enabled)
                 .await

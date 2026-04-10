@@ -60,10 +60,13 @@ async fn character_create_rejects_missing_nickname_or_gender() {
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(json, serde_json::json!({
-        "success": false,
-        "message": "道号和性别不能为空",
-    }));
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "道号和性别不能为空",
+        })
+    );
 }
 
 #[tokio::test]
@@ -100,10 +103,13 @@ async fn character_create_rejects_invalid_gender() {
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(json, serde_json::json!({
-        "success": false,
-        "message": "性别参数错误",
-    }));
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "性别参数错误",
+        })
+    );
 }
 
 #[tokio::test]
@@ -140,10 +146,13 @@ async fn character_create_returns_duplicate_character_failure() {
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(json, serde_json::json!({
-        "success": false,
-        "message": "已存在角色，无法重复创建",
-    }));
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "已存在角色，无法重复创建",
+        })
+    );
 }
 
 #[tokio::test]
@@ -183,27 +192,30 @@ async fn character_create_returns_node_compatible_success_envelope() {
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json, serde_json::json!({
-        "success": true,
-        "message": "角色创建成功",
-        "data": {
-            "character": {
-                "id": 4001,
-                "nickname": "青云子",
-                "gender": "male",
-                "title": "散修",
-                "realm": "凡人",
-                "sub_realm": serde_json::Value::Null,
-                "auto_cast_skills": true,
-                "auto_disassemble_enabled": false,
-                "auto_disassemble_rules": [],
-                "dungeon_no_stamina_cost": false,
-                "spirit_stones": 0,
-                "silver": 0,
-            },
-            "hasCharacter": true,
-        }
-    }));
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "角色创建成功",
+            "data": {
+                "character": {
+                    "id": 4001,
+                    "nickname": "青云子",
+                    "gender": "male",
+                    "title": "散修",
+                    "realm": "凡人",
+                    "sub_realm": serde_json::Value::Null,
+                    "auto_cast_skills": true,
+                    "auto_disassemble_enabled": false,
+                    "auto_disassemble_rules": [],
+                    "dungeon_no_stamina_cost": false,
+                    "spirit_stones": 0,
+                    "silver": 0,
+                },
+                "hasCharacter": true,
+            }
+        })
+    );
 }
 
 struct FakeAuthServices {

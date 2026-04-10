@@ -5,8 +5,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jiuzhou_server_rs::application::character::service::{
-    CharacterBasicInfo, CheckCharacterResult, CreateCharacterResult,
-    UpdateCharacterPositionResult,
+    CharacterBasicInfo, CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
 };
 use jiuzhou_server_rs::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,

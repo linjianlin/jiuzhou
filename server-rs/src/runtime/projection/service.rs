@@ -287,7 +287,12 @@ impl OnlineProjectionRegistry {
         self.character_snapshots.get(&character_id)
     }
 
-    fn update_character_computed_value(&mut self, character_id: i64, key: &str, value: Value) -> bool {
+    fn update_character_computed_value(
+        &mut self,
+        character_id: i64,
+        key: &str,
+        value: Value,
+    ) -> bool {
         let Some(snapshot) = self.character_snapshots.get_mut(&character_id) else {
             return false;
         };

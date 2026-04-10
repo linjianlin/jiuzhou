@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jiuzhou_server_rs::application::character::service::{
-    CheckCharacterResult, CreateCharacterResult,
+    CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
 };
 use jiuzhou_server_rs::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
@@ -291,7 +291,8 @@ impl AuthRouteServices for NoopAuthServices {
     fn check_character<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CheckCharacterResult {
                 has_character: false,
@@ -305,12 +306,31 @@ impl AuthRouteServices for NoopAuthServices {
         _user_id: i64,
         _nickname: String,
         _gender: String,
-    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CreateCharacterResult {
                 success: false,
                 message: "noop".to_string(),
                 data: None,
+            })
+        })
+    }
+
+    fn update_character_position<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_map_id: String,
+        _current_room_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(UpdateCharacterPositionResult {
+                success: true,
+                message: "ok".to_string(),
             })
         })
     }

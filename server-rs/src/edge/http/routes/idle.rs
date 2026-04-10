@@ -17,12 +17,12 @@ use crate::edge::http::response::{ok, success};
  * idle 最小 HTTP 路由集群。
  *
  * 作用：
- * 1. 做什么：暴露 `/start`、`/status`、`/stop` 三个最小端点，覆盖当前前端 start/inspection/stop 所依赖的外部合同。
- * 2. 做什么：复用现有 Bearer/session 校验与角色存在性检查，并把 409 conflict 特例固定在这一层，避免应用服务掺杂 HTTP 细节。
- * 3. 不做什么：不补 history/progress/config，也不在这里实现挂机执行、收益结算或 socket 推送。
+ * 1. 做什么：暴露 `/start`、`/status`、`/stop`、`/history`、`/progress`、`/config`，覆盖当前前端挂机面板真实依赖的最小 HTTP 合同。
+ * 2. 做什么：复用现有 Bearer/session 校验与角色存在性检查，并把 409 conflict 与配置默认值语义固定在这一层，避免应用服务掺杂 HTTP 细节。
+ * 3. 不做什么：不补 history viewed 标记，也不在这里实现挂机执行、收益结算或 socket 推送。
  *
  * 输入 / 输出：
- * - 输入：Authorization Bearer token，以及 start 请求的最小配置体。
+ * - 输入：Authorization Bearer token，以及 start/config 请求体。
  * - 输出：Node 兼容的 `{ success, data? }` 与 `409 { success:false, message, existingSessionId }`。
  *
  * 数据流 / 状态流：
@@ -30,11 +30,12 @@ use crate::edge::http::response::{ok, success};
  *
  * 复用设计说明：
  * - 角色鉴权 helper 沿用 character 路由的模式，只把 requireCharacter 风格的 404 语义补进来，避免 auth/character/idle 三处再长出不同的 bearer 校验分支。
- * - `IdleSessionView` 作为路由与应用服务共享 DTO，集中锁定当前客户端真正依赖的字段，后续引擎增强时也不必改 route contract。
+ * - `IdleSessionView` 与 `IdleConfigView` 作为路由与应用服务共享 DTO，集中锁定当前客户端真正依赖的字段，后续引擎增强时也不必改 route contract。
  *
  * 关键边界条件与坑点：
  * 1. 角色不存在时这里必须保持 `404 { success:false, message:'角色不存在' }`，因为 idle 在 Node 端走的是 requireCharacter 语义。
  * 2. `existingSessionId` 只在 409 conflict 时出现，普通 400 失败不能误带该字段。
+ * 3. 未配置挂机参数时必须返回固定默认值，而不是把空结果抹成 `{}`，否则前端草稿态会丢默认开关。
  */
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct IdleStartInput {
@@ -50,6 +51,54 @@ pub struct IdleStartInput {
     pub target_monster_def_id: String,
     #[serde(rename = "includePartnerInBattle")]
     pub include_partner_in_battle: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleAutoSkillSlot {
+    pub skill_id: String,
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IdleAutoSkillPolicy {
+    pub slots: Vec<IdleAutoSkillSlot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleConfigView {
+    pub map_id: Option<String>,
+    pub room_id: Option<String>,
+    pub max_duration_ms: i64,
+    pub auto_skill_policy: IdleAutoSkillPolicy,
+    pub target_monster_def_id: Option<String>,
+    pub include_partner_in_battle: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleConfigUpdateInput {
+    pub map_id: Option<String>,
+    pub room_id: Option<String>,
+    pub max_duration_ms: Option<i64>,
+    pub auto_skill_policy: Option<IdleAutoSkillPolicy>,
+    pub target_monster_def_id: Option<String>,
+    pub include_partner_in_battle: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleConfigResponseData {
+    pub config: IdleConfigView,
+    pub max_duration_limit_ms: i64,
+    pub month_card_active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdleDurationLimit {
+    pub max_duration_ms: i64,
+    pub month_card_active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -76,12 +125,16 @@ pub struct IdleSessionView {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdleStartServiceResult {
-    Started { session_id: String },
+    Started {
+        session_id: String,
+    },
     Conflict {
         message: String,
         existing_session_id: String,
     },
-    Failure { message: String },
+    Failure {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +152,11 @@ struct IdleStartResponseData {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct IdleStatusResponseData {
     session: Option<IdleSessionView>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct IdleHistoryResponseData {
+    history: Vec<IdleSessionView>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -126,6 +184,27 @@ pub trait IdleRouteServices: Send + Sync {
         &'a self,
         character_id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<IdleStopServiceResult, BusinessError>> + Send + 'a>>;
+
+    fn get_idle_history<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<IdleSessionView>, BusinessError>> + Send + 'a>>;
+
+    fn get_idle_progress<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<IdleSessionView>, BusinessError>> + Send + 'a>>;
+
+    fn get_idle_config<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<IdleConfigResponseData, BusinessError>> + Send + 'a>>;
+
+    fn update_idle_config<'a>(
+        &'a self,
+        character_id: i64,
+        input: IdleConfigUpdateInput,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>>;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -137,7 +216,8 @@ impl IdleRouteServices for NoopIdleRouteServices {
         _character_id: i64,
         _user_id: i64,
         _input: IdleStartInput,
-    ) -> Pin<Box<dyn Future<Output = Result<IdleStartServiceResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<IdleStartServiceResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(IdleStartServiceResult::Failure {
                 message: "挂机功能暂不可用".to_string(),
@@ -156,12 +236,45 @@ impl IdleRouteServices for NoopIdleRouteServices {
     fn stop_idle_session<'a>(
         &'a self,
         _character_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<IdleStopServiceResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<IdleStopServiceResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(IdleStopServiceResult::Failure {
                 message: "没有活跃的挂机会话".to_string(),
             })
         })
+    }
+
+    fn get_idle_history<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<IdleSessionView>, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(Vec::new()) })
+    }
+
+    fn get_idle_progress<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<IdleSessionView>, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(None) })
+    }
+
+    fn get_idle_config<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<IdleConfigResponseData, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(default_idle_config_response()) })
+    }
+
+    fn update_idle_config<'a>(
+        &'a self,
+        _character_id: i64,
+        _input: IdleConfigUpdateInput,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
     }
 }
 
@@ -170,6 +283,12 @@ pub fn build_idle_router() -> Router<AppState> {
         .route("/start", post(start_idle_handler))
         .route("/status", get(idle_status_handler))
         .route("/stop", post(stop_idle_handler))
+        .route("/history", get(idle_history_handler))
+        .route("/progress", get(idle_progress_handler))
+        .route(
+            "/config",
+            get(idle_config_handler).put(update_idle_config_handler),
+        )
 }
 
 async fn start_idle_handler(
@@ -240,6 +359,62 @@ async fn stop_idle_handler(
     }
 }
 
+async fn idle_history_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, BusinessError> {
+    let (_, character) = match require_authenticated_character(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return Ok(response),
+    };
+
+    let history = state.idle_services.get_idle_history(character.id).await?;
+    Ok(success(IdleHistoryResponseData { history }))
+}
+
+async fn idle_progress_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, BusinessError> {
+    let (_, character) = match require_authenticated_character(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return Ok(response),
+    };
+
+    let session = state.idle_services.get_idle_progress(character.id).await?;
+    Ok(success(IdleStatusResponseData { session }))
+}
+
+async fn idle_config_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, BusinessError> {
+    let (_, character) = match require_authenticated_character(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return Ok(response),
+    };
+
+    let config = state.idle_services.get_idle_config(character.id).await?;
+    Ok(success(config))
+}
+
+async fn update_idle_config_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<IdleConfigUpdateInput>,
+) -> Result<Response, BusinessError> {
+    let (_, character) = match require_authenticated_character(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return Ok(response),
+    };
+
+    state
+        .idle_services
+        .update_idle_config(character.id, payload)
+        .await?;
+    Ok(ok())
+}
+
 async fn require_authenticated_character(
     state: &AppState,
     headers: &HeaderMap,
@@ -257,9 +432,11 @@ async fn require_authenticated_character(
     }
 
     let user_id = verify_result.user_id.ok_or_else(unauthorized_response)?;
-    let character_result = state.auth_services.check_character(user_id).await.map_err(|error| {
-        error.into_response()
-    })?;
+    let character_result = state
+        .auth_services
+        .check_character(user_id)
+        .await
+        .map_err(|error| error.into_response())?;
     if !character_result.has_character {
         return Err(
             BusinessError::with_status("角色不存在", StatusCode::NOT_FOUND).into_response(),
@@ -289,4 +466,19 @@ fn validate_start_payload(payload: &IdleStartInput) -> Result<(), BusinessError>
         return Err(BusinessError::new("maxDurationMs 必须大于 0"));
     }
     Ok(())
+}
+
+fn default_idle_config_response() -> IdleConfigResponseData {
+    IdleConfigResponseData {
+        config: IdleConfigView {
+            map_id: None,
+            room_id: None,
+            max_duration_ms: 3_600_000,
+            auto_skill_policy: IdleAutoSkillPolicy { slots: Vec::new() },
+            target_monster_def_id: None,
+            include_partner_in_battle: true,
+        },
+        max_duration_limit_ms: 28_800_000,
+        month_card_active: false,
+    }
 }

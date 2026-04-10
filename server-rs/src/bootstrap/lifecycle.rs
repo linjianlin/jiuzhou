@@ -8,7 +8,9 @@ use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::auth::service::RustAuthServices;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::upload::service::RustUploadService;
-use crate::bootstrap::app::{build_router, new_shared_runtime_services, AppState, RuntimeServicesState};
+use crate::bootstrap::app::{
+    build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
+};
 use crate::bootstrap::config::load_settings;
 use crate::bootstrap::readiness::ReadinessGate;
 use crate::bootstrap::shutdown::ShutdownPlan;
@@ -57,10 +59,12 @@ pub async fn run_application() -> Result<(), AppError> {
     let game_socket_services: std::sync::Arc<
         dyn crate::edge::socket::game_socket::GameSocketAuthServices,
     > = auth_services_impl.clone();
-    let upload_services: std::sync::Arc<dyn crate::edge::http::routes::upload::UploadRouteServices> =
-        std::sync::Arc::new(RustUploadService::new());
-    let afdian_services: std::sync::Arc<dyn crate::edge::http::routes::afdian::AfdianRouteServices> =
-        std::sync::Arc::new(RustAfdianRouteService::new());
+    let upload_services: std::sync::Arc<
+        dyn crate::edge::http::routes::upload::UploadRouteServices,
+    > = std::sync::Arc::new(RustUploadService::new());
+    let afdian_services: std::sync::Arc<
+        dyn crate::edge::http::routes::afdian::AfdianRouteServices,
+    > = std::sync::Arc::new(RustAfdianRouteService::new());
 
     let state = AppState {
         afdian_services,
@@ -79,7 +83,8 @@ pub async fn run_application() -> Result<(), AppError> {
     info!(%local_addr, ready = false, "rust backend listening while startup continues");
 
     spawn_background_startup(async move {
-        let startup_execution = execute_with_runtime_target(&startup_context, runtime_services).await?;
+        let startup_execution =
+            execute_with_runtime_target(&startup_context, runtime_services).await?;
         info!(startup_stages = ?startup_execution.stages, "startup pipeline completed");
         Ok(())
     });

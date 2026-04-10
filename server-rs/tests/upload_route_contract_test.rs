@@ -26,6 +26,44 @@ use jiuzhou_server_rs::runtime::connection::session_registry::new_shared_session
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn upload_avatar_sts_returns_same_contract_as_avatar_asset_sts() {
+    let temp_dir = std::env::temp_dir().join("jiuzhou-upload-route-contract-avatar-sts-success");
+    let app = build_router(build_app_state(temp_dir));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/upload/avatar/sts")
+                .header("authorization", "Bearer token-upload-avatar-sts-success")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "contentType": "image/png",
+                        "fileSize": 256,
+                    })
+                    .to_string(),
+                ))
+                .expect("upload avatar sts success request"),
+        )
+        .await
+        .expect("upload avatar sts success response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "cosEnabled": false,
+                "maxFileSizeBytes": 2_097_152,
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn upload_avatar_asset_sts_rejects_invalid_content_type_with_frozen_message() {
     let temp_dir = std::env::temp_dir().join("jiuzhou-upload-route-contract-invalid-type");
     let app = build_router(build_app_state(temp_dir));
@@ -134,6 +172,41 @@ async fn upload_avatar_asset_sts_rejects_oversized_file_with_frozen_message() {
 }
 
 #[tokio::test]
+async fn upload_avatar_confirm_uses_character_avatar_success_message() {
+    let temp_dir = std::env::temp_dir().join("jiuzhou-upload-route-contract-avatar-confirm");
+    let app = build_router(build_app_state(temp_dir));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/upload/avatar/confirm")
+                .header("authorization", "Bearer token-upload-avatar-confirm")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "avatarUrl": "/uploads/avatars/avatar-confirm.png",
+                    })
+                    .to_string(),
+                ))
+                .expect("upload avatar confirm request"),
+        )
+        .await
+        .expect("upload avatar confirm response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "头像更新成功",
+            "avatarUrl": "/uploads/avatars/avatar-confirm.png",
+        })
+    );
+}
+
+#[tokio::test]
 async fn upload_avatar_asset_confirm_requires_avatar_url_field() {
     let temp_dir = std::env::temp_dir().join("jiuzhou-upload-route-contract-missing-avatar-url");
     let app = build_router(build_app_state(temp_dir));
@@ -159,6 +232,54 @@ async fn upload_avatar_asset_confirm_requires_avatar_url_field() {
             "success": false,
             "message": "缺少 avatarUrl",
         })
+    );
+}
+
+#[tokio::test]
+async fn upload_avatar_returns_character_update_message_and_persists_local_file() {
+    let temp_dir = std::env::temp_dir().join(format!(
+        "jiuzhou-upload-route-contract-avatar-success-{}",
+        std::process::id()
+    ));
+    let app = build_router(build_app_state(temp_dir.clone()));
+
+    let boundary = "upload-boundary-avatar-success";
+    let request_body = multipart_body(boundary, "avatar", "avatar.png", "image/png", b"png-bytes");
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/upload/avatar")
+                .header("authorization", "Bearer token-upload-avatar-success")
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(request_body))
+                .expect("upload avatar request"),
+        )
+        .await
+        .expect("upload avatar response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    assert_eq!(json["message"], serde_json::json!("头像更新成功"));
+
+    let avatar_url = json["avatarUrl"]
+        .as_str()
+        .expect("avatarUrl should be present on success");
+    assert!(avatar_url.starts_with("/uploads/avatars/avatar-"));
+    assert!(avatar_url.ends_with(".png"));
+
+    let file_name = avatar_url
+        .split('/')
+        .next_back()
+        .expect("avatar url should contain file name");
+    let stored_file = temp_dir.join(file_name);
+    assert!(
+        stored_file.exists(),
+        "stored file should exist: {stored_file:?}"
     );
 }
 
@@ -204,7 +325,10 @@ async fn upload_avatar_asset_returns_success_shape_and_persists_local_file() {
         .next_back()
         .expect("avatar url should contain file name");
     let stored_file = temp_dir.join(file_name);
-    assert!(stored_file.exists(), "stored file should exist: {stored_file:?}");
+    assert!(
+        stored_file.exists(),
+        "stored file should exist: {stored_file:?}"
+    );
 }
 
 fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
@@ -284,7 +408,8 @@ impl AuthRouteServices for FakeAuthServices {
     fn check_character<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CheckCharacterResult {
                 has_character: true,
@@ -298,7 +423,8 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _nickname: String,
         _gender: String,
-    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move {
             Ok(CreateCharacterResult {
                 success: false,
@@ -315,7 +441,9 @@ impl GameSocketAuthServices for FakeGameSocketServices {
     fn resolve_game_socket_auth<'a>(
         &'a self,
         _token: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<GameSocketAuthProfile, GameSocketAuthFailure>> + Send + 'a>,
+    > {
         Box::pin(async move {
             Ok(GameSocketAuthProfile {
                 user_id: 7,

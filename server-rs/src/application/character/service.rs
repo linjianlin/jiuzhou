@@ -55,7 +55,6 @@ const CHARACTER_POSITION_TOO_LONG_MESSAGE: &str = "位置参数过长";
 const CHARACTER_NOT_FOUND_MESSAGE: &str = "角色不存在";
 const CHARACTER_POSITION_UPDATED_MESSAGE: &str = "位置更新成功";
 const CHARACTER_SETTING_UPDATED_MESSAGE: &str = "设置已保存";
-const CHARACTER_RENAME_SUCCESS_MESSAGE: &str = "改名成功";
 const CHARACTER_RENAME_CARD_UNSUPPORTED_MESSAGE: &str = "当前暂不支持使用易名符改名";
 const AUTO_DISASSEMBLE_DEFAULT_CATEGORY: &str = "equipment";
 const AUTO_DISASSEMBLE_DEFAULT_MAX_QUALITY_RANK: i32 = 1;
@@ -171,11 +170,12 @@ impl RustCharacterReadService {
         nickname: &str,
         gender: &str,
     ) -> Result<CreateCharacterResult, BusinessError> {
-        let existing_character = sqlx::query("SELECT id FROM characters WHERE user_id = $1 LIMIT 1")
-            .bind(user_id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(internal_business_error)?;
+        let existing_character =
+            sqlx::query("SELECT id FROM characters WHERE user_id = $1 LIMIT 1")
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal_business_error)?;
         if existing_character.is_some() {
             return Ok(CreateCharacterResult {
                 success: false,
@@ -204,11 +204,12 @@ impl RustCharacterReadService {
             });
         }
 
-        let duplicate_nickname = sqlx::query("SELECT id FROM characters WHERE nickname = $1 LIMIT 1")
-            .bind(&normalized_nickname)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(internal_business_error)?;
+        let duplicate_nickname =
+            sqlx::query("SELECT id FROM characters WHERE nickname = $1 LIMIT 1")
+                .bind(&normalized_nickname)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal_business_error)?;
         if duplicate_nickname.is_some() {
             return Ok(CreateCharacterResult {
                 success: false,
@@ -277,7 +278,10 @@ impl RustCharacterReadService {
         .await
         .map_err(internal_business_error)?;
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
 
         let character = self.load_character_from_db(user_id).await?;
         let Some(character) = character else {
@@ -339,7 +343,8 @@ impl RustCharacterReadService {
             });
         };
 
-        self.sync_runtime_position(character_id, &map_id, &room_id).await;
+        self.sync_runtime_position(character_id, &map_id, &room_id)
+            .await;
 
         Ok(UpdateCharacterPositionResult {
             success: true,
@@ -373,7 +378,9 @@ impl RustCharacterReadService {
             });
         };
 
-        let character_id = character_row.try_get("id").map_err(internal_business_error)?;
+        let character_id = character_row
+            .try_get::<i64, _>("id")
+            .map_err(internal_business_error)?;
         let normalized_nickname = normalize_character_nickname_input(nickname);
         if normalized_nickname.is_empty() {
             return Ok(RenameCharacterWithCardResult {
@@ -392,14 +399,13 @@ impl RustCharacterReadService {
             });
         }
 
-        let duplicate_nickname = sqlx::query(
-            "SELECT id FROM characters WHERE nickname = $1 AND id <> $2 LIMIT 1",
-        )
-        .bind(&normalized_nickname)
-        .bind(character_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(internal_business_error)?;
+        let duplicate_nickname =
+            sqlx::query("SELECT id FROM characters WHERE nickname = $1 AND id <> $2 LIMIT 1")
+                .bind(&normalized_nickname)
+                .bind(character_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal_business_error)?;
         if duplicate_nickname.is_some() {
             return Ok(RenameCharacterWithCardResult {
                 success: false,
@@ -440,7 +446,8 @@ impl RustCharacterReadService {
             });
         };
 
-        self.sync_runtime_auto_cast_skills(character_id, enabled).await;
+        self.sync_runtime_auto_cast_skills(character_id, enabled)
+            .await;
 
         Ok(UpdateCharacterSettingResult {
             success: true,
@@ -454,7 +461,9 @@ impl RustCharacterReadService {
         enabled: bool,
         rules: Option<Vec<Value>>,
     ) -> Result<UpdateCharacterSettingResult, BusinessError> {
-        let normalized_rules = rules.as_ref().map(|items| normalize_auto_disassemble_rule_set_list(items));
+        let normalized_rules = rules
+            .as_ref()
+            .map(|items| normalize_auto_disassemble_rule_set_list(items));
         let rules_json = normalized_rules
             .as_ref()
             .map(serde_json::to_value)
@@ -719,8 +728,10 @@ fn normalize_auto_disassemble_rule_set(raw: &Value) -> AutoDisassembleRuleDto {
     let sub_categories = normalize_auto_disassemble_token_list(record.get("subCategories"));
     let excluded_sub_categories =
         normalize_auto_disassemble_token_list(record.get("excludedSubCategories"));
-    let include_name_keywords = normalize_auto_disassemble_token_list(record.get("includeNameKeywords"));
-    let exclude_name_keywords = normalize_auto_disassemble_token_list(record.get("excludeNameKeywords"));
+    let include_name_keywords =
+        normalize_auto_disassemble_token_list(record.get("includeNameKeywords"));
+    let exclude_name_keywords =
+        normalize_auto_disassemble_token_list(record.get("excludeNameKeywords"));
 
     AutoDisassembleRuleDto {
         categories: Some(if categories.is_empty() {

@@ -302,7 +302,8 @@ impl AuthRouteServices for FakeAuthServices {
     fn check_character<'a>(
         &'a self,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move { Ok(self.character_result.clone()) })
     }
 
@@ -311,7 +312,8 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _nickname: String,
         _gender: String,
-    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<CreateCharacterResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move { Ok(self.create_result.clone()) })
     }
 
@@ -330,7 +332,9 @@ impl AuthRouteServices for FakeAuthServices {
         &'a self,
         _user_id: i64,
         _enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move { Ok(self.update_setting_result.clone()) })
     }
 
@@ -339,7 +343,9 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
         _enabled: bool,
         _rules: Option<Vec<serde_json::Value>>,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move { Ok(self.update_setting_result.clone()) })
     }
 
@@ -347,7 +353,9 @@ impl AuthRouteServices for FakeAuthServices {
         &'a self,
         _user_id: i64,
         _enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move { Ok(self.update_setting_result.clone()) })
     }
 }

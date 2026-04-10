@@ -44,11 +44,7 @@ impl AfdianRouteServices for RustAfdianRouteService {
         payload: AfdianWebhookPayloadInput,
     ) -> Pin<Box<dyn Future<Output = Result<(), AfdianRouteError>> + Send + 'a>> {
         Box::pin(async move {
-            let Some(order) = payload
-                .data
-                .as_ref()
-                .and_then(|data| data.order.as_ref())
-            else {
+            let Some(order) = payload.data.as_ref().and_then(|data| data.order.as_ref()) else {
                 return Ok(());
             };
 
@@ -78,19 +74,15 @@ struct NormalizedAfdianOrder {
     status: f64,
 }
 
-fn normalize_order(order: &AfdianWebhookOrderInput) -> Result<NormalizedAfdianOrder, AfdianRouteError> {
+fn normalize_order(
+    order: &AfdianWebhookOrderInput,
+) -> Result<NormalizedAfdianOrder, AfdianRouteError> {
     Ok(NormalizedAfdianOrder {
-        out_trade_no: normalize_required_text_field(
-            order.out_trade_no.as_deref(),
-            "out_trade_no",
-        )?,
+        out_trade_no: normalize_required_text_field(order.out_trade_no.as_deref(), "out_trade_no")?,
         user_id: normalize_required_text_field(order.user_id.as_deref(), "user_id")?,
         plan_id: normalize_required_text_field(order.plan_id.as_deref(), "plan_id")?,
         month: normalize_required_positive_integer_field(order.month, "month")?,
-        total_amount: normalize_required_text_field(
-            order.total_amount.as_deref(),
-            "total_amount",
-        )?,
+        total_amount: normalize_required_text_field(order.total_amount.as_deref(), "total_amount")?,
         status: normalize_required_number_field(order.status.as_ref(), "status")?,
     })
 }

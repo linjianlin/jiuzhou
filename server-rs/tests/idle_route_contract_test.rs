@@ -17,6 +17,7 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::idle::{
+    IdleAutoSkillPolicy, IdleConfigResponseData, IdleConfigUpdateInput, IdleConfigView,
     IdleRouteServices, IdleSessionView, IdleStartInput, IdleStartServiceResult,
     IdleStopServiceResult,
 };
@@ -30,17 +31,20 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn idle_status_rejects_missing_bearer_header() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(7),
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
         },
-        character_result: CheckCharacterResult {
-            has_character: true,
-            character: Some(sample_character()),
-        },
-    }, FakeIdleServices::default()));
+        FakeIdleServices::default(),
+    ));
 
     let response = app
         .oneshot(
@@ -65,26 +69,26 @@ async fn idle_status_rejects_missing_bearer_header() {
 
 #[tokio::test]
 async fn idle_start_returns_conflict_with_existing_session_id() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(7),
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
         },
-        character_result: CheckCharacterResult {
-            has_character: true,
-            character: Some(sample_character()),
+        FakeIdleServices {
+            start_result: IdleStartServiceResult::Conflict {
+                message: "已有活跃挂机会话".to_string(),
+                existing_session_id: "session-existing-1".to_string(),
+            },
+            ..FakeIdleServices::default()
         },
-    }, FakeIdleServices {
-        start_result: IdleStartServiceResult::Conflict {
-            message: "已有活跃挂机会话".to_string(),
-            existing_session_id: "session-existing-1".to_string(),
-        },
-        status_result: None,
-        stop_result: IdleStopServiceResult::Failure {
-            message: "没有活跃的挂机会话".to_string(),
-        },
-    }));
+    ));
 
     let response = app
         .oneshot(
@@ -123,17 +127,20 @@ async fn idle_start_returns_conflict_with_existing_session_id() {
 
 #[tokio::test]
 async fn idle_status_returns_null_session_when_no_active_session() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(7),
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
         },
-        character_result: CheckCharacterResult {
-            has_character: true,
-            character: Some(sample_character()),
-        },
-    }, FakeIdleServices::default()));
+        FakeIdleServices::default(),
+    ));
 
     let response = app
         .oneshot(
@@ -161,17 +168,20 @@ async fn idle_status_returns_null_session_when_no_active_session() {
 
 #[tokio::test]
 async fn idle_stop_returns_business_failure_when_no_active_session() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(7),
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
         },
-        character_result: CheckCharacterResult {
-            has_character: true,
-            character: Some(sample_character()),
-        },
-    }, FakeIdleServices::default()));
+        FakeIdleServices::default(),
+    ));
 
     let response = app
         .oneshot(
@@ -198,25 +208,25 @@ async fn idle_stop_returns_business_failure_when_no_active_session() {
 
 #[tokio::test]
 async fn idle_start_returns_success_envelope_when_session_starts() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(7),
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
         },
-        character_result: CheckCharacterResult {
-            has_character: true,
-            character: Some(sample_character()),
+        FakeIdleServices {
+            start_result: IdleStartServiceResult::Started {
+                session_id: "session-started-1".to_string(),
+            },
+            ..FakeIdleServices::default()
         },
-    }, FakeIdleServices {
-        start_result: IdleStartServiceResult::Started {
-            session_id: "session-started-1".to_string(),
-        },
-        status_result: None,
-        stop_result: IdleStopServiceResult::Failure {
-            message: "没有活跃的挂机会话".to_string(),
-        },
-    }));
+    ));
 
     let response = app
         .oneshot(
@@ -254,6 +264,185 @@ async fn idle_start_returns_success_envelope_when_session_starts() {
     );
 }
 
+#[tokio::test]
+async fn idle_history_returns_recent_sessions_envelope() {
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
+        },
+        FakeIdleServices {
+            history_result: vec![sample_idle_session("session-history-1")],
+            ..FakeIdleServices::default()
+        },
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/idle/history")
+                .header("authorization", "Bearer token-idle-history")
+                .body(Body::empty())
+                .expect("idle history request"),
+        )
+        .await
+        .expect("idle history response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    assert_eq!(
+        json["data"]["history"][0]["id"],
+        serde_json::json!("session-history-1")
+    );
+    assert_eq!(
+        json["data"]["history"][0]["targetMonsterDefId"],
+        serde_json::json!("monster-1")
+    );
+}
+
+#[tokio::test]
+async fn idle_progress_reuses_session_shape() {
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
+        },
+        FakeIdleServices {
+            progress_result: Some(sample_idle_session("session-progress-1")),
+            ..FakeIdleServices::default()
+        },
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/idle/progress")
+                .header("authorization", "Bearer token-idle-progress")
+                .body(Body::empty())
+                .expect("idle progress request"),
+        )
+        .await
+        .expect("idle progress response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    assert_eq!(
+        json["data"]["session"]["id"],
+        serde_json::json!("session-progress-1")
+    );
+}
+
+#[tokio::test]
+async fn idle_config_returns_default_config_shape() {
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
+        },
+        FakeIdleServices::default(),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/idle/config")
+                .header("authorization", "Bearer token-idle-config")
+                .body(Body::empty())
+                .expect("idle config request"),
+        )
+        .await
+        .expect("idle config response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "config": {
+                    "mapId": serde_json::Value::Null,
+                    "roomId": serde_json::Value::Null,
+                    "maxDurationMs": 3_600_000,
+                    "autoSkillPolicy": { "slots": [] },
+                    "targetMonsterDefId": serde_json::Value::Null,
+                    "includePartnerInBattle": true,
+                },
+                "maxDurationLimitMs": 28_800_000,
+                "monthCardActive": false,
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn idle_config_update_returns_ok_envelope() {
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
+        },
+        FakeIdleServices::default(),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/idle/config")
+                .header("authorization", "Bearer token-idle-config-update")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "mapId": "map-1",
+                        "roomId": "room-1",
+                        "maxDurationMs": 60000,
+                        "autoSkillPolicy": { "slots": [] },
+                        "targetMonsterDefId": "monster-1",
+                        "includePartnerInBattle": true,
+                    })
+                    .to_string(),
+                ))
+                .expect("idle config update request"),
+        )
+        .await
+        .expect("idle config update response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json, serde_json::json!({ "success": true }));
+}
+
 struct FakeAuthServices {
     verify_result: VerifyTokenAndSessionResult,
     character_result: CheckCharacterResult,
@@ -264,6 +453,9 @@ struct FakeIdleServices {
     start_result: IdleStartServiceResult,
     status_result: Option<IdleSessionView>,
     stop_result: IdleStopServiceResult,
+    history_result: Vec<IdleSessionView>,
+    progress_result: Option<IdleSessionView>,
+    config_result: IdleConfigResponseData,
 }
 
 impl Default for FakeIdleServices {
@@ -275,6 +467,20 @@ impl Default for FakeIdleServices {
             status_result: None,
             stop_result: IdleStopServiceResult::Failure {
                 message: "没有活跃的挂机会话".to_string(),
+            },
+            history_result: Vec::new(),
+            progress_result: None,
+            config_result: IdleConfigResponseData {
+                config: IdleConfigView {
+                    map_id: None,
+                    room_id: None,
+                    max_duration_ms: 3_600_000,
+                    auto_skill_policy: IdleAutoSkillPolicy { slots: Vec::new() },
+                    target_monster_def_id: None,
+                    include_partner_in_battle: true,
+                },
+                max_duration_limit_ms: 28_800_000,
+                month_card_active: false,
             },
         }
     }
@@ -383,7 +589,8 @@ impl IdleRouteServices for FakeIdleServices {
         _character_id: i64,
         _user_id: i64,
         _input: IdleStartInput,
-    ) -> Pin<Box<dyn Future<Output = Result<IdleStartServiceResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<IdleStartServiceResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move { Ok(self.start_result.clone()) })
     }
 
@@ -398,8 +605,41 @@ impl IdleRouteServices for FakeIdleServices {
     fn stop_idle_session<'a>(
         &'a self,
         _character_id: i64,
-    ) -> Pin<Box<dyn Future<Output = Result<IdleStopServiceResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<IdleStopServiceResult, BusinessError>> + Send + 'a>>
+    {
         Box::pin(async move { Ok(self.stop_result.clone()) })
+    }
+
+    fn get_idle_history<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<IdleSessionView>, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(self.history_result.clone()) })
+    }
+
+    fn get_idle_progress<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<IdleSessionView>, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(self.progress_result.clone()) })
+    }
+
+    fn get_idle_config<'a>(
+        &'a self,
+        _character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<IdleConfigResponseData, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(self.config_result.clone()) })
+    }
+
+    fn update_idle_config<'a>(
+        &'a self,
+        _character_id: i64,
+        _input: IdleConfigUpdateInput,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
     }
 }
 
@@ -417,6 +657,28 @@ fn sample_character() -> CharacterBasicInfo {
         dungeon_no_stamina_cost: false,
         spirit_stones: 88,
         silver: 666,
+    }
+}
+
+fn sample_idle_session(session_id: &str) -> IdleSessionView {
+    IdleSessionView {
+        id: session_id.to_string(),
+        character_id: 3001,
+        status: "active".to_string(),
+        map_id: "map-1".to_string(),
+        room_id: "room-1".to_string(),
+        max_duration_ms: 60_000,
+        total_battles: 3,
+        win_count: 2,
+        lose_count: 1,
+        total_exp: 120,
+        total_silver: 88,
+        bag_full_flag: false,
+        started_at: "2026-04-10 00:00:00+08".to_string(),
+        ended_at: None,
+        viewed_at: None,
+        target_monster_def_id: Some("monster-1".to_string()),
+        target_monster_name: Some("monster-1".to_string()),
     }
 }
 

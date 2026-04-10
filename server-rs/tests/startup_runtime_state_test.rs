@@ -145,7 +145,9 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
             .find_session_id_by_battle_id("battle-1"),
         Some("session-1")
     );
-    assert!(runtime_services.idle_runtime_service.is_character_locked(9001));
+    assert!(runtime_services
+        .idle_runtime_service
+        .is_character_locked(9001));
 }
 
 struct NoopAuthServices;
@@ -252,7 +254,13 @@ impl jiuzhou_server_rs::edge::http::routes::auth::AuthRouteServices for NoopAuth
     fn check_character<'a>(
         &'a self,
         _user_id: i64,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>> {
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<CheckCharacterResult, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
         Box::pin(async move {
             Ok(CheckCharacterResult {
                 has_character: false,

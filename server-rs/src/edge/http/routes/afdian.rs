@@ -3,7 +3,7 @@ use std::{future::Future, pin::Pin};
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::Router;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
@@ -99,7 +99,10 @@ struct AfdianWebhookResponse {
 }
 
 pub fn build_afdian_router() -> Router<AppState> {
-    Router::new().route("/webhook", get(get_webhook_handler).post(post_webhook_handler))
+    Router::new().route(
+        "/webhook",
+        get(get_webhook_handler).post(post_webhook_handler),
+    )
 }
 
 async fn get_webhook_handler() -> Response {

@@ -129,7 +129,8 @@ where
     F: FnMut(StartupStage),
 {
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
-    execute_with_recovery_target_and_observer(context, recovery, runtime_services, &mut observer).await
+    execute_with_recovery_target_and_observer(context, recovery, runtime_services, &mut observer)
+        .await
 }
 
 pub async fn execute_with_recovery_target_and_observer<F>(

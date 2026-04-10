@@ -8,8 +8,8 @@ use axum::Router;
 use serde::{Deserialize, Serialize};
 
 use crate::application::character::service::{
-    CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
-    UpdateCharacterSettingResult,
+    CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
+    UpdateCharacterPositionResult, UpdateCharacterSettingResult,
 };
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::{invalid_session_response, read_bearer_token};
@@ -151,11 +151,29 @@ pub trait AuthRouteServices: Send + Sync {
         Box<dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a>,
     >;
 
+    fn rename_character_with_card<'a>(
+        &'a self,
+        _user_id: i64,
+        _item_instance_id: i64,
+        _nickname: String,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<RenameCharacterWithCardResult, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "服务器错误",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
     fn update_auto_cast_skills<'a>(
         &'a self,
         _user_id: i64,
         _enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             Err(BusinessError::with_status(
                 "服务器错误",
@@ -169,7 +187,9 @@ pub trait AuthRouteServices: Send + Sync {
         _user_id: i64,
         _enabled: bool,
         _rules: Option<Vec<serde_json::Value>>,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             Err(BusinessError::with_status(
                 "服务器错误",
@@ -182,7 +202,9 @@ pub trait AuthRouteServices: Send + Sync {
         &'a self,
         _user_id: i64,
         _enabled: bool,
-    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             Err(BusinessError::with_status(
                 "服务器错误",

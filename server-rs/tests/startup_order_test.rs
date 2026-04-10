@@ -165,5 +165,7 @@ async fn startup_pipeline_preserves_expected_stage_order_and_builds_runtime_befo
             .find_character_id_by_user_id(77),
         Some(9001)
     );
-    assert!(runtime_services.idle_runtime_service.is_character_locked(9001));
+    assert!(runtime_services
+        .idle_runtime_service
+        .is_character_locked(9001));
 }

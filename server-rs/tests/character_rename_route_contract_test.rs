@@ -5,7 +5,8 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jiuzhou_server_rs::application::character::service::{
-    CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
+    CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
+    UpdateCharacterPositionResult,
 };
 use jiuzhou_server_rs::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
@@ -26,42 +27,23 @@ use jiuzhou_server_rs::runtime::connection::session_registry::new_shared_session
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn character_update_position_rejects_empty_params() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(21),
-        },
-        character_result: CheckCharacterResult {
-            has_character: false,
-            character: None,
-        },
-        create_result: CreateCharacterResult {
-            success: false,
-            message: "未使用".to_string(),
-            data: None,
-        },
-        update_position_result: UpdateCharacterPositionResult {
-            success: false,
-            message: "未使用".to_string(),
-        },
-    }));
+async fn character_rename_with_card_rejects_invalid_item_instance_id() {
+    let app = build_router(build_app_state(FakeAuthServices::success()));
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/character/updatePosition")
-                .header("authorization", "Bearer token-position-empty")
+                .uri("/api/character/renameWithCard")
+                .header("authorization", "Bearer token-rename-invalid-item")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"currentMapId":"","currentRoomId":"room-village-center"}"#,
+                    r#"{"itemInstanceId":"abc","nickname":"青云子"}"#,
                 ))
-                .expect("character update position request"),
+                .expect("character rename request"),
         )
         .await
-        .expect("character update position response");
+        .expect("character rename response");
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -69,52 +51,27 @@ async fn character_update_position_rejects_empty_params() {
         json,
         serde_json::json!({
             "success": false,
-            "message": "位置参数不能为空",
+            "message": "itemInstanceId参数错误",
         })
     );
 }
 
 #[tokio::test]
-async fn character_update_position_rejects_overlong_params() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(22),
-        },
-        character_result: CheckCharacterResult {
-            has_character: false,
-            character: None,
-        },
-        create_result: CreateCharacterResult {
-            success: false,
-            message: "未使用".to_string(),
-            data: None,
-        },
-        update_position_result: UpdateCharacterPositionResult {
-            success: false,
-            message: "未使用".to_string(),
-        },
-    }));
-
-    let long_map_id = "m".repeat(65);
-    let body = serde_json::json!({
-        "currentMapId": long_map_id,
-        "currentRoomId": "room-village-center",
-    });
+async fn character_rename_with_card_rejects_empty_nickname() {
+    let app = build_router(build_app_state(FakeAuthServices::success()));
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/character/updatePosition")
-                .header("authorization", "Bearer token-position-overlong")
+                .uri("/api/character/renameWithCard")
+                .header("authorization", "Bearer token-rename-empty-name")
                 .header("content-type", "application/json")
-                .body(Body::from(body.to_string()))
-                .expect("character update position request"),
+                .body(Body::from(r#"{"itemInstanceId":99,"nickname":"   "}"#))
+                .expect("character rename request"),
         )
         .await
-        .expect("character update position response");
+        .expect("character rename response");
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -122,48 +79,35 @@ async fn character_update_position_rejects_overlong_params() {
         json,
         serde_json::json!({
             "success": false,
-            "message": "位置参数过长",
+            "message": "道号不能为空",
         })
     );
 }
 
 #[tokio::test]
-async fn character_update_position_returns_missing_character_failure() {
+async fn character_rename_with_card_returns_business_failure_envelope() {
     let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(23),
-        },
-        character_result: CheckCharacterResult {
-            has_character: false,
-            character: None,
-        },
-        create_result: CreateCharacterResult {
-            success: false,
-            message: "未使用".to_string(),
-            data: None,
-        },
-        update_position_result: UpdateCharacterPositionResult {
+        rename_result: RenameCharacterWithCardResult {
             success: false,
             message: "角色不存在".to_string(),
         },
+        ..FakeAuthServices::success()
     }));
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/character/updatePosition")
-                .header("authorization", "Bearer token-position-missing")
+                .uri("/api/character/renameWithCard")
+                .header("authorization", "Bearer token-rename-missing-character")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"currentMapId":"map-qingyun-village","currentRoomId":"room-village-center"}"#,
+                    r#"{"itemInstanceId":"101","nickname":"凌霄子"}"#,
                 ))
-                .expect("character update position request"),
+                .expect("character rename request"),
         )
         .await
-        .expect("character update position response");
+        .expect("character rename response");
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -177,42 +121,21 @@ async fn character_update_position_returns_missing_character_failure() {
 }
 
 #[tokio::test]
-async fn character_update_position_returns_success_envelope() {
-    let app = build_router(build_app_state(FakeAuthServices {
-        verify_result: VerifyTokenAndSessionResult {
-            valid: true,
-            kicked: false,
-            user_id: Some(24),
-        },
-        character_result: CheckCharacterResult {
-            has_character: false,
-            character: None,
-        },
-        create_result: CreateCharacterResult {
-            success: false,
-            message: "未使用".to_string(),
-            data: None,
-        },
-        update_position_result: UpdateCharacterPositionResult {
-            success: true,
-            message: "位置更新成功".to_string(),
-        },
-    }));
+async fn character_rename_with_card_returns_success_envelope() {
+    let app = build_router(build_app_state(FakeAuthServices::success()));
 
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/character/updatePosition")
-                .header("authorization", "Bearer token-position-success")
+                .uri("/api/character/renameWithCard")
+                .header("authorization", "Bearer token-rename-success")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"currentMapId":"map-qingyun-village","currentRoomId":"room-village-center"}"#,
-                ))
-                .expect("character update position request"),
+                .body(Body::from(r#"{"itemInstanceId":88,"nickname":"凌霄子"}"#))
+                .expect("character rename request"),
         )
         .await
-        .expect("character update position response");
+        .expect("character rename response");
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
@@ -220,7 +143,7 @@ async fn character_update_position_returns_success_envelope() {
         json,
         serde_json::json!({
             "success": true,
-            "message": "位置更新成功",
+            "message": "改名成功",
         })
     );
 }
@@ -230,6 +153,36 @@ struct FakeAuthServices {
     character_result: CheckCharacterResult,
     create_result: CreateCharacterResult,
     update_position_result: UpdateCharacterPositionResult,
+    rename_result: RenameCharacterWithCardResult,
+}
+
+impl FakeAuthServices {
+    fn success() -> Self {
+        Self {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(41),
+            },
+            character_result: CheckCharacterResult {
+                has_character: false,
+                character: None,
+            },
+            create_result: CreateCharacterResult {
+                success: false,
+                message: "未使用".to_string(),
+                data: None,
+            },
+            update_position_result: UpdateCharacterPositionResult {
+                success: false,
+                message: "未使用".to_string(),
+            },
+            rename_result: RenameCharacterWithCardResult {
+                success: true,
+                message: "改名成功".to_string(),
+            },
+        }
+    }
 }
 
 fn build_app_state<T>(services: T) -> AppState
@@ -324,28 +277,23 @@ impl AuthRouteServices for FakeAuthServices {
     fn update_character_position<'a>(
         &'a self,
         _user_id: i64,
-        current_map_id: String,
-        current_room_id: String,
+        _current_map_id: String,
+        _current_room_id: String,
     ) -> Pin<
         Box<dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a>,
     > {
-        Box::pin(async move {
-            let map_id = current_map_id.trim();
-            let room_id = current_room_id.trim();
-            if map_id.is_empty() || room_id.is_empty() {
-                return Ok(UpdateCharacterPositionResult {
-                    success: false,
-                    message: "位置参数不能为空".to_string(),
-                });
-            }
-            if map_id.chars().count() > 64 || room_id.chars().count() > 64 {
-                return Ok(UpdateCharacterPositionResult {
-                    success: false,
-                    message: "位置参数过长".to_string(),
-                });
-            }
-            Ok(self.update_position_result.clone())
-        })
+        Box::pin(async move { Ok(self.update_position_result.clone()) })
+    }
+
+    fn rename_character_with_card<'a>(
+        &'a self,
+        _user_id: i64,
+        _item_instance_id: i64,
+        _nickname: String,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<RenameCharacterWithCardResult, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move { Ok(self.rename_result.clone()) })
     }
 }
 
@@ -359,7 +307,7 @@ impl GameSocketAuthServices for FakeGameSocketServices {
         Box::pin(async move {
             Ok(GameSocketAuthProfile {
                 user_id: 1,
-                session_token: "character-position-route-test-session".to_string(),
+                session_token: "character-rename-route-test-session".to_string(),
                 character_id: None,
                 team_id: None,
                 sect_id: None,
@@ -376,10 +324,6 @@ async fn response_json(response: axum::response::Response) -> (StatusCode, serde
         .await
         .expect("collect body")
         .to_bytes();
-    let json = if bytes.is_empty() {
-        serde_json::Value::Null
-    } else {
-        serde_json::from_slice(&bytes).expect("json body")
-    };
+    let json = serde_json::from_slice(&bytes).expect("parse response json");
     (status, json)
 }
