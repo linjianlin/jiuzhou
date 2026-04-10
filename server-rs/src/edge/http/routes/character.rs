@@ -17,35 +17,33 @@ use crate::edge::http::auth::require_authenticated_user_id;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, ServiceResultResponse};
 
-/**
- * character 最小兼容路由。
- *
- * 作用：
- * 1. 做什么：提供 `/check`、`/info`、`/create`、`/updatePosition`、`/renameWithCard` 与三个 character settings 更新接口。
- * 2. 做什么：复用现有 Bearer + session 校验语义，并把返回 envelope 保持为 Node 当前的 `sendResult` 形状。
- * 3. 不做什么：不扩展更大的库存、聊天或其它与角色最小合同无关的 mutation 能力。
- *
- * 输入 / 输出：
- * - 输入：Authorization Bearer token；create 额外接收 `{ nickname, gender }`；updatePosition 额外接收 `{ currentMapId, currentRoomId }`；renameWithCard 额外接收 `{ itemInstanceId, nickname }`；settings mutation 接收 `{ enabled, rules? }`。
- * - 输出：Node 兼容 `{ success, message, data? }`；其中 `data` 为 `{ character, hasCharacter }`。
- *
- * 数据流 / 状态流：
- * - HTTP 请求 -> 会话校验 -> `AuthRouteServices::{check_character,create_character,update_character_position,...settings mutations}`
- * - -> application 层统一读取/写入角色最小快照 -> 这里做最薄 envelope 转换。
- *
- * 复用设计说明：
- * - `/auth/bootstrap`、`/character/check`、`/character/create`、`/character/renameWithCard` 与 settings mutation 共用同一套 session 校验与基础角色快照结构，避免登录后首创角链路和后续角色 mutation 链路出现口径漂移。
- * - 只在路由层负责协议转换与 Node 可见参数校验，业务读写全部下沉，避免 handler 重复拼接 itemInstanceId 解析、布尔转换、rules 形状校验和写库 SQL。
- *
- * 关键边界条件与坑点：
- * 1. 被踢下线必须继续返回 `401 + kicked:true`，不能被统一抹平成普通未登录。
- * 2. `/info` 无角色时必须维持 `400 { success:false, message:'角色不存在' }`，而不是返回 `200 + hasCharacter:false`。
- * 3. `/create` 路由层必须继续保留 Node 可见的参数报错文案：`道号和性别不能为空`、`性别参数错误`。
- * 4. `/updatePosition` 必须继续复用同一鉴权路径，并保持 service 返回的 `位置参数不能为空`、`位置参数过长`、`角色不存在`、`位置更新成功` 文案不变。
- * 5. `renameWithCard` 路由层必须继续保留 Node 可见的参数报错文案：`itemInstanceId参数错误`、`道号不能为空`。
- * 6. `updateAutoDisassemble` 必须继续保留 Node 可见的 rules 形状报错文案：`rules参数错误，需为数组`、`rules参数错误，规则项需为对象`。
- * 7. `/:characterId/*` 的功法读接口必须先做路径角色所有权校验；未建角账号和访问他人角色都要维持 `403 { success:false, message:'无权限访问该角色' }`。
- */
+/// character 最小兼容路由。
+///
+/// 作用：
+/// 1. 做什么：提供 `/check`、`/info`、`/create`、`/updatePosition`、`/renameWithCard` 与三个 character settings 更新接口。
+/// 2. 做什么：复用现有 Bearer + session 校验语义，并把返回 envelope 保持为 Node 当前的 `sendResult` 形状。
+/// 3. 不做什么：不扩展更大的库存、聊天或其它与角色最小合同无关的 mutation 能力。
+///
+/// 输入 / 输出：
+/// - 输入：Authorization Bearer token；create 额外接收 `{ nickname, gender }`；updatePosition 额外接收 `{ currentMapId, currentRoomId }`；renameWithCard 额外接收 `{ itemInstanceId, nickname }`；settings mutation 接收 `{ enabled, rules? }`。
+/// - 输出：Node 兼容 `{ success, message, data? }`；其中 `data` 为 `{ character, hasCharacter }`。
+///
+/// 数据流 / 状态流：
+/// - HTTP 请求 -> 会话校验 -> `AuthRouteServices::{check_character,create_character,update_character_position,...settings mutations}`
+/// - -> application 层统一读取/写入角色最小快照 -> 这里做最薄 envelope 转换。
+///
+/// 复用设计说明：
+/// - `/auth/bootstrap`、`/character/check`、`/character/create`、`/character/renameWithCard` 与 settings mutation 共用同一套 session 校验与基础角色快照结构，避免登录后首创角链路和后续角色 mutation 链路出现口径漂移。
+/// - 只在路由层负责协议转换与 Node 可见参数校验，业务读写全部下沉，避免 handler 重复拼接 itemInstanceId 解析、布尔转换、rules 形状校验和写库 SQL。
+///
+/// 关键边界条件与坑点：
+/// 1. 被踢下线必须继续返回 `401 + kicked:true`，不能被统一抹平成普通未登录。
+/// 2. `/info` 无角色时必须维持 `400 { success:false, message:'角色不存在' }`，而不是返回 `200 + hasCharacter:false`。
+/// 3. `/create` 路由层必须继续保留 Node 可见的参数报错文案：`道号和性别不能为空`、`性别参数错误`。
+/// 4. `/updatePosition` 必须继续复用同一鉴权路径，并保持 service 返回的 `位置参数不能为空`、`位置参数过长`、`角色不存在`、`位置更新成功` 文案不变。
+/// 5. `renameWithCard` 路由层必须继续保留 Node 可见的参数报错文案：`itemInstanceId参数错误`、`道号不能为空`。
+/// 6. `updateAutoDisassemble` 必须继续保留 Node 可见的 rules 形状报错文案：`rules参数错误，需为数组`、`rules参数错误，规则项需为对象`。
+/// 7. `/:characterId/*` 的功法读接口必须先做路径角色所有权校验；未建角账号和访问他人角色都要维持 `403 { success:false, message:'无权限访问该角色' }`。
 #[derive(Debug, Deserialize)]
 struct CreateCharacterPayload {
     nickname: Option<String>,

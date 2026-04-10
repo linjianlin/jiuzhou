@@ -203,7 +203,6 @@ async fn battle_pass_claim_route_rejects_non_numeric_level() {
 fn build_app_state<TAuth, TBattlePass>(
     auth_services: TAuth,
     battle_pass_services: TBattlePass,
-        character_technique_service: Default::default(),
 ) -> AppState
 where
     TAuth: AuthRouteServices + 'static,
@@ -221,6 +220,7 @@ where
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
         ),
         battle_pass_services: Arc::new(battle_pass_services),
+        character_technique_service: Default::default(),
         game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
