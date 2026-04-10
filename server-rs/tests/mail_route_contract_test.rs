@@ -21,8 +21,9 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
 use jiuzhou_server_rs::edge::http::routes::mail::{
-    MailAttachItemOptionsView, MailAttachItemView, MailItemView, MailListView, MailMutationData,
-    MailRouteServices, MailUnreadSummaryView,
+    MailAttachItemOptionsView, MailAttachItemView, MailClaimAllResponse, MailClaimAllRewardSummary,
+    MailClaimResponse, MailItemView, MailListView, MailMutationData, MailRouteServices,
+    MailUnreadSummaryView,
 };
 use jiuzhou_server_rs::edge::http::routes::upload::NoopUploadRouteServices;
 use jiuzhou_server_rs::edge::socket::game_socket::{
@@ -157,6 +158,81 @@ async fn mail_delete_all_route_preserves_send_result_shape() {
             "message": "已删除2封邮件",
             "data": {
                 "deletedCount": 2
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn mail_claim_route_preserves_success_json_shape() {
+    let app = build_router(build_app_state(FakeMailRouteServices));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/mail/claim")
+                .method("POST")
+                .header("authorization", "Bearer mail-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"mailId":"1","autoDisassemble":false}"#))
+                .expect("mail claim request"),
+        )
+        .await
+        .expect("mail claim response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "领取成功",
+            "rewards": [
+                {
+                    "type": "silver",
+                    "amount": 88
+                },
+                {
+                    "type": "item",
+                    "itemDefId": "item-1",
+                    "quantity": 2,
+                    "itemName": "灵草"
+                }
+            ]
+        })
+    );
+}
+
+#[tokio::test]
+async fn mail_claim_all_route_preserves_summary_shape() {
+    let app = build_router(build_app_state(FakeMailRouteServices));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/mail/claim-all")
+                .method("POST")
+                .header("authorization", "Bearer mail-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"autoDisassemble":false}"#))
+                .expect("mail claim all request"),
+        )
+        .await
+        .expect("mail claim all response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "成功领取2封邮件附件",
+            "claimedCount": 2,
+            "skippedCount": 0,
+            "rewards": {
+                "silver": 188,
+                "spiritStones": 9,
+                "itemCount": 5
             }
         })
     );
@@ -301,6 +377,52 @@ impl MailRouteServices for FakeMailRouteServices {
                 Some("已读".to_string()),
                 None,
             ))
+        })
+    }
+
+    fn claim_mail_attachments<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+        _mail_id: i64,
+        _auto_disassemble: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<MailClaimResponse, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(MailClaimResponse {
+                success: true,
+                message: "领取成功".to_string(),
+                rewards: Some(vec![
+                    GrantedRewardPreviewView::Silver { amount: 88 },
+                    GrantedRewardPreviewView::Item {
+                        item_def_id: "item-1".to_string(),
+                        quantity: 2,
+                        item_name: Some("灵草".to_string()),
+                        item_icon: None,
+                    },
+                ]),
+            })
+        })
+    }
+
+    fn claim_all_mail_attachments<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+        _auto_disassemble: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<MailClaimAllResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            Ok(MailClaimAllResponse {
+                success: true,
+                message: "成功领取2封邮件附件".to_string(),
+                claimed_count: 2,
+                skipped_count: Some(0),
+                rewards: Some(MailClaimAllRewardSummary {
+                    silver: 188,
+                    spirit_stones: 9,
+                    item_count: 5,
+                }),
+            })
         })
     }
 

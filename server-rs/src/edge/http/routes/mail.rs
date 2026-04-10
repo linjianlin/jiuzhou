@@ -1,8 +1,8 @@
 use std::{collections::HashMap, future::Future, pin::Pin};
 
 use axum::extract::{Json, Query, State};
-use axum::http::HeaderMap;
-use axum::response::Response;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::Serialize;
@@ -18,9 +18,9 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  * mail 邮件读取与状态管理路由。
  *
  * 作用：
- * 1. 做什么：补齐 Node `/api/mail/list`、`/api/mail/unread`、`/api/mail/read`、`/api/mail/delete`、`/api/mail/delete-all`、`/api/mail/read-all` 六个接口。
+ * 1. 做什么：补齐 Node `/api/mail/list`、`/api/mail/unread`、`/api/mail/read`、`/api/mail/claim`、`/api/mail/claim-all`、`/api/mail/delete`、`/api/mail/delete-all`、`/api/mail/read-all` 八个接口。
  * 2. 做什么：统一复用角色上下文鉴权、查询参数解析与 `sendSuccess/sendResult` 协议，避免邮件状态规则散落在 handler 中。
- * 3. 不做什么：不在路由层处理附件发放，不实现 `claim/claim-all`，也不直接拼接数据库查询。
+ * 3. 不做什么：不在路由层直接做附件发放事务，不把奖励入包和计数更新逻辑散落到 handler。
  *
  * 输入 / 输出：
  * - 输入：Authorization Bearer token；列表读取接收 `page/pageSize`，写接口接收 `mailId` 或 `onlyRead`。
@@ -31,7 +31,7 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  *
  * 复用设计说明：
  * - 邮件奖励预览直接复用通用 `GrantedRewardPreviewView`，后续 claim 返回、兑换码预览都共享同一份 DTO。
- * - 角色上下文只解析一次，所有邮件接口沿用同一个入口，后续补 claim 接口时不用再复制鉴权和参数解析。
+ * - 角色上下文只解析一次，所有邮件接口沿用同一个入口，附件领取和状态写操作共享同一套参数解析，避免 `mailId/autoDisassemble` 校验在多处漂移。
  *
  * 关键边界条件与坑点：
  * 1. `mailId` 允许前端以字符串回传，路由层必须按 Node 语义接受正整数文本。
@@ -110,6 +110,34 @@ pub struct MailMutationData {
     pub read_count: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct MailClaimResponse {
+    pub success: bool,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rewards: Option<Vec<GrantedRewardPreviewView>>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MailClaimAllRewardSummary {
+    pub silver: i64,
+    pub spirit_stones: i64,
+    pub item_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MailClaimAllResponse {
+    pub success: bool,
+    pub message: String,
+    pub claimed_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rewards: Option<MailClaimAllRewardSummary>,
+}
+
 pub trait MailRouteServices: Send + Sync {
     fn list_mails<'a>(
         &'a self,
@@ -137,6 +165,21 @@ pub trait MailRouteServices: Send + Sync {
                 + 'a,
         >,
     >;
+
+    fn claim_mail_attachments<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        mail_id: i64,
+        auto_disassemble: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<MailClaimResponse, BusinessError>> + Send + 'a>>;
+
+    fn claim_all_mail_attachments<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        auto_disassemble: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<MailClaimAllResponse, BusinessError>> + Send + 'a>>;
 
     fn delete_mail<'a>(
         &'a self,
@@ -235,6 +278,40 @@ impl MailRouteServices for NoopMailRouteServices {
         })
     }
 
+    fn claim_mail_attachments<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+        _mail_id: i64,
+        _auto_disassemble: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<MailClaimResponse, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(MailClaimResponse {
+                success: false,
+                message: "邮件不存在".to_string(),
+                rewards: None,
+            })
+        })
+    }
+
+    fn claim_all_mail_attachments<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+        _auto_disassemble: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<MailClaimAllResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            Ok(MailClaimAllResponse {
+                success: true,
+                message: "没有可领取的附件".to_string(),
+                claimed_count: 0,
+                skipped_count: Some(0),
+                rewards: None,
+            })
+        })
+    }
+
     fn delete_mail<'a>(
         &'a self,
         _user_id: i64,
@@ -309,6 +386,8 @@ pub fn build_mail_router() -> Router<AppState> {
         .route("/list", get(list_mails_handler))
         .route("/unread", get(unread_summary_handler))
         .route("/read", post(read_mail_handler))
+        .route("/claim", post(claim_mail_handler))
+        .route("/claim-all", post(claim_all_mails_handler))
         .route("/delete", post(delete_mail_handler))
         .route("/delete-all", post(delete_all_mails_handler))
         .route("/read-all", post(mark_all_read_handler))
@@ -367,6 +446,52 @@ async fn read_mail_handler(
         .read_mail(context.user_id, context.character.id, mail_id)
         .await?;
     Ok(service_result(result))
+}
+
+async fn claim_mail_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(mail_id) = parse_mail_id(payload.get("mailId")) else {
+        return Err(BusinessError::new("参数错误"));
+    };
+    let auto_disassemble = parse_auto_disassemble(payload.get("autoDisassemble"))?;
+    let result = state
+        .mail_services
+        .claim_mail_attachments(
+            context.user_id,
+            context.character.id,
+            mail_id,
+            auto_disassemble,
+        )
+        .await?;
+    Ok(mail_action_response(result))
+}
+
+async fn claim_all_mails_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let auto_disassemble = parse_auto_disassemble(payload.get("autoDisassemble"))?;
+    let result = state
+        .mail_services
+        .claim_all_mail_attachments(
+            context.user_id,
+            context.character.id,
+            auto_disassemble,
+        )
+        .await?;
+    Ok(mail_action_response(result))
 }
 
 async fn delete_mail_handler(
@@ -433,5 +558,41 @@ fn parse_mail_id(raw: Option<&Value>) -> Option<i64> {
         Some(Value::Number(value)) => value.as_i64().filter(|value| *value > 0),
         Some(Value::String(value)) => value.trim().parse::<i64>().ok().filter(|value| *value > 0),
         _ => None,
+    }
+}
+
+fn parse_auto_disassemble(raw: Option<&Value>) -> Result<bool, BusinessError> {
+    match raw {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        _ => Err(BusinessError::new("参数错误")),
+    }
+}
+
+fn mail_action_response<T>(result: T) -> Response
+where
+    T: Serialize + MailActionSuccessFlag,
+{
+    let status = if result.is_success() {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+    (status, Json(result)).into_response()
+}
+
+trait MailActionSuccessFlag {
+    fn is_success(&self) -> bool;
+}
+
+impl MailActionSuccessFlag for MailClaimResponse {
+    fn is_success(&self) -> bool {
+        self.success
+    }
+}
+
+impl MailActionSuccessFlag for MailClaimAllResponse {
+    fn is_success(&self) -> bool {
+        self.success
     }
 }
