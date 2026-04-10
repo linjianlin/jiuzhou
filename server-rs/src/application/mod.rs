@@ -1,6 +1,8 @@
+pub mod account;
 pub mod afdian;
 pub mod auth;
 pub mod character;
+pub mod info;
 pub mod idle;
 pub mod static_data;
 pub mod time;

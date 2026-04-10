@@ -32,6 +32,22 @@ pub fn read_bearer_token(headers: &HeaderMap) -> Option<String> {
     }
 }
 
+pub fn resolve_request_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|value| value.to_str().ok())
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
 pub fn parse_positive_user_id(raw: &str) -> Option<i64> {
     let user_id = raw.parse::<i64>().ok()?;
     if user_id > 0 {

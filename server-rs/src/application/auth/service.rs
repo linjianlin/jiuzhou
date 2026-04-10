@@ -9,6 +9,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
+use crate::application::account::service::{PhoneBindingStatusDto, RustAccountService};
 use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
     RustCharacterReadService, UpdateCharacterPositionResult, UpdateCharacterSettingResult,
@@ -35,6 +36,7 @@ pub struct RustAuthServices {
     jwt_secret: String,
     jwt_expires_in: String,
     captcha_provider: CaptchaProvider,
+    account_service: RustAccountService,
     character_read_service: RustCharacterReadService,
 }
 
@@ -65,6 +67,7 @@ impl RustAuthServices {
         runtime_services: crate::bootstrap::app::SharedRuntimeServices,
     ) -> Self {
         Self {
+            account_service: RustAccountService::new(pool.clone()),
             character_read_service: RustCharacterReadService::new(pool.clone(), runtime_services),
             pool,
             redis,
@@ -674,6 +677,14 @@ impl AuthRouteServices for RustAuthServices {
     ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move { self.check_character_impl(user_id).await })
+    }
+
+    fn get_phone_binding_status<'a>(
+        &'a self,
+        user_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<PhoneBindingStatusDto, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.account_service.get_phone_binding_status(user_id).await })
     }
 
     fn create_character<'a>(

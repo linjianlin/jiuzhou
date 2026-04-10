@@ -6,13 +6,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::bootstrap::readiness::ReadinessGate;
+use crate::edge::http::routes::account::build_account_router;
 use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
 use crate::edge::http::routes::captcha::build_captcha_router;
 use crate::edge::http::routes::character::build_character_router;
 use crate::edge::http::routes::dungeon::build_dungeon_router;
 use crate::edge::http::routes::idle::{build_idle_router, IdleRouteServices};
-use crate::edge::http::routes::info::build_info_router;
+use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
 use crate::edge::http::routes::map::build_map_router;
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
@@ -68,6 +69,7 @@ pub struct AppState {
     pub afdian_services: Arc<dyn AfdianRouteServices>,
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
+    pub info_services: Arc<dyn InfoRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
     pub upload_services: Arc<dyn UploadRouteServices>,
     pub game_socket_services: Arc<dyn GameSocketAuthServices>,
@@ -95,6 +97,7 @@ pub fn build_router(state: AppState) -> Router {
     let router = Router::new()
         .route("/", get(root_handler))
         .route("/api/health", get(health_handler))
+        .nest("/api/account", build_account_router())
         .nest("/api/afdian", build_afdian_router())
         .nest("/api/auth", build_auth_router())
         .nest("/api/character", build_character_router())
