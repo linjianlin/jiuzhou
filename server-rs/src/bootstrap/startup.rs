@@ -15,6 +15,7 @@ use crate::runtime::projection::service::{
 use crate::runtime::session::{
     build_battle_session_registry_from_snapshot, BattleSessionRuntimeRegistry,
 };
+use crate::runtime::tower::{build_tower_runtime_registry_from_snapshot, TowerRuntimeRegistry};
 use crate::shared::error::AppError;
 
 #[derive(Clone)]
@@ -79,6 +80,13 @@ pub fn build_idle_runtime_service(
     build_idle_runtime_service_from_snapshot(snapshot)
 }
 
+pub fn build_tower_runtime_registry(
+    _context: &StartupContext,
+    snapshot: &RuntimeRecoverySnapshot,
+) -> Result<TowerRuntimeRegistry, AppError> {
+    build_tower_runtime_registry_from_snapshot(snapshot)
+}
+
 pub fn build_runtime_services(
     context: &StartupContext,
     snapshot: &RuntimeRecoverySnapshot,
@@ -88,6 +96,7 @@ pub fn build_runtime_services(
         session_registry: build_session_runtime_registry(context, snapshot)?,
         online_projection_registry: build_online_projection_registry(context, snapshot)?,
         idle_runtime_service: build_idle_runtime_service(context, snapshot)?,
+        tower_runtime_registry: build_tower_runtime_registry(context, snapshot)?,
     })
 }
 

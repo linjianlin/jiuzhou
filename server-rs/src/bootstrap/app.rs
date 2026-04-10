@@ -42,12 +42,13 @@ use crate::runtime::connection::session_registry::SharedSessionRegistry;
 use crate::runtime::idle::IdleRuntimeService;
 use crate::runtime::projection::OnlineProjectionRegistry;
 use crate::runtime::session::BattleSessionRuntimeRegistry;
+use crate::runtime::tower::TowerRuntimeRegistry;
 
 /**
  * 统一的恢复运行时服务容器。
  *
  * 作用：
- * 1. 做什么：把 startup 已构建完成的 battle/session/projection/idle 运行时索引集中挂到一个共享状态里。
+ * 1. 做什么：把 startup 已构建完成的 battle/session/projection/idle/tower 运行时索引集中挂到一个共享状态里。
  * 2. 做什么：为后续 HTTP/socket/业务迁移提供单一读取入口，避免各模块重复触发 recovery loader 或重复拼接 registry。
  * 3. 不做什么：不自行读取 Redis、不推进 gameplay，不替代实时连接 `session_registry`。
  *
@@ -59,7 +60,7 @@ use crate::runtime::session::BattleSessionRuntimeRegistry;
  * - startup recovery loader -> subsystem builders -> `RuntimeServicesState` -> `AppState` / 后续消费者。
  *
  * 复用设计说明：
- * - battle/session/projection/idle 当前都已具备独立 builder，但缺少统一归属点；集中在这里后，后续模块只依赖一个状态入口，不必各自再持有 loader 或多份 registry。
+ * - battle/session/projection/idle/tower 当前都已具备独立 builder，但缺少统一归属点；集中在这里后，后续模块只依赖一个状态入口，不必各自再持有 loader 或多份 registry。
  * - 该容器同时被 `lifecycle` 和测试复用，确保启动接线与应用状态使用同一份结构，不会出现“启动产物”和“路由状态”两套字段漂移。
  *
  * 关键边界条件与坑点：
@@ -74,6 +75,7 @@ pub struct RuntimeServicesState {
     pub session_registry: BattleSessionRuntimeRegistry,
     pub online_projection_registry: OnlineProjectionRegistry,
     pub idle_runtime_service: IdleRuntimeService,
+    pub tower_runtime_registry: TowerRuntimeRegistry,
 }
 
 pub fn new_shared_runtime_services(services: RuntimeServicesState) -> SharedRuntimeServices {

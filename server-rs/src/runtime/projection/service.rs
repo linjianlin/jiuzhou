@@ -2,7 +2,7 @@
  * 在线投影恢复服务。
  *
  * 作用：
- * 1. 做什么：定义 online-battle key/index codec，并把 battle/session/online projection/idle lock 原始 Redis 数据统一收集成恢复快照。
+ * 1. 做什么：定义 online-battle key/index codec，并把 battle/session/online projection/tower/idle lock 原始 Redis 数据统一收集成恢复快照。
  * 2. 做什么：提供 `load_from_source` 纯装载入口与 `load_from_redis` 真实读取入口，方便测试与启动阶段共用同一套恢复编排。
  * 3. 不做什么：不执行业务预热、不落内存运行态索引，也不修改 Redis 内容。
  *
@@ -16,7 +16,7 @@
  * - 下一阶段 startup 只需要消费已分组的恢复结果。
  *
  * 复用设计说明：
- * - key/index codec 与 recovery orchestration 都围绕 online projection 命名空间展开，集中在这里能让 battle/session/idle 子模块只关心各自 payload，不必重复持有全局 Redis 扫描逻辑。
+ * - key/index codec 与 recovery orchestration 都围绕 online projection 命名空间展开，集中在这里能让 battle/session/tower/idle 子模块只关心各自 payload，不必重复持有全局 Redis 扫描逻辑。
  * - 纯数据源 `RecoverySourceData` 让测试与真实 Redis 读取共享同一条装载路径，避免写两套恢复实现。
  *
  * 关键边界条件与坑点：
@@ -37,6 +37,9 @@ use crate::runtime::battle::recovery::{
 use crate::runtime::idle::lock::{load_idle_locks_from_source, RecoveredIdleLockState};
 use crate::runtime::session::projection::{
     load_session_projections_from_source, OnlineBattleSessionSnapshotRedis,
+};
+use crate::runtime::tower::{
+    TowerBattleRuntimeProjectionRedis, TowerProgressProjectionRedis,
 };
 use crate::shared::error::AppError;
 
@@ -258,6 +261,8 @@ pub struct OnlineProjectionRecoveryState {
     pub team_members: Vec<(i64, TeamMemberProjectionRedis)>,
     pub session_battle_links: Vec<(String, String)>,
     pub session_projections: Vec<OnlineBattleSessionSnapshotRedis>,
+    pub tower_progressions: Vec<TowerProgressProjectionRedis>,
+    pub tower_runtime_projections: Vec<TowerBattleRuntimeProjectionRedis>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -411,6 +416,8 @@ impl RuntimeRecoveryLoader {
         let user_character_links = load_user_character_links_from_source(source);
         let team_members = load_team_members_from_source(source)?;
         let session_battle_links = load_session_battle_links_from_source(source);
+        let tower_progressions = load_tower_progressions_from_source(source)?;
+        let tower_runtime_projections = load_tower_runtime_projections_from_source(source)?;
         let runtime_resources = load_runtime_resources_from_source(source)?;
         let idle_locks = load_idle_locks_from_source(source)?;
 
@@ -426,6 +433,8 @@ impl RuntimeRecoveryLoader {
                 team_members,
                 session_battle_links,
                 session_projections: session_projections.clone(),
+                tower_progressions,
+                tower_runtime_projections,
             },
             runtime_resources,
             idle_locks,
@@ -638,4 +647,51 @@ fn load_session_battle_links_from_source(source: &RecoverySourceData) -> Vec<(St
     links.sort();
     links.dedup();
     links
+}
+
+fn load_tower_progressions_from_source(
+    source: &RecoverySourceData,
+) -> Result<Vec<TowerProgressProjectionRedis>, AppError> {
+    let mut character_ids = source
+        .sets
+        .get(OnlineProjectionIndexKey::towers().as_ref())
+        .map(|items| items.iter().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    character_ids.sort();
+
+    let mut progressions = Vec::with_capacity(character_ids.len());
+    for character_id in character_ids {
+        let Some(parsed_character_id) = character_id.parse::<i64>().ok() else {
+            continue;
+        };
+        let key = OnlineProjectionRedisKey::tower(parsed_character_id).into_string();
+        let Some(raw) = source.strings.get(&key) else {
+            continue;
+        };
+        progressions.push(decode_json(raw)?);
+    }
+
+    Ok(progressions)
+}
+
+fn load_tower_runtime_projections_from_source(
+    source: &RecoverySourceData,
+) -> Result<Vec<TowerBattleRuntimeProjectionRedis>, AppError> {
+    let mut battle_ids = source
+        .sets
+        .get(OnlineProjectionIndexKey::tower_runtimes().as_ref())
+        .map(|items| items.iter().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    battle_ids.sort();
+
+    let mut runtimes = Vec::with_capacity(battle_ids.len());
+    for battle_id in battle_ids {
+        let key = OnlineProjectionRedisKey::tower_runtime(&battle_id).into_string();
+        let Some(raw) = source.strings.get(&key) else {
+            continue;
+        };
+        runtimes.push(decode_json(raw)?);
+    }
+
+    Ok(runtimes)
 }

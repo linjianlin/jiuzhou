@@ -87,6 +87,39 @@ fn build_recovery_source() -> RecoverySourceData {
         )
         .with_string(OnlineProjectionRedisKey::user_character(77).into_string(), "9001")
         .with_string(
+            OnlineProjectionRedisKey::tower(9001).into_string(),
+            r#"{
+                "characterId":9001,
+                "bestFloor":18,
+                "nextFloor":19,
+                "currentRunId":"tower-run-1",
+                "currentFloor":18,
+                "currentBattleId":"tower-battle-1",
+                "lastSettledFloor":17,
+                "updatedAt":"2026-04-10T08:00:00.000Z",
+                "reachedAt":"2026-04-10T07:50:00.000Z"
+            }"#,
+        )
+        .with_string(
+            OnlineProjectionRedisKey::tower_runtime("tower-battle-1").into_string(),
+            r#"{
+                "battleId":"tower-battle-1",
+                "characterId":9001,
+                "userId":77,
+                "runId":"tower-run-1",
+                "floor":18,
+                "monsters":[{"id":"tower-monster-1","name":"青木狼妖"}],
+                "preview":{
+                    "floor":18,
+                    "kind":"elite",
+                    "seed":"tower:18",
+                    "realm":"炼气期",
+                    "monsterIds":["tower-monster-1"],
+                    "monsterNames":["青木狼妖"]
+                }
+            }"#,
+        )
+        .with_string(
             IdleLockRedisKey::new(9001).into_string(),
             "idle-start:550e8400-e29b-41d4-a716-446655440000",
         )
@@ -99,6 +132,11 @@ fn build_recovery_source() -> RecoverySourceData {
             ["9001"],
         )
         .with_set(OnlineProjectionIndexKey::users().into_string(), ["77"])
+        .with_set(OnlineProjectionIndexKey::towers().into_string(), ["9001"])
+        .with_set(
+            OnlineProjectionIndexKey::tower_runtimes().into_string(),
+            ["tower-battle-1"],
+        )
 }
 
 #[tokio::test]
@@ -187,6 +225,20 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
             .session_registry
             .find_session_id_by_battle_id("battle-1"),
         Some("session-1")
+    );
+    assert_eq!(
+        runtime_services
+            .tower_runtime_registry
+            .get_progress(9001)
+            .and_then(|item| item.current_battle_id.as_deref()),
+        Some("tower-battle-1")
+    );
+    assert_eq!(
+        runtime_services
+            .tower_runtime_registry
+            .get_runtime("tower-battle-1")
+            .map(|item| item.preview.floor),
+        Some(18)
     );
     assert!(runtime_services
         .idle_runtime_service

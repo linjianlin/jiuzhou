@@ -90,6 +90,7 @@ async fn root_and_health_routes_match_current_contract_shape() {
         .idle_runtime_service
         .locked_character_ids()
         .is_empty());
+    assert!(runtime_snapshot.tower_runtime_registry.is_empty());
 
     let root_response = app
         .clone()

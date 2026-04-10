@@ -9,6 +9,9 @@ use jiuzhou_server_rs::runtime::projection::service::{
     TeamMemberProjectionRedis,
 };
 use jiuzhou_server_rs::runtime::session::projection::OnlineBattleSessionSnapshotRedis;
+use jiuzhou_server_rs::runtime::tower::{
+    TowerBattleRuntimeProjectionRedis, TowerProgressProjectionRedis,
+};
 
 #[test]
 fn redis_key_codecs_preserve_compatibility_matrix_names() {
@@ -229,6 +232,50 @@ fn redis_payload_codecs_decode_current_node_contract_samples() {
         decode_json(r#"{"qixue":88,"lingqi":21}"#).expect("decode character runtime resource");
     assert_eq!(resource.qixue, 88);
     assert_eq!(resource.lingqi, 21);
+
+    let tower_progress: TowerProgressProjectionRedis = decode_json(
+        r#"{
+            "characterId":9001,
+            "bestFloor":18,
+            "nextFloor":19,
+            "currentRunId":"tower-run-1",
+            "currentFloor":18,
+            "currentBattleId":"tower-battle-1",
+            "lastSettledFloor":17,
+            "updatedAt":"2026-04-10T08:00:00.000Z",
+            "reachedAt":"2026-04-10T07:50:00.000Z"
+        }"#,
+    )
+    .expect("decode tower progress projection");
+    assert_eq!(tower_progress.character_id, 9001);
+    assert_eq!(tower_progress.best_floor, 18);
+    assert_eq!(
+        tower_progress.current_battle_id.as_deref(),
+        Some("tower-battle-1")
+    );
+
+    let tower_runtime: TowerBattleRuntimeProjectionRedis = decode_json(
+        r#"{
+            "battleId":"tower-battle-1",
+            "characterId":9001,
+            "userId":77,
+            "runId":"tower-run-1",
+            "floor":18,
+            "monsters":[{"id":"tower-monster-1","name":"青木狼妖"}],
+            "preview":{
+                "floor":18,
+                "kind":"elite",
+                "seed":"tower:18",
+                "realm":"炼气期",
+                "monsterIds":["tower-monster-1"],
+                "monsterNames":["青木狼妖"]
+            }
+        }"#,
+    )
+    .expect("decode tower runtime projection");
+    assert_eq!(tower_runtime.battle_id, "tower-battle-1");
+    assert_eq!(tower_runtime.preview.kind, "elite");
+    assert_eq!(tower_runtime.preview.monster_ids, vec!["tower-monster-1"]);
 
     let idle_lock = IdleLockToken::parse("idle-start:550e8400-e29b-41d4-a716-446655440000")
         .expect("parse idle lock token");
