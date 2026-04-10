@@ -7,9 +7,7 @@ use serde_json::{json, Map, Value};
 use sqlx::types::Json;
 use sqlx::{Postgres, Row, Transaction};
 
-use crate::application::inventory::grant::{
-    grant_items_to_bag, BagGrantEntry, BagGrantItemMeta,
-};
+use crate::application::inventory::grant::{grant_items_to_bag, BagGrantEntry, BagGrantItemMeta};
 use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::achievement::{
@@ -23,12 +21,14 @@ use crate::edge::http::routes::achievement::{
 
 static ACHIEVEMENT_DEFINITION_CACHE: OnceLock<Result<Vec<AchievementDefinition>, String>> =
     OnceLock::new();
-static ACHIEVEMENT_POINT_REWARD_CACHE: OnceLock<Result<Vec<AchievementPointRewardDefinition>, String>> =
-    OnceLock::new();
+static ACHIEVEMENT_POINT_REWARD_CACHE: OnceLock<
+    Result<Vec<AchievementPointRewardDefinition>, String>,
+> = OnceLock::new();
 static ACHIEVEMENT_ITEM_META_CACHE: OnceLock<Result<HashMap<String, AchievementItemMeta>, String>> =
     OnceLock::new();
-static ACHIEVEMENT_TITLE_META_CACHE: OnceLock<Result<HashMap<String, AchievementTitleMeta>, String>> =
-    OnceLock::new();
+static ACHIEVEMENT_TITLE_META_CACHE: OnceLock<
+    Result<HashMap<String, AchievementTitleMeta>, String>,
+> = OnceLock::new();
 
 /**
  * achievement 应用服务。
@@ -215,11 +215,14 @@ impl RustAchievementRouteService {
         character_id: i64,
         query: AchievementListQuery,
     ) -> Result<AchievementListDataView, BusinessError> {
-        self.ensure_character_achievement_points(character_id).await?;
+        self.ensure_character_achievement_points(character_id)
+            .await?;
         self.sync_character_achievements(character_id).await?;
         self.sync_static_achievement_progress(character_id).await?;
 
-        let page = parse_positive_i64(query.page.as_deref()).unwrap_or(1).max(1);
+        let page = parse_positive_i64(query.page.as_deref())
+            .unwrap_or(1)
+            .max(1);
         let limit = parse_positive_i64(query.limit.as_deref())
             .unwrap_or(20)
             .clamp(1, 100);
@@ -276,7 +279,8 @@ impl RustAchievementRouteService {
         character_id: i64,
         achievement_id: String,
     ) -> Result<Option<AchievementDetailDataView>, BusinessError> {
-        self.ensure_character_achievement_points(character_id).await?;
+        self.ensure_character_achievement_points(character_id)
+            .await?;
         self.sync_character_achievements(character_id).await?;
         self.sync_static_achievement_progress(character_id).await?;
 
@@ -362,7 +366,11 @@ impl RustAchievementRouteService {
             )
             .await?;
         let title = self
-            .grant_title_tx(&mut transaction, character_id, definition.title_id.as_deref())
+            .grant_title_tx(
+                &mut transaction,
+                character_id,
+                definition.title_id.as_deref(),
+            )
             .await?;
 
         sqlx::query(
@@ -381,7 +389,10 @@ impl RustAchievementRouteService {
         .await
         .map_err(internal_business_error)?;
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
 
         Ok(AchievementActionResult {
             success: true,
@@ -398,7 +409,8 @@ impl RustAchievementRouteService {
         &self,
         character_id: i64,
     ) -> Result<AchievementPointRewardListDataView, BusinessError> {
-        self.ensure_character_achievement_points(character_id).await?;
+        self.ensure_character_achievement_points(character_id)
+            .await?;
         let point_state = self.load_achievement_point_state(character_id).await?;
 
         let mut rewards = point_reward_definitions()?
@@ -412,8 +424,12 @@ impl RustAchievementRouteService {
                     rewards: build_reward_views(&definition.rewards)?,
                     title: lookup_title_reward(definition.title_id.as_deref())?,
                     claimable: point_state.total_points >= definition.threshold
-                        && !point_state.claimed_thresholds.contains(&definition.threshold),
-                    claimed: point_state.claimed_thresholds.contains(&definition.threshold),
+                        && !point_state
+                            .claimed_thresholds
+                            .contains(&definition.threshold),
+                    claimed: point_state
+                        .claimed_thresholds
+                        .contains(&definition.threshold),
                 })
             })
             .collect::<Result<Vec<_>, BusinessError>>()?;
@@ -470,7 +486,11 @@ impl RustAchievementRouteService {
             )
             .await?;
         let title = self
-            .grant_title_tx(&mut transaction, character_id, definition.title_id.as_deref())
+            .grant_title_tx(
+                &mut transaction,
+                character_id,
+                definition.title_id.as_deref(),
+            )
             .await?;
         let mut claimed_thresholds = state.claimed_thresholds;
         claimed_thresholds.push(normalized_threshold);
@@ -491,7 +511,10 @@ impl RustAchievementRouteService {
         .await
         .map_err(internal_business_error)?;
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
 
         Ok(AchievementActionResult {
             success: true,
@@ -696,7 +719,11 @@ impl RustAchievementRouteService {
             if update_result.rows_affected() == 0 {
                 continue;
             }
-            apply_points_delta(&mut point_delta, definition.category.as_str(), definition.points);
+            apply_points_delta(
+                &mut point_delta,
+                definition.category.as_str(),
+                definition.points,
+            );
         }
 
         if point_delta.combat != 0
@@ -735,7 +762,10 @@ impl RustAchievementRouteService {
             .map_err(internal_business_error)?;
         }
 
-        transaction.commit().await.map_err(internal_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
         Ok(())
     }
 
@@ -760,9 +790,15 @@ impl RustAchievementRouteService {
             result.insert(
                 achievement_id,
                 AchievementProgressRecord {
-                    status: normalize_status(row.try_get::<Option<String>, _>("status").ok().flatten().as_deref())
-                        .to_string(),
-                    progress: row.try_get::<Option<i64>, _>("progress")
+                    status: normalize_status(
+                        row.try_get::<Option<String>, _>("status")
+                            .ok()
+                            .flatten()
+                            .as_deref(),
+                    )
+                    .to_string(),
+                    progress: row
+                        .try_get::<Option<i64>, _>("progress")
                         .ok()
                         .flatten()
                         .unwrap_or(0)
@@ -905,14 +941,17 @@ impl RustAchievementRouteService {
                     reward_views.push(AchievementRewardView::Exp { amount });
                 }
                 "item" => {
-                    let Some(item_def_id) = normalize_optional_text(reward.item_def_id.clone()) else {
+                    let Some(item_def_id) = normalize_optional_text(reward.item_def_id.clone())
+                    else {
                         continue;
                     };
                     let qty = reward.qty.unwrap_or(1).max(1);
                     let item_meta = item_meta_map
                         .get(item_def_id.as_str())
                         .cloned()
-                        .ok_or_else(|| internal_logic_business_error("missing achievement reward item meta"))?;
+                        .ok_or_else(|| {
+                            internal_logic_business_error("missing achievement reward item meta")
+                        })?;
                     item_entries.push(BagGrantEntry {
                         item_def_id: item_def_id.clone(),
                         qty,
@@ -954,7 +993,9 @@ impl RustAchievementRouteService {
                 .map(|entry| {
                     let meta = item_meta_map
                         .get(entry.item_def_id.as_str())
-                        .ok_or_else(|| internal_logic_business_error("missing achievement reward item meta"))?;
+                        .ok_or_else(|| {
+                            internal_logic_business_error("missing achievement reward item meta")
+                        })?;
                     Ok((
                         entry.item_def_id.clone(),
                         BagGrantItemMeta {
@@ -984,9 +1025,7 @@ impl RustAchievementRouteService {
         character_id: i64,
         title_id: Option<&str>,
     ) -> Result<Option<AchievementTitleRewardView>, BusinessError> {
-        let Some(normalized_title_id) = title_id
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+        let Some(normalized_title_id) = title_id.map(str::trim).filter(|value| !value.is_empty())
         else {
             return Ok(None);
         };
@@ -1035,7 +1074,11 @@ impl AchievementRouteServices for RustAchievementRouteService {
         character_id: i64,
         achievement_id: String,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Option<AchievementDetailDataView>, BusinessError>> + Send + 'a>,
+        Box<
+            dyn Future<Output = Result<Option<AchievementDetailDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
     > {
         Box::pin(async move {
             self.get_achievement_detail_impl(character_id, achievement_id)
@@ -1050,8 +1093,12 @@ impl AchievementRouteServices for RustAchievementRouteService {
         achievement_id: String,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<AchievementActionResult<AchievementClaimDataView>, BusinessError>>
-                + Send
+            dyn Future<
+                    Output = Result<
+                        AchievementActionResult<AchievementClaimDataView>,
+                        BusinessError,
+                    >,
+                > + Send
                 + 'a,
         >,
     > {
@@ -1104,7 +1151,8 @@ fn achievement_definitions() -> Result<&'static Vec<AchievementDefinition>, Busi
         .map_err(|error| internal_logic_business_error(error))
 }
 
-fn point_reward_definitions() -> Result<&'static Vec<AchievementPointRewardDefinition>, BusinessError> {
+fn point_reward_definitions(
+) -> Result<&'static Vec<AchievementPointRewardDefinition>, BusinessError> {
     ACHIEVEMENT_POINT_REWARD_CACHE
         .get_or_init(|| load_point_reward_definitions().map_err(|error| error.message))
         .as_ref()
@@ -1285,37 +1333,74 @@ async fn load_achievement_point_state_tx(
 fn parse_achievement_point_state(row: Option<&sqlx::postgres::PgRow>) -> AchievementPointState {
     AchievementPointState {
         total_points: row
-            .and_then(|value| value.try_get::<Option<i64>, _>("total_points").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<i64>, _>("total_points")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(0)
             .max(0),
         combat_points: row
-            .and_then(|value| value.try_get::<Option<i64>, _>("combat_points").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<i64>, _>("combat_points")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(0)
             .max(0),
         cultivation_points: row
-            .and_then(|value| value.try_get::<Option<i64>, _>("cultivation_points").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<i64>, _>("cultivation_points")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(0)
             .max(0),
         exploration_points: row
-            .and_then(|value| value.try_get::<Option<i64>, _>("exploration_points").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<i64>, _>("exploration_points")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(0)
             .max(0),
         social_points: row
-            .and_then(|value| value.try_get::<Option<i64>, _>("social_points").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<i64>, _>("social_points")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(0)
             .max(0),
         collection_points: row
-            .and_then(|value| value.try_get::<Option<i64>, _>("collection_points").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<i64>, _>("collection_points")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(0)
             .max(0),
         claimed_thresholds: row
-            .and_then(|value| value.try_get::<Option<Value>, _>("claimed_thresholds").ok().flatten())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<Value>, _>("claimed_thresholds")
+                    .ok()
+                    .flatten()
+            })
             .map(|value| parse_claimed_thresholds(&value))
             .unwrap_or_default(),
     }
 }
 
-fn build_reward_views(rewards: &[AchievementRewardSeed]) -> Result<Vec<AchievementRewardView>, BusinessError> {
+fn build_reward_views(
+    rewards: &[AchievementRewardSeed],
+) -> Result<Vec<AchievementRewardView>, BusinessError> {
     let item_meta = item_meta_by_id()?;
     let mut result = Vec::new();
     for reward in rewards {
@@ -1360,9 +1445,7 @@ fn build_reward_views(rewards: &[AchievementRewardSeed]) -> Result<Vec<Achieveme
 fn lookup_title_reward(
     title_id: Option<&str>,
 ) -> Result<Option<AchievementTitleRewardView>, BusinessError> {
-    let Some(normalized_title_id) = title_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let Some(normalized_title_id) = title_id.map(str::trim).filter(|value| !value.is_empty())
     else {
         return Ok(None);
     };
@@ -1378,7 +1461,9 @@ fn lookup_title_reward(
 }
 
 fn normalize_optional_text(value: Option<String>) -> Option<String> {
-    value.map(|raw| raw.trim().to_string()).filter(|raw| !raw.is_empty())
+    value
+        .map(|raw| raw.trim().to_string())
+        .filter(|raw| !raw.is_empty())
 }
 
 fn normalize_track_type(value: Option<&str>) -> &'static str {
@@ -1480,11 +1565,7 @@ fn parse_required_layer(track_key: &str) -> Option<i64> {
         .filter(|value| *value > 0)
 }
 
-fn apply_points_delta(
-    target: &mut AchievementPointsByCategoryView,
-    category: &str,
-    points: i64,
-) {
+fn apply_points_delta(target: &mut AchievementPointsByCategoryView, category: &str, points: i64) {
     match category.trim().to_ascii_lowercase().as_str() {
         "combat" => target.combat += points,
         "cultivation" | "skill" | "technique" => target.cultivation += points,
@@ -1565,25 +1646,16 @@ fn action_failure<T>(message: &str) -> AchievementActionResult<T> {
 
 fn internal_business_error(error: sqlx::Error) -> BusinessError {
     let _ = error;
-    BusinessError::with_status(
-        "服务器错误",
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-    )
+    BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 fn internal_seed_business_error(error: crate::shared::error::AppError) -> BusinessError {
     let _ = error;
-    BusinessError::with_status(
-        "服务器错误",
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-    )
+    BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 fn internal_logic_business_error(_message: impl AsRef<str>) -> BusinessError {
-    BusinessError::with_status(
-        "服务器错误",
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-    )
+    BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 trait TapMut: Sized {

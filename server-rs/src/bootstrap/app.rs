@@ -6,10 +6,8 @@ use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 
 use crate::bootstrap::readiness::ReadinessGate;
-use crate::edge::http::routes::achievement::{
-    build_achievement_router, AchievementRouteServices,
-};
 use crate::edge::http::routes::account::build_account_router;
+use crate::edge::http::routes::achievement::{build_achievement_router, AchievementRouteServices};
 use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
 use crate::edge::http::routes::attribute::{build_attribute_router, AttributeRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
@@ -31,6 +29,7 @@ use crate::edge::http::routes::realm::{build_realm_router, RealmRouteServices};
 use crate::edge::http::routes::redeem_code::{build_redeem_code_router, RedeemCodeRouteServices};
 use crate::edge::http::routes::sign_in::build_sign_in_router;
 use crate::edge::http::routes::task::build_task_router;
+use crate::edge::http::routes::team::{build_team_router, TeamRouteServices};
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
 use crate::edge::http::routes::title::{build_title_router, TitleRouteServices};
@@ -97,6 +96,7 @@ pub struct AppState {
     pub rank_services: Arc<dyn RankRouteServices>,
     pub realm_services: Arc<dyn RealmRouteServices>,
     pub redeem_code_services: Arc<dyn RedeemCodeRouteServices>,
+    pub team_services: Arc<dyn TeamRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
     pub title_services: Arc<dyn TitleRouteServices>,
     pub upload_services: Arc<dyn UploadRouteServices>,
@@ -150,6 +150,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/signin", build_sign_in_router())
         .nest("/api/task", build_task_router())
         .nest("/api/technique", build_technique_router())
+        .nest("/api/team", build_team_router())
         .nest("/api/title", build_title_router())
         .nest("/api/upload", build_upload_router())
         .merge(build_time_router())

@@ -33,7 +33,9 @@ async fn root_and_health_routes_match_current_contract_shape() {
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
-        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
+        achievement_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices,
+        ),
         auth_services: Arc::new(NoopAuthServices),
         attribute_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
@@ -44,6 +46,9 @@ async fn root_and_health_routes_match_current_contract_shape() {
         game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
         insight_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,
@@ -72,6 +77,9 @@ async fn root_and_health_routes_match_current_contract_shape() {
         readiness,
         session_registry: new_shared_session_registry(),
         runtime_services: runtime_services.clone(),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
     });
 
     let runtime_snapshot = runtime_services.read().await;

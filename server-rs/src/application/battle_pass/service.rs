@@ -7,9 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 
-use crate::application::inventory::grant::{
-    grant_items_to_bag, BagGrantEntry, BagGrantItemMeta,
-};
+use crate::application::inventory::grant::{grant_items_to_bag, BagGrantEntry, BagGrantItemMeta};
 use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;

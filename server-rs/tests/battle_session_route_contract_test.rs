@@ -299,6 +299,9 @@ fn build_recovery_source() -> RecoverySourceData {
 fn build_app_state(
     auth_services: FakeAuthServices,
     runtime_services: Option<jiuzhou_server_rs::bootstrap::app::SharedRuntimeServices>,
+    team_services: std::sync::Arc::new(
+        jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+    ),
 ) -> AppState {
     AppState {
         afdian_services: Arc::new(
@@ -334,6 +337,9 @@ fn build_app_state(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
         ),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),

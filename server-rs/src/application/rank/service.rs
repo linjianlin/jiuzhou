@@ -3,14 +3,13 @@ use std::{future::Future, pin::Pin};
 use axum::http::StatusCode;
 use sqlx::Row;
 
+use crate::application::month_card::benefits::load_month_card_active_map;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::rank::{
     ArenaRankRow, PartnerRankRow, RankOverviewView, RankRouteServices, RealmRankRow, SectRankRow,
     WealthRankRow,
 };
-
-const DEFAULT_MONTH_CARD_ID: &str = "monthcard-001";
 
 /**
  * rank 排行应用服务。
@@ -431,34 +430,7 @@ impl RustRankRouteService {
         &self,
         character_ids: Vec<i64>,
     ) -> Result<std::collections::HashMap<i64, bool>, BusinessError> {
-        let normalized_ids = normalize_character_ids(character_ids);
-        let mut result = std::collections::HashMap::with_capacity(normalized_ids.len());
-        for character_id in &normalized_ids {
-            result.insert(*character_id, false);
-        }
-        if normalized_ids.is_empty() {
-            return Ok(result);
-        }
-
-        let rows = sqlx::query_scalar::<_, i64>(
-            r#"
-            SELECT character_id
-            FROM month_card_ownership
-            WHERE character_id = ANY($1::bigint[])
-              AND month_card_id = $2
-              AND expire_at > CURRENT_TIMESTAMP
-            "#,
-        )
-        .bind(&normalized_ids)
-        .bind(DEFAULT_MONTH_CARD_ID)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(internal_business_error)?;
-
-        for character_id in rows {
-            result.insert(character_id, true);
-        }
-        Ok(result)
+        load_month_card_active_map(&self.pool, &character_ids).await
     }
 }
 

@@ -31,7 +31,9 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
-        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
+        achievement_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices,
+        ),
         auth_services: auth_services.clone(),
         attribute_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
@@ -42,6 +44,9 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
         insight_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,

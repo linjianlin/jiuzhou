@@ -19,11 +19,10 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
 use jiuzhou_server_rs::edge::http::routes::game::{
     GameActionResult, GameHomeAchievementView, GameHomeMainQuestChapterView,
     GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
-    GameHomeSignInView,
-    GameHomeTaskSummaryItemView, GameHomeTaskSummaryView, GameHomeTeamOverviewView,
-    GameMainQuestTrackDataView, GameRouteServices, GameTaskMutationDataView,
-    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
-    GameTaskTrackDataView,
+    GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
+    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
+    GameTaskMutationDataView, GameTaskObjectiveView, GameTaskOverviewItemView,
+    GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -311,7 +310,9 @@ async fn task_npc_accept_route_preserves_send_result_shape() {
                 .uri("/api/task/npc/accept")
                 .header("authorization", "Bearer game-token")
                 .header("content-type", "application/json")
-                .body(Body::from(r#"{"npcId":"npc-guide","taskId":"task-main-001"}"#))
+                .body(Body::from(
+                    r#"{"npcId":"npc-guide","taskId":"task-main-001"}"#,
+                ))
                 .expect("task npc accept request"),
         )
         .await
@@ -320,8 +321,15 @@ async fn task_npc_accept_route_preserves_send_result_shape() {
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        accept_calls.lock().expect("task npc accept calls").as_slice(),
-        &[(3002_i64, "task-main-001".to_string(), "npc-guide".to_string())]
+        accept_calls
+            .lock()
+            .expect("task npc accept calls")
+            .as_slice(),
+        &[(
+            3002_i64,
+            "task-main-001".to_string(),
+            "npc-guide".to_string()
+        )]
     );
     assert_eq!(
         json,
@@ -361,7 +369,10 @@ async fn task_npc_submit_route_preserves_send_result_shape() {
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        submit_calls.lock().expect("task npc submit calls").as_slice(),
+        submit_calls
+            .lock()
+            .expect("task npc submit calls")
+            .as_slice(),
         &[(
             3002_i64,
             "task-main-003".to_string(),
@@ -538,7 +549,9 @@ where
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
-        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
+        achievement_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices,
+        ),
         auth_services: Arc::new(auth_services),
         attribute_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
@@ -566,6 +579,9 @@ where
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
         ),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
@@ -577,6 +593,9 @@ where
         readiness: ReadinessGate::new(),
         session_registry: new_shared_session_registry(),
         runtime_services: new_shared_runtime_services(RuntimeServicesState::default()),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
     }
 }
 
@@ -1007,10 +1026,11 @@ impl GameRouteServices for FakeGameServices {
     > {
         let calls = self.task_track_calls.clone();
         Box::pin(async move {
-            calls
-                .lock()
-                .expect("record task track call")
-                .push((character_id, task_id.clone(), tracked));
+            calls.lock().expect("record task track call").push((
+                character_id,
+                task_id.clone(),
+                tracked,
+            ));
             Ok(GameActionResult {
                 success: true,
                 message: "ok".to_string(),
@@ -1033,10 +1053,11 @@ impl GameRouteServices for FakeGameServices {
     > {
         let calls = self.task_accept_calls.clone();
         Box::pin(async move {
-            calls
-                .lock()
-                .expect("record task accept call")
-                .push((character_id, task_id.clone(), npc_id));
+            calls.lock().expect("record task accept call").push((
+                character_id,
+                task_id.clone(),
+                npc_id,
+            ));
             Ok(GameActionResult {
                 success: true,
                 message: "ok".to_string(),
@@ -1059,10 +1080,11 @@ impl GameRouteServices for FakeGameServices {
     > {
         let calls = self.task_submit_calls.clone();
         Box::pin(async move {
-            calls
-                .lock()
-                .expect("record task submit call")
-                .push((character_id, task_id.clone(), npc_id));
+            calls.lock().expect("record task submit call").push((
+                character_id,
+                task_id.clone(),
+                npc_id,
+            ));
             Ok(GameActionResult {
                 success: true,
                 message: "ok".to_string(),
@@ -1116,9 +1138,8 @@ impl GameRouteServices for FakeGameServices {
         tracked: bool,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {

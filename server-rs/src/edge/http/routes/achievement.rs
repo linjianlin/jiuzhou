@@ -210,7 +210,11 @@ pub trait AchievementRouteServices: Send + Sync {
         character_id: i64,
         achievement_id: String,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Option<AchievementDetailDataView>, BusinessError>> + Send + 'a>,
+        Box<
+            dyn Future<Output = Result<Option<AchievementDetailDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
     >;
 
     fn claim_achievement<'a>(
@@ -220,8 +224,12 @@ pub trait AchievementRouteServices: Send + Sync {
         achievement_id: String,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<AchievementActionResult<AchievementClaimDataView>, BusinessError>>
-                + Send
+            dyn Future<
+                    Output = Result<
+                        AchievementActionResult<AchievementClaimDataView>,
+                        BusinessError,
+                    >,
+                > + Send
                 + 'a,
         >,
     >;
@@ -290,7 +298,11 @@ impl AchievementRouteServices for NoopAchievementRouteServices {
         _character_id: i64,
         _achievement_id: String,
     ) -> Pin<
-        Box<dyn Future<Output = Result<Option<AchievementDetailDataView>, BusinessError>> + Send + 'a>,
+        Box<
+            dyn Future<Output = Result<Option<AchievementDetailDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
     > {
         Box::pin(async move { Ok(None) })
     }
@@ -302,8 +314,12 @@ impl AchievementRouteServices for NoopAchievementRouteServices {
         _achievement_id: String,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<AchievementActionResult<AchievementClaimDataView>, BusinessError>>
-                + Send
+            dyn Future<
+                    Output = Result<
+                        AchievementActionResult<AchievementClaimDataView>,
+                        BusinessError,
+                    >,
+                > + Send
                 + 'a,
         >,
     > {
@@ -380,8 +396,14 @@ pub fn build_achievement_router() -> Router<AppState> {
     Router::new()
         .route("/list", get(get_achievement_list_handler))
         .route("/claim", post(claim_achievement_handler))
-        .route("/points/rewards", get(get_achievement_point_rewards_handler))
-        .route("/points/claim", post(claim_achievement_point_reward_handler))
+        .route(
+            "/points/rewards",
+            get(get_achievement_point_rewards_handler),
+        )
+        .route(
+            "/points/claim",
+            post(claim_achievement_point_reward_handler),
+        )
         .route("/{achievementId}", get(get_achievement_detail_handler))
 }
 

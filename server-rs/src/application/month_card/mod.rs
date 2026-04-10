@@ -1,3 +1,4 @@
+pub mod benefits;
 /**
  * month_card 应用模块。
  *

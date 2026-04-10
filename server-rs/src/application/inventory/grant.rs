@@ -143,8 +143,7 @@ pub async fn grant_items_to_bag(
     .await
     .map_err(|_| internal_business_error("load stackable bag items failed"))?;
 
-    let mut stackable_rows_by_key: HashMap<(String, String), Vec<StackableBagRow>> =
-        HashMap::new();
+    let mut stackable_rows_by_key: HashMap<(String, String), Vec<StackableBagRow>> = HashMap::new();
     for row in stackable_rows {
         let key = (
             row.get::<String, _>("item_def_id"),
@@ -276,8 +275,5 @@ fn take_next_free_bag_slot(occupied_slots: &mut Vec<i32>, bag_capacity: i32) -> 
 
 fn internal_business_error(message: &'static str) -> BusinessError {
     let _ = message;
-    BusinessError::with_status(
-        "服务器错误",
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-    )
+    BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }

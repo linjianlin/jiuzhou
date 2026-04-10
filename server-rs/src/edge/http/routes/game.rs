@@ -369,9 +369,8 @@ pub trait GameRouteServices: Send + Sync {
         tracked: bool,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     >;
@@ -552,9 +551,8 @@ impl GameRouteServices for NoopGameRouteServices {
         tracked: bool,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {

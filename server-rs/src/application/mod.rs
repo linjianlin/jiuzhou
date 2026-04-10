@@ -1,5 +1,5 @@
-pub mod achievement;
 pub mod account;
+pub mod achievement;
 pub mod afdian;
 pub mod attribute;
 pub mod auth;
@@ -17,6 +17,7 @@ pub mod redeem_code;
 pub mod security;
 pub mod sign_in;
 pub mod static_data;
+pub mod team;
 pub mod time;
 pub mod title;
 pub mod upload;

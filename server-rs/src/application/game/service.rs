@@ -10,7 +10,6 @@ use sqlx::Row;
 use crate::application::account::service::RustAccountService;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::inventory::service::{InventoryLocation, RustInventoryReadService};
-use crate::application::month_card::service::default_month_card_id;
 use crate::application::realm::service::RustRealmRouteService;
 use crate::application::sign_in::service::RustSignInService;
 use crate::application::static_data::catalog::get_static_data_catalog;
@@ -19,6 +18,7 @@ use crate::application::static_data::realm::{
     get_realm_rank_zero_based, normalize_realm_keeping_unknown,
 };
 use crate::application::static_data::seed::{list_seed_files_with_prefix, read_seed_json};
+use crate::application::team::service::RustTeamRouteService;
 use crate::bootstrap::app::SharedRuntimeServices;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::game::{
@@ -26,7 +26,6 @@ use crate::edge::http::routes::game::{
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamApplicationView, GameHomeTeamInfoView, GameHomeTeamMemberView,
     GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
     GameTaskMutationDataView, GameTaskObjectiveView, GameTaskOverviewItemView,
     GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
@@ -67,12 +66,12 @@ static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = 
 #[derive(Clone)]
 pub struct RustGameRouteService {
     pool: sqlx::PgPool,
-    session_registry: SharedSessionRegistry,
     sign_in_service: RustSignInService,
     account_service: RustAccountService,
     realm_service: RustRealmRouteService,
     inventory_service: RustInventoryReadService,
     idle_service: RustIdleRouteService,
+    team_service: RustTeamRouteService,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -230,8 +229,8 @@ impl RustGameRouteService {
             realm_service: RustRealmRouteService::new(pool.clone()),
             inventory_service: RustInventoryReadService::new(pool.clone()),
             idle_service: RustIdleRouteService::new(pool.clone(), redis, runtime_services),
+            team_service: RustTeamRouteService::new(pool.clone(), session_registry),
             pool,
-            session_registry,
         }
     }
 
@@ -266,7 +265,7 @@ impl RustGameRouteService {
                 200,
             ),
             self.idle_service.get_active_idle_session(character_id),
-            self.load_team_overview(character_id),
+            self.team_service.get_team_overview_for_home(character_id),
             self.load_task_summary(character_id, None),
             self.load_main_quest_progress(character_id),
             self.load_achievement_claimable_count(character_id),
@@ -316,242 +315,6 @@ impl RustGameRouteService {
         .fetch_one(&self.pool)
         .await
         .map_err(internal_sql_business_error)
-    }
-
-    async fn load_team_overview(
-        &self,
-        character_id: i64,
-    ) -> Result<GameHomeTeamOverviewView, BusinessError> {
-        let team_id = sqlx::query_scalar::<_, String>(
-            "SELECT team_id FROM team_members WHERE character_id = $1 LIMIT 1",
-        )
-        .bind(character_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(internal_sql_business_error)?;
-
-        let Some(team_id) = team_id else {
-            return Ok(empty_team_overview());
-        };
-
-        let team_row = sqlx::query(
-            r#"
-            SELECT
-              t.id,
-              t.name,
-              t.leader_id,
-              leader.nickname AS leader_name,
-              COALESCE(t.max_members, 5)::int AS max_members,
-              COALESCE(t.goal, '组队冒险') AS goal,
-              COALESCE(t.join_min_realm, '凡人') AS join_min_realm,
-              COALESCE(t.auto_join_enabled, FALSE) AS auto_join_enabled,
-              COALESCE(t.auto_join_min_realm, '凡人') AS auto_join_min_realm,
-              t.current_map_id,
-              COALESCE(t.is_public, TRUE) AS is_public
-            FROM teams t
-            JOIN characters leader ON leader.id = t.leader_id
-            WHERE t.id = $1
-            LIMIT 1
-            "#,
-        )
-        .bind(&team_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(internal_sql_business_error)?;
-
-        let Some(team_row) = team_row else {
-            return Ok(empty_team_overview());
-        };
-
-        let members_rows = sqlx::query(
-            r#"
-            SELECT
-              tm.character_id,
-              c.user_id,
-              COALESCE(tm.role, 'member') AS role,
-              c.nickname,
-              c.realm,
-              c.sub_realm,
-              c.avatar
-            FROM team_members tm
-            JOIN characters c ON c.id = tm.character_id
-            WHERE tm.team_id = $1
-            ORDER BY CASE WHEN tm.role = 'leader' THEN 0 ELSE 1 END, tm.joined_at ASC, tm.id ASC
-            "#,
-        )
-        .bind(&team_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(internal_sql_business_error)?;
-
-        let character_ids = members_rows
-            .iter()
-            .filter_map(|row| row.try_get::<Option<i64>, _>("character_id").ok().flatten())
-            .collect::<Vec<_>>();
-        let month_card_active_map = self.load_month_card_active_map(character_ids).await?;
-        let online_user_map = self
-            .load_online_user_map(
-                members_rows
-                    .iter()
-                    .filter_map(|row| row.try_get::<Option<i64>, _>("user_id").ok().flatten())
-                    .collect(),
-            )
-            .await;
-
-        let members = members_rows
-            .into_iter()
-            .filter_map(|row| {
-                let character_id = row.try_get::<i64, _>("character_id").ok()?;
-                let user_id = row.try_get::<Option<i64>, _>("user_id").ok().flatten();
-                let role = row
-                    .try_get::<String, _>("role")
-                    .ok()
-                    .unwrap_or_else(|| "member".to_string());
-                let realm = normalize_realm_keeping_unknown(
-                    row.try_get::<Option<String>, _>("realm")
-                        .ok()
-                        .flatten()
-                        .as_deref(),
-                    row.try_get::<Option<String>, _>("sub_realm")
-                        .ok()
-                        .flatten()
-                        .as_deref(),
-                );
-
-                Some(GameHomeTeamMemberView {
-                    id: format!("tm-{character_id}"),
-                    character_id,
-                    name: row
-                        .try_get::<String, _>("nickname")
-                        .ok()
-                        .unwrap_or_default(),
-                    month_card_active: month_card_active_map
-                        .get(&character_id)
-                        .copied()
-                        .unwrap_or(false),
-                    role: if role == "leader" {
-                        "leader".to_string()
-                    } else {
-                        "member".to_string()
-                    },
-                    realm,
-                    online: user_id
-                        .and_then(|value| online_user_map.get(&value).copied())
-                        .unwrap_or(false),
-                    avatar: row.try_get::<Option<String>, _>("avatar").ok().flatten(),
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let leader_id = team_row.get::<i64, _>("leader_id");
-        let info = GameHomeTeamInfoView {
-            id: team_row.get::<String, _>("id"),
-            name: team_row.get::<String, _>("name"),
-            leader: team_row.get::<String, _>("leader_name"),
-            leader_id,
-            leader_month_card_active: month_card_active_map
-                .get(&leader_id)
-                .copied()
-                .unwrap_or(false),
-            member_count: members.len() as i32,
-            members,
-            max_members: team_row.get::<i32, _>("max_members"),
-            goal: team_row.get::<String, _>("goal"),
-            join_min_realm: team_row.get::<String, _>("join_min_realm"),
-            auto_join_enabled: team_row.get::<bool, _>("auto_join_enabled"),
-            auto_join_min_realm: team_row.get::<String, _>("auto_join_min_realm"),
-            current_map_id: team_row
-                .try_get::<Option<String>, _>("current_map_id")
-                .ok()
-                .flatten(),
-            is_public: team_row.get::<bool, _>("is_public"),
-        };
-        let role = if leader_id == character_id {
-            Some("leader".to_string())
-        } else {
-            Some("member".to_string())
-        };
-
-        let applications = if role.as_deref() == Some("leader") {
-            self.load_team_applications(&team_id).await?
-        } else {
-            Vec::new()
-        };
-
-        Ok(GameHomeTeamOverviewView {
-            info: Some(info),
-            role,
-            applications,
-        })
-    }
-
-    async fn load_team_applications(
-        &self,
-        team_id: &str,
-    ) -> Result<Vec<GameHomeTeamApplicationView>, BusinessError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT
-              ta.id,
-              ta.message,
-              (EXTRACT(EPOCH FROM ta.created_at) * 1000)::bigint AS created_at_ms,
-              c.id AS character_id,
-              c.nickname,
-              c.realm,
-              c.sub_realm,
-              c.avatar
-            FROM team_applications ta
-            JOIN characters c ON c.id = ta.applicant_id
-            WHERE ta.team_id = $1
-              AND ta.status = 'pending'
-            ORDER BY ta.created_at DESC
-            "#,
-        )
-        .bind(team_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(internal_sql_business_error)?;
-
-        let month_card_active_map = self
-            .load_month_card_active_map(
-                rows.iter()
-                    .filter_map(|row| row.try_get::<Option<i64>, _>("character_id").ok().flatten())
-                    .collect(),
-            )
-            .await?;
-
-        Ok(rows
-            .into_iter()
-            .filter_map(|row| {
-                let character_id = row.try_get::<i64, _>("character_id").ok()?;
-                let created_at = row.try_get::<i64, _>("created_at_ms").ok().unwrap_or(0);
-                Some(GameHomeTeamApplicationView {
-                    id: row.try_get::<String, _>("id").ok().unwrap_or_default(),
-                    character_id,
-                    name: row
-                        .try_get::<String, _>("nickname")
-                        .ok()
-                        .unwrap_or_default(),
-                    month_card_active: month_card_active_map
-                        .get(&character_id)
-                        .copied()
-                        .unwrap_or(false),
-                    realm: normalize_realm_keeping_unknown(
-                        row.try_get::<Option<String>, _>("realm")
-                            .ok()
-                            .flatten()
-                            .as_deref(),
-                        row.try_get::<Option<String>, _>("sub_realm")
-                            .ok()
-                            .flatten()
-                            .as_deref(),
-                    ),
-                    avatar: row.try_get::<Option<String>, _>("avatar").ok().flatten(),
-                    message: row.try_get::<Option<String>, _>("message").ok().flatten(),
-                    time: created_at,
-                })
-            })
-            .collect())
     }
 
     async fn load_prepared_task_entries(
@@ -648,19 +411,19 @@ impl RustGameRouteService {
         character_id: i64,
         category: Option<&str>,
     ) -> Result<GameHomeTaskSummaryView, BusinessError> {
-        let entries = self.load_prepared_task_entries(character_id, category).await?;
+        let entries = self
+            .load_prepared_task_entries(character_id, category)
+            .await?;
         Ok(GameHomeTaskSummaryView {
             tasks: entries
                 .into_iter()
-                .map(|entry| {
-                    GameHomeTaskSummaryItemView {
-                        id: entry.seed.id,
-                        category: entry.seed.category,
-                        map_id: normalize_optional_text(entry.seed.map_id.as_deref()),
-                        room_id: normalize_optional_text(entry.seed.room_id.as_deref()),
-                        status: entry.status,
-                        tracked: entry.tracked,
-                    }
+                .map(|entry| GameHomeTaskSummaryItemView {
+                    id: entry.seed.id,
+                    category: entry.seed.category,
+                    map_id: normalize_optional_text(entry.seed.map_id.as_deref()),
+                    room_id: normalize_optional_text(entry.seed.room_id.as_deref()),
+                    status: entry.status,
+                    tracked: entry.tracked,
                 })
                 .collect(),
         })
@@ -671,7 +434,9 @@ impl RustGameRouteService {
         character_id: i64,
         category: Option<&str>,
     ) -> Result<GameTaskOverviewView, BusinessError> {
-        let entries = self.load_prepared_task_entries(character_id, category).await?;
+        let entries = self
+            .load_prepared_task_entries(character_id, category)
+            .await?;
         if entries.is_empty() {
             return Ok(GameTaskOverviewView { tasks: Vec::new() });
         }
@@ -700,10 +465,7 @@ impl RustGameRouteService {
                         realm: seed.realm,
                         giver_npc_id: normalize_optional_text(seed.giver_npc_id.as_deref()),
                         map_id: normalize_optional_text(seed.map_id.as_deref()),
-                        map_name: resolve_task_map_name(
-                            auxiliary_catalog,
-                            seed.map_id.as_deref(),
-                        ),
+                        map_name: resolve_task_map_name(auxiliary_catalog, seed.map_id.as_deref()),
                         room_id: normalize_optional_text(seed.room_id.as_deref()),
                         status,
                         tracked,
@@ -1014,9 +776,7 @@ impl RustGameRouteService {
             });
         }
 
-        if normalize_optional_text(task_def.giver_npc_id.as_deref())
-            != Some(normalized_npc_id)
-        {
+        if normalize_optional_text(task_def.giver_npc_id.as_deref()) != Some(normalized_npc_id) {
             return Ok(GameActionResult {
                 success: false,
                 message: "该任务无法在此提交".to_string(),
@@ -1051,7 +811,10 @@ impl RustGameRouteService {
         };
 
         let status = map_task_status(
-            row.try_get::<Option<String>, _>("status").ok().flatten().as_deref(),
+            row.try_get::<Option<String>, _>("status")
+                .ok()
+                .flatten()
+                .as_deref(),
         );
         if status == "completed" {
             return Ok(GameActionResult {
@@ -1070,9 +833,8 @@ impl RustGameRouteService {
             });
         }
 
-        let progress = parse_task_progress_map(
-            row.try_get::<Option<Value>, _>("progress").ok().flatten(),
-        );
+        let progress =
+            parse_task_progress_map(row.try_get::<Option<Value>, _>("progress").ok().flatten());
         if !all_task_objectives_done(&task_def, &progress) {
             return Ok(GameActionResult {
                 success: false,
@@ -1323,7 +1085,9 @@ impl RustGameRouteService {
                             .min_realm
                             .clone()
                             .unwrap_or_else(|| "凡人".to_string()),
-                        is_completed: completed_chapter_ids.iter().any(|value| value == &chapter_id),
+                        is_completed: completed_chapter_ids
+                            .iter()
+                            .any(|value| value == &chapter_id),
                     },
                 ))
             })
@@ -1335,7 +1099,10 @@ impl RustGameRouteService {
                 .then_with(|| left.2.id.cmp(&right.2.id))
         });
         chapters.dedup_by(|left, right| left.0 == right.0);
-        Ok(chapters.into_iter().map(|(_, _, chapter)| chapter).collect())
+        Ok(chapters
+            .into_iter()
+            .map(|(_, _, chapter)| chapter)
+            .collect())
     }
 
     async fn load_main_quest_sections(
@@ -1373,7 +1140,11 @@ impl RustGameRouteService {
         );
         let current_section_id = row
             .as_ref()
-            .and_then(|value| value.try_get::<Option<String>, _>("current_section_id").ok())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<String>, _>("current_section_id")
+                    .ok()
+            })
             .flatten();
         let current_status = row
             .as_ref()
@@ -1382,7 +1153,11 @@ impl RustGameRouteService {
             .unwrap_or_else(|| "not_started".to_string());
         let current_progress = row
             .as_ref()
-            .and_then(|value| value.try_get::<Option<Value>, _>("objectives_progress").ok())
+            .and_then(|value| {
+                value
+                    .try_get::<Option<Value>, _>("objectives_progress")
+                    .ok()
+            })
             .flatten()
             .unwrap_or(Value::Null);
 
@@ -1487,40 +1262,6 @@ impl RustGameRouteService {
         }))
     }
 
-    async fn load_month_card_active_map(
-        &self,
-        character_ids: Vec<i64>,
-    ) -> Result<HashMap<i64, bool>, BusinessError> {
-        let mut result = HashMap::with_capacity(character_ids.len());
-        let normalized_ids = normalize_character_ids(character_ids);
-        for character_id in &normalized_ids {
-            result.insert(*character_id, false);
-        }
-        if normalized_ids.is_empty() {
-            return Ok(result);
-        }
-
-        let rows = sqlx::query_scalar::<_, i64>(
-            r#"
-            SELECT character_id
-            FROM month_card_ownership
-            WHERE character_id = ANY($1::bigint[])
-              AND month_card_id = $2
-              AND expire_at > CURRENT_TIMESTAMP
-            "#,
-        )
-        .bind(&normalized_ids)
-        .bind(default_month_card_id())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(internal_sql_business_error)?;
-
-        for character_id in rows {
-            result.insert(character_id, true);
-        }
-        Ok(result)
-    }
-
     async fn refresh_recurring_task_progress(
         &self,
         character_id: i64,
@@ -1601,7 +1342,10 @@ impl RustGameRouteService {
         for row in rows {
             let task_id = row.get::<String, _>("task_id");
             let status = map_task_status(
-                row.try_get::<Option<String>, _>("status").ok().flatten().as_deref(),
+                row.try_get::<Option<String>, _>("status")
+                    .ok()
+                    .flatten()
+                    .as_deref(),
             );
             status_by_task_id.insert(task_id, status);
         }
@@ -1612,20 +1356,6 @@ impl RustGameRouteService {
                 Some("turnin" | "claimable" | "completed")
             )
         }))
-    }
-
-    async fn load_online_user_map(&self, user_ids: Vec<i64>) -> HashMap<i64, bool> {
-        let normalized_ids = normalize_character_ids(user_ids);
-        let mut result = HashMap::with_capacity(normalized_ids.len());
-        if normalized_ids.is_empty() {
-            return result;
-        }
-
-        let registry = self.session_registry.lock().await;
-        for user_id in normalized_ids {
-            result.insert(user_id, registry.socket_id_by_user(user_id).is_some());
-        }
-        result
     }
 }
 
@@ -1658,7 +1388,8 @@ impl GameRouteServices for RustGameRouteService {
     ) -> Pin<Box<dyn Future<Output = Result<GameHomeTaskSummaryView, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move {
-            self.load_task_summary(character_id, category.as_deref()).await
+            self.load_task_summary(character_id, category.as_deref())
+                .await
         })
     }
 
@@ -1674,7 +1405,10 @@ impl GameRouteServices for RustGameRouteService {
                 + 'a,
         >,
     > {
-        Box::pin(async move { self.set_task_tracked_impl(character_id, task_id, tracked).await })
+        Box::pin(async move {
+            self.set_task_tracked_impl(character_id, task_id, tracked)
+                .await
+        })
     }
 
     fn accept_task_from_npc<'a>(
@@ -1758,22 +1492,21 @@ impl GameRouteServices for RustGameRouteService {
         tracked: bool,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
         Box::pin(async move {
-            self.set_main_quest_tracked_impl(character_id, tracked).await
+            self.set_main_quest_tracked_impl(character_id, tracked)
+                .await
         })
     }
 }
 
 fn task_auxiliary_catalog() -> Result<&'static TaskAuxiliaryCatalog, BusinessError> {
-    let result = TASK_AUXILIARY_CATALOG.get_or_init(|| {
-        build_task_auxiliary_catalog().map_err(|error| error.to_string())
-    });
+    let result = TASK_AUXILIARY_CATALOG
+        .get_or_init(|| build_task_auxiliary_catalog().map_err(|error| error.to_string()));
     match result {
         Ok(catalog) => Ok(catalog),
         Err(error) => Err(internal_string_business_error(error.clone())),
@@ -2033,7 +1766,11 @@ fn build_task_objective_views(
                 .unwrap_or_default()
                 .to_string();
             let target = objective.target.unwrap_or(1).max(1);
-            let done = progress.get(id.as_str()).copied().unwrap_or(0).clamp(0, target);
+            let done = progress
+                .get(id.as_str())
+                .copied()
+                .unwrap_or(0)
+                .clamp(0, target);
             let (map_name, map_name_type) = resolve_task_objective_map_binding(
                 auxiliary_catalog,
                 task_map_id,
@@ -2104,10 +1841,7 @@ fn build_task_reward_views(
                         .as_deref()
                         .map(str::trim)
                         .filter(|value| !value.is_empty())?;
-                    let amount = normalize_task_reward_amount(
-                        reward.qty.or(reward.qty_min),
-                        0,
-                    );
+                    let amount = normalize_task_reward_amount(reward.qty.or(reward.qty_min), 0);
                     if amount <= 0 {
                         return None;
                     }

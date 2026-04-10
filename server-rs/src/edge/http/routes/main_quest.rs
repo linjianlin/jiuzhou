@@ -9,9 +9,7 @@ use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::require_authenticated_character_context;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, success, ServiceResultResponse};
-use crate::edge::http::routes::game::{
-    GameHomeMainQuestChapterView, GameHomeMainQuestSectionView,
-};
+use crate::edge::http::routes::game::{GameHomeMainQuestChapterView, GameHomeMainQuestSectionView};
 
 /**
  * main-quest 最小独立路由。
@@ -55,7 +53,10 @@ pub fn build_main_quest_router() -> Router<AppState> {
     Router::new()
         .route("/progress", get(main_quest_progress_handler))
         .route("/chapters", get(main_quest_chapters_handler))
-        .route("/chapters/{chapter_id}/sections", get(main_quest_sections_handler))
+        .route(
+            "/chapters/{chapter_id}/sections",
+            get(main_quest_sections_handler),
+        )
         .route("/track", post(main_quest_track_handler))
 }
 
