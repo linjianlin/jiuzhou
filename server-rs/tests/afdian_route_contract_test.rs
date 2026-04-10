@@ -156,6 +156,9 @@ where
     AppState {
         afdian_services: Arc::new(afdian_services),
         auth_services: Arc::new(NoopAuthServices),
+        attribute_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

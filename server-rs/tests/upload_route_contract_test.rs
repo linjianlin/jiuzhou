@@ -337,6 +337,9 @@ fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
         auth_services: Arc::new(FakeAuthServices),
+        attribute_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

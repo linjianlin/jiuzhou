@@ -234,9 +234,8 @@ pub trait AuthRouteServices: Send + Sync {
         _month: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<SignInOverviewData>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<SignInOverviewData>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {

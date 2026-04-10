@@ -152,13 +152,15 @@ impl RustSignInService {
         let signed_today = if records.contains_key(&today_key) {
             true
         } else {
-            sqlx::query("SELECT 1 FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1")
-                .bind(user_id)
-                .bind(&today_key)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(internal_business_error)?
-                .is_some()
+            sqlx::query(
+                "SELECT 1 FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1",
+            )
+            .bind(user_id)
+            .bind(&today_key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(internal_business_error)?
+            .is_some()
         };
 
         let history_rows = sqlx::query(
@@ -178,7 +180,8 @@ impl RustSignInService {
         .map_err(internal_business_error)?;
 
         let signed_dates = build_signed_date_set(history_rows);
-        let streak_days = count_consecutive_signed_days(&signed_dates, today, SIGN_IN_HISTORY_LOOKBACK_DAYS);
+        let streak_days =
+            count_consecutive_signed_days(&signed_dates, today, SIGN_IN_HISTORY_LOOKBACK_DAYS);
 
         Ok(ServiceResultResponse::new(
             true,
@@ -202,13 +205,13 @@ impl RustSignInService {
         let today_key = format_date_key(today);
         let holiday_info = get_holiday_info(today);
 
-        let Some(character_id) = sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM characters WHERE user_id = $1 LIMIT 1",
-        )
-        .bind(user_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(internal_business_error)? else {
+        let Some(character_id) =
+            sqlx::query_scalar::<_, i64>("SELECT id FROM characters WHERE user_id = $1 LIMIT 1")
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal_business_error)?
+        else {
             return Ok(ServiceResultResponse::new(
                 false,
                 Some("角色不存在，无法签到".to_string()),
@@ -367,8 +370,8 @@ fn calculate_sign_in_reward(streak_days_after_sign_in: i64) -> i64 {
 }
 
 fn get_holiday_info(date: NaiveDate) -> HolidayInfo {
-    let festivals = solar::from_ymd(date.year() as i64, date.month() as i64, date.day() as i64)
-        .get_festivals();
+    let festivals =
+        solar::from_ymd(date.year() as i64, date.month() as i64, date.day() as i64).get_festivals();
     let Some(first_holiday) = festivals.into_iter().next() else {
         return HolidayInfo {
             is_holiday: false,

@@ -138,6 +138,9 @@ where
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
         auth_services: Arc::new(auth_services),
+        attribute_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
         inventory_services: Arc::new(

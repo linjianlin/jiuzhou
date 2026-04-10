@@ -5,6 +5,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::application::afdian::service::RustAfdianRouteService;
+use crate::application::attribute::service::RustAttributeRouteService;
 use crate::application::auth::service::RustAuthServices;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::info::service::RustInfoService;
@@ -74,6 +75,9 @@ pub async fn run_application() -> Result<(), AppError> {
     let state = AppState {
         afdian_services,
         auth_services,
+        attribute_services: std::sync::Arc::new(RustAttributeRouteService::new(
+            postgres.pool.clone(),
+        )),
         idle_services,
         info_services: std::sync::Arc::new(RustInfoService::new(postgres.pool.clone())),
         inventory_services: std::sync::Arc::new(RustInventoryReadService::new(

@@ -86,6 +86,9 @@ fn build_app_state() -> AppState {
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
         auth_services: auth_services.clone(),
+        attribute_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

@@ -1,5 +1,6 @@
 pub mod account;
 pub mod afdian;
+pub mod attribute;
 pub mod auth;
 pub mod captcha;
 pub mod character;

@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 use crate::bootstrap::readiness::ReadinessGate;
 use crate::edge::http::routes::account::build_account_router;
 use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
+use crate::edge::http::routes::attribute::{build_attribute_router, AttributeRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
 use crate::edge::http::routes::captcha::build_captcha_router;
 use crate::edge::http::routes::character::build_character_router;
@@ -72,6 +73,7 @@ pub fn new_shared_runtime_services(services: RuntimeServicesState) -> SharedRunt
 pub struct AppState {
     pub afdian_services: Arc<dyn AfdianRouteServices>,
     pub auth_services: Arc<dyn AuthRouteServices>,
+    pub attribute_services: Arc<dyn AttributeRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub info_services: Arc<dyn InfoRouteServices>,
     pub inventory_services: Arc<dyn InventoryRouteServices>,
@@ -106,6 +108,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/health", get(health_handler))
         .nest("/api/account", build_account_router())
         .nest("/api/afdian", build_afdian_router())
+        .nest("/api/attribute", build_attribute_router())
         .nest("/api/auth", build_auth_router())
         .nest("/api/character", build_character_router())
         .nest("/api/dungeon", build_dungeon_router())

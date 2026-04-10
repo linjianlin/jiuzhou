@@ -67,11 +67,7 @@ async fn sign_in_overview_route_uses_current_month_when_query_missing() {
                 .collect(),
             }),
         ),
-        do_result: ServiceResultResponse::new(
-            false,
-            Some("未使用".to_string()),
-            None,
-        ),
+        do_result: ServiceResultResponse::new(false, Some("未使用".to_string()), None),
         requested_months: requested_months.clone(),
     }));
 
@@ -89,7 +85,10 @@ async fn sign_in_overview_route_uses_current_month_when_query_missing() {
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        requested_months.lock().expect("requested months").as_slice(),
+        requested_months
+            .lock()
+            .expect("requested months")
+            .as_slice(),
         &[current_month()]
     );
     assert_eq!(
@@ -150,11 +149,7 @@ async fn sign_in_do_route_preserves_business_failure_shape() {
             kicked: false,
             user_id: Some(2002),
         },
-        overview_result: ServiceResultResponse::new(
-            false,
-            Some("未使用".to_string()),
-            None,
-        ),
+        overview_result: ServiceResultResponse::new(false, Some("未使用".to_string()), None),
         do_result: ServiceResultResponse::new(
             false,
             Some("角色不存在，无法签到".to_string()),
@@ -213,6 +208,9 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
     AppState {
         afdian_services: Arc::new(NoopAfdianRouteServices),
         auth_services: Arc::new(auth_services),
+        attribute_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(NoopInfoRouteServices),
         inventory_services: Arc::new(NoopInventoryRouteServices),
@@ -327,9 +325,8 @@ impl AuthRouteServices for FakeAuthServices {
         month: String,
     ) -> Pin<
         Box<
-            dyn Future<
-                    Output = Result<ServiceResultResponse<SignInOverviewData>, BusinessError>,
-                > + Send
+            dyn Future<Output = Result<ServiceResultResponse<SignInOverviewData>, BusinessError>>
+                + Send
                 + 'a,
         >,
     > {
