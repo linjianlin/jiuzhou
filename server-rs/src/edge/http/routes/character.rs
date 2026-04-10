@@ -1,15 +1,17 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::HeaderMap;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::application::character::service::{
     CharacterRouteData, RenameCharacterWithCardResult, UpdateCharacterSettingResult,
 };
+use crate::application::character_technique::service::CharacterTechniqueServiceResult;
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::require_authenticated_user_id;
 use crate::edge::http::error::BusinessError;
@@ -42,6 +44,7 @@ use crate::edge::http::response::{service_result, ServiceResultResponse};
  * 4. `/updatePosition` 必须继续复用同一鉴权路径，并保持 service 返回的 `位置参数不能为空`、`位置参数过长`、`角色不存在`、`位置更新成功` 文案不变。
  * 5. `renameWithCard` 路由层必须继续保留 Node 可见的参数报错文案：`itemInstanceId参数错误`、`道号不能为空`。
  * 6. `updateAutoDisassemble` 必须继续保留 Node 可见的 rules 形状报错文案：`rules参数错误，需为数组`、`rules参数错误，规则项需为对象`。
+ * 7. `/:characterId/*` 的功法读接口必须先做路径角色所有权校验；未建角账号和访问他人角色都要维持 `403 { success:false, message:'无权限访问该角色' }`。
  */
 #[derive(Debug, Deserialize)]
 struct CreateCharacterPayload {
@@ -82,6 +85,31 @@ pub fn build_character_router() -> Router<AppState> {
         .route("/create", post(create_character_handler))
         .route("/updatePosition", post(update_character_position_handler))
         .route("/renameWithCard", post(rename_character_with_card_handler))
+        .route(
+            "/{characterId}/technique/status",
+            get(get_character_technique_status_handler),
+        )
+        .route("/{characterId}/techniques", get(get_character_techniques_handler))
+        .route(
+            "/{characterId}/techniques/equipped",
+            get(get_equipped_techniques_handler),
+        )
+        .route(
+            "/{characterId}/technique/{techniqueId}/upgrade-cost",
+            get(get_technique_upgrade_cost_handler),
+        )
+        .route(
+            "/{characterId}/skills/available",
+            get(get_available_skills_handler),
+        )
+        .route(
+            "/{characterId}/skills/equipped",
+            get(get_equipped_skills_handler),
+        )
+        .route(
+            "/{characterId}/technique/passives",
+            get(get_technique_passives_handler),
+        )
         .route(
             "/updateAutoCastSkills",
             post(update_auto_cast_skills_handler),
@@ -253,6 +281,118 @@ async fn update_auto_cast_skills_handler(
     Ok(setting_result_response(result))
 }
 
+async fn get_character_technique_status_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .get_character_technique_status(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn get_character_techniques_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .get_character_techniques(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn get_equipped_techniques_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .get_equipped_techniques(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn get_technique_upgrade_cost_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((character_id, technique_id)): Path<(String, String)>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .get_technique_upgrade_cost(character_id, technique_id.as_str())
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn get_available_skills_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .get_available_skills(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn get_equipped_skills_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .get_equipped_skills(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn get_technique_passives_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .calculate_technique_passives(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
 async fn update_auto_disassemble_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -306,6 +446,17 @@ fn rename_result_response(result: RenameCharacterWithCardResult) -> Response {
     ))
 }
 
+fn character_technique_result_response<T>(result: CharacterTechniqueServiceResult<T>) -> Response
+where
+    T: Serialize,
+{
+    service_result(ServiceResultResponse::new(
+        result.success,
+        Some(result.message),
+        result.data,
+    ))
+}
+
 fn validate_auto_disassemble_rules_shape(
     rules: Option<Value>,
 ) -> Result<Option<Vec<Value>>, BusinessError> {
@@ -341,4 +492,40 @@ fn parse_positive_item_instance_id(value: Option<&Value>) -> Option<i64> {
         Value::String(text) => text.trim().parse::<i64>().ok().filter(|item| *item > 0),
         _ => None,
     }
+}
+
+async fn require_owned_character_id(
+    state: &AppState,
+    headers: &HeaderMap,
+    raw_character_id: &str,
+) -> Result<i64, Response> {
+    let character_id = match parse_positive_character_id(raw_character_id) {
+        Ok(character_id) => character_id,
+        Err(error) => return Err(error.into_response()),
+    };
+    let user_id = require_authenticated_user_id(state, headers).await?;
+    let character_result = match state.auth_services.check_character(user_id).await {
+        Ok(result) => result,
+        Err(error) => return Err(error.into_response()),
+    };
+    let has_access = character_result
+        .character
+        .as_ref()
+        .is_some_and(|character| character_result.has_character && character.id == character_id);
+    if !has_access {
+        return Err(
+            BusinessError::with_status("无权限访问该角色", axum::http::StatusCode::FORBIDDEN)
+                .into_response(),
+        );
+    }
+    Ok(character_id)
+}
+
+fn parse_positive_character_id(raw_character_id: &str) -> Result<i64, BusinessError> {
+    raw_character_id
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|character_id| *character_id > 0)
+        .ok_or_else(|| BusinessError::new("无效的角色ID"))
 }

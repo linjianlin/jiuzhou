@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 
+use crate::application::character_technique::service::RustCharacterTechniqueReadService;
 use crate::bootstrap::readiness::ReadinessGate;
 use crate::edge::http::routes::account::build_account_router;
 use crate::edge::http::routes::achievement::{build_achievement_router, AchievementRouteServices};
@@ -92,6 +93,7 @@ pub struct AppState {
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub attribute_services: Arc<dyn AttributeRouteServices>,
     pub battle_pass_services: Arc<dyn BattlePassRouteServices>,
+    pub character_technique_service: Arc<RustCharacterTechniqueReadService>,
     pub game_services: Arc<dyn GameRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub info_services: Arc<dyn InfoRouteServices>,

@@ -107,6 +107,13 @@ pub struct ItemTaxonomyOptionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaticItemMetaDto {
+    pub id: String,
+    pub name: String,
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ItemTaxonomyCategoryDto {
     pub all: ItemTaxonomyOptionDto,
     pub options: Vec<ItemTaxonomyOptionDto>,
@@ -343,6 +350,8 @@ pub struct MapDetailDto {
 #[derive(Debug, Clone)]
 pub struct StaticDataCatalog {
     item_taxonomy: GameItemTaxonomyDto,
+    item_meta_by_id: BTreeMap<String, StaticItemMetaDto>,
+    skill_by_id: BTreeMap<String, SkillDefDto>,
     techniques: Vec<TechniqueDefDto>,
     technique_details_by_id: BTreeMap<String, TechniqueDetailDto>,
     world_map: WorldMapDto,
@@ -353,6 +362,14 @@ pub struct StaticDataCatalog {
 impl StaticDataCatalog {
     pub fn item_taxonomy(&self) -> &GameItemTaxonomyDto {
         &self.item_taxonomy
+    }
+
+    pub fn item_meta(&self, item_id: &str) -> Option<&StaticItemMetaDto> {
+        self.item_meta_by_id.get(item_id)
+    }
+
+    pub fn skill(&self, skill_id: &str) -> Option<&SkillDefDto> {
+        self.skill_by_id.get(skill_id)
     }
 
     pub fn techniques(&self) -> &[TechniqueDefDto] {
@@ -548,6 +565,7 @@ fn build_static_data_catalog() -> Result<StaticDataCatalog, AppError> {
 
     let item_taxonomy = build_item_taxonomy(&items);
     let item_meta_by_id = build_item_meta_index(&items);
+    let skill_by_id = build_skill_index(&skills);
     let technique_dtos = build_technique_list(&techniques);
     let technique_details_by_id =
         build_technique_detail_index(&techniques, &layers, &skills, &item_meta_by_id);
@@ -561,6 +579,8 @@ fn build_static_data_catalog() -> Result<StaticDataCatalog, AppError> {
 
     Ok(StaticDataCatalog {
         item_taxonomy,
+        item_meta_by_id,
+        skill_by_id,
         techniques: technique_dtos,
         technique_details_by_id,
         world_map,
@@ -680,11 +700,28 @@ fn build_item_taxonomy(items: &[ItemDefinitionSeed]) -> GameItemTaxonomyDto {
 
 fn build_item_meta_index(
     items: &[ItemDefinitionSeed],
-) -> HashMap<String, (String, Option<String>)> {
+) -> BTreeMap<String, StaticItemMetaDto> {
     items
         .iter()
         .filter(|item| is_enabled(item.enabled))
-        .map(|item| (item.id.clone(), (item.name.clone(), item.icon.clone())))
+        .map(|item| {
+            (
+                item.id.clone(),
+                StaticItemMetaDto {
+                    id: item.id.clone(),
+                    name: item.name.clone(),
+                    icon: item.icon.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn build_skill_index(skills: &[SkillDefinitionSeed]) -> BTreeMap<String, SkillDefDto> {
+    skills
+        .iter()
+        .filter(|skill| is_enabled(skill.enabled))
+        .map(|skill| (skill.id.clone(), map_skill_definition(skill)))
         .collect()
 }
 
@@ -709,7 +746,7 @@ fn build_technique_detail_index(
     techniques: &[TechniqueDefinitionSeed],
     layers: &[TechniqueLayerDefinitionSeed],
     skills: &[SkillDefinitionSeed],
-    item_meta_by_id: &HashMap<String, (String, Option<String>)>,
+    item_meta_by_id: &BTreeMap<String, StaticItemMetaDto>,
 ) -> BTreeMap<String, TechniqueDetailDto> {
     let technique_by_id = techniques
         .iter()
@@ -947,7 +984,7 @@ fn map_technique_definition(entry: &TechniqueDefinitionSeed) -> TechniqueDefDto 
 
 fn map_technique_layer_definition(
     entry: &TechniqueLayerDefinitionSeed,
-    item_meta_by_id: &HashMap<String, (String, Option<String>)>,
+    item_meta_by_id: &BTreeMap<String, StaticItemMetaDto>,
 ) -> TechniqueLayerDto {
     TechniqueLayerDto {
         technique_id: entry.technique_id.clone(),
@@ -964,8 +1001,8 @@ fn map_technique_layer_definition(
                 TechniqueLayerCostMaterialDto {
                     item_id: material.item_id,
                     qty: material.qty,
-                    item_name: item_meta.map(|(name, _)| name.clone()),
-                    item_icon: item_meta.and_then(|(_, icon)| icon.clone()),
+                    item_name: item_meta.map(|meta| meta.name.clone()),
+                    item_icon: item_meta.and_then(|meta| meta.icon.clone()),
                 }
             })
             .collect(),

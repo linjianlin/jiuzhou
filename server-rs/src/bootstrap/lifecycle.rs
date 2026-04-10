@@ -9,6 +9,7 @@ use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::attribute::service::RustAttributeRouteService;
 use crate::application::auth::service::RustAuthServices;
 use crate::application::battle_pass::service::RustBattlePassRouteService;
+use crate::application::character_technique::service::RustCharacterTechniqueReadService;
 use crate::application::game::service::RustGameRouteService;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::info::service::RustInfoService;
@@ -95,6 +96,9 @@ pub async fn run_application() -> Result<(), AppError> {
         battle_pass_services: std::sync::Arc::new(RustBattlePassRouteService::new(
             postgres.pool.clone(),
         )),
+        character_technique_service: std::sync::Arc::new(
+            RustCharacterTechniqueReadService::new(postgres.pool.clone()),
+        ),
         game_services: std::sync::Arc::new(RustGameRouteService::new(
             postgres.pool.clone(),
             redis.client.clone(),

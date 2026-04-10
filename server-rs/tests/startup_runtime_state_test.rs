@@ -174,6 +174,7 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         battle_pass_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
         ),
+        character_technique_service: Default::default(),
         game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices,

@@ -177,6 +177,7 @@ fn build_app_state(mail_services: FakeMailRouteServices) -> AppState {
         battle_pass_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
         ),
+        character_technique_service: Default::default(),
         game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

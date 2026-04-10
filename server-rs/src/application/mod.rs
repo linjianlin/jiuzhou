@@ -6,6 +6,7 @@ pub mod attribute;
 pub mod auth;
 pub mod battle_pass;
 pub mod character;
+pub mod character_technique;
 pub mod game;
 pub mod idle;
 pub mod info;
