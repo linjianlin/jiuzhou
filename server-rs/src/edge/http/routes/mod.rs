@@ -21,6 +21,7 @@ pub mod month_card;
 pub mod rank;
 pub mod realm;
 pub mod redeem_code;
+pub mod sect;
 pub mod sign_in;
 pub mod task;
 pub mod team;

@@ -22,6 +22,7 @@ use crate::application::month_card::service::RustMonthCardRouteService;
 use crate::application::rank::service::RustRankRouteService;
 use crate::application::realm::service::RustRealmRouteService;
 use crate::application::redeem_code::service::RustRedeemCodeRouteService;
+use crate::application::sect::service::RustSectRouteService;
 use crate::application::team::service::RustTeamRouteService;
 use crate::application::time::service::RustTimeService;
 use crate::application::title::service::RustTitleRouteService;
@@ -123,6 +124,7 @@ pub async fn run_application() -> Result<(), AppError> {
             postgres.pool.clone(),
             redis.client.clone(),
         )),
+        sect_services: std::sync::Arc::new(RustSectRouteService::new(postgres.pool.clone())),
         team_services: std::sync::Arc::new(RustTeamRouteService::new(
             postgres.pool.clone(),
             session_registry.clone(),

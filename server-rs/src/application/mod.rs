@@ -19,6 +19,7 @@ pub mod realm;
 pub mod redeem_code;
 pub mod reward_payload;
 pub mod security;
+pub mod sect;
 pub mod sign_in;
 pub mod static_data;
 pub mod team;

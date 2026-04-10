@@ -30,6 +30,7 @@ use crate::edge::http::routes::month_card::{build_month_card_router, MonthCardRo
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
 use crate::edge::http::routes::realm::{build_realm_router, RealmRouteServices};
 use crate::edge::http::routes::redeem_code::{build_redeem_code_router, RedeemCodeRouteServices};
+use crate::edge::http::routes::sect::{build_sect_router, SectRouteServices};
 use crate::edge::http::routes::sign_in::build_sign_in_router;
 use crate::edge::http::routes::task::build_task_router;
 use crate::edge::http::routes::team::{build_team_router, TeamRouteServices};
@@ -104,6 +105,7 @@ pub struct AppState {
     pub rank_services: Arc<dyn RankRouteServices>,
     pub realm_services: Arc<dyn RealmRouteServices>,
     pub redeem_code_services: Arc<dyn RedeemCodeRouteServices>,
+    pub sect_services: Arc<dyn SectRouteServices>,
     pub team_services: Arc<dyn TeamRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
     pub tower_services: Arc<dyn TowerRouteServices>,
@@ -158,6 +160,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/rank", build_rank_router())
         .nest("/api/realm", build_realm_router())
         .nest("/api/redeem-code", build_redeem_code_router())
+        .nest("/api/sect", build_sect_router())
         .nest("/api/signin", build_sign_in_router())
         .nest("/api/task", build_task_router())
         .nest("/api/technique", build_technique_router())
