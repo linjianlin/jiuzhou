@@ -46,7 +46,8 @@ use jiuzhou_server_rs::edge::http::routes::game::{
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
 use jiuzhou_server_rs::edge::http::routes::team::{
-    TeamBrowseEntryView, TeamInvitationView, TeamMyTeamResponse, TeamRouteServices,
+    TeamBrowseEntryView, TeamInvitationView, TeamMutationResponse, TeamMyTeamResponse,
+    TeamRouteServices, TeamSettingsUpdateInput,
 };
 use jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices;
 use jiuzhou_server_rs::edge::http::routes::upload::NoopUploadRouteServices;
@@ -271,6 +272,152 @@ async fn team_received_invitations_route_returns_node_success_shape() {
     );
 }
 
+#[tokio::test]
+async fn team_create_route_requires_character_id_before_service() {
+    let team_services = FakeTeamRouteServices::default();
+    let app = build_router(build_app_state(team_services.clone()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/team/create")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"天南小队"}"#))
+                .expect("team create request"),
+        )
+        .await
+        .expect("team create response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "缺少角色ID"
+        })
+    );
+    assert!(team_services
+        .create_requests
+        .lock()
+        .expect("create requests")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn team_apply_route_preserves_application_id_payload() {
+    let team_services = FakeTeamRouteServices::with_apply_response(
+        TeamMutationResponse::success("申请已提交").with_application_id("apply-1".to_string()),
+    );
+    let app = build_router(build_app_state(team_services.clone()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/team/apply")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"characterId":3003,"teamId":"team-apply-1","message":"求带"}"#,
+                ))
+                .expect("team apply request"),
+        )
+        .await
+        .expect("team apply response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["message"], serde_json::json!("申请已提交"));
+    assert_eq!(json["applicationId"], serde_json::json!("apply-1"));
+    assert_eq!(
+        team_services
+            .apply_requests
+            .lock()
+            .expect("apply requests")
+            .as_slice(),
+        &[(3003, "team-apply-1".to_string(), Some("求带".to_string()))]
+    );
+}
+
+#[tokio::test]
+async fn team_settings_route_forwards_nested_patch_fields() {
+    let team_services = FakeTeamRouteServices::with_settings_response(TeamMutationResponse::success(
+        "设置已更新",
+    ));
+    let app = build_router(build_app_state(team_services.clone()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/team/settings")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"characterId":4002,"teamId":"team-settings-1","settings":{"name":"冲榜队","autoJoinEnabled":true,"isPublic":false}}"#,
+                ))
+                .expect("team settings request"),
+        )
+        .await
+        .expect("team settings response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["message"], serde_json::json!("设置已更新"));
+    assert_eq!(
+        team_services
+            .settings_requests
+            .lock()
+            .expect("settings requests")
+            .as_slice(),
+        &[(
+            4002,
+            "team-settings-1".to_string(),
+            TeamSettingsUpdateInput {
+                name: Some("冲榜队".to_string()),
+                goal: None,
+                join_min_realm: None,
+                auto_join_enabled: Some(true),
+                auto_join_min_realm: None,
+                is_public: Some(false),
+            }
+        )]
+    );
+}
+
+#[tokio::test]
+async fn team_invitation_handle_route_requires_accept_flag() {
+    let team_services = FakeTeamRouteServices::default();
+    let app = build_router(build_app_state(team_services.clone()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/team/invitation/handle")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"characterId":5001,"invitationId":"invite-9"}"#))
+                .expect("team invitation handle request"),
+        )
+        .await
+        .expect("team invitation handle response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "缺少参数"
+        })
+    );
+    assert!(team_services
+        .handle_invitation_requests
+        .lock()
+        .expect("handle invitation requests")
+        .is_empty());
+}
+
 fn build_app_state(team_services: FakeTeamRouteServices) -> AppState {
     AppState {
         afdian_services: Arc::new(
@@ -308,6 +455,7 @@ fn build_app_state(team_services: FakeTeamRouteServices) -> AppState {
         ),
         time_services: Arc::new(NoopTimeRouteServices),
         team_services: Arc::new(team_services),
+        tower_services: Arc::new(jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices),
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
@@ -324,14 +472,34 @@ fn build_app_state(team_services: FakeTeamRouteServices) -> AppState {
 struct FakeTeamRouteServices {
     my_team_response: TeamMyTeamResponse,
     team_detail_response: ServiceResultResponse<GameHomeTeamInfoView>,
+    create_response: TeamMutationResponse,
+    disband_response: TeamMutationResponse,
+    leave_response: TeamMutationResponse,
+    apply_response: TeamMutationResponse,
     applications_response: ServiceResultResponse<Vec<GameHomeTeamApplicationView>>,
+    handle_application_response: TeamMutationResponse,
+    kick_response: TeamMutationResponse,
+    transfer_response: TeamMutationResponse,
+    settings_response: TeamMutationResponse,
     nearby_response: ServiceResultResponse<Vec<TeamBrowseEntryView>>,
     lobby_response: ServiceResultResponse<Vec<TeamBrowseEntryView>>,
+    invite_response: TeamMutationResponse,
     invitations_response: ServiceResultResponse<Vec<TeamInvitationView>>,
+    handle_invitation_response: TeamMutationResponse,
+    create_requests: Arc<Mutex<Vec<(i64, Option<String>, Option<String>)>>>,
+    disband_requests: Arc<Mutex<Vec<(i64, String)>>>,
+    leave_requests: Arc<Mutex<Vec<i64>>>,
+    apply_requests: Arc<Mutex<Vec<(i64, String, Option<String>)>>>,
     application_requests: Arc<Mutex<Vec<(String, i64)>>>,
+    handle_application_requests: Arc<Mutex<Vec<(i64, String, bool)>>>,
+    kick_requests: Arc<Mutex<Vec<(i64, i64)>>>,
+    transfer_requests: Arc<Mutex<Vec<(i64, i64)>>>,
+    settings_requests: Arc<Mutex<Vec<(i64, String, TeamSettingsUpdateInput)>>>,
     nearby_requests: Arc<Mutex<Vec<(i64, Option<String>)>>>,
     lobby_requests: Arc<Mutex<Vec<(i64, Option<String>, Option<i64>)>>>,
+    invite_requests: Arc<Mutex<Vec<(i64, i64, Option<String>)>>>,
     invitation_requests: Arc<Mutex<Vec<i64>>>,
+    handle_invitation_requests: Arc<Mutex<Vec<(i64, String, bool)>>>,
 }
 
 impl Default for FakeTeamRouteServices {
@@ -343,14 +511,34 @@ impl Default for FakeTeamRouteServices {
                 Some("队伍不存在".to_string()),
                 None,
             ),
+            create_response: TeamMutationResponse::failure("功能暂不可用"),
+            disband_response: TeamMutationResponse::failure("功能暂不可用"),
+            leave_response: TeamMutationResponse::failure("功能暂不可用"),
+            apply_response: TeamMutationResponse::failure("功能暂不可用"),
             applications_response: ServiceResultResponse::new(true, None, Some(Vec::new())),
+            handle_application_response: TeamMutationResponse::failure("功能暂不可用"),
+            kick_response: TeamMutationResponse::failure("功能暂不可用"),
+            transfer_response: TeamMutationResponse::failure("功能暂不可用"),
+            settings_response: TeamMutationResponse::failure("功能暂不可用"),
             nearby_response: ServiceResultResponse::new(true, None, Some(Vec::new())),
             lobby_response: ServiceResultResponse::new(true, None, Some(Vec::new())),
+            invite_response: TeamMutationResponse::failure("功能暂不可用"),
             invitations_response: ServiceResultResponse::new(true, None, Some(Vec::new())),
+            handle_invitation_response: TeamMutationResponse::failure("功能暂不可用"),
+            create_requests: Arc::new(Mutex::new(Vec::new())),
+            disband_requests: Arc::new(Mutex::new(Vec::new())),
+            leave_requests: Arc::new(Mutex::new(Vec::new())),
+            apply_requests: Arc::new(Mutex::new(Vec::new())),
             application_requests: Arc::new(Mutex::new(Vec::new())),
+            handle_application_requests: Arc::new(Mutex::new(Vec::new())),
+            kick_requests: Arc::new(Mutex::new(Vec::new())),
+            transfer_requests: Arc::new(Mutex::new(Vec::new())),
+            settings_requests: Arc::new(Mutex::new(Vec::new())),
             nearby_requests: Arc::new(Mutex::new(Vec::new())),
             lobby_requests: Arc::new(Mutex::new(Vec::new())),
+            invite_requests: Arc::new(Mutex::new(Vec::new())),
             invitation_requests: Arc::new(Mutex::new(Vec::new())),
+            handle_invitation_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -366,6 +554,13 @@ impl FakeTeamRouteServices {
     fn with_team_detail(team_detail_response: ServiceResultResponse<GameHomeTeamInfoView>) -> Self {
         Self {
             team_detail_response,
+            ..Self::default()
+        }
+    }
+
+    fn with_apply_response(apply_response: TeamMutationResponse) -> Self {
+        Self {
+            apply_response,
             ..Self::default()
         }
     }
@@ -389,6 +584,13 @@ impl FakeTeamRouteServices {
     ) -> Self {
         Self {
             invitations_response,
+            ..Self::default()
+        }
+    }
+
+    fn with_settings_response(settings_response: TeamMutationResponse) -> Self {
+        Self {
+            settings_response,
             ..Self::default()
         }
     }
@@ -417,6 +619,75 @@ impl TeamRouteServices for FakeTeamRouteServices {
         Box::pin(async move { Ok(response) })
     }
 
+    fn create_team<'a>(
+        &'a self,
+        character_id: i64,
+        name: Option<String>,
+        goal: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.create_response.clone();
+        let requests = Arc::clone(&self.create_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("create requests")
+                .push((character_id, name, goal));
+            Ok(response)
+        })
+    }
+
+    fn disband_team<'a>(
+        &'a self,
+        character_id: i64,
+        team_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.disband_response.clone();
+        let requests = Arc::clone(&self.disband_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("disband requests")
+                .push((character_id, team_id));
+            Ok(response)
+        })
+    }
+
+    fn leave_team<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.leave_response.clone();
+        let requests = Arc::clone(&self.leave_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("leave requests")
+                .push(character_id);
+            Ok(response)
+        })
+    }
+
+    fn apply_to_team<'a>(
+        &'a self,
+        character_id: i64,
+        team_id: String,
+        message: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.apply_response.clone();
+        let requests = Arc::clone(&self.apply_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("apply requests")
+                .push((character_id, team_id, message));
+            Ok(response)
+        })
+    }
+
     fn get_team_applications<'a>(
         &'a self,
         team_id: String,
@@ -439,6 +710,76 @@ impl TeamRouteServices for FakeTeamRouteServices {
                 .lock()
                 .expect("application requests")
                 .push((team_id, character_id));
+            Ok(response)
+        })
+    }
+
+    fn handle_application<'a>(
+        &'a self,
+        character_id: i64,
+        application_id: String,
+        approve: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.handle_application_response.clone();
+        let requests = Arc::clone(&self.handle_application_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("handle application requests")
+                .push((character_id, application_id, approve));
+            Ok(response)
+        })
+    }
+
+    fn kick_member<'a>(
+        &'a self,
+        leader_id: i64,
+        target_character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.kick_response.clone();
+        let requests = Arc::clone(&self.kick_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("kick requests")
+                .push((leader_id, target_character_id));
+            Ok(response)
+        })
+    }
+
+    fn transfer_leader<'a>(
+        &'a self,
+        current_leader_id: i64,
+        new_leader_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.transfer_response.clone();
+        let requests = Arc::clone(&self.transfer_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("transfer requests")
+                .push((current_leader_id, new_leader_id));
+            Ok(response)
+        })
+    }
+
+    fn update_team_settings<'a>(
+        &'a self,
+        character_id: i64,
+        team_id: String,
+        settings: TeamSettingsUpdateInput,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.settings_response.clone();
+        let requests = Arc::clone(&self.settings_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("settings requests")
+                .push((character_id, team_id, settings));
             Ok(response)
         })
     }
@@ -490,6 +831,24 @@ impl TeamRouteServices for FakeTeamRouteServices {
         })
     }
 
+    fn invite_to_team<'a>(
+        &'a self,
+        inviter_id: i64,
+        invitee_id: i64,
+        message: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.invite_response.clone();
+        let requests = Arc::clone(&self.invite_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("invite requests")
+                .push((inviter_id, invitee_id, message));
+            Ok(response)
+        })
+    }
+
     fn get_received_invitations<'a>(
         &'a self,
         character_id: i64,
@@ -508,6 +867,24 @@ impl TeamRouteServices for FakeTeamRouteServices {
                 .lock()
                 .expect("invitation requests")
                 .push(character_id);
+            Ok(response)
+        })
+    }
+
+    fn handle_invitation<'a>(
+        &'a self,
+        character_id: i64,
+        invitation_id: String,
+        accept: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        let response = self.handle_invitation_response.clone();
+        let requests = Arc::clone(&self.handle_invitation_requests);
+        Box::pin(async move {
+            requests
+                .lock()
+                .expect("handle invitation requests")
+                .push((character_id, invitation_id, accept));
             Ok(response)
         })
     }

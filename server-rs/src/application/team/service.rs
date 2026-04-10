@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::{future::Future, pin::Pin};
 
-use sqlx::Row;
+use sqlx::{postgres::PgRow, QueryBuilder, Row};
 
 use crate::application::month_card::benefits::load_month_card_active_map;
-use crate::application::static_data::realm::normalize_realm_keeping_unknown;
+use crate::application::static_data::realm::{
+    get_realm_rank_zero_based, normalize_realm_keeping_unknown,
+};
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::game::{
@@ -12,38 +14,86 @@ use crate::edge::http::routes::game::{
     GameHomeTeamOverviewView,
 };
 use crate::edge::http::routes::team::{
-    TeamBrowseEntryView, TeamInvitationView, TeamMyTeamResponse, TeamRouteServices,
+    TeamBrowseEntryView, TeamCreateDataView, TeamInvitationView, TeamMutationResponse,
+    TeamMyTeamResponse, TeamRouteServices, TeamSettingsUpdateInput,
 };
 use crate::runtime::connection::session_registry::SharedSessionRegistry;
 
+const DEFAULT_TEAM_GOAL: &str = "组队冒险";
+const DEFAULT_TEAM_MAX_MEMBERS: i32 = 5;
+
 /**
- * team 只读应用服务。
+ * team 应用服务。
  *
  * 作用：
- * 1. 做什么：复刻 Node `teamService` 的核心只读查询，把当前队伍、队伍详情、申请列表、附近队伍、大厅列表与收到的邀请统一收口。
- * 2. 做什么：把成员月卡标记、在线态与申请/邀请时间转换集中在一个模块，供首页聚合和 `/api/team` 直接复用。
- * 3. 不做什么：不处理建队、申请、审批、邀请等写路径，不在这里发 socket 推送，也不引入缓存层。
+ * 1. 做什么：复刻 Node `teamService` 的读写协议，覆盖当前队伍、队伍详情、申请列表、附近/大厅列表、邀请列表与建队/退队/审批/邀请等写链路。
+ * 2. 做什么：把成员月卡标记、在线态、境界判断、组队写校验与队伍 DTO 映射集中在一个模块，供首页聚合和 `/api/team` 直接复用。
+ * 3. 不做什么：不在这里发 socket 推送、不维护 battle 投影同步，也不引入额外缓存层或兼容分支。
  *
  * 输入 / 输出：
- * - 输入：角色 ID、队伍 ID，以及附近/大厅查询参数。
- * - 输出：Node 兼容的 `TeamMyTeamResponse`、`ServiceResultResponse<T>` 与首页复用的 `GameHomeTeamOverviewView`。
+ * - 输入：角色 ID、队伍 ID、写接口 body 字段，以及大厅/附近查询参数。
+ * - 输出：Node 兼容的 `TeamMyTeamResponse`、`ServiceResultResponse<T>`、`TeamMutationResponse` 与首页复用的 `GameHomeTeamOverviewView`。
  *
  * 数据流 / 状态流：
- * - 路由或首页聚合 -> 本服务读 `teams/team_members/team_applications/team_invitations/characters`
- * - -> 批量补齐月卡激活态与在线状态 -> 返回队伍 DTO。
+ * - 路由或首页聚合 -> 本服务读写 PostgreSQL `teams/team_members/team_applications/team_invitations/characters/idle_sessions`
+ * - -> 批量补齐月卡激活态与在线状态 -> 返回队伍 DTO 或写操作结果。
  *
  * 复用设计说明：
- * - 首页队伍块与独立 `team` 路由都需要同一套成员、申请与邀请视图；集中在这里后，后续任何一侧加字段都只改一个入口。
- * - 月卡激活态复用 `month_card::benefits` 的共享查询，避免 `game/rank/team` 三处继续维护同一 SQL。
+ * - 首页队伍块与独立 `team` 路由都依赖同一套成员、申请、邀请与写校验规则；集中在这里后，读写口径不会再分叉。
+ * - 境界比较、挂机互斥校验、申请/邀请状态更新等高频业务变化点统一收敛到 helper，避免 create/apply/approve/invite 四处复制同一判断。
  *
  * 关键边界条件与坑点：
  * 1. `get_my_team` 在未入队时必须继续返回 `success:true + data:null + message:'未加入队伍'`，不能改成 404。
- * 2. 申请列表只有队长可见；即便队伍存在，也必须保留 `只有队长才能查看申请` 的 Node 文案。
+ * 2. 入队写操作必须与活跃挂机互斥，命中 `idle_sessions.status IN ('active', 'stopping')` 时要保持 `离线挂机中，无法进行组队操作` 文案。
  */
 #[derive(Clone)]
 pub struct RustTeamRouteService {
     pool: sqlx::PgPool,
     session_registry: SharedSessionRegistry,
+}
+
+#[derive(Debug, Clone)]
+struct CharacterTeamProfile {
+    nickname: String,
+    current_map_id: Option<String>,
+    realm: String,
+    sub_realm: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TeamWriteContext {
+    team_id: String,
+    max_members: i32,
+    member_count: i32,
+    join_min_realm: String,
+    auto_join_enabled: bool,
+    auto_join_min_realm: String,
+}
+
+#[derive(Debug, Clone)]
+struct TeamMembershipContext {
+    team_id: String,
+    role: String,
+    leader_id: i64,
+}
+
+#[derive(Debug, Clone)]
+struct PendingTeamApplicationContext {
+    application_id: String,
+    team_id: String,
+    applicant_id: i64,
+    leader_id: i64,
+    max_members: i32,
+    member_count: i32,
+}
+
+#[derive(Debug, Clone)]
+struct PendingTeamInvitationContext {
+    invitation_id: String,
+    team_id: String,
+    invitee_id: i64,
+    max_members: i32,
+    member_count: i32,
 }
 
 impl RustTeamRouteService {
@@ -135,12 +185,259 @@ impl RustTeamRouteService {
         Ok(ServiceResultResponse::new(true, None, Some(info)))
     }
 
+    async fn create_team_impl(
+        &self,
+        character_id: i64,
+        name: Option<String>,
+        goal: Option<String>,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        if let Some(conflict) = self.assert_character_can_join_team(character_id).await? {
+            return Ok(conflict);
+        }
+
+        if self.is_character_in_team(character_id).await? {
+            return Ok(TeamMutationResponse::failure(
+                "你已在队伍中，请先退出当前队伍",
+            ));
+        }
+
+        let Some(profile) = self.load_character_profile(character_id).await? else {
+            return Ok(TeamMutationResponse::failure("角色不存在"));
+        };
+
+        let team_id = self.generate_uuid().await?;
+        let team_name = normalize_optional_text(name.as_deref())
+            .unwrap_or_else(|| format!("{}的小队", profile.nickname));
+        let team_goal = normalize_optional_text(goal.as_deref())
+            .unwrap_or_else(|| DEFAULT_TEAM_GOAL.to_string());
+
+        let mut transaction = self.pool.begin().await.map_err(internal_sql_business_error)?;
+        sqlx::query(
+            r#"
+            INSERT INTO teams (id, name, leader_id, goal, current_map_id)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(&team_id)
+        .bind(&team_name)
+        .bind(character_id)
+        .bind(&team_goal)
+        .bind(profile.current_map_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        sqlx::query(
+            "INSERT INTO team_members (team_id, character_id, role) VALUES ($1, $2, 'leader')",
+        )
+        .bind(&team_id)
+        .bind(character_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("队伍创建成功").with_data(TeamCreateDataView {
+            team_id,
+            name: team_name,
+        }))
+    }
+
+    async fn disband_team_impl(
+        &self,
+        character_id: i64,
+        team_id: String,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let leader_id =
+            sqlx::query_scalar::<_, i64>("SELECT leader_id FROM teams WHERE id = $1 LIMIT 1")
+                .bind(&team_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal_sql_business_error)?;
+
+        let Some(leader_id) = leader_id else {
+            return Ok(TeamMutationResponse::failure("队伍不存在"));
+        };
+
+        if leader_id != character_id {
+            return Ok(TeamMutationResponse::failure("只有队长才能解散队伍"));
+        }
+
+        sqlx::query("DELETE FROM teams WHERE id = $1")
+            .bind(&team_id)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("队伍已解散"))
+    }
+
+    async fn leave_team_impl(&self, character_id: i64) -> Result<TeamMutationResponse, BusinessError> {
+        let Some(context) = self.load_team_membership_context(character_id).await? else {
+            return Ok(TeamMutationResponse::failure("你不在任何队伍中"));
+        };
+
+        if context.role == "leader" {
+            let next_leader_id = sqlx::query_scalar::<_, i64>(
+                r#"
+                SELECT character_id
+                FROM team_members
+                WHERE team_id = $1
+                  AND character_id != $2
+                ORDER BY joined_at ASC NULLS LAST, id ASC
+                LIMIT 1
+                "#,
+            )
+            .bind(&context.team_id)
+            .bind(character_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+
+            if let Some(next_leader_id) = next_leader_id {
+                let mut transaction = self.pool.begin().await.map_err(internal_sql_business_error)?;
+                sqlx::query("UPDATE teams SET leader_id = $1 WHERE id = $2")
+                    .bind(next_leader_id)
+                    .bind(&context.team_id)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(internal_sql_business_error)?;
+                sqlx::query(
+                    "UPDATE team_members SET role = 'leader' WHERE team_id = $1 AND character_id = $2",
+                )
+                .bind(&context.team_id)
+                .bind(next_leader_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(internal_sql_business_error)?;
+                sqlx::query("DELETE FROM team_members WHERE character_id = $1")
+                    .bind(character_id)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(internal_sql_business_error)?;
+                transaction
+                    .commit()
+                    .await
+                    .map_err(internal_sql_business_error)?;
+                return Ok(TeamMutationResponse::success("已离开队伍"));
+            }
+
+            sqlx::query("DELETE FROM teams WHERE id = $1")
+                .bind(&context.team_id)
+                .execute(&self.pool)
+                .await
+                .map_err(internal_sql_business_error)?;
+            return Ok(TeamMutationResponse::success("队伍已解散（无其他成员）"));
+        }
+
+        sqlx::query("DELETE FROM team_members WHERE character_id = $1")
+            .bind(character_id)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("已离开队伍"))
+    }
+
+    async fn apply_to_team_impl(
+        &self,
+        character_id: i64,
+        team_id: String,
+        message: Option<String>,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        if self.is_character_in_team(character_id).await? {
+            return Ok(TeamMutationResponse::failure("你已在队伍中"));
+        }
+
+        let Some(team_context) = self.load_team_write_context(&team_id).await? else {
+            return Ok(TeamMutationResponse::failure("队伍不存在"));
+        };
+
+        if team_context.member_count >= team_context.max_members {
+            return Ok(TeamMutationResponse::failure("队伍已满"));
+        }
+
+        let Some(profile) = self.load_character_profile(character_id).await? else {
+            return Ok(TeamMutationResponse::failure("角色不存在"));
+        };
+
+        let character_rank = get_realm_rank_zero_based(
+            Some(profile.realm.as_str()),
+            profile.sub_realm.as_deref(),
+        );
+        let min_join_rank =
+            get_realm_rank_zero_based(Some(team_context.join_min_realm.as_str()), None);
+        if character_rank < min_join_rank {
+            return Ok(TeamMutationResponse::failure(format!(
+                "境界不足，需要{}以上",
+                team_context.join_min_realm
+            )));
+        }
+
+        let existing_application = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM team_applications
+            WHERE team_id = $1
+              AND applicant_id = $2
+              AND COALESCE(status, 'pending') = 'pending'
+            LIMIT 1
+            "#,
+        )
+        .bind(&team_context.team_id)
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        if existing_application.is_some() {
+            return Ok(TeamMutationResponse::failure("已有待处理的申请"));
+        }
+
+        let auto_join_rank =
+            get_realm_rank_zero_based(Some(team_context.auto_join_min_realm.as_str()), None);
+        if team_context.auto_join_enabled && character_rank >= auto_join_rank {
+            if let Some(conflict) = self.assert_character_can_join_team(character_id).await? {
+                return Ok(conflict);
+            }
+
+            sqlx::query(
+                "INSERT INTO team_members (team_id, character_id, role) VALUES ($1, $2, 'member')",
+            )
+            .bind(&team_context.team_id)
+            .bind(character_id)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+
+            return Ok(TeamMutationResponse::success("已自动加入队伍").with_auto_joined(true));
+        }
+
+        let application_id = self.generate_uuid().await?;
+        sqlx::query(
+            r#"
+            INSERT INTO team_applications (id, team_id, applicant_id, message)
+            VALUES ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(&application_id)
+        .bind(&team_context.team_id)
+        .bind(character_id)
+        .bind(normalize_optional_text(message.as_deref()))
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("申请已提交").with_application_id(application_id))
+    }
+
     async fn get_team_applications_impl(
         &self,
         team_id: String,
         character_id: i64,
     ) -> Result<ServiceResultResponse<Vec<GameHomeTeamApplicationView>>, BusinessError> {
-        let team_id = team_id.trim().to_string();
         let leader_id =
             sqlx::query_scalar::<_, i64>("SELECT leader_id FROM teams WHERE id = $1 LIMIT 1")
                 .bind(&team_id)
@@ -169,6 +466,274 @@ impl RustTeamRouteService {
             None,
             Some(self.load_team_applications(&team_id).await?),
         ))
+    }
+
+    async fn handle_application_impl(
+        &self,
+        character_id: i64,
+        application_id: String,
+        approve: bool,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let Some(context) = self.load_pending_team_application(&application_id).await? else {
+            return Ok(TeamMutationResponse::failure("申请不存在或已处理"));
+        };
+
+        if context.leader_id != character_id {
+            return Ok(TeamMutationResponse::failure("只有队长才能处理申请"));
+        }
+
+        if approve {
+            if context.member_count >= context.max_members {
+                self.update_team_application_status(
+                    &context.application_id,
+                    &context.team_id,
+                    context.applicant_id,
+                    "rejected",
+                )
+                .await?;
+                return Ok(TeamMutationResponse::failure("队伍已满"));
+            }
+
+            if self.is_character_in_team(context.applicant_id).await? {
+                self.update_team_application_status(
+                    &context.application_id,
+                    &context.team_id,
+                    context.applicant_id,
+                    "rejected",
+                )
+                .await?;
+                return Ok(TeamMutationResponse::failure("该玩家已加入其他队伍"));
+            }
+
+            if let Some(conflict) = self.assert_character_can_join_team(context.applicant_id).await?
+            {
+                return Ok(conflict);
+            }
+
+            let mut transaction = self.pool.begin().await.map_err(internal_sql_business_error)?;
+            sqlx::query(
+                "INSERT INTO team_members (team_id, character_id, role) VALUES ($1, $2, 'member')",
+            )
+            .bind(&context.team_id)
+            .bind(context.applicant_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+            sqlx::query(
+                r#"
+                DELETE FROM team_applications
+                WHERE team_id = $1 AND applicant_id = $2 AND status = $3 AND id != $4
+                "#,
+            )
+            .bind(&context.team_id)
+            .bind(context.applicant_id)
+            .bind("approved")
+            .bind(&context.application_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+            sqlx::query(
+                "UPDATE team_applications SET status = $2, handled_at = NOW() WHERE id = $1",
+            )
+            .bind(&context.application_id)
+            .bind("approved")
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+            transaction
+                .commit()
+                .await
+                .map_err(internal_sql_business_error)?;
+
+            return Ok(TeamMutationResponse::success("已通过申请"));
+        }
+
+        self.update_team_application_status(
+            &context.application_id,
+            &context.team_id,
+            context.applicant_id,
+            "rejected",
+        )
+        .await?;
+        Ok(TeamMutationResponse::success("已拒绝申请"))
+    }
+
+    async fn kick_member_impl(
+        &self,
+        leader_id: i64,
+        target_character_id: i64,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let Some(context) = self.load_team_membership_context(leader_id).await? else {
+            return Ok(TeamMutationResponse::failure("你不在任何队伍中"));
+        };
+
+        if context.leader_id != leader_id {
+            return Ok(TeamMutationResponse::failure("只有队长才能踢人"));
+        }
+
+        if leader_id == target_character_id {
+            return Ok(TeamMutationResponse::failure("不能踢出自己"));
+        }
+
+        let target_exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT 1
+            FROM team_members
+            WHERE team_id = $1 AND character_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(&context.team_id)
+        .bind(target_character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        if target_exists.is_none() {
+            return Ok(TeamMutationResponse::failure("该玩家不在队伍中"));
+        }
+
+        sqlx::query("DELETE FROM team_members WHERE team_id = $1 AND character_id = $2")
+            .bind(&context.team_id)
+            .bind(target_character_id)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("已踢出成员"))
+    }
+
+    async fn transfer_leader_impl(
+        &self,
+        current_leader_id: i64,
+        new_leader_id: i64,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let Some(context) = self.load_team_membership_context(current_leader_id).await? else {
+            return Ok(TeamMutationResponse::failure("你不在任何队伍中"));
+        };
+
+        if context.leader_id != current_leader_id {
+            return Ok(TeamMutationResponse::failure("只有队长才能转让"));
+        }
+
+        let new_leader_exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT 1
+            FROM team_members
+            WHERE team_id = $1 AND character_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(&context.team_id)
+        .bind(new_leader_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        if new_leader_exists.is_none() {
+            return Ok(TeamMutationResponse::failure("该玩家不在队伍中"));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(internal_sql_business_error)?;
+        sqlx::query("UPDATE teams SET leader_id = $1, updated_at = NOW() WHERE id = $2")
+            .bind(new_leader_id)
+            .bind(&context.team_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+        sqlx::query("UPDATE team_members SET role = 'member' WHERE team_id = $1 AND character_id = $2")
+            .bind(&context.team_id)
+            .bind(current_leader_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+        sqlx::query("UPDATE team_members SET role = 'leader' WHERE team_id = $1 AND character_id = $2")
+            .bind(&context.team_id)
+            .bind(new_leader_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("队长已转让"))
+    }
+
+    async fn update_team_settings_impl(
+        &self,
+        character_id: i64,
+        team_id: String,
+        settings: TeamSettingsUpdateInput,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let leader_id =
+            sqlx::query_scalar::<_, i64>("SELECT leader_id FROM teams WHERE id = $1 LIMIT 1")
+                .bind(&team_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal_sql_business_error)?;
+
+        let Some(leader_id) = leader_id else {
+            return Ok(TeamMutationResponse::failure("队伍不存在"));
+        };
+
+        if leader_id != character_id {
+            return Ok(TeamMutationResponse::failure("只有队长才能修改设置"));
+        }
+
+        let TeamSettingsUpdateInput {
+            name,
+            goal,
+            join_min_realm,
+            auto_join_enabled,
+            auto_join_min_realm,
+            is_public,
+        } = settings;
+
+        if name.is_none()
+            && goal.is_none()
+            && join_min_realm.is_none()
+            && auto_join_enabled.is_none()
+            && auto_join_min_realm.is_none()
+            && is_public.is_none()
+        {
+            return Ok(TeamMutationResponse::success("无需更新"));
+        }
+
+        let mut builder = QueryBuilder::<sqlx::Postgres>::new("UPDATE teams SET ");
+        let mut separated = builder.separated(", ");
+
+        if let Some(value) = name {
+            separated.push("name = ").push_bind(value);
+        }
+        if let Some(value) = goal {
+            separated.push("goal = ").push_bind(value);
+        }
+        if let Some(value) = join_min_realm {
+            separated.push("join_min_realm = ").push_bind(value);
+        }
+        if let Some(value) = auto_join_enabled {
+            separated.push("auto_join_enabled = ").push_bind(value);
+        }
+        if let Some(value) = auto_join_min_realm {
+            separated.push("auto_join_min_realm = ").push_bind(value);
+        }
+        if let Some(value) = is_public {
+            separated.push("is_public = ").push_bind(value);
+        }
+        separated.push("updated_at = NOW()");
+        drop(separated);
+
+        builder.push(" WHERE id = ");
+        builder.push_bind(team_id);
+        builder
+            .build()
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("设置已更新"))
     }
 
     async fn get_nearby_teams_impl(
@@ -313,6 +878,81 @@ impl RustTeamRouteService {
         ))
     }
 
+    async fn invite_to_team_impl(
+        &self,
+        inviter_id: i64,
+        invitee_id: i64,
+        message: Option<String>,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let Some(context) = self.load_team_membership_context(inviter_id).await? else {
+            return Ok(TeamMutationResponse::failure("你不在任何队伍中"));
+        };
+
+        if context.leader_id != inviter_id {
+            return Ok(TeamMutationResponse::failure("只有队长才能邀请"));
+        }
+
+        let member_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM team_members WHERE team_id = $1")
+                .bind(&context.team_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(internal_sql_business_error)? as i32;
+        let max_members = sqlx::query_scalar::<_, i32>(
+            "SELECT COALESCE(max_members, 5)::int FROM teams WHERE id = $1 LIMIT 1",
+        )
+        .bind(&context.team_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        if member_count >= max_members {
+            return Ok(TeamMutationResponse::failure("队伍已满"));
+        }
+
+        if self.is_character_in_team(invitee_id).await? {
+            return Ok(TeamMutationResponse::failure("该玩家已在队伍中"));
+        }
+
+        let existing_invitation = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM team_invitations
+            WHERE team_id = $1
+              AND invitee_id = $2
+              AND COALESCE(status, 'pending') = 'pending'
+            LIMIT 1
+            "#,
+        )
+        .bind(&context.team_id)
+        .bind(invitee_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        if existing_invitation.is_some() {
+            return Ok(TeamMutationResponse::failure("已有待处理的邀请"));
+        }
+
+        let invitation_id = self.generate_uuid().await?;
+        sqlx::query(
+            r#"
+            INSERT INTO team_invitations (id, team_id, inviter_id, invitee_id, message)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(&invitation_id)
+        .bind(&context.team_id)
+        .bind(inviter_id)
+        .bind(invitee_id)
+        .bind(normalize_optional_text(message.as_deref()))
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(TeamMutationResponse::success("邀请已发送").with_invitation_id(invitation_id))
+    }
+
     async fn get_received_invitations_impl(
         &self,
         character_id: i64,
@@ -382,6 +1022,92 @@ impl RustTeamRouteService {
             .collect::<Vec<_>>();
 
         Ok(ServiceResultResponse::new(true, None, Some(invitations)))
+    }
+
+    async fn handle_invitation_impl(
+        &self,
+        character_id: i64,
+        invitation_id: String,
+        accept: bool,
+    ) -> Result<TeamMutationResponse, BusinessError> {
+        let Some(context) = self
+            .load_pending_team_invitation(&invitation_id, character_id)
+            .await?
+        else {
+            return Ok(TeamMutationResponse::failure("邀请不存在或已处理"));
+        };
+
+        if accept {
+            if self.is_character_in_team(character_id).await? {
+                sqlx::query(
+                    "UPDATE team_invitations SET status = 'rejected', handled_at = NOW() WHERE id = $1",
+                )
+                .bind(&context.invitation_id)
+                .execute(&self.pool)
+                .await
+                .map_err(internal_sql_business_error)?;
+                return Ok(TeamMutationResponse::failure("你已在其他队伍中"));
+            }
+
+            if context.member_count >= context.max_members {
+                sqlx::query(
+                    "UPDATE team_invitations SET status = 'rejected', handled_at = NOW() WHERE id = $1",
+                )
+                .bind(&context.invitation_id)
+                .execute(&self.pool)
+                .await
+                .map_err(internal_sql_business_error)?;
+                return Ok(TeamMutationResponse::failure("队伍已满"));
+            }
+
+            if let Some(conflict) = self.assert_character_can_join_team(character_id).await? {
+                return Ok(conflict);
+            }
+
+            let mut transaction = self.pool.begin().await.map_err(internal_sql_business_error)?;
+            sqlx::query(
+                "INSERT INTO team_members (team_id, character_id, role) VALUES ($1, $2, 'member')",
+            )
+            .bind(&context.team_id)
+            .bind(character_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+            sqlx::query(
+                "UPDATE team_invitations SET status = 'accepted', handled_at = NOW() WHERE id = $1",
+            )
+            .bind(&context.invitation_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+            sqlx::query(
+                r#"
+                UPDATE team_invitations
+                SET status = 'rejected', handled_at = NOW()
+                WHERE invitee_id = $1
+                  AND COALESCE(status, 'pending') = 'pending'
+                  AND id != $2
+                "#,
+            )
+            .bind(context.invitee_id)
+            .bind(&context.invitation_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+            transaction
+                .commit()
+                .await
+                .map_err(internal_sql_business_error)?;
+
+            return Ok(TeamMutationResponse::success("已加入队伍"));
+        }
+
+        sqlx::query("UPDATE team_invitations SET status = 'rejected', handled_at = NOW() WHERE id = $1")
+            .bind(&context.invitation_id)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+        Ok(TeamMutationResponse::success("已拒绝邀请"))
     }
 
     async fn load_team_info(
@@ -559,7 +1285,7 @@ impl RustTeamRouteService {
 
     async fn build_team_browse_entries(
         &self,
-        rows: Vec<sqlx::postgres::PgRow>,
+        rows: Vec<PgRow>,
         include_distance: bool,
     ) -> Result<Vec<TeamBrowseEntryView>, BusinessError> {
         let leader_ids = rows
@@ -586,7 +1312,10 @@ impl RustTeamRouteService {
                         .copied()
                         .unwrap_or(false),
                     members: row.try_get::<i32, _>("member_count").ok().unwrap_or(0),
-                    cap: row.try_get::<i32, _>("max_members").ok().unwrap_or(5),
+                    cap: row
+                        .try_get::<i32, _>("max_members")
+                        .ok()
+                        .unwrap_or(DEFAULT_TEAM_MAX_MEMBERS),
                     goal: row.try_get::<String, _>("goal").ok().unwrap_or_default(),
                     min_realm: row
                         .try_get::<String, _>("join_min_realm")
@@ -618,6 +1347,234 @@ impl RustTeamRouteService {
         }
         result
     }
+
+    async fn assert_character_can_join_team(
+        &self,
+        character_id: i64,
+    ) -> Result<Option<TeamMutationResponse>, BusinessError> {
+        let blocked = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT 1
+            FROM idle_sessions
+            WHERE character_id = $1
+              AND status IN ('active', 'stopping')
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(blocked.map(|_| TeamMutationResponse::failure("离线挂机中，无法进行组队操作")))
+    }
+
+    async fn is_character_in_team(&self, character_id: i64) -> Result<bool, BusinessError> {
+        let existing = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM team_members WHERE character_id = $1 LIMIT 1",
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+        Ok(existing.is_some())
+    }
+
+    async fn load_character_profile(
+        &self,
+        character_id: i64,
+    ) -> Result<Option<CharacterTeamProfile>, BusinessError> {
+        let row = sqlx::query(
+            r#"
+            SELECT nickname, current_map_id, realm, sub_realm
+            FROM characters
+            WHERE id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(row.map(|row| CharacterTeamProfile {
+            nickname: row.try_get::<String, _>("nickname").ok().unwrap_or_default(),
+            current_map_id: row
+                .try_get::<Option<String>, _>("current_map_id")
+                .ok()
+                .flatten(),
+            realm: row.try_get::<String, _>("realm").ok().unwrap_or_default(),
+            sub_realm: row.try_get::<Option<String>, _>("sub_realm").ok().flatten(),
+        }))
+    }
+
+    async fn load_team_write_context(
+        &self,
+        team_id: &str,
+    ) -> Result<Option<TeamWriteContext>, BusinessError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+              t.id,
+              COALESCE(t.max_members, 5)::int AS max_members,
+              (SELECT COUNT(*) FROM team_members WHERE team_id = t.id)::int AS member_count,
+              COALESCE(t.join_min_realm, '凡人') AS join_min_realm,
+              COALESCE(t.auto_join_enabled, FALSE) AS auto_join_enabled,
+              COALESCE(t.auto_join_min_realm, '凡人') AS auto_join_min_realm
+            FROM teams t
+            WHERE t.id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(team_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(row.map(|row| TeamWriteContext {
+            team_id: row.get::<String, _>("id"),
+            max_members: row.get::<i32, _>("max_members"),
+            member_count: row.get::<i32, _>("member_count"),
+            join_min_realm: row.get::<String, _>("join_min_realm"),
+            auto_join_enabled: row.get::<bool, _>("auto_join_enabled"),
+            auto_join_min_realm: row.get::<String, _>("auto_join_min_realm"),
+        }))
+    }
+
+    async fn load_team_membership_context(
+        &self,
+        character_id: i64,
+    ) -> Result<Option<TeamMembershipContext>, BusinessError> {
+        let row = sqlx::query(
+            r#"
+            SELECT tm.team_id, COALESCE(tm.role, 'member') AS role, t.leader_id
+            FROM team_members tm
+            JOIN teams t ON t.id = tm.team_id
+            WHERE tm.character_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(row.map(|row| TeamMembershipContext {
+            team_id: row.get::<String, _>("team_id"),
+            role: row.get::<String, _>("role"),
+            leader_id: row.get::<i64, _>("leader_id"),
+        }))
+    }
+
+    async fn load_pending_team_application(
+        &self,
+        application_id: &str,
+    ) -> Result<Option<PendingTeamApplicationContext>, BusinessError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+              ta.id,
+              ta.team_id,
+              ta.applicant_id,
+              t.leader_id,
+              COALESCE(t.max_members, 5)::int AS max_members,
+              (SELECT COUNT(*) FROM team_members WHERE team_id = ta.team_id)::int AS member_count
+            FROM team_applications ta
+            JOIN teams t ON t.id = ta.team_id
+            WHERE ta.id = $1
+              AND COALESCE(ta.status, 'pending') = 'pending'
+            LIMIT 1
+            "#,
+        )
+        .bind(application_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(row.map(|row| PendingTeamApplicationContext {
+            application_id: row.get::<String, _>("id"),
+            team_id: row.get::<String, _>("team_id"),
+            applicant_id: row.get::<i64, _>("applicant_id"),
+            leader_id: row.get::<i64, _>("leader_id"),
+            max_members: row.get::<i32, _>("max_members"),
+            member_count: row.get::<i32, _>("member_count"),
+        }))
+    }
+
+    async fn load_pending_team_invitation(
+        &self,
+        invitation_id: &str,
+        invitee_id: i64,
+    ) -> Result<Option<PendingTeamInvitationContext>, BusinessError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+              ti.id,
+              ti.team_id,
+              ti.invitee_id,
+              COALESCE(t.max_members, 5)::int AS max_members,
+              (SELECT COUNT(*) FROM team_members WHERE team_id = ti.team_id)::int AS member_count
+            FROM team_invitations ti
+            JOIN teams t ON t.id = ti.team_id
+            WHERE ti.id = $1
+              AND ti.invitee_id = $2
+              AND COALESCE(ti.status, 'pending') = 'pending'
+            LIMIT 1
+            "#,
+        )
+        .bind(invitation_id)
+        .bind(invitee_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(row.map(|row| PendingTeamInvitationContext {
+            invitation_id: row.get::<String, _>("id"),
+            team_id: row.get::<String, _>("team_id"),
+            invitee_id: row.get::<i64, _>("invitee_id"),
+            max_members: row.get::<i32, _>("max_members"),
+            member_count: row.get::<i32, _>("member_count"),
+        }))
+    }
+
+    async fn update_team_application_status(
+        &self,
+        application_id: &str,
+        team_id: &str,
+        applicant_id: i64,
+        status: &str,
+    ) -> Result<(), BusinessError> {
+        sqlx::query(
+            r#"
+            DELETE FROM team_applications
+            WHERE team_id = $1
+              AND applicant_id = $2
+              AND status = $3
+              AND id != $4
+            "#,
+        )
+        .bind(team_id)
+        .bind(applicant_id)
+        .bind(status)
+        .bind(application_id)
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+        sqlx::query("UPDATE team_applications SET status = $2, handled_at = NOW() WHERE id = $1")
+            .bind(application_id)
+            .bind(status)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+        Ok(())
+    }
+
+    async fn generate_uuid(&self) -> Result<String, BusinessError> {
+        sqlx::query_scalar::<_, String>("SELECT gen_random_uuid()::text")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)
+    }
 }
 
 impl TeamRouteServices for RustTeamRouteService {
@@ -641,6 +1598,43 @@ impl TeamRouteServices for RustTeamRouteService {
         Box::pin(async move { self.get_team_by_id_impl(team_id).await })
     }
 
+    fn create_team<'a>(
+        &'a self,
+        character_id: i64,
+        name: Option<String>,
+        goal: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.create_team_impl(character_id, name, goal).await })
+    }
+
+    fn disband_team<'a>(
+        &'a self,
+        character_id: i64,
+        team_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.disband_team_impl(character_id, team_id).await })
+    }
+
+    fn leave_team<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.leave_team_impl(character_id).await })
+    }
+
+    fn apply_to_team<'a>(
+        &'a self,
+        character_id: i64,
+        team_id: String,
+        message: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.apply_to_team_impl(character_id, team_id, message).await })
+    }
+
     fn get_team_applications<'a>(
         &'a self,
         team_id: String,
@@ -657,6 +1651,53 @@ impl TeamRouteServices for RustTeamRouteService {
         >,
     > {
         Box::pin(async move { self.get_team_applications_impl(team_id, character_id).await })
+    }
+
+    fn handle_application<'a>(
+        &'a self,
+        character_id: i64,
+        application_id: String,
+        approve: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.handle_application_impl(character_id, application_id, approve)
+                .await
+        })
+    }
+
+    fn kick_member<'a>(
+        &'a self,
+        leader_id: i64,
+        target_character_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.kick_member_impl(leader_id, target_character_id).await })
+    }
+
+    fn transfer_leader<'a>(
+        &'a self,
+        current_leader_id: i64,
+        new_leader_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.transfer_leader_impl(current_leader_id, new_leader_id)
+                .await
+        })
+    }
+
+    fn update_team_settings<'a>(
+        &'a self,
+        character_id: i64,
+        team_id: String,
+        settings: TeamSettingsUpdateInput,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.update_team_settings_impl(character_id, team_id, settings)
+                .await
+        })
     }
 
     fn get_nearby_teams<'a>(
@@ -690,6 +1731,16 @@ impl TeamRouteServices for RustTeamRouteService {
         Box::pin(async move { self.get_lobby_teams_impl(character_id, search, limit).await })
     }
 
+    fn invite_to_team<'a>(
+        &'a self,
+        inviter_id: i64,
+        invitee_id: i64,
+        message: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move { self.invite_to_team_impl(inviter_id, invitee_id, message).await })
+    }
+
     fn get_received_invitations<'a>(
         &'a self,
         character_id: i64,
@@ -703,10 +1754,23 @@ impl TeamRouteServices for RustTeamRouteService {
     > {
         Box::pin(async move { self.get_received_invitations_impl(character_id).await })
     }
+
+    fn handle_invitation<'a>(
+        &'a self,
+        character_id: i64,
+        invitation_id: String,
+        accept: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<TeamMutationResponse, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.handle_invitation_impl(character_id, invitation_id, accept)
+                .await
+        })
+    }
 }
 
 fn build_team_member_view(
-    row: sqlx::postgres::PgRow,
+    row: PgRow,
     month_card_active_map: &HashMap<i64, bool>,
     online_user_map: &HashMap<i64, bool>,
 ) -> Option<GameHomeTeamMemberView> {
