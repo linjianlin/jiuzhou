@@ -26,9 +26,11 @@ use crate::edge::http::routes::game::{
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices, GameTaskClaimDataView,
-    GameTaskClaimRewardView, GameTaskMutationDataView, GameTaskObjectiveView,
-    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
+    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameNpcTalkDataView,
+    GameNpcTalkMainQuestOptionView, GameNpcTalkTaskOptionView, GameRouteServices,
+    GameTaskClaimDataView, GameTaskClaimRewardView, GameTaskMutationDataView,
+    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
+    GameTaskTrackDataView,
 };
 use crate::edge::http::routes::inventory::InventoryRouteServices;
 use crate::edge::http::routes::realm::RealmRouteServices;
@@ -166,6 +168,7 @@ struct MainQuestSectionSeed {
     npc_id: Option<String>,
     map_id: Option<String>,
     room_id: Option<String>,
+    dialogue_id: Option<String>,
     #[serde(default)]
     objectives: Vec<MainQuestObjectiveSeed>,
     rewards: Option<Value>,
@@ -217,6 +220,55 @@ struct TaskAuxiliaryCatalog {
     entity_map_name_by_id: HashMap<String, String>,
     item_meta_by_id: HashMap<String, TaskRewardItemMeta>,
     item_grant_meta_by_id: HashMap<String, BagGrantItemMeta>,
+    npc_name_by_id: HashMap<String, String>,
+    npc_talk_tree_id_by_npc_id: HashMap<String, String>,
+    talk_tree_lines_by_id: HashMap<String, Vec<String>>,
+    dialogue_preview_lines_by_id: HashMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NpcSeedFile {
+    #[serde(default)]
+    npcs: Vec<NpcSeed>,
+    #[serde(default)]
+    talk_trees: Vec<TalkTreeSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NpcSeed {
+    id: String,
+    name: Option<String>,
+    talk_tree_id: Option<String>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TalkTreeSeed {
+    id: String,
+    #[serde(default)]
+    greeting_lines: Vec<String>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DialogueSeedFile {
+    #[serde(default)]
+    dialogues: Vec<DialogueSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DialogueSeed {
+    id: String,
+    #[serde(default)]
+    nodes: Vec<DialogueNodeSeed>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DialogueNodeSeed {
+    #[serde(rename = "type")]
+    node_type: Option<String>,
+    text: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -567,6 +619,326 @@ impl RustGameRouteService {
             data: Some(GameTaskTrackDataView {
                 task_id: normalized_task_id,
                 tracked: row.get::<bool, _>("tracked"),
+            }),
+        })
+    }
+
+    async fn npc_talk_impl(
+        &self,
+        character_id: i64,
+        npc_id: String,
+    ) -> Result<GameActionResult<GameNpcTalkDataView>, BusinessError> {
+        let normalized_npc_id = npc_id.trim().to_string();
+        if normalized_npc_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "NPC不存在".to_string(),
+                data: None,
+            });
+        }
+
+        let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "角色不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let task_catalog = task_seed_catalog()?;
+        self.refresh_recurring_task_progress(character_id, task_catalog)
+            .await?;
+        let _ = self.load_main_quest_progress(character_id).await?;
+
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        let Some(npc_name) = auxiliary_catalog
+            .npc_name_by_id
+            .get(normalized_npc_id.as_str())
+            .cloned()
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "NPC不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let available_task_defs = task_catalog
+            .iter()
+            .filter(|task| task.enabled != Some(false))
+            .filter(|task| is_task_visible_for_realm(task, &character_realm_state))
+            .filter(|task| {
+                normalize_optional_text(task.giver_npc_id.as_deref())
+                    == Some(normalized_npc_id.clone())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let task_ids = available_task_defs
+            .iter()
+            .map(|task| task.id.clone())
+            .collect::<Vec<_>>();
+        let task_rows = if task_ids.is_empty() {
+            Vec::new()
+        } else {
+            sqlx::query(
+                r#"
+                SELECT task_id, status, progress
+                FROM character_task_progress
+                WHERE character_id = $1
+                  AND task_id = ANY($2::varchar[])
+                "#,
+            )
+            .bind(character_id)
+            .bind(&task_ids)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?
+        };
+
+        let mut progress_by_task_id = HashMap::<String, (String, HashMap<String, i32>)>::new();
+        for row in task_rows {
+            let task_id = row.get::<String, _>("task_id");
+            progress_by_task_id.insert(
+                task_id,
+                (
+                    row.try_get::<Option<String>, _>("status")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| "ongoing".to_string()),
+                    parse_task_progress_map(
+                        row.try_get::<Option<Value>, _>("progress").ok().flatten(),
+                    ),
+                ),
+            );
+        }
+
+        for task_def in &available_task_defs {
+            let Some((status, progress)) = progress_by_task_id.get_mut(task_def.id.as_str()) else {
+                continue;
+            };
+            if status != "ongoing" && status != "turnin" {
+                continue;
+            }
+
+            let updated = apply_npc_talk_progress_to_task(
+                &task_def.objectives,
+                progress,
+                normalized_npc_id.as_str(),
+            );
+            if !updated {
+                continue;
+            }
+
+            let next_status = if all_task_objectives_done(task_def, progress) {
+                "turnin".to_string()
+            } else {
+                status.clone()
+            };
+            sqlx::query(
+                r#"
+                UPDATE character_task_progress
+                SET progress = $3::jsonb,
+                    status = $4,
+                    updated_at = NOW()
+                WHERE character_id = $1
+                  AND task_id = $2
+                "#,
+            )
+            .bind(character_id)
+            .bind(task_def.id.as_str())
+            .bind(task_progress_to_json(progress))
+            .bind(&next_status)
+            .execute(&self.pool)
+            .await
+            .map_err(internal_sql_business_error)?;
+            *status = next_status;
+        }
+
+        let main_quest_catalog = main_quest_catalog()?;
+        let main_quest_row = sqlx::query(
+            r#"
+            SELECT current_section_id, section_status, objectives_progress
+            FROM character_main_quest_progress
+            WHERE character_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        let current_section_id = main_quest_row.as_ref().and_then(|row| {
+            row.try_get::<Option<String>, _>("current_section_id")
+                .ok()
+                .flatten()
+        });
+        let mut current_section_status = main_quest_row
+            .as_ref()
+            .and_then(|row| {
+                row.try_get::<Option<String>, _>("section_status")
+                    .ok()
+                    .flatten()
+            })
+            .unwrap_or_else(|| "not_started".to_string());
+        let mut current_section_progress = main_quest_row
+            .as_ref()
+            .and_then(|row| {
+                row.try_get::<Option<Value>, _>("objectives_progress")
+                    .ok()
+                    .flatten()
+            })
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
+        if current_section_status == "objectives" {
+            if let Some(section_id) = current_section_id.as_deref() {
+                if let Some(section) = main_quest_catalog.section_by_id.get(section_id) {
+                    if normalize_optional_text(section.npc_id.as_deref())
+                        == Some(normalized_npc_id.clone())
+                    {
+                        let updated = apply_npc_talk_progress_to_main_quest(
+                            &section.objectives,
+                            &mut current_section_progress,
+                            normalized_npc_id.as_str(),
+                        );
+                        if updated {
+                            if all_main_quest_objectives_done(
+                                &section.objectives,
+                                &current_section_progress,
+                            ) {
+                                current_section_status = "turnin".to_string();
+                            }
+                            sqlx::query(
+                                r#"
+                                UPDATE character_main_quest_progress
+                                SET objectives_progress = $2::jsonb,
+                                    section_status = $3,
+                                    updated_at = NOW()
+                                WHERE character_id = $1
+                                "#,
+                            )
+                            .bind(character_id)
+                            .bind(&current_section_progress)
+                            .bind(&current_section_status)
+                            .execute(&self.pool)
+                            .await
+                            .map_err(internal_sql_business_error)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        let lines = {
+            let mut lines = resolve_npc_talk_greeting_lines(
+                auxiliary_catalog,
+                main_quest_catalog,
+                normalized_npc_id.as_str(),
+                current_section_id.as_deref(),
+                current_section_status.as_str(),
+            );
+            if lines.is_empty() {
+                lines.push(format!("{npc_name}看着你，没有多说什么。"));
+            }
+            lines
+        };
+
+        let mut task_options = Vec::with_capacity(available_task_defs.len());
+        for task_def in &available_task_defs {
+            if let Some((status, progress)) = progress_by_task_id.get(task_def.id.as_str()) {
+                let task_status = normalize_task_progress_status_db(Some(status.as_str()));
+                let option_status = if task_status == "claimed" {
+                    "claimed".to_string()
+                } else if task_status == "claimable" {
+                    "claimable".to_string()
+                } else if all_task_objectives_done(task_def, progress) {
+                    "turnin".to_string()
+                } else {
+                    "accepted".to_string()
+                };
+                task_options.push(GameNpcTalkTaskOptionView {
+                    task_id: task_def.id.clone(),
+                    title: task_def
+                        .title
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or(task_def.id.as_str())
+                        .to_string(),
+                    category: task_def.category.clone(),
+                    status: option_status,
+                });
+                continue;
+            }
+
+            let prereq_ok = self
+                .check_task_prerequisites(character_id, &task_def.prereq_task_ids)
+                .await?;
+            task_options.push(GameNpcTalkTaskOptionView {
+                task_id: task_def.id.clone(),
+                title: task_def
+                    .title
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(task_def.id.as_str())
+                    .to_string(),
+                category: task_def.category.clone(),
+                status: if prereq_ok {
+                    "available".to_string()
+                } else {
+                    "locked".to_string()
+                },
+            });
+        }
+
+        let main_quest = current_section_id
+            .as_deref()
+            .and_then(|section_id| main_quest_catalog.section_by_id.get(section_id))
+            .filter(|section| {
+                normalize_optional_text(section.npc_id.as_deref())
+                    == Some(normalized_npc_id.clone())
+            })
+            .and_then(|section| {
+                main_quest_catalog
+                    .chapter_by_id
+                    .get(section.chapter_id.as_str())
+                    .map(|chapter| GameNpcTalkMainQuestOptionView {
+                        section_id: section.id.clone(),
+                        section_name: section
+                            .name
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or(section.id.as_str())
+                            .to_string(),
+                        chapter_name: chapter
+                            .name
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or(chapter.id.as_str())
+                            .to_string(),
+                        status: current_section_status.clone(),
+                        can_start_dialogue: matches!(
+                            current_section_status.as_str(),
+                            "not_started" | "dialogue"
+                        ),
+                        can_complete: current_section_status == "turnin",
+                    })
+            });
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameNpcTalkDataView {
+                npc_id: normalized_npc_id,
+                npc_name,
+                lines,
+                tasks: task_options,
+                main_quest,
             }),
         })
     }
@@ -1600,6 +1972,20 @@ impl GameRouteServices for RustGameRouteService {
         })
     }
 
+    fn npc_talk<'a>(
+        &'a self,
+        character_id: i64,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameNpcTalkDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.npc_talk_impl(character_id, npc_id).await })
+    }
+
     fn submit_task_to_npc<'a>(
         &'a self,
         character_id: i64,
@@ -1702,6 +2088,78 @@ fn task_auxiliary_catalog() -> Result<&'static TaskAuxiliaryCatalog, BusinessErr
     }
 }
 
+fn extract_dialogue_preview_lines(nodes: &[DialogueNodeSeed]) -> Vec<String> {
+    if let Some(text) = nodes
+        .iter()
+        .find(|node| node.node_type.as_deref() == Some("npc"))
+        .and_then(|node| node.text.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return vec![text.to_string()];
+    }
+
+    nodes
+        .iter()
+        .find(|node| node.node_type.as_deref() != Some("choice"))
+        .and_then(|node| node.text.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|text| vec![text.to_string()])
+        .unwrap_or_default()
+}
+
+fn resolve_npc_talk_greeting_lines(
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+    main_quest_catalog: &MainQuestCatalog,
+    npc_id: &str,
+    current_section_id: Option<&str>,
+    _current_section_status: &str,
+) -> Vec<String> {
+    let normalized_npc_id = npc_id.trim();
+    if normalized_npc_id.is_empty() {
+        return Vec::new();
+    }
+
+    let talk_tree_lines = auxiliary_catalog
+        .npc_talk_tree_id_by_npc_id
+        .get(normalized_npc_id)
+        .and_then(|talk_tree_id| auxiliary_catalog.talk_tree_lines_by_id.get(talk_tree_id))
+        .cloned()
+        .unwrap_or_default();
+
+    let npc_has_main_quest = main_quest_catalog.section_by_id.values().any(|section| {
+        normalize_optional_text(section.npc_id.as_deref()) == Some(normalized_npc_id.to_string())
+            && main_quest_catalog
+                .chapter_by_id
+                .get(section.chapter_id.as_str())
+                .map(|chapter| chapter.enabled != Some(false))
+                .unwrap_or(false)
+    });
+    if !npc_has_main_quest {
+        return talk_tree_lines;
+    }
+
+    let Some(section_id) = current_section_id else {
+        return Vec::new();
+    };
+    let Some(section) = main_quest_catalog.section_by_id.get(section_id) else {
+        return Vec::new();
+    };
+    if normalize_optional_text(section.npc_id.as_deref()) != Some(normalized_npc_id.to_string()) {
+        return Vec::new();
+    }
+
+    let Some(dialogue_id) = normalize_optional_text(section.dialogue_id.as_deref()) else {
+        return Vec::new();
+    };
+    auxiliary_catalog
+        .dialogue_preview_lines_by_id
+        .get(dialogue_id.as_str())
+        .cloned()
+        .unwrap_or_default()
+}
+
 fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared::error::AppError> {
     let static_catalog = get_static_data_catalog()?;
     let dungeon_catalog = get_dungeon_static_catalog()?;
@@ -1763,12 +2221,86 @@ fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared:
         );
     }
 
+    let npc_seed_file = read_seed_json::<NpcSeedFile>("npc_def.json")?;
+    let npc_name_by_id = npc_seed_file
+        .npcs
+        .iter()
+        .filter(|entry| entry.enabled != Some(false))
+        .filter_map(|entry| {
+            let npc_id = entry.id.trim();
+            let npc_name = entry.name.as_deref().map(str::trim).unwrap_or_default();
+            if npc_id.is_empty() || npc_name.is_empty() {
+                None
+            } else {
+                Some((npc_id.to_string(), npc_name.to_string()))
+            }
+        })
+        .collect::<HashMap<_, _>>();
+    let npc_talk_tree_id_by_npc_id = npc_seed_file
+        .npcs
+        .iter()
+        .filter(|entry| entry.enabled != Some(false))
+        .filter_map(|entry| {
+            let npc_id = entry.id.trim();
+            let talk_tree_id = entry
+                .talk_tree_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
+            if npc_id.is_empty() || talk_tree_id.is_empty() {
+                None
+            } else {
+                Some((npc_id.to_string(), talk_tree_id.to_string()))
+            }
+        })
+        .collect::<HashMap<_, _>>();
+    let talk_tree_lines_by_id = npc_seed_file
+        .talk_trees
+        .iter()
+        .filter(|entry| entry.enabled != Some(false))
+        .filter_map(|entry| {
+            let talk_tree_id = entry.id.trim();
+            if talk_tree_id.is_empty() {
+                return None;
+            }
+            let greeting_lines = entry
+                .greeting_lines
+                .iter()
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            Some((talk_tree_id.to_string(), greeting_lines))
+        })
+        .collect::<HashMap<_, _>>();
+
+    let mut dialogue_preview_lines_by_id = HashMap::new();
+    for file_name in list_seed_files_with_prefix("dialogue_main_chapter")? {
+        let file = read_seed_json::<DialogueSeedFile>(file_name.as_str())?;
+        for dialogue in file.dialogues {
+            if dialogue.enabled == Some(false) {
+                continue;
+            }
+            let dialogue_id = dialogue.id.trim();
+            if dialogue_id.is_empty() {
+                continue;
+            }
+            dialogue_preview_lines_by_id
+                .entry(dialogue_id.to_string())
+                .or_insert_with(|| extract_dialogue_preview_lines(&dialogue.nodes));
+        }
+    }
+
     Ok(TaskAuxiliaryCatalog {
         map_name_by_id,
         dungeon_name_by_id,
         entity_map_name_by_id,
         item_meta_by_id,
         item_grant_meta_by_id,
+        npc_name_by_id,
+        npc_talk_tree_id_by_npc_id,
+        talk_tree_lines_by_id,
+        dialogue_preview_lines_by_id,
     })
 }
 
@@ -1877,6 +2409,160 @@ fn all_task_objectives_done(task: &GameTaskSeed, progress: &HashMap<String, i32>
         has_objective = true;
         let target = objective.target.unwrap_or(1).max(1);
         let done = progress.get(objective_id).copied().unwrap_or(0);
+        if done < target {
+            return false;
+        }
+    }
+
+    has_objective
+}
+
+fn task_progress_to_json(progress: &HashMap<String, i32>) -> Value {
+    let mut entries = serde_json::Map::with_capacity(progress.len());
+    for (objective_id, done) in progress {
+        entries.insert(objective_id.clone(), Value::from((*done).max(0)));
+    }
+    Value::Object(entries)
+}
+
+fn apply_npc_talk_progress_to_task(
+    objectives: &[GameTaskObjectiveSeed],
+    progress: &mut HashMap<String, i32>,
+    npc_id: &str,
+) -> bool {
+    let normalized_npc_id = npc_id.trim();
+    if normalized_npc_id.is_empty() {
+        return false;
+    }
+
+    let mut updated = false;
+    for objective in objectives {
+        if objective.objective_type.as_deref() != Some("talk_npc") {
+            continue;
+        }
+        let Some(objective_id) = objective
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let required_npc_id = objective
+            .params
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|params| params.get("npc_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        if required_npc_id.is_empty() || required_npc_id != normalized_npc_id {
+            continue;
+        }
+
+        let target = objective.target.unwrap_or(1).max(1);
+        let current = progress.get(objective_id).copied().unwrap_or(0).max(0);
+        if current >= target {
+            continue;
+        }
+        progress.insert(objective_id.to_string(), (current + 1).min(target));
+        updated = true;
+    }
+
+    updated
+}
+
+fn parse_main_quest_progress_map(value: &Value) -> HashMap<String, i32> {
+    let Some(entries) = value.as_object() else {
+        return HashMap::new();
+    };
+    entries
+        .iter()
+        .filter_map(|(key, value)| {
+            let normalized_key = key.trim();
+            if normalized_key.is_empty() {
+                return None;
+            }
+            let number = value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|item| i64::try_from(item).ok()))
+                .unwrap_or(0);
+            Some((
+                normalized_key.to_string(),
+                number.max(0).min(i64::from(i32::MAX)) as i32,
+            ))
+        })
+        .collect()
+}
+
+fn apply_npc_talk_progress_to_main_quest(
+    objectives: &[MainQuestObjectiveSeed],
+    progress: &mut Value,
+    npc_id: &str,
+) -> bool {
+    let normalized_npc_id = npc_id.trim();
+    if normalized_npc_id.is_empty() {
+        return false;
+    }
+
+    let mut progress_map = parse_main_quest_progress_map(progress);
+    let mut updated = false;
+
+    for objective in objectives {
+        if objective.objective_type.as_deref() != Some("talk_npc") {
+            continue;
+        }
+        let Some(objective_id) = objective
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let required_npc_id = objective
+            .params
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|params| params.get("npc_id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        if required_npc_id.is_empty() || required_npc_id != normalized_npc_id {
+            continue;
+        }
+
+        let target = objective.target.unwrap_or(1).max(1);
+        let current = progress_map.get(objective_id).copied().unwrap_or(0).max(0);
+        if current >= target {
+            continue;
+        }
+        progress_map.insert(objective_id.to_string(), (current + 1).min(target));
+        updated = true;
+    }
+
+    if updated {
+        *progress = task_progress_to_json(&progress_map);
+    }
+
+    updated
+}
+
+fn all_main_quest_objectives_done(objectives: &[MainQuestObjectiveSeed], progress: &Value) -> bool {
+    let progress_map = parse_main_quest_progress_map(progress);
+    let mut has_objective = false;
+    for objective in objectives {
+        let Some(objective_id) = objective
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        has_objective = true;
+        let target = objective.target.unwrap_or(1).max(1);
+        let done = progress_map.get(objective_id).copied().unwrap_or(0);
         if done < target {
             return false;
         }

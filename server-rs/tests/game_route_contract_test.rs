@@ -20,9 +20,11 @@ use jiuzhou_server_rs::edge::http::routes::game::{
     GameActionResult, GameHomeAchievementView, GameHomeMainQuestChapterView,
     GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices, GameTaskClaimDataView,
-    GameTaskClaimRewardView, GameTaskMutationDataView, GameTaskObjectiveView,
-    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
+    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameNpcTalkDataView,
+    GameNpcTalkMainQuestOptionView, GameNpcTalkTaskOptionView, GameRouteServices,
+    GameTaskClaimDataView, GameTaskClaimRewardView, GameTaskMutationDataView,
+    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
+    GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -290,6 +292,65 @@ async fn task_track_route_preserves_send_result_shape() {
             "data": {
                 "taskId": "daily-1",
                 "tracked": true
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_npc_talk_route_preserves_send_result_shape() {
+    let talk_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_talk_calls(talk_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/task/npc/talk")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"npcId":"npc-guide"}"#))
+                .expect("task npc talk request"),
+        )
+        .await
+        .expect("task npc talk response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        talk_calls.lock().expect("task npc talk calls").as_slice(),
+        &[(3002_i64, "npc-guide".to_string())]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "npcId": "npc-guide",
+                "npcName": "引路童子",
+                "lines": [
+                    "欢迎来到青云村！修行之路漫漫，先从认识这里开始吧。"
+                ],
+                "tasks": [
+                    {
+                        "taskId": "task-main-001",
+                        "title": "初入青云村",
+                        "category": "main",
+                        "status": "turnin"
+                    }
+                ],
+                "mainQuest": {
+                    "sectionId": "section-main-001",
+                    "sectionName": "初入青云",
+                    "chapterName": "第一章",
+                    "status": "dialogue",
+                    "canStartDialogue": true,
+                    "canComplete": false
+                }
             }
         })
     );
@@ -830,12 +891,14 @@ struct FakeGameServices {
     overview: GameHomeOverviewView,
     task_overview: GameTaskOverviewView,
     task_summary: GameHomeTaskSummaryView,
+    task_npc_talk: GameNpcTalkDataView,
     main_quest_progress: GameHomeMainQuestProgressView,
     main_quest_chapters: Vec<GameHomeMainQuestChapterView>,
     main_quest_sections: Vec<GameHomeMainQuestSectionView>,
     requested_ids: Arc<Mutex<Vec<(i64, i64)>>>,
     task_summary_requests: Arc<Mutex<Vec<(i64, Option<String>)>>>,
     task_track_calls: Arc<Mutex<Vec<(i64, String, bool)>>>,
+    task_talk_calls: Arc<Mutex<Vec<(i64, String)>>>,
     task_accept_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
     task_claim_calls: Arc<Mutex<Vec<(i64, i64, String)>>>,
     task_submit_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
@@ -934,6 +997,25 @@ impl FakeGameServices {
                     tracked: true,
                 }],
             },
+            task_npc_talk: GameNpcTalkDataView {
+                npc_id: "npc-guide".to_string(),
+                npc_name: "引路童子".to_string(),
+                lines: vec!["欢迎来到青云村！修行之路漫漫，先从认识这里开始吧。".to_string()],
+                tasks: vec![GameNpcTalkTaskOptionView {
+                    task_id: "task-main-001".to_string(),
+                    title: "初入青云村".to_string(),
+                    category: "main".to_string(),
+                    status: "turnin".to_string(),
+                }],
+                main_quest: Some(GameNpcTalkMainQuestOptionView {
+                    section_id: "section-main-001".to_string(),
+                    section_name: "初入青云".to_string(),
+                    chapter_name: "第一章".to_string(),
+                    status: "dialogue".to_string(),
+                    can_start_dialogue: true,
+                    can_complete: false,
+                }),
+            },
             main_quest_progress: GameHomeMainQuestProgressView {
                 current_chapter: None,
                 current_section: None,
@@ -969,6 +1051,7 @@ impl FakeGameServices {
             requested_ids,
             task_summary_requests: Arc::new(Mutex::new(Vec::new())),
             task_track_calls: Arc::new(Mutex::new(Vec::new())),
+            task_talk_calls: Arc::new(Mutex::new(Vec::new())),
             task_accept_calls: Arc::new(Mutex::new(Vec::new())),
             task_claim_calls: Arc::new(Mutex::new(Vec::new())),
             task_submit_calls: Arc::new(Mutex::new(Vec::new())),
@@ -991,6 +1074,12 @@ impl FakeGameServices {
     fn with_task_accept_calls(accept_calls: Arc<Mutex<Vec<(i64, String, String)>>>) -> Self {
         let mut services = Self::new();
         services.task_accept_calls = accept_calls;
+        services
+    }
+
+    fn with_task_talk_calls(talk_calls: Arc<Mutex<Vec<(i64, String)>>>) -> Self {
+        let mut services = Self::new();
+        services.task_talk_calls = talk_calls;
         services
     }
 
@@ -1119,6 +1208,32 @@ impl GameRouteServices for FakeGameServices {
                 success: true,
                 message: "ok".to_string(),
                 data: Some(GameTaskMutationDataView { task_id }),
+            })
+        })
+    }
+
+    fn npc_talk<'a>(
+        &'a self,
+        character_id: i64,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameNpcTalkDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.task_talk_calls.clone();
+        let payload = self.task_npc_talk.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record task talk call")
+                .push((character_id, npc_id));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(payload),
             })
         })
     }

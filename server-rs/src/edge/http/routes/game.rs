@@ -270,6 +270,37 @@ pub struct GameTaskMutationDataView {
     pub task_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameNpcTalkTaskOptionView {
+    pub task_id: String,
+    pub title: String,
+    pub category: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameNpcTalkMainQuestOptionView {
+    pub section_id: String,
+    pub section_name: String,
+    pub chapter_name: String,
+    pub status: String,
+    pub can_start_dialogue: bool,
+    pub can_complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameNpcTalkDataView {
+    pub npc_id: String,
+    pub npc_name: String,
+    pub lines: Vec<String>,
+    pub tasks: Vec<GameNpcTalkTaskOptionView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub main_quest: Option<GameNpcTalkMainQuestOptionView>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GameTaskClaimRewardView {
@@ -329,6 +360,18 @@ pub trait GameRouteServices: Send + Sync {
     ) -> Pin<
         Box<
             dyn Future<Output = Result<GameActionResult<GameTaskTrackDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn npc_talk<'a>(
+        &'a self,
+        character_id: i64,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameNpcTalkDataView>, BusinessError>>
                 + Send
                 + 'a,
         >,
@@ -538,6 +581,32 @@ impl GameRouteServices for NoopGameRouteServices {
                 data: Some(GameTaskClaimDataView {
                     task_id,
                     rewards: Vec::new(),
+                }),
+            })
+        })
+    }
+
+    fn npc_talk<'a>(
+        &'a self,
+        _character_id: i64,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameNpcTalkDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameNpcTalkDataView {
+                    npc_id,
+                    npc_name: "引路童子".to_string(),
+                    lines: vec!["欢迎来到青云村！".to_string()],
+                    tasks: Vec::new(),
+                    main_quest: None,
                 }),
             })
         })
