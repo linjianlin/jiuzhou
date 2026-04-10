@@ -104,6 +104,7 @@ async fn root_and_health_routes_match_current_contract_shape() {
         .to_bytes();
     let root_json: serde_json::Value = serde_json::from_slice(&root_body).expect("root json");
     assert_eq!(root_json["name"], "九州修仙录");
+    assert_eq!(root_json["version"], "1.0.0");
     assert_eq!(root_json["status"], "running");
 
     let health_response = app
@@ -126,8 +127,14 @@ async fn root_and_health_routes_match_current_contract_shape() {
         .to_bytes();
     let health_json: serde_json::Value = serde_json::from_slice(&health_body).expect("health json");
     assert_eq!(health_json["status"], "ok");
-    assert_eq!(health_json["ready"], false);
     assert!(health_json["timestamp"].is_number());
+    assert_eq!(
+        health_json,
+        serde_json::json!({
+            "status": "ok",
+            "timestamp": health_json["timestamp"].clone(),
+        })
+    );
 
     let auth_verify_response = app
         .clone()

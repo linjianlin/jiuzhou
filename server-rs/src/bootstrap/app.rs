@@ -1,4 +1,3 @@
-use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
@@ -111,7 +110,6 @@ struct RootPayload<'a> {
 struct HealthPayload {
     status: &'static str,
     timestamp: u64,
-    ready: bool,
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -156,11 +154,10 @@ async fn root_handler() -> Json<RootPayload<'static>> {
     })
 }
 
-async fn health_handler(State(state): State<AppState>) -> Json<HealthPayload> {
+async fn health_handler() -> Json<HealthPayload> {
     Json(HealthPayload {
         status: "ok",
         timestamp: current_timestamp_ms(),
-        ready: state.readiness.is_ready(),
     })
 }
 

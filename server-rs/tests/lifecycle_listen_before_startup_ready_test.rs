@@ -91,7 +91,14 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
 
     let health_after_ready = wait_for_health(local_addr).await;
     assert_eq!(health_after_ready["status"], "ok");
-    assert_eq!(health_after_ready["ready"], true);
+    assert!(health_after_ready["timestamp"].is_number());
+    assert_eq!(
+        health_after_ready,
+        serde_json::json!({
+            "status": "ok",
+            "timestamp": health_after_ready["timestamp"].clone(),
+        })
+    );
 
     server_handle.abort();
 }
