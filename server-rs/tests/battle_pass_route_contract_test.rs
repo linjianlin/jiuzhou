@@ -217,6 +217,7 @@ where
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
         ),
         battle_pass_services: Arc::new(battle_pass_services),
+        game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
         insight_services: Arc::new(

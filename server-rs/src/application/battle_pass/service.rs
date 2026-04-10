@@ -12,8 +12,8 @@ use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::battle_pass::{
     BattlePassClaimDataView, BattlePassRewardItemView, BattlePassRewardView,
-    BattlePassRouteServices, BattlePassStatusView, BattlePassTaskView,
-    BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
+    BattlePassRouteServices, BattlePassStatusView, BattlePassTaskView, BattlePassTasksOverviewView,
+    CompleteBattlePassTaskDataView,
 };
 use crate::shared::error::AppError;
 
@@ -952,7 +952,9 @@ impl RustBattlePassRouteService {
 
         for (item_def_id, quantity) in reward_items {
             let Some(meta) = item_meta.get(item_def_id.as_str()) else {
-                return Err(internal_business_error("missing battle pass item definition"));
+                return Err(internal_business_error(
+                    "missing battle pass item definition",
+                ));
             };
             let bind_type = normalize_item_bind_type(meta.bind_type.clone());
             let stack_max = meta.stack_max.max(1) as i64;
@@ -1149,17 +1151,17 @@ fn load_item_meta() -> Result<HashMap<String, ItemDisplayMeta>, AppError> {
             if id.is_empty() || name.is_empty() {
                 return None;
             }
-                Some((
-                    id,
-                    ItemDisplayMeta {
-                        name,
-                        icon: trim_optional_string(item.icon),
-                        bind_type: normalize_item_bind_type(
-                            item.bind_type.unwrap_or_else(|| "none".to_string()),
-                        ),
-                        stack_max: item.stack_max.unwrap_or(1).max(1),
-                    },
-                ))
+            Some((
+                id,
+                ItemDisplayMeta {
+                    name,
+                    icon: trim_optional_string(item.icon),
+                    bind_type: normalize_item_bind_type(
+                        item.bind_type.unwrap_or_else(|| "none".to_string()),
+                    ),
+                    stack_max: item.stack_max.unwrap_or(1).max(1),
+                },
+            ))
         })
         .collect())
 }

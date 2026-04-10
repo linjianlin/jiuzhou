@@ -38,6 +38,7 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         battle_pass_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
         ),
+        game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

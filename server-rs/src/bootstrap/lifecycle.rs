@@ -8,6 +8,7 @@ use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::attribute::service::RustAttributeRouteService;
 use crate::application::auth::service::RustAuthServices;
 use crate::application::battle_pass::service::RustBattlePassRouteService;
+use crate::application::game::service::RustGameRouteService;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::info::service::RustInfoService;
 use crate::application::insight::service::RustInsightRouteService;
@@ -40,6 +41,7 @@ pub async fn run_application() -> Result<(), AppError> {
     let redis = build_redis(&settings).await?;
     let readiness = ReadinessGate::new();
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
+    let session_registry = new_shared_session_registry();
 
     let startup_context = StartupContext {
         settings: settings.clone(),
@@ -86,6 +88,12 @@ pub async fn run_application() -> Result<(), AppError> {
         battle_pass_services: std::sync::Arc::new(RustBattlePassRouteService::new(
             postgres.pool.clone(),
         )),
+        game_services: std::sync::Arc::new(RustGameRouteService::new(
+            postgres.pool.clone(),
+            redis.client.clone(),
+            runtime_services.clone(),
+            session_registry.clone(),
+        )),
         idle_services,
         info_services: std::sync::Arc::new(RustInfoService::new(postgres.pool.clone())),
         insight_services: std::sync::Arc::new(RustInsightRouteService::new(postgres.pool.clone())),
@@ -107,7 +115,7 @@ pub async fn run_application() -> Result<(), AppError> {
         game_socket_services,
         settings,
         readiness,
-        session_registry: new_shared_session_registry(),
+        session_registry,
         runtime_services: runtime_services.clone(),
     };
     let startup_execution = execute_with_runtime_target(&startup_context, runtime_services).await?;

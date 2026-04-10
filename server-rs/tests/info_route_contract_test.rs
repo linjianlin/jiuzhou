@@ -113,6 +113,7 @@ fn build_app_state() -> AppState {
         battle_pass_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
         ),
+        game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

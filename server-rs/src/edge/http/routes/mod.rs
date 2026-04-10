@@ -7,6 +7,7 @@ pub mod battle_session;
 pub mod captcha;
 pub mod character;
 pub mod dungeon;
+pub mod game;
 pub mod idle;
 pub mod info;
 pub mod insight;

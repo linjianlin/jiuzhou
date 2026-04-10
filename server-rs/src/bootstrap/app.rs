@@ -15,6 +15,7 @@ use crate::edge::http::routes::battle_session::build_battle_session_router;
 use crate::edge::http::routes::captcha::build_captcha_router;
 use crate::edge::http::routes::character::build_character_router;
 use crate::edge::http::routes::dungeon::build_dungeon_router;
+use crate::edge::http::routes::game::{build_game_router, GameRouteServices};
 use crate::edge::http::routes::idle::{build_idle_router, IdleRouteServices};
 use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
 use crate::edge::http::routes::insight::{build_insight_router, InsightRouteServices};
@@ -81,6 +82,7 @@ pub struct AppState {
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub attribute_services: Arc<dyn AttributeRouteServices>,
     pub battle_pass_services: Arc<dyn BattlePassRouteServices>,
+    pub game_services: Arc<dyn GameRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub info_services: Arc<dyn InfoRouteServices>,
     pub insight_services: Arc<dyn InsightRouteServices>,
@@ -126,6 +128,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/battlepass", build_battle_pass_router())
         .nest("/api/character", build_character_router())
         .nest("/api/dungeon", build_dungeon_router())
+        .nest("/api/game", build_game_router())
         .nest("/api/idle", build_idle_router())
         .nest("/api/captcha", build_captcha_router())
         .nest("/api/info", build_info_router())

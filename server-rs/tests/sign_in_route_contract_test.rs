@@ -214,6 +214,7 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
         battle_pass_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
         ),
+        game_services: Arc::new(jiuzhou_server_rs::edge::http::routes::game::NoopGameRouteServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(NoopInfoRouteServices),
         insight_services: Arc::new(
