@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use axum::extract::{Json, State};
+use axum::extract::{Json, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -17,9 +17,9 @@ use crate::edge::http::response::{ok, success};
  * idle 最小 HTTP 路由集群。
  *
  * 作用：
- * 1. 做什么：暴露 `/start`、`/status`、`/stop`、`/history`、`/progress`、`/config`，覆盖当前前端挂机面板真实依赖的最小 HTTP 合同。
- * 2. 做什么：复用现有 Bearer/session 校验与角色存在性检查，并把 409 conflict 与配置默认值语义固定在这一层，避免应用服务掺杂 HTTP 细节。
- * 3. 不做什么：不补 history viewed 标记，也不在这里实现挂机执行、收益结算或 socket 推送。
+ * 1. 做什么：暴露 `/start`、`/status`、`/stop`、`/history`、`/history/:id/viewed`、`/progress`、`/config`，覆盖当前前端挂机面板真实依赖的最小 HTTP 合同。
+ * 2. 做什么：复用现有 Bearer/session 校验与角色存在性检查，并把 409 conflict、history viewed 标记与配置默认值语义固定在这一层，避免应用服务掺杂 HTTP 细节。
+ * 3. 不做什么：不在这里实现挂机执行、收益结算或 socket 推送。
  *
  * 输入 / 输出：
  * - 输入：Authorization Bearer token，以及 start/config 请求体。
@@ -190,6 +190,12 @@ pub trait IdleRouteServices: Send + Sync {
         character_id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<IdleSessionView>, BusinessError>> + Send + 'a>>;
 
+    fn mark_idle_history_viewed<'a>(
+        &'a self,
+        character_id: i64,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>>;
+
     fn get_idle_progress<'a>(
         &'a self,
         character_id: i64,
@@ -253,6 +259,14 @@ impl IdleRouteServices for NoopIdleRouteServices {
         Box::pin(async move { Ok(Vec::new()) })
     }
 
+    fn mark_idle_history_viewed<'a>(
+        &'a self,
+        _character_id: i64,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
+    }
+
     fn get_idle_progress<'a>(
         &'a self,
         _character_id: i64,
@@ -284,6 +298,10 @@ pub fn build_idle_router() -> Router<AppState> {
         .route("/status", get(idle_status_handler))
         .route("/stop", post(stop_idle_handler))
         .route("/history", get(idle_history_handler))
+        .route(
+            "/history/{id}/viewed",
+            post(mark_idle_history_viewed_handler),
+        )
         .route("/progress", get(idle_progress_handler))
         .route(
             "/config",
@@ -383,6 +401,28 @@ async fn idle_progress_handler(
 
     let session = state.idle_services.get_idle_progress(character.id).await?;
     Ok(success(IdleStatusResponseData { session }))
+}
+
+async fn mark_idle_history_viewed_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(session_id): Path<String>,
+) -> Result<Response, BusinessError> {
+    let (_, character) = match require_authenticated_character(&state, &headers).await {
+        Ok(result) => result,
+        Err(response) => return Ok(response),
+    };
+
+    let normalized_session_id = session_id.trim().to_string();
+    if normalized_session_id.is_empty() {
+        return Err(BusinessError::new("缺少 sessionId"));
+    }
+
+    state
+        .idle_services
+        .mark_idle_history_viewed(character.id, normalized_session_id)
+        .await?;
+    Ok(ok())
 }
 
 async fn idle_config_handler(

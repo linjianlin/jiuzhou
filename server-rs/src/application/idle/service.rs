@@ -24,9 +24,9 @@ const DEFAULT_MONTH_CARD_ID: &str = "monthcard-001";
  * idle 最小应用服务。
  *
  * 作用：
- * 1. 做什么：为 `/api/idle/start|status|stop|history|progress|config` 提供最小真实会话与配置读写，保持 Node 兼容所需数据。
+ * 1. 做什么：为 `/api/idle/start|status|stop|history|history/:id/viewed|progress|config` 提供最小真实会话与配置读写，保持 Node 兼容所需数据。
  * 2. 做什么：复用 PostgreSQL `idle_sessions`、`idle_configs` 与 Redis `idle:lock:{characterId}`，并把 lock 变化同步回已挂到 AppState 的 runtime idle 服务。
- * 3. 不做什么：不启动挂机执行循环、不推进战斗批次，也不补 viewed 标记。
+ * 3. 不做什么：不启动挂机执行循环，也不推进战斗批次。
  *
  * 输入 / 输出：
  * - 输入：characterId、userId、start/config 请求参数。
@@ -281,6 +281,29 @@ impl RustIdleRouteService {
         character_id: i64,
     ) -> Result<Option<IdleSessionView>, BusinessError> {
         self.get_active_idle_session(character_id).await
+    }
+
+    pub async fn mark_idle_history_viewed(
+        &self,
+        character_id: i64,
+        session_id: &str,
+    ) -> Result<(), BusinessError> {
+        let _ = sqlx::query(
+            r#"
+            UPDATE idle_sessions
+            SET viewed_at = COALESCE(viewed_at, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+              AND character_id = $2
+            "#,
+        )
+        .bind(session_id)
+        .bind(character_id)
+        .execute(&self.pool)
+        .await
+        .map_err(internal_business_error)?;
+
+        Ok(())
     }
 
     pub async fn get_idle_config(
@@ -542,6 +565,17 @@ impl IdleRouteServices for RustIdleRouteService {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<IdleSessionView>, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move { self.get_idle_history(character_id).await })
+    }
+
+    fn mark_idle_history_viewed<'a>(
+        &'a self,
+        character_id: i64,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.mark_idle_history_viewed(character_id, &session_id)
+                .await
+        })
     }
 
     fn get_idle_progress<'a>(

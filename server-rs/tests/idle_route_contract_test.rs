@@ -349,6 +349,40 @@ async fn idle_progress_reuses_session_shape() {
 }
 
 #[tokio::test]
+async fn idle_history_viewed_returns_ok_envelope() {
+    let app = build_router(build_app_state(
+        FakeAuthServices {
+            verify_result: VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(7),
+            },
+            character_result: CheckCharacterResult {
+                has_character: true,
+                character: Some(sample_character()),
+            },
+        },
+        FakeIdleServices::default(),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/idle/history/session-viewed-1/viewed")
+                .header("authorization", "Bearer token-idle-history-viewed")
+                .body(Body::empty())
+                .expect("idle history viewed request"),
+        )
+        .await
+        .expect("idle history viewed response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json, serde_json::json!({ "success": true }));
+}
+
+#[tokio::test]
 async fn idle_config_returns_default_config_shape() {
     let app = build_router(build_app_state(
         FakeAuthServices {
@@ -641,6 +675,14 @@ impl IdleRouteServices for FakeIdleServices {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<IdleSessionView>, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move { Ok(self.history_result.clone()) })
+    }
+
+    fn mark_idle_history_viewed<'a>(
+        &'a self,
+        _character_id: i64,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
     }
 
     fn get_idle_progress<'a>(
