@@ -20,6 +20,7 @@ use crate::application::realm::service::RustRealmRouteService;
 use crate::application::redeem_code::service::RustRedeemCodeRouteService;
 use crate::application::team::service::RustTeamRouteService;
 use crate::application::time::service::RustTimeService;
+use crate::application::tower::service::RustTowerRouteService;
 use crate::application::title::service::RustTitleRouteService;
 use crate::application::upload::service::RustUploadService;
 use crate::bootstrap::app::{
@@ -119,6 +120,10 @@ pub async fn run_application() -> Result<(), AppError> {
             session_registry.clone(),
         )),
         time_services: std::sync::Arc::new(RustTimeService::new()),
+        tower_services: std::sync::Arc::new(RustTowerRouteService::new(
+            postgres.pool.clone(),
+            runtime_services.clone(),
+        )),
         title_services: std::sync::Arc::new(RustTitleRouteService::new(postgres.pool.clone())),
         upload_services,
         game_socket_services,

@@ -25,5 +25,6 @@ pub mod task;
 pub mod team;
 pub mod technique;
 pub mod time;
+pub mod tower;
 pub mod title;
 pub mod upload;

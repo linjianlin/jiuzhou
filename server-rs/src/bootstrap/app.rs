@@ -33,6 +33,7 @@ use crate::edge::http::routes::task::build_task_router;
 use crate::edge::http::routes::team::{build_team_router, TeamRouteServices};
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
+use crate::edge::http::routes::tower::{build_tower_router, TowerRouteServices};
 use crate::edge::http::routes::title::{build_title_router, TitleRouteServices};
 use crate::edge::http::routes::upload::{build_upload_router, UploadRouteServices};
 use crate::edge::socket::default_socket::attach_default_socket_layer;
@@ -101,6 +102,7 @@ pub struct AppState {
     pub redeem_code_services: Arc<dyn RedeemCodeRouteServices>,
     pub team_services: Arc<dyn TeamRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
+    pub tower_services: Arc<dyn TowerRouteServices>,
     pub title_services: Arc<dyn TitleRouteServices>,
     pub upload_services: Arc<dyn UploadRouteServices>,
     pub game_socket_services: Arc<dyn GameSocketAuthServices>,
@@ -155,6 +157,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/task", build_task_router())
         .nest("/api/technique", build_technique_router())
         .nest("/api/team", build_team_router())
+        .nest("/api/tower", build_tower_router())
         .nest("/api/title", build_title_router())
         .nest("/api/upload", build_upload_router())
         .merge(build_time_router())

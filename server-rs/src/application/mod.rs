@@ -20,5 +20,6 @@ pub mod sign_in;
 pub mod static_data;
 pub mod team;
 pub mod time;
+pub mod tower;
 pub mod title;
 pub mod upload;
