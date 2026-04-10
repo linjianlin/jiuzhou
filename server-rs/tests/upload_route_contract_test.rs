@@ -423,6 +423,9 @@ fn build_app_state_with_upload_services(upload_services: Arc<dyn UploadRouteServ
         team_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
         ),
+        tower_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices,
+        ),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
         insight_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,

@@ -181,6 +181,12 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         time_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices,
         ),
+        team_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
+        ),
+        tower_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices,
+        ),
         info_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices,
         ),
@@ -214,9 +220,6 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         readiness: context.readiness.clone(),
         session_registry: new_shared_session_registry(),
         runtime_services: execution.runtime_services.clone(),
-        team_services: std::sync::Arc::new(
-            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
-        ),
     };
 
     let runtime_services = state.runtime_services.read().await;

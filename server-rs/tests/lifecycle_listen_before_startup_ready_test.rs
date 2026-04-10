@@ -47,6 +47,9 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         team_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
         ),
+        tower_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices,
+        ),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
         insight_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,

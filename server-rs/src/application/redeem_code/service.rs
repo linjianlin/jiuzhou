@@ -5,7 +5,7 @@ use sqlx::Row;
 
 use crate::application::reward_payload::{
     build_grant_rewards_input, build_reward_payload_json, build_reward_preview,
-    normalize_reward_payload, GrantedRewardPreviewView,
+    normalize_reward_payload,
 };
 use crate::application::security::attempt_guard::{AttemptGuardPolicy, AttemptGuardService};
 use crate::edge::http::error::BusinessError;

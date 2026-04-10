@@ -241,6 +241,9 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
         team_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
         ),
+        tower_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices,
+        ),
         title_services: Arc::new(NoopTitleRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),

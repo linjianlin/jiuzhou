@@ -225,6 +225,9 @@ where
         team_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
         ),
+        tower_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices,
+        ),
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),

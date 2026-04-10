@@ -367,6 +367,7 @@ fn build_app_state(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
         ),
         team_services: Arc::new(jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices),
+        tower_services: Arc::new(jiuzhou_server_rs::edge::http::routes::tower::NoopTowerRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
