@@ -150,6 +150,9 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         rank_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices,
         ),
+        redeem_code_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
+        ),
         upload_services: std::sync::Arc::new(NoopUploadRouteServices),
         game_socket_services: std::sync::Arc::new(NoopAuthServices),
         settings: context.settings.clone(),

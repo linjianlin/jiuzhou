@@ -102,6 +102,9 @@ fn build_app_state() -> AppState {
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
+        redeem_code_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
+        ),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: auth_services,
         settings: Settings::from_map(Default::default()).expect("settings"),

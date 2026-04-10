@@ -14,6 +14,7 @@ use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
     RustCharacterReadService, UpdateCharacterPositionResult, UpdateCharacterSettingResult,
 };
+use crate::application::security::attempt_guard::{AttemptGuardPolicy, AttemptGuardService};
 use crate::application::sign_in::service::RustSignInService;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::auth::{
@@ -27,8 +28,15 @@ use crate::edge::socket::game_socket::{
 
 const AUTH_CAPTCHA_TTL_SECONDS: u64 = 300;
 const LOGIN_QPS_LIMIT_MESSAGE: &str = "认证请求过于频繁，请稍后再试";
-const LOGIN_BLOCKED_MESSAGE: &str = "登录尝试过于频繁，请15分钟后再试";
 const CAPTCHA_CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const LOGIN_ATTEMPT_GUARD_POLICY: AttemptGuardPolicy = AttemptGuardPolicy {
+    failure_window_ms: 15 * 60 * 1_000,
+    block_window_ms: 15 * 60 * 1_000,
+    subject_ip_failure_limit: 5,
+    subject_failure_limit: 10,
+    ip_failure_limit: 20,
+    blocked_message: "登录尝试过于频繁，请15分钟后再试",
+};
 
 #[derive(Clone)]
 pub struct RustAuthServices {
@@ -38,6 +46,7 @@ pub struct RustAuthServices {
     jwt_expires_in: String,
     captcha_provider: CaptchaProvider,
     account_service: RustAccountService,
+    attempt_guard: AttemptGuardService,
     character_read_service: RustCharacterReadService,
     sign_in_service: RustSignInService,
 }
@@ -70,6 +79,7 @@ impl RustAuthServices {
     ) -> Self {
         Self {
             account_service: RustAccountService::new(pool.clone()),
+            attempt_guard: AttemptGuardService::new(redis.clone()),
             character_read_service: RustCharacterReadService::new(pool.clone(), runtime_services),
             sign_in_service: RustSignInService::new(pool.clone()),
             pool,
@@ -360,24 +370,9 @@ impl RustAuthServices {
         username: &str,
         user_ip: &str,
     ) -> Result<(), BusinessError> {
-        let keys = build_attempt_guard_keys("login", username, user_ip)?;
-        let mut redis = self.redis_connection().await?;
-        let values = redis
-            .mget::<_, Vec<Option<String>>>(&[
-                keys.subject_ip_block_key.as_str(),
-                keys.subject_block_key.as_str(),
-                keys.ip_block_key.as_str(),
-            ])
+        self.attempt_guard
+            .assert_allowed("login", username, user_ip, LOGIN_ATTEMPT_GUARD_POLICY)
             .await
-            .map_err(internal_business_error)?;
-
-        if values.iter().any(|value| value.as_deref() == Some("1")) {
-            return Err(BusinessError::with_status(
-                LOGIN_BLOCKED_MESSAGE,
-                axum::http::StatusCode::TOO_MANY_REQUESTS,
-            ));
-        }
-        Ok(())
     }
 
     async fn record_login_attempt_failure(
@@ -385,25 +380,9 @@ impl RustAuthServices {
         username: &str,
         user_ip: &str,
     ) -> Result<(), BusinessError> {
-        let keys = build_attempt_guard_keys("login", username, user_ip)?;
-        let mut redis = self.redis_connection().await?;
-        let subject_ip =
-            touch_failure_counter(&mut redis, &keys.subject_ip_failure_key, 15 * 60 * 1_000)
-                .await?;
-        let subject =
-            touch_failure_counter(&mut redis, &keys.subject_failure_key, 15 * 60 * 1_000).await?;
-        let ip = touch_failure_counter(&mut redis, &keys.ip_failure_key, 15 * 60 * 1_000).await?;
-
-        if subject_ip >= 5 {
-            write_block_key(&mut redis, &keys.subject_ip_block_key, 15 * 60 * 1_000).await?;
-        }
-        if subject >= 10 {
-            write_block_key(&mut redis, &keys.subject_block_key, 15 * 60 * 1_000).await?;
-        }
-        if ip >= 20 {
-            write_block_key(&mut redis, &keys.ip_block_key, 15 * 60 * 1_000).await?;
-        }
-        Ok(())
+        self.attempt_guard
+            .record_failure("login", username, user_ip, LOGIN_ATTEMPT_GUARD_POLICY)
+            .await
     }
 
     async fn clear_login_attempt_failures(
@@ -411,18 +390,9 @@ impl RustAuthServices {
         username: &str,
         user_ip: &str,
     ) -> Result<(), BusinessError> {
-        let keys = build_attempt_guard_keys("login", username, user_ip)?;
-        let mut redis = self.redis_connection().await?;
-        let _: i64 = redis
-            .del(&[
-                keys.subject_ip_failure_key.as_str(),
-                keys.subject_failure_key.as_str(),
-                keys.subject_ip_block_key.as_str(),
-                keys.subject_block_key.as_str(),
-            ])
+        self.attempt_guard
+            .clear_failures("login", username, user_ip)
             .await
-            .map_err(internal_business_error)?;
-        Ok(())
     }
 
     async fn verify_impl(&self, token: &str) -> VerifyTokenAndSessionResult {
@@ -816,16 +786,6 @@ impl GameSocketAuthServices for RustAuthServices {
     }
 }
 
-#[derive(Debug, Clone)]
-struct AttemptGuardKeys {
-    subject_ip_failure_key: String,
-    subject_failure_key: String,
-    ip_failure_key: String,
-    subject_ip_block_key: String,
-    subject_block_key: String,
-    ip_block_key: String,
-}
-
 fn internal_business_error<E>(_error: E) -> BusinessError {
     BusinessError::with_status("服务器错误", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
@@ -925,68 +885,4 @@ fn normalize_scope(scope: &str) -> Result<String, BusinessError> {
         return Err(BusinessError::new("QPS 限流作用域不能为空字符串"));
     }
     Ok(scope.to_string())
-}
-
-fn build_attempt_guard_keys(
-    action: &str,
-    subject: &str,
-    ip: &str,
-) -> Result<AttemptGuardKeys, BusinessError> {
-    let action = normalize_attempt_key_part(action, "action")?;
-    let subject = normalize_attempt_key_part(subject, "subject")?;
-    let ip = normalize_attempt_key_part(ip, "ip")?;
-    let base = format!("attempt-guard:{action}");
-    Ok(AttemptGuardKeys {
-        subject_ip_failure_key: format!("{base}:failure:subject-ip:{subject}:{ip}"),
-        subject_failure_key: format!("{base}:failure:subject:{subject}"),
-        ip_failure_key: format!("{base}:failure:ip:{ip}"),
-        subject_ip_block_key: format!("{base}:block:subject-ip:{subject}:{ip}"),
-        subject_block_key: format!("{base}:block:subject:{subject}"),
-        ip_block_key: format!("{base}:block:ip:{ip}"),
-    })
-}
-
-fn normalize_attempt_key_part(value: &str, field_name: &str) -> Result<String, BusinessError> {
-    let normalized = value.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Err(BusinessError::with_status(
-            format!("{field_name} 不能为空"),
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        ));
-    }
-    Ok(urlencoding::encode(&normalized).into_owned())
-}
-
-async fn touch_failure_counter(
-    redis: &mut redis::aio::MultiplexedConnection,
-    key: &str,
-    window_ms: u64,
-) -> Result<i64, BusinessError> {
-    let count = redis
-        .incr::<_, _, i64>(key, 1)
-        .await
-        .map_err(internal_business_error)?;
-    if count == 1 {
-        let _: bool = redis
-            .pexpire(key, window_ms as i64)
-            .await
-            .map_err(internal_business_error)?;
-    }
-    Ok(count)
-}
-
-async fn write_block_key(
-    redis: &mut redis::aio::MultiplexedConnection,
-    key: &str,
-    window_ms: u64,
-) -> Result<(), BusinessError> {
-    redis
-        .set::<_, _, ()>(key, "1")
-        .await
-        .map_err(internal_business_error)?;
-    let _: bool = redis
-        .pexpire(key, window_ms as i64)
-        .await
-        .map_err(internal_business_error)?;
-    Ok(())
 }

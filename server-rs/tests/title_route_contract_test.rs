@@ -152,6 +152,9 @@ where
         time_services: Arc::new(NoopTimeRouteServices),
         title_services: Arc::new(title_services),
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
+        redeem_code_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
+        ),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(HashMap::new()).expect("settings"),

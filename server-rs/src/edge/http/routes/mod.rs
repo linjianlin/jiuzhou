@@ -11,6 +11,7 @@ pub mod insight;
 pub mod inventory;
 pub mod map;
 pub mod rank;
+pub mod redeem_code;
 pub mod sign_in;
 pub mod technique;
 pub mod time;

@@ -140,6 +140,9 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
+        redeem_code_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
+        ),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),

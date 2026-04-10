@@ -202,6 +202,9 @@ where
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
+        redeem_code_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
+        ),
         time_services: Arc::new(NoopTimeRouteServices),
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,

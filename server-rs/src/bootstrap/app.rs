@@ -19,6 +19,9 @@ use crate::edge::http::routes::insight::{build_insight_router, InsightRouteServi
 use crate::edge::http::routes::inventory::{build_inventory_router, InventoryRouteServices};
 use crate::edge::http::routes::map::build_map_router;
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
+use crate::edge::http::routes::redeem_code::{
+    build_redeem_code_router, RedeemCodeRouteServices,
+};
 use crate::edge::http::routes::sign_in::build_sign_in_router;
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
@@ -80,6 +83,7 @@ pub struct AppState {
     pub insight_services: Arc<dyn InsightRouteServices>,
     pub inventory_services: Arc<dyn InventoryRouteServices>,
     pub rank_services: Arc<dyn RankRouteServices>,
+    pub redeem_code_services: Arc<dyn RedeemCodeRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
     pub title_services: Arc<dyn TitleRouteServices>,
     pub upload_services: Arc<dyn UploadRouteServices>,
@@ -121,6 +125,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/inventory", build_inventory_router())
         .nest("/api/map", build_map_router())
         .nest("/api/rank", build_rank_router())
+        .nest("/api/redeem-code", build_redeem_code_router())
         .nest("/api/signin", build_sign_in_router())
         .nest("/api/technique", build_technique_router())
         .nest("/api/title", build_title_router())

@@ -3,6 +3,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
 
+use crate::application::character::service::CharacterBasicInfo;
 use crate::bootstrap::app::AppState;
 
 pub const AUTH_INVALID_MESSAGE: &str = "登录状态无效，请重新登录";
@@ -21,6 +22,12 @@ pub struct KickedAuthErrorResponse {
     pub success: bool,
     pub message: String,
     pub kicked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedCharacterContext {
+    pub user_id: i64,
+    pub character: CharacterBasicInfo,
 }
 
 pub fn read_bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -123,4 +130,35 @@ pub async fn require_authenticated_user_id(
     }
 
     result.user_id.ok_or_else(unauthorized_response)
+}
+
+pub async fn require_authenticated_character_context(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<AuthenticatedCharacterContext, Response> {
+    let user_id = require_authenticated_user_id(state, headers).await?;
+    let character_result = match state.auth_services.check_character(user_id).await {
+        Ok(result) => result,
+        Err(error) => return Err(error.into_response()),
+    };
+    let Some(character) = character_result.character else {
+        return Err(
+            crate::edge::http::error::BusinessError::with_status(
+                "角色不存在",
+                StatusCode::NOT_FOUND,
+            )
+            .into_response(),
+        );
+    };
+    if !character_result.has_character || character.id <= 0 {
+        return Err(
+            crate::edge::http::error::BusinessError::with_status(
+                "角色不存在",
+                StatusCode::NOT_FOUND,
+            )
+            .into_response(),
+        );
+    }
+
+    Ok(AuthenticatedCharacterContext { user_id, character })
 }
