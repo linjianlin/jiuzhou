@@ -8,6 +8,7 @@ pub mod info;
 pub mod insight;
 pub mod inventory;
 pub mod rank;
+pub mod realm;
 pub mod security;
 pub mod sign_in;
 pub mod redeem_code;

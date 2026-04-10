@@ -12,6 +12,7 @@ use crate::application::info::service::RustInfoService;
 use crate::application::insight::service::RustInsightRouteService;
 use crate::application::inventory::service::RustInventoryReadService;
 use crate::application::rank::service::RustRankRouteService;
+use crate::application::realm::service::RustRealmRouteService;
 use crate::application::redeem_code::service::RustRedeemCodeRouteService;
 use crate::application::time::service::RustTimeService;
 use crate::application::title::service::RustTitleRouteService;
@@ -87,6 +88,7 @@ pub async fn run_application() -> Result<(), AppError> {
             postgres.pool.clone(),
         )),
         rank_services: std::sync::Arc::new(RustRankRouteService::new(postgres.pool.clone())),
+        realm_services: std::sync::Arc::new(RustRealmRouteService::new(postgres.pool.clone())),
         redeem_code_services: std::sync::Arc::new(RustRedeemCodeRouteService::new(
             postgres.pool.clone(),
             redis.client.clone(),
