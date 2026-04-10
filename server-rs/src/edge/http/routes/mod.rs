@@ -10,6 +10,7 @@ pub mod info;
 pub mod insight;
 pub mod inventory;
 pub mod map;
+pub mod month_card;
 pub mod rank;
 pub mod realm;
 pub mod redeem_code;

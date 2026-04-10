@@ -196,7 +196,11 @@ where
         inventory_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),
+        month_card_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices),
+
         rank_services: Arc::new(jiuzhou_server_rs::edge::http::routes::rank::NoopRankRouteServices),
+        realm_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::realm::NoopRealmRouteServices),
+
         redeem_code_services: Arc::new(redeem_code_services),
         time_services: Arc::new(NoopTimeRouteServices),
         title_services: Arc::new(jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices),

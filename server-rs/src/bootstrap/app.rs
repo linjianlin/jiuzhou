@@ -18,6 +18,7 @@ use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
 use crate::edge::http::routes::insight::{build_insight_router, InsightRouteServices};
 use crate::edge::http::routes::inventory::{build_inventory_router, InventoryRouteServices};
 use crate::edge::http::routes::map::build_map_router;
+use crate::edge::http::routes::month_card::{build_month_card_router, MonthCardRouteServices};
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
 use crate::edge::http::routes::realm::{build_realm_router, RealmRouteServices};
 use crate::edge::http::routes::redeem_code::{
@@ -83,6 +84,7 @@ pub struct AppState {
     pub info_services: Arc<dyn InfoRouteServices>,
     pub insight_services: Arc<dyn InsightRouteServices>,
     pub inventory_services: Arc<dyn InventoryRouteServices>,
+    pub month_card_services: Arc<dyn MonthCardRouteServices>,
     pub rank_services: Arc<dyn RankRouteServices>,
     pub realm_services: Arc<dyn RealmRouteServices>,
     pub redeem_code_services: Arc<dyn RedeemCodeRouteServices>,
@@ -126,6 +128,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/insight", build_insight_router())
         .nest("/api/inventory", build_inventory_router())
         .nest("/api/map", build_map_router())
+        .nest("/api/monthcard", build_month_card_router())
         .nest("/api/rank", build_rank_router())
         .nest("/api/realm", build_realm_router())
         .nest("/api/redeem-code", build_redeem_code_router())
