@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use tokio::net::TcpListener;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::auth::service::RustAuthServices;
@@ -77,31 +77,15 @@ pub async fn run_application() -> Result<(), AppError> {
         session_registry: new_shared_session_registry(),
         runtime_services: runtime_services.clone(),
     };
+    let startup_execution = execute_with_runtime_target(&startup_context, runtime_services).await?;
+    info!(startup_stages = ?startup_execution.stages, "startup pipeline completed");
+
+    let _shutdown_plan = ShutdownPlan::new(Duration::from_secs(30));
     let router = build_router(state.clone());
     let listener = bind_listener(&state.settings).await?;
     let local_addr = listener.local_addr().map_err(AppError::Io)?;
-    info!(%local_addr, ready = false, "rust backend listening while startup continues");
-
-    spawn_background_startup(async move {
-        let startup_execution =
-            execute_with_runtime_target(&startup_context, runtime_services).await?;
-        info!(startup_stages = ?startup_execution.stages, "startup pipeline completed");
-        Ok(())
-    });
-
-    let _shutdown_plan = ShutdownPlan::new(Duration::from_secs(30));
+    info!(%local_addr, ready = state.readiness.is_ready(), "rust backend listening after startup ready");
     axum::serve(listener, router).await.map_err(AppError::Io)
-}
-
-pub fn spawn_background_startup<F>(startup_future: F) -> tokio::task::JoinHandle<()>
-where
-    F: std::future::Future<Output = Result<(), AppError>> + Send + 'static,
-{
-    tokio::spawn(async move {
-        if let Err(error) = startup_future.await {
-            error!(%error, "startup pipeline failed after listener bind");
-        }
-    })
 }
 
 async fn bind_listener(

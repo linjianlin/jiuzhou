@@ -8,7 +8,6 @@ use jiuzhou_server_rs::application::character::service::{
 use jiuzhou_server_rs::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
 };
-use jiuzhou_server_rs::bootstrap::lifecycle::spawn_background_startup;
 use jiuzhou_server_rs::bootstrap::readiness::ReadinessGate;
 use jiuzhou_server_rs::edge::http::error::BusinessError;
 use jiuzhou_server_rs::edge::http::routes::auth::{
@@ -24,7 +23,7 @@ use jiuzhou_server_rs::infra::config::settings::Settings;
 use jiuzhou_server_rs::runtime::connection::session_registry::new_shared_session_registry;
 
 #[tokio::test]
-async fn health_endpoint_is_reachable_before_background_startup_finishes() {
+async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_binds() {
     let readiness = ReadinessGate::new();
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
     let auth_services = Arc::new(NoopAuthServices);
@@ -42,47 +41,35 @@ async fn health_endpoint_is_reachable_before_background_startup_finishes() {
         runtime_services,
     };
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind test listener");
-    let local_addr = listener.local_addr().expect("listener addr");
     let app = build_router(state);
+    let reserved = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve test listener");
+    let local_addr = reserved.local_addr().expect("reserved listener addr");
+    drop(reserved);
+
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
     let server_handle = tokio::spawn(async move {
+        ready_rx.await.expect("startup release signal");
+        readiness.mark_ready();
+        let listener = tokio::net::TcpListener::bind(local_addr)
+            .await
+            .expect("bind test listener after startup");
         axum::serve(listener, app).await.expect("serve test app");
     });
 
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
-    let startup_handle = spawn_background_startup(async move {
-        ready_rx.await.expect("startup release signal");
-        readiness.mark_ready();
-        Ok(())
-    });
-
-    let health_before_ready = wait_for_health(local_addr, false).await;
-    assert_eq!(health_before_ready["status"], "ok");
-    assert_eq!(health_before_ready["ready"], false);
+    assert!(request_health(local_addr).await.is_err());
 
     ready_tx.send(()).expect("release startup");
 
-    let mut health_after_ready = None;
-    for _ in 0..20 {
-        let response = request_health(local_addr).await;
-        if response["ready"] == true {
-            health_after_ready = Some(response);
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-
-    let health_after_ready = health_after_ready.expect("health should become ready");
+    let health_after_ready = wait_for_health(local_addr).await;
     assert_eq!(health_after_ready["status"], "ok");
     assert_eq!(health_after_ready["ready"], true);
 
-    startup_handle.await.expect("startup task join");
     server_handle.abort();
 }
 
-async fn request_health(addr: std::net::SocketAddr) -> serde_json::Value {
+async fn request_health(
+    addr: std::net::SocketAddr,
+) -> Result<serde_json::Value, reqwest::Error> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(1))
         .build()
@@ -90,28 +77,22 @@ async fn request_health(addr: std::net::SocketAddr) -> serde_json::Value {
     client
         .get(format!("http://{addr}/api/health"))
         .send()
-        .await
-        .expect("request health endpoint")
+        .await?
         .json::<serde_json::Value>()
         .await
-        .expect("parse health json")
 }
 
-async fn wait_for_health(addr: std::net::SocketAddr, expected_ready: bool) -> serde_json::Value {
+async fn wait_for_health(addr: std::net::SocketAddr) -> serde_json::Value {
     for _ in 0..20 {
-        match request_health(addr).await {
-            response if response["ready"] == expected_ready => return response,
-            _ => {}
+        if let Ok(response) = request_health(addr).await {
+            return response;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
-    let response = request_health(addr).await;
-
-    panic!(
-        "health endpoint did not reach expected ready={expected_ready}: {:?}",
-        response
-    );
+    request_health(addr)
+        .await
+        .expect("health endpoint should become reachable after startup")
 }
 
 struct NoopAuthServices;
