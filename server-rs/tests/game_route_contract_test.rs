@@ -17,14 +17,14 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::game::{
-    GameActionResult, GameHomeAchievementView, GameHomeMainQuestChapterView,
-    GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
-    GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameNpcTalkDataView,
-    GameNpcTalkMainQuestOptionView, GameNpcTalkTaskOptionView, GameRouteServices,
-    GameTaskClaimDataView, GameTaskClaimRewardView, GameTaskMutationDataView,
-    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
-    GameTaskTrackDataView,
+    GameActionResult, GameHomeAchievementView, GameHomeDialogueStateView,
+    GameHomeMainQuestChapterView, GameHomeMainQuestProgressView, GameHomeMainQuestSectionView,
+    GameHomeOverviewView, GameHomeSignInView, GameHomeTaskSummaryItemView,
+    GameHomeTaskSummaryView, GameHomeTeamOverviewView, GameMainQuestDialogueActionDataView,
+    GameMainQuestSectionCompleteDataView, GameMainQuestTrackDataView, GameNpcTalkDataView, GameNpcTalkMainQuestOptionView,
+    GameNpcTalkTaskOptionView, GameRouteServices, GameTaskClaimDataView,
+    GameTaskClaimRewardView, GameTaskMutationDataView, GameTaskObjectiveView,
+    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -653,6 +653,266 @@ async fn main_quest_track_route_preserves_send_result_shape() {
     );
 }
 
+#[tokio::test]
+async fn main_quest_dialogue_start_route_forwards_optional_dialogue_id() {
+    let start_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_main_quest_dialogue_start_calls(start_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/main-quest/dialogue/start")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"dialogueId":" dlg-main-custom "}"#))
+                .expect("main quest dialogue start request"),
+        )
+        .await
+        .expect("main quest dialogue start response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        start_calls
+            .lock()
+            .expect("main quest dialogue start calls")
+            .as_slice(),
+        &[(3002_i64, Some("dlg-main-custom".to_string()))]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "dialogueState": {
+                    "dialogueId": "dlg-main-custom",
+                    "currentNodeId": "start",
+                    "currentNode": {
+                        "id": "start",
+                        "type": "npc",
+                        "text": "前往青云村。"
+                    },
+                    "selectedChoices": [],
+                    "isComplete": false,
+                    "pendingEffects": []
+                }
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn main_quest_dialogue_advance_route_preserves_send_result_shape() {
+    let advance_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_main_quest_dialogue_advance_calls(advance_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/main-quest/dialogue/advance")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("main quest dialogue advance request"),
+        )
+        .await
+        .expect("main quest dialogue advance response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        advance_calls
+            .lock()
+            .expect("main quest dialogue advance calls")
+            .as_slice(),
+        &[(9001_i64, 3002_i64)]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "dialogueState": {
+                    "dialogueId": "dlg-main-001",
+                    "currentNodeId": "start",
+                    "currentNode": {
+                        "id": "start",
+                        "type": "npc",
+                        "text": "前往青云村。"
+                    },
+                    "selectedChoices": [],
+                    "isComplete": false,
+                    "pendingEffects": []
+                },
+                "effectResults": []
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn main_quest_dialogue_choice_route_validates_and_forwards_choice_id() {
+    let choice_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_main_quest_dialogue_choice_calls(choice_calls.clone()),
+    ));
+
+    let invalid_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/main-quest/dialogue/choice")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"choiceId":"   "}"#))
+                .expect("main quest dialogue invalid choice request"),
+        )
+        .await
+        .expect("main quest dialogue invalid choice response");
+    let (invalid_status, invalid_json) = response_json(invalid_response).await;
+    assert_eq!(invalid_status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid_json,
+        serde_json::json!({
+            "success": false,
+            "message": "选项ID不能为空"
+        })
+    );
+    assert!(
+        choice_calls
+            .lock()
+            .expect("main quest dialogue choice calls after invalid request")
+            .is_empty()
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/main-quest/dialogue/choice")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"choiceId":" choice-1 "}"#))
+                .expect("main quest dialogue choice request"),
+        )
+        .await
+        .expect("main quest dialogue choice response");
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        choice_calls
+            .lock()
+            .expect("main quest dialogue choice calls")
+            .as_slice(),
+        &[(9001_i64, 3002_i64, "choice-1".to_string())]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "dialogueState": {
+                    "dialogueId": "dlg-main-001",
+                    "currentNodeId": "start",
+                    "currentNode": {
+                        "id": "start",
+                        "type": "npc",
+                        "text": "前往青云村。"
+                    },
+                    "selectedChoices": [],
+                    "isComplete": false,
+                    "pendingEffects": []
+                },
+                "effectResults": [
+                    {
+                        "type": "item",
+                        "itemDefId": "cons-001",
+                        "quantity": 1
+                    }
+                ]
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn main_quest_section_complete_route_preserves_send_result_shape() {
+    let complete_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_main_quest_section_complete_calls(complete_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/main-quest/section/complete")
+                .header("authorization", "Bearer game-token")
+                .body(Body::empty())
+                .expect("main quest section complete request"),
+        )
+        .await
+        .expect("main quest section complete response");
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        complete_calls
+            .lock()
+            .expect("main quest section complete calls")
+            .as_slice(),
+        &[(9001_i64, 3002_i64)]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "rewards": [
+                    {
+                        "type": "silver",
+                        "amount": 180
+                    },
+                    {
+                        "type": "item",
+                        "itemDefId": "cons-001",
+                        "quantity": 2
+                    }
+                ],
+                "nextSection": {
+                    "id": "section-1",
+                    "chapterId": "chapter-1",
+                    "sectionNum": 1,
+                    "name": "拜入山门",
+                    "description": "完成入门试炼",
+                    "brief": "去找长老",
+                    "npcId": "npc-1",
+                    "mapId": "map-1",
+                    "roomId": "room-1",
+                    "status": "completed",
+                    "objectives": [],
+                    "rewards": {},
+                    "isChapterFinal": false
+                },
+                "chapterCompleted": false
+            }
+        })
+    );
+}
+
 fn build_app_state<TAuth, TGame>(auth_services: TAuth, game_services: TGame) -> AppState
 where
     TAuth: AuthRouteServices + 'static,
@@ -907,6 +1167,10 @@ struct FakeGameServices {
     task_claim_calls: Arc<Mutex<Vec<(i64, i64, String)>>>,
     task_submit_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
     main_quest_track_calls: Arc<Mutex<Vec<(i64, bool)>>>,
+    main_quest_dialogue_start_calls: Arc<Mutex<Vec<(i64, Option<String>)>>>,
+    main_quest_dialogue_advance_calls: Arc<Mutex<Vec<(i64, i64)>>>,
+    main_quest_dialogue_choice_calls: Arc<Mutex<Vec<(i64, i64, String)>>>,
+    main_quest_section_complete_calls: Arc<Mutex<Vec<(i64, i64)>>>,
 }
 
 impl FakeGameServices {
@@ -1060,6 +1324,10 @@ impl FakeGameServices {
             task_claim_calls: Arc::new(Mutex::new(Vec::new())),
             task_submit_calls: Arc::new(Mutex::new(Vec::new())),
             main_quest_track_calls: Arc::new(Mutex::new(Vec::new())),
+            main_quest_dialogue_start_calls: Arc::new(Mutex::new(Vec::new())),
+            main_quest_dialogue_advance_calls: Arc::new(Mutex::new(Vec::new())),
+            main_quest_dialogue_choice_calls: Arc::new(Mutex::new(Vec::new())),
+            main_quest_section_complete_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1106,6 +1374,38 @@ impl FakeGameServices {
     fn with_main_quest_track_calls(track_calls: Arc<Mutex<Vec<(i64, bool)>>>) -> Self {
         let mut services = Self::new();
         services.main_quest_track_calls = track_calls;
+        services
+    }
+
+    fn with_main_quest_dialogue_start_calls(
+        start_calls: Arc<Mutex<Vec<(i64, Option<String>)>>>,
+    ) -> Self {
+        let mut services = Self::new();
+        services.main_quest_dialogue_start_calls = start_calls;
+        services
+    }
+
+    fn with_main_quest_dialogue_advance_calls(
+        advance_calls: Arc<Mutex<Vec<(i64, i64)>>>,
+    ) -> Self {
+        let mut services = Self::new();
+        services.main_quest_dialogue_advance_calls = advance_calls;
+        services
+    }
+
+    fn with_main_quest_dialogue_choice_calls(
+        choice_calls: Arc<Mutex<Vec<(i64, i64, String)>>>,
+    ) -> Self {
+        let mut services = Self::new();
+        services.main_quest_dialogue_choice_calls = choice_calls;
+        services
+    }
+
+    fn with_main_quest_section_complete_calls(
+        complete_calls: Arc<Mutex<Vec<(i64, i64)>>>,
+    ) -> Self {
+        let mut services = Self::new();
+        services.main_quest_section_complete_calls = complete_calls;
         services
     }
 }
@@ -1370,6 +1670,153 @@ impl GameRouteServices for FakeGameServices {
             })
         })
     }
+
+    fn start_main_quest_dialogue<'a>(
+        &'a self,
+        character_id: i64,
+        dialogue_id: Option<String>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.main_quest_dialogue_start_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record main quest dialogue start call")
+                .push((character_id, dialogue_id.clone()));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestDialogueActionDataView {
+                    dialogue_state: sample_dialogue_state(
+                        dialogue_id.unwrap_or_else(|| "dlg-main-001".to_string()),
+                    ),
+                    effect_results: None,
+                }),
+            })
+        })
+    }
+
+    fn advance_main_quest_dialogue<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.main_quest_dialogue_advance_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record main quest dialogue advance call")
+                .push((user_id, character_id));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestDialogueActionDataView {
+                    dialogue_state: sample_dialogue_state("dlg-main-001".to_string()),
+                    effect_results: Some(Vec::new()),
+                }),
+            })
+        })
+    }
+
+    fn choose_main_quest_dialogue<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        choice_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.main_quest_dialogue_choice_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record main quest dialogue choice call")
+                .push((user_id, character_id, choice_id));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestDialogueActionDataView {
+                    dialogue_state: sample_dialogue_state("dlg-main-001".to_string()),
+                    effect_results: Some(vec![serde_json::json!({
+                        "type": "item",
+                        "itemDefId": "cons-001",
+                        "quantity": 1
+                    })]),
+                }),
+            })
+        })
+    }
+
+    fn complete_main_quest_section<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestSectionCompleteDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.main_quest_section_complete_calls.clone();
+        let next_section = self.main_quest_sections.first().cloned();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record main quest section complete call")
+                .push((user_id, character_id));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestSectionCompleteDataView {
+                    rewards: vec![
+                        serde_json::json!({
+                            "type": "silver",
+                            "amount": 180
+                        }),
+                        serde_json::json!({
+                            "type": "item",
+                            "itemDefId": "cons-001",
+                            "quantity": 2
+                        }),
+                    ],
+                    next_section,
+                    chapter_completed: false,
+                }),
+            })
+        })
+    }
 }
 
 struct FakeGameSocketServices;
@@ -1407,6 +1854,21 @@ fn sample_character() -> CharacterBasicInfo {
         dungeon_no_stamina_cost: false,
         spirit_stones: 500,
         silver: 800,
+    }
+}
+
+fn sample_dialogue_state(dialogue_id: String) -> GameHomeDialogueStateView {
+    GameHomeDialogueStateView {
+        dialogue_id,
+        current_node_id: "start".to_string(),
+        current_node: Some(serde_json::json!({
+            "id": "start",
+            "type": "npc",
+            "text": "前往青云村。"
+        })),
+        selected_choices: Vec::new(),
+        is_complete: false,
+        pending_effects: Vec::new(),
     }
 }
 

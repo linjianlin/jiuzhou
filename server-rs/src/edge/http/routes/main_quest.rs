@@ -9,7 +9,10 @@ use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::require_authenticated_character_context;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, success, ServiceResultResponse};
-use crate::edge::http::routes::game::{GameHomeMainQuestChapterView, GameHomeMainQuestSectionView};
+use crate::edge::http::routes::game::{
+    GameHomeMainQuestChapterView, GameHomeMainQuestSectionView,
+    GameMainQuestDialogueActionDataView, GameMainQuestSectionCompleteDataView,
+};
 
 /**
  * main-quest 最小独立路由。
@@ -49,6 +52,18 @@ struct MainQuestTrackPayload {
     tracked: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MainQuestDialogueStartPayload {
+    dialogue_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MainQuestDialogueChoicePayload {
+    choice_id: Option<String>,
+}
+
 pub fn build_main_quest_router() -> Router<AppState> {
     Router::new()
         .route("/progress", get(main_quest_progress_handler))
@@ -57,6 +72,10 @@ pub fn build_main_quest_router() -> Router<AppState> {
             "/chapters/{chapter_id}/sections",
             get(main_quest_sections_handler),
         )
+        .route("/dialogue/start", post(main_quest_dialogue_start_handler))
+        .route("/dialogue/advance", post(main_quest_dialogue_advance_handler))
+        .route("/dialogue/choice", post(main_quest_dialogue_choice_handler))
+        .route("/section/complete", post(main_quest_section_complete_handler))
         .route("/track", post(main_quest_track_handler))
 }
 
@@ -128,4 +147,97 @@ async fn main_quest_sections_handler(
         .get_main_quest_sections(context.character.id, normalized_chapter_id)
         .await?;
     Ok(success(MainQuestSectionListView { sections }))
+}
+
+async fn main_quest_dialogue_start_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MainQuestDialogueStartPayload>,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let dialogue_id = payload
+        .dialogue_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let result = state
+        .game_services
+        .start_main_quest_dialogue(context.character.id, dialogue_id)
+        .await?;
+    Ok(main_quest_action_response(result))
+}
+
+async fn main_quest_dialogue_advance_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .game_services
+        .advance_main_quest_dialogue(context.user_id, context.character.id)
+        .await?;
+    Ok(main_quest_action_response(result))
+}
+
+async fn main_quest_dialogue_choice_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MainQuestDialogueChoicePayload>,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let choice_id = payload
+        .choice_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let Some(choice_id) = choice_id else {
+        return Err(BusinessError::new("选项ID不能为空"));
+    };
+    let result = state
+        .game_services
+        .choose_main_quest_dialogue(context.user_id, context.character.id, choice_id)
+        .await?;
+    Ok(main_quest_action_response(result))
+}
+
+async fn main_quest_section_complete_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, BusinessError> {
+    let context = match require_authenticated_character_context(&state, &headers).await {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .game_services
+        .complete_main_quest_section(context.user_id, context.character.id)
+        .await?;
+    Ok(main_quest_section_complete_response(result))
+}
+
+fn main_quest_action_response(
+    result: crate::edge::http::routes::game::GameActionResult<GameMainQuestDialogueActionDataView>,
+) -> Response {
+    service_result(ServiceResultResponse::new(
+        result.success,
+        Some(result.message),
+        result.data,
+    ))
+}
+
+fn main_quest_section_complete_response(
+    result: crate::edge::http::routes::game::GameActionResult<GameMainQuestSectionCompleteDataView>,
+) -> Response {
+    service_result(ServiceResultResponse::new(
+        result.success,
+        Some(result.message),
+        result.data,
+    ))
 }

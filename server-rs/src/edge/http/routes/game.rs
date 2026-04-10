@@ -333,6 +333,23 @@ pub struct GameMainQuestTrackDataView {
     pub tracked: bool,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameMainQuestDialogueActionDataView {
+    pub dialogue_state: GameHomeDialogueStateView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_results: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameMainQuestSectionCompleteDataView {
+    pub rewards: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_section: Option<GameHomeMainQuestSectionView>,
+    pub chapter_completed: bool,
+}
+
 pub trait GameRouteServices: Send + Sync {
     fn get_home_overview<'a>(
         &'a self,
@@ -454,6 +471,71 @@ pub trait GameRouteServices: Send + Sync {
         Box<
             dyn Future<Output = Result<GameActionResult<GameMainQuestTrackDataView>, BusinessError>>
                 + Send
+                + 'a,
+        >,
+    >;
+
+    fn start_main_quest_dialogue<'a>(
+        &'a self,
+        character_id: i64,
+        dialogue_id: Option<String>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn advance_main_quest_dialogue<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn choose_main_quest_dialogue<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        choice_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn complete_main_quest_section<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestSectionCompleteDataView>,
+                        BusinessError,
+                    >,
+                > + Send
                 + 'a,
         >,
     >;
@@ -697,6 +779,121 @@ impl GameRouteServices for NoopGameRouteServices {
             })
         })
     }
+
+    fn start_main_quest_dialogue<'a>(
+        &'a self,
+        _character_id: i64,
+        dialogue_id: Option<String>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestDialogueActionDataView {
+                    dialogue_state: sample_main_quest_dialogue_state(
+                        dialogue_id.unwrap_or_else(|| "dialogue-noop".to_string()),
+                    ),
+                    effect_results: None,
+                }),
+            })
+        })
+    }
+
+    fn advance_main_quest_dialogue<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestDialogueActionDataView {
+                    dialogue_state: sample_main_quest_dialogue_state("dialogue-noop".to_string()),
+                    effect_results: Some(Vec::new()),
+                }),
+            })
+        })
+    }
+
+    fn choose_main_quest_dialogue<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+        _choice_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestDialogueActionDataView {
+                    dialogue_state: sample_main_quest_dialogue_state("dialogue-noop".to_string()),
+                    effect_results: Some(Vec::new()),
+                }),
+            })
+        })
+    }
+
+    fn complete_main_quest_section<'a>(
+        &'a self,
+        _user_id: i64,
+        _character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestSectionCompleteDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameMainQuestSectionCompleteDataView {
+                    rewards: vec![serde_json::json!({
+                        "type": "silver",
+                        "amount": 100
+                    })],
+                    next_section: None,
+                    chapter_completed: false,
+                }),
+            })
+        })
+    }
 }
 
 pub fn build_game_router() -> Router<AppState> {
@@ -717,4 +914,19 @@ async fn home_overview_handler(
         .get_home_overview(context.user_id, context.character.id)
         .await?;
     Ok(success(overview))
+}
+
+fn sample_main_quest_dialogue_state(dialogue_id: String) -> GameHomeDialogueStateView {
+    GameHomeDialogueStateView {
+        dialogue_id,
+        current_node_id: "start".to_string(),
+        current_node: Some(serde_json::json!({
+            "id": "start",
+            "type": "npc",
+            "text": "noop",
+        })),
+        selected_choices: Vec::new(),
+        is_complete: false,
+        pending_effects: Vec::new(),
+    }
 }

@@ -13,6 +13,7 @@ use crate::application::idle::service::RustIdleRouteService;
 use crate::application::inventory::grant::{grant_items_to_bag, BagGrantEntry, BagGrantItemMeta};
 use crate::application::inventory::service::{InventoryLocation, RustInventoryReadService};
 use crate::application::realm::service::RustRealmRouteService;
+use crate::application::reward_payload::normalize_reward_payload;
 use crate::application::sign_in::service::RustSignInService;
 use crate::application::static_data::catalog::get_static_data_catalog;
 use crate::application::static_data::dungeon::{get_dungeon_static_catalog, DungeonListFilter};
@@ -23,6 +24,7 @@ use crate::bootstrap::app::SharedRuntimeServices;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::game::{
     GameActionResult, GameHomeAchievementView, GameHomeDialogueStateView,
+    GameMainQuestDialogueActionDataView,
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
@@ -30,7 +32,7 @@ use crate::edge::http::routes::game::{
     GameNpcTalkMainQuestOptionView, GameNpcTalkTaskOptionView, GameRouteServices,
     GameTaskClaimDataView, GameTaskClaimRewardView, GameTaskMutationDataView,
     GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
-    GameTaskTrackDataView,
+    GameTaskTrackDataView, GameMainQuestSectionCompleteDataView,
 };
 use crate::edge::http::routes::inventory::InventoryRouteServices;
 use crate::edge::http::routes::realm::RealmRouteServices;
@@ -154,6 +156,7 @@ struct MainQuestChapterSeed {
     description: Option<String>,
     background: Option<String>,
     min_realm: Option<String>,
+    chapter_rewards: Option<Value>,
     enabled: Option<bool>,
 }
 
@@ -224,6 +227,7 @@ struct TaskAuxiliaryCatalog {
     npc_talk_tree_id_by_npc_id: HashMap<String, String>,
     talk_tree_lines_by_id: HashMap<String, Vec<String>>,
     dialogue_preview_lines_by_id: HashMap<String, Vec<String>>,
+    dialogue_by_id: HashMap<String, DialogueSeed>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -256,19 +260,45 @@ struct DialogueSeedFile {
     dialogues: Vec<DialogueSeed>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 struct DialogueSeed {
     id: String,
+    name: Option<String>,
     #[serde(default)]
     nodes: Vec<DialogueNodeSeed>,
     enabled: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 struct DialogueNodeSeed {
+    id: String,
     #[serde(rename = "type")]
     node_type: Option<String>,
+    speaker: Option<String>,
     text: Option<String>,
+    emotion: Option<String>,
+    #[serde(default)]
+    choices: Vec<DialogueChoiceSeed>,
+    next: Option<String>,
+    #[serde(default)]
+    effects: Vec<DialogueEffectSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+struct DialogueChoiceSeed {
+    id: String,
+    text: Option<String>,
+    next: Option<String>,
+    condition: Option<Value>,
+    #[serde(default)]
+    effects: Vec<DialogueEffectSeed>,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+struct DialogueEffectSeed {
+    #[serde(rename = "type")]
+    effect_type: Option<String>,
+    params: Option<Value>,
 }
 
 #[derive(Debug, Default)]
@@ -1785,6 +1815,606 @@ impl RustGameRouteService {
         })
     }
 
+    async fn start_main_quest_dialogue_impl(
+        &self,
+        character_id: i64,
+        dialogue_id: Option<String>,
+    ) -> Result<GameActionResult<GameMainQuestDialogueActionDataView>, BusinessError> {
+        if character_id <= 0 {
+            return Ok(main_quest_dialogue_failure("角色不存在"));
+        }
+
+        let catalog = main_quest_catalog()?;
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        let _ = self.load_main_quest_progress(character_id).await?;
+
+        let progress_row = sqlx::query(
+            r#"
+            SELECT current_section_id, section_status, dialogue_state
+            FROM character_main_quest_progress
+            WHERE character_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        let Some(progress_row) = progress_row else {
+            return Ok(main_quest_dialogue_failure("主线进度不存在"));
+        };
+
+        let current_section_id = progress_row
+            .try_get::<Option<String>, _>("current_section_id")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let section_status = progress_row
+            .try_get::<Option<String>, _>("section_status")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "not_started".to_string());
+        let dialogue_state = parse_dialogue_state(
+            progress_row.try_get::<Option<Value>, _>("dialogue_state").ok().flatten(),
+        );
+        if section_status == "dialogue" {
+            if let Some(dialogue_state) = dialogue_state {
+                if !dialogue_state.is_complete {
+                    return Ok(main_quest_dialogue_success(
+                        dialogue_state,
+                        None,
+                    ));
+                }
+            }
+        }
+
+        let resolved_dialogue_id = dialogue_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                resolve_main_quest_dialogue_id(
+                    catalog,
+                    current_section_id.as_str(),
+                    section_status.as_str(),
+                )
+            });
+        let Some(resolved_dialogue_id) = resolved_dialogue_id else {
+            return Ok(main_quest_dialogue_failure("没有可用的对话"));
+        };
+
+        let Some(dialogue) = auxiliary_catalog.dialogue_by_id.get(resolved_dialogue_id.as_str()) else {
+            return Ok(main_quest_dialogue_failure("对话不存在"));
+        };
+
+        let dialogue_state = build_dialogue_state_from_seed(dialogue);
+        sqlx::query(
+            r#"
+            UPDATE character_main_quest_progress
+            SET section_status = CASE WHEN section_status = 'not_started' THEN 'dialogue' ELSE section_status END,
+                dialogue_state = $2::jsonb,
+                updated_at = NOW()
+            WHERE character_id = $1
+            "#,
+        )
+        .bind(character_id)
+        .bind(build_dialogue_state_value(&dialogue_state))
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(main_quest_dialogue_success(dialogue_state, None))
+    }
+
+    async fn advance_main_quest_dialogue_impl(
+        &self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Result<GameActionResult<GameMainQuestDialogueActionDataView>, BusinessError> {
+        if user_id <= 0 {
+            return Ok(main_quest_dialogue_failure("未登录"));
+        }
+        if character_id <= 0 {
+            return Ok(main_quest_dialogue_failure("角色不存在"));
+        }
+
+        let catalog = main_quest_catalog()?;
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(internal_sql_business_error)?;
+        let progress_row = sqlx::query(
+            r#"
+            SELECT dialogue_state, current_section_id, section_status
+            FROM character_main_quest_progress
+            WHERE character_id = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        let Some(progress_row) = progress_row else {
+            return Ok(main_quest_dialogue_failure("主线进度不存在"));
+        };
+
+        let section_id = progress_row
+            .try_get::<Option<String>, _>("current_section_id")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let section_status = progress_row
+            .try_get::<Option<String>, _>("section_status")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "not_started".to_string());
+        let mut dialogue_state = parse_dialogue_state(
+            progress_row.try_get::<Option<Value>, _>("dialogue_state").ok().flatten(),
+        );
+        let mut dialogue_id = dialogue_state.as_ref().map(|value| value.dialogue_id.clone());
+
+        if dialogue_id.is_none() {
+            dialogue_id = resolve_main_quest_dialogue_id(catalog, section_id.as_str(), section_status.as_str());
+            let Some(resolved_dialogue_id) = dialogue_id.clone() else {
+                return Ok(main_quest_dialogue_failure("没有进行中的对话"));
+            };
+            let Some(dialogue) = auxiliary_catalog.dialogue_by_id.get(resolved_dialogue_id.as_str()) else {
+                return Ok(main_quest_dialogue_failure("对话不存在"));
+            };
+            dialogue_state = Some(build_dialogue_state_from_seed(dialogue));
+        }
+
+        let Some(dialogue_id) = dialogue_id else {
+            return Ok(main_quest_dialogue_failure("没有进行中的对话"));
+        };
+        let Some(dialogue) = auxiliary_catalog.dialogue_by_id.get(dialogue_id.as_str()) else {
+            return Ok(main_quest_dialogue_failure("对话不存在"));
+        };
+        let Some(mut current_state) = dialogue_state else {
+            return Ok(main_quest_dialogue_failure("没有进行中的对话"));
+        };
+
+        let effect_results = apply_dialogue_effects_tx(
+            &mut transaction,
+            user_id,
+            character_id,
+            &current_state.pending_effects,
+        )
+        .await?;
+        current_state.pending_effects = Vec::new();
+
+        let Some(current_node) = find_dialogue_node(dialogue, current_state.current_node_id.as_str()) else {
+            return Ok(main_quest_dialogue_failure("对话节点不存在"));
+        };
+        if current_node.node_type.as_deref() == Some("choice") {
+            return Ok(main_quest_dialogue_failure("请选择选项"));
+        }
+
+        let next_node_id = current_node
+            .next
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string);
+        if next_node_id.is_none() {
+            let mut finished_state = current_state.clone();
+            finished_state.current_node = Some(dialogue_node_to_value(&current_node));
+            finished_state.is_complete = true;
+            let next_status =
+                resolve_dialogue_completion_section_status(catalog, section_id.as_str());
+            persist_dialogue_completion_state_tx(
+                &mut transaction,
+                character_id,
+                &finished_state,
+                next_status.as_str(),
+            )
+            .await?;
+            transaction
+                .commit()
+                .await
+                .map_err(internal_sql_business_error)?;
+            return Ok(main_quest_dialogue_success(
+                finished_state,
+                Some(effect_results),
+            ));
+        }
+
+        let next_node_id = next_node_id.unwrap_or_default();
+        let Some(next_node) = find_dialogue_node(dialogue, next_node_id.as_str()) else {
+            return Ok(main_quest_dialogue_failure(format!(
+                "无效的对话节点: {next_node_id}"
+            )));
+        };
+        let next_state = persist_entered_dialogue_node_tx(
+            &mut transaction,
+            catalog,
+            character_id,
+            section_id.as_str(),
+            dialogue_id.as_str(),
+            next_node,
+            current_state.selected_choices,
+        )
+        .await?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+        Ok(main_quest_dialogue_success(next_state, Some(effect_results)))
+    }
+
+    async fn choose_main_quest_dialogue_impl(
+        &self,
+        user_id: i64,
+        character_id: i64,
+        choice_id: String,
+    ) -> Result<GameActionResult<GameMainQuestDialogueActionDataView>, BusinessError> {
+        if user_id <= 0 {
+            return Ok(main_quest_dialogue_failure("未登录"));
+        }
+        if character_id <= 0 {
+            return Ok(main_quest_dialogue_failure("角色不存在"));
+        }
+        let normalized_choice_id = choice_id.trim().to_string();
+        if normalized_choice_id.is_empty() {
+            return Ok(main_quest_dialogue_failure("选项ID不能为空"));
+        }
+
+        let catalog = main_quest_catalog()?;
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(internal_sql_business_error)?;
+        let progress_row = sqlx::query(
+            r#"
+            SELECT dialogue_state, current_section_id
+            FROM character_main_quest_progress
+            WHERE character_id = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        let Some(progress_row) = progress_row else {
+            return Ok(main_quest_dialogue_failure("主线进度不存在"));
+        };
+
+        let section_id = progress_row
+            .try_get::<Option<String>, _>("current_section_id")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let Some(current_state) = parse_dialogue_state(
+            progress_row.try_get::<Option<Value>, _>("dialogue_state").ok().flatten(),
+        ) else {
+            return Ok(main_quest_dialogue_failure("没有进行中的对话"));
+        };
+        let Some(dialogue) = auxiliary_catalog
+            .dialogue_by_id
+            .get(current_state.dialogue_id.as_str())
+        else {
+            return Ok(main_quest_dialogue_failure("对话不存在"));
+        };
+
+        let Some((next_node_id, choice_effects)) = resolve_dialogue_choice(
+            dialogue,
+            current_state.current_node_id.as_str(),
+            normalized_choice_id.as_str(),
+        ) else {
+            return Ok(main_quest_dialogue_failure("无效的选项"));
+        };
+
+        let effect_results = apply_dialogue_effects_tx(
+            &mut transaction,
+            user_id,
+            character_id,
+            &dialogue_effects_to_values(&choice_effects),
+        )
+        .await?;
+        let Some(next_node) = find_dialogue_node(dialogue, next_node_id.as_str()) else {
+            return Ok(main_quest_dialogue_failure(format!(
+                "无效的对话节点: {next_node_id}"
+            )));
+        };
+        let mut selected_choices = current_state.selected_choices;
+        selected_choices.push(normalized_choice_id);
+        let next_state = persist_entered_dialogue_node_tx(
+            &mut transaction,
+            catalog,
+            character_id,
+            section_id.as_str(),
+            current_state.dialogue_id.as_str(),
+            next_node,
+            selected_choices,
+        )
+        .await?;
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+        Ok(main_quest_dialogue_success(next_state, Some(effect_results)))
+    }
+
+    async fn complete_main_quest_section_impl(
+        &self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Result<GameActionResult<GameMainQuestSectionCompleteDataView>, BusinessError> {
+        if user_id <= 0 {
+            return Ok(GameActionResult {
+                success: false,
+                message: "未登录".to_string(),
+                data: None,
+            });
+        }
+        if character_id <= 0 {
+            return Ok(GameActionResult {
+                success: false,
+                message: "角色不存在".to_string(),
+                data: None,
+            });
+        }
+
+        let catalog = main_quest_catalog()?;
+        let auxiliary_catalog = task_auxiliary_catalog()?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(internal_sql_business_error)?;
+        let progress_row = sqlx::query(
+            r#"
+            SELECT current_chapter_id, current_section_id, section_status, completed_chapters, completed_sections
+            FROM character_main_quest_progress
+            WHERE character_id = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        let Some(progress_row) = progress_row else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "主线进度不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let section_status = progress_row
+            .try_get::<Option<String>, _>("section_status")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "not_started".to_string());
+        if section_status != "turnin" {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务未完成，无法领取奖励".to_string(),
+                data: None,
+            });
+        }
+
+        let current_section_id = progress_row
+            .try_get::<Option<String>, _>("current_section_id")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if current_section_id.trim().is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务节不存在".to_string(),
+                data: None,
+            });
+        }
+        let Some(section) = catalog.section_by_id.get(current_section_id.as_str()) else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务节不存在".to_string(),
+                data: None,
+            });
+        };
+        let chapter_id = section.chapter_id.trim().to_string();
+        if chapter_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务节不存在".to_string(),
+                data: None,
+            });
+        }
+
+        let mut rewards = apply_main_quest_reward_payload_tx(
+            &mut transaction,
+            user_id,
+            character_id,
+            section.rewards.clone(),
+            false,
+            auxiliary_catalog,
+        )
+        .await?;
+
+        let mut completed_sections = value_to_string_vec(
+            progress_row
+                .try_get::<Option<Value>, _>("completed_sections")
+                .ok()
+                .flatten(),
+        );
+        if !completed_sections.iter().any(|value| value == &section.id) {
+            completed_sections.push(section.id.clone());
+        }
+        let mut completed_chapters = value_to_string_vec(
+            progress_row
+                .try_get::<Option<Value>, _>("completed_chapters")
+                .ok()
+                .flatten(),
+        );
+
+        let mut chapter_completed = false;
+        let mut next_section = None;
+
+        if section.is_chapter_final == Some(true) {
+            chapter_completed = true;
+            if !completed_chapters.iter().any(|value| value == &chapter_id) {
+                completed_chapters.push(chapter_id.clone());
+            }
+            if let Some(chapter) = catalog.chapter_by_id.get(chapter_id.as_str()) {
+                let mut chapter_rewards = apply_main_quest_reward_payload_tx(
+                    &mut transaction,
+                    user_id,
+                    character_id,
+                    chapter.chapter_rewards.clone(),
+                    true,
+                    auxiliary_catalog,
+                )
+                .await?;
+                rewards.append(&mut chapter_rewards);
+            }
+
+            let current_chapter_num = catalog
+                .chapter_by_id
+                .get(chapter_id.as_str())
+                .map(|entry| entry.chapter_num)
+                .unwrap_or(0);
+            let next_section_seed = catalog
+                .sorted_section_ids
+                .iter()
+                .filter_map(|section_id| catalog.section_by_id.get(section_id))
+                .find(|entry| {
+                    catalog
+                        .chapter_by_id
+                        .get(entry.chapter_id.as_str())
+                        .map(|chapter| chapter.chapter_num > current_chapter_num)
+                        .unwrap_or(false)
+                });
+
+            if let Some(next_section_seed) = next_section_seed {
+                sqlx::query(
+                    r#"
+                    UPDATE character_main_quest_progress
+                    SET current_chapter_id = $2,
+                        current_section_id = $3,
+                        section_status = 'not_started',
+                        objectives_progress = '{}'::jsonb,
+                        dialogue_state = '{}'::jsonb,
+                        completed_chapters = $4::jsonb,
+                        completed_sections = $5::jsonb,
+                        updated_at = NOW()
+                    WHERE character_id = $1
+                    "#,
+                )
+                .bind(character_id)
+                .bind(&next_section_seed.chapter_id)
+                .bind(&next_section_seed.id)
+                .bind(Value::Array(
+                    completed_chapters
+                        .iter()
+                        .cloned()
+                        .map(Value::from)
+                        .collect(),
+                ))
+                .bind(Value::Array(
+                    completed_sections
+                        .iter()
+                        .cloned()
+                        .map(Value::from)
+                        .collect(),
+                ))
+                .execute(&mut *transaction)
+                .await
+                .map_err(internal_sql_business_error)?;
+            } else {
+                sqlx::query(
+                    r#"
+                    UPDATE character_main_quest_progress
+                    SET section_status = 'completed',
+                        completed_chapters = $2::jsonb,
+                        completed_sections = $3::jsonb,
+                        updated_at = NOW()
+                    WHERE character_id = $1
+                    "#,
+                )
+                .bind(character_id)
+                .bind(Value::Array(
+                    completed_chapters
+                        .iter()
+                        .cloned()
+                        .map(Value::from)
+                        .collect(),
+                ))
+                .bind(Value::Array(
+                    completed_sections
+                        .iter()
+                        .cloned()
+                        .map(Value::from)
+                        .collect(),
+                ))
+                .execute(&mut *transaction)
+                .await
+                .map_err(internal_sql_business_error)?;
+            }
+        } else {
+            let next_section_seed = catalog
+                .sorted_section_ids
+                .iter()
+                .filter_map(|section_id| catalog.section_by_id.get(section_id))
+                .find(|entry| {
+                    entry.chapter_id == chapter_id && entry.section_num > section.section_num
+                });
+
+            if let Some(next_section_seed) = next_section_seed {
+                sqlx::query(
+                    r#"
+                    UPDATE character_main_quest_progress
+                    SET current_section_id = $2,
+                        section_status = 'not_started',
+                        objectives_progress = '{}'::jsonb,
+                        dialogue_state = '{}'::jsonb,
+                        completed_sections = $3::jsonb,
+                        updated_at = NOW()
+                    WHERE character_id = $1
+                    "#,
+                )
+                .bind(character_id)
+                .bind(&next_section_seed.id)
+                .bind(Value::Array(
+                    completed_sections
+                        .iter()
+                        .cloned()
+                        .map(Value::from)
+                        .collect(),
+                ))
+                .execute(&mut *transaction)
+                .await
+                .map_err(internal_sql_business_error)?;
+                next_section = Some(build_main_quest_next_section_view(
+                    next_section_seed,
+                    auxiliary_catalog,
+                )?);
+            }
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_sql_business_error)?;
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameMainQuestSectionCompleteDataView {
+                rewards,
+                next_section,
+                chapter_completed,
+            }),
+        })
+    }
+
     async fn load_character_realm_state(
         &self,
         character_id: i64,
@@ -2077,6 +2707,91 @@ impl GameRouteServices for RustGameRouteService {
                 .await
         })
     }
+
+    fn start_main_quest_dialogue<'a>(
+        &'a self,
+        character_id: i64,
+        dialogue_id: Option<String>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.start_main_quest_dialogue_impl(character_id, dialogue_id)
+                .await
+        })
+    }
+
+    fn advance_main_quest_dialogue<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.advance_main_quest_dialogue_impl(user_id, character_id)
+                .await
+        })
+    }
+
+    fn choose_main_quest_dialogue<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+        choice_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestDialogueActionDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.choose_main_quest_dialogue_impl(user_id, character_id, choice_id)
+                .await
+        })
+    }
+
+    fn complete_main_quest_section<'a>(
+        &'a self,
+        user_id: i64,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        GameActionResult<GameMainQuestSectionCompleteDataView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.complete_main_quest_section_impl(user_id, character_id)
+                .await
+        })
+    }
 }
 
 fn task_auxiliary_catalog() -> Result<&'static TaskAuxiliaryCatalog, BusinessError> {
@@ -2107,6 +2822,184 @@ fn extract_dialogue_preview_lines(nodes: &[DialogueNodeSeed]) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(|text| vec![text.to_string()])
         .unwrap_or_default()
+}
+
+fn empty_dialogue_node(id: String) -> DialogueNodeSeed {
+    DialogueNodeSeed {
+        id,
+        node_type: None,
+        speaker: None,
+        text: None,
+        emotion: None,
+        choices: Vec::new(),
+        next: None,
+        effects: Vec::new(),
+    }
+}
+
+fn find_dialogue_node(dialogue: &DialogueSeed, node_id: &str) -> Option<DialogueNodeSeed> {
+    let normalized_node_id = node_id.trim();
+    if normalized_node_id.is_empty() {
+        return None;
+    }
+    dialogue
+        .nodes
+        .iter()
+        .find(|node| node.id.trim() == normalized_node_id)
+        .cloned()
+}
+
+fn build_dialogue_state_from_seed(dialogue: &DialogueSeed) -> GameHomeDialogueStateView {
+    let start_node = dialogue
+        .nodes
+        .iter()
+        .find(|node| node.id.trim() == "start")
+        .cloned()
+        .or_else(|| dialogue.nodes.first().cloned());
+    let pending_effects = start_node
+        .as_ref()
+        .map(|node| dialogue_effects_to_values(&node.effects))
+        .unwrap_or_default();
+    GameHomeDialogueStateView {
+        dialogue_id: dialogue.id.clone(),
+        current_node_id: start_node
+            .as_ref()
+            .map(|node| node.id.clone())
+            .unwrap_or_default(),
+        current_node: start_node
+            .as_ref()
+            .map(dialogue_node_to_value),
+        selected_choices: Vec::new(),
+        is_complete: start_node.is_none(),
+        pending_effects,
+    }
+}
+
+fn build_dialogue_state_value(state: &GameHomeDialogueStateView) -> Value {
+    serde_json::json!({
+        "dialogueId": state.dialogue_id,
+        "currentNodeId": state.current_node_id,
+        "currentNode": state.current_node,
+        "selectedChoices": state.selected_choices,
+        "isComplete": state.is_complete,
+        "pendingEffects": state.pending_effects,
+    })
+}
+
+fn dialogue_node_to_value(node: &DialogueNodeSeed) -> Value {
+    serde_json::to_value(node).unwrap_or(Value::Null)
+}
+
+fn dialogue_effects_to_values(effects: &[DialogueEffectSeed]) -> Vec<Value> {
+    effects
+        .iter()
+        .filter_map(|effect| serde_json::to_value(effect).ok())
+        .collect()
+}
+
+fn parse_dialogue_effects(values: &[Value]) -> Vec<DialogueEffectSeed> {
+    values
+        .iter()
+        .filter_map(|value| serde_json::from_value::<DialogueEffectSeed>(value.clone()).ok())
+        .collect()
+}
+
+fn resolve_dialogue_completion_section_status(
+    catalog: &MainQuestCatalog,
+    section_id: &str,
+) -> String {
+    let normalized_section_id = section_id.trim();
+    if normalized_section_id.is_empty() {
+        return "turnin".to_string();
+    }
+    let Some(section) = catalog.section_by_id.get(normalized_section_id) else {
+        return "turnin".to_string();
+    };
+    if section.objectives.is_empty() {
+        "turnin".to_string()
+    } else {
+        "objectives".to_string()
+    }
+}
+
+fn should_auto_complete_entered_dialogue_node(node: &DialogueNodeSeed) -> bool {
+    if node.node_type.as_deref() == Some("choice") {
+        return false;
+    }
+    if !node.effects.is_empty() {
+        return false;
+    }
+    node.next
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+}
+
+fn resolve_main_quest_dialogue_id(
+    catalog: &MainQuestCatalog,
+    section_id: &str,
+    section_status: &str,
+) -> Option<String> {
+    let normalized_section_id = section_id.trim();
+    if normalized_section_id.is_empty() {
+        return None;
+    }
+    let section = catalog.section_by_id.get(normalized_section_id)?;
+    if matches!(section_status, "turnin" | "completed") {
+        return normalize_optional_text(section.dialogue_id.as_deref());
+    }
+    normalize_optional_text(section.dialogue_id.as_deref())
+}
+
+fn resolve_dialogue_choice(
+    dialogue: &DialogueSeed,
+    current_node_id: &str,
+    choice_id: &str,
+) -> Option<(String, Vec<DialogueEffectSeed>)> {
+    let current_node = find_dialogue_node(dialogue, current_node_id)?;
+    if current_node.node_type.as_deref() != Some("choice") {
+        return None;
+    }
+    let normalized_choice_id = choice_id.trim();
+    if normalized_choice_id.is_empty() {
+        return None;
+    }
+    let choice = current_node
+        .choices
+        .iter()
+        .find(|choice| choice.id.trim() == normalized_choice_id)?;
+    let next_node_id = choice
+        .next
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    Some((next_node_id, choice.effects.clone()))
+}
+
+fn main_quest_dialogue_failure(
+    message: impl Into<String>,
+) -> GameActionResult<GameMainQuestDialogueActionDataView> {
+    GameActionResult {
+        success: false,
+        message: message.into(),
+        data: None,
+    }
+}
+
+fn main_quest_dialogue_success(
+    dialogue_state: GameHomeDialogueStateView,
+    effect_results: Option<Vec<Value>>,
+) -> GameActionResult<GameMainQuestDialogueActionDataView> {
+    GameActionResult {
+        success: true,
+        message: "ok".to_string(),
+        data: Some(GameMainQuestDialogueActionDataView {
+            dialogue_state,
+            effect_results,
+        }),
+    }
 }
 
 fn resolve_npc_talk_greeting_lines(
@@ -2275,6 +3168,7 @@ fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared:
         .collect::<HashMap<_, _>>();
 
     let mut dialogue_preview_lines_by_id = HashMap::new();
+    let mut dialogue_by_id = HashMap::new();
     for file_name in list_seed_files_with_prefix("dialogue_main_chapter")? {
         let file = read_seed_json::<DialogueSeedFile>(file_name.as_str())?;
         for dialogue in file.dialogues {
@@ -2288,6 +3182,9 @@ fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared:
             dialogue_preview_lines_by_id
                 .entry(dialogue_id.to_string())
                 .or_insert_with(|| extract_dialogue_preview_lines(&dialogue.nodes));
+            dialogue_by_id
+                .entry(dialogue_id.to_string())
+                .or_insert(dialogue);
         }
     }
 
@@ -2301,6 +3198,7 @@ fn build_task_auxiliary_catalog() -> Result<TaskAuxiliaryCatalog, crate::shared:
         npc_talk_tree_id_by_npc_id,
         talk_tree_lines_by_id,
         dialogue_preview_lines_by_id,
+        dialogue_by_id,
     })
 }
 
@@ -2569,6 +3467,444 @@ fn all_main_quest_objectives_done(objectives: &[MainQuestObjectiveSeed], progres
     }
 
     has_objective
+}
+
+async fn persist_dialogue_completion_state_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    dialogue_state: &GameHomeDialogueStateView,
+    next_section_status: &str,
+) -> Result<(), BusinessError> {
+    sqlx::query(
+        r#"
+        UPDATE character_main_quest_progress
+        SET dialogue_state = $2::jsonb,
+            section_status = $3,
+            updated_at = NOW()
+        WHERE character_id = $1
+        "#,
+    )
+    .bind(character_id)
+    .bind(build_dialogue_state_value(dialogue_state))
+    .bind(next_section_status)
+    .execute(&mut **transaction)
+    .await
+    .map_err(internal_sql_business_error)?;
+    Ok(())
+}
+
+async fn persist_entered_dialogue_node_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    catalog: &MainQuestCatalog,
+    character_id: i64,
+    section_id: &str,
+    dialogue_id: &str,
+    next_node: DialogueNodeSeed,
+    selected_choices: Vec<String>,
+) -> Result<GameHomeDialogueStateView, BusinessError> {
+    let auto_complete = should_auto_complete_entered_dialogue_node(&next_node);
+    let dialogue_state = GameHomeDialogueStateView {
+        dialogue_id: dialogue_id.to_string(),
+        current_node_id: next_node.id.clone(),
+        current_node: Some(dialogue_node_to_value(&next_node)),
+        selected_choices,
+        is_complete: auto_complete,
+        pending_effects: if auto_complete {
+            Vec::new()
+        } else {
+            dialogue_effects_to_values(&next_node.effects)
+        },
+    };
+    let next_section_status = if auto_complete {
+        resolve_dialogue_completion_section_status(catalog, section_id)
+    } else {
+        "dialogue".to_string()
+    };
+    persist_dialogue_completion_state_tx(
+        transaction,
+        character_id,
+        &dialogue_state,
+        next_section_status.as_str(),
+    )
+    .await?;
+    Ok(dialogue_state)
+}
+
+async fn apply_dialogue_effects_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+    character_id: i64,
+    effects: &[Value],
+) -> Result<Vec<Value>, BusinessError> {
+    let mut effect_results = Vec::new();
+    let parsed_effects = parse_dialogue_effects(effects);
+    if parsed_effects.is_empty() {
+        return Ok(effect_results);
+    }
+
+    let item_grant_meta_by_id = task_auxiliary_catalog()?.item_grant_meta_by_id.clone();
+
+    for effect in parsed_effects {
+        let effect_type = effect
+            .effect_type
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default();
+        match effect_type {
+            "give_item" => {
+                let params = effect.params.as_ref().and_then(Value::as_object);
+                let item_def_id = params
+                    .and_then(|value| value.get("item_def_id"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default();
+                let quantity = params
+                    .and_then(|value| value.get("quantity"))
+                    .and_then(Value::as_i64)
+                    .unwrap_or(1)
+                    .max(1);
+                if item_def_id.is_empty() {
+                    continue;
+                }
+                let entries = vec![BagGrantEntry {
+                    item_def_id: item_def_id.to_string(),
+                    qty: quantity,
+                }];
+                grant_items_to_bag(
+                    transaction,
+                    user_id,
+                    character_id,
+                    "dialogue",
+                    &entries,
+                    &item_grant_meta_by_id,
+                )
+                .await?;
+                effect_results.push(serde_json::json!({
+                    "type": "item",
+                    "itemDefId": item_def_id,
+                    "quantity": quantity,
+                }));
+            }
+            "give_technique" => {
+                let params = effect.params.as_ref().and_then(Value::as_object);
+                let technique_id = params
+                    .and_then(|value| value.get("technique_id"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .unwrap_or_default();
+                if technique_id.is_empty() {
+                    continue;
+                }
+                let exists = sqlx::query_scalar::<_, i64>(
+                    r#"
+                    SELECT COUNT(*)::bigint
+                    FROM character_technique
+                    WHERE character_id = $1
+                      AND technique_id = $2
+                    "#,
+                )
+                .bind(character_id)
+                .bind(technique_id)
+                .fetch_one(&mut **transaction)
+                .await
+                .map_err(internal_sql_business_error)?;
+                if exists == 0 {
+                    sqlx::query(
+                        r#"
+                        INSERT INTO character_technique (
+                          character_id,
+                          technique_id,
+                          current_layer,
+                          acquired_at
+                        ) VALUES ($1, $2, 1, NOW())
+                        "#,
+                    )
+                    .bind(character_id)
+                    .bind(technique_id)
+                    .execute(&mut **transaction)
+                    .await
+                    .map_err(internal_sql_business_error)?;
+                    effect_results.push(serde_json::json!({
+                        "type": "technique",
+                        "techniqueId": technique_id,
+                    }));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(effect_results)
+}
+
+fn build_main_quest_next_section_view(
+    section: &MainQuestSectionSeed,
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+) -> Result<GameHomeMainQuestSectionView, BusinessError> {
+    Ok(GameHomeMainQuestSectionView {
+        id: section.id.clone(),
+        chapter_id: Some(section.chapter_id.clone()),
+        section_num: section.section_num,
+        name: section.name.clone(),
+        description: section.description.clone(),
+        brief: section.brief.clone(),
+        npc_id: section.npc_id.clone(),
+        map_id: section.map_id.clone(),
+        room_id: section.room_id.clone(),
+        status: "not_started".to_string(),
+        objectives: Vec::new(),
+        rewards: build_decorated_main_quest_rewards(section.rewards.clone(), auxiliary_catalog)?,
+        is_chapter_final: section.is_chapter_final == Some(true),
+    })
+}
+
+fn build_decorated_main_quest_rewards(
+    raw_rewards: Option<Value>,
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+) -> Result<Value, BusinessError> {
+    let mut rewards = raw_rewards
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let payload = normalize_reward_payload(Some(Value::Object(rewards.clone())));
+    let static_catalog = get_static_data_catalog().map_err(internal_business_error)?;
+
+    if !payload.items.is_empty() {
+        rewards.insert(
+            "items_detail".to_string(),
+            Value::Array(
+                payload
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let meta = auxiliary_catalog.item_meta_by_id.get(item.item_def_id.as_str());
+                        serde_json::json!({
+                            "item_def_id": item.item_def_id,
+                            "quantity": item.quantity,
+                            "name": meta
+                                .map(|entry| entry.name.clone())
+                                .unwrap_or_else(|| item.item_def_id.clone()),
+                            "icon": meta.and_then(|entry| entry.icon.clone()),
+                        })
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    if !payload.techniques.is_empty() {
+        rewards.insert(
+            "techniques_detail".to_string(),
+            Value::Array(
+                payload
+                    .techniques
+                    .iter()
+                    .map(|technique_id| {
+                        let technique_meta = static_catalog
+                            .technique_detail(technique_id.as_str())
+                            .map(|detail| (&detail.technique.name, detail.technique.icon.clone()));
+                        let technique_name = technique_meta
+                            .as_ref()
+                            .map(|entry| entry.0.clone())
+                            .unwrap_or_else(|| technique_id.clone());
+                        let technique_icon =
+                            technique_meta.as_ref().and_then(|entry| entry.1.clone());
+                        serde_json::json!({
+                            "id": technique_id,
+                            "name": technique_name,
+                            "icon": technique_icon,
+                        })
+                    })
+                    .collect(),
+            ),
+        );
+    }
+
+    Ok(Value::Object(rewards))
+}
+
+async fn apply_main_quest_reward_payload_tx(
+    transaction: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+    character_id: i64,
+    raw_rewards: Option<Value>,
+    chapter_reward: bool,
+    auxiliary_catalog: &TaskAuxiliaryCatalog,
+) -> Result<Vec<Value>, BusinessError> {
+    let payload = normalize_reward_payload(raw_rewards);
+    let mut reward_results = Vec::new();
+
+    if payload.exp > 0 || payload.silver > 0 || payload.spirit_stones > 0 {
+        sqlx::query(
+            r#"
+            UPDATE characters
+            SET exp = COALESCE(exp, 0) + $2,
+                silver = COALESCE(silver, 0) + $3,
+                spirit_stones = COALESCE(spirit_stones, 0) + $4,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(character_id)
+        .bind(payload.exp)
+        .bind(payload.silver)
+        .bind(payload.spirit_stones)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+    }
+    if payload.exp > 0 {
+        reward_results.push(serde_json::json!({
+            "type": if chapter_reward { "chapter_exp" } else { "exp" },
+            "amount": payload.exp,
+        }));
+    }
+    if payload.silver > 0 {
+        reward_results.push(serde_json::json!({
+            "type": if chapter_reward { "chapter_silver" } else { "silver" },
+            "amount": payload.silver,
+        }));
+    }
+    if payload.spirit_stones > 0 {
+        reward_results.push(serde_json::json!({
+            "type": if chapter_reward { "chapter_spirit_stones" } else { "spirit_stones" },
+            "amount": payload.spirit_stones,
+        }));
+    }
+
+    let item_entries = payload
+        .items
+        .iter()
+        .map(|item| BagGrantEntry {
+            item_def_id: item.item_def_id.clone(),
+            qty: item.quantity,
+        })
+        .collect::<Vec<_>>();
+    if !item_entries.is_empty() {
+        grant_items_to_bag(
+            transaction,
+            user_id,
+            character_id,
+            if chapter_reward {
+                "main_quest_chapter_reward"
+            } else {
+                "main_quest_section_reward"
+            },
+            &item_entries,
+            &auxiliary_catalog.item_grant_meta_by_id,
+        )
+        .await?;
+    }
+    for item in &payload.items {
+        let meta = auxiliary_catalog.item_meta_by_id.get(item.item_def_id.as_str());
+        reward_results.push(serde_json::json!({
+            "type": "item",
+            "itemDefId": item.item_def_id,
+            "quantity": item.quantity,
+            "itemName": meta.map(|entry| entry.name.clone()),
+            "itemIcon": meta.and_then(|entry| entry.icon.clone()),
+        }));
+    }
+
+    let static_catalog = get_static_data_catalog().map_err(internal_business_error)?;
+    for technique_id in &payload.techniques {
+        let exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)::bigint
+            FROM character_technique
+            WHERE character_id = $1
+              AND technique_id = $2
+            "#,
+        )
+        .bind(character_id)
+        .bind(technique_id)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        if exists > 0 {
+            continue;
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO character_technique (character_id, technique_id, current_layer, acquired_at)
+            VALUES ($1, $2, 1, NOW())
+            "#,
+        )
+        .bind(character_id)
+        .bind(technique_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        let technique_meta = static_catalog
+            .technique_detail(technique_id.as_str())
+            .map(|detail| (&detail.technique.name, detail.technique.icon.clone()));
+        let technique_name = technique_meta.as_ref().map(|entry| entry.0.clone());
+        let technique_icon = technique_meta.as_ref().and_then(|entry| entry.1.clone());
+        reward_results.push(serde_json::json!({
+            "type": "technique",
+            "techniqueId": technique_id,
+            "techniqueName": technique_name,
+            "techniqueIcon": technique_icon,
+        }));
+    }
+
+    if !payload.titles.is_empty() {
+        let final_title = payload.titles.last().cloned().unwrap_or_default();
+        if !final_title.is_empty() {
+            sqlx::query(
+                r#"
+                UPDATE characters
+                SET title = $2,
+                    updated_at = NOW()
+                WHERE id = $1
+                "#,
+            )
+            .bind(character_id)
+            .bind(&final_title)
+            .execute(&mut **transaction)
+            .await
+            .map_err(internal_sql_business_error)?;
+        }
+        for title in &payload.titles {
+            reward_results.push(serde_json::json!({
+                "type": "title",
+                "title": title,
+            }));
+        }
+    }
+
+    for feature_code in &payload.unlock_features {
+        let inserted = sqlx::query(
+            r#"
+            INSERT INTO character_feature_unlocks (
+              character_id,
+              feature_code,
+              obtained_from,
+              obtained_ref_id,
+              unlocked_at
+            )
+            VALUES ($1, $2, $3, NULL, NOW())
+            ON CONFLICT (character_id, feature_code) DO NOTHING
+            RETURNING feature_code
+            "#,
+        )
+        .bind(character_id)
+        .bind(feature_code)
+        .bind(if chapter_reward {
+            "main_quest_chapter_reward"
+        } else {
+            "main_quest_section_reward"
+        })
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(internal_sql_business_error)?;
+        if inserted.is_some() {
+            reward_results.push(serde_json::json!({
+                "type": "feature_unlock",
+                "featureCode": feature_code,
+            }));
+        }
+    }
+
+    Ok(reward_results)
 }
 
 fn resolve_task_map_name(
