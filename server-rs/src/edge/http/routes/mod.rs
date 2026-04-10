@@ -7,6 +7,7 @@ pub mod character;
 pub mod dungeon;
 pub mod idle;
 pub mod info;
+pub mod insight;
 pub mod inventory;
 pub mod map;
 pub mod rank;

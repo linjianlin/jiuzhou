@@ -213,6 +213,9 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
         ),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(NoopInfoRouteServices),
+        insight_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,
+        ),
         inventory_services: Arc::new(NoopInventoryRouteServices),
         rank_services: Arc::new(NoopRankRouteServices),
         time_services: Arc::new(NoopTimeRouteServices),

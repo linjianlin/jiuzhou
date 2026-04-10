@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::shared::error::AppError;
 
+use super::realm::{get_realm_rank_one_based_strict, get_realm_rank_zero_based};
 use super::seed::{list_seed_files_with_prefix, read_seed_json};
 
 static DUNGEON_STATIC_CATALOG: OnceLock<Result<DungeonStaticCatalog, String>> = OnceLock::new();
@@ -21,22 +22,6 @@ const DUNGEON_REWARD_EXCLUDED_POOL_IDS: [&str; 2] = [
     "dp-common-dungeon-boss-unbind",
     "dp-common-dungeon-boss-advanced-recruit-token",
 ];
-const REALM_ORDER: [&str; 13] = [
-    "凡人",
-    "炼精化炁·养气期",
-    "炼精化炁·通脉期",
-    "炼精化炁·凝炁期",
-    "炼炁化神·炼己期",
-    "炼炁化神·采药期",
-    "炼炁化神·结胎期",
-    "炼神返虚·养神期",
-    "炼神返虚·还虚期",
-    "炼神返虚·合道期",
-    "炼虚合道·证道期",
-    "炼虚合道·历劫期",
-    "炼虚合道·成圣期",
-];
-
 /**
  * 秘境静态索引。
  *
@@ -1021,22 +1006,9 @@ fn resolve_dungeon_reward_multiplier(value: f64) -> f64 {
     }
 }
 
-fn get_realm_rank_zero_based(realm: Option<&str>) -> i32 {
-    realm
-        .and_then(|value| REALM_ORDER.iter().position(|candidate| candidate == &value))
-        .map(|value| value as i32)
-        .unwrap_or(0)
-}
-
-fn get_realm_rank_one_based_strict(realm: Option<&str>) -> i32 {
-    realm
-        .and_then(|value| REALM_ORDER.iter().position(|candidate| candidate == &value))
-        .map(|value| value as i32 + 1)
-        .unwrap_or(1)
-}
-
 fn is_realm_sufficient(current_realm: &str, min_realm: &str) -> bool {
-    get_realm_rank_zero_based(Some(current_realm)) >= get_realm_rank_zero_based(Some(min_realm))
+    get_realm_rank_zero_based(Some(current_realm), None) as i32
+        >= get_realm_rank_zero_based(Some(min_realm), None) as i32
 }
 
 fn normalize_monster_kind(value: Option<&str>) -> &'static str {
@@ -1092,7 +1064,8 @@ fn get_adjusted_chance(
     }
     let multiplied = chance * get_common_pool_multiplier(source_type, source_pool_id, monster_kind);
     let realm_bonus =
-        chance_add_by_monster_realm.max(0.0) * f64::from(get_realm_rank_zero_based(monster_realm));
+        chance_add_by_monster_realm.max(0.0)
+            * f64::from(get_realm_rank_zero_based(monster_realm, None) as i32);
     ((multiplied + realm_bonus)
         * get_dungeon_reward_rate_multiplier(source_pool_id, reward_multiplier))
     .clamp(0.0, 1.0)
@@ -1141,7 +1114,7 @@ fn apply_monster_realm_drop_qty_multiplier(
         return base;
     }
 
-    let realm_rank = f64::from(get_realm_rank_one_based_strict(monster_realm).max(1));
+    let realm_rank = f64::from(get_realm_rank_one_based_strict(monster_realm, None).max(1));
     let effective_multiplier = if multiplier < 1.0 {
         multiplier
     } else {
@@ -1157,7 +1130,7 @@ fn get_adjusted_drop_quantity_range(
     monster_kind: Option<&str>,
     reward_multiplier: f64,
 ) -> (i32, i32) {
-    let realm_rank = f64::from(get_realm_rank_zero_based(monster_realm).max(0));
+    let realm_rank = f64::from(get_realm_rank_zero_based(monster_realm, None) as i32);
     let base_min = (f64::from(entry.qty_min) + realm_rank * entry.qty_min_add_by_monster_realm)
         .floor()
         .max(1.0) as i32;

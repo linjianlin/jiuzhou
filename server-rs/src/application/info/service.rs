@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
+use crate::application::static_data::realm::get_realm_rank_zero_based;
 use crate::application::static_data::catalog::{
     GameItemTaxonomyDto, ItemTaxonomyCategoryDto, ItemTaxonomyOptionDto, ItemTaxonomySubCategoryDto,
 };
@@ -117,22 +118,6 @@ const ATTR_LABELS: [(&str, &str); 18] = [
     ("baoshang", "暴伤"),
     ("kangbao", "抗暴"),
     ("zengshang", "增伤"),
-];
-
-const REALM_ORDER: [&str; 13] = [
-    "凡人",
-    "炼精化炁·养气期",
-    "炼精化炁·通脉期",
-    "炼精化炁·凝炁期",
-    "炼炁化神·炼己期",
-    "炼炁化神·采药期",
-    "炼炁化神·结胎期",
-    "炼神返虚·养神期",
-    "炼神返虚·还虚期",
-    "炼神返虚·合道期",
-    "炼虚合道·证道期",
-    "炼虚合道·历劫期",
-    "炼虚合道·成圣期",
 ];
 
 #[derive(Debug, Clone)]
@@ -945,7 +930,7 @@ fn normalize_drop_entry(
 fn adjusted_chance(entry: &ResolvedDropEntry, monster: Option<&MonsterStaticMeta>) -> f64 {
     let realm_bonus = monster
         .map(|meta| {
-            get_realm_rank_zero_based(meta.realm.as_deref()) as f64
+            get_realm_rank_zero_based(meta.realm.as_deref(), None) as f64
                 * entry.chance_add_by_monster_realm
         })
         .unwrap_or(0.0);
@@ -972,7 +957,7 @@ fn adjusted_quantity_range(
     monster: Option<&MonsterStaticMeta>,
 ) -> (i32, i32) {
     let realm_rank = monster
-        .map(|meta| get_realm_rank_zero_based(meta.realm.as_deref()) as f64)
+        .map(|meta| get_realm_rank_zero_based(meta.realm.as_deref(), None) as f64)
         .unwrap_or(0.0);
     let base_min = (entry.qty_min as f64 + realm_rank * entry.qty_min_add_by_monster_realm)
         .floor()
@@ -1111,14 +1096,6 @@ fn format_percent(value: f64) -> String {
         format!("{percent:.2}")
     };
     format!("{}%", text.trim_end_matches('0').trim_end_matches('.'))
-}
-
-fn get_realm_rank_zero_based(realm: Option<&str>) -> usize {
-    let normalized = realm.unwrap_or("凡人").trim();
-    REALM_ORDER
-        .iter()
-        .position(|entry| *entry == normalized)
-        .unwrap_or(0)
 }
 
 fn is_enabled(value: Option<bool>) -> bool {

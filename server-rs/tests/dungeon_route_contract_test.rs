@@ -160,6 +160,9 @@ fn build_app_state() -> AppState {
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
+        insight_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,
+        ),
         inventory_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),

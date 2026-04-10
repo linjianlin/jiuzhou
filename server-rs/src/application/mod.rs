@@ -5,6 +5,7 @@ pub mod auth;
 pub mod character;
 pub mod idle;
 pub mod info;
+pub mod insight;
 pub mod inventory;
 pub mod rank;
 pub mod sign_in;

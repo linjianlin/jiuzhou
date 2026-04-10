@@ -143,6 +143,9 @@ where
         ),
         idle_services: Arc::new(NoopIdleRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),
+        insight_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,
+        ),
         inventory_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),

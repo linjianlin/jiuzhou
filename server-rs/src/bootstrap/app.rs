@@ -15,6 +15,7 @@ use crate::edge::http::routes::character::build_character_router;
 use crate::edge::http::routes::dungeon::build_dungeon_router;
 use crate::edge::http::routes::idle::{build_idle_router, IdleRouteServices};
 use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
+use crate::edge::http::routes::insight::{build_insight_router, InsightRouteServices};
 use crate::edge::http::routes::inventory::{build_inventory_router, InventoryRouteServices};
 use crate::edge::http::routes::map::build_map_router;
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
@@ -76,6 +77,7 @@ pub struct AppState {
     pub attribute_services: Arc<dyn AttributeRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub info_services: Arc<dyn InfoRouteServices>,
+    pub insight_services: Arc<dyn InsightRouteServices>,
     pub inventory_services: Arc<dyn InventoryRouteServices>,
     pub rank_services: Arc<dyn RankRouteServices>,
     pub time_services: Arc<dyn TimeRouteServices>,
@@ -115,6 +117,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/idle", build_idle_router())
         .nest("/api/captcha", build_captcha_router())
         .nest("/api/info", build_info_router())
+        .nest("/api/insight", build_insight_router())
         .nest("/api/inventory", build_inventory_router())
         .nest("/api/map", build_map_router())
         .nest("/api/rank", build_rank_router())

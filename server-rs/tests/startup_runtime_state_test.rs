@@ -138,6 +138,9 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         info_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices,
         ),
+        insight_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,
+        ),
         inventory_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::inventory::NoopInventoryRouteServices,
         ),
