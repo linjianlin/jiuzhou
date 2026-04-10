@@ -100,6 +100,43 @@ pub trait TowerRouteServices: Send + Sync {
     >;
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct NoopTowerRouteServices;
+
+impl TowerRouteServices for NoopTowerRouteServices {
+    fn get_overview<'a>(
+        &'a self,
+        _user_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ServiceResultResponse<TowerOverviewView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(ServiceResultResponse::new(
+                false,
+                Some("角色不存在".to_string()),
+                None,
+            ))
+        })
+    }
+
+    fn get_rank_list<'a>(
+        &'a self,
+        _limit: Option<i64>,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ServiceResultResponse<Vec<TowerRankRow>>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { Ok(ServiceResultResponse::new(true, None, Some(Vec::new()))) })
+    }
+}
+
 pub fn build_tower_router() -> Router<AppState> {
     Router::new()
         .route("/overview", get(tower_overview_handler))

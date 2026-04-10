@@ -14,6 +14,7 @@ use crate::application::idle::service::RustIdleRouteService;
 use crate::application::info::service::RustInfoService;
 use crate::application::insight::service::RustInsightRouteService;
 use crate::application::inventory::service::RustInventoryReadService;
+use crate::application::mail::service::RustMailRouteService;
 use crate::application::month_card::service::RustMonthCardRouteService;
 use crate::application::rank::service::RustRankRouteService;
 use crate::application::realm::service::RustRealmRouteService;
@@ -106,6 +107,7 @@ pub async fn run_application() -> Result<(), AppError> {
         inventory_services: std::sync::Arc::new(RustInventoryReadService::new(
             postgres.pool.clone(),
         )),
+        mail_services: std::sync::Arc::new(RustMailRouteService::new(postgres.pool.clone())),
         month_card_services: std::sync::Arc::new(RustMonthCardRouteService::new(
             postgres.pool.clone(),
         )),

@@ -323,6 +323,7 @@ impl Default for FakeMonthCardRouteServices {
 
 fn build_app_state<TAuth, TMonthCard>(
     auth_services: TAuth,
+        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
     month_card_services: TMonthCard,
 ) -> AppState
 where

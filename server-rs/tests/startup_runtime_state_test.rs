@@ -193,6 +193,7 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         title_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
+        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
         month_card_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
         ),

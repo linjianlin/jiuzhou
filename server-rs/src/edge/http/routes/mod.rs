@@ -15,6 +15,7 @@ pub mod info;
 pub mod insight;
 pub mod inventory;
 pub mod main_quest;
+pub mod mail;
 pub mod map;
 pub mod month_card;
 pub mod rank;

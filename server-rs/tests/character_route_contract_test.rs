@@ -218,6 +218,7 @@ where
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
+        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
         month_card_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
         ),

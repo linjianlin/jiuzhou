@@ -7,6 +7,7 @@ use axum::routing::post;
 use axum::Router;
 use serde::{Deserialize, Serialize};
 
+use crate::application::reward_payload::GrantedRewardPreviewView;
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::{require_authenticated_character_context, resolve_request_ip};
 use crate::edge::http::error::BusinessError;
@@ -42,42 +43,7 @@ pub struct RedeemCodePayload {
     pub code: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(tag = "type")]
-pub enum RedeemCodeRewardView {
-    #[serde(rename = "exp")]
-    Exp { amount: i64 },
-    #[serde(rename = "silver")]
-    Silver { amount: i64 },
-    #[serde(rename = "spirit_stones")]
-    SpiritStones { amount: i64 },
-    #[serde(rename = "item")]
-    Item {
-        #[serde(rename = "itemDefId")]
-        item_def_id: String,
-        quantity: i64,
-        #[serde(rename = "itemName", skip_serializing_if = "Option::is_none")]
-        item_name: Option<String>,
-        #[serde(rename = "itemIcon", skip_serializing_if = "Option::is_none")]
-        item_icon: Option<String>,
-    },
-    #[serde(rename = "technique")]
-    Technique {
-        #[serde(rename = "techniqueId")]
-        technique_id: String,
-        #[serde(rename = "techniqueName", skip_serializing_if = "Option::is_none")]
-        technique_name: Option<String>,
-        #[serde(rename = "techniqueIcon", skip_serializing_if = "Option::is_none")]
-        technique_icon: Option<String>,
-    },
-    #[serde(rename = "feature_unlock")]
-    FeatureUnlock {
-        #[serde(rename = "featureCode")]
-        feature_code: String,
-    },
-    #[serde(rename = "title")]
-    Title { title: String },
-}
+pub type RedeemCodeRewardView = GrantedRewardPreviewView;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct RedeemCodeSuccessData {

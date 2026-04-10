@@ -433,6 +433,7 @@ fn build_app_state_with_upload_services(upload_services: Arc<dyn UploadRouteServ
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
+        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
         month_card_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
         ),

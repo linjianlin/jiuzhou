@@ -224,6 +224,7 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
             jiuzhou_server_rs::edge::http::routes::insight::NoopInsightRouteServices,
         ),
         inventory_services: Arc::new(NoopInventoryRouteServices),
+        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
         month_card_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
         ),

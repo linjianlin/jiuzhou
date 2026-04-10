@@ -59,6 +59,7 @@ async fn root_and_health_routes_match_current_contract_shape() {
         title_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::title::NoopTitleRouteServices,
         ),
+        mail_services: std::sync::Arc::new(jiuzhou_server_rs::edge::http::routes::mail::NoopMailRouteServices),
         month_card_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::month_card::NoopMonthCardRouteServices,
         ),
