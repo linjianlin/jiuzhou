@@ -77,9 +77,6 @@ async fn root_and_health_routes_match_current_contract_shape() {
         readiness,
         session_registry: new_shared_session_registry(),
         runtime_services: runtime_services.clone(),
-        team_services: std::sync::Arc::new(
-            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
-        ),
     });
 
     let runtime_snapshot = runtime_services.read().await;

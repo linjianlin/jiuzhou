@@ -14,9 +14,7 @@ use crate::application::realm::service::RustRealmRouteService;
 use crate::application::sign_in::service::RustSignInService;
 use crate::application::static_data::catalog::get_static_data_catalog;
 use crate::application::static_data::dungeon::{get_dungeon_static_catalog, DungeonListFilter};
-use crate::application::static_data::realm::{
-    get_realm_rank_zero_based, normalize_realm_keeping_unknown,
-};
+use crate::application::static_data::realm::get_realm_rank_zero_based;
 use crate::application::static_data::seed::{list_seed_files_with_prefix, read_seed_json};
 use crate::application::team::service::RustTeamRouteService;
 use crate::bootstrap::app::SharedRuntimeServices;

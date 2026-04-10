@@ -252,9 +252,6 @@ where
         readiness: ReadinessGate::new(),
         session_registry: new_shared_session_registry(),
         runtime_services: new_shared_runtime_services(RuntimeServicesState::default()),
-        team_services: std::sync::Arc::new(
-            jiuzhou_server_rs::edge::http::routes::team::NoopTeamRouteServices,
-        ),
     }
 }
 
