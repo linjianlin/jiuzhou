@@ -122,6 +122,9 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         .await
         .expect("startup execute with recovery");
     let state = AppState {
+        afdian_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: std::sync::Arc::new(NoopAuthServices),
         idle_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices,

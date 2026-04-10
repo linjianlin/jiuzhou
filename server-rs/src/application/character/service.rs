@@ -9,13 +9,13 @@ use crate::edge::http::error::BusinessError;
  * 角色最小读写聚合服务。
  *
  * 作用：
- * 1. 做什么：为 `/api/auth/bootstrap`、`/api/character/check`、`/api/character/info`、`/api/character/create`、`/api/character/updatePosition` 与三个 character settings mutation 提供统一的角色最小读写入口。
- * 2. 做什么：优先复用启动期恢复好的 online projection 内存索引做高频读取，未命中再回落 PostgreSQL；创角、位置更新与设置更新只写入当前合同真正需要的主表字段。
- * 3. 不做什么：不处理成就初始化、缓存失效、完整 gameplay 副作用链，也不伪造 Redis/运行态中当前并不存在的能力。
+ * 1. 做什么：为 `/api/auth/bootstrap`、`/api/character/check`、`/api/character/info`、`/api/character/create`、`/api/character/updatePosition`、`/api/character/renameWithCard` 与三个 character settings mutation 提供统一的角色最小读写入口。
+ * 2. 做什么：优先复用启动期恢复好的 online projection 内存索引做高频读取，未命中再回落 PostgreSQL；创角、位置更新、最小改名校验与设置更新只写入当前合同真正需要的主表字段。
+ * 3. 不做什么：不处理成就初始化、缓存失效、完整 gameplay 副作用链，也不伪造 Redis/运行态中当前并不存在的库存实例消费能力。
  *
  * 输入 / 输出：
- * - 输入：`userId`，以及创角时的 `nickname/gender`、位置更新时的 `currentMapId/currentRoomId`、设置更新时的 `enabled/rules`。
- * - 输出：读取场景返回 `CheckCharacterResult`；创角场景返回 `CreateCharacterResult`；位置与设置 mutation 返回统一轻量结果。
+ * - 输入：`userId`，以及创角时的 `nickname/gender`、位置更新时的 `currentMapId/currentRoomId`、改名时的 `itemInstanceId/nickname`、设置更新时的 `enabled/rules`。
+ * - 输出：读取场景返回 `CheckCharacterResult`；创角场景返回 `CreateCharacterResult`；位置、改名与设置 mutation 返回统一轻量结果。
  *
  * 数据流 / 状态流：
  * - HTTP/Auth 入口 -> 本服务
@@ -23,16 +23,18 @@ use crate::edge::http::error::BusinessError;
  * - -> 未命中时回落 PostgreSQL `characters` 基础字段查询
  * - -> 创角时先做重复角色/道号校验 -> 单事务写入 `characters + inventory`
  * - -> 位置更新时统一做参数归一化 -> 更新 `characters.current_map_id/current_room_id` -> 按当前运行态真实能力同步内存 online projection。
+ * - -> 改名时先检查角色存在、再复用统一道号规则校验；若 Rust 端缺少真实易名符实例消费链，则明确返回业务失败，不伪造成功。
  * - -> 设置更新时统一做布尔/规则归一化 -> 更新 `characters` 对应字段 -> 仅同步当前内存里真实存在的 projection 快照。
  * - -> 路由层再包装为 Node 兼容 envelope。
  *
  * 复用设计说明：
- * - bootstrap、character 读取路由、create 成功回包、position mutation 与 settings mutation 都复用同一聚合服务，避免路由层重复拼 SQL、重复维护设置写入文案与规则归一化。
- * - 运行态 projection 是高频读路径，DB 查询只保留为真实缺失时的兜底入口；位置/设置同步也集中在这里，避免后续其它调用方再各写一份“落库后顺手改内存快照”。
+ * - bootstrap、character 读取路由、create 成功回包、position mutation、renameWithCard 与 settings mutation 都复用同一聚合服务，避免路由层重复拼 SQL、重复维护道号校验与写库文案。
+ * - 运行态 projection 是高频读路径，DB 查询只保留为真实缺失时的兜底入口；位置/设置同步也集中在这里，改名校验也复用同一套昵称规则，避免后续其它调用方再各写一份重复逻辑。
  *
  * 关键边界条件与坑点：
  * 1. online projection 只覆盖当前恢复到内存的角色，不能把未命中直接当成“角色不存在”；必须继续查 PostgreSQL。
  * 2. create 成功后暂不具备 Node 侧完整副作用链，因此这里只返回数据库里可真实读取的基础快照；位置与设置更新也只同步当前已恢复到内存的 online projection，不能伪装成已经持久化回 Redis。
+ * 3. renameWithCard 若没有真实库存实例读取与扣除能力，必须明确返回业务失败，不能跳过扣卡直接改名。
  */
 #[derive(Clone)]
 pub struct RustCharacterReadService {
@@ -53,6 +55,8 @@ const CHARACTER_POSITION_TOO_LONG_MESSAGE: &str = "位置参数过长";
 const CHARACTER_NOT_FOUND_MESSAGE: &str = "角色不存在";
 const CHARACTER_POSITION_UPDATED_MESSAGE: &str = "位置更新成功";
 const CHARACTER_SETTING_UPDATED_MESSAGE: &str = "设置已保存";
+const CHARACTER_RENAME_SUCCESS_MESSAGE: &str = "改名成功";
+const CHARACTER_RENAME_CARD_UNSUPPORTED_MESSAGE: &str = "当前暂不支持使用易名符改名";
 const AUTO_DISASSEMBLE_DEFAULT_CATEGORY: &str = "equipment";
 const AUTO_DISASSEMBLE_DEFAULT_MAX_QUALITY_RANK: i32 = 1;
 const AUTO_DISASSEMBLE_MAX_RULE_COUNT: usize = 20;
@@ -127,6 +131,12 @@ pub struct UpdateCharacterPositionResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateCharacterSettingResult {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenameCharacterWithCardResult {
     pub success: bool,
     pub message: String,
 }
@@ -334,6 +344,72 @@ impl RustCharacterReadService {
         Ok(UpdateCharacterPositionResult {
             success: true,
             message: CHARACTER_POSITION_UPDATED_MESSAGE.to_string(),
+        })
+    }
+
+    pub async fn rename_character_with_card(
+        &self,
+        user_id: i64,
+        _item_instance_id: i64,
+        nickname: &str,
+    ) -> Result<RenameCharacterWithCardResult, BusinessError> {
+        let character_row = sqlx::query(
+            r#"
+            SELECT id, nickname
+            FROM characters
+            WHERE user_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_business_error)?;
+
+        let Some(character_row) = character_row else {
+            return Ok(RenameCharacterWithCardResult {
+                success: false,
+                message: CHARACTER_NOT_FOUND_MESSAGE.to_string(),
+            });
+        };
+
+        let character_id = character_row.try_get("id").map_err(internal_business_error)?;
+        let normalized_nickname = normalize_character_nickname_input(nickname);
+        if normalized_nickname.is_empty() {
+            return Ok(RenameCharacterWithCardResult {
+                success: false,
+                message: CHARACTER_NICKNAME_REQUIRED_MESSAGE.to_string(),
+            });
+        }
+
+        let nickname_length = normalized_nickname.chars().count();
+        if !(CHARACTER_NICKNAME_MIN_LENGTH..=CHARACTER_NICKNAME_MAX_LENGTH)
+            .contains(&nickname_length)
+        {
+            return Ok(RenameCharacterWithCardResult {
+                success: false,
+                message: CHARACTER_NICKNAME_LENGTH_MESSAGE.to_string(),
+            });
+        }
+
+        let duplicate_nickname = sqlx::query(
+            "SELECT id FROM characters WHERE nickname = $1 AND id <> $2 LIMIT 1",
+        )
+        .bind(&normalized_nickname)
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_business_error)?;
+        if duplicate_nickname.is_some() {
+            return Ok(RenameCharacterWithCardResult {
+                success: false,
+                message: CHARACTER_NICKNAME_DUPLICATE_MESSAGE.to_string(),
+            });
+        }
+
+        Ok(RenameCharacterWithCardResult {
+            success: false,
+            message: CHARACTER_RENAME_CARD_UNSUPPORTED_MESSAGE.to_string(),
         })
     }
 

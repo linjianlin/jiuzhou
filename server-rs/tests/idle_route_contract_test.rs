@@ -286,6 +286,9 @@ where
     I: IdleRouteServices + 'static,
 {
     AppState {
+        afdian_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: Arc::new(services),
         idle_services: Arc::new(idle_services),
         upload_services: Arc::new(NoopUploadRouteServices),

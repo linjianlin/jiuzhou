@@ -190,6 +190,9 @@ where
     T: AuthRouteServices + 'static,
 {
     AppState {
+        afdian_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: Arc::new(services),
         idle_services: Arc::new(NoopIdleRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),

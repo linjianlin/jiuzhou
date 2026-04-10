@@ -7,7 +7,7 @@
  * 3. 不做什么：不负责数据库查询、不处理动态战斗/背包状态，也不伪造 Node 端尚未迁移的业务副作用。
  *
  * 输入 / 输出：
- * - 输入：`server/src/data/seeds/*.json` 中的静态种子文件。
+ * - 输入：`server/src/data/seeds/` 目录下的静态 JSON 种子文件。
  * - 输出：进程级只读 `StaticDataCatalog`，供 `/api/info`、`/api/technique`、`/api/map` 路由复用。
  *
  * 数据流 / 状态流：
@@ -530,7 +530,9 @@ struct MapDefinitionSeed {
 }
 
 pub fn get_static_data_catalog() -> Result<&'static StaticDataCatalog, AppError> {
-    match STATIC_DATA_CATALOG.get_or_init(|| build_static_data_catalog().map_err(|error| error.to_string())) {
+    match STATIC_DATA_CATALOG
+        .get_or_init(|| build_static_data_catalog().map_err(|error| error.to_string()))
+    {
         Ok(catalog) => Ok(catalog),
         Err(message) => Err(AppError::Config(message.clone())),
     }
@@ -583,9 +585,12 @@ fn seed_file_path(file_name: &str) -> PathBuf {
 }
 
 fn build_item_taxonomy(items: &[ItemDefinitionSeed]) -> GameItemTaxonomyDto {
-    let category_labels_fallback = CATEGORY_LABEL_FALLBACK.into_iter().collect::<HashMap<_, _>>();
-    let mut sub_category_labels_fallback =
-        SUB_CATEGORY_LABEL_FALLBACK.into_iter().collect::<HashMap<_, _>>();
+    let category_labels_fallback = CATEGORY_LABEL_FALLBACK
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+    let mut sub_category_labels_fallback = SUB_CATEGORY_LABEL_FALLBACK
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     sub_category_labels_fallback.extend(EXTRA_SUB_CATEGORY_LABEL_FALLBACK);
 
     let mut category_set = BTreeSet::new();
@@ -694,12 +699,7 @@ fn build_item_meta_index(
     items
         .iter()
         .filter(|item| is_enabled(item.enabled))
-        .map(|item| {
-            (
-                item.id.clone(),
-                (item.name.clone(), item.icon.clone()),
-            )
-        })
+        .map(|item| (item.id.clone(), (item.name.clone(), item.icon.clone())))
         .collect()
 }
 
@@ -781,9 +781,13 @@ fn build_technique_detail_index(
                 TechniqueDetailDto {
                     technique,
                     layers: apply_preview_visibility(
-                        layers_by_technique_id.remove(&technique_id).unwrap_or_default(),
+                        layers_by_technique_id
+                            .remove(&technique_id)
+                            .unwrap_or_default(),
                     ),
-                    skills: skills_by_technique_id.remove(&technique_id).unwrap_or_default(),
+                    skills: skills_by_technique_id
+                        .remove(&technique_id)
+                        .unwrap_or_default(),
                 },
             )
         })
@@ -800,10 +804,7 @@ fn build_enabled_map_summaries(maps: &[MapDefinitionSeed]) -> Vec<MapSummaryDto>
             name: map.name.clone(),
             description: map.description.clone(),
             background_image: map.background_image.clone(),
-            map_type: map
-                .map_type
-                .clone()
-                .unwrap_or_else(|| "field".to_string()),
+            map_type: map.map_type.clone().unwrap_or_else(|| "field".to_string()),
             region: map.region.clone(),
             req_level_min: map.req_level_min.unwrap_or(0),
             req_realm_min: map.req_realm_min.clone(),
@@ -845,10 +846,7 @@ fn build_map_detail_index(
                     name: map.name.clone(),
                     description: map.description.clone(),
                     background_image: map.background_image.clone(),
-                    map_type: map
-                        .map_type
-                        .clone()
-                        .unwrap_or_else(|| "field".to_string()),
+                    map_type: map.map_type.clone().unwrap_or_else(|| "field".to_string()),
                     parent_map_id: map.parent_map_id.clone(),
                     world_position: map.world_position.clone(),
                     region: map.region.clone(),
@@ -903,12 +901,11 @@ fn build_world_map() -> WorldMapDto {
     let mut added = BTreeSet::new();
     let mut connections = Vec::new();
     for position in all_positions {
-        let (x, y) = position_coord
-            .get(position)
-            .copied()
-            .unwrap_or((0, 0));
+        let (x, y) = position_coord.get(position).copied().unwrap_or((0, 0));
         for neighbor in [(x, y + 1), (x, y - 1), (x - 1, y), (x + 1, y)] {
-            let Some(other) = coord_to_position.get(format!("{},{}", neighbor.0, neighbor.1).as_str()) else {
+            let Some(other) =
+                coord_to_position.get(format!("{},{}", neighbor.0, neighbor.1).as_str())
+            else {
                 continue;
             };
             let (left, right) = if position < other.as_str() {

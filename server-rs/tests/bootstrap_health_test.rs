@@ -30,6 +30,9 @@ async fn root_and_health_routes_match_current_contract_shape() {
     let readiness = ReadinessGate::new();
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
     let app = build_router(AppState {
+        afdian_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: Arc::new(NoopAuthServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),

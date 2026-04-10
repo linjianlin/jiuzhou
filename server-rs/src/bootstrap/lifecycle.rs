@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing::{error, info};
 
+use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::auth::service::RustAuthServices;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::upload::service::RustUploadService;
@@ -58,8 +59,11 @@ pub async fn run_application() -> Result<(), AppError> {
     > = auth_services_impl.clone();
     let upload_services: std::sync::Arc<dyn crate::edge::http::routes::upload::UploadRouteServices> =
         std::sync::Arc::new(RustUploadService::new());
+    let afdian_services: std::sync::Arc<dyn crate::edge::http::routes::afdian::AfdianRouteServices> =
+        std::sync::Arc::new(RustAfdianRouteService::new());
 
     let state = AppState {
+        afdian_services,
         auth_services,
         idle_services,
         upload_services,

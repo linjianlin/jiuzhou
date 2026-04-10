@@ -1,3 +1,4 @@
+pub mod afdian;
 pub mod auth;
 pub mod character;
 pub mod idle;

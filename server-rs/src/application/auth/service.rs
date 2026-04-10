@@ -11,7 +11,7 @@ use sqlx::Row;
 
 use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RustCharacterReadService,
-    UpdateCharacterPositionResult,
+    UpdateCharacterPositionResult, UpdateCharacterSettingResult,
 };
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::auth::{
@@ -452,6 +452,37 @@ impl RustAuthServices {
             .await
     }
 
+    async fn update_auto_cast_skills_impl(
+        &self,
+        user_id: i64,
+        enabled: bool,
+    ) -> Result<UpdateCharacterSettingResult, BusinessError> {
+        self.character_read_service
+            .update_auto_cast_skills(user_id, enabled)
+            .await
+    }
+
+    async fn update_auto_disassemble_impl(
+        &self,
+        user_id: i64,
+        enabled: bool,
+        rules: Option<Vec<serde_json::Value>>,
+    ) -> Result<UpdateCharacterSettingResult, BusinessError> {
+        self.character_read_service
+            .update_auto_disassemble_settings(user_id, enabled, rules)
+            .await
+    }
+
+    async fn update_dungeon_no_stamina_cost_impl(
+        &self,
+        user_id: i64,
+        enabled: bool,
+    ) -> Result<UpdateCharacterSettingResult, BusinessError> {
+        self.character_read_service
+            .update_dungeon_no_stamina_cost(user_id, enabled)
+            .await
+    }
+
     async fn redis_connection(&self) -> Result<redis::aio::MultiplexedConnection, BusinessError> {
         self.redis
             .get_multiplexed_async_connection()
@@ -654,6 +685,37 @@ impl AuthRouteServices for RustAuthServices {
     > {
         Box::pin(async move {
             self.update_character_position_impl(user_id, current_map_id, current_room_id)
+                .await
+        })
+    }
+
+    fn update_auto_cast_skills<'a>(
+        &'a self,
+        user_id: i64,
+        enabled: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+        Box::pin(async move { self.update_auto_cast_skills_impl(user_id, enabled).await })
+    }
+
+    fn update_auto_disassemble<'a>(
+        &'a self,
+        user_id: i64,
+        enabled: bool,
+        rules: Option<Vec<serde_json::Value>>,
+    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.update_auto_disassemble_impl(user_id, enabled, rules)
+                .await
+        })
+    }
+
+    fn update_dungeon_no_stamina_cost<'a>(
+        &'a self,
+        user_id: i64,
+        enabled: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.update_dungeon_no_stamina_cost_impl(user_id, enabled)
                 .await
         })
     }

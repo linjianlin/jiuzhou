@@ -209,6 +209,9 @@ async fn upload_avatar_asset_returns_success_shape_and_persists_local_file() {
 
 fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
     AppState {
+        afdian_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: Arc::new(FakeAuthServices),
         idle_services: Arc::new(NoopIdleRouteServices),
         upload_services: Arc::new(RustUploadService::with_local_storage_root(upload_dir)),

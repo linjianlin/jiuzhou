@@ -287,12 +287,7 @@ impl OnlineProjectionRegistry {
         self.character_snapshots.get(&character_id)
     }
 
-    pub fn update_character_position(
-        &mut self,
-        character_id: i64,
-        map_id: &str,
-        room_id: &str,
-    ) -> bool {
+    fn update_character_computed_value(&mut self, character_id: i64, key: &str, value: Value) -> bool {
         let Some(snapshot) = self.character_snapshots.get_mut(&character_id) else {
             return false;
         };
@@ -300,15 +295,62 @@ impl OnlineProjectionRegistry {
             return false;
         };
 
-        computed.insert(
-            "current_map_id".to_string(),
+        computed.insert(key.to_string(), value);
+        true
+    }
+
+    pub fn update_character_position(
+        &mut self,
+        character_id: i64,
+        map_id: &str,
+        room_id: &str,
+    ) -> bool {
+        let map_updated = self.update_character_computed_value(
+            character_id,
+            "current_map_id",
             Value::String(map_id.to_string()),
         );
-        computed.insert(
-            "current_room_id".to_string(),
+        let room_updated = self.update_character_computed_value(
+            character_id,
+            "current_room_id",
             Value::String(room_id.to_string()),
         );
-        true
+        map_updated && room_updated
+    }
+
+    pub fn update_character_auto_cast_skills(&mut self, character_id: i64, enabled: bool) -> bool {
+        self.update_character_computed_value(character_id, "auto_cast_skills", Value::Bool(enabled))
+    }
+
+    pub fn update_character_auto_disassemble(
+        &mut self,
+        character_id: i64,
+        enabled: bool,
+        rules: &[crate::application::character::service::AutoDisassembleRuleDto],
+    ) -> bool {
+        let enabled_updated = self.update_character_computed_value(
+            character_id,
+            "auto_disassemble_enabled",
+            Value::Bool(enabled),
+        );
+        let rules_updated = self.update_character_computed_value(
+            character_id,
+            "auto_disassemble_rules",
+            serde_json::to_value(rules).unwrap_or(Value::Array(Vec::new())),
+        );
+        enabled_updated && rules_updated
+    }
+
+    pub fn update_character_dungeon_no_stamina_cost(
+        &mut self,
+        character_id: i64,
+        enabled: bool,
+    ) -> bool {
+        self.update_character_computed_value(
+            character_id,
+            "dungeon_no_stamina_cost",
+            Value::Bool(enabled),
+        )
     }
 
     pub fn character_ids(&self) -> Vec<i64> {

@@ -29,6 +29,9 @@ async fn health_endpoint_is_reachable_before_background_startup_finishes() {
     let runtime_services = new_shared_runtime_services(RuntimeServicesState::default());
     let auth_services = Arc::new(NoopAuthServices);
     let state = AppState {
+        afdian_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: auth_services.clone(),
         idle_services: Arc::new(NoopIdleRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::bootstrap::readiness::ReadinessGate;
+use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
 use crate::edge::http::routes::captcha::build_captcha_router;
 use crate::edge::http::routes::character::build_character_router;
@@ -62,6 +63,7 @@ pub fn new_shared_runtime_services(services: RuntimeServicesState) -> SharedRunt
 
 #[derive(Clone)]
 pub struct AppState {
+    pub afdian_services: Arc<dyn AfdianRouteServices>,
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub upload_services: Arc<dyn UploadRouteServices>,
@@ -90,6 +92,7 @@ pub fn build_router(state: AppState) -> Router {
     let router = Router::new()
         .route("/", get(root_handler))
         .route("/api/health", get(health_handler))
+        .nest("/api/afdian", build_afdian_router())
         .nest("/api/auth", build_auth_router())
         .nest("/api/character", build_character_router())
         .nest("/api/idle", build_idle_router())

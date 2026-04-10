@@ -82,6 +82,9 @@ async fn default_socket_path_remains_available() {
 fn build_app_state() -> AppState {
     let auth_services = Arc::new(NoopAuthServices);
     AppState {
+        afdian_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
         auth_services: auth_services.clone(),
         idle_services: Arc::new(NoopIdleRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
