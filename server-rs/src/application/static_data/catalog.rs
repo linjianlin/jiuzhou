@@ -23,14 +23,14 @@
  * 2. `enabled` 只有显式为 `false` 才视为禁用；这与 Node 现状一致，不能把缺省字段误判成禁用。
  */
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::shared::error::AppError;
+
+use super::seed::read_seed_json;
 
 static STATIC_DATA_CATALOG: OnceLock<Result<StaticDataCatalog, String>> = OnceLock::new();
 
@@ -567,21 +567,6 @@ fn build_static_data_catalog() -> Result<StaticDataCatalog, AppError> {
         maps,
         map_details_by_id,
     })
-}
-
-fn read_seed_json<T>(file_name: &str) -> Result<T, AppError>
-where
-    T: DeserializeOwned,
-{
-    let file_path = seed_file_path(file_name);
-    let content = std::fs::read_to_string(file_path).map_err(AppError::Io)?;
-    serde_json::from_str(&content).map_err(AppError::SerdeJson)
-}
-
-fn seed_file_path(file_name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../server/src/data/seeds")
-        .join(file_name)
 }
 
 fn build_item_taxonomy(items: &[ItemDefinitionSeed]) -> GameItemTaxonomyDto {

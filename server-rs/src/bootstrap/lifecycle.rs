@@ -7,6 +7,7 @@ use tracing::info;
 use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::auth::service::RustAuthServices;
 use crate::application::idle::service::RustIdleRouteService;
+use crate::application::time::service::RustTimeService;
 use crate::application::upload::service::RustUploadService;
 use crate::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
@@ -70,6 +71,7 @@ pub async fn run_application() -> Result<(), AppError> {
         afdian_services,
         auth_services,
         idle_services,
+        time_services: std::sync::Arc::new(RustTimeService::new()),
         upload_services,
         game_socket_services,
         settings,

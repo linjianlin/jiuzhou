@@ -35,6 +35,7 @@ async fn root_and_health_routes_match_current_contract_shape() {
         ),
         auth_services: Arc::new(NoopAuthServices),
         idle_services: Arc::new(NoopIdleRouteServices),
+        time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(NoopAuthServices),
         settings,
@@ -272,6 +273,32 @@ impl AuthRouteServices for NoopAuthServices {
                 message: "noop".to_string(),
                 data: None,
             })
+        })
+    }
+
+    fn update_character_position<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_map_id: String,
+        _current_room_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult,
+                        jiuzhou_server_rs::edge::http::error::BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >{
+        Box::pin(async move {
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult {
+                    success: false,
+                    message: "noop".to_string(),
+                },
+            )
         })
     }
 }

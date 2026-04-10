@@ -129,6 +129,9 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         idle_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices,
         ),
+        time_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices,
+        ),
         upload_services: std::sync::Arc::new(NoopUploadRouteServices),
         game_socket_services: std::sync::Arc::new(NoopAuthServices),
         settings: context.settings.clone(),
@@ -226,6 +229,59 @@ impl jiuzhou_server_rs::edge::http::routes::auth::AuthRouteServices for NoopAuth
                     success: true,
                     message: "ok".to_string(),
                     data: None,
+                },
+            )
+        })
+    }
+
+    fn create_character<'a>(
+        &'a self,
+        _user_id: i64,
+        _nickname: String,
+        _gender: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        jiuzhou_server_rs::application::character::service::CreateCharacterResult,
+                        jiuzhou_server_rs::edge::http::error::BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(
+                jiuzhou_server_rs::application::character::service::CreateCharacterResult {
+                    success: false,
+                    message: "noop".to_string(),
+                    data: None,
+                },
+            )
+        })
+    }
+
+    fn update_character_position<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_map_id: String,
+        _current_room_id: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult,
+                        jiuzhou_server_rs::edge::http::error::BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >{
+        Box::pin(async move {
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult {
+                    success: false,
+                    message: "noop".to_string(),
                 },
             )
         })

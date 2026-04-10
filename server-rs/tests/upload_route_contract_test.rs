@@ -338,6 +338,7 @@ fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
         ),
         auth_services: Arc::new(FakeAuthServices),
         idle_services: Arc::new(NoopIdleRouteServices),
+        time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         upload_services: Arc::new(RustUploadService::with_local_storage_root(upload_dir)),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
@@ -431,6 +432,22 @@ impl AuthRouteServices for FakeAuthServices {
                 message: "noop".to_string(),
                 data: None,
             })
+        })
+    }
+
+    fn update_character_position<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_map_id: String,
+        _current_room_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult, BusinessError>> + Send + 'a>>{
+        Box::pin(async move {
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult {
+                    success: false,
+                    message: "noop".to_string(),
+                },
+            )
         })
     }
 }

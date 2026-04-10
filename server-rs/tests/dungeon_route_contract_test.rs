@@ -17,7 +17,7 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
-use jiuzhou_server_rs::edge::http::routes::time::{GameTimeSnapshotView, TimeRouteServices};
+use jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices;
 use jiuzhou_server_rs::edge::http::routes::upload::NoopUploadRouteServices;
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -27,100 +27,135 @@ use jiuzhou_server_rs::runtime::connection::session_registry::new_shared_session
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn time_route_returns_current_snapshot_with_success_envelope() {
-    let app = build_router(build_app_state(
-        FakeAuthServices::default(),
-        FakeTimeServices {
-            snapshot_result: Ok(Some(sample_game_time_snapshot())),
-        },
-    ));
+async fn dungeon_categories_route_keeps_node_order_and_labels() {
+    let app = build_router(build_app_state());
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/time")
+                .uri("/api/dungeon/categories")
                 .body(Body::empty())
-                .expect("time request"),
+                .expect("dungeon categories request"),
         )
         .await
-        .expect("time response");
+        .expect("dungeon categories response");
 
     let (status, json) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    assert_eq!(json["data"]["categories"].as_array().map(Vec::len), Some(5));
     assert_eq!(
-        json,
-        serde_json::json!({
-            "success": true,
-            "data": {
-                "era_name": "末法纪元",
-                "base_year": 1000,
-                "year": 1002,
-                "month": 3,
-                "day": 12,
-                "hour": 8,
-                "minute": 30,
-                "second": 15,
-                "shichen": "辰时",
-                "weather": "晴",
-                "scale": 60,
-                "server_now_ms": 1712707200000u64,
-                "game_elapsed_ms": 123456789u64,
-            }
-        })
+        json["data"]["categories"][0]["type"],
+        serde_json::json!("material")
+    );
+    assert_eq!(
+        json["data"]["categories"][0]["label"],
+        serde_json::json!("材料秘境")
+    );
+    assert!(json["data"]["categories"][0]["count"].is_number());
+    assert_eq!(
+        json["data"]["categories"][2]["type"],
+        serde_json::json!("trial")
     );
 }
 
 #[tokio::test]
-async fn time_route_returns_503_when_snapshot_not_initialized() {
-    let app = build_router(build_app_state(
-        FakeAuthServices::default(),
-        FakeTimeServices {
-            snapshot_result: Ok(None),
-        },
-    ));
+async fn dungeon_list_route_filters_by_type_and_keyword() {
+    let app = build_router(build_app_state());
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/time")
+                .uri("/api/dungeon/list?type=trial&q=%E7%8B%BC")
                 .body(Body::empty())
-                .expect("time request"),
+                .expect("dungeon list request"),
         )
         .await
-        .expect("time response");
+        .expect("dungeon list response");
 
     let (status, json) = response_json(response).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    let dungeons = json["data"]["dungeons"].as_array().expect("dungeons array");
+    assert!(dungeons
+        .iter()
+        .all(|entry| entry["type"] == serde_json::json!("trial")));
+    assert!(dungeons
+        .iter()
+        .any(|entry| entry["id"] == serde_json::json!("dungeon-qiqi-wolf-den")));
+}
+
+#[tokio::test]
+async fn dungeon_preview_route_returns_stage_and_drop_preview() {
+    let app = build_router(build_app_state());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/dungeon/preview/dungeon-qiqi-wolf-den?rank=1")
+                .body(Body::empty())
+                .expect("dungeon preview request"),
+        )
+        .await
+        .expect("dungeon preview response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    assert_eq!(
+        json["data"]["dungeon"]["id"],
+        serde_json::json!("dungeon-qiqi-wolf-den")
+    );
+    assert_eq!(
+        json["data"]["difficulty"]["difficulty_rank"],
+        serde_json::json!(1)
+    );
+    assert_eq!(
+        json["data"]["stages"][0]["name"],
+        serde_json::json!("林间伏影")
+    );
+    assert_eq!(
+        json["data"]["stages"][0]["waves"][0]["monsters"][0]["name"],
+        serde_json::json!("灰狼")
+    );
+    assert!(json["data"]["drop_items"]
+        .as_array()
+        .is_some_and(|entries| !entries.is_empty()));
+}
+
+#[tokio::test]
+async fn dungeon_preview_route_returns_404_when_dungeon_missing() {
+    let app = build_router(build_app_state());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/dungeon/preview/not-exists")
+                .body(Body::empty())
+                .expect("dungeon preview missing request"),
+        )
+        .await
+        .expect("dungeon preview missing response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(
         json,
         serde_json::json!({
             "success": false,
-            "message": "游戏时间未初始化",
+            "message": "秘境不存在",
         })
     );
 }
 
-struct FakeAuthServices {
-    verify_result: VerifyTokenAndSessionResult,
-    character_result: CheckCharacterResult,
-}
-
-struct FakeTimeServices {
-    snapshot_result: Result<Option<GameTimeSnapshotView>, BusinessError>,
-}
-
-fn build_app_state<T, S>(auth_services: T, time_services: S) -> AppState
-where
-    T: AuthRouteServices + 'static,
-    S: TimeRouteServices + 'static,
-{
+fn build_app_state() -> AppState {
     AppState {
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
         ),
-        auth_services: Arc::new(auth_services),
+        auth_services: Arc::new(FakeAuthServices::default()),
         idle_services: Arc::new(NoopIdleRouteServices),
-        time_services: Arc::new(time_services),
+        time_services: Arc::new(NoopTimeRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
@@ -130,39 +165,10 @@ where
     }
 }
 
-fn sample_game_time_snapshot() -> GameTimeSnapshotView {
-    GameTimeSnapshotView {
-        era_name: "末法纪元".to_string(),
-        base_year: 1000,
-        year: 1002,
-        month: 3,
-        day: 12,
-        hour: 8,
-        minute: 30,
-        second: 15,
-        shichen: "辰时".to_string(),
-        weather: "晴".to_string(),
-        scale: 60,
-        server_now_ms: 1_712_707_200_000,
-        game_elapsed_ms: 123_456_789,
-    }
-}
+#[derive(Default)]
+struct FakeAuthServices;
 
-impl Default for FakeAuthServices {
-    fn default() -> Self {
-        Self {
-            verify_result: VerifyTokenAndSessionResult {
-                valid: true,
-                kicked: false,
-                user_id: Some(1),
-            },
-            character_result: CheckCharacterResult {
-                has_character: true,
-                character: Some(sample_character()),
-            },
-        }
-    }
-}
+struct FakeGameSocketServices;
 
 impl AuthRouteServices for FakeAuthServices {
     fn captcha_provider(&self) -> CaptchaProvider {
@@ -174,8 +180,8 @@ impl AuthRouteServices for FakeAuthServices {
     ) -> Pin<Box<dyn Future<Output = Result<CaptchaChallenge, BusinessError>> + Send + 'a>> {
         Box::pin(async move {
             Ok(CaptchaChallenge {
-                captcha_id: "captcha-unused".to_string(),
-                image_data: "data:image/svg+xml;base64,unused".to_string(),
+                captcha_id: "captcha-dungeon".to_string(),
+                image_data: "data:image/svg+xml;base64,dungeon".to_string(),
                 expires_at: 1,
             })
         })
@@ -211,7 +217,13 @@ impl AuthRouteServices for FakeAuthServices {
         &'a self,
         _token: &'a str,
     ) -> Pin<Box<dyn Future<Output = VerifyTokenAndSessionResult> + Send + 'a>> {
-        Box::pin(async move { self.verify_result.clone() })
+        Box::pin(async move {
+            VerifyTokenAndSessionResult {
+                valid: true,
+                kicked: false,
+                user_id: Some(1),
+            }
+        })
     }
 
     fn check_character<'a>(
@@ -219,7 +231,25 @@ impl AuthRouteServices for FakeAuthServices {
         _user_id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<CheckCharacterResult, BusinessError>> + Send + 'a>>
     {
-        Box::pin(async move { Ok(self.character_result.clone()) })
+        Box::pin(async move {
+            Ok(CheckCharacterResult {
+                has_character: true,
+                character: Some(CharacterBasicInfo {
+                    id: 1,
+                    nickname: "青云子".to_string(),
+                    gender: "male".to_string(),
+                    title: "散修".to_string(),
+                    realm: "炼精化炁·养气期".to_string(),
+                    sub_realm: Some("养气期".to_string()),
+                    auto_cast_skills: true,
+                    auto_disassemble_enabled: false,
+                    auto_disassemble_rules: Some(Vec::new()),
+                    dungeon_no_stamina_cost: false,
+                    spirit_stones: 0,
+                    silver: 0,
+                }),
+            })
+        })
     }
 
     fn create_character<'a>(
@@ -231,8 +261,8 @@ impl AuthRouteServices for FakeAuthServices {
     {
         Box::pin(async move {
             Ok(CreateCharacterResult {
-                success: false,
-                message: "noop".to_string(),
+                success: true,
+                message: "创建成功".to_string(),
                 data: None,
             })
         })
@@ -248,41 +278,12 @@ impl AuthRouteServices for FakeAuthServices {
     > {
         Box::pin(async move {
             Ok(UpdateCharacterPositionResult {
-                success: false,
-                message: "noop".to_string(),
+                success: true,
+                message: "位置更新成功".to_string(),
             })
         })
     }
 }
-
-impl TimeRouteServices for FakeTimeServices {
-    fn get_game_time_snapshot<'a>(
-        &'a self,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<Option<GameTimeSnapshotView>, BusinessError>> + Send + 'a>,
-    > {
-        Box::pin(async move { self.snapshot_result.clone() })
-    }
-}
-
-fn sample_character() -> CharacterBasicInfo {
-    CharacterBasicInfo {
-        id: 3001,
-        nickname: "青云子".to_string(),
-        gender: "male".to_string(),
-        title: "散修".to_string(),
-        realm: "炼气".to_string(),
-        sub_realm: None,
-        auto_cast_skills: true,
-        auto_disassemble_enabled: true,
-        auto_disassemble_rules: None,
-        dungeon_no_stamina_cost: false,
-        spirit_stones: 88,
-        silver: 666,
-    }
-}
-
-struct FakeGameSocketServices;
 
 impl GameSocketAuthServices for FakeGameSocketServices {
     fn resolve_game_socket_auth<'a>(
@@ -294,8 +295,8 @@ impl GameSocketAuthServices for FakeGameSocketServices {
         Box::pin(async move {
             Ok(GameSocketAuthProfile {
                 user_id: 1,
-                session_token: "time-route-test-session".to_string(),
-                character_id: None,
+                session_token: "session-token".to_string(),
+                character_id: Some(1),
                 team_id: None,
                 sect_id: None,
             })
@@ -305,16 +306,12 @@ impl GameSocketAuthServices for FakeGameSocketServices {
 
 async fn response_json(response: axum::response::Response) -> (StatusCode, serde_json::Value) {
     let status = response.status();
-    let bytes = response
+    let body = response
         .into_body()
         .collect()
         .await
         .expect("collect body")
         .to_bytes();
-    let json = if bytes.is_empty() {
-        serde_json::Value::Null
-    } else {
-        serde_json::from_slice(&bytes).expect("json body")
-    };
+    let json = serde_json::from_slice(&body).expect("response json");
     (status, json)
 }

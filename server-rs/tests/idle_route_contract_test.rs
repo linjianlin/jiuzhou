@@ -497,6 +497,7 @@ where
         ),
         auth_services: Arc::new(services),
         idle_services: Arc::new(idle_services),
+        time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
@@ -579,6 +580,22 @@ impl AuthRouteServices for FakeAuthServices {
                 message: "noop".to_string(),
                 data: None,
             })
+        })
+    }
+
+    fn update_character_position<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_map_id: String,
+        _current_room_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult, BusinessError>> + Send + 'a>>{
+        Box::pin(async move {
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult {
+                    success: false,
+                    message: "noop".to_string(),
+                },
+            )
         })
     }
 }

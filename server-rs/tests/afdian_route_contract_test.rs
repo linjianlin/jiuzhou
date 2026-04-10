@@ -157,6 +157,7 @@ where
         afdian_services: Arc::new(afdian_services),
         auth_services: Arc::new(NoopAuthServices),
         idle_services: Arc::new(NoopIdleRouteServices),
+        time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(NoopAuthServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
@@ -323,9 +324,7 @@ impl AuthRouteServices for NoopAuthServices {
         _current_map_id: String,
         _current_room_id: String,
     ) -> Pin<
-        Box<
-            dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a,
-        >,
+        Box<dyn Future<Output = Result<UpdateCharacterPositionResult, BusinessError>> + Send + 'a>,
     > {
         Box::pin(async move {
             Ok(UpdateCharacterPositionResult {

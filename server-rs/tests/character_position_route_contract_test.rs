@@ -242,6 +242,7 @@ where
         ),
         auth_services: Arc::new(services),
         idle_services: Arc::new(NoopIdleRouteServices),
+        time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),

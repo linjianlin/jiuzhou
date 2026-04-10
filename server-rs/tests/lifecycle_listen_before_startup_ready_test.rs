@@ -33,6 +33,7 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
         ),
         auth_services: auth_services.clone(),
         idle_services: Arc::new(NoopIdleRouteServices),
+        time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         upload_services: Arc::new(NoopUploadRouteServices),
         game_socket_services: auth_services,
         settings: Settings::from_map(Default::default()).expect("settings"),
@@ -67,9 +68,7 @@ async fn health_endpoint_stays_unreachable_until_startup_marks_ready_and_server_
     server_handle.abort();
 }
 
-async fn request_health(
-    addr: std::net::SocketAddr,
-) -> Result<serde_json::Value, reqwest::Error> {
+async fn request_health(addr: std::net::SocketAddr) -> Result<serde_json::Value, reqwest::Error> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(1))
         .build()
@@ -179,6 +178,22 @@ impl AuthRouteServices for NoopAuthServices {
                 message: "noop".to_string(),
                 data: None,
             })
+        })
+    }
+
+    fn update_character_position<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_map_id: String,
+        _current_room_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult, BusinessError>> + Send + 'a>>{
+        Box::pin(async move {
+            Ok(
+                jiuzhou_server_rs::application::character::service::UpdateCharacterPositionResult {
+                    success: false,
+                    message: "noop".to_string(),
+                },
+            )
         })
     }
 }
