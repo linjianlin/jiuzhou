@@ -125,7 +125,7 @@ pub async fn run_application() -> Result<(), AppError> {
             postgres.pool.clone(),
             session_registry.clone(),
         )),
-        time_services: std::sync::Arc::new(RustTimeService::new()),
+        time_services: std::sync::Arc::new(RustTimeService::new(postgres.pool.clone())),
         tower_services: std::sync::Arc::new(RustTowerRouteService::new(
             postgres.pool.clone(),
             runtime_services.clone(),
