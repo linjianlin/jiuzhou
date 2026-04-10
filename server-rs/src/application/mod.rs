@@ -1,3 +1,4 @@
+pub mod battle_pass;
 pub mod account;
 pub mod afdian;
 pub mod attribute;

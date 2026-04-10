@@ -10,6 +10,7 @@ use crate::edge::http::routes::account::build_account_router;
 use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
 use crate::edge::http::routes::attribute::{build_attribute_router, AttributeRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
+use crate::edge::http::routes::battle_pass::{build_battle_pass_router, BattlePassRouteServices};
 use crate::edge::http::routes::captcha::build_captcha_router;
 use crate::edge::http::routes::character::build_character_router;
 use crate::edge::http::routes::dungeon::build_dungeon_router;
@@ -80,6 +81,7 @@ pub struct AppState {
     pub afdian_services: Arc<dyn AfdianRouteServices>,
     pub auth_services: Arc<dyn AuthRouteServices>,
     pub attribute_services: Arc<dyn AttributeRouteServices>,
+    pub battle_pass_services: Arc<dyn BattlePassRouteServices>,
     pub idle_services: Arc<dyn IdleRouteServices>,
     pub info_services: Arc<dyn InfoRouteServices>,
     pub insight_services: Arc<dyn InsightRouteServices>,
@@ -120,6 +122,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/afdian", build_afdian_router())
         .nest("/api/attribute", build_attribute_router())
         .nest("/api/auth", build_auth_router())
+        .nest("/api/battlepass", build_battle_pass_router())
         .nest("/api/character", build_character_router())
         .nest("/api/dungeon", build_dungeon_router())
         .nest("/api/idle", build_idle_router())

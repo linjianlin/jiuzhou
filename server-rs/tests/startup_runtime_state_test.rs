@@ -129,6 +129,9 @@ async fn startup_execution_result_can_be_attached_to_application_state() {
         attribute_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
         ),
+        battle_pass_services: std::sync::Arc::new(
+            jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
+        ),
         idle_services: std::sync::Arc::new(
             jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices,
         ),

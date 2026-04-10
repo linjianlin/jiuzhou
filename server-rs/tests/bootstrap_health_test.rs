@@ -37,6 +37,9 @@ async fn root_and_health_routes_match_current_contract_shape() {
         attribute_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
         ),
+        battle_pass_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

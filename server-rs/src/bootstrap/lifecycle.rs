@@ -7,6 +7,7 @@ use tracing::info;
 use crate::application::afdian::service::RustAfdianRouteService;
 use crate::application::attribute::service::RustAttributeRouteService;
 use crate::application::auth::service::RustAuthServices;
+use crate::application::battle_pass::service::RustBattlePassRouteService;
 use crate::application::idle::service::RustIdleRouteService;
 use crate::application::info::service::RustInfoService;
 use crate::application::insight::service::RustInsightRouteService;
@@ -80,6 +81,9 @@ pub async fn run_application() -> Result<(), AppError> {
         afdian_services,
         auth_services,
         attribute_services: std::sync::Arc::new(RustAttributeRouteService::new(
+            postgres.pool.clone(),
+        )),
+        battle_pass_services: std::sync::Arc::new(RustBattlePassRouteService::new(
             postgres.pool.clone(),
         )),
         idle_services,

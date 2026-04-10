@@ -122,6 +122,9 @@ where
         attribute_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::attribute::NoopAttributeRouteServices,
         ),
+        battle_pass_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::battle_pass::NoopBattlePassRouteServices,
+        ),
         idle_services: Arc::new(NoopIdleRouteServices),
         time_services: Arc::new(time_services),
         info_services: Arc::new(jiuzhou_server_rs::edge::http::routes::info::NoopInfoRouteServices),

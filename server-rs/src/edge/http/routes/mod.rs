@@ -2,6 +2,7 @@ pub mod account;
 pub mod afdian;
 pub mod attribute;
 pub mod auth;
+pub mod battle_pass;
 pub mod captcha;
 pub mod character;
 pub mod dungeon;
