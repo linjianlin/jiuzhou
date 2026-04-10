@@ -1,9 +1,15 @@
+use std::{future::Future, pin::Pin, sync::Arc};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 
+use crate::application::inventory::consume::{
+    consume_character_stored_resources_and_materials_atomically,
+    CharacterStoredResourceCost, CharacterStoredResourcesConsumeInput,
+    CharacterStoredResourcesConsumeOutcome, MaterialConsumeRequirement,
+};
 use crate::application::static_data::catalog::{
     get_static_data_catalog, SkillDefDto, StaticDataCatalog, TechniqueDetailDto, TechniqueLayerDto,
 };
@@ -172,11 +178,213 @@ pub struct CharacterTechniqueStatusView {
     pub passives: BTreeMap<String, f64>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TechniqueUpgradeResultView {
+    #[serde(rename = "newLayer")]
+    pub new_layer: i32,
+    #[serde(rename = "unlockedSkills")]
+    pub unlocked_skills: Vec<String>,
+    #[serde(rename = "upgradedSkills")]
+    pub upgraded_skills: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CharacterTechniqueServiceResult<T> {
     pub success: bool,
     pub message: String,
     pub data: Option<T>,
+}
+
+#[derive(Clone)]
+pub struct SharedCharacterTechniqueRouteServices(pub Arc<dyn CharacterTechniqueRouteServices>);
+
+impl Default for SharedCharacterTechniqueRouteServices {
+    fn default() -> Self {
+        Self(Arc::new(RustCharacterTechniqueReadService::default()))
+    }
+}
+
+impl<T> From<Arc<T>> for SharedCharacterTechniqueRouteServices
+where
+    T: CharacterTechniqueRouteServices + 'static,
+{
+    fn from(value: Arc<T>) -> Self {
+        Self(value)
+    }
+}
+
+impl<T> From<T> for SharedCharacterTechniqueRouteServices
+where
+    T: CharacterTechniqueRouteServices + 'static,
+{
+    fn from(value: T) -> Self {
+        Self(Arc::new(value))
+    }
+}
+
+impl std::ops::Deref for SharedCharacterTechniqueRouteServices {
+    type Target = dyn CharacterTechniqueRouteServices;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+pub trait CharacterTechniqueRouteServices: Send + Sync {
+    fn get_character_techniques<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<Vec<CharacterTechniqueView>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn get_equipped_techniques<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<CharacterTechniqueEquippedView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn get_technique_upgrade_cost<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<TechniqueUpgradeCostView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn upgrade_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<TechniqueUpgradeResultView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn equip_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+        slot_type: &'a str,
+        slot_index: Option<i32>,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>>;
+
+    fn unequip_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>>;
+
+    fn dissipate_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>>;
+
+    fn equip_skill<'a>(
+        &'a self,
+        character_id: i64,
+        skill_id: &'a str,
+        slot_index: i32,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>>;
+
+    fn unequip_skill<'a>(
+        &'a self,
+        character_id: i64,
+        slot_index: i32,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>>;
+
+    fn get_available_skills<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<Vec<AvailableSkillView>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn get_equipped_skills<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<Vec<CharacterSkillSlotView>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn calculate_technique_passives<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<BTreeMap<String, f64>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
+
+    fn get_character_technique_status<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<CharacterTechniqueStatusView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >;
 }
 
 #[derive(Debug, Clone)]
@@ -297,6 +505,135 @@ impl RustCharacterTechniqueReadService {
                 spirit_stones: scale_cost(layer.cost_spirit_stones, quality_multiplier),
                 exp: scale_cost(layer.cost_exp, quality_multiplier),
                 materials,
+            }),
+        })
+    }
+
+    pub async fn upgrade_technique(
+        &self,
+        character_id: i64,
+        technique_id: &str,
+    ) -> Result<CharacterTechniqueServiceResult<TechniqueUpgradeResultView>, BusinessError> {
+        let normalized_technique_id = technique_id.trim();
+        if normalized_technique_id.is_empty() {
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_LEARNED_MESSAGE));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
+        let current_row = sqlx::query(
+            r#"
+            SELECT id, current_layer
+            FROM character_technique
+            WHERE character_id = $1
+              AND technique_id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .bind(normalized_technique_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+        let Some(current_row) = current_row else {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_LEARNED_MESSAGE));
+        };
+
+        let current_layer = current_row.get::<i32, _>("current_layer");
+        let technique_row_id = current_row.get::<i64, _>("id");
+        let catalog = get_static_data_catalog().map_err(internal_business_error)?;
+        let Some(detail) = catalog.technique_detail(normalized_technique_id) else {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_FOUND_MESSAGE));
+        };
+        let max_layer = detail.technique.max_layer.max(1);
+        if current_layer >= max_layer {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_TECHNIQUE_MAX_LAYER_MESSAGE));
+        }
+
+        let next_layer = current_layer + 1;
+        let Some(layer) = detail.layers.iter().find(|entry| entry.layer == next_layer) else {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(
+                CHARACTER_TECHNIQUE_LAYER_CONFIG_MISSING_MESSAGE,
+            ));
+        };
+
+        let quality_multiplier = detail.technique.quality_rank.max(1);
+        let consume_input = CharacterStoredResourcesConsumeInput {
+            resources: CharacterStoredResourceCost {
+                silver: 0,
+                spirit_stones: i64::from(scale_cost(
+                    layer.cost_spirit_stones,
+                    quality_multiplier,
+                )),
+                exp: i64::from(scale_cost(layer.cost_exp, quality_multiplier)),
+            },
+            materials: layer
+                .cost_materials
+                .iter()
+                .map(|material| MaterialConsumeRequirement {
+                    item_def_id: material.item_id.clone(),
+                    qty: i64::from(material.qty.max(0)),
+                    item_name: catalog
+                        .item_meta(material.item_id.as_str())
+                        .map(|entry| entry.name.clone()),
+                })
+                .collect(),
+        };
+        let consume_outcome = consume_character_stored_resources_and_materials_atomically(
+            &mut transaction,
+            character_id,
+            &consume_input,
+        )
+        .await?;
+        if let CharacterStoredResourcesConsumeOutcome::Failure { message } = consume_outcome {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(message.as_str()));
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE character_technique
+            SET current_layer = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(technique_row_id)
+        .bind(next_layer)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
+
+        Ok(CharacterTechniqueServiceResult {
+            success: true,
+            message: format!("{}修炼至第{}层", detail.technique.name, next_layer),
+            data: Some(TechniqueUpgradeResultView {
+                new_layer: next_layer,
+                unlocked_skills: layer.unlock_skill_ids.clone(),
+                upgraded_skills: layer.upgrade_skill_ids.clone(),
             }),
         })
     }
@@ -924,6 +1261,237 @@ impl RustCharacterTechniqueReadService {
                 })
             })
             .collect())
+    }
+}
+
+impl CharacterTechniqueRouteServices for RustCharacterTechniqueReadService {
+    fn get_character_techniques<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<Vec<CharacterTechniqueView>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::get_character_techniques(self, character_id).await
+        })
+    }
+
+    fn get_equipped_techniques<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<CharacterTechniqueEquippedView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::get_equipped_techniques(self, character_id).await
+        })
+    }
+
+    fn get_technique_upgrade_cost<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<TechniqueUpgradeCostView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::get_technique_upgrade_cost(
+                self,
+                character_id,
+                technique_id,
+            )
+            .await
+        })
+    }
+
+    fn upgrade_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<TechniqueUpgradeResultView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::upgrade_technique(self, character_id, technique_id)
+                .await
+        })
+    }
+
+    fn equip_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+        slot_type: &'a str,
+        slot_index: Option<i32>,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::equip_technique(
+                self,
+                character_id,
+                technique_id,
+                slot_type,
+                slot_index,
+            )
+            .await
+        })
+    }
+
+    fn unequip_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::unequip_technique(self, character_id, technique_id)
+                .await
+        })
+    }
+
+    fn dissipate_technique<'a>(
+        &'a self,
+        character_id: i64,
+        technique_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::dissipate_technique(
+                self,
+                character_id,
+                technique_id,
+            )
+            .await
+        })
+    }
+
+    fn equip_skill<'a>(
+        &'a self,
+        character_id: i64,
+        skill_id: &'a str,
+        slot_index: i32,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::equip_skill(self, character_id, skill_id, slot_index)
+                .await
+        })
+    }
+
+    fn unequip_skill<'a>(
+        &'a self,
+        character_id: i64,
+        slot_index: i32,
+    ) -> Pin<Box<dyn Future<Output = Result<CharacterTechniqueServiceResult<()>, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::unequip_skill(self, character_id, slot_index).await
+        })
+    }
+
+    fn get_available_skills<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<Vec<AvailableSkillView>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::get_available_skills(self, character_id).await
+        })
+    }
+
+    fn get_equipped_skills<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<Vec<CharacterSkillSlotView>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::get_equipped_skills(self, character_id).await
+        })
+    }
+
+    fn calculate_technique_passives<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<BTreeMap<String, f64>>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::calculate_technique_passives(self, character_id)
+                .await
+        })
+    }
+
+    fn get_character_technique_status<'a>(
+        &'a self,
+        character_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        CharacterTechniqueServiceResult<CharacterTechniqueStatusView>,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            RustCharacterTechniqueReadService::get_character_technique_status(self, character_id)
+                .await
+        })
     }
 }
 

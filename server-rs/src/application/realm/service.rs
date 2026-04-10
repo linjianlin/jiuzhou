@@ -6,6 +6,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 
+use crate::application::inventory::consume::{
+    consume_character_stored_resources_and_materials_atomically,
+    CharacterStoredResourceCost, CharacterStoredResourcesConsumeInput,
+    CharacterStoredResourcesConsumeOutcome, MaterialConsumeRequirement,
+};
 use crate::application::static_data::realm::normalize_realm_keeping_unknown;
 use crate::application::static_data::seed::{
     list_seed_files_with_prefix, read_seed_json, seed_file_path,
@@ -464,12 +469,36 @@ impl RustRealmRouteService {
             ));
         }
 
-        consume_cost_items(
+        let consume_outcome = consume_character_stored_resources_and_materials_atomically(
             &mut transaction,
             locked_state.character_id,
-            &preview_costs.items,
+            &CharacterStoredResourcesConsumeInput {
+                resources: CharacterStoredResourceCost {
+                    silver: 0,
+                    spirit_stones: preview_costs.spirit_stones,
+                    exp: preview_costs.exp,
+                },
+                materials: preview_costs
+                    .items
+                    .iter()
+                    .map(|item| MaterialConsumeRequirement {
+                        item_def_id: item.item_def_id.clone(),
+                        qty: i64::from(item.qty.max(0)),
+                        item_name: load_item_meta_map()
+                            .ok()
+                            .and_then(|meta| meta.get(item.item_def_id.as_str()).cloned())
+                            .map(|meta| meta.name),
+                    })
+                    .collect(),
+            },
         )
         .await?;
+        let consumed_resources = match consume_outcome {
+            CharacterStoredResourcesConsumeOutcome::Success(result) => result,
+            CharacterStoredResourcesConsumeOutcome::Failure { message } => {
+                return Ok(ServiceResultResponse::new(false, Some(message), None));
+            }
+        };
 
         let reward_attribute_points = rule
             .rewards
@@ -477,8 +506,8 @@ impl RustRealmRouteService {
             .and_then(|reward| reward.attribute_points)
             .unwrap_or(0)
             .max(0);
-        let new_exp = locked_state.exp - preview_costs.exp;
-        let new_spirit_stones = locked_state.spirit_stones - preview_costs.spirit_stones;
+        let new_exp = consumed_resources.remaining_exp;
+        let new_spirit_stones = consumed_resources.remaining_spirit_stones;
         let new_attribute_points = locked_state.attribute_points + reward_attribute_points;
 
         sqlx::query(
@@ -1644,72 +1673,6 @@ fn format_signed_percentage(value: f64) -> String {
     } else {
         pct
     }
-}
-
-async fn consume_cost_items(
-    transaction: &mut Transaction<'_, Postgres>,
-    character_id: i64,
-    items: &[BreakthroughItemCost],
-) -> Result<(), BusinessError> {
-    for item in items {
-        let mut remaining = item.qty.max(0);
-        if remaining <= 0 {
-            continue;
-        }
-        let rows = sqlx::query(
-            r#"
-            SELECT id, qty
-            FROM item_instance
-            WHERE owner_character_id = $1
-              AND location = 'bag'
-              AND item_def_id = $2
-            ORDER BY created_at ASC, id ASC
-            FOR UPDATE
-            "#,
-        )
-        .bind(character_id)
-        .bind(&item.item_def_id)
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(sqlx_business_error)?;
-        for row in rows {
-            if remaining <= 0 {
-                break;
-            }
-            let instance_id = row.get::<i64, _>("id");
-            let instance_qty = row.get::<i32, _>("qty").max(0);
-            if instance_qty <= 0 {
-                continue;
-            }
-            let consume_qty = remaining.min(instance_qty);
-            if consume_qty == instance_qty {
-                sqlx::query("DELETE FROM item_instance WHERE id = $1")
-                    .bind(instance_id)
-                    .execute(&mut **transaction)
-                    .await
-                    .map_err(sqlx_business_error)?;
-            } else {
-                sqlx::query(
-                    r#"
-                    UPDATE item_instance
-                    SET qty = qty - $2,
-                        updated_at = NOW()
-                    WHERE id = $1
-                    "#,
-                )
-                .bind(instance_id)
-                .bind(consume_qty)
-                .execute(&mut **transaction)
-                .await
-                .map_err(sqlx_business_error)?;
-            }
-            remaining -= consume_qty;
-        }
-        if remaining > 0 {
-            return Err(BusinessError::new("材料不足"));
-        }
-    }
-    Ok(())
 }
 
 fn build_requirement_failure_message(requirement: &RealmRequirementView) -> String {

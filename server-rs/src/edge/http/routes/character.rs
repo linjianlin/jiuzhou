@@ -131,6 +131,10 @@ pub fn build_character_router() -> Router<AppState> {
             get(get_technique_upgrade_cost_handler),
         )
         .route(
+            "/{characterId}/technique/{techniqueId}/upgrade",
+            post(upgrade_technique_handler),
+        )
+        .route(
             "/{characterId}/technique/equip",
             post(equip_technique_handler),
         )
@@ -403,6 +407,22 @@ async fn get_available_skills_handler(
     let result = state
         .character_technique_service
         .get_available_skills(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn upgrade_technique_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((character_id, technique_id)): Path<(String, String)>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let result = state
+        .character_technique_service
+        .upgrade_technique(character_id, technique_id.as_str())
         .await?;
     Ok(character_technique_result_response(result))
 }
