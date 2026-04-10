@@ -26,10 +26,10 @@ use crate::edge::http::routes::game::{
     GameHomeMainQuestChapterView, GameHomeMainQuestProgressView,
     GameHomeMainQuestSectionObjectiveView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView, GameHomeTaskSummaryItemView, GameHomeTaskSummaryView,
-    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
     GameHomeTeamApplicationView, GameHomeTeamInfoView, GameHomeTeamMemberView,
     GameHomeTeamOverviewView, GameMainQuestTrackDataView, GameRouteServices,
-    GameTaskTrackDataView,
+    GameTaskMutationDataView, GameTaskObjectiveView, GameTaskOverviewItemView,
+    GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
 };
 use crate::edge::http::routes::inventory::InventoryRouteServices;
 use crate::edge::http::routes::realm::RealmRouteServices;
@@ -43,9 +43,9 @@ static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = 
  * 首页聚合应用服务。
  *
  * 作用：
- * 1. 做什么：对齐 Node `gameHomeOverviewService` 的首页首屏聚合读取，把签到、成就、账号安全、境界、装备、挂机、队伍、任务、主线收敛到单一入口。
- * 2. 做什么：优先复用现有 sign_in/account/realm/inventory/idle 应用服务，把未迁移领域只保留为首页所需的最小摘要查询，避免重复实现整套路由。
- * 3. 不做什么：不承担任务/主线/队伍的写操作，也不伪造尚未迁移的完整副作用链。
+ * 1. 做什么：对齐 Node `gameHomeOverviewService` 的首页首屏聚合读取，并补齐 task/main-quest 独立路由复用的最小读写能力。
+ * 2. 做什么：优先复用现有 sign_in/account/realm/inventory/idle 应用服务，把未迁移领域只保留为首页与任务面板所需的最小摘要查询与轻量写入，避免重复实现整套路由。
+ * 3. 不做什么：不承担完整队伍、副本或任务领奖副作用链，也不伪造尚未迁移的重型战斗/奖励流程。
  *
  * 输入 / 输出：
  * - 输入：`user_id`、`character_id`。
@@ -53,14 +53,16 @@ static TASK_AUXILIARY_CATALOG: OnceLock<Result<TaskAuxiliaryCatalog, String>> = 
  *
  * 数据流 / 状态流：
  * - 首页请求 -> 本服务并发调用已迁移服务 + PostgreSQL/seed 摘要查询 -> 聚合为首页快照 -> HTTP 路由直接返回。
+ * - task/main-quest 独立路由 -> 本服务复用同一批任务与主线索引 -> 返回摘要或落轻量 tracked / NPC 接取提交状态。
  *
  * 复用设计说明：
  * - 签到、手机号、境界、背包、挂机都直接复用现有服务，避免首页聚合复制领域规则；未迁移的任务/主线/队伍只在这里维护最小只读查询，等完整路由迁移后仍可继续复用。
- * - 任务种子与主线种子通过模块级 `OnceLock` 缓存，首页高频打开时不会重复扫描大 JSON 文件。
+ * - 任务种子与主线种子通过模块级 `OnceLock` 缓存，首页高频打开或 NPC 面板频繁切换时都不会重复扫描大 JSON 文件。
  *
  * 关键边界条件与坑点：
  * 1. 签到概览是首页红点真值来源，若读取失败必须直接报错，不能静默回退成“未签到”，否则会把真实异常伪装成业务状态。
  * 2. 主线快照当前只对齐首页追踪所需的最小字段；`dialogue.currentNode` 与奖励富化不在这一轮扩展，避免为了首页读接口把未迁移详情逻辑硬塞进来。
+ * 3. 任务 NPC 接取/提交只覆盖状态迁移，不在这里偷带领奖、副本推进或角色推送，避免把高副作用链路混进首页聚合服务。
  */
 #[derive(Clone)]
 pub struct RustGameRouteService {
@@ -92,6 +94,8 @@ struct GameTaskSeed {
     objectives: Vec<GameTaskObjectiveSeed>,
     #[serde(default)]
     rewards: Vec<GameTaskRewardSeed>,
+    #[serde(default)]
+    prereq_task_ids: Vec<String>,
     enabled: Option<bool>,
     #[serde(default)]
     sort_weight: i32,
@@ -576,42 +580,8 @@ impl RustGameRouteService {
             return Ok(Vec::new());
         }
 
-        let daily_ids = task_defs
-            .iter()
-            .filter(|task| task.category == "daily")
-            .map(|task| task.id.clone())
-            .collect::<Vec<_>>();
-        let event_ids = task_defs
-            .iter()
-            .filter(|task| task.category == "event")
-            .map(|task| task.id.clone())
-            .collect::<Vec<_>>();
-
-        if !daily_ids.is_empty() || !event_ids.is_empty() {
-            sqlx::query(
-                r#"
-                UPDATE character_task_progress
-                SET status = 'ongoing',
-                    progress = '{}'::jsonb,
-                    accepted_at = NOW(),
-                    completed_at = NULL,
-                    claimed_at = NULL,
-                    updated_at = NOW()
-                WHERE character_id = $1
-                  AND (
-                    (task_id = ANY($2::varchar[]) AND accepted_at < date_trunc('day', NOW()))
-                    OR
-                    (task_id = ANY($3::varchar[]) AND accepted_at < date_trunc('week', NOW()))
-                  )
-                "#,
-            )
-            .bind(character_id)
-            .bind(&daily_ids)
-            .bind(&event_ids)
-            .execute(&self.pool)
-            .await
-            .map_err(internal_sql_business_error)?;
-        }
+        self.refresh_recurring_task_progress(character_id, &task_defs)
+            .await?;
 
         let task_ids = task_defs
             .iter()
@@ -825,6 +795,313 @@ impl RustGameRouteService {
             data: Some(GameTaskTrackDataView {
                 task_id: normalized_task_id,
                 tracked: row.get::<bool, _>("tracked"),
+            }),
+        })
+    }
+
+    async fn accept_task_from_npc_impl(
+        &self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Result<GameActionResult<GameTaskMutationDataView>, BusinessError> {
+        let normalized_task_id = task_id.trim().to_string();
+        if normalized_task_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务ID不能为空".to_string(),
+                data: None,
+            });
+        }
+        let normalized_npc_id = npc_id.trim().to_string();
+        if normalized_npc_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "NPC不存在".to_string(),
+                data: None,
+            });
+        }
+
+        let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "角色不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let Some(task_def) = task_seed_catalog()?
+            .iter()
+            .find(|task| task.enabled != Some(false) && task.id == normalized_task_id)
+            .cloned()
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务不存在".to_string(),
+                data: None,
+            });
+        };
+
+        if let Some(message) = build_task_unlock_failure_message(&task_def, &character_realm_state)
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message,
+                data: None,
+            });
+        }
+
+        if normalize_optional_text(task_def.giver_npc_id.as_deref())
+            != Some(normalized_npc_id.clone())
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message: "该NPC无法发放此任务".to_string(),
+                data: None,
+            });
+        }
+
+        self.refresh_recurring_task_progress(character_id, std::slice::from_ref(&task_def))
+            .await?;
+
+        if !self
+            .check_task_prerequisites(character_id, &task_def.prereq_task_ids)
+            .await?
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message: "前置任务未完成".to_string(),
+                data: None,
+            });
+        }
+
+        let existing_status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT status
+            FROM character_task_progress
+            WHERE character_id = $1
+              AND task_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        if let Some(status) = existing_status {
+            let status = map_task_status(Some(status.as_str()));
+            if status != "completed" {
+                return Ok(GameActionResult {
+                    success: false,
+                    message: "任务已接取".to_string(),
+                    data: None,
+                });
+            }
+
+            let repeat_finish_message = match task_def.category.as_str() {
+                "daily" => "今日任务已完成",
+                "event" => "本周活动任务已完成",
+                _ => "任务已完成，不可重复接取",
+            };
+            return Ok(GameActionResult {
+                success: false,
+                message: repeat_finish_message.to_string(),
+                data: None,
+            });
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO character_task_progress (
+              character_id,
+              task_id,
+              status,
+              progress,
+              tracked,
+              accepted_at,
+              completed_at,
+              claimed_at,
+              updated_at
+            ) VALUES (
+              $1,
+              $2,
+              'ongoing',
+              '{}'::jsonb,
+              true,
+              NOW(),
+              NULL,
+              NULL,
+              NOW()
+            )
+            ON CONFLICT (character_id, task_id) DO UPDATE SET
+              status = EXCLUDED.status,
+              progress = EXCLUDED.progress,
+              tracked = EXCLUDED.tracked,
+              accepted_at = NOW(),
+              completed_at = NULL,
+              claimed_at = NULL,
+              updated_at = NOW()
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameTaskMutationDataView {
+                task_id: normalized_task_id,
+            }),
+        })
+    }
+
+    async fn submit_task_to_npc_impl(
+        &self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Result<GameActionResult<GameTaskMutationDataView>, BusinessError> {
+        let normalized_task_id = task_id.trim().to_string();
+        if normalized_task_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务ID不能为空".to_string(),
+                data: None,
+            });
+        }
+        let normalized_npc_id = npc_id.trim().to_string();
+        if normalized_npc_id.is_empty() {
+            return Ok(GameActionResult {
+                success: false,
+                message: "NPC不存在".to_string(),
+                data: None,
+            });
+        }
+
+        let Some(character_realm_state) = self.load_character_realm_state(character_id).await?
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "角色不存在".to_string(),
+                data: None,
+            });
+        };
+
+        let Some(task_def) = task_seed_catalog()?
+            .iter()
+            .find(|task| task.enabled != Some(false) && task.id == normalized_task_id)
+            .cloned()
+        else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务不存在".to_string(),
+                data: None,
+            });
+        };
+
+        if let Some(message) = build_task_unlock_failure_message(&task_def, &character_realm_state)
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message,
+                data: None,
+            });
+        }
+
+        if normalize_optional_text(task_def.giver_npc_id.as_deref())
+            != Some(normalized_npc_id)
+        {
+            return Ok(GameActionResult {
+                success: false,
+                message: "该任务无法在此提交".to_string(),
+                data: None,
+            });
+        }
+
+        self.refresh_recurring_task_progress(character_id, std::slice::from_ref(&task_def))
+            .await?;
+
+        let row = sqlx::query(
+            r#"
+            SELECT status, progress
+            FROM character_task_progress
+            WHERE character_id = $1
+              AND task_id = $2
+            LIMIT 1
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        let Some(row) = row else {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务未接取".to_string(),
+                data: None,
+            });
+        };
+
+        let status = map_task_status(
+            row.try_get::<Option<String>, _>("status").ok().flatten().as_deref(),
+        );
+        if status == "completed" {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务已完成".to_string(),
+                data: None,
+            });
+        }
+        if status == "claimable" {
+            return Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskMutationDataView {
+                    task_id: normalized_task_id,
+                }),
+            });
+        }
+
+        let progress = parse_task_progress_map(
+            row.try_get::<Option<Value>, _>("progress").ok().flatten(),
+        );
+        if !all_task_objectives_done(&task_def, &progress) {
+            return Ok(GameActionResult {
+                success: false,
+                message: "任务未完成".to_string(),
+                data: None,
+            });
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE character_task_progress
+            SET status = 'claimable',
+                completed_at = COALESCE(completed_at, NOW()),
+                updated_at = NOW()
+            WHERE character_id = $1
+              AND task_id = $2
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_id)
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(GameActionResult {
+            success: true,
+            message: "ok".to_string(),
+            data: Some(GameTaskMutationDataView {
+                task_id: normalized_task_id,
             }),
         })
     }
@@ -1244,6 +1521,99 @@ impl RustGameRouteService {
         Ok(result)
     }
 
+    async fn refresh_recurring_task_progress(
+        &self,
+        character_id: i64,
+        task_defs: &[GameTaskSeed],
+    ) -> Result<(), BusinessError> {
+        let daily_ids = task_defs
+            .iter()
+            .filter(|task| task.category == "daily")
+            .map(|task| task.id.clone())
+            .collect::<Vec<_>>();
+        let event_ids = task_defs
+            .iter()
+            .filter(|task| task.category == "event")
+            .map(|task| task.id.clone())
+            .collect::<Vec<_>>();
+
+        if daily_ids.is_empty() && event_ids.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE character_task_progress
+            SET status = 'ongoing',
+                progress = '{}'::jsonb,
+                accepted_at = NOW(),
+                completed_at = NULL,
+                claimed_at = NULL,
+                updated_at = NOW()
+            WHERE character_id = $1
+              AND (
+                (task_id = ANY($2::varchar[]) AND accepted_at < date_trunc('day', NOW()))
+                OR
+                (task_id = ANY($3::varchar[]) AND accepted_at < date_trunc('week', NOW()))
+              )
+            "#,
+        )
+        .bind(character_id)
+        .bind(&daily_ids)
+        .bind(&event_ids)
+        .execute(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        Ok(())
+    }
+
+    async fn check_task_prerequisites(
+        &self,
+        character_id: i64,
+        prereq_task_ids: &[String],
+    ) -> Result<bool, BusinessError> {
+        let normalized_task_ids = prereq_task_ids
+            .iter()
+            .map(|task_id| task_id.trim())
+            .filter(|task_id| !task_id.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if normalized_task_ids.is_empty() {
+            return Ok(true);
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT task_id, status
+            FROM character_task_progress
+            WHERE character_id = $1
+              AND task_id = ANY($2::varchar[])
+            "#,
+        )
+        .bind(character_id)
+        .bind(&normalized_task_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(internal_sql_business_error)?;
+
+        let mut status_by_task_id = HashMap::with_capacity(rows.len());
+        for row in rows {
+            let task_id = row.get::<String, _>("task_id");
+            let status = map_task_status(
+                row.try_get::<Option<String>, _>("status").ok().flatten().as_deref(),
+            );
+            status_by_task_id.insert(task_id, status);
+        }
+
+        Ok(normalized_task_ids.iter().all(|task_id| {
+            matches!(
+                status_by_task_id.get(task_id).map(String::as_str),
+                Some("turnin" | "claimable" | "completed")
+            )
+        }))
+    }
+
     async fn load_online_user_map(&self, user_ids: Vec<i64>) -> HashMap<i64, bool> {
         let normalized_ids = normalize_character_ids(user_ids);
         let mut result = HashMap::with_capacity(normalized_ids.len());
@@ -1305,6 +1675,42 @@ impl GameRouteServices for RustGameRouteService {
         >,
     > {
         Box::pin(async move { self.set_task_tracked_impl(character_id, task_id, tracked).await })
+    }
+
+    fn accept_task_from_npc<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.accept_task_from_npc_impl(character_id, task_id, npc_id)
+                .await
+        })
+    }
+
+    fn submit_task_to_npc<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.submit_task_to_npc_impl(character_id, task_id, npc_id)
+                .await
+        })
     }
 
     fn get_main_quest_progress<'a>(
@@ -1525,6 +1931,28 @@ fn parse_task_progress_map(value: Option<Value>) -> HashMap<String, i32> {
             }
         })
         .collect()
+}
+
+fn all_task_objectives_done(task: &GameTaskSeed, progress: &HashMap<String, i32>) -> bool {
+    let mut has_objective = false;
+    for objective in &task.objectives {
+        let Some(objective_id) = objective
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        has_objective = true;
+        let target = objective.target.unwrap_or(1).max(1);
+        let done = progress.get(objective_id).copied().unwrap_or(0);
+        if done < target {
+            return false;
+        }
+    }
+
+    has_objective
 }
 
 fn resolve_task_map_name(

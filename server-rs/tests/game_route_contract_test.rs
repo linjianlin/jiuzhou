@@ -21,8 +21,9 @@ use jiuzhou_server_rs::edge::http::routes::game::{
     GameHomeMainQuestProgressView, GameHomeMainQuestSectionView, GameHomeOverviewView,
     GameHomeSignInView,
     GameHomeTaskSummaryItemView, GameHomeTaskSummaryView, GameHomeTeamOverviewView,
-    GameMainQuestTrackDataView, GameRouteServices, GameTaskObjectiveView,
-    GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView, GameTaskTrackDataView,
+    GameMainQuestTrackDataView, GameRouteServices, GameTaskMutationDataView,
+    GameTaskObjectiveView, GameTaskOverviewItemView, GameTaskOverviewView, GameTaskRewardView,
+    GameTaskTrackDataView,
 };
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
@@ -290,6 +291,90 @@ async fn task_track_route_preserves_send_result_shape() {
             "data": {
                 "taskId": "daily-1",
                 "tracked": true
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_npc_accept_route_preserves_send_result_shape() {
+    let accept_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_accept_calls(accept_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/task/npc/accept")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"npcId":"npc-guide","taskId":"task-main-001"}"#))
+                .expect("task npc accept request"),
+        )
+        .await
+        .expect("task npc accept response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        accept_calls.lock().expect("task npc accept calls").as_slice(),
+        &[(3002_i64, "task-main-001".to_string(), "npc-guide".to_string())]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "taskId": "task-main-001"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn task_npc_submit_route_preserves_send_result_shape() {
+    let submit_calls = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_character(sample_character()),
+        FakeGameServices::with_task_submit_calls(submit_calls.clone()),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/task/npc/submit")
+                .header("authorization", "Bearer game-token")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"npcId":"npc-village-elder","taskId":"task-main-003"}"#,
+                ))
+                .expect("task npc submit request"),
+        )
+        .await
+        .expect("task npc submit response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        submit_calls.lock().expect("task npc submit calls").as_slice(),
+        &[(
+            3002_i64,
+            "task-main-003".to_string(),
+            "npc-village-elder".to_string(),
+        )]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "ok",
+            "data": {
+                "taskId": "task-main-003"
             }
         })
     );
@@ -683,6 +768,8 @@ struct FakeGameServices {
     requested_ids: Arc<Mutex<Vec<(i64, i64)>>>,
     task_summary_requests: Arc<Mutex<Vec<(i64, Option<String>)>>>,
     task_track_calls: Arc<Mutex<Vec<(i64, String, bool)>>>,
+    task_accept_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
+    task_submit_calls: Arc<Mutex<Vec<(i64, String, String)>>>,
     main_quest_track_calls: Arc<Mutex<Vec<(i64, bool)>>>,
 }
 
@@ -813,6 +900,8 @@ impl FakeGameServices {
             requested_ids,
             task_summary_requests: Arc::new(Mutex::new(Vec::new())),
             task_track_calls: Arc::new(Mutex::new(Vec::new())),
+            task_accept_calls: Arc::new(Mutex::new(Vec::new())),
+            task_submit_calls: Arc::new(Mutex::new(Vec::new())),
             main_quest_track_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -826,6 +915,18 @@ impl FakeGameServices {
     fn with_task_track_calls(track_calls: Arc<Mutex<Vec<(i64, String, bool)>>>) -> Self {
         let mut services = Self::new();
         services.task_track_calls = track_calls;
+        services
+    }
+
+    fn with_task_accept_calls(accept_calls: Arc<Mutex<Vec<(i64, String, String)>>>) -> Self {
+        let mut services = Self::new();
+        services.task_accept_calls = accept_calls;
+        services
+    }
+
+    fn with_task_submit_calls(submit_calls: Arc<Mutex<Vec<(i64, String, String)>>>) -> Self {
+        let mut services = Self::new();
+        services.task_submit_calls = submit_calls;
         services
     }
 
@@ -914,6 +1015,58 @@ impl GameRouteServices for FakeGameServices {
                 success: true,
                 message: "ok".to_string(),
                 data: Some(GameTaskTrackDataView { task_id, tracked }),
+            })
+        })
+    }
+
+    fn accept_task_from_npc<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.task_accept_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record task accept call")
+                .push((character_id, task_id.clone(), npc_id));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskMutationDataView { task_id }),
+            })
+        })
+    }
+
+    fn submit_task_to_npc<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let calls = self.task_submit_calls.clone();
+        Box::pin(async move {
+            calls
+                .lock()
+                .expect("record task submit call")
+                .push((character_id, task_id.clone(), npc_id));
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskMutationDataView { task_id }),
             })
         })
     }

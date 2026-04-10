@@ -265,6 +265,12 @@ pub struct GameTaskTrackDataView {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTaskMutationDataView {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GameMainQuestTrackDataView {
     pub tracked: bool,
 }
@@ -296,6 +302,32 @@ pub trait GameRouteServices: Send + Sync {
     ) -> Pin<
         Box<
             dyn Future<Output = Result<GameActionResult<GameTaskTrackDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn accept_task_from_npc<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    >;
+
+    fn submit_task_to_npc<'a>(
+        &'a self,
+        character_id: i64,
+        task_id: String,
+        npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
                 + Send
                 + 'a,
         >,
@@ -423,6 +455,48 @@ impl GameRouteServices for NoopGameRouteServices {
                 success: true,
                 message: "ok".to_string(),
                 data: Some(GameTaskTrackDataView { task_id, tracked }),
+            })
+        })
+    }
+
+    fn accept_task_from_npc<'a>(
+        &'a self,
+        _character_id: i64,
+        task_id: String,
+        _npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskMutationDataView { task_id }),
+            })
+        })
+    }
+
+    fn submit_task_to_npc<'a>(
+        &'a self,
+        _character_id: i64,
+        task_id: String,
+        _npc_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<GameActionResult<GameTaskMutationDataView>, BusinessError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(GameActionResult {
+                success: true,
+                message: "ok".to_string(),
+                data: Some(GameTaskMutationDataView { task_id }),
             })
         })
     }
