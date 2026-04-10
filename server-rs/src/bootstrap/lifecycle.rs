@@ -72,7 +72,7 @@ pub async fn run_application() -> Result<(), AppError> {
     > = auth_services_impl.clone();
     let upload_services: std::sync::Arc<
         dyn crate::edge::http::routes::upload::UploadRouteServices,
-    > = std::sync::Arc::new(RustUploadService::new());
+    > = std::sync::Arc::new(RustUploadService::new(postgres.pool.clone()));
     let afdian_services: std::sync::Arc<
         dyn crate::edge::http::routes::afdian::AfdianRouteServices,
     > = std::sync::Arc::new(RustAfdianRouteService::new());

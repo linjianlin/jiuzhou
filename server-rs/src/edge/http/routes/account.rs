@@ -14,7 +14,7 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  * account 账号级只读路由。
  *
  * 作用：
- * 1. 做什么：补齐 Node 当前账号页已公开的 `/current-ip`、`/phone-binding/*`、`/password/change` 协议层。
+ * 1. 做什么：补齐 Node 当前账号页已公开的 `/current-ip`、`/phone-binding/send-code|bind|status`、`/password/change` 协议层。
  * 2. 做什么：复用现有 Bearer + session 鉴权链，把手机号绑定状态、发码、绑卡和改密都收口到统一服务接口，避免路由层散落同类校验。
  * 3. 不做什么：不直接实现短信发送、外部验证码验证或密码哈希写库，这些仍由下层服务负责。
  *
@@ -110,7 +110,12 @@ async fn phone_binding_send_code_handler(
         Err(response) => return Ok(response),
     };
 
-    let phone_number = payload.phone_number.unwrap_or_default().trim().to_string();
+    let phone_number = payload
+        .phone_number
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if phone_number.is_empty() {
         return Err(BusinessError::new("手机号不能为空"));
     }

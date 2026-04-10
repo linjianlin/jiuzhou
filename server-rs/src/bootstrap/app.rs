@@ -4,6 +4,7 @@ use axum::{Json, Router};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower_http::services::ServeDir;
 
 use crate::bootstrap::readiness::ReadinessGate;
 use crate::edge::http::routes::account::build_account_router;
@@ -115,9 +116,11 @@ struct HealthPayload {
 }
 
 pub fn build_router(state: AppState) -> Router {
+    let uploads_avatar_root = state.upload_services.avatar_storage_root();
     let router = Router::new()
         .route("/", get(root_handler))
         .route("/api/health", get(health_handler))
+        .nest_service("/uploads/avatars", ServeDir::new(uploads_avatar_root))
         .nest("/api/account", build_account_router())
         .nest("/api/afdian", build_afdian_router())
         .nest("/api/attribute", build_attribute_router())

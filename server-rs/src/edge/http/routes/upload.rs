@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::{future::Future, path::PathBuf, pin::Pin};
 
 use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::http::HeaderMap;
@@ -18,25 +18,26 @@ const MISSING_AVATAR_URL_MESSAGE: &str = "缺少 avatarUrl";
 const MISSING_IMAGE_FILE_MESSAGE: &str = "请选择图片文件";
 const ASSET_UPLOAD_SUCCESS_MESSAGE: &str = "头像上传成功";
 const AVATAR_UPDATE_SUCCESS_MESSAGE: &str = "头像更新成功";
+const AVATAR_DELETE_SUCCESS_MESSAGE: &str = "头像删除成功";
 
 /**
- * upload 最小路由簇。
+ * upload 路由簇。
  *
  * 作用：
- * 1. 做什么：实现当前前端真实会走到的 `avatar/sts`、`avatar`、`avatar/confirm` 与 `avatar-asset` 组上传端点。
- * 2. 做什么：把冻结的图片类型/大小/缺字段文案和 Node 兼容响应 shape 固定在这一层，并让 `avatar`/`avatar-asset` 共用同一套校验与 multipart 解析。
- * 3. 不做什么：不扩展头像删除、不接 COS，也不在这里补额外的角色资料广播逻辑。
+ * 1. 做什么：实现 Node 当前 `avatar/sts`、`avatar`、`avatar/confirm`、`avatar-asset/sts|avatar-asset|avatar-asset/confirm` 与 `DELETE /avatar` 合同，并把角色头像写库/删除编排集中在这里。
+ * 2. 做什么：把冻结的图片类型/大小/缺字段文案和 Node 兼容响应 shape 固定在这一层，并让 `avatar`/`avatar-asset` 复用同一套校验与 multipart 解析。
+ * 3. 不做什么：不接 COS，也不在这里补额外的角色资料广播逻辑。
  *
  * 输入 / 输出：
  * - 输入：Bearer token、STS JSON、multipart `avatar` 文件、confirm JSON。
- * - 输出：STS 走 `{ success:true, data }`，本地 upload/confirm 走 `{ success, message, avatarUrl? }`。
+ * - 输出：STS 走 `{ success:true, data }`，upload/confirm 走 `{ success, message, avatarUrl? }`，删除走 `{ success, message }`。
  *
  * 数据流 / 状态流：
- * - STS / upload / confirm 请求 -> 统一鉴权 -> 统一图片校验 -> application upload 服务 -> 协议响应。
+ * - STS / upload / confirm / delete 请求 -> 统一鉴权 -> 统一图片校验或 URL 校验 -> application upload 服务 -> 协议响应。
  *
  * 复用设计说明：
  * - 图片格式/大小校验集中在单一 helper，避免 `avatar` 与 `avatar-asset` 的 STS / multipart / confirm 各维护一份冻结契约。
- * - upload 成功响应 DTO 与处理函数统一复用，后续若补正式头像写库，只需在应用服务扩展，不必再复制四组 handler。
+ * - `avatar` 上传、确认与删除都复用同一组角色头像服务接口，避免路由层重复维护写库、旧头像清理与返回文案。
  *
  * 关键边界条件与坑点：
  * 1. multipart 默认 body limit 会提前抛 413，必须在路由层放宽限制后自己返回固定 `图片大小不能超过2MB`。
@@ -78,6 +79,8 @@ struct UploadActionResponse {
 }
 
 pub trait UploadRouteServices: Send + Sync {
+    fn avatar_storage_root(&self) -> PathBuf;
+
     fn store_avatar_asset<'a>(
         &'a self,
         request: UploadStoreRequest,
@@ -87,12 +90,27 @@ pub trait UploadRouteServices: Send + Sync {
         &'a self,
         avatar_url: String,
     ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>>;
+
+    fn assign_character_avatar<'a>(
+        &'a self,
+        user_id: i64,
+        avatar_url: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>>;
+
+    fn delete_character_avatar<'a>(
+        &'a self,
+        user_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>>;
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct NoopUploadRouteServices;
 
 impl UploadRouteServices for NoopUploadRouteServices {
+    fn avatar_storage_root(&self) -> PathBuf {
+        std::env::temp_dir().join("jiuzhou-server-rs-noop-uploads")
+    }
+
     fn store_avatar_asset<'a>(
         &'a self,
         _request: UploadStoreRequest,
@@ -111,12 +129,37 @@ impl UploadRouteServices for NoopUploadRouteServices {
     ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>> {
         Box::pin(async move { Err(BusinessError::new("头像地址不合法")) })
     }
+
+    fn assign_character_avatar<'a>(
+        &'a self,
+        _user_id: i64,
+        _avatar_url: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "上传失败",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
+    fn delete_character_avatar<'a>(
+        &'a self,
+        _user_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "上传失败",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
 }
 
 pub fn build_upload_router() -> Router<AppState> {
     Router::new()
         .route("/avatar/sts", post(create_avatar_sts_handler))
-        .route("/avatar", post(upload_avatar_handler))
+        .route("/avatar", post(upload_avatar_handler).delete(delete_avatar_handler))
         .route("/avatar/confirm", post(confirm_avatar_handler))
         .route("/avatar-asset/sts", post(create_avatar_asset_sts_handler))
         .route("/avatar-asset", post(upload_avatar_asset_handler))
@@ -145,7 +188,21 @@ async fn upload_avatar_handler(
     headers: HeaderMap,
     multipart: Multipart,
 ) -> Result<Response, BusinessError> {
-    upload_multipart_avatar(&state, &headers, multipart, AVATAR_UPDATE_SUCCESS_MESSAGE).await
+    let user_id = ensure_authenticated_user_id(&state, &headers).await?;
+    let upload_request = read_avatar_upload_request(multipart).await?;
+    let avatar_url = state
+        .upload_services
+        .store_avatar_asset(upload_request)
+        .await?;
+    let avatar_url = state
+        .upload_services
+        .assign_character_avatar(user_id, avatar_url)
+        .await?;
+    Ok(upload_action_response(
+        true,
+        AVATAR_UPDATE_SUCCESS_MESSAGE,
+        Some(avatar_url),
+    ))
 }
 
 async fn upload_avatar_asset_handler(
@@ -161,7 +218,25 @@ async fn confirm_avatar_handler(
     headers: HeaderMap,
     Json(payload): Json<UploadConfirmRequest>,
 ) -> Result<Response, BusinessError> {
-    confirm_avatar_upload(&state, &headers, payload, AVATAR_UPDATE_SUCCESS_MESSAGE).await
+    let user_id = ensure_authenticated_user_id(&state, &headers).await?;
+    let avatar_url = payload.avatar_url.unwrap_or_default().trim().to_string();
+    if avatar_url.is_empty() {
+        return Err(BusinessError::new(MISSING_AVATAR_URL_MESSAGE));
+    }
+
+    let avatar_url = state
+        .upload_services
+        .confirm_avatar_asset(avatar_url)
+        .await?;
+    let avatar_url = state
+        .upload_services
+        .assign_character_avatar(user_id, avatar_url)
+        .await?;
+    Ok(upload_action_response(
+        true,
+        AVATAR_UPDATE_SUCCESS_MESSAGE,
+        Some(avatar_url),
+    ))
 }
 
 async fn confirm_avatar_asset_handler(
@@ -172,12 +247,25 @@ async fn confirm_avatar_asset_handler(
     confirm_avatar_upload(&state, &headers, payload, ASSET_UPLOAD_SUCCESS_MESSAGE).await
 }
 
+async fn delete_avatar_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, BusinessError> {
+    let user_id = ensure_authenticated_user_id(&state, &headers).await?;
+    state.upload_services.delete_character_avatar(user_id).await?;
+    Ok(upload_action_response(
+        true,
+        AVATAR_DELETE_SUCCESS_MESSAGE,
+        None,
+    ))
+}
+
 async fn create_upload_sts_response(
     state: &AppState,
     headers: &HeaderMap,
     payload: UploadStsRequest,
 ) -> Result<Response, BusinessError> {
-    ensure_authenticated(state, headers).await?;
+    let _ = ensure_authenticated_user_id(state, headers).await?;
     let content_type = payload.content_type.unwrap_or_default();
     validate_image_contract(
         &content_type,
@@ -196,7 +284,7 @@ async fn upload_multipart_avatar(
     multipart: Multipart,
     success_message: &'static str,
 ) -> Result<Response, BusinessError> {
-    ensure_authenticated(state, headers).await?;
+    let _ = ensure_authenticated_user_id(state, headers).await?;
     let upload_request = read_avatar_upload_request(multipart).await?;
     let avatar_url = state
         .upload_services
@@ -215,7 +303,7 @@ async fn confirm_avatar_upload(
     payload: UploadConfirmRequest,
     success_message: &'static str,
 ) -> Result<Response, BusinessError> {
-    ensure_authenticated(state, headers).await?;
+    let _ = ensure_authenticated_user_id(state, headers).await?;
     let avatar_url = payload.avatar_url.unwrap_or_default().trim().to_string();
     if avatar_url.is_empty() {
         return Err(BusinessError::new(MISSING_AVATAR_URL_MESSAGE));
@@ -263,7 +351,10 @@ async fn read_avatar_upload_request(
     Err(BusinessError::new(MISSING_IMAGE_FILE_MESSAGE))
 }
 
-async fn ensure_authenticated(state: &AppState, headers: &HeaderMap) -> Result<(), BusinessError> {
+async fn ensure_authenticated_user_id(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<i64, BusinessError> {
     let Some(token) = crate::edge::http::auth::read_bearer_token(headers) else {
         return Err(unauthorized_business_error());
     };
@@ -280,10 +371,9 @@ async fn ensure_authenticated(state: &AppState, headers: &HeaderMap) -> Result<(
         };
     }
 
-    let _ = result
+    result
         .user_id
-        .ok_or_else(|| unauthorized_business_error())?;
-    Ok(())
+        .ok_or_else(unauthorized_business_error)
 }
 
 fn validate_image_contract(content_type: &str, file_size: usize) -> Result<(), BusinessError> {

@@ -18,11 +18,13 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
+use jiuzhou_server_rs::edge::http::routes::upload::{UploadRouteServices, UploadStoreRequest};
 use jiuzhou_server_rs::edge::socket::game_socket::{
     GameSocketAuthFailure, GameSocketAuthProfile, GameSocketAuthServices,
 };
 use jiuzhou_server_rs::infra::config::settings::Settings;
 use jiuzhou_server_rs::runtime::connection::session_registry::new_shared_session_registry;
+use std::path::PathBuf;
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -331,7 +333,76 @@ async fn upload_avatar_asset_returns_success_shape_and_persists_local_file() {
     );
 }
 
+#[tokio::test]
+async fn upload_delete_avatar_preserves_node_success_shape() {
+    let upload_dir = std::env::temp_dir().join("jiuzhou-upload-route-contract-delete-avatar");
+    let app = build_router(build_app_state_with_upload_services(Arc::new(
+        RecordingUploadServices::new(upload_dir),
+    )));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/upload/avatar")
+                .header("authorization", "Bearer token-upload-delete-avatar")
+                .body(Body::empty())
+                .expect("upload delete avatar request"),
+        )
+        .await
+        .expect("upload delete avatar response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "头像删除成功",
+        })
+    );
+}
+
+#[tokio::test]
+async fn uploads_avatar_static_route_serves_uploaded_file() {
+    let upload_dir = std::env::temp_dir().join(format!(
+        "jiuzhou-upload-route-contract-static-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&upload_dir).expect("create upload dir");
+    std::fs::write(upload_dir.join("avatar-static.png"), b"avatar-static-bytes")
+        .expect("write avatar file");
+    let app = build_router(build_app_state(upload_dir));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/uploads/avatars/avatar-static.png")
+                .body(Body::empty())
+                .expect("uploads avatar static request"),
+        )
+        .await
+        .expect("uploads avatar static response");
+
+    let status = response.status();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect uploads avatar static body")
+        .to_bytes();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&body[..], b"avatar-static-bytes");
+}
+
 fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
+    build_app_state_with_upload_services(Arc::new(
+        RustUploadService::with_local_storage_root(upload_dir),
+    ))
+}
+
+fn build_app_state_with_upload_services(upload_services: Arc<dyn UploadRouteServices>) -> AppState {
     AppState {
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
@@ -363,7 +434,7 @@ fn build_app_state(upload_dir: std::path::PathBuf) -> AppState {
         redeem_code_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::redeem_code::NoopRedeemCodeRouteServices,
         ),
-        upload_services: Arc::new(RustUploadService::with_local_storage_root(upload_dir)),
+        upload_services,
         game_socket_services: Arc::new(FakeGameSocketServices),
         settings: Settings::from_map(std::collections::HashMap::new()).expect("settings"),
         readiness: ReadinessGate::new(),
@@ -494,6 +565,51 @@ impl GameSocketAuthServices for FakeGameSocketServices {
                 sect_id: None,
             })
         })
+    }
+}
+
+struct RecordingUploadServices {
+    upload_dir: PathBuf,
+}
+
+impl RecordingUploadServices {
+    fn new(upload_dir: PathBuf) -> Self {
+        Self { upload_dir }
+    }
+}
+
+impl UploadRouteServices for RecordingUploadServices {
+    fn avatar_storage_root(&self) -> PathBuf {
+        self.upload_dir.clone()
+    }
+
+    fn store_avatar_asset<'a>(
+        &'a self,
+        _request: UploadStoreRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok("/uploads/avatars/recording.png".to_string()) })
+    }
+
+    fn confirm_avatar_asset<'a>(
+        &'a self,
+        avatar_url: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(avatar_url) })
+    }
+
+    fn assign_character_avatar<'a>(
+        &'a self,
+        _user_id: i64,
+        avatar_url: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(avatar_url) })
+    }
+
+    fn delete_character_avatar<'a>(
+        &'a self,
+        _user_id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BusinessError>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
     }
 }
 
