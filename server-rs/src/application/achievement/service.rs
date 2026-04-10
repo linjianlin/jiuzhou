@@ -403,16 +403,18 @@ impl RustAchievementRouteService {
 
         let mut rewards = point_reward_definitions()?
             .iter()
-            .map(|definition| AchievementPointRewardView {
-                id: definition.id.clone(),
-                threshold: definition.threshold,
-                name: definition.name.clone(),
-                description: definition.description.clone(),
-                rewards: build_reward_views(&definition.rewards)?,
-                title: lookup_title_reward(definition.title_id.as_deref())?,
-                claimable: point_state.total_points >= definition.threshold
-                    && !point_state.claimed_thresholds.contains(&definition.threshold),
-                claimed: point_state.claimed_thresholds.contains(&definition.threshold),
+            .map(|definition| {
+                Ok(AchievementPointRewardView {
+                    id: definition.id.clone(),
+                    threshold: definition.threshold,
+                    name: definition.name.clone(),
+                    description: definition.description.clone(),
+                    rewards: build_reward_views(&definition.rewards)?,
+                    title: lookup_title_reward(definition.title_id.as_deref())?,
+                    claimable: point_state.total_points >= definition.threshold
+                        && !point_state.claimed_thresholds.contains(&definition.threshold),
+                    claimed: point_state.claimed_thresholds.contains(&definition.threshold),
+                })
             })
             .collect::<Result<Vec<_>, BusinessError>>()?;
         rewards.sort_by(|left, right| left.threshold.cmp(&right.threshold));
@@ -941,7 +943,7 @@ impl RustAchievementRouteService {
             .bind(silver_delta)
             .bind(spirit_stones_delta)
             .bind(exp_delta)
-            .execute(&mut *transaction)
+            .execute(&mut **transaction)
             .await
             .map_err(internal_business_error)?;
         }
@@ -1005,7 +1007,7 @@ impl RustAchievementRouteService {
         )
         .bind(character_id)
         .bind(normalized_title_id)
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await
         .map_err(internal_business_error)?;
 

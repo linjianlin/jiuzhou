@@ -87,7 +87,7 @@ pub async fn grant_items_to_bag(
     .bind(DEFAULT_BAG_CAPACITY)
     .fetch_optional(&mut **transaction)
     .await
-    .map_err(internal_business_error)?
+    .map_err(|_| internal_business_error("load inventory bag capacity failed"))?
     .unwrap_or(DEFAULT_BAG_CAPACITY)
     .max(0);
 
@@ -106,7 +106,7 @@ pub async fn grant_items_to_bag(
     .bind(character_id)
     .fetch_all(&mut **transaction)
     .await
-    .map_err(internal_business_error)?;
+    .map_err(|_| internal_business_error("load occupied bag slots failed"))?;
     let mut occupied_slots = occupied_slot_rows
         .into_iter()
         .map(|row| row.get::<i32, _>("location_slot"))
@@ -141,7 +141,7 @@ pub async fn grant_items_to_bag(
     .bind(character_id)
     .fetch_all(&mut **transaction)
     .await
-    .map_err(internal_business_error)?;
+    .map_err(|_| internal_business_error("load stackable bag items failed"))?;
 
     let mut stackable_rows_by_key: HashMap<(String, String), Vec<StackableBagRow>> =
         HashMap::new();
@@ -198,7 +198,7 @@ pub async fn grant_items_to_bag(
                 .bind(add_qty)
                 .execute(&mut **transaction)
                 .await
-                .map_err(internal_business_error)?;
+                .map_err(|_| internal_business_error("stack inventory item failed"))?;
                 row.qty += add_qty;
                 remaining -= add_qty;
             }
@@ -234,7 +234,7 @@ pub async fn grant_items_to_bag(
             .bind(obtained_from)
             .fetch_one(&mut **transaction)
             .await
-            .map_err(internal_business_error)?;
+            .map_err(|_| internal_business_error("insert inventory item failed"))?;
             stack_rows.push(StackableBagRow {
                 id: inserted_id,
                 qty: add_qty,

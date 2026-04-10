@@ -224,7 +224,6 @@ async fn attribute_routes_require_authentication() {
 }
 
 fn build_app_state<TAuth, TAttribute>(
-        achievement_services: Arc::new(jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices),
     auth_services: TAuth,
     attribute_services: TAttribute,
 ) -> AppState
@@ -235,6 +234,9 @@ where
     AppState {
         afdian_services: Arc::new(
             jiuzhou_server_rs::edge::http::routes::afdian::NoopAfdianRouteServices,
+        ),
+        achievement_services: Arc::new(
+            jiuzhou_server_rs::edge::http::routes::achievement::NoopAchievementRouteServices,
         ),
         auth_services: Arc::new(auth_services),
         attribute_services: Arc::new(attribute_services),
