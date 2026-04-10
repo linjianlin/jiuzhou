@@ -17,12 +17,12 @@ use crate::edge::http::auth::require_authenticated_user_id;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, ServiceResultResponse};
 
-/// character 最小兼容路由。
+/// character 兼容路由。
 ///
 /// 作用：
-/// 1. 做什么：提供 `/check`、`/info`、`/create`、`/updatePosition`、`/renameWithCard` 与三个 character settings 更新接口。
+/// 1. 做什么：提供 `/check`、`/info`、`/create`、`/updatePosition`、`/renameWithCard`、character settings，以及角色功法/技能的读写接口。
 /// 2. 做什么：复用现有 Bearer + session 校验语义，并把返回 envelope 保持为 Node 当前的 `sendResult` 形状。
-/// 3. 不做什么：不扩展更大的库存、聊天或其它与角色最小合同无关的 mutation 能力。
+/// 3. 不做什么：不扩展更大的库存、聊天或其它与当前角色最小合同无关的 mutation 能力。
 ///
 /// 输入 / 输出：
 /// - 输入：Authorization Bearer token；create 额外接收 `{ nickname, gender }`；updatePosition 额外接收 `{ currentMapId, currentRoomId }`；renameWithCard 额外接收 `{ itemInstanceId, nickname }`；settings mutation 接收 `{ enabled, rules? }`。
@@ -43,7 +43,8 @@ use crate::edge::http::response::{service_result, ServiceResultResponse};
 /// 4. `/updatePosition` 必须继续复用同一鉴权路径，并保持 service 返回的 `位置参数不能为空`、`位置参数过长`、`角色不存在`、`位置更新成功` 文案不变。
 /// 5. `renameWithCard` 路由层必须继续保留 Node 可见的参数报错文案：`itemInstanceId参数错误`、`道号不能为空`。
 /// 6. `updateAutoDisassemble` 必须继续保留 Node 可见的 rules 形状报错文案：`rules参数错误，需为数组`、`rules参数错误，规则项需为对象`。
-/// 7. `/:characterId/*` 的功法读接口必须先做路径角色所有权校验；未建角账号和访问他人角色都要维持 `403 { success:false, message:'无权限访问该角色' }`。
+/// 7. `/:characterId/*` 的功法接口必须先做路径角色所有权校验；未建角账号和访问他人角色都要维持 `403 { success:false, message:'无权限访问该角色' }`。
+/// 8. 功法装配/卸下必须继续拦截“战斗中无法切换功法”；该报错走业务失败包体，不能抬成 4xx。
 #[derive(Debug, Deserialize)]
 struct CreateCharacterPayload {
     nickname: Option<String>,
@@ -76,6 +77,36 @@ struct RenameCharacterWithCardPayload {
     nickname: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct TechniqueEquipPayload {
+    #[serde(rename = "techniqueId")]
+    technique_id: Option<String>,
+    #[serde(rename = "slotType")]
+    slot_type: Option<String>,
+    #[serde(rename = "slotIndex")]
+    slot_index: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TechniqueUnequipPayload {
+    #[serde(rename = "techniqueId")]
+    technique_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SkillEquipPayload {
+    #[serde(rename = "skillId")]
+    skill_id: Option<String>,
+    #[serde(rename = "slotIndex")]
+    slot_index: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SkillUnequipPayload {
+    #[serde(rename = "slotIndex")]
+    slot_index: Option<Value>,
+}
+
 pub fn build_character_router() -> Router<AppState> {
     Router::new()
         .route("/check", get(check_character_handler))
@@ -87,7 +118,10 @@ pub fn build_character_router() -> Router<AppState> {
             "/{characterId}/technique/status",
             get(get_character_technique_status_handler),
         )
-        .route("/{characterId}/techniques", get(get_character_techniques_handler))
+        .route(
+            "/{characterId}/techniques",
+            get(get_character_techniques_handler),
+        )
         .route(
             "/{characterId}/techniques/equipped",
             get(get_equipped_techniques_handler),
@@ -97,6 +131,18 @@ pub fn build_character_router() -> Router<AppState> {
             get(get_technique_upgrade_cost_handler),
         )
         .route(
+            "/{characterId}/technique/equip",
+            post(equip_technique_handler),
+        )
+        .route(
+            "/{characterId}/technique/unequip",
+            post(unequip_technique_handler),
+        )
+        .route(
+            "/{characterId}/technique/{techniqueId}/dissipate",
+            post(dissipate_technique_handler),
+        )
+        .route(
             "/{characterId}/skills/available",
             get(get_available_skills_handler),
         )
@@ -104,6 +150,8 @@ pub fn build_character_router() -> Router<AppState> {
             "/{characterId}/skills/equipped",
             get(get_equipped_skills_handler),
         )
+        .route("/{characterId}/skill/equip", post(equip_skill_handler))
+        .route("/{characterId}/skill/unequip", post(unequip_skill_handler))
         .route(
             "/{characterId}/technique/passives",
             get(get_technique_passives_handler),
@@ -359,6 +407,88 @@ async fn get_available_skills_handler(
     Ok(character_technique_result_response(result))
 }
 
+async fn equip_technique_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+    Json(payload): Json<TechniqueEquipPayload>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    if is_character_in_active_battle(&state, character_id).await {
+        return Ok(character_technique_failure_response("战斗中无法切换功法"));
+    }
+
+    let technique_id = payload.technique_id.unwrap_or_default().trim().to_string();
+    let slot_type = payload.slot_type.unwrap_or_default().trim().to_string();
+    if technique_id.is_empty() || slot_type.is_empty() {
+        return Err(BusinessError::new("缺少必要参数"));
+    }
+    if slot_type != "main" && slot_type != "sub" {
+        return Err(BusinessError::new("无效的槽位类型"));
+    }
+
+    let result = state
+        .character_technique_service
+        .equip_technique(
+            character_id,
+            technique_id.as_str(),
+            slot_type.as_str(),
+            parse_positive_i32(payload.slot_index.as_ref()),
+        )
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn unequip_technique_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+    Json(payload): Json<TechniqueUnequipPayload>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    if is_character_in_active_battle(&state, character_id).await {
+        return Ok(character_technique_failure_response("战斗中无法切换功法"));
+    }
+
+    let technique_id = payload.technique_id.unwrap_or_default().trim().to_string();
+    if technique_id.is_empty() {
+        return Err(BusinessError::new("缺少功法ID"));
+    }
+
+    let result = state
+        .character_technique_service
+        .unequip_technique(character_id, technique_id.as_str())
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn dissipate_technique_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((character_id, technique_id)): Path<(String, String)>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+    let normalized_technique_id = technique_id.trim().to_string();
+    if normalized_technique_id.is_empty() {
+        return Err(BusinessError::new("缺少功法ID"));
+    }
+
+    let result = state
+        .character_technique_service
+        .dissipate_technique(character_id, normalized_technique_id.as_str())
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
 async fn get_equipped_skills_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -371,6 +501,56 @@ async fn get_equipped_skills_handler(
     let result = state
         .character_technique_service
         .get_equipped_skills(character_id)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn equip_skill_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+    Json(payload): Json<SkillEquipPayload>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+
+    let skill_id = payload.skill_id.unwrap_or_default().trim().to_string();
+    let Some(slot_index) = parse_positive_i32(payload.slot_index.as_ref()) else {
+        if skill_id.is_empty() {
+            return Err(BusinessError::new("缺少必要参数"));
+        }
+        return Err(BusinessError::new("缺少必要参数"));
+    };
+    if skill_id.is_empty() {
+        return Err(BusinessError::new("缺少必要参数"));
+    }
+
+    let result = state
+        .character_technique_service
+        .equip_skill(character_id, skill_id.as_str(), slot_index)
+        .await?;
+    Ok(character_technique_result_response(result))
+}
+
+async fn unequip_skill_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<String>,
+    Json(payload): Json<SkillUnequipPayload>,
+) -> Result<Response, BusinessError> {
+    let character_id = match require_owned_character_id(&state, &headers, &character_id).await {
+        Ok(character_id) => character_id,
+        Err(response) => return Ok(response),
+    };
+
+    let Some(slot_index) = parse_positive_i32(payload.slot_index.as_ref()) else {
+        return Err(BusinessError::new("缺少槽位索引"));
+    };
+    let result = state
+        .character_technique_service
+        .unequip_skill(character_id, slot_index)
         .await?;
     Ok(character_technique_result_response(result))
 }
@@ -455,6 +635,14 @@ where
     ))
 }
 
+fn character_technique_failure_response(message: &str) -> Response {
+    service_result(ServiceResultResponse::<serde_json::Value>::new(
+        false,
+        Some(message.to_string()),
+        None,
+    ))
+}
+
 fn validate_auto_disassemble_rules_shape(
     rules: Option<Value>,
 ) -> Result<Option<Vec<Value>>, BusinessError> {
@@ -492,6 +680,28 @@ fn parse_positive_item_instance_id(value: Option<&Value>) -> Option<i64> {
     }
 }
 
+fn parse_positive_i32(value: Option<&Value>) -> Option<i32> {
+    let value = value?;
+    match value {
+        Value::Number(number) => number
+            .as_i64()
+            .and_then(|item| i32::try_from(item).ok())
+            .filter(|item| *item > 0),
+        Value::String(text) => text.trim().parse::<i32>().ok().filter(|item| *item > 0),
+        _ => None,
+    }
+}
+
+async fn is_character_in_active_battle(state: &AppState, character_id: i64) -> bool {
+    state
+        .runtime_services
+        .read()
+        .await
+        .battle_registry
+        .find_battle_id_by_character_id(character_id)
+        .is_some()
+}
+
 async fn require_owned_character_id(
     state: &AppState,
     headers: &HeaderMap,
@@ -511,10 +721,11 @@ async fn require_owned_character_id(
         .as_ref()
         .is_some_and(|character| character_result.has_character && character.id == character_id);
     if !has_access {
-        return Err(
-            BusinessError::with_status("无权限访问该角色", axum::http::StatusCode::FORBIDDEN)
-                .into_response(),
-        );
+        return Err(BusinessError::with_status(
+            "无权限访问该角色",
+            axum::http::StatusCode::FORBIDDEN,
+        )
+        .into_response());
     }
     Ok(character_id)
 }

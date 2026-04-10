@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 
 use crate::application::static_data::catalog::{
     get_static_data_catalog, SkillDefDto, StaticDataCatalog, TechniqueDetailDto, TechniqueLayerDto,
@@ -15,31 +15,43 @@ const CHARACTER_TECHNIQUE_NOT_FOUND_MESSAGE: &str = "功法不存在";
 const CHARACTER_TECHNIQUE_LAYER_CONFIG_MISSING_MESSAGE: &str = "层级配置不存在";
 const CHARACTER_TECHNIQUE_MAX_LAYER_MESSAGE: &str = "已达最高层数";
 const PLACEHOLDER_POSTGRES_URL: &str = "postgres://postgres:postgres@127.0.0.1/jiuzhou";
+const CHARACTER_TECHNIQUE_EQUIPPED_MESSAGE: &str = "功法已在该位置";
+const CHARACTER_TECHNIQUE_NOT_EQUIPPED_MESSAGE: &str = "功法未装备";
+const CHARACTER_TECHNIQUE_DISSIPATE_EQUIPPED_MESSAGE: &str = "已运功的功法不可散功，请先取消运功";
+const CHARACTER_TECHNIQUE_DISSIPATE_SUCCESS_MESSAGE: &str = "散功成功";
+const CHARACTER_TECHNIQUE_EQUIP_SUCCESS_MESSAGE: &str = "装备成功";
+const CHARACTER_TECHNIQUE_UNEQUIP_SUCCESS_MESSAGE: &str = "卸下成功";
+const CHARACTER_SKILL_SLOT_INVALID_MESSAGE: &str = "技能槽位必须为1-10";
+const CHARACTER_SKILL_NOT_AVAILABLE_MESSAGE: &str = "技能不可用（未解锁或功法未装备）";
+const CHARACTER_SKILL_EQUIP_SUCCESS_MESSAGE: &str = "装备成功";
+const CHARACTER_SKILL_SLOT_EMPTY_MESSAGE: &str = "该槽位无技能";
+const CHARACTER_SKILL_UNEQUIP_SUCCESS_MESSAGE: &str = "卸下成功";
+const CHARACTER_TECHNIQUE_SUB_SLOT_INVALID_MESSAGE: &str = "副功法槽位必须为1-3";
 
-/// 角色功法只读聚合服务。
+/// 角色功法读写聚合服务。
 ///
 /// 作用：
-/// 1. 做什么：集中实现 `/api/character/:characterId/*` 下功法与技能栏的高频只读查询，覆盖功法状态、已学功法、已装备功法、升级消耗、可用技能、已装备技能与功法被动加成。
-/// 2. 做什么：把静态功法目录、技能定义、材料元信息与数据库读表拼装收敛到单一服务，避免路由层重复查表、重复排序、重复做技能解锁计算。
-/// 3. 不做什么：不处理功法升级、装配、散功、研修生成等写操作，也不在这里追加 battle/idle/socket 副作用。
+/// 1. 做什么：集中实现 `/api/character/:characterId/*` 下功法与技能栏的高频查询与最小写入，覆盖功法状态、已学功法、已装备功法、升级消耗、可用技能、已装备技能，以及功法装配/散功、技能槽装配。
+/// 2. 做什么：把静态功法目录、技能定义、技能可用性裁剪、挂机自动技能清理与数据库写入收敛到单一服务，避免路由层重复查表、重复排序、重复做技能解锁与失效技能回收。
+/// 3. 不做什么：暂不处理研修生成、功法升级消耗扣费后的成就/主线推进等更重副作用，也不在这里追加 battle/socket 推送。
 ///
 /// 输入 / 输出：
-/// - 输入：`characterId`，以及升级消耗查询额外接收的 `techniqueId`。
-/// - 输出：Node 兼容的只读 DTO，字段命名保持现有前端消费协议，包括 snake_case 的功法/技能槽字段与 camelCase 的状态聚合字段。
+/// - 输入：`characterId`，部分接口额外接收 `techniqueId / slotType / slotIndex / skillId`。
+/// - 输出：Node 兼容 DTO 与 `{ success, message, data? }` 结果体；字段命名保持现有前端消费协议，包括 snake_case 的功法/技能槽字段与 camelCase 的状态聚合字段。
 ///
 /// 数据流 / 状态流：
 /// - HTTP 路由 -> 本服务
-/// - -> PostgreSQL `character_technique / character_skill_slot`
+/// - -> PostgreSQL `character_technique / character_skill_slot / idle_configs / characters`
 /// - -> `StaticDataCatalog` 的功法详情/技能定义/物品元信息索引
-/// - -> 在服务内一次性完成排序、技能解锁集、被动累计和状态聚合后返回路由层。
+/// - -> 在服务内一次性完成排序、技能解锁集、被动累计、失效技能回收和状态聚合后返回路由层。
 ///
 /// 复用设计说明：
-/// - 功法列表、装备状态、可用技能、升级消耗都依赖同一份 `character_technique` 和静态目录；集中在这里后，排序规则、品质倍率、技能解锁口径与被动累计只维护一份。
-/// - `getCharacterTechniqueStatus` 直接复用同一份快照派生 `equippedMain/equippedSubs/equippedSkills/availableSkills/passives`，避免像 Node 那样在多个接口之间重复查表、重复扫层级。
+/// - 功法列表、装备状态、可用技能、升级消耗与技能清理都依赖同一份 `character_technique` 和静态目录；集中在这里后，排序规则、槽位归一化、技能解锁口径与被动累计只维护一份。
+/// - `get_character_technique_status` 与写路径里的技能回收都复用同一份“当前已装备功法 -> 可用技能集合”派生逻辑，避免读写链路各自复制层级扫描与技能过滤规则。
 ///
 /// 关键边界条件与坑点：
 /// 1. 只有角色可见功法才允许进入返回结果；静态目录中被禁用或 `usage_scope=partner_only` 的功法必须直接过滤掉，不能透传数据库脏数据。
-/// 2. `getCharacterTechniqueStatus` 中的 `equippedSkills` 必须只保留当前仍可用的技能槽，否则前端会拿到已失效的旧技能配置。
+/// 2. 技能槽和挂机自动技能策略都必须只保留当前仍可用的技能；功法切换后若不立即清理，会让前端和挂机链路读到失效 skillId。
 #[derive(Clone)]
 pub struct RustCharacterTechniqueReadService {
     pool: sqlx::PgPool,
@@ -203,7 +215,8 @@ impl RustCharacterTechniqueReadService {
     pub async fn get_equipped_techniques(
         &self,
         character_id: i64,
-    ) -> Result<CharacterTechniqueServiceResult<CharacterTechniqueEquippedView>, BusinessError> {
+    ) -> Result<CharacterTechniqueServiceResult<CharacterTechniqueEquippedView>, BusinessError>
+    {
         let snapshot = self.load_snapshot(character_id).await?;
         let mut main = None;
         let mut subs = Vec::new();
@@ -288,6 +301,420 @@ impl RustCharacterTechniqueReadService {
         })
     }
 
+    pub async fn equip_technique(
+        &self,
+        character_id: i64,
+        technique_id: &str,
+        slot_type: &str,
+        slot_index: Option<i32>,
+    ) -> Result<CharacterTechniqueServiceResult<()>, BusinessError> {
+        let normalized_technique_id = technique_id.trim();
+        if normalized_technique_id.is_empty() {
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_LEARNED_MESSAGE));
+        }
+        if slot_type == "sub" && !matches!(slot_index, Some(1..=3)) {
+            return Ok(service_failure(
+                CHARACTER_TECHNIQUE_SUB_SLOT_INVALID_MESSAGE,
+            ));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
+        let current_row = sqlx::query(
+            r#"
+            SELECT id, slot_type, slot_index
+            FROM character_technique
+            WHERE character_id = $1
+              AND technique_id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .bind(normalized_technique_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+        let Some(current_row) = current_row else {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_LEARNED_MESSAGE));
+        };
+
+        let current_slot_type = normalize_slot_type(
+            current_row
+                .try_get::<Option<String>, _>("slot_type")
+                .ok()
+                .flatten(),
+        );
+        let current_slot_index = current_row
+            .try_get::<Option<i32>, _>("slot_index")
+            .ok()
+            .flatten();
+        if current_slot_type.as_deref() == Some(slot_type)
+            && (slot_type == "main" || current_slot_index == slot_index)
+        {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(CharacterTechniqueServiceResult {
+                success: true,
+                message: CHARACTER_TECHNIQUE_EQUIPPED_MESSAGE.to_string(),
+                data: None,
+            });
+        }
+
+        if slot_type == "main" {
+            sqlx::query(
+                r#"
+                UPDATE character_technique
+                SET slot_type = NULL,
+                    slot_index = NULL,
+                    updated_at = NOW()
+                WHERE character_id = $1
+                  AND slot_type = 'main'
+                "#,
+            )
+            .bind(character_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_business_error)?;
+        } else {
+            sqlx::query(
+                r#"
+                UPDATE character_technique
+                SET slot_type = NULL,
+                    slot_index = NULL,
+                    updated_at = NOW()
+                WHERE character_id = $1
+                  AND slot_type = 'sub'
+                  AND slot_index = $2
+                "#,
+            )
+            .bind(character_id)
+            .bind(slot_index.unwrap_or_default())
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal_business_error)?;
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE character_technique
+            SET slot_type = $1,
+                slot_index = $2,
+                updated_at = NOW()
+            WHERE id = $3
+            "#,
+        )
+        .bind(slot_type)
+        .bind(if slot_type == "main" {
+            None
+        } else {
+            slot_index
+        })
+        .bind(current_row.get::<i64, _>("id"))
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        let catalog = get_static_data_catalog().map_err(internal_business_error)?;
+        sync_character_main_attribute_in_transaction(&mut transaction, character_id, catalog)
+            .await?;
+        let available_skill_ids =
+            load_available_skill_ids_in_transaction(&mut transaction, character_id, catalog)
+                .await?;
+        let removed_slots = reconcile_equipped_skill_slots_in_transaction(
+            &mut transaction,
+            character_id,
+            &available_skill_ids,
+            catalog,
+        )
+        .await?;
+        cleanup_idle_auto_skill_policy_in_transaction(
+            &mut transaction,
+            character_id,
+            &available_skill_ids,
+        )
+        .await?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
+        Ok(CharacterTechniqueServiceResult {
+            success: true,
+            message: build_technique_switch_message(
+                CHARACTER_TECHNIQUE_EQUIP_SUCCESS_MESSAGE,
+                &removed_slots,
+            ),
+            data: None,
+        })
+    }
+
+    pub async fn unequip_technique(
+        &self,
+        character_id: i64,
+        technique_id: &str,
+    ) -> Result<CharacterTechniqueServiceResult<()>, BusinessError> {
+        let normalized_technique_id = technique_id.trim();
+        if normalized_technique_id.is_empty() {
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_EQUIPPED_MESSAGE));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
+        let result = sqlx::query(
+            r#"
+            UPDATE character_technique
+            SET slot_type = NULL,
+                slot_index = NULL,
+                updated_at = NOW()
+            WHERE character_id = $1
+              AND technique_id = $2
+              AND slot_type IS NOT NULL
+            RETURNING id
+            "#,
+        )
+        .bind(character_id)
+        .bind(normalized_technique_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+        if result.is_none() {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_EQUIPPED_MESSAGE));
+        }
+
+        let catalog = get_static_data_catalog().map_err(internal_business_error)?;
+        sync_character_main_attribute_in_transaction(&mut transaction, character_id, catalog)
+            .await?;
+        let available_skill_ids =
+            load_available_skill_ids_in_transaction(&mut transaction, character_id, catalog)
+                .await?;
+        let removed_slots = reconcile_equipped_skill_slots_in_transaction(
+            &mut transaction,
+            character_id,
+            &available_skill_ids,
+            catalog,
+        )
+        .await?;
+        cleanup_idle_auto_skill_policy_in_transaction(
+            &mut transaction,
+            character_id,
+            &available_skill_ids,
+        )
+        .await?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
+        Ok(CharacterTechniqueServiceResult {
+            success: true,
+            message: build_technique_switch_message(
+                CHARACTER_TECHNIQUE_UNEQUIP_SUCCESS_MESSAGE,
+                &removed_slots,
+            ),
+            data: None,
+        })
+    }
+
+    pub async fn dissipate_technique(
+        &self,
+        character_id: i64,
+        technique_id: &str,
+    ) -> Result<CharacterTechniqueServiceResult<()>, BusinessError> {
+        let normalized_technique_id = technique_id.trim();
+        if normalized_technique_id.is_empty() {
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_LEARNED_MESSAGE));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
+        let row = sqlx::query(
+            r#"
+            SELECT id, slot_type
+            FROM character_technique
+            WHERE character_id = $1
+              AND technique_id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .bind(normalized_technique_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+        let Some(row) = row else {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_TECHNIQUE_NOT_LEARNED_MESSAGE));
+        };
+
+        if normalize_slot_type(row.try_get::<Option<String>, _>("slot_type").ok().flatten())
+            .is_some()
+        {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(
+                CHARACTER_TECHNIQUE_DISSIPATE_EQUIPPED_MESSAGE,
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            DELETE FROM character_technique
+            WHERE id = $1
+            "#,
+        )
+        .bind(row.get::<i64, _>("id"))
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
+        Ok(CharacterTechniqueServiceResult {
+            success: true,
+            message: CHARACTER_TECHNIQUE_DISSIPATE_SUCCESS_MESSAGE.to_string(),
+            data: None,
+        })
+    }
+
+    pub async fn equip_skill(
+        &self,
+        character_id: i64,
+        skill_id: &str,
+        slot_index: i32,
+    ) -> Result<CharacterTechniqueServiceResult<()>, BusinessError> {
+        if !(1..=10).contains(&slot_index) {
+            return Ok(service_failure(CHARACTER_SKILL_SLOT_INVALID_MESSAGE));
+        }
+
+        let normalized_skill_id = skill_id.trim();
+        if normalized_skill_id.is_empty() {
+            return Ok(service_failure(CHARACTER_SKILL_NOT_AVAILABLE_MESSAGE));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
+        sqlx::query(
+            r#"
+            SELECT id
+            FROM characters
+            WHERE id = $1
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        let catalog = get_static_data_catalog().map_err(internal_business_error)?;
+        let available_skill_ids =
+            load_available_skill_ids_in_transaction(&mut transaction, character_id, catalog)
+                .await?;
+        if !available_skill_ids.contains(normalized_skill_id) {
+            transaction
+                .rollback()
+                .await
+                .map_err(internal_business_error)?;
+            return Ok(service_failure(CHARACTER_SKILL_NOT_AVAILABLE_MESSAGE));
+        }
+
+        let existing_slot = sqlx::query(
+            r#"
+            SELECT slot_index
+            FROM character_skill_slot
+            WHERE character_id = $1
+              AND skill_id = $2
+            "#,
+        )
+        .bind(character_id)
+        .bind(normalized_skill_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?
+        .and_then(|row| row.try_get::<i32, _>("slot_index").ok());
+        if let Some(previous_slot_index) = existing_slot {
+            if previous_slot_index != slot_index {
+                sqlx::query(
+                    r#"
+                    DELETE FROM character_skill_slot
+                    WHERE character_id = $1
+                      AND skill_id = $2
+                    "#,
+                )
+                .bind(character_id)
+                .bind(normalized_skill_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(internal_business_error)?;
+            }
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO character_skill_slot (character_id, slot_index, skill_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (character_id, slot_index)
+            DO UPDATE SET skill_id = EXCLUDED.skill_id, updated_at = NOW()
+            "#,
+        )
+        .bind(character_id)
+        .bind(slot_index)
+        .bind(normalized_skill_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
+        Ok(CharacterTechniqueServiceResult {
+            success: true,
+            message: CHARACTER_SKILL_EQUIP_SUCCESS_MESSAGE.to_string(),
+            data: None,
+        })
+    }
+
+    pub async fn unequip_skill(
+        &self,
+        character_id: i64,
+        slot_index: i32,
+    ) -> Result<CharacterTechniqueServiceResult<()>, BusinessError> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM character_skill_slot
+            WHERE character_id = $1
+              AND slot_index = $2
+            "#,
+        )
+        .bind(character_id)
+        .bind(slot_index)
+        .execute(&self.pool)
+        .await
+        .map_err(internal_business_error)?;
+        if result.rows_affected() == 0 {
+            return Ok(service_failure(CHARACTER_SKILL_SLOT_EMPTY_MESSAGE));
+        }
+        Ok(CharacterTechniqueServiceResult {
+            success: true,
+            message: CHARACTER_SKILL_UNEQUIP_SUCCESS_MESSAGE.to_string(),
+            data: None,
+        })
+    }
+
     pub async fn get_available_skills(
         &self,
         character_id: i64,
@@ -365,9 +792,14 @@ impl RustCharacterTechniqueReadService {
         })
     }
 
-    async fn load_snapshot(&self, character_id: i64) -> Result<TechniqueStatusSnapshot, BusinessError> {
+    async fn load_snapshot(
+        &self,
+        character_id: i64,
+    ) -> Result<TechniqueStatusSnapshot, BusinessError> {
         let catalog = get_static_data_catalog().map_err(internal_business_error)?;
-        let techniques = self.load_character_techniques(character_id, catalog).await?;
+        let techniques = self
+            .load_character_techniques(character_id, catalog)
+            .await?;
         let equipped = build_equipped_snapshot(catalog, &techniques);
         let equipped_skills = self.load_equipped_skills(character_id, catalog).await?;
         Ok(TechniqueStatusSnapshot {
@@ -406,7 +838,9 @@ impl RustCharacterTechniqueReadService {
             .filter_map(|row| {
                 let technique_id = row.get::<String, _>("technique_id");
                 let detail = catalog.technique_detail(technique_id.as_str())?;
-                let slot_type = normalize_slot_type(row.try_get::<Option<String>, _>("slot_type").ok().flatten());
+                let slot_type = normalize_slot_type(
+                    row.try_get::<Option<String>, _>("slot_type").ok().flatten(),
+                );
                 Some(CharacterTechniqueView {
                     id: row.get::<i64, _>("id"),
                     character_id: row.get::<i64, _>("character_id"),
@@ -484,7 +918,9 @@ impl RustCharacterTechniqueReadService {
                     skill_name: skill
                         .map(|entry| entry.name.clone())
                         .unwrap_or_else(|| skill_id.clone()),
-                    skill_icon: skill.and_then(|entry| entry.icon.clone()).unwrap_or_default(),
+                    skill_icon: skill
+                        .and_then(|entry| entry.icon.clone())
+                        .unwrap_or_default(),
                 })
             })
             .collect())
@@ -518,7 +954,8 @@ fn build_available_skills(equipped: &[EquippedTechniqueSnapshot]) -> Vec<Availab
     let mut seen_skill_keys = HashSet::<String>::new();
 
     for technique in equipped {
-        let unlocked_skill_ids = build_unlocked_skill_id_set(&technique.detail.layers, technique.current_layer);
+        let unlocked_skill_ids =
+            build_unlocked_skill_id_set(&technique.detail.layers, technique.current_layer);
         let skill_upgrade_counts =
             build_skill_upgrade_count_map(&technique.detail.layers, technique.current_layer);
         for skill in &technique.detail.skills {
@@ -531,7 +968,10 @@ fn build_available_skills(equipped: &[EquippedTechniqueSnapshot]) -> Vec<Availab
             }
             let effective_skill = build_effective_skill_data(
                 skill,
-                skill_upgrade_counts.get(skill.id.as_str()).copied().unwrap_or(0),
+                skill_upgrade_counts
+                    .get(skill.id.as_str())
+                    .copied()
+                    .unwrap_or(0),
             );
             result.push(AvailableSkillView {
                 skill_id: skill.id.clone(),
@@ -566,7 +1006,11 @@ fn build_available_skills(equipped: &[EquippedTechniqueSnapshot]) -> Vec<Availab
 fn build_passives(equipped: &[EquippedTechniqueSnapshot]) -> BTreeMap<String, f64> {
     let mut passives = BTreeMap::<String, f64>::new();
     for technique in equipped {
-        let ratio = if is_main_technique(technique) { 1.0 } else { 0.3 };
+        let ratio = if is_main_technique(technique) {
+            1.0
+        } else {
+            0.3
+        };
         for layer in technique
             .detail
             .layers
@@ -578,7 +1022,8 @@ fn build_passives(equipped: &[EquippedTechniqueSnapshot]) -> BTreeMap<String, f6
                     continue;
                 };
                 let effective_value = round_passive_value(value * ratio);
-                let next_value = passives.get(key.as_str()).copied().unwrap_or(0.0) + effective_value;
+                let next_value =
+                    passives.get(key.as_str()).copied().unwrap_or(0.0) + effective_value;
                 passives.insert(key, round_passive_value(next_value));
             }
         }
@@ -586,7 +1031,10 @@ fn build_passives(equipped: &[EquippedTechniqueSnapshot]) -> BTreeMap<String, f6
     passives
 }
 
-fn build_unlocked_skill_id_set(layers: &[TechniqueLayerDto], current_layer: i32) -> BTreeSet<String> {
+fn build_unlocked_skill_id_set(
+    layers: &[TechniqueLayerDto],
+    current_layer: i32,
+) -> BTreeSet<String> {
     let mut unlocked = BTreeSet::<String>::new();
     for layer in layers
         .iter()
@@ -707,9 +1155,7 @@ fn apply_skill_upgrade_changes(
     {
         effective.cost_lingqi = (effective.cost_lingqi + cost_lingqi_delta).max(0);
     }
-    if let Some(cost_lingqi_rate_delta) =
-        changes.get("cost_lingqi_rate").and_then(value_as_f64)
-    {
+    if let Some(cost_lingqi_rate_delta) = changes.get("cost_lingqi_rate").and_then(value_as_f64) {
         effective.cost_lingqi_rate = (effective.cost_lingqi_rate + cost_lingqi_rate_delta).max(0.0);
     }
     if let Some(cost_qixue_delta) = changes
@@ -756,15 +1202,19 @@ fn find_first_damage_effect(effects: &[Value]) -> Option<Value> {
 }
 
 fn value_as_i64(value: &Value) -> Option<i64> {
-    value
-        .as_i64()
-        .or_else(|| value.as_str().and_then(|text| text.trim().parse::<i64>().ok()))
+    value.as_i64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|text| text.trim().parse::<i64>().ok())
+    })
 }
 
 fn value_as_f64(value: &Value) -> Option<f64> {
-    value
-        .as_f64()
-        .or_else(|| value.as_str().and_then(|text| text.trim().parse::<f64>().ok()))
+    value.as_f64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|text| text.trim().parse::<f64>().ok())
+    })
 }
 
 fn extract_passive_entry(value: &Value) -> Option<(String, f64)> {
@@ -802,6 +1252,241 @@ fn is_main_technique(technique: &EquippedTechniqueSnapshot) -> bool {
 
 fn scale_cost(base_cost: i32, quality_multiplier: i32) -> i32 {
     base_cost.max(0).saturating_mul(quality_multiplier.max(1))
+}
+
+fn build_technique_switch_message(
+    base_message: &str,
+    removed_slots: &[CharacterSkillSlotView],
+) -> String {
+    if removed_slots.is_empty() {
+        return base_message.to_string();
+    }
+    let removed_text = removed_slots
+        .iter()
+        .map(|entry| format!("{}号位{}", entry.slot_index, entry.skill_name))
+        .collect::<Vec<_>>()
+        .join("、");
+    format!("{base_message}，已自动卸下不兼容技能：{removed_text}")
+}
+
+async fn sync_character_main_attribute_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    catalog: &StaticDataCatalog,
+) -> Result<(), BusinessError> {
+    let main_row = sqlx::query(
+        r#"
+        SELECT technique_id
+        FROM character_technique
+        WHERE character_id = $1
+          AND slot_type = 'main'
+        LIMIT 1
+        "#,
+    )
+    .bind(character_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_business_error)?;
+    let (attribute_type, attribute_element) = main_row
+        .and_then(|row| row.try_get::<String, _>("technique_id").ok())
+        .and_then(|technique_id| catalog.technique_detail(technique_id.trim()))
+        .map(|detail| {
+            (
+                detail.technique.attribute_type.clone(),
+                detail.technique.attribute_element.clone(),
+            )
+        })
+        .unwrap_or_else(|| ("physical".to_string(), "none".to_string()));
+
+    sqlx::query(
+        r#"
+        UPDATE characters
+        SET attribute_type = $2,
+            attribute_element = $3,
+            updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(character_id)
+    .bind(attribute_type)
+    .bind(attribute_element)
+    .execute(&mut **transaction)
+    .await
+    .map_err(internal_business_error)?;
+    Ok(())
+}
+
+async fn load_available_skill_ids_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    catalog: &StaticDataCatalog,
+) -> Result<HashSet<String>, BusinessError> {
+    let equipped_rows = sqlx::query(
+        r#"
+        SELECT technique_id, current_layer, slot_type
+        FROM character_technique
+        WHERE character_id = $1
+          AND slot_type IS NOT NULL
+        "#,
+    )
+    .bind(character_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_business_error)?;
+
+    let equipped = equipped_rows
+        .into_iter()
+        .filter_map(|row| {
+            let technique_id = row.get::<String, _>("technique_id");
+            let detail = catalog.technique_detail(technique_id.as_str())?;
+            Some(EquippedTechniqueSnapshot {
+                technique_id,
+                technique_name: detail.technique.name.clone(),
+                slot_type: normalize_slot_type(
+                    row.try_get::<Option<String>, _>("slot_type").ok().flatten(),
+                )?,
+                current_layer: row.get::<i32, _>("current_layer"),
+                detail: detail.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(build_available_skills(&equipped)
+        .into_iter()
+        .map(|entry| entry.skill_id)
+        .collect())
+}
+
+async fn reconcile_equipped_skill_slots_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    available_skill_ids: &HashSet<String>,
+    catalog: &StaticDataCatalog,
+) -> Result<Vec<CharacterSkillSlotView>, BusinessError> {
+    let removed_rows = if available_skill_ids.is_empty() {
+        sqlx::query(
+            r#"
+            DELETE FROM character_skill_slot
+            WHERE character_id = $1
+            RETURNING slot_index, skill_id
+            "#,
+        )
+        .bind(character_id)
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(internal_business_error)?
+    } else {
+        let allowed = available_skill_ids.iter().cloned().collect::<Vec<_>>();
+        sqlx::query(
+            r#"
+            DELETE FROM character_skill_slot
+            WHERE character_id = $1
+              AND NOT (skill_id = ANY($2::text[]))
+            RETURNING slot_index, skill_id
+            "#,
+        )
+        .bind(character_id)
+        .bind(allowed)
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(internal_business_error)?
+    };
+
+    let mut removed_slots = removed_rows
+        .into_iter()
+        .filter_map(|row| {
+            let slot_index = row.get::<i32, _>("slot_index");
+            let skill_id = row.get::<String, _>("skill_id");
+            if slot_index <= 0 || skill_id.trim().is_empty() {
+                return None;
+            }
+            let skill = catalog.skill(skill_id.trim());
+            Some(CharacterSkillSlotView {
+                slot_index,
+                skill_id: skill_id.trim().to_string(),
+                skill_name: skill
+                    .map(|entry| entry.name.clone())
+                    .unwrap_or_else(|| skill_id.trim().to_string()),
+                skill_icon: skill
+                    .and_then(|entry| entry.icon.clone())
+                    .unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+    removed_slots.sort_by(|left, right| left.slot_index.cmp(&right.slot_index));
+    Ok(removed_slots)
+}
+
+async fn cleanup_idle_auto_skill_policy_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    character_id: i64,
+    available_skill_ids: &HashSet<String>,
+) -> Result<(), BusinessError> {
+    let policy_row = sqlx::query(
+        r#"
+        SELECT auto_skill_policy
+        FROM idle_configs
+        WHERE character_id = $1
+        "#,
+    )
+    .bind(character_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_business_error)?;
+    let Some(policy_row) = policy_row else {
+        return Ok(());
+    };
+    let original_policy = policy_row
+        .try_get::<Option<Value>, _>("auto_skill_policy")
+        .ok()
+        .flatten()
+        .unwrap_or(Value::Object(Default::default()));
+    let original_slots = original_policy
+        .get("slots")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let normalized_slots = original_slots
+        .into_iter()
+        .filter_map(|entry| {
+            let skill_id = entry
+                .get("skillId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())?;
+            if !available_skill_ids.contains(skill_id) {
+                return None;
+            }
+            Some(skill_id.to_string())
+        })
+        .enumerate()
+        .map(|(index, skill_id)| {
+            serde_json::json!({
+                "skillId": skill_id,
+                "priority": index + 1,
+            })
+        })
+        .collect::<Vec<_>>();
+    let normalized_policy = serde_json::json!({ "slots": normalized_slots });
+    if normalized_policy == original_policy {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE idle_configs
+        SET auto_skill_policy = $2::jsonb,
+            updated_at = NOW()
+        WHERE character_id = $1
+        "#,
+    )
+    .bind(character_id)
+    .bind(normalized_policy)
+    .execute(&mut **transaction)
+    .await
+    .map_err(internal_business_error)?;
+    Ok(())
 }
 
 fn service_failure<T>(message: &str) -> CharacterTechniqueServiceResult<T> {
@@ -903,7 +1588,11 @@ mod tests {
 
         assert_eq!(effective.cooldown, 1);
         assert_eq!(
-            effective.effects.first().and_then(|entry| entry.get("type")).and_then(Value::as_str),
+            effective
+                .effects
+                .first()
+                .and_then(|entry| entry.get("type"))
+                .and_then(Value::as_str),
             Some("damage")
         );
         assert_eq!(effective.effects.len(), 2);
@@ -941,7 +1630,10 @@ mod tests {
         assert_eq!(passives.get("atkPct").copied(), Some(1.3));
     }
 
-    fn sample_technique(id: &str, name: &str) -> crate::application::static_data::catalog::TechniqueDefDto {
+    fn sample_technique(
+        id: &str,
+        name: &str,
+    ) -> crate::application::static_data::catalog::TechniqueDefDto {
         crate::application::static_data::catalog::TechniqueDefDto {
             id: id.to_string(),
             code: None,
