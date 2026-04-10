@@ -5,8 +5,8 @@ use jiuzhou_server_rs::runtime::battle::persistence::{
 };
 use jiuzhou_server_rs::runtime::idle::lock::{IdleLockRedisKey, IdleLockToken};
 use jiuzhou_server_rs::runtime::projection::service::{
-    OnlineBattleCharacterSnapshotRedis, OnlineProjectionIndexKey, OnlineProjectionRedisKey,
-    TeamMemberProjectionRedis,
+    ArenaProjectionRedis, OnlineBattleCharacterSnapshotRedis, OnlineProjectionIndexKey,
+    OnlineProjectionRedisKey, TeamMemberProjectionRedis,
 };
 use jiuzhou_server_rs::runtime::session::projection::OnlineBattleSessionSnapshotRedis;
 use jiuzhou_server_rs::runtime::tower::{
@@ -227,6 +227,33 @@ fn redis_payload_codecs_decode_current_node_contract_samples() {
     )
     .expect("decode team member projection");
     assert_eq!(team.member_character_ids, vec![9001, 9002]);
+
+    let arena: ArenaProjectionRedis = decode_json(
+        r#"{
+            "characterId":9001,
+            "score":1288,
+            "winCount":12,
+            "loseCount":3,
+            "todayUsed":5,
+            "todayLimit":20,
+            "todayRemaining":15,
+            "records":[
+                {
+                    "id":"arena-battle-1",
+                    "ts":1710000000000,
+                    "opponentName":"乙",
+                    "opponentRealm":"炼气期",
+                    "opponentPower":9527,
+                    "result":"win",
+                    "deltaScore":18,
+                    "scoreAfter":1288
+                }
+            ]
+        }"#,
+    )
+    .expect("decode arena projection");
+    assert_eq!(arena.character_id, 9001);
+    assert_eq!(arena.records[0].opponent_name, "乙");
 
     let resource: CharacterRuntimeResourceRedis =
         decode_json(r#"{"qixue":88,"lingqi":21}"#).expect("decode character runtime resource");

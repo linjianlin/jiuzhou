@@ -96,6 +96,43 @@ fn build_recovery_source() -> RecoverySourceData {
             }"#,
         )
         .with_string(
+            OnlineProjectionRedisKey::arena(9001).into_string(),
+            r#"{
+                "characterId":9001,
+                "score":1288,
+                "winCount":12,
+                "loseCount":3,
+                "todayUsed":5,
+                "todayLimit":20,
+                "todayRemaining":15,
+                "records":[
+                    {
+                        "id":"arena-battle-1",
+                        "ts":1710000000000,
+                        "opponentName":"乙",
+                        "opponentRealm":"炼气期",
+                        "opponentPower":9527,
+                        "result":"win",
+                        "deltaScore":18,
+                        "scoreAfter":1288
+                    }
+                ]
+            }"#,
+        )
+        .with_string(
+            OnlineProjectionRedisKey::arena(9002).into_string(),
+            r#"{
+                "characterId":9002,
+                "score":1210,
+                "winCount":8,
+                "loseCount":6,
+                "todayUsed":4,
+                "todayLimit":20,
+                "todayRemaining":16,
+                "records":[]
+            }"#,
+        )
+        .with_string(
             OnlineProjectionRedisKey::user_character(77).into_string(),
             "9001",
         )
@@ -114,6 +151,10 @@ fn build_recovery_source() -> RecoverySourceData {
         .with_set(
             OnlineProjectionIndexKey::sessions().into_string(),
             ["session-1", "session-2"],
+        )
+        .with_set(
+            OnlineProjectionIndexKey::arena().into_string(),
+            ["9001", "9002"],
         )
         .with_set(
             OnlineProjectionIndexKey::characters().into_string(),
@@ -167,6 +208,7 @@ async fn online_projection_registry_recovers_character_user_and_session_indexes(
         .expect("build online projection registry");
 
     assert_eq!(registry.character_ids(), vec![9001, 9002]);
+    assert_eq!(registry.arena_character_ids(), vec![9001, 9002]);
     assert_eq!(registry.find_character_id_by_user_id(77), Some(9001));
     assert_eq!(
         registry.find_session_ids_by_character_id(9001),
@@ -182,6 +224,14 @@ async fn online_projection_registry_recovers_character_user_and_session_indexes(
     assert_eq!(payload.character.character_id, 9001);
     assert_eq!(payload.user_id, 77);
     assert_eq!(payload.session_ids, vec!["session-1".to_string()]);
+    assert_eq!(registry.get_arena(9001).map(|item| item.score), Some(1288));
+    assert_eq!(
+        registry
+            .get_arena(9001)
+            .map(|item| item.records[0].opponent_name.clone()),
+        Some("乙".to_string())
+    );
+
     assert_eq!(
         payload
             .team_member
@@ -205,4 +255,8 @@ async fn startup_helpers_build_session_and_projection_registries() {
 
     assert!(session_registry.get("session-2").is_some());
     assert!(projection_registry.get_character(9002).is_some());
+    assert_eq!(
+        projection_registry.get_arena(9002).map(|item| item.score),
+        Some(1210)
+    );
 }

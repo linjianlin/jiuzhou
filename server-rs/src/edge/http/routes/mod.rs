@@ -1,6 +1,7 @@
 pub mod account;
 pub mod achievement;
 pub mod afdian;
+pub mod arena;
 pub mod attribute;
 pub mod auth;
 pub mod battle_pass;

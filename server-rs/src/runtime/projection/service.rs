@@ -224,6 +224,32 @@ pub struct TeamMemberProjectionRedis {
     pub member_character_ids: Vec<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArenaRecordProjectionRedis {
+    pub id: String,
+    pub ts: i64,
+    pub opponent_name: String,
+    pub opponent_realm: String,
+    pub opponent_power: i64,
+    pub result: String,
+    pub delta_score: i64,
+    pub score_after: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArenaProjectionRedis {
+    pub character_id: i64,
+    pub score: i64,
+    pub win_count: i64,
+    pub lose_count: i64,
+    pub today_used: i64,
+    pub today_limit: i64,
+    pub today_remaining: i64,
+    pub records: Vec<ArenaRecordProjectionRedis>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RecoverySourceData {
     pub strings: BTreeMap<String, String>,
@@ -257,6 +283,7 @@ pub struct OnlineProjectionRecoveryState {
     pub character_snapshots: Vec<OnlineBattleCharacterSnapshotRedis>,
     pub user_character_links: Vec<(i64, i64)>,
     pub team_members: Vec<(i64, TeamMemberProjectionRedis)>,
+    pub arena_projections: Vec<ArenaProjectionRedis>,
     pub session_battle_links: Vec<(String, String)>,
     pub session_projections: Vec<OnlineBattleSessionSnapshotRedis>,
     pub tower_progressions: Vec<TowerProgressProjectionRedis>,
@@ -280,6 +307,7 @@ pub struct OnlineProjectionRegistry {
     character_snapshots: BTreeMap<i64, OnlineBattleCharacterSnapshotRedis>,
     character_id_by_user_id: BTreeMap<i64, i64>,
     team_members_by_user_id: BTreeMap<i64, TeamMemberProjectionRedis>,
+    arena_projections_by_character_id: BTreeMap<i64, ArenaProjectionRedis>,
     session_snapshots: BTreeMap<String, OnlineBattleSessionSnapshotRedis>,
     battle_id_by_session_id: BTreeMap<String, String>,
     session_ids_by_character_id: BTreeMap<i64, BTreeSet<String>>,
@@ -373,6 +401,24 @@ impl OnlineProjectionRegistry {
         self.team_members_by_user_id.get(&user_id)
     }
 
+    pub fn get_arena(&self, character_id: i64) -> Option<&ArenaProjectionRedis> {
+        self.arena_projections_by_character_id.get(&character_id)
+    }
+
+    pub fn arena_character_ids(&self) -> Vec<i64> {
+        self.arena_projections_by_character_id
+            .keys()
+            .copied()
+            .collect()
+    }
+
+    pub fn list_arenas(&self) -> Vec<ArenaProjectionRedis> {
+        self.arena_projections_by_character_id
+            .values()
+            .cloned()
+            .collect()
+    }
+
     pub fn get_session(&self, session_id: &str) -> Option<&OnlineBattleSessionSnapshotRedis> {
         self.session_snapshots.get(session_id)
     }
@@ -413,6 +459,7 @@ impl RuntimeRecoveryLoader {
         let character_snapshots = load_character_snapshots_from_source(source)?;
         let user_character_links = load_user_character_links_from_source(source);
         let team_members = load_team_members_from_source(source)?;
+        let arena_projections = load_arena_projections_from_source(source)?;
         let session_battle_links = load_session_battle_links_from_source(source);
         let tower_progressions = load_tower_progressions_from_source(source)?;
         let tower_runtime_projections = load_tower_runtime_projections_from_source(source)?;
@@ -429,6 +476,7 @@ impl RuntimeRecoveryLoader {
                 character_snapshots,
                 user_character_links,
                 team_members,
+                arena_projections,
                 session_battle_links,
                 session_projections: session_projections.clone(),
                 tower_progressions,
@@ -466,6 +514,12 @@ pub fn build_online_projection_registry_from_snapshot(
         registry
             .team_members_by_user_id
             .insert(*user_id, team_member.clone());
+    }
+
+    for projection in &snapshot.online_projection.arena_projections {
+        registry
+            .arena_projections_by_character_id
+            .insert(projection.character_id, projection.clone());
     }
 
     for session in &snapshot.online_projection.session_projections {
@@ -670,6 +724,31 @@ fn load_tower_progressions_from_source(
     }
 
     Ok(progressions)
+}
+
+fn load_arena_projections_from_source(
+    source: &RecoverySourceData,
+) -> Result<Vec<ArenaProjectionRedis>, AppError> {
+    let mut character_ids = source
+        .sets
+        .get(OnlineProjectionIndexKey::arena().as_ref())
+        .map(|items| items.iter().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    character_ids.sort();
+
+    let mut projections = Vec::with_capacity(character_ids.len());
+    for character_id in character_ids {
+        let Some(parsed_character_id) = character_id.parse::<i64>().ok() else {
+            continue;
+        };
+        let key = OnlineProjectionRedisKey::arena(parsed_character_id).into_string();
+        let Some(raw) = source.strings.get(&key) else {
+            continue;
+        };
+        projections.push(decode_json(raw)?);
+    }
+
+    Ok(projections)
 }
 
 fn load_tower_runtime_projections_from_source(

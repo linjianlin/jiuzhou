@@ -9,6 +9,7 @@ use crate::bootstrap::readiness::ReadinessGate;
 use crate::edge::http::routes::account::build_account_router;
 use crate::edge::http::routes::achievement::{build_achievement_router, AchievementRouteServices};
 use crate::edge::http::routes::afdian::{build_afdian_router, AfdianRouteServices};
+use crate::edge::http::routes::arena::build_arena_router;
 use crate::edge::http::routes::attribute::{build_attribute_router, AttributeRouteServices};
 use crate::edge::http::routes::auth::{build_auth_router, AuthRouteServices};
 use crate::edge::http::routes::battle_pass::{build_battle_pass_router, BattlePassRouteServices};
@@ -131,6 +132,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/account", build_account_router())
         .nest("/api/afdian", build_afdian_router())
         .nest("/api/achievement", build_achievement_router())
+        .nest("/api/arena", build_arena_router())
         .nest("/api/attribute", build_attribute_router())
         .nest("/api/auth", build_auth_router())
         .nest("/api/battle-session", build_battle_session_router())
