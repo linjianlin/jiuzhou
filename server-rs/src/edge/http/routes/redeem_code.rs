@@ -2,7 +2,7 @@ use std::{future::Future, pin::Pin};
 
 use axum::extract::{Json, State};
 use axum::http::HeaderMap;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -87,6 +87,12 @@ pub struct RedeemCodeSuccessData {
     pub rewards: Vec<RedeemCodeRewardView>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct RedeemCodeFailureResponse {
+    success: bool,
+    message: String,
+}
+
 pub trait RedeemCodeRouteServices: Send + Sync {
     fn redeem_code<'a>(
         &'a self,
@@ -148,11 +154,11 @@ async fn redeem_code_handler(
 
     let code = payload.code.unwrap_or_default();
     if code.trim().is_empty() {
-        return Ok(service_result(ServiceResultResponse::<RedeemCodeSuccessData>::new(
-            false,
-            Some("兑换码不能为空".to_string()),
-            None,
-        )));
+        return Ok(Json(RedeemCodeFailureResponse {
+            success: false,
+            message: "兑换码不能为空".to_string(),
+        })
+        .into_response());
     }
 
     let result = state
