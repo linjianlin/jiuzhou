@@ -18,8 +18,9 @@ use jiuzhou_server_rs::edge::http::routes::auth::{
     RegisterInput, VerifyTokenAndSessionResult,
 };
 use jiuzhou_server_rs::edge::http::routes::battle_pass::{
-    BattlePassRewardItemView, BattlePassRewardView, BattlePassRouteServices, BattlePassStatusView,
-    BattlePassTaskView, BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
+    BattlePassClaimDataView, BattlePassRewardItemView, BattlePassRewardView,
+    BattlePassRouteServices, BattlePassStatusView, BattlePassTaskView,
+    BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
 };
 use jiuzhou_server_rs::edge::http::routes::idle::NoopIdleRouteServices;
 use jiuzhou_server_rs::edge::http::routes::time::NoopTimeRouteServices;
@@ -122,6 +123,79 @@ async fn battle_pass_status_route_returns_404_when_status_missing() {
         serde_json::json!({
             "success": false,
             "message": "战令数据不存在",
+        })
+    );
+}
+
+#[tokio::test]
+async fn battle_pass_claim_route_returns_service_result_shape() {
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_user(),
+        FakeBattlePassServices::new(),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/battlepass/claim")
+                .method("POST")
+                .header("authorization", "Bearer bp-token")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "level": 3,
+                        "track": "premium"
+                    })
+                    .to_string(),
+                ))
+                .expect("battle pass claim request"),
+        )
+        .await
+        .expect("battle pass claim response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["success"], serde_json::json!(true));
+    assert_eq!(json["message"], serde_json::json!("领取成功"));
+    assert_eq!(json["data"]["level"], serde_json::json!(3));
+    assert_eq!(json["data"]["track"], serde_json::json!("premium"));
+    assert_eq!(json["data"]["spiritStones"], serde_json::json!(88));
+    assert_eq!(json["data"]["silver"], serde_json::json!(666));
+}
+
+#[tokio::test]
+async fn battle_pass_claim_route_rejects_non_numeric_level() {
+    let app = build_router(build_app_state(
+        FakeAuthServices::with_user(),
+        FakeBattlePassServices::new(),
+    ));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/battlepass/claim")
+                .method("POST")
+                .header("authorization", "Bearer bp-token")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "level": "3",
+                        "track": "free"
+                    })
+                    .to_string(),
+                ))
+                .expect("battle pass invalid claim request"),
+        )
+        .await
+        .expect("battle pass invalid claim response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "等级参数无效",
         })
     );
 }
@@ -341,6 +415,42 @@ impl BattlePassRouteServices for FakeBattlePassServices {
                     icon: Some("mat-001.png".to_string()),
                 }],
             }])
+        })
+    }
+
+    fn claim_reward<'a>(
+        &'a self,
+        _user_id: i64,
+        level: i64,
+        track: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ServiceResultResponse<BattlePassClaimDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(ServiceResultResponse::new(
+                true,
+                Some("领取成功".to_string()),
+                Some(BattlePassClaimDataView {
+                    level,
+                    track,
+                    rewards: vec![BattlePassRewardItemView {
+                        reward_type: "item".to_string(),
+                        currency: None,
+                        amount: None,
+                        item_def_id: Some("mat-001".to_string()),
+                        qty: Some(20),
+                        name: "赤炎砂".to_string(),
+                        icon: Some("mat-001.png".to_string()),
+                    }],
+                    spirit_stones: 88,
+                    silver: 666,
+                }),
+            ))
         })
     }
 }

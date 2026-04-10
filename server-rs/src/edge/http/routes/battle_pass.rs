@@ -4,7 +4,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -17,17 +17,17 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  * battlepass 战令路由。
  *
  * 作用：
- * 1. 做什么：对齐 Node `/api/battlepass/tasks`、`/api/battlepass/tasks/:taskId/complete`、`/api/battlepass/status`、`/api/battlepass/rewards` 四个接口。
+ * 1. 做什么：对齐 Node `/api/battlepass/tasks`、`/api/battlepass/tasks/:taskId/complete`、`/api/battlepass/status`、`/api/battlepass/rewards`、`/api/battlepass/claim` 五个接口。
  * 2. 做什么：统一复用 `requireAuth` 鉴权与成功/失败 envelope，避免各 handler 重复拼 session 校验和 query 解析。
- * 3. 不做什么：不在这里实现奖励领取、副作用推送或事件驱动任务累加；这些保留给后续战令剩余迁移。
+ * 3. 不做什么：不在这里实现推送通知或事件驱动任务累加；这些仍由应用层外的后续链路负责。
  *
  * 输入 / 输出：
- * - 输入：Authorization Bearer token；`tasks/rewards` 可选 `seasonId` query；完成任务走 `:taskId` path。
- * - 输出：`tasks/status/rewards` 走 `sendSuccess` 形状，`complete` 走 `sendResult` 形状。
+ * - 输入：Authorization Bearer token；`tasks/rewards` 可选 `seasonId` query；完成任务走 `:taskId` path；领取奖励接收 `{ level, track }`。
+ * - 输出：`tasks/status/rewards` 走 `sendSuccess` 形状，`complete/claim` 走 `sendResult` 形状。
  *
  * 数据流 / 状态流：
  * - 请求 -> `require_authenticated_user_id` -> `BattlePassRouteServices`
- * - 只读接口直接输出成功包；完成接口透传业务结果。
+ * - 只读接口直接输出成功包；完成与领取接口透传业务结果。
  *
  * 复用设计说明：
  * - `BattlePass*View` 在路由、应用服务、合同测试之间共用，字段协议只维护一份。
@@ -36,6 +36,8 @@ use crate::edge::http::response::{service_result, success, ServiceResultResponse
  * 关键边界条件与坑点：
  * 1. `status` 在 Node 里数据不存在会抛 404，不能退化成 `200 + null`。
  * 2. `seasonId` 只做去空白，不在路由层擅自追加回退逻辑，保持 Node 的赛季解析仍由服务层统一负责。
+ * 3. `claim` 的 `level` 必须继续要求 JSON number 且为正整数，不能放宽成字符串数字。
+ * 4. `claim` 的 `track` 只能是 `free|premium`，错误文案必须保持 `奖励轨道参数无效`。
  */
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -123,10 +125,26 @@ pub struct CompleteBattlePassTaskDataView {
     pub exp_per_level: i64,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BattlePassClaimDataView {
+    pub level: i64,
+    pub track: String,
+    pub rewards: Vec<BattlePassRewardItemView>,
+    pub spirit_stones: i64,
+    pub silver: i64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct BattlePassSeasonQuery {
     #[serde(rename = "seasonId")]
     season_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BattlePassClaimPayload {
+    level: Option<Value>,
+    track: Option<String>,
 }
 
 pub trait BattlePassRouteServices: Send + Sync {
@@ -163,6 +181,20 @@ pub trait BattlePassRouteServices: Send + Sync {
         &'a self,
         season_id: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<BattlePassRewardView>, BusinessError>> + Send + 'a>>;
+
+    fn claim_reward<'a>(
+        &'a self,
+        user_id: i64,
+        level: i64,
+        track: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ServiceResultResponse<BattlePassClaimDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    >;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -225,6 +257,28 @@ impl BattlePassRouteServices for NoopBattlePassRouteServices {
     {
         Box::pin(async move { Ok(Vec::new()) })
     }
+
+    fn claim_reward<'a>(
+        &'a self,
+        _user_id: i64,
+        _level: i64,
+        _track: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ServiceResultResponse<BattlePassClaimDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(ServiceResultResponse::new(
+                false,
+                Some("奖励配置不存在".to_string()),
+                None,
+            ))
+        })
+    }
 }
 
 pub fn build_battle_pass_router() -> Router<AppState> {
@@ -233,6 +287,7 @@ pub fn build_battle_pass_router() -> Router<AppState> {
         .route("/tasks/{task_id}/complete", post(complete_task_handler))
         .route("/status", get(get_status_handler))
         .route("/rewards", get(get_rewards_handler))
+        .route("/claim", post(claim_reward_handler))
 }
 
 async fn get_tasks_handler(
@@ -300,8 +355,43 @@ async fn get_rewards_handler(
     Ok(success(view))
 }
 
+async fn claim_reward_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BattlePassClaimPayload>,
+) -> Result<Response, BusinessError> {
+    let user_id = match require_authenticated_user_id(&state, &headers).await {
+        Ok(user_id) => user_id,
+        Err(response) => return Ok(response),
+    };
+    let Some(level) = parse_positive_integer_number(payload.level.as_ref()) else {
+        return Err(BusinessError::new("等级参数无效"));
+    };
+    let Some(track) = payload
+        .track
+        .map(|value: String| value.trim().to_string())
+        .filter(|value| value == "free" || value == "premium")
+    else {
+        return Err(BusinessError::new("奖励轨道参数无效"));
+    };
+
+    let result = state
+        .battle_pass_services
+        .claim_reward(user_id, level, track)
+        .await?;
+    Ok(service_result(result))
+}
+
 fn normalize_optional_query_text(value: Option<String>) -> Option<String> {
     value
         .map(|raw| raw.trim().to_string())
         .filter(|raw| !raw.is_empty())
+}
+
+fn parse_positive_integer_number(value: Option<&Value>) -> Option<i64> {
+    let Value::Number(number) = value? else {
+        return None;
+    };
+    let parsed = number.as_i64()?;
+    (parsed > 0).then_some(parsed)
 }

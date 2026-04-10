@@ -5,14 +5,15 @@ use std::{future::Future, pin::Pin};
 use chrono::{Datelike, Local, NaiveDate};
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 
 use crate::application::static_data::seed::read_seed_json;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::ServiceResultResponse;
 use crate::edge::http::routes::battle_pass::{
-    BattlePassRewardItemView, BattlePassRewardView, BattlePassRouteServices, BattlePassStatusView,
-    BattlePassTaskView, BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
+    BattlePassClaimDataView, BattlePassRewardItemView, BattlePassRewardView,
+    BattlePassRouteServices, BattlePassStatusView, BattlePassTaskView,
+    BattlePassTasksOverviewView, CompleteBattlePassTaskDataView,
 };
 use crate::shared::error::AppError;
 
@@ -23,23 +24,25 @@ static BATTLE_PASS_ITEM_META: OnceLock<Result<HashMap<String, ItemDisplayMeta>, 
 
 const DEFAULT_MAX_LEVEL: i64 = 30;
 const DEFAULT_EXP_PER_LEVEL: i64 = 1_000;
+const DEFAULT_BAG_CAPACITY: i32 = 100;
 
 /**
  * 战令应用服务。
  *
  * 作用：
- * 1. 做什么：对齐 Node `battlePassService` 的战令任务概览、任务完成、赛季状态与奖励列表逻辑。
- * 2. 做什么：把赛季回退、周期判断、静态奖励展示映射和进度写库收敛到单一入口，避免路由层重复维护规则。
- * 3. 不做什么：不在这里实现奖励领取入包、特权解锁购买和事件驱动进度累加；这些属于后续战令剩余链路。
+ * 1. 做什么：对齐 Node `battlePassService` 的战令任务概览、任务完成、赛季状态、奖励列表与奖励领取逻辑。
+ * 2. 做什么：把赛季回退、周期判断、静态奖励展示映射、进度写库和领取入包收敛到单一入口，避免路由层重复维护规则。
+ * 3. 不做什么：不在这里实现特权解锁购买和事件驱动任务累加；这些属于后续战令剩余链路。
  *
  * 输入 / 输出：
  * - 输入：`user_id`、可选 `season_id`、`task_id`。
- * - 输出：Node 兼容的任务概览 / 状态 / 奖励 DTO，以及 `sendResult` 风格的任务完成结果。
+ * - 输出：Node 兼容的任务概览 / 状态 / 奖励 DTO，以及 `sendResult` 风格的任务完成、奖励领取结果。
  *
  * 数据流 / 状态流：
  * - 任务概览：HTTP -> 本服务 -> 解析静态任务配置 -> 读取 `battle_pass_task_progress` -> 周期化归并 -> 返回 DTO。
  * - 状态：HTTP -> 本服务 -> 读取 `battle_pass_progress` + `battle_pass_claim_record` -> 返回赛季状态。
  * - 任务完成：HTTP -> 本服务 -> 事务锁定目标进度 -> 校验周期状态 -> 写入进度与经验 -> 返回完成结果。
+ * - 奖励领取：HTTP -> 本服务 -> 事务锁定战令进度/领取记录 -> 发放货币与物品 -> 写入领取记录 -> 返回最新资产快照。
  *
  * 复用设计说明：
  * - 静态配置、奖励展示元数据、角色 ID 查询和周期判定都集中在这里，后续如果首页聚合要展示战令红点，可以直接复用本模块。
@@ -47,7 +50,8 @@ const DEFAULT_EXP_PER_LEVEL: i64 = 1_000;
  *
  * 关键边界条件与坑点：
  * 1. `completed/claimed/progressValue` 必须继续按 daily/weekly 周期衰减，不能把旧赛季或上周数据直接透传给当前视图。
- * 2. 配置读取失败必须直接报 500，不能默默返回空任务列表，否则会掩盖 Node 权威种子与 Rust 实现漂移。
+ * 2. 奖励领取必须和 `battle_pass_claim_record`、角色钱包、背包入包放在同一事务里，不能先发奖后记账。
+ * 3. 配置读取失败必须直接报 500，不能默默返回空任务列表，否则会掩盖 Node 权威种子与 Rust 实现漂移。
  */
 #[derive(Debug, Clone)]
 pub struct RustBattlePassRouteService {
@@ -133,6 +137,8 @@ struct BattlePassSeasonConfig {
 struct ItemDisplayMeta {
     name: String,
     icon: Option<String>,
+    bind_type: String,
+    stack_max: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,6 +151,8 @@ struct ItemSeedEntry {
     id: String,
     name: String,
     icon: Option<String>,
+    bind_type: Option<String>,
+    stack_max: Option<i32>,
     enabled: Option<bool>,
 }
 
@@ -158,9 +166,51 @@ struct TaskProgressSnapshot {
     updated_day: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CharacterWallet {
+    character_id: i64,
+    silver: i64,
+    spirit_stones: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StackableBagRow {
+    id: i64,
+    qty: i64,
+    location_slot: i32,
+}
+
 impl RustBattlePassRouteService {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self { pool }
+    }
+
+    async fn load_character_wallet(
+        &self,
+        user_id: i64,
+    ) -> Result<Option<CharacterWallet>, BusinessError> {
+        sqlx::query(
+            r#"
+            SELECT
+              id,
+              COALESCE(silver, 0)::bigint AS silver,
+              COALESCE(spirit_stones, 0)::bigint AS spirit_stones
+            FROM characters
+            WHERE user_id = $1
+            LIMIT 1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map(|row| {
+            row.map(|value| CharacterWallet {
+                character_id: value.get::<i64, _>("id"),
+                silver: value.get::<i64, _>("silver"),
+                spirit_stones: value.get::<i64, _>("spirit_stones"),
+            })
+        })
+        .map_err(internal_business_error)
     }
 
     async fn get_tasks_overview_impl(
@@ -570,6 +620,414 @@ impl RustBattlePassRouteService {
             })
             .collect())
     }
+
+    async fn claim_reward_impl(
+        &self,
+        user_id: i64,
+        level: i64,
+        track: String,
+    ) -> Result<ServiceResultResponse<BattlePassClaimDataView>, BusinessError> {
+        let Some(character_wallet) = self.load_character_wallet(user_id).await? else {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("角色不存在".to_string()),
+                None,
+            ));
+        };
+
+        let config = battle_pass_static_config().map_err(internal_business_error)?;
+        let Some(season_id) = resolve_active_or_default_season_id(config) else {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("当前没有进行中的赛季".to_string()),
+                None,
+            ));
+        };
+        if config.season.id != season_id {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("赛季配置不存在".to_string()),
+                None,
+            ));
+        }
+
+        let max_level = config.season.max_level.max(1);
+        let exp_per_level = config.season.exp_per_level.max(1);
+        if level < 1 || level > max_level {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("等级无效".to_string()),
+                None,
+            ));
+        }
+        if track != "free" && track != "premium" {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("奖励轨道参数无效".to_string()),
+                None,
+            ));
+        }
+
+        let Some(reward_row) = config.rewards.iter().find(|entry| entry.level == level) else {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("奖励配置不存在".to_string()),
+                None,
+            ));
+        };
+        let reward_entries = if track == "free" {
+            reward_row.free.clone().unwrap_or_default()
+        } else {
+            reward_row.premium.clone().unwrap_or_default()
+        };
+
+        let item_meta = battle_pass_item_meta().map_err(internal_business_error)?;
+        let rewards = build_reward_item_views(Some(reward_entries.as_slice()), item_meta);
+
+        let mut transaction = self.pool.begin().await.map_err(internal_business_error)?;
+        let progress_row = sqlx::query(
+            r#"
+            SELECT COALESCE(exp, 0)::bigint AS exp, COALESCE(premium_unlocked, FALSE) AS premium_unlocked
+            FROM battle_pass_progress
+            WHERE character_id = $1 AND season_id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_wallet.character_id)
+        .bind(&season_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        let exp = progress_row
+            .as_ref()
+            .map(|row| row.get::<i64, _>("exp"))
+            .unwrap_or(0);
+        let premium_unlocked = progress_row
+            .as_ref()
+            .map(|row| row.get::<bool, _>("premium_unlocked"))
+            .unwrap_or(false);
+        let current_level = calculate_level(exp, exp_per_level, max_level);
+        if level > current_level {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("等级未解锁".to_string()),
+                None,
+            ));
+        }
+        if track == "premium" && !premium_unlocked {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("未解锁特权通行证".to_string()),
+                None,
+            ));
+        }
+
+        let already_claimed = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT 1
+            FROM battle_pass_claim_record
+            WHERE character_id = $1
+              AND season_id = $2
+              AND level = $3
+              AND track = $4
+            LIMIT 1
+            "#,
+        )
+        .bind(character_wallet.character_id)
+        .bind(&season_id)
+        .bind(level)
+        .bind(track.as_str())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+        if already_claimed.is_some() {
+            return Ok(ServiceResultResponse::new(
+                false,
+                Some("该等级奖励已领取".to_string()),
+                None,
+            ));
+        }
+
+        let mut silver_delta = 0_i64;
+        let mut spirit_stones_delta = 0_i64;
+        for reward in &reward_entries {
+            if let BattlePassRewardEntry::Currency { currency, amount } = reward {
+                let normalized_amount = (*amount).max(0);
+                if normalized_amount <= 0 {
+                    continue;
+                }
+                match currency.trim() {
+                    "silver" => silver_delta += normalized_amount,
+                    "spirit_stones" => spirit_stones_delta += normalized_amount,
+                    _ => {}
+                }
+            }
+        }
+
+        self.grant_reward_items(
+            &mut transaction,
+            user_id,
+            character_wallet.character_id,
+            &reward_entries,
+            item_meta,
+        )
+        .await?;
+
+        let (silver, spirit_stones) = if silver_delta > 0 || spirit_stones_delta > 0 {
+            let wallet_row = sqlx::query(
+                r#"
+                UPDATE characters
+                SET
+                  silver = COALESCE(silver, 0) + $2,
+                  spirit_stones = COALESCE(spirit_stones, 0) + $3
+                WHERE id = $1
+                RETURNING
+                  COALESCE(silver, 0)::bigint AS silver,
+                  COALESCE(spirit_stones, 0)::bigint AS spirit_stones
+                "#,
+            )
+            .bind(character_wallet.character_id)
+            .bind(silver_delta)
+            .bind(spirit_stones_delta)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(internal_business_error)?;
+            (
+                wallet_row.get::<i64, _>("silver"),
+                wallet_row.get::<i64, _>("spirit_stones"),
+            )
+        } else {
+            (character_wallet.silver, character_wallet.spirit_stones)
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO battle_pass_claim_record (character_id, season_id, level, track, claimed_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            "#,
+        )
+        .bind(character_wallet.character_id)
+        .bind(&season_id)
+        .bind(level)
+        .bind(track.as_str())
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(internal_business_error)?;
+
+        Ok(ServiceResultResponse::new(
+            true,
+            Some("领取成功".to_string()),
+            Some(BattlePassClaimDataView {
+                level,
+                track,
+                rewards,
+                spirit_stones,
+                silver,
+            }),
+        ))
+    }
+
+    async fn grant_reward_items(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        user_id: i64,
+        character_id: i64,
+        reward_entries: &[BattlePassRewardEntry],
+        item_meta: &HashMap<String, ItemDisplayMeta>,
+    ) -> Result<(), BusinessError> {
+        let reward_items = reward_entries
+            .iter()
+            .filter_map(|entry| match entry {
+                BattlePassRewardEntry::Item { item_def_id, qty } => {
+                    let normalized_item_def_id = item_def_id.trim().to_string();
+                    let normalized_qty = (*qty).max(0);
+                    if normalized_item_def_id.is_empty() || normalized_qty <= 0 {
+                        return None;
+                    }
+                    Some((normalized_item_def_id, normalized_qty))
+                }
+                BattlePassRewardEntry::Currency { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        if reward_items.is_empty() {
+            return Ok(());
+        }
+
+        let bag_capacity = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT COALESCE(bag_capacity, $2)::int AS bag_capacity
+            FROM inventory
+            WHERE character_id = $1
+            "#,
+        )
+        .bind(character_id)
+        .bind(DEFAULT_BAG_CAPACITY)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(internal_business_error)?
+        .unwrap_or(DEFAULT_BAG_CAPACITY)
+        .max(0);
+
+        let occupied_slot_rows = sqlx::query(
+            r#"
+            SELECT location_slot
+            FROM item_instance
+            WHERE owner_character_id = $1
+              AND location = 'bag'
+              AND location_slot IS NOT NULL
+              AND location_slot >= 0
+            ORDER BY location_slot ASC
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(internal_business_error)?;
+        let mut occupied_slots = occupied_slot_rows
+            .into_iter()
+            .map(|row| row.get::<i32, _>("location_slot"))
+            .collect::<Vec<_>>();
+        occupied_slots.sort_unstable();
+        occupied_slots.dedup();
+
+        let stackable_rows = sqlx::query(
+            r#"
+            SELECT
+              id,
+              item_def_id,
+              COALESCE(qty, 0)::bigint AS qty,
+              location_slot,
+              COALESCE(NULLIF(BTRIM(bind_type), ''), 'none') AS bind_type
+            FROM item_instance
+            WHERE owner_character_id = $1
+              AND location = 'bag'
+              AND location_slot IS NOT NULL
+              AND location_slot >= 0
+              AND (metadata IS NULL OR metadata = 'null'::jsonb)
+              AND (affixes IS NULL OR affixes = 'null'::jsonb)
+              AND quality IS NULL
+              AND (quality_rank IS NULL OR quality_rank <= 0)
+              AND (equipped_slot IS NULL OR equipped_slot = '')
+              AND COALESCE(strengthen_level, 0) = 0
+              AND COALESCE(refine_level, 0) = 0
+              AND COALESCE(locked, FALSE) = FALSE
+            FOR UPDATE
+            "#,
+        )
+        .bind(character_id)
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(internal_business_error)?;
+
+        let mut stackable_rows_by_key: HashMap<(String, String), Vec<StackableBagRow>> =
+            HashMap::new();
+        for row in stackable_rows {
+            let key = (
+                row.get::<String, _>("item_def_id"),
+                normalize_item_bind_type(row.get::<String, _>("bind_type")),
+            );
+            stackable_rows_by_key
+                .entry(key)
+                .or_default()
+                .push(StackableBagRow {
+                    id: row.get::<i64, _>("id"),
+                    qty: row.get::<i64, _>("qty").max(0),
+                    location_slot: row.get::<i32, _>("location_slot"),
+                });
+        }
+        for rows in stackable_rows_by_key.values_mut() {
+            rows.sort_by(|left, right| {
+                left.location_slot
+                    .cmp(&right.location_slot)
+                    .then_with(|| left.id.cmp(&right.id))
+            });
+        }
+
+        for (item_def_id, quantity) in reward_items {
+            let Some(meta) = item_meta.get(item_def_id.as_str()) else {
+                return Err(internal_business_error("missing battle pass item definition"));
+            };
+            let bind_type = normalize_item_bind_type(meta.bind_type.clone());
+            let stack_max = meta.stack_max.max(1) as i64;
+            let key = (item_def_id.clone(), bind_type.clone());
+            let stack_rows = stackable_rows_by_key.entry(key).or_default();
+            let mut remaining = quantity;
+
+            if stack_max > 1 {
+                for row in stack_rows.iter_mut() {
+                    if remaining <= 0 {
+                        break;
+                    }
+                    let available = (stack_max - row.qty).max(0);
+                    if available <= 0 {
+                        continue;
+                    }
+                    let add_qty = remaining.min(available);
+                    sqlx::query(
+                        r#"
+                        UPDATE item_instance
+                        SET qty = qty + $2, updated_at = NOW()
+                        WHERE id = $1
+                        "#,
+                    )
+                    .bind(row.id)
+                    .bind(add_qty)
+                    .execute(&mut **transaction)
+                    .await
+                    .map_err(internal_business_error)?;
+                    row.qty += add_qty;
+                    remaining -= add_qty;
+                }
+            }
+
+            while remaining > 0 {
+                let Some(slot) = take_next_free_bag_slot(&mut occupied_slots, bag_capacity) else {
+                    return Err(BusinessError::new("背包已满"));
+                };
+                let add_qty = remaining.min(stack_max);
+                let inserted_id = sqlx::query_scalar::<_, i64>(
+                    r#"
+                    INSERT INTO item_instance (
+                      owner_user_id,
+                      owner_character_id,
+                      item_def_id,
+                      qty,
+                      location,
+                      location_slot,
+                      bind_type,
+                      obtained_from
+                    )
+                    VALUES ($1, $2, $3, $4, 'bag', $5, $6, 'battle_pass')
+                    RETURNING id
+                    "#,
+                )
+                .bind(user_id)
+                .bind(character_id)
+                .bind(item_def_id.as_str())
+                .bind(add_qty)
+                .bind(slot)
+                .bind(bind_type.as_str())
+                .fetch_one(&mut **transaction)
+                .await
+                .map_err(internal_business_error)?;
+                stack_rows.push(StackableBagRow {
+                    id: inserted_id,
+                    qty: add_qty,
+                    location_slot: slot,
+                });
+                remaining -= add_qty;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl BattlePassRouteServices for RustBattlePassRouteService {
@@ -615,6 +1073,22 @@ impl BattlePassRouteServices for RustBattlePassRouteService {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<BattlePassRewardView>, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move { self.get_rewards_impl(season_id).await })
+    }
+
+    fn claim_reward<'a>(
+        &'a self,
+        user_id: i64,
+        level: i64,
+        track: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ServiceResultResponse<BattlePassClaimDataView>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.claim_reward_impl(user_id, level, track).await })
     }
 }
 
@@ -675,13 +1149,17 @@ fn load_item_meta() -> Result<HashMap<String, ItemDisplayMeta>, AppError> {
             if id.is_empty() || name.is_empty() {
                 return None;
             }
-            Some((
-                id,
-                ItemDisplayMeta {
-                    name,
-                    icon: trim_optional_string(item.icon),
-                },
-            ))
+                Some((
+                    id,
+                    ItemDisplayMeta {
+                        name,
+                        icon: trim_optional_string(item.icon),
+                        bind_type: normalize_item_bind_type(
+                            item.bind_type.unwrap_or_else(|| "none".to_string()),
+                        ),
+                        stack_max: item.stack_max.unwrap_or(1).max(1),
+                    },
+                ))
         })
         .collect())
 }
@@ -847,6 +1325,43 @@ fn trim_optional_string(value: Option<String>) -> Option<String> {
     value
         .map(|raw| raw.trim().to_string())
         .filter(|raw| !raw.is_empty())
+}
+
+fn normalize_item_bind_type(value: impl Into<String>) -> String {
+    let normalized = value.into().trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        "none".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn take_next_free_bag_slot(occupied_slots: &mut Vec<i32>, bag_capacity: i32) -> Option<i32> {
+    let mut expected = 0_i32;
+    let max_capacity = bag_capacity.max(0);
+    for slot in occupied_slots.iter().copied() {
+        if expected >= max_capacity {
+            return None;
+        }
+        if slot < expected {
+            continue;
+        }
+        if slot == expected {
+            expected += 1;
+            continue;
+        }
+        break;
+    }
+    if expected >= max_capacity {
+        return None;
+    }
+    match occupied_slots.binary_search(&expected) {
+        Ok(_) => None,
+        Err(index) => {
+            occupied_slots.insert(index, expected);
+            Some(expected)
+        }
+    }
 }
 
 fn internal_business_error(error: impl std::fmt::Display) -> BusinessError {
