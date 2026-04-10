@@ -7,7 +7,10 @@ use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
 
-use crate::application::account::service::PhoneBindingStatusDto;
+use crate::application::account::service::{
+    BindPhoneNumberResult, ChangePasswordResult, PhoneBindingStatusDto,
+    SendPhoneBindingCodeResult,
+};
 use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
     UpdateCharacterPositionResult, UpdateCharacterSettingResult,
@@ -141,6 +144,54 @@ pub trait AuthRouteServices: Send + Sync {
         &'a self,
         _user_id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<PhoneBindingStatusDto, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "服务器错误",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
+    fn send_phone_binding_code<'a>(
+        &'a self,
+        _user_id: i64,
+        _phone_number: String,
+        _user_ip: String,
+        _captcha: CaptchaVerifyPayload,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<SendPhoneBindingCodeResult, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "服务器错误",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
+    fn bind_phone_number<'a>(
+        &'a self,
+        _user_id: i64,
+        _phone_number: String,
+        _code: String,
+    ) -> Pin<Box<dyn Future<Output = Result<BindPhoneNumberResult, BusinessError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "服务器错误",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
+    fn change_password<'a>(
+        &'a self,
+        _user_id: i64,
+        _current_password: String,
+        _new_password: String,
+        _user_ip: String,
+    ) -> Pin<Box<dyn Future<Output = Result<ChangePasswordResult, BusinessError>> + Send + 'a>>
     {
         Box::pin(async move {
             Err(BusinessError::with_status(

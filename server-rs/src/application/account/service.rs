@@ -34,6 +34,24 @@ pub struct PhoneBindingStatusDto {
     pub masked_phone_number: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SendPhoneBindingCodeResult {
+    #[serde(rename = "cooldownSeconds")]
+    pub cooldown_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BindPhoneNumberResult {
+    #[serde(rename = "maskedPhoneNumber")]
+    pub masked_phone_number: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangePasswordResult {
+    pub success: bool,
+    pub message: String,
+}
+
 #[derive(Clone)]
 pub struct RustAccountService {
     pool: sqlx::PgPool,

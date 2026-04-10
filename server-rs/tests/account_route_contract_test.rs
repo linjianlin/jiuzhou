@@ -1,10 +1,13 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{future::Future, pin::Pin};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use jiuzhou_server_rs::application::account::service::PhoneBindingStatusDto;
+use jiuzhou_server_rs::application::account::service::{
+    BindPhoneNumberResult, ChangePasswordResult, PhoneBindingStatusDto,
+    SendPhoneBindingCodeResult,
+};
 use jiuzhou_server_rs::application::character::service::{
     CharacterBasicInfo, CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
 };
@@ -94,6 +97,234 @@ async fn account_phone_binding_status_route_preserves_node_payload() {
 }
 
 #[tokio::test]
+async fn account_phone_binding_send_code_route_reuses_camel_case_payload_and_request_ip() {
+    let requested_payloads = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(FakeAuthServices {
+        requested_send_code_payloads: requested_payloads.clone(),
+        send_code_result: SendPhoneBindingCodeResult {
+            cooldown_seconds: 60,
+        },
+        ..FakeAuthServices::default()
+    }));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/account/phone-binding/send-code")
+                .header("authorization", "Bearer account-token")
+                .header("x-real-ip", "198.51.100.7")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "phoneNumber": "13800138000",
+                        "captchaId": "captcha-1",
+                        "captchaCode": "ABCD"
+                    })
+                    .to_string(),
+                ))
+                .expect("account phone binding send-code request"),
+        )
+        .await
+        .expect("account phone binding send-code response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        requested_payloads
+            .lock()
+            .expect("requested send-code payloads")
+            .as_slice(),
+        &[(
+            "13800138000".to_string(),
+            "198.51.100.7".to_string(),
+            "captcha-1".to_string(),
+            "ABCD".to_string(),
+        )]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "cooldownSeconds": 60
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn account_phone_binding_send_code_route_requires_local_captcha_fields() {
+    let app = build_router(build_app_state(FakeAuthServices::default()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/account/phone-binding/send-code")
+                .header("authorization", "Bearer account-token")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "phoneNumber": "13800138000"
+                    })
+                    .to_string(),
+                ))
+                .expect("account phone binding send-code missing captcha request"),
+        )
+        .await
+        .expect("account phone binding send-code missing captcha response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "图片验证码不能为空"
+        })
+    );
+}
+
+#[tokio::test]
+async fn account_phone_binding_bind_route_preserves_success_payload_shape() {
+    let requested_payloads = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(FakeAuthServices {
+        requested_bind_payloads: requested_payloads.clone(),
+        bind_result: BindPhoneNumberResult {
+            masked_phone_number: "138****8000".to_string(),
+        },
+        ..FakeAuthServices::default()
+    }));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/account/phone-binding/bind")
+                .header("authorization", "Bearer account-token")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "phoneNumber": "13800138000",
+                        "code": "123456"
+                    })
+                    .to_string(),
+                ))
+                .expect("account phone binding bind request"),
+        )
+        .await
+        .expect("account phone binding bind response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        requested_payloads
+            .lock()
+            .expect("requested bind payloads")
+            .as_slice(),
+        &[("13800138000".to_string(), "123456".to_string())]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "maskedPhoneNumber": "138****8000"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn account_change_password_route_preserves_send_result_shape() {
+    let requested_payloads = Arc::new(Mutex::new(Vec::new()));
+    let app = build_router(build_app_state(FakeAuthServices {
+        requested_change_password_payloads: requested_payloads.clone(),
+        change_password_result: ChangePasswordResult {
+            success: true,
+            message: "密码修改成功".to_string(),
+        },
+        ..FakeAuthServices::default()
+    }));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/account/password/change")
+                .header("authorization", "Bearer account-token")
+                .header("x-forwarded-for", "198.51.100.9, 10.0.0.2")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "currentPassword": "old-pass",
+                        "newPassword": "new-pass"
+                    })
+                    .to_string(),
+                ))
+                .expect("account change password request"),
+        )
+        .await
+        .expect("account change password response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        requested_payloads
+            .lock()
+            .expect("requested change password payloads")
+            .as_slice(),
+        &[(
+            "old-pass".to_string(),
+            "new-pass".to_string(),
+            "198.51.100.9".to_string(),
+        )]
+    );
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": true,
+            "message": "密码修改成功"
+        })
+    );
+}
+
+#[tokio::test]
+async fn account_change_password_route_keeps_node_pre_validation_order() {
+    let app = build_router(build_app_state(FakeAuthServices::default()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/account/password/change")
+                .header("authorization", "Bearer account-token")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "currentPassword": "same-pass",
+                        "newPassword": "same-pass"
+                    })
+                    .to_string(),
+                ))
+                .expect("account change password same request"),
+        )
+        .await
+        .expect("account change password same response");
+
+    let (status, json) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "success": false,
+            "message": "新密码不能与当前密码相同"
+        })
+    );
+}
+
+#[tokio::test]
 async fn account_routes_require_authentication() {
     let app = build_router(build_app_state(FakeAuthServices::default()));
 
@@ -162,6 +393,12 @@ fn build_app_state(auth_services: FakeAuthServices) -> AppState {
 #[derive(Clone)]
 struct FakeAuthServices {
     phone_binding_status: PhoneBindingStatusDto,
+    send_code_result: SendPhoneBindingCodeResult,
+    bind_result: BindPhoneNumberResult,
+    change_password_result: ChangePasswordResult,
+    requested_send_code_payloads: Arc<Mutex<Vec<(String, String, String, String)>>>,
+    requested_bind_payloads: Arc<Mutex<Vec<(String, String)>>>,
+    requested_change_password_payloads: Arc<Mutex<Vec<(String, String, String)>>>,
 }
 
 impl Default for FakeAuthServices {
@@ -172,6 +409,19 @@ impl Default for FakeAuthServices {
                 is_bound: false,
                 masked_phone_number: None,
             },
+            send_code_result: SendPhoneBindingCodeResult {
+                cooldown_seconds: 60,
+            },
+            bind_result: BindPhoneNumberResult {
+                masked_phone_number: "138****8000".to_string(),
+            },
+            change_password_result: ChangePasswordResult {
+                success: true,
+                message: "密码修改成功".to_string(),
+            },
+            requested_send_code_payloads: Arc::new(Mutex::new(Vec::new())),
+            requested_bind_payloads: Arc::new(Mutex::new(Vec::new())),
+            requested_change_password_payloads: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -267,6 +517,72 @@ impl AuthRouteServices for FakeAuthServices {
     {
         let status = self.phone_binding_status.clone();
         Box::pin(async move { Ok(status) })
+    }
+
+    fn send_phone_binding_code<'a>(
+        &'a self,
+        _user_id: i64,
+        phone_number: String,
+        user_ip: String,
+        captcha: jiuzhou_server_rs::edge::http::routes::auth::CaptchaVerifyPayload,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<SendPhoneBindingCodeResult, BusinessError>> + Send + 'a,
+        >,
+    > {
+        let requested_payloads = self.requested_send_code_payloads.clone();
+        let result = self.send_code_result.clone();
+        Box::pin(async move {
+            let jiuzhou_server_rs::edge::http::routes::auth::CaptchaVerifyPayload::Local {
+                captcha_id,
+                captcha_code,
+            } = captcha
+            else {
+                return Err(BusinessError::new("测试仅支持 local captcha"));
+            };
+            requested_payloads
+                .lock()
+                .expect("requested send-code payloads")
+                .push((phone_number, user_ip, captcha_id, captcha_code));
+            Ok(result)
+        })
+    }
+
+    fn bind_phone_number<'a>(
+        &'a self,
+        _user_id: i64,
+        phone_number: String,
+        code: String,
+    ) -> Pin<Box<dyn Future<Output = Result<BindPhoneNumberResult, BusinessError>> + Send + 'a>>
+    {
+        let requested_payloads = self.requested_bind_payloads.clone();
+        let result = self.bind_result.clone();
+        Box::pin(async move {
+            requested_payloads
+                .lock()
+                .expect("requested bind payloads")
+                .push((phone_number, code));
+            Ok(result)
+        })
+    }
+
+    fn change_password<'a>(
+        &'a self,
+        _user_id: i64,
+        current_password: String,
+        new_password: String,
+        user_ip: String,
+    ) -> Pin<Box<dyn Future<Output = Result<ChangePasswordResult, BusinessError>> + Send + 'a>>
+    {
+        let requested_payloads = self.requested_change_password_payloads.clone();
+        let result = self.change_password_result.clone();
+        Box::pin(async move {
+            requested_payloads
+                .lock()
+                .expect("requested change password payloads")
+                .push((current_password, new_password, user_ip));
+            Ok(result)
+        })
     }
 
     fn create_character<'a>(
