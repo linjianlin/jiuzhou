@@ -12,6 +12,7 @@ use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
     UpdateCharacterPositionResult, UpdateCharacterSettingResult,
 };
+use crate::application::sign_in::service::{DoSignInData, SignInOverviewData};
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::{invalid_session_response, read_bearer_token};
 use crate::edge::http::error::BusinessError;
@@ -218,6 +219,44 @@ pub trait AuthRouteServices: Send + Sync {
         _enabled: bool,
     ) -> Pin<
         Box<dyn Future<Output = Result<UpdateCharacterSettingResult, BusinessError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "服务器错误",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
+    fn get_sign_in_overview<'a>(
+        &'a self,
+        _user_id: i64,
+        _month: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<ServiceResultResponse<SignInOverviewData>, BusinessError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Err(BusinessError::with_status(
+                "服务器错误",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        })
+    }
+
+    fn do_sign_in<'a>(
+        &'a self,
+        _user_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<ServiceResultResponse<DoSignInData>, BusinessError>>
+                + Send
+                + 'a,
+        >,
     > {
         Box::pin(async move {
             Err(BusinessError::with_status(

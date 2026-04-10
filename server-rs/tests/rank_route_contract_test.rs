@@ -5,7 +5,8 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jiuzhou_server_rs::application::character::service::{
-    CharacterBasicInfo, CheckCharacterResult, CreateCharacterResult, UpdateCharacterPositionResult,
+    CharacterBasicInfo, CharacterRouteData, CheckCharacterResult, CreateCharacterResult,
+    UpdateCharacterPositionResult,
 };
 use jiuzhou_server_rs::bootstrap::app::{
     build_router, new_shared_runtime_services, AppState, RuntimeServicesState,
@@ -459,7 +460,23 @@ impl AuthRouteServices for FakeAuthServices {
             Ok(CreateCharacterResult {
                 success: true,
                 message: "创建角色成功".to_string(),
-                character_id: Some(1001),
+                data: Some(CharacterRouteData {
+                    character: Some(CharacterBasicInfo {
+                        id: 1001,
+                        nickname: "青云子".to_string(),
+                        gender: "male".to_string(),
+                        title: "散修".to_string(),
+                        realm: "炼精化炁·养气期".to_string(),
+                        sub_realm: Some("养气期".to_string()),
+                        auto_cast_skills: true,
+                        auto_disassemble_enabled: false,
+                        auto_disassemble_rules: Some(Vec::new()),
+                        dungeon_no_stamina_cost: false,
+                        spirit_stones: 0,
+                        silver: 0,
+                    }),
+                    has_character: true,
+                }),
             })
         })
     }

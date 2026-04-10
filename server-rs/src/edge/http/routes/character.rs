@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
@@ -11,7 +11,7 @@ use crate::application::character::service::{
     CharacterRouteData, RenameCharacterWithCardResult, UpdateCharacterSettingResult,
 };
 use crate::bootstrap::app::AppState;
-use crate::edge::http::auth::{invalid_session_response, unauthorized_response};
+use crate::edge::http::auth::require_authenticated_user_id;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, ServiceResultResponse};
 
@@ -288,25 +288,6 @@ async fn update_dungeon_no_stamina_cost_handler(
         .await?;
 
     Ok(setting_result_response(result))
-}
-
-async fn require_authenticated_user_id(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<i64, Response> {
-    let Some(token) = crate::edge::http::auth::read_bearer_token(headers) else {
-        return Err(unauthorized_response());
-    };
-
-    let result = state.auth_services.verify_token_and_session(&token).await;
-    if !result.valid {
-        return match invalid_session_response(result.kicked) {
-            Ok(response) => Err(response),
-            Err(error) => Err(error.into_response()),
-        };
-    }
-
-    result.user_id.ok_or_else(unauthorized_response)
 }
 
 fn setting_result_response(result: UpdateCharacterSettingResult) -> Response {

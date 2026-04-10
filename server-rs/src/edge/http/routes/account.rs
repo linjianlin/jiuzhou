@@ -1,13 +1,13 @@
 use axum::extract::State;
 use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
 use serde::Serialize;
 
 use crate::bootstrap::app::AppState;
 use crate::edge::http::auth::{
-    invalid_session_response, resolve_request_ip, unauthorized_response,
+    require_authenticated_user_id, resolve_request_ip,
 };
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::success;
@@ -73,23 +73,4 @@ async fn phone_binding_status_handler(
         .get_phone_binding_status(user_id)
         .await?;
     Ok(success(status))
-}
-
-async fn require_authenticated_user_id(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<i64, Response> {
-    let Some(token) = crate::edge::http::auth::read_bearer_token(headers) else {
-        return Err(unauthorized_response());
-    };
-
-    let result = state.auth_services.verify_token_and_session(&token).await;
-    if !result.valid {
-        return match invalid_session_response(result.kicked) {
-            Ok(response) => Err(response),
-            Err(error) => Err(error.into_response()),
-        };
-    }
-
-    result.user_id.ok_or_else(unauthorized_response)
 }

@@ -3,13 +3,13 @@ use std::{future::Future, pin::Pin};
 
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
 use serde::Serialize;
 
 use crate::bootstrap::app::AppState;
-use crate::edge::http::auth::{invalid_session_response, unauthorized_response};
+use crate::edge::http::auth::require_authenticated_user_id;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::response::{service_result, ServiceResultResponse};
 
@@ -426,25 +426,6 @@ async fn partner_rank_handler(
             )
             .await?,
     ))
-}
-
-async fn require_authenticated_user_id(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<i64, Response> {
-    let Some(token) = crate::edge::http::auth::read_bearer_token(headers) else {
-        return Err(unauthorized_response());
-    };
-
-    let result = state.auth_services.verify_token_and_session(&token).await;
-    if !result.valid {
-        return match invalid_session_response(result.kicked) {
-            Ok(response) => Err(response),
-            Err(error) => Err(error.into_response()),
-        };
-    }
-
-    result.user_id.ok_or_else(unauthorized_response)
 }
 
 fn parse_positive_i64(value: Option<&String>) -> Option<i64> {

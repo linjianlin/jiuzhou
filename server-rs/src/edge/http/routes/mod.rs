@@ -9,6 +9,7 @@ pub mod info;
 pub mod inventory;
 pub mod map;
 pub mod rank;
+pub mod sign_in;
 pub mod technique;
 pub mod time;
 pub mod title;

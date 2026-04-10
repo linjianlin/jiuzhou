@@ -6,6 +6,7 @@ pub mod idle;
 pub mod info;
 pub mod inventory;
 pub mod rank;
+pub mod sign_in;
 pub mod static_data;
 pub mod time;
 pub mod title;

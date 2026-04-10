@@ -3,6 +3,8 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
 
+use crate::bootstrap::app::AppState;
+
 pub const AUTH_INVALID_MESSAGE: &str = "登录状态无效，请重新登录";
 pub const HTTP_USER_QUEUE_TIMEOUT_MESSAGE: &str = "当前账号请求排队超时，请稍后再试";
 pub const MAX_CONCURRENT_HTTP_REQUESTS_PER_USER: usize = 6;
@@ -102,4 +104,23 @@ pub fn invalid_session_response(
         AUTH_INVALID_MESSAGE,
         StatusCode::UNAUTHORIZED,
     ))
+}
+
+pub async fn require_authenticated_user_id(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<i64, Response> {
+    let Some(token) = read_bearer_token(headers) else {
+        return Err(unauthorized_response());
+    };
+
+    let result = state.auth_services.verify_token_and_session(&token).await;
+    if !result.valid {
+        return match invalid_session_response(result.kicked) {
+            Ok(response) => Err(response),
+            Err(error) => Err(error.into_response()),
+        };
+    }
+
+    result.user_id.ok_or_else(unauthorized_response)
 }

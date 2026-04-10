@@ -14,6 +14,7 @@ use crate::application::character::service::{
     CheckCharacterResult, CreateCharacterResult, RenameCharacterWithCardResult,
     RustCharacterReadService, UpdateCharacterPositionResult, UpdateCharacterSettingResult,
 };
+use crate::application::sign_in::service::RustSignInService;
 use crate::edge::http::error::BusinessError;
 use crate::edge::http::routes::auth::{
     AuthActionResult, AuthResponseData, AuthResponseUser, AuthRouteServices, CaptchaChallenge,
@@ -38,6 +39,7 @@ pub struct RustAuthServices {
     captcha_provider: CaptchaProvider,
     account_service: RustAccountService,
     character_read_service: RustCharacterReadService,
+    sign_in_service: RustSignInService,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -69,6 +71,7 @@ impl RustAuthServices {
         Self {
             account_service: RustAccountService::new(pool.clone()),
             character_read_service: RustCharacterReadService::new(pool.clone(), runtime_services),
+            sign_in_service: RustSignInService::new(pool.clone()),
             pool,
             redis,
             jwt_secret,
@@ -760,6 +763,45 @@ impl AuthRouteServices for RustAuthServices {
             self.update_dungeon_no_stamina_cost_impl(user_id, enabled)
                 .await
         })
+    }
+
+    fn get_sign_in_overview<'a>(
+        &'a self,
+        user_id: i64,
+        month: String,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        crate::edge::http::response::ServiceResultResponse<
+                            crate::application::sign_in::service::SignInOverviewData,
+                        >,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.sign_in_service.get_overview(user_id, &month).await })
+    }
+
+    fn do_sign_in<'a>(
+        &'a self,
+        user_id: i64,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        crate::edge::http::response::ServiceResultResponse<
+                            crate::application::sign_in::service::DoSignInData,
+                        >,
+                        BusinessError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move { self.sign_in_service.do_sign_in(user_id).await })
     }
 }
 

@@ -17,6 +17,7 @@ use crate::edge::http::routes::info::{build_info_router, InfoRouteServices};
 use crate::edge::http::routes::inventory::{build_inventory_router, InventoryRouteServices};
 use crate::edge::http::routes::map::build_map_router;
 use crate::edge::http::routes::rank::{build_rank_router, RankRouteServices};
+use crate::edge::http::routes::sign_in::build_sign_in_router;
 use crate::edge::http::routes::technique::build_technique_router;
 use crate::edge::http::routes::time::{build_time_router, TimeRouteServices};
 use crate::edge::http::routes::title::{build_title_router, TitleRouteServices};
@@ -114,6 +115,7 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api/inventory", build_inventory_router())
         .nest("/api/map", build_map_router())
         .nest("/api/rank", build_rank_router())
+        .nest("/api/signin", build_sign_in_router())
         .nest("/api/technique", build_technique_router())
         .nest("/api/title", build_title_router())
         .nest("/api/upload", build_upload_router())
