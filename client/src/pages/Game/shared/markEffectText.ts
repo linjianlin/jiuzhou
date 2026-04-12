@@ -27,7 +27,6 @@ type ParsedMarkEffect = {
   markId: string;
   operation: MarkOperation;
   maxStacks: number;
-  duration: number;
   applyStacks: number;
   consumeMode: MarkConsumeMode;
   consumeStacks: number;
@@ -120,7 +119,6 @@ const parseMarkEffect = (raw: Record<string, unknown>): ParsedMarkEffect | null 
 
   const markId = toText(readField(raw, "markId", "mark_id")) || VOID_EROSION_MARK_ID;
   const maxStacks = normalizePositiveInt(readField(raw, "maxStacks", "max_stacks"), 5);
-  const duration = normalizePositiveInt(readField(raw, "duration", "duration_round"), 2);
   const applyStacks = normalizePositiveInt(
     readField(raw, "applyStacks", "apply_stacks") ?? readField(raw, "stacks", "stacks"),
     1,
@@ -134,7 +132,6 @@ const parseMarkEffect = (raw: Record<string, unknown>): ParsedMarkEffect | null 
     markId,
     operation,
     maxStacks,
-    duration,
     applyStacks,
     consumeMode,
     consumeStacks,
@@ -152,7 +149,7 @@ export const formatMarkEffectText = (raw: Record<string, unknown>): string | nul
   const consumeTraitText = CONSUME_TRAIT_TEXT_BY_ID[parsed.markId] || '';
   if (parsed.operation === "apply") {
     const traitSuffix = applyTraitText ? `；${applyTraitText}` : '';
-    return `施加${markName}（每次+${parsed.applyStacks}层，上限${parsed.maxStacks}层，持续${parsed.duration}回合${traitSuffix}）`;
+    return `施加${markName}（每次+${parsed.applyStacks}层，上限${parsed.maxStacks}层，不自动衰减${traitSuffix}）`;
   }
 
   const consumeModeText =
