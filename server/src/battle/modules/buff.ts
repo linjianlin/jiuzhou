@@ -19,7 +19,6 @@ import type {
   AuraSubResult,
   AuraTargetType,
 } from '../types.js';
-import { BATTLE_CONSTANTS } from '../types.js';
 import { applyDamage } from './damage.js';
 import { calculateDamageAfterDefenseReduction } from './defense.js';
 import { applyHealing } from './healing.js';
@@ -153,6 +152,76 @@ function collectEffectiveBuffs(buffs: readonly ActiveBuff[]): ActiveBuff[] {
   }
 
   return effectiveBuffs;
+}
+
+/**
+ * 同步最大气血变化对当前气血的影响。
+ *
+ * 作用：
+ * 1. 把战斗内 max_qixue 的增减统一折算到 qixue，覆盖 buff、debuff、光环子 Buff、到期移除等所有入口。
+ * 2. 统一处理最大气血变化后的截断与死亡收口，避免各调用点重复补丁。
+ * 3. 不做什么：不负责复活已死亡单位，也不处理灵气等其他资源字段。
+ *
+ * 输入/输出：
+ * - 输入：待同步的 BattleUnit 与重算前的最大气血。
+ * - 输出：直接原地更新 unit.qixue / unit.isAlive。
+ *
+ * 数据流/状态流：
+ * previousMaxQixue + unit.currentAttrs.max_qixue -> 计算 delta -> 同步到 unit.qixue -> clamp -> 必要时置死。
+ *
+ * 关键边界条件与坑点：
+ * 1. 已死亡单位不能因为 max_qixue 提升被动复活，因此死亡态下必须直接钉死 qixue=0。
+ * 2. debuff 或 Buff 移除导致 max_qixue 回退时，qixue 可能被同步扣到 0 以下，这里必须统一做死亡收口。
+ */
+function syncUnitQixueWithMaxQixueChange(unit: BattleUnit, previousMaxQixue: number): void {
+  if (!unit.isAlive) {
+    unit.qixue = 0;
+    return;
+  }
+
+  const nextMaxQixue = unit.currentAttrs.max_qixue;
+  const maxQixueDelta = nextMaxQixue - previousMaxQixue;
+
+  if (maxQixueDelta !== 0) {
+    unit.qixue += maxQixueDelta;
+  }
+
+  unit.qixue = Math.min(unit.qixue, nextMaxQixue);
+
+  if (unit.qixue <= 0) {
+    unit.qixue = 0;
+    unit.isAlive = false;
+  }
+}
+
+/**
+ * 同步最大灵气变化对当前灵气的影响。
+ *
+ * 作用：
+ * 1. 把战斗内 max_lingqi 的增减统一折算到 lingqi，覆盖 buff、debuff、光环子 Buff、到期移除等所有入口。
+ * 2. 统一处理最大灵气变化后的截断，避免技能、套装、光环各自维护不同的同步规则。
+ * 3. 不做什么：不负责死亡状态，也不处理回血/回灵的实际收益统计。
+ *
+ * 输入/输出：
+ * - 输入：待同步的 BattleUnit 与重算前的最大灵气。
+ * - 输出：直接原地更新 unit.lingqi。
+ *
+ * 数据流/状态流：
+ * previousMaxLingqi + unit.currentAttrs.max_lingqi -> 计算 delta -> 同步到 unit.lingqi -> clamp 到 [0, max_lingqi]。
+ *
+ * 关键边界条件与坑点：
+ * 1. debuff 或 Buff 移除导致 max_lingqi 回退时，lingqi 可能被同步扣到 0 以下，这里必须统一归零。
+ * 2. 灵气没有死亡语义，因此不能复用气血的置死逻辑，只能做资源范围收敛。
+ */
+function syncUnitLingqiWithMaxLingqiChange(unit: BattleUnit, previousMaxLingqi: number): void {
+  const nextMaxLingqi = unit.currentAttrs.max_lingqi;
+  const maxLingqiDelta = nextMaxLingqi - previousMaxLingqi;
+
+  if (maxLingqiDelta !== 0) {
+    unit.lingqi += maxLingqiDelta;
+  }
+
+  unit.lingqi = Math.max(0, Math.min(unit.lingqi, nextMaxLingqi));
 }
 
 /**
@@ -697,6 +766,9 @@ export const createNextSkillBonusRuntime = (params: {
  *        当前实现是先 flat 后 percent，符合"基础值+固定值，再乘百分比"的标准公式。
  */
 function recalculateUnitAttrs(unit: BattleUnit): void {
+  const previousMaxQixue = Math.max(1, unit.currentAttrs.max_qixue);
+  const previousMaxLingqi = Math.max(0, unit.currentAttrs.max_lingqi);
+
   // 从基础属性开始
   unit.currentAttrs = { ...unit.baseAttrs };
   const effectiveBuffs = collectEffectiveBuffs(unit.buffs);
@@ -744,11 +816,15 @@ function recalculateUnitAttrs(unit: BattleUnit): void {
 
   // 确保属性不为负
   unit.currentAttrs.max_qixue = Math.max(1, unit.currentAttrs.max_qixue);
+  unit.currentAttrs.max_lingqi = Math.max(0, unit.currentAttrs.max_lingqi);
   unit.currentAttrs.wugong = Math.max(0, unit.currentAttrs.wugong);
   unit.currentAttrs.fagong = Math.max(0, unit.currentAttrs.fagong);
   unit.currentAttrs.wufang = Math.max(0, unit.currentAttrs.wufang);
   unit.currentAttrs.fafang = Math.max(0, unit.currentAttrs.fafang);
   unit.currentAttrs.sudu = Math.max(0, unit.currentAttrs.sudu);
+
+  syncUnitQixueWithMaxQixueChange(unit, previousMaxQixue);
+  syncUnitLingqiWithMaxLingqiChange(unit, previousMaxLingqi);
 }
 
 /**
