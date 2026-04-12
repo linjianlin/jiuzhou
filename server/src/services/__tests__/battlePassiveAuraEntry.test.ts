@@ -6,6 +6,7 @@ import { executeSkill, getAvailableSkills } from '../../battle/modules/skill.js'
 import { BATTLE_CONSTANTS } from '../../battle/types.js';
 import type { BattleSkill, SkillEffect } from '../../battle/types.js';
 import type { SkillData } from '../../battle/battleFactory.js';
+import type { PartnerBattleMember } from '../shared/partnerBattleMember.js';
 import type { SkillDefConfig } from '../staticConfigLoader.js';
 import { buildEffectiveTechniqueSkillData } from '../shared/techniqueSkillProgression.js';
 import { asActionLog, consumeBattleLogs, createCharacterData, createMonsterData, createState, createUnit } from './battleTestUtils.js';
@@ -102,6 +103,55 @@ const createPassiveAuraBattleSkill = (id: string, auraEffects: SkillEffect[]): B
   aiPriority: 10,
 });
 
+const createPassiveAuraSkillData = (params: {
+  id: string;
+  name: string;
+  attrKey: 'wugong' | 'fagong';
+  value: number;
+}): SkillData => ({
+  id: params.id,
+  name: params.name,
+  cost_lingqi: 0,
+  cost_lingqi_rate: 0,
+  cost_qixue: 0,
+  cost_qixue_rate: 0,
+  cooldown: 0,
+  target_type: 'self',
+  target_count: 1,
+  damage_type: 'none',
+  element: 'none',
+  effects: [
+    {
+      type: 'buff',
+      buffKind: 'aura',
+      auraTarget: 'all_ally',
+      auraEffects: [
+        {
+          type: 'buff',
+          buffKind: 'attr',
+          attrKey: params.attrKey,
+          applyType: 'flat',
+          value: params.value,
+          duration: 1,
+        },
+      ],
+      duration: 1,
+    },
+  ],
+  trigger_type: 'passive',
+  ai_priority: 10,
+});
+
+const createPartnerMember = (skills: SkillData[], skillPolicy: PartnerBattleMember['skillPolicy']): PartnerBattleMember => ({
+  data: createCharacterData(101, {
+    nickname: '伙伴甲',
+    realm: '',
+    sub_realm: null,
+  }),
+  skills,
+  skillPolicy,
+});
+
 test('被动光环在进入战斗时立即生效，且不会进入主动技能轮转', () => {
   const player = createCharacterData(1);
   const monster = createMonsterData('passive-aura-monster');
@@ -164,6 +214,108 @@ test('光环技能即使被错误写成 active，进入战斗时也应强制按 
     availableSkillIds,
     ['skill-normal-attack', ACTIVE_SKILL.id],
   );
+});
+
+test('伙伴开场光环触发顺序应与策略排序一致', () => {
+  const player = createCharacterData(1);
+  const monster = createMonsterData('partner-passive-aura-order');
+  const auraSkillA = createPassiveAuraSkillData({
+    id: 'skill-partner-aura-a',
+    name: '先天气环',
+    attrKey: 'wugong',
+    value: 20,
+  });
+  const auraSkillB = createPassiveAuraSkillData({
+    id: 'skill-partner-aura-b',
+    name: '后发灵环',
+    attrKey: 'fagong',
+    value: 35,
+  });
+  const state = createPVEBattle(
+    'battle-partner-passive-aura-order',
+    player,
+    [ACTIVE_SKILL],
+    [monster],
+    { [monster.id]: [] },
+    {
+      partnerMember: createPartnerMember(
+        [auraSkillA, auraSkillB],
+        {
+          slots: [
+            { skillId: auraSkillB.id, priority: 1, enabled: true },
+            { skillId: auraSkillA.id, priority: 2, enabled: true },
+          ],
+        },
+      ),
+    },
+  );
+
+  const partner = state.teams.attacker.units[0];
+  assert.equal(partner?.type, 'partner');
+
+  const engine = new BattleEngine(state);
+  engine.startBattle();
+
+  assert.equal(partner.currentAttrs.wugong, partner.baseAttrs.wugong + 20);
+  assert.equal(partner.currentAttrs.fagong, partner.baseAttrs.fagong + 35);
+
+  const actionSkillIds = consumeBattleLogs(state)
+    .filter((log) => log.type === 'action')
+    .map((log) => asActionLog(log).skillId)
+    .filter((skillId) => skillId === auraSkillA.id || skillId === auraSkillB.id);
+
+  assert.deepEqual(actionSkillIds, [auraSkillB.id, auraSkillA.id]);
+});
+
+test('伙伴策略禁用的光环不应在开场自动触发', () => {
+  const player = createCharacterData(1);
+  const monster = createMonsterData('partner-passive-aura-disabled');
+  const enabledAuraSkill = createPassiveAuraSkillData({
+    id: 'skill-partner-enabled-aura',
+    name: '护身灵环',
+    attrKey: 'wugong',
+    value: 18,
+  });
+  const disabledAuraSkill = createPassiveAuraSkillData({
+    id: 'skill-partner-disabled-aura',
+    name: '封存灵环',
+    attrKey: 'fagong',
+    value: 28,
+  });
+  const state = createPVEBattle(
+    'battle-partner-passive-aura-disabled',
+    player,
+    [ACTIVE_SKILL],
+    [monster],
+    { [monster.id]: [] },
+    {
+      partnerMember: createPartnerMember(
+        [enabledAuraSkill, disabledAuraSkill],
+        {
+          slots: [
+            { skillId: disabledAuraSkill.id, priority: 1, enabled: false },
+            { skillId: enabledAuraSkill.id, priority: 2, enabled: true },
+          ],
+        },
+      ),
+    },
+  );
+
+  const partner = state.teams.attacker.units[0];
+  assert.equal(partner?.type, 'partner');
+
+  const engine = new BattleEngine(state);
+  engine.startBattle();
+
+  assert.equal(partner.currentAttrs.wugong, partner.baseAttrs.wugong + 18);
+  assert.equal(partner.currentAttrs.fagong, partner.baseAttrs.fagong);
+
+  const actionSkillIds = consumeBattleLogs(state)
+    .filter((log) => log.type === 'action')
+    .map((log) => asActionLog(log).skillId);
+
+  assert.ok(actionSkillIds.includes(enabledAuraSkill.id));
+  assert.ok(!actionSkillIds.includes(disabledAuraSkill.id));
 });
 
 test('光环获得摘要中的比率属性应按百分比显示，避免 flat 比率被写成 +0', () => {

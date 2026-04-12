@@ -235,7 +235,37 @@ export class BattleEngine {
    * 坑点：
    * 1) 被动技能要求 cost=0、cooldown=0，executeSkill 的消耗/冷却检查自然通过。
    * 2) 被动技能的 targetType 应为 self（光环挂在自身），resolveTargets 返回施法者自身。
+   * 3) 伙伴单位若携带技能策略，则策略中启用的光环/被动顺序优先于自然技能顺序；未纳入策略的其他被动仍按原顺序补执行。
    */
+  private getOrderedEntryPassiveSkills(unit: BattleUnit): BattleSkill[] {
+    const passiveSkills = unit.skills.filter((skill) => skill.triggerType === 'passive');
+    if (passiveSkills.length <= 0 || unit.type !== 'partner' || !unit.partnerSkillPolicy) {
+      return passiveSkills;
+    }
+
+    const passiveSkillMap = new Map(passiveSkills.map((skill) => [skill.id, skill] as const));
+    const slottedPassiveSkillIds = new Set<string>();
+    const orderedPassiveSkills: BattleSkill[] = [];
+    const orderedSlots = [...unit.partnerSkillPolicy.slots].sort(
+      (left, right) => left.priority - right.priority,
+    );
+
+    for (const slot of orderedSlots) {
+      const passiveSkill = passiveSkillMap.get(slot.skillId);
+      if (!passiveSkill) continue;
+      slottedPassiveSkillIds.add(passiveSkill.id);
+      if (!slot.enabled) continue;
+      orderedPassiveSkills.push(passiveSkill);
+    }
+
+    for (const passiveSkill of passiveSkills) {
+      if (slottedPassiveSkillIds.has(passiveSkill.id)) continue;
+      orderedPassiveSkills.push(passiveSkill);
+    }
+
+    return orderedPassiveSkills;
+  }
+
   private processPassiveSkills(): void {
     const allUnits = [
       ...this.state.teams.attacker.units,
@@ -243,8 +273,7 @@ export class BattleEngine {
     ];
     for (const unit of allUnits) {
       if (!unit.isAlive) continue;
-      for (const skill of unit.skills) {
-        if (skill.triggerType !== 'passive') continue;
+      for (const skill of this.getOrderedEntryPassiveSkills(unit)) {
         executeSkill(this.state, unit, skill);
       }
     }
