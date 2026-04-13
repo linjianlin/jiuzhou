@@ -300,6 +300,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
   const announcedAutoNextBattleIdRef = useRef<string | null>(null);
   const startingBattleRef = useRef(false);
   const battleStartCooldownMsRef = useRef(DEFAULT_BATTLE_START_COOLDOWN_MS);
+  const battleCooldownReadyAtRef = useRef<number | null>(null);
   const battleCooldownActiveRef = useRef(false);
   const startBattleRef = useRef<(monsterIds: string[], options?: StartBattleOptions) => Promise<void>>(async () => {});
   const localBattleMonsterIds = useMemo(
@@ -448,9 +449,9 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
    * - 把冷却等待 UI、冷却元数据、待执行动作收口到单一入口
    * - 避免 BattleArea 在多个分支各自 setTimeout 猜测冷却结束时刻，和服务端单一真源冲突
    *
-   * 输入/输出：
-   * - 输入：remainingMs、silent，以及可选的待执行动作
-   * - 输出：无返回值，直接更新冷却等待状态
+    * 输入/输出：
+    * - 输入：remainingMs、silent，以及可选的待执行动作
+    * - 输出：无返回值，直接更新冷却等待状态
    *
    * 数据流：
    * - 服务端返回 retryAfterMs / nextBattleAvailableAt，或重连同步 remainingMs -> 本函数记录待执行动作 -> 服务端 `battle:cooldown-ready` 到达后真正执行
@@ -460,17 +461,17 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
    * 2) 新的冷却同步必须覆盖旧动作，避免连续收到 sync 包时保留过期的待执行动作。
    */
   const activateCooldownWait = useCallback(
-    (
-      remainingMs: number,
-      silent: boolean,
-      pendingAction: PendingCooldownAction | null,
-      messageText: string,
-    ): void => {
-      const delayMs = Math.max(0, Math.floor(remainingMs));
-      battleCooldownActiveRef.current = true;
-      pendingCooldownActionRef.current = pendingAction;
-      setWaitingForCooldown(true);
-      setStartupStatus('cooldown');
+      (
+        remainingMs: number,
+        silent: boolean,
+        pendingAction: PendingCooldownAction | null,
+        messageText: string,
+      ): void => {
+        const delayMs = Math.max(0, Math.floor(remainingMs));
+        battleCooldownActiveRef.current = true;
+        pendingCooldownActionRef.current = pendingAction;
+        setWaitingForCooldown(true);
+        setStartupStatus('cooldown');
       if (!silent && delayMs >= MINIMUM_MEANINGFUL_COOLDOWN_DISPLAY_MS) {
         onNotify('info', messageText, Math.max(1, Math.ceil(delayMs / 1000)));
       }
@@ -487,6 +488,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
 
     const nextAvailableAt = toPositiveInt(raw.nextBattleAvailableAt);
     if (nextAvailableAt != null) {
+      battleCooldownReadyAtRef.current = nextAvailableAt;
       const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
       const latestCooldownState = gameSocket.getLatestBattleCooldown();
       if (isBattleCooldownReadyForMeta(latestCooldownState, currentCharacterId, nextAvailableAt)) {
@@ -499,6 +501,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
 
     const retryAfterMs = toPositiveInt(raw.retryAfterMs);
     if (retryAfterMs != null) {
+      battleCooldownReadyAtRef.current = Date.now() + retryAfterMs;
       battleCooldownActiveRef.current = true;
     }
   }, []);
@@ -873,9 +876,9 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
     if (replayKey && replayKey === lastHandledCooldownKeyRef.current) {
       return;
     }
-    lastHandledCooldownKeyRef.current = replayKey;
 
     if (detail.kind === 'sync' && detail.remainingMs > 0) {
+      lastHandledCooldownKeyRef.current = replayKey;
       const currentState = battleStateRef.current;
       const isFinishedWin = currentState?.phase === 'finished' && currentState.result === 'attacker_win';
       const remainingMs = Math.max(0, Math.floor(detail.remainingMs));
@@ -893,7 +896,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
         activateCooldownWait(
           remainingMs,
           true,
-          null,
+          { kind: 'advance_session' },
           `冷却中，${(remainingMs / 1000).toFixed(2)}秒后自动继续`,
         );
         return;
@@ -904,7 +907,22 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
       return;
     }
 
+    lastHandledCooldownKeyRef.current = replayKey;
     const pendingAction = pendingCooldownActionRef.current;
+    if (import.meta.env.DEV) {
+      console.info('[battle-cooldown] ready received', {
+        battleId: battleIdRef.current,
+        characterId: currentCharacterId,
+        detailCharacterId: detail.characterId,
+        detailTimestamp: detail.timestamp,
+        expectedReadyAt: battleCooldownReadyAtRef.current,
+        pendingActionKind: pendingAction?.kind ?? null,
+        advanceMode: finishedBattleAdvanceMode,
+        allowAutoNext: resolvedAllowAutoNext,
+        battlePhase: battleStateRef.current?.phase ?? null,
+        replayKey,
+      });
+    }
     battleCooldownActiveRef.current = false;
     clearPendingCooldownAction();
     setWaitingForCooldown(false);
@@ -1043,7 +1061,7 @@ const BattleAreaComponent: React.FC<BattleAreaProps> = ({
         activateCooldownWait(
           battleStartCooldownMsRef.current,
           true,
-          null,
+          { kind: 'advance_session' },
           `冷却中，${(battleStartCooldownMsRef.current / 1000).toFixed(2)}秒后自动继续`,
         );
         return;

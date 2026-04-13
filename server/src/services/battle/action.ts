@@ -18,7 +18,6 @@ import {
   getOnlineBattleCharacterSnapshotByUserId,
 } from "../onlineBattleProjectionService.js";
 import { getArenaStatus } from "../arenaService.js";
-import { cancelBattleCooldown } from "./cooldownManager.js";
 import type { BattleResult } from "./battleTypes.js";
 import {
   activeBattles,
@@ -307,10 +306,6 @@ export async function abandonBattle(
       ? cooldownCharacterIds
       : collectPlayerCharacterIdsFromBattleState(state),
   );
-
-  for (const characterId of cooldownCharacterIds) {
-    cancelBattleCooldown(characterId);
-  }
 
   try {
     if (arenaSettlementContext) {

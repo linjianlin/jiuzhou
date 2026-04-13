@@ -18,8 +18,8 @@ import {
 } from "../services/characterComputedService.js";
 import { addAttributePoint } from "../services/attributeService.js";
 import { withUnlockedFeatures } from "../services/featureUnlockService.js";
-import { getRemainingCooldown } from "../services/battle/cooldownManager.js";
 import {
+  getBattleStartCooldownRemainingMs,
   getBattleState,
   syncBattleSnapshotToUser,
   syncBattleStateOnReconnect,
@@ -1259,7 +1259,9 @@ class GameServer {
     userId: number,
     characterId: number,
   ): Promise<void> {
-    const remaining = getRemainingCooldown(characterId);
+    // 重连补发的冷却状态必须与真正开战校验共用同一真源，
+    // 否则会出现“客户端已收到 ready，但 advance 仍被 battle_start_cooldown 拦截”的竞态。
+    const remaining = getBattleStartCooldownRemainingMs(characterId);
     if (remaining > 0) {
       socket.emit("battle:cooldown-sync", {
         characterId,

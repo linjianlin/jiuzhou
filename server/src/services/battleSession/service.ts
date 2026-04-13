@@ -29,7 +29,7 @@ import { getBattleLogCursor } from '../../battle/logStream.js';
 import { getGameServer } from '../../game/gameServer.js';
 import { battleParticipants } from '../battle/runtime/state.js';
 import { getBattleState } from '../battle/queries.js';
-import { startPVEBattle } from '../battle/pve.js';
+import { startPVEBattle, startPVEBattleForSessionFlow } from '../battle/pve.js';
 import { startPVPBattle } from '../battle/pvp.js';
 import {
   nextDungeonInstance,
@@ -412,6 +412,7 @@ const listRestoredActiveSessionsForUser = async (
 const startPveBattleAndBindSession = async (params: {
   userId: number;
   monsterIds: string[];
+  startBattle?: typeof startPVEBattle;
   bindSession: (payload: {
     battleId: string;
     participantUserIds: number[];
@@ -429,7 +430,7 @@ const startPveBattleAndBindSession = async (params: {
   }
 > => {
   let boundSession: BattleSessionRecord | null = null;
-  const battleRes = await startPVEBattle(params.userId, params.monsterIds, {
+  const battleRes = await (params.startBattle ?? startPVEBattle)(params.userId, params.monsterIds, {
     onBattleRegistered: (payload) => {
       boundSession = params.bindSession(payload);
     },
@@ -1098,6 +1099,7 @@ export const advanceBattleSession = async (
     const startResult = await startPveBattleAndBindSession({
       userId,
       monsterIds: context.monsterIds,
+      startBattle: startPVEBattleForSessionFlow,
       bindSession: ({ battleId, participantUserIds }) => updateBattleSessionRecord(session.sessionId, {
         currentBattleId: battleId,
         participantUserIds: normalizeParticipantUserIds(

@@ -42,7 +42,10 @@ export { playerAction, abandonBattle } from "./action.js";
 
 // ------ 查询 ------
 export { getBattleState } from "./queries.js";
-export { isCharacterInBattle } from "./runtime/state.js";
+export {
+  getBattleStartCooldownRemainingMs,
+  isCharacterInBattle,
+} from "./runtime/state.js";
 
 // ------ 生命周期 ------
 export {

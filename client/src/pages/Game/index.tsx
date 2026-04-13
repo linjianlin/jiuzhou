@@ -72,6 +72,7 @@ import {
   getWanderOverview,
   pickupRoomItem,
   SILENT_API_REQUEST_CONFIG,
+  toUnifiedApiError,
   getInventoryItems,
   npcTalk,
   getSignInOverview,
@@ -174,6 +175,28 @@ import DesktopPanelToggleButton from './shared/DesktopPanelToggleButton';
 interface GameProps {
   onLogout?: () => void;
 }
+
+type BattleSessionAdvanceFailurePayload = {
+  reason?: string;
+  retryAfterMs?: number;
+};
+
+const getBattleSessionAdvanceFailurePayload = (
+  error: ReturnType<typeof toUnifiedApiError>,
+): BattleSessionAdvanceFailurePayload | null => {
+  const raw = error.raw;
+  if (!raw || typeof raw !== 'object') return null;
+  const response = (raw as { response?: { data?: { data?: BattleSessionAdvanceFailurePayload } } }).response;
+  const payloadFromAxios = response?.data?.data;
+  if (payloadFromAxios && typeof payloadFromAxios === 'object') {
+    return payloadFromAxios;
+  }
+  const payloadFromBusiness = (raw as { raw?: { data?: BattleSessionAdvanceFailurePayload } }).raw?.data;
+  if (!payloadFromBusiness || typeof payloadFromBusiness !== 'object') {
+    return null;
+  }
+  return payloadFromBusiness;
+};
 
 const EQUIP_SLOTS_LEFT = ['武器', '头部', '衣服', '护手'] as const;
 const EQUIP_SLOTS_RIGHT = ['下装', '项链', '饰品', '法宝'] as const;
@@ -1406,7 +1429,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       setBattlePhase(null);
       setBattleActiveUnitId(null);
     } catch (error) {
-      const errorText = getUnifiedApiErrorMessage(error, '推进战斗失败');
+      const normalizedError = toUnifiedApiError(error, '推进战斗失败');
+      const errorText = normalizedError.message;
+      const payload = getBattleSessionAdvanceFailurePayload(normalizedError);
       if (!isLatestAdvanceTarget()) {
         return;
       }
@@ -1423,7 +1448,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         setBattleActiveUnitId(null);
         return;
       }
-      setBlockedAutoAdvanceSessionKey(sessionAdvanceKey);
+      if (payload?.reason !== 'battle_start_cooldown') {
+        setBlockedAutoAdvanceSessionKey(sessionAdvanceKey);
+      }
       messageRef.current.error(errorText);
     } finally {
       if (advancingBattleSessionKeyRef.current === sessionAdvanceKey) {
@@ -1457,8 +1484,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       && latestBattleCooldown.characterId === characterId;
     if (
       !session
-      || sessionAdvanceMode === 'none'
-      || sessionAdvanceMode === 'manual_session'
+      || sessionAdvanceMode !== 'auto_session'
       || isSessionAdvanceCoolingDown
     ) {
       clearSessionAutoAdvanceTimer();

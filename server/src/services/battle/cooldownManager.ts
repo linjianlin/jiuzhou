@@ -47,10 +47,14 @@ export function scheduleBattleCooldownPush(
 
   // 启动定时器
   const timer = setTimeout(() => {
+    const latestEndTime = cooldownEndTimes.get(characterId);
+    if (latestEndTime !== endTime) {
+      return;
+    }
     cooldownTimers.delete(characterId);
     cooldownEndTimes.delete(characterId);
 
-    // 推送冷却结束事件
+    // 只有当前这轮冷却对应的定时器才允许发 ready，避免旧 timer 竞态误推送。
     pushBattleCooldownReady(characterId);
   }, normalizedCooldownMs);
 

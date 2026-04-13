@@ -37,6 +37,28 @@ export const PLAYER_DRIVEN_PVE_BATTLE_START_POLICY: PveBattleStartPolicy = {
   settlementCooldownMode: 'required',
 };
 
+/**
+ * 普通地图 PVE 会话内续战策略。
+ *
+ * 作用：
+ * - 仅用于 `BattleSession` 已进入 waiting_transition 后的“继续下一场”内部推进；
+ * - 跳过重复的 starter cooldown 校验，避免客户端已按 ready 触发 advance 后，
+ *   服务端又把同一次推进当成“玩家手动重新开战”再次拦截。
+ *
+ * 不做什么：
+ * - 不取消普通地图本身的战后冷却；
+ * - 不对外暴露给普通 `/battle/start` 调用。
+ *
+ * 关键边界条件与坑点：
+ * 1. 这里只跳过“续战入口”的 starter cooldown 再校验，结算阶段仍保留普通地图的冷却写入。
+ * 2. 若未来普通地图出现非会话内自动续战场景，必须继续使用 PLAYER_DRIVEN_PVE_BATTLE_START_POLICY，不能误复用本策略。
+ */
+export const SESSION_FLOW_PVE_BATTLE_START_POLICY: PveBattleStartPolicy = {
+  starterCooldownMode: 'skipped',
+  teamMemberCooldownMode: 'starter_only',
+  settlementCooldownMode: 'required',
+};
+
 export const DUNGEON_FLOW_PVE_BATTLE_START_POLICY: PveBattleStartPolicy = {
   starterCooldownMode: 'skipped',
   teamMemberCooldownMode: 'starter_only',

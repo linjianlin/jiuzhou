@@ -45,6 +45,7 @@ import {
 import {
   DUNGEON_FLOW_PVE_BATTLE_START_POLICY,
   PLAYER_DRIVEN_PVE_BATTLE_START_POLICY,
+  SESSION_FLOW_PVE_BATTLE_START_POLICY,
   shouldValidateBattleStarterCooldown,
   type PveBattleStartPolicy,
 } from "./shared/startPolicy.js";
@@ -73,11 +74,12 @@ export type StartPVEBattleOptions = {
   };
 };
 
-export async function startPVEBattle(
+const startPVEBattleByPolicy = async (
   userId: number,
   monsterIds: string[],
+  startPolicy: PveBattleStartPolicy,
   options?: StartPVEBattleOptions,
-): Promise<BattleResult> {
+): Promise<BattleResult> => {
   const slowLogger = createSlowOperationLogger({
     label: "battle.startPVEBattle",
     fields: {
@@ -148,7 +150,7 @@ export async function startPVEBattle(
       });
       return selfInBattleResult;
     }
-    if (shouldValidateBattleStarterCooldown(PLAYER_DRIVEN_PVE_BATTLE_START_POLICY)) {
+    if (shouldValidateBattleStarterCooldown(startPolicy)) {
       const selfCooldown = validateBattleStartCooldown(characterId);
       if (selfCooldown) {
         slowLogger.flush({
@@ -189,7 +191,7 @@ export async function startPVEBattle(
     const preparedTeamPromise = prepareTeamBattleParticipants(
       userId,
       character.id,
-      { startPolicy: PLAYER_DRIVEN_PVE_BATTLE_START_POLICY },
+      { startPolicy },
     );
 
     const room = await roomPromise;
@@ -333,6 +335,32 @@ export async function startPVEBattle(
     }, "发起战斗失败");
     return { success: false, message: "发起战斗失败" };
   }
+};
+
+export async function startPVEBattle(
+  userId: number,
+  monsterIds: string[],
+  options?: StartPVEBattleOptions,
+): Promise<BattleResult> {
+  return startPVEBattleByPolicy(
+    userId,
+    monsterIds,
+    PLAYER_DRIVEN_PVE_BATTLE_START_POLICY,
+    options,
+  );
+}
+
+export async function startPVEBattleForSessionFlow(
+  userId: number,
+  monsterIds: string[],
+  options?: StartPVEBattleOptions,
+): Promise<BattleResult> {
+  return startPVEBattleByPolicy(
+    userId,
+    monsterIds,
+    SESSION_FLOW_PVE_BATTLE_START_POLICY,
+    options,
+  );
 }
 
 /**
