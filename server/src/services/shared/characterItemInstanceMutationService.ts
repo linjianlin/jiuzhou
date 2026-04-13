@@ -1,7 +1,8 @@
-import { afterTransactionCommit, query, withTransaction } from '../../config/database.js';
+import { afterTransactionCommit, hasUsableTransactionContext, query, withTransaction } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import type { InventoryItem, InventoryLocation } from '../inventory/shared/types.js';
 import { createScopedLogger } from '../../utils/logger.js';
+import { tryInsertItemInstanceWithSlot } from './itemInstanceSlotInsert.js';
 
 type JsonScalar = string | number | boolean | null;
 export type JsonValue = JsonScalar | JsonValue[] | { [key: string]: JsonValue };
@@ -42,6 +43,10 @@ type ExistingItemInstanceLocationRow = {
   owner_character_id: number | string;
   location: string;
   location_slot: number | string | null;
+};
+
+type ExistingItemInstanceRow = ExistingItemInstanceLocationRow & {
+  owner_user_id: number | string;
 };
 
 type ItemInstanceMutationFlushPlan = {
@@ -588,6 +593,200 @@ const isSlotConstrainedLocation = (location: string, locationSlot: number | null
   return (location === 'bag' || location === 'warehouse') && locationSlot !== null;
 };
 
+const isItemInstanceSlotConflictError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const databaseError = error as Error & { code?: string; constraint?: string };
+  return databaseError.code === '23505'
+    && typeof databaseError.constraint === 'string'
+    && databaseError.constraint.includes('uq_item_instance_slot');
+};
+
+const loadExistingItemInstanceRow = async (
+  itemId: number,
+): Promise<ExistingItemInstanceRow | null> => {
+  const result = await query<ExistingItemInstanceRow>(
+    `
+      SELECT id, owner_user_id, owner_character_id, location, location_slot
+      FROM item_instance
+      WHERE id = $1
+    `,
+    [itemId],
+  );
+  return result.rows[0] ?? null;
+};
+
+const tryInsertCharacterItemInstanceSnapshotWithSlot = async (
+  snapshot: CharacterItemInstanceSnapshot,
+): Promise<boolean> => {
+  const insertedId = await tryInsertItemInstanceWithSlot(
+    `
+      INSERT INTO item_instance (
+        id,
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        metadata,
+        location,
+        location_slot,
+        equipped_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        affixes,
+        identified,
+        locked,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        random_seed,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13,
+        $14::jsonb, $15::jsonb, $16, $17, $18, $19, $20, $21, $22,
+        $23::jsonb, $24, $25, $26, $27, $28, NOW()
+      )
+    `,
+    [
+      snapshot.id,
+      snapshot.owner_user_id,
+      snapshot.owner_character_id,
+      snapshot.item_def_id,
+      snapshot.qty,
+      snapshot.quality,
+      snapshot.quality_rank,
+      toDbJson(snapshot.metadata),
+      snapshot.location,
+      snapshot.location_slot,
+      snapshot.equipped_slot,
+      snapshot.strengthen_level,
+      snapshot.refine_level,
+      toDbJson(snapshot.socketed_gems),
+      toDbJson(snapshot.affixes),
+      snapshot.identified,
+      snapshot.locked,
+      snapshot.bind_type,
+      snapshot.bind_owner_user_id,
+      snapshot.bind_owner_character_id,
+      snapshot.random_seed,
+      snapshot.affix_gen_version,
+      toDbJson(snapshot.affix_roll_meta),
+      snapshot.custom_name,
+      snapshot.expire_at,
+      snapshot.obtained_from,
+      snapshot.obtained_ref_id,
+      snapshot.created_at,
+    ],
+  );
+  return insertedId !== null;
+};
+
+const tryUpdateCharacterItemInstanceSnapshotWithSlot = async (
+  snapshot: CharacterItemInstanceSnapshot,
+): Promise<boolean> => {
+  const result = await query<{ id: number | string }>(
+    `
+      UPDATE item_instance AS target
+      SET owner_user_id = $2,
+          owner_character_id = $3,
+          item_def_id = $4,
+          qty = $5,
+          quality = $6,
+          quality_rank = $7,
+          metadata = $8::jsonb,
+          location = $9,
+          location_slot = $10,
+          equipped_slot = $11,
+          strengthen_level = $12,
+          refine_level = $13,
+          socketed_gems = $14::jsonb,
+          affixes = $15::jsonb,
+          identified = $16,
+          locked = $17,
+          bind_type = $18,
+          bind_owner_user_id = $19,
+          bind_owner_character_id = $20,
+          random_seed = $21,
+          affix_gen_version = $22,
+          affix_roll_meta = $23::jsonb,
+          custom_name = $24,
+          expire_at = $25,
+          obtained_from = $26,
+          obtained_ref_id = $27,
+          created_at = $28,
+          updated_at = NOW()
+      WHERE target.id = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM item_instance AS occupied
+          WHERE occupied.owner_character_id = $3
+            AND occupied.location = $9
+            AND occupied.location_slot = $10
+            AND occupied.id <> target.id
+        )
+      RETURNING target.id
+    `,
+    [
+      snapshot.id,
+      snapshot.owner_user_id,
+      snapshot.owner_character_id,
+      snapshot.item_def_id,
+      snapshot.qty,
+      snapshot.quality,
+      snapshot.quality_rank,
+      toDbJson(snapshot.metadata),
+      snapshot.location,
+      snapshot.location_slot,
+      snapshot.equipped_slot,
+      snapshot.strengthen_level,
+      snapshot.refine_level,
+      toDbJson(snapshot.socketed_gems),
+      toDbJson(snapshot.affixes),
+      snapshot.identified,
+      snapshot.locked,
+      snapshot.bind_type,
+      snapshot.bind_owner_user_id,
+      snapshot.bind_owner_character_id,
+      snapshot.random_seed,
+      snapshot.affix_gen_version,
+      toDbJson(snapshot.affix_roll_meta),
+      snapshot.custom_name,
+      snapshot.expire_at,
+      snapshot.obtained_from,
+      snapshot.obtained_ref_id,
+      snapshot.created_at,
+    ],
+  );
+  return result.rows.length > 0;
+};
+
+export const tryUpsertCharacterItemInstanceSnapshotImmediately = async (
+  snapshot: CharacterItemInstanceSnapshot,
+): Promise<boolean> => {
+  if (!isSlotConstrainedLocation(snapshot.location, snapshot.location_slot)) {
+    await upsertCharacterItemInstanceSnapshot(snapshot);
+    return true;
+  }
+
+  const existingRow = await loadExistingItemInstanceRow(snapshot.id);
+  if (!existingRow) {
+    return tryInsertCharacterItemInstanceSnapshotWithSlot(snapshot);
+  }
+
+  return tryUpdateCharacterItemInstanceSnapshotWithSlot(snapshot);
+};
+
 export const buildItemInstanceMutationFlushPlan = (
   existingRows: readonly ExistingItemInstanceLocationRow[],
   mutations: readonly BufferedCharacterItemInstanceMutation[],
@@ -1000,19 +1199,120 @@ export const upsertCharacterItemInstanceSnapshot = async (
 export const applyCharacterItemInstanceMutationsImmediately = async (
   mutations: readonly BufferedCharacterItemInstanceMutation[],
 ): Promise<void> => {
+  const applied = await tryApplyCharacterItemInstanceMutationsImmediately(mutations);
+  if (!applied) {
+    throw new Error('实例 mutation 目标槽位冲突');
+  }
+};
+
+const buildImmediateMutationSavepointName = (): string => {
+  return `item_instance_immediate_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
+};
+
+const executeImmediateCharacterItemInstanceMutations = async (
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+): Promise<void> => {
+  const mutationsByCharacter = new Map<number, BufferedCharacterItemInstanceMutation[]>();
   for (const mutation of mutations) {
-    if (mutation.kind === 'delete') {
+    const group = mutationsByCharacter.get(mutation.characterId) ?? [];
+    group.push(mutation);
+    mutationsByCharacter.set(mutation.characterId, group);
+  }
+
+  for (const [characterId, characterMutations] of mutationsByCharacter.entries()) {
+    const existingRowsResult = await query<ExistingItemInstanceLocationRow>(
+      `
+        SELECT id, owner_character_id, location, location_slot
+        FROM item_instance
+        WHERE owner_character_id = $1
+          AND location IN ('bag', 'warehouse')
+          AND location_slot IS NOT NULL
+      `,
+      [characterId],
+    );
+
+    const { effectiveMutations, flushPlan } = resolveItemInstanceFlushInput(
+      existingRowsResult.rows,
+      characterMutations,
+    );
+
+    if (flushPlan.duplicateTargetKeys.length > 0) {
+      throw new Error(`slot-conflict:${flushPlan.duplicateTargetKeys.join(',')}`);
+    }
+
+    if (flushPlan.slotReleaseItemIds.length > 0) {
       await query(
         `
-          DELETE FROM item_instance
-          WHERE id = $1 AND owner_character_id = $2
+          UPDATE item_instance
+          SET location_slot = NULL,
+              updated_at = NOW()
+          WHERE owner_character_id = $1
+            AND id = ANY($2::bigint[])
+            AND location IN ('bag', 'warehouse')
+            AND location_slot IS NOT NULL
         `,
-        [mutation.itemId, mutation.characterId],
+        [characterId, buildItemInstanceIdArrayParam(flushPlan.slotReleaseItemIds)],
       );
-      continue;
     }
-    if (!mutation.snapshot) continue;
-    await upsertCharacterItemInstanceSnapshot(mutation.snapshot);
+
+    for (const mutation of effectiveMutations) {
+      if (mutation.kind === 'delete') {
+        await query(
+          `
+            DELETE FROM item_instance
+            WHERE id = $1 AND owner_character_id = $2
+          `,
+          [mutation.itemId, mutation.characterId],
+        );
+        continue;
+      }
+
+      if (!mutation.snapshot) {
+        continue;
+      }
+
+      const persisted = await tryUpsertCharacterItemInstanceSnapshotImmediately(mutation.snapshot);
+      if (!persisted) {
+        throw new Error(`slot-conflict:${mutation.itemId}`);
+      }
+    }
+  }
+};
+
+export const tryApplyCharacterItemInstanceMutationsImmediately = async (
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+): Promise<boolean> => {
+  if (mutations.length <= 0) {
+    return true;
+  }
+
+  try {
+    if (!hasUsableTransactionContext()) {
+      await withTransaction(async () => {
+        await executeImmediateCharacterItemInstanceMutations(mutations);
+      });
+      return true;
+    }
+
+    const savepointName = buildImmediateMutationSavepointName();
+    await query(`SAVEPOINT ${savepointName}`);
+    try {
+      await executeImmediateCharacterItemInstanceMutations(mutations);
+      await query(`RELEASE SAVEPOINT ${savepointName}`);
+    } catch (error) {
+      await query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+      await query(`RELEASE SAVEPOINT ${savepointName}`);
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    if (isItemInstanceSlotConflictError(error)) {
+      return false;
+    }
+    if (error instanceof Error && error.message.startsWith('slot-conflict:')) {
+      return false;
+    }
+    throw error;
   }
 };
 

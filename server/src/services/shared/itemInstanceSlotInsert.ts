@@ -23,7 +23,7 @@ import { ITEM_INSTANCE_SLOT_CONFLICT_CLAUSE } from './itemInstanceSlotUniqueInde
  * 2) 该工具依赖与唯一索引一致的 conflict target；若索引谓词变更，必须同步更新本模块，避免失配。
  */
 
-type ItemInstanceInsertParam = string | number | boolean | null;
+type ItemInstanceInsertParam = string | number | boolean | Date | null;
 
 export const tryInsertItemInstanceWithSlot = async (
   insertSql: string,

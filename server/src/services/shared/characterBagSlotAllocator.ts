@@ -1,6 +1,7 @@
-import { query } from '../../config/database.js';
-import { normalizeCharacterRewardTargetIds } from './characterRewardTargetLock.js';
-import { loadProjectedCharacterItemInstances } from './characterItemInstanceMutationService.js';
+import {
+  createInventorySlotSession,
+  type InventorySlotSession,
+} from './inventorySlotSession.js';
 
 /**
  * CharacterBagSlotAllocator - 奖励链路背包空槽预分配器
@@ -30,11 +31,6 @@ export interface CharacterBagSlotAllocator {
   reserveSlots(characterId: number, count: number): number[];
 }
 
-type InventoryCapacityRow = {
-  character_id: number;
-  bag_capacity: number;
-};
-
 type CharacterBagSlotState = {
   emptySlots: number[];
   nextIndex: number;
@@ -44,71 +40,21 @@ const EMPTY_ALLOCATOR: CharacterBagSlotAllocator = {
   reserveSlots: (): number[] => [],
 };
 
-export const createCharacterBagSlotAllocator = async (
+export const createCharacterBagSlotAllocatorFromSession = (
+  slotSession: InventorySlotSession,
   characterIds: number[],
-): Promise<CharacterBagSlotAllocator> => {
-  const normalizedCharacterIds = normalizeCharacterRewardTargetIds(characterIds);
-  if (normalizedCharacterIds.length <= 0) {
+): CharacterBagSlotAllocator => {
+  if (characterIds.length <= 0) {
     return EMPTY_ALLOCATOR;
   }
 
-  await query(
-    `
-      INSERT INTO inventory (character_id)
-      SELECT DISTINCT UNNEST($1::integer[])
-      ON CONFLICT (character_id) DO NOTHING
-    `,
-    [normalizedCharacterIds],
-  );
-
-  const capacityResult = await query<InventoryCapacityRow>(
-    `
-      SELECT character_id, bag_capacity
-      FROM inventory
-      WHERE character_id = ANY($1)
-    `,
-    [normalizedCharacterIds],
-  );
-  const projectedItemGroups = await Promise.all(
-    normalizedCharacterIds.map(async (characterId) => ({
-      characterId,
-      items: await loadProjectedCharacterItemInstances(characterId),
-    })),
-  );
-
-  const usedSlotsByCharacter = new Map<number, Set<number>>();
-  for (const group of projectedItemGroups) {
-    const usedSlots = new Set<number>();
-    for (const item of group.items) {
-      if (item.location !== 'bag') {
-        continue;
-      }
-      const slot = Number(item.location_slot);
-      if (!Number.isInteger(slot) || slot < 0) {
-        continue;
-      }
-      usedSlots.add(slot);
-    }
-    usedSlotsByCharacter.set(group.characterId, usedSlots);
-  }
-
   const slotStateByCharacter = new Map<number, CharacterBagSlotState>();
-  for (const row of capacityResult.rows) {
-    const characterId = Number(row.character_id);
-    const capacity = Math.max(0, Math.floor(Number(row.bag_capacity) || 0));
-    if (!Number.isInteger(characterId) || characterId <= 0 || capacity <= 0) {
-      slotStateByCharacter.set(characterId, { emptySlots: [], nextIndex: 0 });
-      continue;
-    }
-
-    const usedSlots = usedSlotsByCharacter.get(characterId) ?? new Set<number>();
-    const emptySlots: number[] = [];
-    for (let slot = 0; slot < capacity; slot += 1) {
-      if (!usedSlots.has(slot)) {
-        emptySlots.push(slot);
-      }
-    }
-    slotStateByCharacter.set(characterId, { emptySlots, nextIndex: 0 });
+  for (const characterId of characterIds) {
+    const capacity = slotSession.getSlottedCapacity(characterId, 'bag') ?? 0;
+    slotStateByCharacter.set(characterId, {
+      emptySlots: slotSession.listEmptySlots(characterId, 'bag', capacity),
+      nextIndex: 0,
+    });
   }
 
   return {
@@ -132,4 +78,11 @@ export const createCharacterBagSlotAllocator = async (
       return state.emptySlots.slice(startIndex, endIndex);
     },
   };
+};
+
+export const createCharacterBagSlotAllocator = async (
+  characterIds: number[],
+): Promise<CharacterBagSlotAllocator> => {
+  const slotSession = await createInventorySlotSession(characterIds);
+  return createCharacterBagSlotAllocatorFromSession(slotSession, characterIds);
 };

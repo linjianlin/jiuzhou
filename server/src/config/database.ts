@@ -164,6 +164,10 @@ const getUsableTransactionContext = (): TransactionContext | null => {
   return context;
 };
 
+export const hasUsableTransactionContext = (): boolean => {
+  return getUsableTransactionContext() !== null;
+};
+
 const stripLeadingSqlComments = (sql: string): string => {
   let text = sql.trim();
 

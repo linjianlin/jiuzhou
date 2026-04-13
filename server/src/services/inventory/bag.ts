@@ -28,7 +28,7 @@
  * 1. addItemToInventory 在 INSERT 遇到唯一约束冲突时会重试（最多 6 次），处理并发写入竞争
  * 2. sortInventory 采用两步更新（先写临时负数槽位，再写最终槽位）避免唯一索引瞬时冲突
  */
-import { query } from "../../config/database.js";
+import { hasUsableTransactionContext, query, withTransaction } from "../../config/database.js";
 import {
   getItemDefinitionsByIds,
 } from "../staticConfigLoader.js";
@@ -66,9 +66,9 @@ import type {
   PlainAutoStackLookupOptions,
   PlainAutoStackLookupRow,
 } from "../shared/characterInventoryMutationContext.js";
+import type { InventorySlotSession } from "../shared/inventorySlotSession.js";
 import { loadCharacterPendingItemGrants } from "../shared/characterItemGrantDeltaService.js";
 import {
-  applyCharacterItemInstanceMutationsImmediately,
   applyCharacterItemInstanceMutations,
   bufferCharacterItemInstanceMutations,
   type BufferedCharacterItemInstanceMutation,
@@ -76,6 +76,8 @@ import {
   loadProjectedCharacterItemInstances,
   loadProjectedCharacterItemInstancesByLocation,
   type CharacterItemInstanceSnapshot,
+  type JsonValue,
+  tryApplyCharacterItemInstanceMutationsImmediately,
 } from "../shared/characterItemInstanceMutationService.js";
 
 // ============================================
@@ -252,6 +254,41 @@ const applyBufferedMutationsToProjectedItems = (
   return applyCharacterItemInstanceMutations(sourceItems, mutations);
 };
 
+const collectUsedSlotsFromProjectedItems = (
+  items: readonly CharacterItemInstanceSnapshot[],
+  location: SlottedInventoryLocation,
+): Set<number> => {
+  const usedSlots = new Set<number>();
+  for (const item of items) {
+    if (item.location !== location) {
+      continue;
+    }
+    const slot = item.location_slot;
+    if (slot === null || slot < 0) {
+      continue;
+    }
+    usedSlots.add(slot);
+  }
+  return usedSlots;
+};
+
+const findEmptySlotsFromUsedSlots = (
+  usedSlots: ReadonlySet<number>,
+  capacity: number,
+  count: number,
+): number[] => {
+  if (capacity <= 0 || count <= 0) {
+    return [];
+  }
+  const emptySlots: number[] = [];
+  for (let slot = 0; slot < capacity && emptySlots.length < count; slot += 1) {
+    if (!usedSlots.has(slot)) {
+      emptySlots.push(slot);
+    }
+  }
+  return emptySlots;
+};
+
 type MoveItemInstanceToBagComputationResult = {
   success: boolean;
   message: string;
@@ -267,6 +304,7 @@ export const buildMoveItemInstanceToBagMutations = async (
   options: {
     expectedSourceLocation: MoveToBagSourceLocation;
     expectedOwnerUserId?: number;
+    slotSession?: InventorySlotSession;
   },
 ): Promise<MoveItemInstanceToBagComputationResult> => {
   const source = projectedItems.find((item) => item.id === itemInstanceId);
@@ -379,12 +417,13 @@ export const buildMoveItemInstanceToBagMutations = async (
 
   let targetSlot: number | null = null;
   if (needsEmptySlot) {
-    const info = await getInventoryInfo(characterId);
     const localProjectedItems = applyBufferedMutationsToProjectedItems(projectedItems, pendingMutations);
+    const bagCapacity = options.slotSession?.getSlottedCapacity(characterId, "bag")
+      ?? getSlottedCapacity(await getInventoryInfo(characterId), "bag");
     targetSlot = findFirstEmptyProjectedSlot(
       localProjectedItems,
       "bag",
-      getSlottedCapacity(info, "bag"),
+      bagCapacity,
     );
     if (targetSlot === null) {
       return { success: false, message: "背包已满" };
@@ -426,16 +465,11 @@ const findFirstEmptyProjectedSlot = (
   location: SlottedInventoryLocation,
   capacity: number,
 ): number | null => {
-  const usedSlots = new Set(
-    items
-      .filter((item) => item.location === location)
-      .map((item) => item.location_slot)
-      .filter((slot): slot is number => slot !== null && slot >= 0),
-  );
-  for (let slot = 0; slot < capacity; slot += 1) {
-    if (!usedSlots.has(slot)) return slot;
-  }
-  return null;
+  return findEmptySlotsFromUsedSlots(
+    collectUsedSlotsFromProjectedItems(items, location),
+    capacity,
+    1,
+  )[0] ?? null;
 };
 
 const buildPendingGrantItemDefMap = (
@@ -699,20 +733,11 @@ const findEmptySlotsByCapacity = async (
   }
 
   const projectedItems = await loadProjectedCharacterItemInstancesByLocation(characterId, location);
-  const usedSlots = new Set(
-    projectedItems
-      .map((row) => row.location_slot)
-      .filter((slot): slot is number => slot !== null && slot >= 0),
+  return findEmptySlotsFromUsedSlots(
+    collectUsedSlotsFromProjectedItems(projectedItems, location),
+    capacity,
+    count,
   );
-
-  const emptySlots: number[] = [];
-  for (let slot = 0; slot < capacity && emptySlots.length < count; slot += 1) {
-    if (!usedSlots.has(slot)) {
-      emptySlots.push(slot);
-    }
-  }
-
-  return emptySlots;
 };
 
 /**
@@ -741,6 +766,10 @@ const runInventoryMutation = async <T extends { success: boolean }>(
   executor: () => Promise<T>,
 ): Promise<T> => {
   return await executor();
+};
+
+const buildInventoryMutationSavepointName = (): string => {
+  return `inventory_mutation_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
 };
 
 const serializeInventoryMetadata = (
@@ -788,11 +817,24 @@ const loadPlainAutoStackRows = async ({
   bindType,
   excludeItemId,
   inventoryMutationContext,
+  slotSession,
 }: PlainAutoStackLookupOptions & {
   inventoryMutationContext?: CharacterInventoryMutationContext;
+  slotSession?: InventorySlotSession;
 }): Promise<PlainAutoStackLookupRow[]> => {
   if (stackMax <= 1) {
     return [];
+  }
+
+  if (slotSession) {
+    return slotSession.getPlainAutoStackRows({
+      characterId,
+      itemDefId,
+      location,
+      stackMax,
+      bindType,
+      ...(excludeItemId !== undefined ? { excludeItemId } : {}),
+    });
   }
 
   if (inventoryMutationContext) {
@@ -865,6 +907,7 @@ export const addItemToInventory = async (
     qualityRank?: number | null;
     bagSlotAllocator?: CharacterBagSlotAllocator;
     inventoryMutationContext?: CharacterInventoryMutationContext;
+    slotSession?: InventorySlotSession;
     skipInventoryMutexLock?: boolean;
   } = {},
 ): Promise<{ success: boolean; message: string; itemIds?: number[] }> => {
@@ -903,11 +946,17 @@ export const addItemToInventory = async (
         ? Math.max(1, Math.floor(Number(options.qualityRank) || 1))
         : null;
     const canStackByOption = !metadataJson && !quality && qualityRank === null;
+    const slotSession = options.slotSession;
+    const snapshotMetadata = metadataJson === null
+      ? null
+      : JSON.parse(metadataJson) as { [key: string]: JsonValue };
+    const snapshotAffixes = options.affixes
+      ? JSON.parse(JSON.stringify(options.affixes)) as JsonValue
+      : [];
 
-    const cachedCapacity = options.inventoryMutationContext?.getSlottedCapacity(
-      characterId,
-      location,
-    );
+    const cachedCapacity = slotSession?.getSlottedCapacity(characterId, location)
+      ?? options.inventoryMutationContext?.getSlottedCapacity(characterId, location)
+      ?? null;
     const info = cachedCapacity === null || cachedCapacity === undefined
       ? await getInventoryInfo(characterId)
       : null;
@@ -924,12 +973,13 @@ export const addItemToInventory = async (
       stackRows = await loadPlainAutoStackRows({
         characterId,
         itemDefId,
-        location,
-        stackMax: stack_max,
-        bindType: actualBindType,
-        ...(options.inventoryMutationContext
-          ? { inventoryMutationContext: options.inventoryMutationContext }
-          : {}),
+          location,
+          stackMax: stack_max,
+          bindType: actualBindType,
+          ...(slotSession ? { slotSession } : {}),
+          ...(options.inventoryMutationContext
+            ? { inventoryMutationContext: options.inventoryMutationContext }
+            : {}),
       });
     }
 
@@ -949,12 +999,14 @@ export const addItemToInventory = async (
         ? 0
         : Math.ceil(remainingAfterStacks / Math.max(1, stack_max));
     const reservedBagSlots =
-      location === "bag" && options.bagSlotAllocator
+      location === "bag" && !slotSession && options.bagSlotAllocator
         ? options.bagSlotAllocator.reserveSlots(characterId, neededSlots)
         : [];
     if (neededSlots > 0) {
       const emptySlots =
-        location === "bag" && options.bagSlotAllocator
+        slotSession
+          ? slotSession.listEmptySlots(characterId, location, neededSlots)
+          : location === "bag" && options.bagSlotAllocator
           ? reservedBagSlots
           : await findEmptySlotsByCapacity(
               characterId,
@@ -967,107 +1019,226 @@ export const addItemToInventory = async (
       }
     }
 
-    if (stack_max > 1 && canStackByOption && stackRows.length > 0) {
-      for (const row of stackRows) {
-        if (remainingQty <= 0) break;
+    const executeWritePlan = async (): Promise<{
+      success: boolean;
+      message: string;
+      itemIds?: number[];
+      appliedStackDeltas: Array<{ itemId: number; addedQty: number }>;
+      insertedRows: Array<{ itemId: number; qty: number; slot: number }>;
+    }> => {
+      const writeItemIds: number[] = [];
+      const appliedStackDeltas: Array<{ itemId: number; addedQty: number }> = [];
+      const insertedRows: Array<{ itemId: number; qty: number; slot: number }> = [];
+      const locallyOccupiedSlots = new Set<number>();
+      const locallyRejectedSlots = new Set<number>();
+      let writeRemainingQty = remainingQty;
 
-        const rowQty = Number(row.qty) || 0;
-        const canAdd = Math.min(remainingQty, Math.max(0, stack_max - rowQty));
-        if (canAdd <= 0) continue;
+      if (stack_max > 1 && canStackByOption && stackRows.length > 0) {
+        for (const row of stackRows) {
+          if (writeRemainingQty <= 0) break;
 
-        await query(
-          `
-            UPDATE item_instance
-            SET qty = qty + $1,
-                ${PLAIN_STACKING_CANONICAL_SET_SQL}
-            WHERE id = $3
-          `,
-          [canAdd, actualBindType, row.id],
-        );
-        options.inventoryMutationContext?.applyPlainAutoStackDelta({
-          characterId,
-          itemDefId,
-          location,
-          bindType: actualBindType,
-          itemId: row.id,
-          addedQty: canAdd,
-        });
-        itemIds.push(row.id);
-        remainingQty -= canAdd;
-      }
-    }
+          const rowQty = Number(row.qty) || 0;
+          const canAdd = Math.min(writeRemainingQty, Math.max(0, stack_max - rowQty));
+          if (canAdd <= 0) continue;
 
-    let nextReservedBagSlotIndex = 0;
-    while (remainingQty > 0) {
-      const addQty = Math.min(remainingQty, Math.max(1, stack_max));
-      let insertedId: number | null = null;
-      let attempt = 0;
-
-      while (insertedId === null && attempt < 6) {
-        attempt += 1;
-        const emptySlots =
-          location === "bag" && options.bagSlotAllocator
-            ? reservedBagSlots.slice(nextReservedBagSlotIndex, nextReservedBagSlotIndex + 1)
-            : await findEmptySlotsByCapacity(
-                characterId,
-                location,
-                capacity,
-                6,
-              );
-        if (emptySlots.length === 0) {
-          return { success: false, message: "背包已满" };
-        }
-
-        for (const slot of emptySlots) {
-          const inserted = await tryInsertItemInstanceWithSlot(
+          await query(
             `
-                INSERT INTO item_instance (
-                  owner_user_id, owner_character_id, item_def_id, qty,
-                  location, location_slot, bind_type, affixes, obtained_from,
-                  metadata, quality, quality_rank
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+              UPDATE item_instance
+              SET qty = qty + $1,
+                  ${PLAIN_STACKING_CANONICAL_SET_SQL}
+              WHERE id = $3
             `,
-            [
-              userId,
-              characterId,
-              itemDefId,
-              addQty,
-              location,
-              slot,
-              actualBindType,
-              options.affixes ? JSON.stringify(options.affixes) : null,
-              obtainedFrom,
-              metadataJson,
-              quality,
-              qualityRank,
-            ],
+            [canAdd, actualBindType, row.id],
           );
-          if (inserted !== null) {
-            insertedId = inserted;
-            if (location === "bag" && options.bagSlotAllocator) {
-              nextReservedBagSlotIndex += 1;
-            }
-            if (canStackByOption) {
-              options.inventoryMutationContext?.registerPlainAutoStackRow({
+          appliedStackDeltas.push({ itemId: row.id, addedQty: canAdd });
+          writeItemIds.push(row.id);
+          writeRemainingQty -= canAdd;
+        }
+      }
+
+      let nextReservedBagSlotIndex = 0;
+      while (writeRemainingQty > 0) {
+        const addQty = Math.min(writeRemainingQty, Math.max(1, stack_max));
+        let insertedId: number | null = null;
+        let insertedSlot: number | null = null;
+        let attempt = 0;
+
+        while (insertedId === null && attempt < 6) {
+          attempt += 1;
+          const emptySlots = slotSession
+            ? slotSession
+              .listEmptySlots(characterId, location, capacity)
+              .filter((slot) => !locallyOccupiedSlots.has(slot) && !locallyRejectedSlots.has(slot))
+              .slice(0, 6)
+            : location === "bag" && options.bagSlotAllocator
+              ? reservedBagSlots.slice(nextReservedBagSlotIndex, nextReservedBagSlotIndex + 1)
+              : await findEmptySlotsByCapacity(
+                  characterId,
+                  location,
+                  capacity,
+                  6,
+                );
+          if (emptySlots.length === 0) {
+            throw new Error('inventory-add-failed:背包已满');
+          }
+
+          for (const slot of emptySlots) {
+            const inserted = await tryInsertItemInstanceWithSlot(
+              `
+                  INSERT INTO item_instance (
+                    owner_user_id, owner_character_id, item_def_id, qty,
+                    location, location_slot, bind_type, affixes, obtained_from,
+                    metadata, quality, quality_rank
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+              `,
+              [
+                userId,
                 characterId,
                 itemDefId,
+                addQty,
                 location,
-                bindType: actualBindType,
-                itemId: inserted,
-                qty: addQty,
-              });
+                slot,
+                actualBindType,
+                options.affixes ? JSON.stringify(options.affixes) : null,
+                obtainedFrom,
+                metadataJson,
+                quality,
+                qualityRank,
+              ],
+            );
+            if (inserted !== null) {
+              insertedId = inserted;
+              insertedSlot = slot;
+              locallyOccupiedSlots.add(slot);
+              if (location === "bag" && options.bagSlotAllocator) {
+                nextReservedBagSlotIndex += 1;
+              }
+              insertedRows.push({ itemId: inserted, qty: addQty, slot });
+              break;
             }
-            break;
+            locallyRejectedSlots.add(slot);
           }
+        }
+
+        if (insertedId === null || insertedSlot === null || !Number.isFinite(insertedId)) {
+          throw new Error('inventory-add-failed:背包已满');
+        }
+
+        writeItemIds.push(insertedId);
+        writeRemainingQty -= addQty;
+      }
+
+      return {
+        success: true,
+        message: "添加成功",
+        itemIds: writeItemIds,
+        appliedStackDeltas,
+        insertedRows,
+      };
+    };
+
+    try {
+      const result = !hasUsableTransactionContext()
+        ? await withTransaction(async () => executeWritePlan())
+        : await (async () => {
+            const savepointName = buildInventoryMutationSavepointName();
+            await query(`SAVEPOINT ${savepointName}`);
+            try {
+              const savepointResult = await executeWritePlan();
+              await query(`RELEASE SAVEPOINT ${savepointName}`);
+              return savepointResult;
+            } catch (error) {
+              await query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+              await query(`RELEASE SAVEPOINT ${savepointName}`);
+              throw error;
+            }
+          })();
+
+      for (const delta of result.appliedStackDeltas) {
+        if (slotSession) {
+          slotSession.applyPlainAutoStackDelta({
+            characterId,
+            itemDefId,
+            location,
+            bindType: actualBindType,
+            itemId: delta.itemId,
+            addedQty: delta.addedQty,
+          });
+        } else {
+          options.inventoryMutationContext?.applyPlainAutoStackDelta({
+            characterId,
+            itemDefId,
+            location,
+            bindType: actualBindType,
+            itemId: delta.itemId,
+            addedQty: delta.addedQty,
+          });
         }
       }
 
-      if (insertedId === null || !Number.isFinite(insertedId)) {
-        return { success: false, message: "背包已满" };
+      for (const row of result.insertedRows) {
+        if (canStackByOption) {
+          if (slotSession) {
+            slotSession.registerPlainAutoStackRow({
+              characterId,
+              itemDefId,
+              location,
+              bindType: actualBindType,
+              itemId: row.itemId,
+              qty: row.qty,
+            });
+          } else {
+            options.inventoryMutationContext?.registerPlainAutoStackRow({
+              characterId,
+              itemDefId,
+              location,
+              bindType: actualBindType,
+              itemId: row.itemId,
+              qty: row.qty,
+            });
+          }
+        }
+        slotSession?.registerSnapshot({
+          id: row.itemId,
+          owner_user_id: userId,
+          owner_character_id: characterId,
+          item_def_id: itemDefId,
+          qty: row.qty,
+          quality,
+          quality_rank: qualityRank,
+          metadata: snapshotMetadata,
+          location,
+          location_slot: row.slot,
+          equipped_slot: null,
+          strengthen_level: 0,
+          refine_level: 0,
+          socketed_gems: [],
+          affixes: snapshotAffixes,
+          identified: true,
+          locked: false,
+          bind_type: actualBindType,
+          bind_owner_user_id: null,
+          bind_owner_character_id: null,
+          random_seed: null,
+          affix_gen_version: 0,
+          affix_roll_meta: null,
+          custom_name: null,
+          expire_at: null,
+          obtained_from: obtainedFrom,
+          obtained_ref_id: null,
+          created_at: new Date(),
+        });
       }
 
-      itemIds.push(insertedId);
-      remainingQty -= addQty;
+      itemIds.push(...(result.itemIds ?? []));
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('inventory-add-failed:')) {
+        return {
+          success: false,
+          message: error.message.replace('inventory-add-failed:', ''),
+        };
+      }
+      throw error;
     }
 
     if (info) {
@@ -1122,9 +1293,11 @@ export const moveItemInstanceToBagWithStacking = async (
   options: {
     expectedSourceLocation: MoveToBagSourceLocation;
     expectedOwnerUserId?: number;
+    slotSession?: InventorySlotSession;
   },
 ): Promise<{ success: boolean; message: string; itemId?: number }> => {
-  const projectedItems = await loadProjectedCharacterItemInstances(characterId);
+  const projectedItems = options.slotSession?.getProjectedItems(characterId)
+    ?? await loadProjectedCharacterItemInstances(characterId);
   const result = await buildMoveItemInstanceToBagMutations(
     projectedItems,
     characterId,
@@ -1135,6 +1308,7 @@ export const moveItemInstanceToBagWithStacking = async (
     return { success: result.success, message: result.message, itemId: result.itemId };
   }
   await bufferCharacterItemInstanceMutations(result.mutations);
+  options.slotSession?.applyBufferedMutations(characterId, result.mutations);
   return { success: true, message: result.message, itemId: result.itemId };
 };
 
@@ -1145,35 +1319,69 @@ export const moveItemInstancesToBagWithStacking = async (
     expectedSourceLocation: MoveToBagSourceLocation;
     expectedOwnerUserId?: number;
     persistImmediately?: boolean;
+    slotSession?: InventorySlotSession;
   },
 ): Promise<{ success: boolean; message: string; itemIds: number[] }> => {
-  let projectedItems = await loadProjectedCharacterItemInstances(characterId);
-  const bufferedMutations: BufferedCharacterItemInstanceMutation[] = [];
-  const itemIds: number[] = [];
+  const buildBatchMutations = async (): Promise<{
+    success: boolean;
+    message: string;
+    itemIds: number[];
+    mutations: BufferedCharacterItemInstanceMutation[];
+  }> => {
+    let projectedItems = options.slotSession?.getProjectedItems(characterId)
+      ?? await loadProjectedCharacterItemInstances(characterId);
+    const bufferedMutations: BufferedCharacterItemInstanceMutation[] = [];
+    const itemIds: number[] = [];
 
-  for (const itemInstanceId of itemInstanceIds) {
-    const result = await buildMoveItemInstanceToBagMutations(
-      projectedItems,
-      characterId,
-      itemInstanceId,
-      options,
-    );
-    if (!result.success || !result.mutations || !result.projectedItems) {
-      return { success: false, message: result.message, itemIds };
+    for (const itemInstanceId of itemInstanceIds) {
+      const result = await buildMoveItemInstanceToBagMutations(
+        projectedItems,
+        characterId,
+        itemInstanceId,
+        options,
+      );
+      if (!result.success || !result.mutations || !result.projectedItems) {
+        return { success: false, message: result.message, itemIds, mutations: [] };
+      }
+      bufferedMutations.push(...result.mutations);
+      projectedItems = result.projectedItems;
+      if (result.itemId !== undefined) {
+        itemIds.push(result.itemId);
+      }
     }
-    bufferedMutations.push(...result.mutations);
-    projectedItems = result.projectedItems;
-    if (result.itemId !== undefined) {
-      itemIds.push(result.itemId);
+
+    return {
+      success: true,
+      message: '移动成功',
+      itemIds,
+      mutations: bufferedMutations,
+    };
+  };
+
+  if (!options.persistImmediately) {
+    const batchResult = await buildBatchMutations();
+    if (!batchResult.success) {
+      return { success: false, message: batchResult.message, itemIds: batchResult.itemIds };
+    }
+    await bufferCharacterItemInstanceMutations(batchResult.mutations);
+    options.slotSession?.applyBufferedMutations(characterId, batchResult.mutations);
+    return { success: true, message: batchResult.message, itemIds: batchResult.itemIds };
+  }
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const batchResult = await buildBatchMutations();
+    if (!batchResult.success) {
+      return { success: false, message: batchResult.message, itemIds: batchResult.itemIds };
+    }
+
+    const applied = await tryApplyCharacterItemInstanceMutationsImmediately(batchResult.mutations);
+    if (applied) {
+      options.slotSession?.applyBufferedMutations(characterId, batchResult.mutations);
+      return { success: true, message: batchResult.message, itemIds: batchResult.itemIds };
     }
   }
 
-  if (options.persistImmediately) {
-    await applyCharacterItemInstanceMutationsImmediately(bufferedMutations);
-  } else {
-    await bufferCharacterItemInstanceMutations(bufferedMutations);
-  }
-  return { success: true, message: '移动成功', itemIds };
+  return { success: false, message: '背包槽位冲突，请稍后重试', itemIds: [] };
 };
 
 // ============================================

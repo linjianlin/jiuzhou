@@ -11,7 +11,7 @@
  * 1) useItem 使用 @Transactional 保证物品使用与资源更新的原子性
  * 2) createItem 支持在事务/非事务上下文中调用，内部统一复用 inventoryService / equipmentService 的事务入口
  */
-import { query } from '../config/database.js';
+import { hasUsableTransactionContext, query, withTransaction } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { equipmentService, generateEquipment, type GenerateOptions, type GeneratedEquipment } from './equipmentService.js';
 import {
@@ -42,9 +42,10 @@ import { partnerReboneService } from './partnerReboneService.js';
 import { recoverStaminaByCharacterId } from './staminaService.js';
 import type { CharacterBagSlotAllocator } from './shared/characterBagSlotAllocator.js';
 import type { CharacterInventoryMutationContext } from './shared/characterInventoryMutationContext.js';
+import type { InventorySlotSession } from './shared/inventorySlotSession.js';
 import { applyCharacterRewardDeltas, createCharacterRewardDelta } from './shared/characterRewardSettlement.js';
 import { bufferSimpleCharacterItemGrants } from './shared/characterItemGrantDeltaService.js';
-import { loadProjectedCharacterItemInstanceById } from './shared/characterItemInstanceMutationService.js';
+import { bufferCharacterItemInstanceMutations, loadProjectedCharacterItemInstanceById } from './shared/characterItemInstanceMutationService.js';
 import { consumeSpecificItemInstance } from './inventory/shared/consume.js';
 
 // 物品定义接口
@@ -74,6 +75,8 @@ export interface CreateItemOptions {
   bagSlotAllocator?: CharacterBagSlotAllocator;
   /** 奖励事务内共享的库存视图缓存，用于复用容量与普通堆叠承载实例。 */
   inventoryMutationContext?: CharacterInventoryMutationContext;
+  /** 事务级统一槽位会话，统一管理容量、空槽与普通堆叠视图。 */
+  slotSession?: InventorySlotSession;
   /** 调用方已持有角色背包互斥锁时，跳过底层重复加锁 SQL。 */
   skipInventoryMutexLock?: boolean;
   /** 需要严格受当前事务 / savepoint 控制时，改为立即写入真实实例表。 */
@@ -126,6 +129,10 @@ type ItemUseCountRow = {
   daily_count: number;
   total_count: number;
   last_daily_reset: Date | string | null;
+};
+
+const buildCreateItemSavepointName = (): string => {
+  return `item_create_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
 };
 
 type ItemInstanceRow = {
@@ -307,48 +314,113 @@ const createEquipmentItem = async (
   const preGeneratedEquipment = options.equipOptions?.preGeneratedEquipment;
   const location = options.location || 'bag';
   const reservedBagSlots =
-    location === 'bag' && options.bagSlotAllocator
+    location === 'bag' && !options.slotSession && options.bagSlotAllocator
       ? options.bagSlotAllocator.reserveSlots(characterId, qty)
       : [];
 
-  if (location === 'bag' && options.bagSlotAllocator && reservedBagSlots.length < qty) {
+  if (location === 'bag' && !options.slotSession && options.bagSlotAllocator && reservedBagSlots.length < qty) {
     return { success: false, message: '背包已满' };
   }
 
-  // 装备不可堆叠，逐个生成
-  for (let i = 0; i < qty; i++) {
-    const generated =
-      i === 0 && preGeneratedEquipment
-        ? preGeneratedEquipment
-        : await generateEquipment(itemDefId, options.equipOptions);
-    if (!generated) {
-      return { success: false, message: '装备生成失败' };
+  const executeBatch = async (): Promise<CreateItemResult> => {
+    const pendingMutations = [] as NonNullable<Awaited<ReturnType<typeof equipmentService.createEquipmentInstanceTx>>['pendingMutation']>[];
+    for (let i = 0; i < qty; i++) {
+      const generated =
+        i === 0 && preGeneratedEquipment
+          ? preGeneratedEquipment
+          : await generateEquipment(itemDefId, options.equipOptions);
+      if (!generated) {
+        return { success: false, message: '装备生成失败' };
+      }
+
+      const result = await equipmentService.createEquipmentInstanceTx(userId, characterId, generated, {
+        location,
+        ...(options.slotSession ? { slotSession: options.slotSession } : {}),
+        ...(reservedBagSlots[i] !== undefined ? { locationSlot: reservedBagSlots[i] } : {}),
+        ...(options.locationSlot !== undefined ? { locationSlot: options.locationSlot } : {}),
+        ...(reservedBagSlots[i] !== undefined && options.locationSlot === undefined
+          ? { fallbackOnSlotConflict: true }
+          : {}),
+        bindType: options.bindType,
+        obtainedFrom: options.obtainedFrom,
+        ...(options.skipInventoryMutexLock ? { skipInventoryMutexLock: true } : {}),
+        ...(options.persistImmediately ? { persistImmediately: true } : {}),
+        ...(!options.persistImmediately ? { deferBufferedMutation: true } : {}),
+      });
+
+      if (!result.success) {
+        return { success: false, message: result.message };
+      }
+
+      itemIds.push(result.instanceId!);
+      lastEquipment = generated;
+      if (!options.persistImmediately) {
+        if (!result.pendingMutation) {
+          return { success: false, message: '装备创建失败' };
+        }
+        pendingMutations.push(result.pendingMutation);
+      }
     }
 
-    const result = await equipmentService.createEquipmentInstance(userId, characterId, generated, {
-      location,
-      ...(reservedBagSlots[i] !== undefined ? { locationSlot: reservedBagSlots[i] } : {}),
-      ...(options.locationSlot !== undefined ? { locationSlot: options.locationSlot } : {}),
-      bindType: options.bindType,
-      obtainedFrom: options.obtainedFrom,
-      ...(options.skipInventoryMutexLock ? { skipInventoryMutexLock: true } : {}),
-      ...(options.persistImmediately ? { persistImmediately: true } : {}),
-    });
-
-    if (!result.success) {
-      return { success: false, message: result.message };
+    if (!options.persistImmediately && pendingMutations.length > 0) {
+      await bufferCharacterItemInstanceMutations(pendingMutations);
+      if (options.slotSession) {
+        for (const mutation of pendingMutations) {
+          if (mutation.snapshot) {
+            options.slotSession.registerSnapshot(mutation.snapshot);
+          }
+        }
+      }
     }
 
-    itemIds.push(result.instanceId!);
-    lastEquipment = generated;
-  }
-
-  return {
-    success: true,
-    message: `成功创建${qty}件装备`,
-    itemIds,
-    equipment: lastEquipment
+    return {
+      success: true,
+      message: `成功创建${qty}件装备`,
+      itemIds,
+      equipment: lastEquipment,
+    };
   };
+
+  const runBatch = async (): Promise<CreateItemResult> => {
+    if (!hasUsableTransactionContext()) {
+      try {
+        return await withTransaction(async () => {
+          const result = await executeBatch();
+          if (!result.success) {
+            throw new Error(`create-equipment-item-failed:${result.message}`);
+          }
+          return result;
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('create-equipment-item-failed:')) {
+          return {
+            success: false,
+            message: error.message.replace('create-equipment-item-failed:', ''),
+          };
+        }
+        throw error;
+      }
+    }
+
+    const savepointName = buildCreateItemSavepointName();
+    await query(`SAVEPOINT ${savepointName}`);
+    try {
+      const result = await executeBatch();
+      if (!result.success) {
+        await query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+        await query(`RELEASE SAVEPOINT ${savepointName}`);
+        return result;
+      }
+      await query(`RELEASE SAVEPOINT ${savepointName}`);
+      return result;
+    } catch (error) {
+      await query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+      await query(`RELEASE SAVEPOINT ${savepointName}`);
+      throw error;
+    }
+  };
+
+  return runBatch();
 };
 
 /**
@@ -375,6 +447,7 @@ const createNormalItem = async (
     ...(options.qualityRank !== undefined && options.qualityRank !== null ? { qualityRank: options.qualityRank } : {}),
     ...(options.bagSlotAllocator ? { bagSlotAllocator: options.bagSlotAllocator } : {}),
     ...(options.inventoryMutationContext ? { inventoryMutationContext: options.inventoryMutationContext } : {}),
+    ...(options.slotSession ? { slotSession: options.slotSession } : {}),
     ...(options.skipInventoryMutexLock ? { skipInventoryMutexLock: true } : {}),
   });
 

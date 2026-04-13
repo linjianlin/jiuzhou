@@ -5,8 +5,9 @@ import { sendSystemMail, type MailAttachItem } from '../mailService.js';
 import type { GenerateOptions, GeneratedEquipment } from '../equipmentService.js';
 import { createScopedLogger } from '../../utils/logger.js';
 import { lockCharacterInventoryMutex } from '../inventoryMutex.js';
-import { createCharacterBagSlotAllocator } from './characterBagSlotAllocator.js';
-import { createCharacterInventoryMutationContext } from './characterInventoryMutationContext.js';
+import { createCharacterBagSlotAllocatorFromSession } from './characterBagSlotAllocator.js';
+import { createCharacterInventoryMutationContextFromSession } from './characterInventoryMutationContext.js';
+import { createInventorySlotSession } from './inventorySlotSession.js';
 
 /**
  * 角色物品授予 Delta 聚合服务
@@ -495,10 +496,9 @@ const flushSingleCharacterItemGrants = async (
 
   await withTransaction(async () => {
     await lockCharacterInventoryMutex(characterId);
-    const [bagSlotAllocator, inventoryMutationContext] = await Promise.all([
-      createCharacterBagSlotAllocator([characterId]),
-      createCharacterInventoryMutationContext([characterId]),
-    ]);
+    const slotSession = await createInventorySlotSession([characterId]);
+    const bagSlotAllocator = createCharacterBagSlotAllocatorFromSession(slotSession, [characterId]);
+    const inventoryMutationContext = createCharacterInventoryMutationContextFromSession(slotSession);
     const pendingMailItems: MailAttachItem[] = [];
     const idleBagFullSessionIds = new Set<string>();
     let receiverUserId = 0;
@@ -516,6 +516,7 @@ const flushSingleCharacterItemGrants = async (
           bindType: grant.payload.bindType,
           bagSlotAllocator,
           inventoryMutationContext,
+          slotSession,
           skipInventoryMutexLock: true,
           ...(grant.payload.metadata ? { metadata: grant.payload.metadata } : {}),
           ...(grant.payload.quality ? { quality: grant.payload.quality } : {}),

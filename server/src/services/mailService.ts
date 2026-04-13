@@ -52,8 +52,15 @@ import {
   type MailCounterDeltaInput,
   type MailCounterStateRow,
 } from './shared/mailCounterStore.js';
-import { createCharacterBagSlotAllocator } from './shared/characterBagSlotAllocator.js';
-import { createCharacterInventoryMutationContext } from './shared/characterInventoryMutationContext.js';
+import {
+  createCharacterBagSlotAllocator,
+  createCharacterBagSlotAllocatorFromSession,
+} from './shared/characterBagSlotAllocator.js';
+import {
+  createCharacterInventoryMutationContext,
+  createCharacterInventoryMutationContextFromSession,
+} from './shared/characterInventoryMutationContext.js';
+import { createInventorySlotSession, type InventorySlotSession } from './shared/inventorySlotSession.js';
 import {
   loadProjectedCharacterItemInstances,
   loadProjectedCharacterItemInstanceById,
@@ -225,6 +232,7 @@ type PrepareMailInsertPayloadResult =
 type MailClaimSynchronousGrantContext = {
   bagSlotAllocator: Awaited<ReturnType<typeof createCharacterBagSlotAllocator>>;
   inventoryMutationContext: Awaited<ReturnType<typeof createCharacterInventoryMutationContext>>;
+  slotSession: InventorySlotSession;
 };
 
 const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_rewards IS NOT NULL OR attach_instance_ids IS NOT NULL)';
@@ -1131,14 +1139,14 @@ class MailService {
   private async createMailClaimSynchronousGrantContext(
     characterId: number,
   ): Promise<MailClaimSynchronousGrantContext> {
-    const [bagSlotAllocator, inventoryMutationContext] = await Promise.all([
-      createCharacterBagSlotAllocator([characterId]),
-      createCharacterInventoryMutationContext([characterId]),
-    ]);
+    const slotSession = await createInventorySlotSession([characterId]);
+    const bagSlotAllocator = createCharacterBagSlotAllocatorFromSession(slotSession, [characterId]);
+    const inventoryMutationContext = createCharacterInventoryMutationContextFromSession(slotSession);
 
     return {
       bagSlotAllocator,
       inventoryMutationContext,
+      slotSession,
     };
   }
 
@@ -1189,6 +1197,7 @@ class MailService {
       ...(params.equipOptions ? { equipOptions: params.equipOptions } : {}),
       bagSlotAllocator: context.bagSlotAllocator,
       inventoryMutationContext: context.inventoryMutationContext,
+      slotSession: context.slotSession,
       skipInventoryMutexLock: true,
       persistImmediately: true,
     });
@@ -2180,7 +2189,7 @@ class MailService {
       }
     }
 
-    if (hasAttachRewards || effectiveAttachItems.length > 0) {
+    if (hasAttachRewards || effectiveAttachItems.length > 0 || attachInstanceIds.length > 0) {
       mailClaimSynchronousGrantContext = await this.createMailClaimSynchronousGrantContext(characterId);
     }
 
@@ -2251,6 +2260,7 @@ class MailService {
               expectedSourceLocation: 'mail',
               expectedOwnerUserId: userId,
               persistImmediately: true,
+              ...(mailClaimSynchronousGrantContext ? { slotSession: mailClaimSynchronousGrantContext.slotSession } : {}),
             },
           );
           if (!moveResult.success) {

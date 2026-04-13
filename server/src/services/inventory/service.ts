@@ -27,6 +27,7 @@ import type { GeneratedAffix } from "../equipmentService.js";
 import type { SocketedGemEntry } from "../equipmentGrowthRules.js";
 import type { CharacterBagSlotAllocator } from "../shared/characterBagSlotAllocator.js";
 import type { CharacterInventoryMutationContext } from "../shared/characterInventoryMutationContext.js";
+import type { InventorySlotSession } from "../shared/inventorySlotSession.js";
 
 import {
   getInventoryInfo,
@@ -225,6 +226,7 @@ class InventoryService {
       qualityRank?: number | null;
       bagSlotAllocator?: CharacterBagSlotAllocator;
       inventoryMutationContext?: CharacterInventoryMutationContext;
+      slotSession?: InventorySlotSession;
       skipInventoryMutexLock?: boolean;
     } = {},
   ): Promise<{ success: boolean; message: string; itemIds?: number[] }> {

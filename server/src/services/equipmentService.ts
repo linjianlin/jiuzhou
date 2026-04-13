@@ -11,6 +11,7 @@
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { findEmptySlots } from './inventory/index.js';
+import type { SlottedInventoryLocation } from './inventory/shared/types.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import {
   QUALITY_MULTIPLIER_BY_RANK,
@@ -41,16 +42,17 @@ import {
   toRatingAttrKey,
 } from './shared/affixRating.js';
 import { normalizeItemInstanceObtainedFrom } from './shared/itemInstanceSource.js';
-import { tryInsertItemInstanceWithSlot } from './shared/itemInstanceSlotInsert.js';
 import { resolveAffixPoolBySlot } from './shared/affixPoolSlotResolver.js';
 import { roundAffixResultValue } from './shared/affixPrecision.js';
 import {
   bufferCharacterItemInstanceMutations,
+  type BufferedCharacterItemInstanceMutation,
   type JsonValue,
   loadProjectedCharacterItemInstances,
   reserveItemInstanceIds,
-  upsertCharacterItemInstanceSnapshot,
+  tryApplyCharacterItemInstanceMutationsImmediately,
 } from './shared/characterItemInstanceMutationService.js';
+import type { InventorySlotSession } from './shared/inventorySlotSession.js';
 
 // ============================================
 // 类型定义
@@ -769,6 +771,116 @@ export const generateEquipment = async (
  * 2) createEquipmentInstanceTx 仅承载创建逻辑本体，统一通过 query 自动复用事务上下文
  */
 class EquipmentService {
+  /**
+   * 装备实例立即落库 mutation 构建器
+   *
+   * 作用：
+   * - 做什么：把装备实例快照收敛为共享的 item_instance mutation 结构，复用统一的槽位安全立即落库协议。
+   * - 不做什么：不分配槽位、不处理重试策略，调用方必须先准备好候选 snapshot。
+   *
+   * 输入 / 输出：
+   * - 输入：角色ID与已完成字段收敛的装备实例 snapshot。
+   * - 输出：单条 upsert mutation，供 savepoint/事务内立即写库复用。
+   *
+   * 数据流 / 状态流：
+   * - createEquipmentInstanceTx 先分配候选槽位；
+   * - 再通过本方法构建 mutation；
+   * - 最终交给 shared 层的槽位安全立即落库能力处理。
+   *
+   * 复用设计说明：
+   * - 把“装备立即写 item_instance”的 mutation 结构集中到单一出口，避免邮件领取、奖励同步发放各自拼一套对象。
+   * - 后续若还有实例型奖励要立即落库，也能直接复用同一构造协议。
+   *
+   * 关键边界条件与坑点：
+   * 1) `createdAt` 只用于 mutation 排序，必须保持稳定可比；这里单条 mutation 直接使用当前时间即可。
+   * 2) snapshot 必须已经带上最终 `location/location_slot`，否则 shared 层只能按错误目标执行占槽校验。
+   */
+  private buildImmediateCreateMutation(
+    characterId: number,
+    snapshot: {
+      id: number;
+      owner_user_id: number;
+      owner_character_id: number;
+      item_def_id: string;
+      qty: number;
+      quality: string | null;
+      quality_rank: number | null;
+      metadata: null;
+      location: string;
+      location_slot: number | null;
+      equipped_slot: null;
+      strengthen_level: number;
+      refine_level: number;
+      socketed_gems: JsonValue;
+      affixes: JsonValue;
+      identified: boolean;
+      locked: boolean;
+      bind_type: string;
+      bind_owner_user_id: null;
+      bind_owner_character_id: null;
+      random_seed: string;
+      affix_gen_version: number;
+      affix_roll_meta: null;
+      custom_name: null;
+      expire_at: null;
+      obtained_from: string | null;
+      obtained_ref_id: null;
+      created_at: Date;
+    },
+  ): BufferedCharacterItemInstanceMutation {
+    return {
+      opId: `equipment-create:${snapshot.id}:${Date.now()}`,
+      characterId,
+      itemId: snapshot.id,
+      createdAt: Date.now(),
+      kind: 'upsert',
+      snapshot,
+    };
+  }
+
+  private buildBufferedCreateMutation(
+    characterId: number,
+    snapshot: {
+      id: number;
+      owner_user_id: number;
+      owner_character_id: number;
+      item_def_id: string;
+      qty: number;
+      quality: string | null;
+      quality_rank: number | null;
+      metadata: null;
+      location: string;
+      location_slot: number | null;
+      equipped_slot: null;
+      strengthen_level: number;
+      refine_level: number;
+      socketed_gems: JsonValue;
+      affixes: JsonValue;
+      identified: boolean;
+      locked: boolean;
+      bind_type: string;
+      bind_owner_user_id: null;
+      bind_owner_character_id: null;
+      random_seed: string;
+      affix_gen_version: number;
+      affix_roll_meta: null;
+      custom_name: null;
+      expire_at: null;
+      obtained_from: string | null;
+      obtained_ref_id: null;
+      created_at: Date;
+    },
+  ): BufferedCharacterItemInstanceMutation {
+    return {
+      opId: `equipment-create:${snapshot.id}:${Date.now()}`,
+      characterId,
+      itemId: snapshot.id,
+      createdAt: Date.now(),
+      kind: 'upsert',
+      snapshot,
+    };
+  }
+
   // 创建装备实例（自动开启事务）
   @Transactional
   async createEquipmentInstance(
@@ -783,8 +895,10 @@ class EquipmentService {
       obtainedFrom?: string;
       skipInventoryMutexLock?: boolean;
       persistImmediately?: boolean;
+      fallbackOnSlotConflict?: boolean;
+      slotSession?: InventorySlotSession;
     } = {}
-  ): Promise<{ success: boolean; instanceId?: number; message: string }> {
+  ): Promise<{ success: boolean; instanceId?: number; message: string; pendingMutation?: BufferedCharacterItemInstanceMutation }> {
     return this.createEquipmentInstanceTx(userId, characterId, generated, options);
   }
 
@@ -801,10 +915,15 @@ class EquipmentService {
       obtainedFrom?: string;
       skipInventoryMutexLock?: boolean;
       persistImmediately?: boolean;
+      fallbackOnSlotConflict?: boolean;
+      slotSession?: InventorySlotSession;
+      deferBufferedMutation?: boolean;
     } = {}
-  ): Promise<{ success: boolean; instanceId?: number; message: string }> {
+  ): Promise<{ success: boolean; instanceId?: number; message: string; pendingMutation?: BufferedCharacterItemInstanceMutation }> {
     const location = options.location || 'bag';
     const hasExplicitSlot = options.locationSlot !== undefined && options.locationSlot !== null;
+    const shouldFallbackOnSlotConflict = options.fallbackOnSlotConflict === true || !hasExplicitSlot;
+    const slotSession = options.slotSession;
     let locationSlot = options.locationSlot ?? null;
     const obtainedFrom = normalizeItemInstanceObtainedFrom(options.obtainedFrom).value;
 
@@ -812,21 +931,27 @@ class EquipmentService {
       await lockCharacterInventoryMutex(characterId);
     }
 
-    if ((location === 'bag' || location === 'warehouse') && (locationSlot === null || locationSlot === undefined)) {
-      const slots = await findEmptySlots(characterId, location, 6);
-      if (slots.length === 0) {
-        return { success: false, message: '背包已满' };
-      }
-      locationSlot = slots[0];
-    }
-
     if (hasExplicitSlot && (location === 'bag' || location === 'warehouse')) {
-      const occupied = (await loadProjectedCharacterItemInstances(characterId)).some((item) => (
-        item.location === location && item.location_slot === locationSlot
-      ));
+      const slottedLocation: SlottedInventoryLocation = location === 'warehouse' ? 'warehouse' : 'bag';
+      const occupied = slotSession
+        ? !slotSession.isSlotAvailable(characterId, slottedLocation, Number(locationSlot))
+        : (await loadProjectedCharacterItemInstances(characterId)).some((item) => (
+          item.location === location && item.location_slot === locationSlot
+        ));
       if (occupied) {
         return { success: false, message: '目标格子已被占用' };
       }
+    }
+
+    if (!options.persistImmediately && (location === 'bag' || location === 'warehouse') && (locationSlot === null || locationSlot === undefined)) {
+      const slottedLocation: SlottedInventoryLocation = location === 'warehouse' ? 'warehouse' : 'bag';
+      const slots = slotSession
+        ? slotSession.listEmptySlots(characterId, slottedLocation, 6)
+        : await findEmptySlots(characterId, location, 6);
+      if (slots.length === 0) {
+        return { success: false, message: '背包已满' };
+      }
+      locationSlot = slots[0] ?? null;
     }
 
     const [instanceId] = await reserveItemInstanceIds(1);
@@ -834,7 +959,7 @@ class EquipmentService {
       return { success: false, message: '装备创建失败' };
     }
 
-    const snapshot = {
+    const baseSnapshot = {
       id: instanceId,
       owner_user_id: userId,
       owner_character_id: characterId,
@@ -866,18 +991,71 @@ class EquipmentService {
     };
 
     if (options.persistImmediately) {
-      await upsertCharacterItemInstanceSnapshot(snapshot);
+      const maxAttempts = shouldFallbackOnSlotConflict && (location === 'bag' || location === 'warehouse') ? 6 : 1;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        let nextLocationSlot = locationSlot;
+        if ((location === 'bag' || location === 'warehouse') && (nextLocationSlot === null || nextLocationSlot === undefined)) {
+          const slottedLocation: SlottedInventoryLocation = location === 'warehouse' ? 'warehouse' : 'bag';
+          const slots = attempt === 0 && slotSession
+            ? slotSession.listEmptySlots(characterId, slottedLocation, 6)
+            : await findEmptySlots(characterId, location, 6);
+          if (slots.length === 0) {
+            return { success: false, message: '背包已满' };
+          }
+          nextLocationSlot = slots[0] ?? null;
+        }
+
+        const persisted = await tryApplyCharacterItemInstanceMutationsImmediately([
+          this.buildImmediateCreateMutation(characterId, {
+            ...baseSnapshot,
+            location_slot: nextLocationSlot,
+          }),
+        ]);
+
+        if (persisted) {
+          locationSlot = nextLocationSlot;
+          if (slotSession) {
+            slotSession.registerSnapshot({
+              ...baseSnapshot,
+              location_slot: nextLocationSlot,
+            });
+          }
+          return {
+            success: true,
+            instanceId,
+            message: '装备创建成功',
+          };
+        }
+
+        if (!shouldFallbackOnSlotConflict) {
+          return { success: false, message: '目标格子已被占用' };
+        }
+
+        locationSlot = null;
+      }
+
+      return { success: false, message: '背包已满' };
     } else {
-      await bufferCharacterItemInstanceMutations([
-        {
-          opId: `equipment-create:${instanceId}:${Date.now()}`,
-          characterId,
-          itemId: instanceId,
-          createdAt: Date.now(),
-          kind: 'upsert',
-          snapshot,
-        },
-      ]);
+      const pendingMutation = this.buildBufferedCreateMutation(characterId, {
+        ...baseSnapshot,
+        location_slot: locationSlot,
+      });
+      if (options.deferBufferedMutation) {
+        return {
+          success: true,
+          instanceId,
+          message: '装备创建成功',
+          pendingMutation,
+        };
+      }
+      await bufferCharacterItemInstanceMutations([pendingMutation]);
+      if (slotSession) {
+        slotSession.registerSnapshot({
+          ...baseSnapshot,
+          location_slot: locationSlot,
+        });
+      }
     }
 
     return {
