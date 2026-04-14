@@ -39,6 +39,10 @@ export type BufferedCharacterItemInstanceMutation = {
   snapshot: CharacterItemInstanceSnapshot | null;
 };
 
+type LoadProjectedCharacterItemInstanceOptions = {
+  pendingMutations?: readonly BufferedCharacterItemInstanceMutation[];
+};
+
 type ExistingItemInstanceLocationRow = {
   id: number | string;
   owner_character_id: number | string;
@@ -1203,19 +1207,23 @@ export const applyCharacterItemInstanceMutations = (
 
 export const loadProjectedCharacterItemInstances = async (
   characterId: number,
+  options: LoadProjectedCharacterItemInstanceOptions = {},
 ): Promise<CharacterItemInstanceSnapshot[]> => {
-  const [baseSnapshots, mutations] = await Promise.all([
-    loadBaseCharacterItemInstanceSnapshots(characterId),
-    loadCharacterPendingItemInstanceMutations(characterId),
-  ]);
+  const mutations = options.pendingMutations
+    ? [...options.pendingMutations]
+    : await loadCharacterPendingItemInstanceMutations(characterId);
+  const baseSnapshots = await loadBaseCharacterItemInstanceSnapshots(characterId);
   return applyCharacterItemInstanceMutations(baseSnapshots, mutations);
 };
 
 export const loadProjectedCharacterItemInstancesByLocation = async (
   characterId: number,
   location: ItemInstanceLocation,
+  options: LoadProjectedCharacterItemInstanceOptions = {},
 ): Promise<CharacterItemInstanceSnapshot[]> => {
-  const mutations = await loadCharacterPendingItemInstanceMutations(characterId);
+  const mutations = options.pendingMutations
+    ? [...options.pendingMutations]
+    : await loadCharacterPendingItemInstanceMutations(characterId);
   const baseSnapshots = await loadBaseCharacterItemInstanceSnapshotsForProjectedLocation(
     characterId,
     location,
@@ -1228,12 +1236,15 @@ export const loadProjectedCharacterItemInstancesByLocation = async (
 export const loadProjectedCharacterItemInstanceById = async (
   characterId: number,
   itemId: number,
+  options: LoadProjectedCharacterItemInstanceOptions = {},
 ): Promise<CharacterItemInstanceSnapshot | null> => {
   const normalizedItemId = normalizePositiveInt(itemId);
   if (normalizedItemId <= 0) {
     return null;
   }
-  const mutations = await loadCharacterPendingItemInstanceMutations(characterId);
+  const mutations = options.pendingMutations
+    ? [...options.pendingMutations]
+    : await loadCharacterPendingItemInstanceMutations(characterId);
   for (let index = mutations.length - 1; index >= 0; index -= 1) {
     const mutation = mutations[index];
     if (!mutation || mutation.itemId !== normalizedItemId) {

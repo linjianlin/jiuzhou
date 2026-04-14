@@ -51,7 +51,13 @@ import type {
 } from "./shared/types.js";
 import { getInventoryInfo, getInventoryItems } from "./bag.js";
 import { getEquippedSetPieceCountMap } from "./shared/equippedSetCount.js";
-import { loadProjectedCharacterItemInstancesByLocation } from "../shared/characterItemInstanceMutationService.js";
+import {
+  loadCharacterPendingItemInstanceMutations,
+  loadProjectedCharacterItemInstances,
+  loadProjectedCharacterItemInstancesByLocation,
+  type BufferedCharacterItemInstanceMutation,
+  type CharacterItemInstanceSnapshot,
+} from "../shared/characterItemInstanceMutationService.js";
 
 type InventoryItemDefContext = {
   staticDefMap: Map<string, Record<string, unknown>>;
@@ -62,6 +68,37 @@ type InventoryItemDefContext = {
 
 type BuildInventoryItemDefContextOptions = {
   equippedItems?: readonly InventoryItem[];
+  pendingMutations?: readonly BufferedCharacterItemInstanceMutation[];
+};
+
+/**
+ * 单次 projected 全量读取结果按库存位置拆分。
+ *
+ * 作用：
+ * 1. 让背包快照在一次 projected 读取后即可同时复用 bag / equipped / warehouse 三段结果。
+ * 2. 把位置拆分逻辑集中到单一入口，避免多个调用点重复 filter 同一份快照。
+ *
+ * 不做什么：
+ * - 不做排序、不做富化，也不改写实例字段；只负责轻量分桶。
+ *
+ * 关键边界条件与坑点：
+ * 1. 仅识别当前 inventory 读路径会消费的三种 location，其他位置会被忽略。
+ * 2. 返回数组保持输入顺序；展示顺序仍由 `getInventoryItems` 统一排序。
+ */
+const partitionProjectedInventoryItemsByLocation = (
+  projectedItems: readonly CharacterItemInstanceSnapshot[],
+): Record<InventoryLocation, CharacterItemInstanceSnapshot[]> => {
+  const partitioned: Record<InventoryLocation, CharacterItemInstanceSnapshot[]> = {
+    bag: [],
+    warehouse: [],
+    equipped: [],
+  };
+  for (const item of projectedItems) {
+    if (item.location === "bag" || item.location === "warehouse" || item.location === "equipped") {
+      partitioned[item.location].push(item);
+    }
+  }
+  return partitioned;
 };
 
 /**
@@ -191,7 +228,9 @@ const buildInventoryItemDefContext = async (
       setBonusMap.set(setId, normalizedBonuses);
     }
 
-    const rawEquippedSetCountMap = await getEquippedSetPieceCountMap(characterId, options.equippedItems);
+    const rawEquippedSetCountMap = await getEquippedSetPieceCountMap(characterId, options.equippedItems, {
+      pendingMutations: options.pendingMutations,
+    });
     for (const [setId, pieceCount] of rawEquippedSetCountMap.entries()) {
       if (!setIdSet.has(setId)) continue;
       equippedSetCountMap.set(setId, pieceCount);
@@ -353,7 +392,10 @@ export const getInventoryItemsWithDefs = async (
   page: number,
   pageSize: number,
 ): Promise<{ items: InventoryItemWithDef[]; total: number }> => {
-  const result = await getInventoryItems(characterId, location, page, pageSize);
+  const pendingMutations = await loadCharacterPendingItemInstanceMutations(characterId);
+  const result = await getInventoryItems(characterId, location, page, pageSize, {
+    pendingMutations,
+  });
 
   if (result.items.length === 0) {
     return { items: [], total: 0 };
@@ -361,6 +403,7 @@ export const getInventoryItemsWithDefs = async (
 
   const context = await buildInventoryItemDefContext(characterId, result.items, {
     equippedItems: location === 'equipped' ? result.items : undefined,
+    pendingMutations,
   });
   const items = enrichInventoryItemsWithDefs(result.items, context);
 
@@ -392,20 +435,18 @@ export const getBagInventorySnapshot = async (
   bagItems: InventoryItemWithDef[];
   equippedItems: InventoryItemWithDef[];
 }> => {
-  const bagProjectedItemsPromise = loadProjectedCharacterItemInstancesByLocation(characterId, "bag");
-  const equippedProjectedItemsPromise = loadProjectedCharacterItemInstancesByLocation(characterId, "equipped");
-  const warehouseProjectedItemsPromise = loadProjectedCharacterItemInstancesByLocation(characterId, "warehouse");
-
-  const [bagProjectedItems, equippedProjectedItems, warehouseProjectedItems] = await Promise.all([
-    bagProjectedItemsPromise,
-    equippedProjectedItemsPromise,
-    warehouseProjectedItemsPromise,
-  ]);
+  const projectedItems = await loadProjectedCharacterItemInstances(characterId);
+  const {
+    bag: bagProjectedItems,
+    equipped: equippedProjectedItems,
+    warehouse: warehouseProjectedItems,
+  } = partitionProjectedInventoryItemsByLocation(projectedItems);
 
   const [info, bagResult, equippedResult] = await Promise.all([
     getInventoryInfo(characterId, {
       bagProjectedItems,
       warehouseProjectedItems,
+      knownPendingGrantsFlushed: true,
     }),
     getInventoryItems(characterId, "bag", 1, 200, {
       projectedItems: bagProjectedItems,

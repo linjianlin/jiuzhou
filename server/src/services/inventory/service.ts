@@ -89,7 +89,7 @@ class InventoryService {
   }
 
   async getInventoryInfo(characterId: number): Promise<InventoryInfo> {
-    return getInventoryInfo(characterId);
+    return getInventoryInfo(characterId, { knownPendingGrantsFlushed: true });
   }
 
   async getInventoryItems(

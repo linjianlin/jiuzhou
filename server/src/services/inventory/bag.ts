@@ -216,20 +216,25 @@ const mapProjectedSnapshotsToInventoryItems = (
 type GetInventoryInfoOptions = {
   bagProjectedItems?: readonly CharacterItemInstanceSnapshot[];
   warehouseProjectedItems?: readonly CharacterItemInstanceSnapshot[];
+  knownPendingGrantsFlushed?: boolean;
 };
 
 type GetInventoryItemsOptions = {
   projectedItems?: readonly CharacterItemInstanceSnapshot[];
+  pendingMutations?: readonly BufferedCharacterItemInstanceMutation[];
 };
 
 const loadProjectedInventoryItemsByLocation = async (
   characterId: number,
   location: InventoryLocation,
   projectedItems?: readonly CharacterItemInstanceSnapshot[],
+  pendingMutations?: readonly BufferedCharacterItemInstanceMutation[],
 ): Promise<InventoryItem[]> => {
   const resolvedProjectedItems = projectedItems
     ? [...projectedItems]
-    : await loadProjectedCharacterItemInstancesByLocation(characterId, location);
+    : await loadProjectedCharacterItemInstancesByLocation(characterId, location, {
+      pendingMutations,
+    });
   return mapProjectedSnapshotsToInventoryItems(resolvedProjectedItems);
 };
 
@@ -637,7 +642,9 @@ export const getInventoryInfo = async (
     infoPromise,
     bagProjectedItemsPromise,
     warehouseProjectedItemsPromise,
-    loadCharacterPendingItemGrants(characterId),
+    options.knownPendingGrantsFlushed
+      ? Promise.resolve([])
+      : loadCharacterPendingItemGrants(characterId),
   ]);
   const itemDefMap = buildPendingGrantItemDefMap(pendingGrants);
   const projectedBagItems = mapProjectedSnapshotsToInventoryItems(bagProjectedItems);
@@ -699,7 +706,12 @@ export const getInventoryItems = async (
 ): Promise<{ items: InventoryItem[]; total: number }> => {
   if (location === "bag") {
     const rawItems = sortInventoryItemsForDisplay(
-      await loadProjectedInventoryItemsByLocation(characterId, location, options.projectedItems),
+      await loadProjectedInventoryItemsByLocation(
+        characterId,
+        location,
+        options.projectedItems,
+        options.pendingMutations,
+      ),
     );
     const offset = (page - 1) * pageSize;
     return {
@@ -709,7 +721,12 @@ export const getInventoryItems = async (
   }
   if (location === "warehouse" || location === "equipped") {
     const rawItems = sortInventoryItemsForDisplay(
-      await loadProjectedInventoryItemsByLocation(characterId, location, options.projectedItems),
+      await loadProjectedInventoryItemsByLocation(
+        characterId,
+        location,
+        options.projectedItems,
+        options.pendingMutations,
+      ),
     );
     const offset = (page - 1) * pageSize;
     return {

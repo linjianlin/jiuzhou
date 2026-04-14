@@ -18,11 +18,104 @@
  * 2. 缺少静态定义或未配置 `set_id` 的装备必须直接忽略，不能让脏配置污染套装件数。
  */
 
+import { query } from '../../../config/database.js';
 import { getStaticItemDef } from './helpers.js';
-import { loadProjectedCharacterItemInstancesByLocation } from '../../shared/characterItemInstanceMutationService.js';
+import {
+  buildItemInstanceIdArrayParam,
+  loadCharacterPendingItemInstanceMutations,
+  type BufferedCharacterItemInstanceMutation,
+} from '../../shared/characterItemInstanceMutationService.js';
 
 type EquippedItemDefRow = {
+  id?: number;
   item_def_id: string | null;
+  location?: string | null;
+};
+
+const cloneEquippedItemDefRow = (row: EquippedItemDefRow): EquippedItemDefRow => ({
+  id: typeof row.id === 'number' ? row.id : undefined,
+  item_def_id: typeof row.item_def_id === 'string' ? row.item_def_id : null,
+  location: typeof row.location === 'string' ? row.location : null,
+});
+
+/**
+ * 套装件数轻量投影视图。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：仅以 `id / item_def_id / location` 三个最小字段构建 equipped 套装件数所需的 projected 视图。
+ * 2. 做什么：复用 pending mutation，避免 `/items` 为了 `set_equipped_count` 再把整套 equipped snapshot 全字段加载一遍。
+ * 3. 不做什么：不返回完整库存实例，也不参与装备属性、词条或展示字段富化。
+ *
+ * 输入 / 输出：
+ * - 输入：角色 ID、可选的已加载 pending mutations。
+ * - 输出：最终仍处于 `equipped` 位置的轻量行数组。
+ *
+ * 数据流 / 状态流：
+ * pending mutations -> 查询 equipped/相关 itemId 的最小底表行 -> 叠加 mutation 最终位置与 item_def_id -> 过滤出 equipped。
+ *
+ * 关键边界条件与坑点：
+ * 1. 只读取最小字段，调用方不能把返回值当作完整实例使用。
+ * 2. mutation 若把实例移出 equipped，必须在这里被剔除，否则套装件数会被高估。
+ */
+const loadProjectedEquippedItemDefRows = async (
+  characterId: number,
+  pendingMutations: readonly BufferedCharacterItemInstanceMutation[],
+): Promise<EquippedItemDefRow[]> => {
+  const relatedItemIds = pendingMutations.map((mutation) => mutation.itemId);
+  const params = relatedItemIds.length > 0
+    ? [characterId, 'equipped', buildItemInstanceIdArrayParam(relatedItemIds)]
+    : [characterId, 'equipped'];
+  const sql = relatedItemIds.length > 0
+    ? `
+      SELECT id, item_def_id, location
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND (
+          location = $2
+          OR id = ANY($3::bigint[])
+        )
+      ORDER BY id ASC
+    `
+    : `
+      SELECT id, item_def_id, location
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND location = $2
+      ORDER BY id ASC
+    `;
+  const result = await query(sql, params);
+  const rowById = new Map<number, EquippedItemDefRow>();
+  for (const row of result.rows) {
+    const normalizedId = Math.floor(Number((row as { id?: unknown }).id));
+    if (!Number.isFinite(normalizedId) || normalizedId <= 0) {
+      continue;
+    }
+    rowById.set(normalizedId, {
+      id: normalizedId,
+      item_def_id: typeof (row as { item_def_id?: unknown }).item_def_id === 'string'
+        ? (row as { item_def_id?: string }).item_def_id ?? null
+        : null,
+      location: typeof (row as { location?: unknown }).location === 'string'
+        ? (row as { location?: string }).location ?? null
+        : null,
+    });
+  }
+
+  for (const mutation of pendingMutations) {
+    if (mutation.kind === 'delete' || !mutation.snapshot) {
+      rowById.delete(mutation.itemId);
+      continue;
+    }
+    rowById.set(mutation.itemId, {
+      id: mutation.itemId,
+      item_def_id: mutation.snapshot.item_def_id,
+      location: mutation.snapshot.location,
+    });
+  }
+
+  return [...rowById.values()]
+    .filter((row) => row.location === 'equipped')
+    .map((row) => cloneEquippedItemDefRow(row));
 };
 
 /**
@@ -67,9 +160,17 @@ const buildEquippedSetPieceCountMap = (
 export const getEquippedSetPieceCountMap = async (
   characterId: number,
   equippedItems?: readonly EquippedItemDefRow[],
+  options: {
+    pendingMutations?: readonly BufferedCharacterItemInstanceMutation[];
+  } = {},
 ): Promise<Map<string, number>> => {
   const resolvedEquippedItems = equippedItems
     ? [...equippedItems]
-    : await loadProjectedCharacterItemInstancesByLocation(characterId, 'equipped') as EquippedItemDefRow[];
+    : await loadProjectedEquippedItemDefRows(
+      characterId,
+      options.pendingMutations
+        ? [...options.pendingMutations]
+        : await loadCharacterPendingItemInstanceMutations(characterId),
+    );
   return buildEquippedSetPieceCountMap(resolvedEquippedItems);
 };
