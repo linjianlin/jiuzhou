@@ -102,6 +102,7 @@ const itemGrantDeltaLogger = createScopedLogger('characterItemGrant.delta');
 
 let itemGrantFlushTimer: ReturnType<typeof setInterval> | null = null;
 let itemGrantFlushInFlight: Promise<void> | null = null;
+const syncFlushPromiseByCharacterId = new Map<number, Promise<void>>();
 
 const claimItemGrantDeltaLua = `
 local dirtyIndexKey = KEYS[1]
@@ -486,6 +487,84 @@ export const loadCharacterPendingItemGrants = async (
     });
   }
   return pendingGrants;
+};
+
+/**
+ * 同步 flush 指定角色的待发放物品奖励。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把当前角色 Redis 中待 flush 的物品奖励立即落成真实 `item_instance`，供背包/仓库/使用道具等库存交互复用。
+ * 2. 做什么：复用现有 claim -> flush -> finalize / restore 流程，保证与后台定时 flush 的入包规则、堆叠规则、邮件补发规则完全一致。
+ * 3. 不做什么：不改奖励生产侧写入协议，不直接返回奖励列表，也不负责前端展示。
+ *
+ * 输入 / 输出：
+ * - 输入：角色 ID。
+ * - 输出：`Promise<void>`；成功表示当前角色可见的 pending grants 已被尽力结算为真实库存，失败时抛出异常。
+ *
+ * 数据流 / 状态流：
+ * characterId -> 等待同进程中的 flush 任务完成 -> 读取 pending grants -> claim Redis hash -> 事务内真实入包 -> finalize / restore。
+ *
+ * 复用设计说明：
+ * - 同步入口只做“时机前移”，不新增第二套落库逻辑，避免异步 worker 和库存前置 flush 出现规则漂移。
+ * - 以角色 ID 为粒度做同进程串行，避免同一角色并发打开背包/仓库时重复 claim 或重复 flush。
+ *
+ * 关键边界条件与坑点：
+ * 1. 如果后台定时 flush 正在执行，必须先等待其完成，再决定是否还需要本次同步 flush，否则可能读到短暂 inflight 状态。
+ * 2. 一旦 claim 成功但后续 flush 失败，必须走 restore，把 inflight 奖励回滚回主哈希，不能把奖励吞掉。
+ */
+export const flushCharacterPendingItemGrantsNow = async (
+  characterId: number,
+): Promise<void> => {
+  const normalizedCharacterId = Math.floor(Number(characterId));
+  if (!Number.isFinite(normalizedCharacterId) || normalizedCharacterId <= 0) {
+    return;
+  }
+
+  const existingPromise = syncFlushPromiseByCharacterId.get(normalizedCharacterId);
+  if (existingPromise) {
+    await existingPromise;
+    return;
+  }
+
+  const flushPromise = (async () => {
+    if (itemGrantFlushInFlight) {
+      await itemGrantFlushInFlight;
+    }
+
+    const pendingGrants = await loadCharacterPendingItemGrants(normalizedCharacterId);
+    if (pendingGrants.length <= 0) {
+      return;
+    }
+
+    const claimed = await claimCharacterItemGrantDelta(normalizedCharacterId);
+    if (!claimed) {
+      if (itemGrantFlushInFlight) {
+        await itemGrantFlushInFlight;
+      }
+      return;
+    }
+
+    try {
+      const hash = await loadClaimedCharacterItemGrantHash(normalizedCharacterId);
+      const grants = parseClaimedCharacterItemGrantHash(normalizedCharacterId, hash);
+      if (grants.length > 0) {
+        await flushSingleCharacterItemGrants(normalizedCharacterId, grants);
+      }
+      await finalizeCharacterItemGrantDelta(normalizedCharacterId);
+    } catch (error) {
+      await restoreCharacterItemGrantDelta(normalizedCharacterId);
+      throw error;
+    }
+  })();
+
+  syncFlushPromiseByCharacterId.set(normalizedCharacterId, flushPromise);
+  try {
+    await flushPromise;
+  } finally {
+    if (syncFlushPromiseByCharacterId.get(normalizedCharacterId) === flushPromise) {
+      syncFlushPromiseByCharacterId.delete(normalizedCharacterId);
+    }
+  }
 };
 
 const flushSingleCharacterItemGrants = async (

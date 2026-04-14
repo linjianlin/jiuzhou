@@ -627,29 +627,42 @@ export const getInventoryInfo = async (
 // 获取背包物品列表（分页优化）
 // ============================================
 
+/**
+ * 获取可操作的库存实例列表。
+ *
+ * 作用：
+ * 1. 只返回已经进入 projected item instance 视图的真实实例，供背包弹窗、仓库弹窗等可执行操作的 UI 直接消费。
+ * 2. 不把待 flush 的奖励 Delta 混入返回结果，避免前端拿到负数临时 ID 或被提前叠加后的伪数量。
+ *
+ * 输入 / 输出：
+ * - 输入：角色 ID、位置、分页参数。
+ * - 输出：按展示顺序排序后的真实库存实例列表与总数。
+ *
+ * 数据流 / 状态流：
+ * characterId + location -> projected item instance 视图 -> 展示排序 -> 分页返回。
+ *
+ * 复用设计说明：
+ * - 把“可操作列表只暴露真实实例”的约束集中在这里，避免 BagModal / WarehouseModal / 快照查询各自再过滤伪物品。
+ * - 待 flush 奖励仍由 `getInventoryInfo` 参与容量占用统计，列表侧则保持纯实例语义，减少展示态与写入态不一致。
+ *
+ * 关键边界条件与坑点：
+ * 1. 待 flush 奖励不能出现在可点击列表里，否则使用 / 移动 / 上锁等操作会拿到不存在的实例 ID。
+ * 2. 待 flush 可堆叠奖励也不能提前合并进真实实例数量，否则前端会显示出服务端尚不可消费的数量，触发“数量不足”假象。
+ */
 export const getInventoryItems = async (
   characterId: number,
   location: InventoryLocation = "bag",
   page: number = 1,
   pageSize: number = 100,
 ): Promise<{ items: InventoryItem[]; total: number }> => {
-  const info = await loadBaseInventoryInfo(characterId);
   if (location === "bag") {
     const rawItems = sortInventoryItemsForDisplay(
       await loadProjectedInventoryItemsByLocation(characterId, location),
     );
-    const pendingGrants = await loadCharacterPendingItemGrants(characterId);
-    const itemDefMap = buildPendingGrantItemDefMap(pendingGrants);
-    const overlayItems = applyPendingBagGrantOverlay(
-      rawItems,
-      pendingGrants,
-      Number(info.bag_capacity) || 0,
-      itemDefMap,
-    );
     const offset = (page - 1) * pageSize;
     return {
-      items: overlayItems.slice(offset, offset + pageSize),
-      total: overlayItems.length,
+      items: rawItems.slice(offset, offset + pageSize),
+      total: rawItems.length,
     };
   }
   if (location === "warehouse" || location === "equipped") {

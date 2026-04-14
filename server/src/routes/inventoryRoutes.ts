@@ -85,6 +85,10 @@ const parseBodyItemInstanceId = (body: {
 
 
 router.use(requireCharacter);
+router.use(asyncHandler(async (req, _res, next) => {
+  await inventoryService.prepareInventoryInteraction(req.characterId!);
+  next();
+}));
 
 // ============================================
 // 获取背包信息

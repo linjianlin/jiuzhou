@@ -57,6 +57,7 @@ import {
   disassembleEquipment,
   disassembleEquipmentBatch,
 } from "./disassemble.js";
+import { flushCharacterPendingItemGrantsNow } from "../shared/characterItemGrantDeltaService.js";
 import {
   getBagInventorySnapshot,
   getInventoryItemsWithDefs,
@@ -67,6 +68,25 @@ class InventoryService {
   // ============================================
   // 读操作（无需事务）
   // ============================================
+
+  /**
+   * 库存交互前置准备。
+   *
+   * 作用：
+   * 1. 在背包/仓库/使用道具等库存交互开始前，把当前角色待 flush 的奖励同步落成真实库存实例。
+   * 2. 让后续所有库存读写只面对同一套 `item_instance` 权威数据，避免列表展示与实际可操作数量不一致。
+   *
+   * 输入 / 输出：
+   * - 输入：角色 ID。
+   * - 输出：`Promise<void>`；成功后表示当前角色的库存交互可以只依赖真实实例继续执行。
+   *
+   * 关键边界条件与坑点：
+   * 1. 这是非事务 preflight，必须在具体库存事务开始前调用，避免外层业务回滚时提前 finalize 奖励。
+   * 2. 只负责奖励结算前置，不负责角色鉴权与参数校验。
+   */
+  async prepareInventoryInteraction(characterId: number): Promise<void> {
+    await flushCharacterPendingItemGrantsNow(characterId);
+  }
 
   async getInventoryInfo(characterId: number): Promise<InventoryInfo> {
     return getInventoryInfo(characterId);
