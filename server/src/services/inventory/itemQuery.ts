@@ -60,6 +60,10 @@ type InventoryItemDefContext = {
   setNameMap: Map<string, string>;
 };
 
+type BuildInventoryItemDefContextOptions = {
+  equippedItems?: readonly InventoryItem[];
+};
+
 /**
  * 查询角色已装备物品的 item_def_id 列表
  *
@@ -100,6 +104,7 @@ export const getEquippedItemDefIds = async (
 const buildInventoryItemDefContext = async (
   characterId: number,
   sourceItems: InventoryItem[],
+  options: BuildInventoryItemDefContextOptions = {},
 ): Promise<InventoryItemDefContext> => {
   if (sourceItems.length <= 0) {
     return {
@@ -186,7 +191,7 @@ const buildInventoryItemDefContext = async (
       setBonusMap.set(setId, normalizedBonuses);
     }
 
-    const rawEquippedSetCountMap = await getEquippedSetPieceCountMap(characterId);
+    const rawEquippedSetCountMap = await getEquippedSetPieceCountMap(characterId, options.equippedItems);
     for (const [setId, pieceCount] of rawEquippedSetCountMap.entries()) {
       if (!setIdSet.has(setId)) continue;
       equippedSetCountMap.set(setId, pieceCount);
@@ -354,7 +359,9 @@ export const getInventoryItemsWithDefs = async (
     return { items: [], total: 0 };
   }
 
-  const context = await buildInventoryItemDefContext(characterId, result.items);
+  const context = await buildInventoryItemDefContext(characterId, result.items, {
+    equippedItems: location === 'equipped' ? result.items : undefined,
+  });
   const items = enrichInventoryItemsWithDefs(result.items, context);
 
   return { items, total: result.total };
@@ -385,10 +392,27 @@ export const getBagInventorySnapshot = async (
   bagItems: InventoryItemWithDef[];
   equippedItems: InventoryItemWithDef[];
 }> => {
+  const bagProjectedItemsPromise = loadProjectedCharacterItemInstancesByLocation(characterId, "bag");
+  const equippedProjectedItemsPromise = loadProjectedCharacterItemInstancesByLocation(characterId, "equipped");
+  const warehouseProjectedItemsPromise = loadProjectedCharacterItemInstancesByLocation(characterId, "warehouse");
+
+  const [bagProjectedItems, equippedProjectedItems, warehouseProjectedItems] = await Promise.all([
+    bagProjectedItemsPromise,
+    equippedProjectedItemsPromise,
+    warehouseProjectedItemsPromise,
+  ]);
+
   const [info, bagResult, equippedResult] = await Promise.all([
-    getInventoryInfo(characterId),
-    getInventoryItems(characterId, "bag", 1, 200),
-    getInventoryItems(characterId, "equipped", 1, 200),
+    getInventoryInfo(characterId, {
+      bagProjectedItems,
+      warehouseProjectedItems,
+    }),
+    getInventoryItems(characterId, "bag", 1, 200, {
+      projectedItems: bagProjectedItems,
+    }),
+    getInventoryItems(characterId, "equipped", 1, 200, {
+      projectedItems: equippedProjectedItems,
+    }),
   ]);
 
   const sourceItems = [...bagResult.items, ...equippedResult.items];
@@ -400,7 +424,9 @@ export const getBagInventorySnapshot = async (
     };
   }
 
-  const context = await buildInventoryItemDefContext(characterId, sourceItems);
+  const context = await buildInventoryItemDefContext(characterId, sourceItems, {
+    equippedItems: equippedResult.items,
+  });
 
   return {
     info,

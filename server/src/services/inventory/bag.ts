@@ -187,14 +187,50 @@ const mapProjectedSnapshotToInventoryItem = (
   };
 };
 
+/**
+ * projected 快照转库存展示实体。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把共享的 `CharacterItemInstanceSnapshot[]` 一次性映射为 `InventoryItem[]`，供容量统计、列表分页、快照查询复用。
+ * 2. 不做什么：不做排序、不做分页，也不叠加 pending grant overlay；这些行为由上层查询入口决定。
+ *
+ * 输入 / 输出：
+ * - 输入：同一位置下的 projected 实例快照数组。
+ * - 输出：可直接参与库存展示与计数的 `InventoryItem[]`。
+ *
+ * 数据流 / 状态流：
+ * projected snapshot -> 字段映射 -> InventoryItem 列表。
+ *
+ * 复用设计说明：
+ * - 让 `getInventoryInfo`、`getInventoryItems`、`getBagInventorySnapshot` 共享同一份映射逻辑，避免每个入口各自 map 一遍。
+ * - 后续如 InventoryItem 展示字段扩展，只需维护这里与 `mapProjectedSnapshotToInventoryItem` 的单一入口。
+ *
+ * 关键边界条件与坑点：
+ * 1. 这里只做结构转换，不会保证 location 已经正确过滤；调用方必须传入目标位置的快照。
+ * 2. 返回数组保持输入顺序，若要用于 UI 展示，仍需额外经过排序函数，避免把 DB/id 顺序直接暴露给前端。
+ */
+const mapProjectedSnapshotsToInventoryItems = (
+  snapshots: readonly CharacterItemInstanceSnapshot[],
+): InventoryItem[] => snapshots.map((snapshot) => mapProjectedSnapshotToInventoryItem(snapshot));
+
+type GetInventoryInfoOptions = {
+  bagProjectedItems?: readonly CharacterItemInstanceSnapshot[];
+  warehouseProjectedItems?: readonly CharacterItemInstanceSnapshot[];
+};
+
+type GetInventoryItemsOptions = {
+  projectedItems?: readonly CharacterItemInstanceSnapshot[];
+};
+
 const loadProjectedInventoryItemsByLocation = async (
   characterId: number,
   location: InventoryLocation,
+  projectedItems?: readonly CharacterItemInstanceSnapshot[],
 ): Promise<InventoryItem[]> => {
-  const projectedItems = await loadProjectedCharacterItemInstances(characterId);
-  return projectedItems
-    .filter((item) => item.location === location)
-    .map((item) => mapProjectedSnapshotToInventoryItem(item));
+  const resolvedProjectedItems = projectedItems
+    ? [...projectedItems]
+    : await loadProjectedCharacterItemInstancesByLocation(characterId, location);
+  return mapProjectedSnapshotsToInventoryItems(resolvedProjectedItems);
 };
 
 const buildItemInstanceMutationOpId = (
@@ -588,19 +624,24 @@ const applyPendingBagGrantOverlay = (
 
 export const getInventoryInfo = async (
   characterId: number,
+  options: GetInventoryInfoOptions = {},
 ): Promise<InventoryInfo> => {
-  const info = await loadBaseInventoryInfo(characterId);
-  const [projectedItems, pendingGrants] = await Promise.all([
-    loadProjectedCharacterItemInstances(characterId),
+  const infoPromise = loadBaseInventoryInfo(characterId);
+  const bagProjectedItemsPromise = options.bagProjectedItems
+    ? Promise.resolve([...options.bagProjectedItems])
+    : loadProjectedCharacterItemInstancesByLocation(characterId, "bag");
+  const warehouseProjectedItemsPromise = options.warehouseProjectedItems
+    ? Promise.resolve([...options.warehouseProjectedItems])
+    : loadProjectedCharacterItemInstancesByLocation(characterId, "warehouse");
+  const [info, bagProjectedItems, warehouseProjectedItems, pendingGrants] = await Promise.all([
+    infoPromise,
+    bagProjectedItemsPromise,
+    warehouseProjectedItemsPromise,
     loadCharacterPendingItemGrants(characterId),
   ]);
   const itemDefMap = buildPendingGrantItemDefMap(pendingGrants);
-  const projectedBagItems = projectedItems
-    .filter((item) => item.location === "bag")
-    .map((item) => mapProjectedSnapshotToInventoryItem(item));
-  const projectedWarehouseItems = projectedItems
-    .filter((item) => item.location === "warehouse")
-    .map((item) => mapProjectedSnapshotToInventoryItem(item));
+  const projectedBagItems = mapProjectedSnapshotsToInventoryItems(bagProjectedItems);
+  const projectedWarehouseItems = mapProjectedSnapshotsToInventoryItems(warehouseProjectedItems);
   if (pendingGrants.length <= 0) {
     return {
       ...info,
@@ -654,10 +695,11 @@ export const getInventoryItems = async (
   location: InventoryLocation = "bag",
   page: number = 1,
   pageSize: number = 100,
+  options: GetInventoryItemsOptions = {},
 ): Promise<{ items: InventoryItem[]; total: number }> => {
   if (location === "bag") {
     const rawItems = sortInventoryItemsForDisplay(
-      await loadProjectedInventoryItemsByLocation(characterId, location),
+      await loadProjectedInventoryItemsByLocation(characterId, location, options.projectedItems),
     );
     const offset = (page - 1) * pageSize;
     return {
@@ -667,7 +709,7 @@ export const getInventoryItems = async (
   }
   if (location === "warehouse" || location === "equipped") {
     const rawItems = sortInventoryItemsForDisplay(
-      await loadProjectedInventoryItemsByLocation(characterId, location),
+      await loadProjectedInventoryItemsByLocation(characterId, location, options.projectedItems),
     );
     const offset = (page - 1) * pageSize;
     return {

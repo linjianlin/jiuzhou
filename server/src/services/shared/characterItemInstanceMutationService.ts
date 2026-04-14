@@ -1003,6 +1003,185 @@ export const loadBaseCharacterItemInstanceSnapshots = async (
     .filter((snapshot): snapshot is CharacterItemInstanceSnapshot => snapshot !== null);
 };
 
+/**
+ * 按指定条件加载库存实例快照。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：复用统一的 item_instance -> CharacterItemInstanceSnapshot 映射逻辑，避免按位置 / 按 ID 查询各自复制整段 SQL 映射代码。
+ * 2. 不做什么：不叠加 Redis 中的 pending mutation，也不做位置过滤后的业务判定；这里只负责底表快照读取。
+ *
+ * 输入 / 输出：
+ * - 输入：完整 SQL 与参数数组。
+ * - 输出：标准化后的 `CharacterItemInstanceSnapshot[]`。
+ *
+ * 数据流 / 状态流：
+ * SQL 查询 -> `mapRowToSnapshot` 标准化 -> 过滤脏行 -> 返回只读快照数组。
+ *
+ * 复用设计说明：
+ * - 把快照行映射收敛到单一入口后，按位置 / 按 ID / 带 mutation 关联 ID 的查询都能复用，减少重复维护。
+ * - 后续如果 item_instance 字段扩展，只需在一处同步映射规则，不会遗漏局部查询分支。
+ *
+ * 关键边界条件与坑点：
+ * 1. SQL 必须显式带上 `owner_character_id` 约束，否则会把其他角色实例混入当前投影视图。
+ * 2. 返回结果仍是底表快照，不代表最终 projected 结果；调用方若需要 pending overlay，必须继续叠加 mutation。
+ */
+const loadCharacterItemInstanceSnapshotsByQuery = async (
+  sql: string,
+  params: ReadonlyArray<number | string | string[]>,
+): Promise<CharacterItemInstanceSnapshot[]> => {
+  const result = await query(sql, [...params]);
+  return result.rows
+    .map((row) => mapRowToSnapshot(row as Record<string, JsonValue | Date | number | string | boolean | null>))
+    .filter((snapshot): snapshot is CharacterItemInstanceSnapshot => snapshot !== null);
+};
+
+const loadBaseCharacterItemInstanceSnapshotsByLocation = async (
+  characterId: number,
+  location: ItemInstanceLocation,
+): Promise<CharacterItemInstanceSnapshot[]> => {
+  const normalizedCharacterId = normalizePositiveInt(characterId);
+  if (normalizedCharacterId <= 0) return [];
+  return loadCharacterItemInstanceSnapshotsByQuery(
+    `
+      SELECT
+        id,
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        metadata,
+        location,
+        location_slot,
+        equipped_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        affixes,
+        identified,
+        locked,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        random_seed,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        created_at
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND location = $2
+      ORDER BY id ASC
+    `,
+    [normalizedCharacterId, location],
+  );
+};
+
+const loadBaseCharacterItemInstanceSnapshotsForProjectedLocation = async (
+  characterId: number,
+  location: ItemInstanceLocation,
+  relatedItemIds: readonly number[],
+): Promise<CharacterItemInstanceSnapshot[]> => {
+  const normalizedCharacterId = normalizePositiveInt(characterId);
+  if (normalizedCharacterId <= 0) return [];
+  if (relatedItemIds.length <= 0) {
+    return loadBaseCharacterItemInstanceSnapshotsByLocation(normalizedCharacterId, location);
+  }
+  return loadCharacterItemInstanceSnapshotsByQuery(
+    `
+      SELECT
+        id,
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        metadata,
+        location,
+        location_slot,
+        equipped_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        affixes,
+        identified,
+        locked,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        random_seed,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        created_at
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND (
+          location = $2
+          OR id = ANY($3::bigint[])
+        )
+      ORDER BY id ASC
+    `,
+    [normalizedCharacterId, location, buildItemInstanceIdArrayParam(relatedItemIds)],
+  );
+};
+
+const loadBaseCharacterItemInstanceSnapshotById = async (
+  characterId: number,
+  itemId: number,
+): Promise<CharacterItemInstanceSnapshot | null> => {
+  const normalizedCharacterId = normalizePositiveInt(characterId);
+  const normalizedItemId = normalizePositiveInt(itemId);
+  if (normalizedCharacterId <= 0 || normalizedItemId <= 0) return null;
+  const rows = await loadCharacterItemInstanceSnapshotsByQuery(
+    `
+      SELECT
+        id,
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        metadata,
+        location,
+        location_slot,
+        equipped_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        affixes,
+        identified,
+        locked,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        random_seed,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        created_at
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND id = $2
+      LIMIT 1
+    `,
+    [normalizedCharacterId, normalizedItemId],
+  );
+  return rows[0] ? cloneSnapshot(rows[0]) : null;
+};
+
 export const applyCharacterItemInstanceMutations = (
   baseSnapshots: readonly CharacterItemInstanceSnapshot[],
   mutations: readonly BufferedCharacterItemInstanceMutation[],
@@ -1036,7 +1215,13 @@ export const loadProjectedCharacterItemInstancesByLocation = async (
   characterId: number,
   location: ItemInstanceLocation,
 ): Promise<CharacterItemInstanceSnapshot[]> => {
-  const projectedItems = await loadProjectedCharacterItemInstances(characterId);
+  const mutations = await loadCharacterPendingItemInstanceMutations(characterId);
+  const baseSnapshots = await loadBaseCharacterItemInstanceSnapshotsForProjectedLocation(
+    characterId,
+    location,
+    mutations.map((mutation) => mutation.itemId),
+  );
+  const projectedItems = applyCharacterItemInstanceMutations(baseSnapshots, mutations);
   return projectedItems.filter((item) => item.location === location);
 };
 
@@ -1044,9 +1229,22 @@ export const loadProjectedCharacterItemInstanceById = async (
   characterId: number,
   itemId: number,
 ): Promise<CharacterItemInstanceSnapshot | null> => {
-  const projectedItems = await loadProjectedCharacterItemInstances(characterId);
-  const target = projectedItems.find((item) => item.id === itemId);
-  return target ? cloneSnapshot(target) : null;
+  const normalizedItemId = normalizePositiveInt(itemId);
+  if (normalizedItemId <= 0) {
+    return null;
+  }
+  const mutations = await loadCharacterPendingItemInstanceMutations(characterId);
+  for (let index = mutations.length - 1; index >= 0; index -= 1) {
+    const mutation = mutations[index];
+    if (!mutation || mutation.itemId !== normalizedItemId) {
+      continue;
+    }
+    if (mutation.kind === 'delete' || !mutation.snapshot) {
+      return null;
+    }
+    return cloneSnapshot(mutation.snapshot);
+  }
+  return loadBaseCharacterItemInstanceSnapshotById(characterId, normalizedItemId);
 };
 
 export const bufferCharacterItemInstanceMutations = async (

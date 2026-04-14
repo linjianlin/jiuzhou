@@ -85,16 +85,27 @@ const parseBodyItemInstanceId = (body: {
 
 
 router.use(requireCharacter);
-router.use(asyncHandler(async (req, _res, next) => {
+
+/**
+ * 库存实体态前置准备。
+ *
+ * 作用：
+ * 1. 在真正依赖“已落成真实实例”的读写路由前，同步把待 flush 奖励转成可见、可操作的库存实例。
+ * 2. 避免背包容量、物品列表与后续可点击操作看到的库存真相不一致。
+ *
+ * 不做什么：
+ * - 不挂到纯配方/纯预览类接口，避免无意义地为只读辅助查询触发库存落库。
+ */
+const prepareInventoryConcreteState = asyncHandler(async (req, _res, next) => {
   await inventoryService.prepareInventoryInteraction(req.characterId!);
   next();
-}));
+});
 
 // ============================================
 // 获取背包信息
 // GET /api/inventory/info
 // ============================================
-router.get('/info', asyncHandler(async (req, res) => {
+router.get('/info', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const info = await inventoryService.getInventoryInfo(characterId);
@@ -105,7 +116,7 @@ router.get('/info', asyncHandler(async (req, res) => {
 // 获取背包弹窗快照
 // GET /api/inventory/bag/snapshot
 // ============================================
-router.get('/bag/snapshot', asyncHandler(async (req, res) => {
+router.get('/bag/snapshot', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const snapshot = await inventoryService.getBagInventorySnapshot(characterId);
@@ -116,7 +127,7 @@ router.get('/bag/snapshot', asyncHandler(async (req, res) => {
 // 获取背包物品列表
 // GET /api/inventory/items?location=bag&page=1&pageSize=100
 // ============================================
-router.get('/items', asyncHandler(async (req, res) => {
+router.get('/items', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const location = parseNonEmptyText(getSingleQueryValue(req.query.location)) ?? 'bag';
@@ -152,7 +163,7 @@ router.get('/craft/recipes', asyncHandler(async (req, res) => {
 // POST /api/inventory/craft/execute
 // Body: { recipeId: string, times?: number }
 // ============================================
-router.post('/craft/execute', asyncHandler(async (req, res) => {
+router.post('/craft/execute', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const recipeId = parseNonEmptyText(typeof req.body?.recipeId === 'string' ? req.body.recipeId : undefined);
     const parsedTimes = req.body?.times === undefined || req.body?.times === null ? undefined : parsePositiveInt(req.body.times);
@@ -199,7 +210,7 @@ router.get('/gem/convert/options', asyncHandler(async (req, res) => {
 // POST /api/inventory/gem/convert
 // Body: { selectedGemItemIds: number[], times?: number }（必须手动选择2个宝石）
 // ============================================
-router.post('/gem/convert', asyncHandler(async (req, res) => {
+router.post('/gem/convert', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -229,7 +240,7 @@ router.post('/gem/convert', asyncHandler(async (req, res) => {
 // POST /api/inventory/gem/synthesize
 // Body: { recipeId: string, times?: number }
 // ============================================
-router.post('/gem/synthesize', asyncHandler(async (req, res) => {
+router.post('/gem/synthesize', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -260,7 +271,7 @@ router.post('/gem/synthesize', asyncHandler(async (req, res) => {
 // POST /api/inventory/gem/synthesize/batch
 // Body: { gemType: string, targetLevel: number, sourceLevel?: number, seriesKey?: string }
 // ============================================
-router.post('/gem/synthesize/batch', asyncHandler(async (req, res) => {
+router.post('/gem/synthesize/batch', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -298,7 +309,7 @@ router.post('/gem/synthesize/batch', asyncHandler(async (req, res) => {
 // 移动物品
 // POST /api/inventory/move
 // ============================================
-router.post('/move', asyncHandler(async (req, res) => {
+router.post('/move', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const { itemId, targetLocation, targetSlot } = req.body;
@@ -328,7 +339,7 @@ router.post('/move', asyncHandler(async (req, res) => {
     sendResult(res, result);
 }));
 
-router.post('/use', asyncHandler(async (req, res) => {
+router.post('/use', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -401,7 +412,7 @@ router.post('/use', asyncHandler(async (req, res) => {
 // POST /api/inventory/equip
 // Body: { itemId: number }
 // ============================================
-router.post('/equip', asyncHandler(async (req, res) => {
+router.post('/equip', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -424,7 +435,7 @@ router.post('/equip', asyncHandler(async (req, res) => {
 // POST /api/inventory/unequip
 // Body: { itemId: number, targetLocation?: 'bag' | 'warehouse' }
 // ============================================
-router.post('/unequip', asyncHandler(async (req, res) => {
+router.post('/unequip', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -454,7 +465,7 @@ router.post('/unequip', asyncHandler(async (req, res) => {
 // POST /api/inventory/enhance
 // Body: { itemId: number }
 // ============================================
-router.post('/enhance', asyncHandler(async (req, res) => {
+router.post('/enhance', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
     const parsedItemId = parseBodyItemInstanceId(
@@ -486,7 +497,7 @@ router.post('/enhance', asyncHandler(async (req, res) => {
 // POST /api/inventory/refine
 // Body: { itemId: number }
 // ============================================
-router.post('/refine', asyncHandler(async (req, res) => {
+router.post('/refine', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
     const parsedItemId = parseBodyItemInstanceId(
@@ -561,7 +572,7 @@ router.post('/reroll-affixes/pool-preview', asyncHandler(async (req, res) => {
 // POST /api/inventory/reroll-affixes
 // Body: { itemId: number, lockIndexes?: number[] }
 // ============================================
-router.post('/reroll-affixes', asyncHandler(async (req, res) => {
+router.post('/reroll-affixes', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -603,7 +614,7 @@ router.post('/reroll-affixes', asyncHandler(async (req, res) => {
 // POST /api/inventory/socket
 // Body: { itemId: number, gemItemId: number, slot?: number }
 // ============================================
-router.post('/socket', asyncHandler(async (req, res) => {
+router.post('/socket', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -680,7 +691,7 @@ router.post('/disassemble/preview', asyncHandler(async (req, res) => {
 // POST /api/inventory/disassemble
 // Body: { itemId: number, qty: number }
 // ============================================
-router.post('/disassemble', asyncHandler(async (req, res) => {
+router.post('/disassemble', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -707,7 +718,7 @@ router.post('/disassemble', asyncHandler(async (req, res) => {
 // POST /api/inventory/disassemble/batch
 // Body: { items: Array<{ itemId: number; qty: number }> }
 // ============================================
-router.post('/disassemble/batch', asyncHandler(async (req, res) => {
+router.post('/disassemble/batch', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -740,7 +751,7 @@ router.post('/disassemble/batch', asyncHandler(async (req, res) => {
 // 丢弃/删除物品
 // POST /api/inventory/remove
 // ============================================
-router.post('/remove', asyncHandler(async (req, res) => {
+router.post('/remove', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const { qty } = req.body;
@@ -764,7 +775,7 @@ router.post('/remove', asyncHandler(async (req, res) => {
 // POST /api/inventory/remove/batch
 // Body: { itemIds: number[] }
 // ============================================
-router.post('/remove/batch', asyncHandler(async (req, res) => {
+router.post('/remove/batch', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const { itemIds } = req.body as { itemIds?: unknown };
@@ -785,7 +796,7 @@ router.post('/remove/batch', asyncHandler(async (req, res) => {
 // 整理背包
 // POST /api/inventory/sort
 // ============================================
-router.post('/sort', asyncHandler(async (req, res) => {
+router.post('/sort', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const { location } = req.body;
@@ -810,7 +821,7 @@ router.post('/expand', asyncHandler(async (req, res) => {
 // 锁定/解锁物品
 // POST /api/inventory/lock
 // ============================================
-router.post('/lock', asyncHandler(async (req, res) => {
+router.post('/lock', prepareInventoryConcreteState, asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const { locked } = req.body;
