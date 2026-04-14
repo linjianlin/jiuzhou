@@ -1,10 +1,6 @@
 import type { AxiosRequestConfig } from 'axios';
 import api from './core';
-import { SILENT_API_REQUEST_CONFIG } from './requestConfig';
-import type {
-  CaptchaResponse,
-  UnifiedCaptchaPayload,
-} from './auth-character';
+import type { TencentCaptchaVerifyPayload } from './auth-character';
 import type { PartnerDisplayDto, PartnerTechniqueDetailResponse } from './partner';
 import type { GrantedRewardResultDto } from '../reward';
 
@@ -143,7 +139,7 @@ export const buyMarketListing = (
     listingId: number;
     qty: number;
     buyTicket: string;
-  },
+  } & Partial<TencentCaptchaVerifyPayload>,
   requestConfig?: AxiosRequestConfig,
 ): Promise<{ success: boolean; message: string }> => {
   return api.post('/market/buy', body, requestConfig);
@@ -192,7 +188,7 @@ export const buyPartnerMarketListing = (
   body: {
     listingId: number;
     buyTicket: string;
-  },
+  } & Partial<TencentCaptchaVerifyPayload>,
   requestConfig?: AxiosRequestConfig,
 ): Promise<{ success: boolean; message: string }> => {
   return api.post('/market/partner/buy', body, requestConfig);
@@ -213,28 +209,6 @@ export const getMarketPartnerTechniqueDetail = (
     params: { listingId, techniqueId },
   });
 };
-
-export interface MarketPurchaseCaptchaVerifyResponse {
-  success: boolean;
-  message?: string;
-  data?: {
-    passExpiresAt: number;
-  };
-}
-
-export const getMarketPurchaseCaptcha = (): Promise<CaptchaResponse> => {
-  return api.get('/market/captcha', SILENT_API_REQUEST_CONFIG);
-};
-
-export const verifyMarketPurchaseCaptcha = (
-  payload: UnifiedCaptchaPayload & {
-    scene?: 'item' | 'partner';
-    listingId?: number;
-  },
-): Promise<MarketPurchaseCaptchaVerifyResponse> => {
-  return api.post('/market/captcha/verify', payload, SILENT_API_REQUEST_CONFIG);
-};
-
 
 // ============================================
 // 邮件相关接口

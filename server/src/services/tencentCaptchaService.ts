@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：封装腾讯云天御 DescribeCaptchaResult API 调用，统一完成前端验证码票据的服务端二次校验。
- * 2. 做什么：把天御 SDK 初始化、请求参数组装、响应码判断收敛到单一模块，避免多个路由各自拼装 SDK 调用。
+ * 2. 做什么：把天御 SDK 初始化、请求参数组装、响应码判断收敛到单一模块，支持 auth 全局验证码与坊市购买专用验证码复用同一套底层校验逻辑。
  * 3. 不做什么：不处理 HTTP 请求，不生成前端验证码，也不管理 Redis 状态。
  *
  * 输入/输出：
@@ -19,29 +19,38 @@
  */
 import { captcha as tencentCaptcha } from 'tencentcloud-sdk-nodejs-captcha';
 
-import { tencentCaptchaConfig } from '../config/captchaConfig.js';
+import {
+    marketPurchaseTencentCaptchaConfig,
+    tencentCaptchaConfig,
+    type TencentCaptchaRuntimeConfig,
+} from '../config/captchaConfig.js';
 import { BusinessError } from '../middleware/BusinessError.js';
 
 const CaptchaClient = tencentCaptcha.v20190722.Client;
 type CaptchaClientInstance = InstanceType<typeof CaptchaClient>;
 
-let clientInstance: CaptchaClientInstance | null = null;
+const clientInstanceMap = new Map<string, CaptchaClientInstance>();
 
-const getClient = (): CaptchaClientInstance => {
-    if (clientInstance) {
-        return clientInstance;
+const buildClientCacheKey = (config: TencentCaptchaRuntimeConfig): string => {
+    return `${String(config.secretId)}:${String(config.secretKey)}`;
+};
+
+const getClient = (config: TencentCaptchaRuntimeConfig, serviceLabel: string): CaptchaClientInstance => {
+    const cacheKey = buildClientCacheKey(config);
+    const cachedClient = clientInstanceMap.get(cacheKey);
+    if (cachedClient) {
+        return cachedClient;
     }
 
-    const { secretId, secretKey } = tencentCaptchaConfig;
-    if (!secretId || !secretKey) {
-        throw new BusinessError('天御验证码服务未正确配置');
+    if (!config.secretId || !config.secretKey) {
+        throw new BusinessError(`${serviceLabel}未正确配置`);
     }
 
-    clientInstance = new CaptchaClient({
-        credential: { secretId, secretKey },
+    const client = new CaptchaClient({
+        credential: { secretId: config.secretId, secretKey: config.secretKey },
     });
-
-    return clientInstance;
+    clientInstanceMap.set(cacheKey, client);
+    return client;
 };
 
 export interface TencentCaptchaVerifyInput {
@@ -54,15 +63,18 @@ export interface TencentCaptchaVerifyInput {
  * 校验天御验证码票据
  * 调用腾讯云 DescribeCaptchaResult 接口，CaptchaCode === 1 为通过，其余均抛 BusinessError
  */
-export const verifyTencentCaptchaTicket = async (
+const verifyTencentCaptchaTicketByConfig = async (
     input: TencentCaptchaVerifyInput,
+    config: TencentCaptchaRuntimeConfig,
+    serviceLabel: string,
+    requireSafeEvilLevel: boolean,
 ): Promise<void> => {
-    const { appId, appSecretKey } = tencentCaptchaConfig;
+    const { appId, appSecretKey } = config;
     if (!appId || !appSecretKey) {
-        throw new BusinessError('天御验证码服务未正确配置');
+        throw new BusinessError(`${serviceLabel}未正确配置`);
     }
 
-    const client = getClient();
+    const client = getClient(config, serviceLabel);
     const response = await client.DescribeCaptchaResult({
         CaptchaType: 9,
         Ticket: input.ticket,
@@ -77,4 +89,25 @@ export const verifyTencentCaptchaTicket = async (
             `验证码校验失败：${response.CaptchaMsg ?? '未知错误'}`,
         );
     }
+
+    if (requireSafeEvilLevel && Number(response.EvilLevel ?? 0) !== 0) {
+        throw new BusinessError('验证码校验未通过，请重试');
+    }
+};
+
+export const verifyTencentCaptchaTicket = async (
+    input: TencentCaptchaVerifyInput,
+): Promise<void> => {
+    await verifyTencentCaptchaTicketByConfig(input, tencentCaptchaConfig, '天御验证码服务', false);
+};
+
+export const verifyMarketPurchaseTencentCaptchaTicket = async (
+    input: TencentCaptchaVerifyInput,
+): Promise<void> => {
+    await verifyTencentCaptchaTicketByConfig(
+        input,
+        marketPurchaseTencentCaptchaConfig,
+        '坊市购买天御验证码服务',
+        true,
+    );
 };
