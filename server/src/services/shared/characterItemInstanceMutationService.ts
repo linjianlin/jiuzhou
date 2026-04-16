@@ -129,7 +129,28 @@ const isAutoSlotResolutionMutation = (
   if (mutation.kind !== 'upsert' || !mutation.snapshot) {
     return false;
   }
-  if (mutation.slotResolution?.mode !== 'auto') {
+  if (mutation.slotResolution?.mode === 'auto') {
+    return true;
+  }
+  if (!isLegacyAutoSlotResolutionMutation(mutation)) {
+    return false;
+  }
+  return mutation.snapshot.location === 'bag' || mutation.snapshot.location === 'warehouse';
+};
+
+const isLegacyAutoSlotResolutionMutation = (
+  mutation: BufferedCharacterItemInstanceMutation,
+): boolean => {
+  if (mutation.kind !== 'upsert' || !mutation.snapshot) {
+    return false;
+  }
+  if (mutation.slotResolution !== undefined) {
+    return false;
+  }
+  if (getItemInstanceMutationPrefix(mutation.opId) !== 'equipment-create') {
+    return false;
+  }
+  if (mutation.snapshot.obtained_from !== 'battle_drop') {
     return false;
   }
   return mutation.snapshot.location === 'bag' || mutation.snapshot.location === 'warehouse';
@@ -809,7 +830,8 @@ const cloneSnapshot = (snapshot: CharacterItemInstanceSnapshot): CharacterItemIn
 const cloneMutation = (mutation: BufferedCharacterItemInstanceMutation): BufferedCharacterItemInstanceMutation => ({
   ...mutation,
   snapshot: mutation.snapshot ? cloneSnapshot(mutation.snapshot) : null,
-  slotResolution: normalizeSlotResolution(mutation.slotResolution),
+  slotResolution: normalizeSlotResolution(mutation.slotResolution)
+    ?? (isLegacyAutoSlotResolutionMutation(mutation) ? { mode: 'auto' } : undefined),
 });
 
 const mapRowToSnapshot = (row: Record<string, JsonValue | Date | number | string | boolean | null>): CharacterItemInstanceSnapshot | null => {
@@ -1337,6 +1359,17 @@ export const loadCharacterPendingItemInstanceMutations = async (
     .sort((left, right) => left.createdAt - right.createdAt || left.opId.localeCompare(right.opId));
 };
 
+const hasCharacterInflightItemInstanceMutations = async (
+  characterId: number,
+): Promise<boolean> => {
+  const normalizedCharacterId = normalizePositiveInt(characterId);
+  if (normalizedCharacterId <= 0) {
+    return false;
+  }
+  const count = await redis.hlen(buildInflightItemInstanceMutationKey(normalizedCharacterId));
+  return Number(count) > 0;
+};
+
 export const flushCharacterPendingItemInstanceMutationsNow = async (
   characterId: number,
 ): Promise<void> => {
@@ -1352,10 +1385,6 @@ export const flushCharacterPendingItemInstanceMutationsNow = async (
   }
 
   const flushPromise = (async () => {
-    if (itemInstanceMutationFlushInFlight) {
-      await itemInstanceMutationFlushInFlight;
-    }
-
     const pendingMutations = await loadCharacterPendingItemInstanceMutations(normalizedCharacterId);
     if (pendingMutations.length <= 0) {
       return;
@@ -1363,7 +1392,7 @@ export const flushCharacterPendingItemInstanceMutationsNow = async (
 
     const claimed = await claimCharacterItemInstanceMutations(normalizedCharacterId);
     if (!claimed) {
-      if (itemInstanceMutationFlushInFlight) {
+      if (await hasCharacterInflightItemInstanceMutations(normalizedCharacterId) && itemInstanceMutationFlushInFlight) {
         await itemInstanceMutationFlushInFlight;
       }
       return;

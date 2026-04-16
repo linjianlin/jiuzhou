@@ -29,6 +29,11 @@ import test from 'node:test';
 import * as database from '../../config/database.js';
 import * as autoDisassembleRewardService from '../autoDisassembleRewardService.js';
 import { battleDropService, type BattleRewardSettlementPlan } from '../battleDropService.js';
+import { itemService } from '../itemService.js';
+import * as inventoryMutex from '../inventoryMutex.js';
+import * as inventorySlotSessionModule from '../shared/inventorySlotSession.js';
+import * as characterBagSlotAllocatorModule from '../shared/characterBagSlotAllocator.js';
+import * as characterInventoryMutationContextModule from '../shared/characterInventoryMutationContext.js';
 import * as characterRewardSettlement from '../shared/characterRewardSettlement.js';
 import * as characterRewardTargetLock from '../shared/characterRewardTargetLock.js';
 import * as slowOperationLogger from '../../utils/slowOperationLogger.js';
@@ -244,6 +249,121 @@ test('battleDropService.settleBattleRewardPlan: 应按角色批量记录收集�
           count: 3,
         },
       ],
+    },
+  ]);
+});
+
+test('battleDropService.settleBattleRewardPlan: battle_drop 装备应同步入包而不是写异步 delta', async (t) => {
+  const plan: BattleRewardSettlementPlan = {
+    totalExp: 12,
+    totalSilver: 0,
+    drops: [
+      {
+        receiverCharacterId: 1001,
+        receiverUserId: 101,
+        receiverFuyuan: 8,
+        itemDefId: 'weapon_test_blade',
+        quantity: 1,
+        bindType: 'bound',
+      },
+    ],
+    perPlayerRewards: [
+      {
+        characterId: 1001,
+        userId: 101,
+        exp: 12,
+        silver: 0,
+        drops: [],
+      },
+    ],
+  };
+
+  const mockedSlotSession = {
+    getSlottedCapacity: () => 20,
+    getPlainAutoStackRows: () => [],
+    applyPlainAutoStackDelta: () => undefined,
+    registerPlainAutoStackRow: () => undefined,
+    listEmptySlots: () => [0, 1, 2],
+    isSlotAvailable: () => true,
+    markSlotOccupied: () => undefined,
+    registerSnapshot: () => undefined,
+    applyBufferedMutations: () => undefined,
+    getProjectedItems: () => [],
+  } as never;
+  const mockedBagAllocator = {} as never;
+  const mockedInventoryContext = {} as never;
+  const createItemCalls: Array<Parameters<typeof itemService.createItem>> = [];
+
+  t.mock.method(database, 'withTransactionAuto', async <T>(callback: () => Promise<T>) => callback());
+  t.mock.method(characterRewardTargetLock, 'lockCharacterRewardSettlementTargets', async () => undefined);
+  t.mock.method(database, 'query', async () => ({
+    rows: [{ id: 1001, auto_disassemble_enabled: false, auto_disassemble_rules: null }],
+    rowCount: 1,
+  }));
+  t.mock.method(staticConfigLoader, 'getItemDefinitionById', () => ({
+    id: 'weapon_test_blade',
+    name: '测试刀',
+    category: 'equipment',
+    subCategory: 'weapon',
+    effectDefs: [],
+    quality: '黄',
+    disassemblable: true,
+  }) as never);
+  t.mock.method(inventoryMutex, 'lockCharacterInventoryMutex', async () => undefined);
+  t.mock.method(inventorySlotSessionModule, 'createInventorySlotSession', async () => mockedSlotSession);
+  t.mock.method(characterBagSlotAllocatorModule, 'createCharacterBagSlotAllocatorFromSession', () => mockedBagAllocator);
+  t.mock.method(characterInventoryMutationContextModule, 'createCharacterInventoryMutationContextFromSession', () => mockedInventoryContext);
+  t.mock.method(itemService, 'createItem', async (...args: Parameters<typeof itemService.createItem>) => {
+    createItemCalls.push(args);
+    return { success: true, message: 'ok', itemIds: [9001] };
+  });
+  t.mock.method(
+    autoDisassembleRewardService,
+    'grantRewardItemWithAutoDisassemble',
+    async (input: Parameters<typeof autoDisassembleRewardService.grantRewardItemWithAutoDisassemble>[0]) => {
+    const createResult = await input.createItem({
+      itemDefId: input.itemDefId,
+      qty: input.qty,
+      bindType: input.bindType,
+      obtainedFrom: input.sourceObtainedFrom,
+      equipOptions: input.sourceEquipOptions,
+    });
+    return {
+      grantedItems: [
+        {
+          itemDefId: input.itemDefId,
+          qty: input.qty,
+          itemIds: createResult.itemIds ?? [],
+        },
+      ],
+      pendingMailItems: [],
+      gainedSilver: 0,
+      warnings: [],
+    };
+    },
+  );
+  t.mock.method(taskService, 'recordCollectItemEventsBatch', async () => undefined);
+  t.mock.method(characterRewardSettlement, 'applyCharacterRewardDeltas', async () => undefined);
+  t.mock.method(slowOperationLogger, 'createSlowOperationLogger', () => ({ mark: () => undefined, flush: () => undefined }));
+
+  await battleDropService.settleBattleRewardPlan(plan);
+
+  assert.equal(createItemCalls.length, 1);
+  assert.deepEqual(createItemCalls[0], [
+    101,
+    1001,
+    'weapon_test_blade',
+    1,
+    {
+      location: 'bag',
+      bindType: 'bound',
+      obtainedFrom: 'battle_drop',
+      bagSlotAllocator: mockedBagAllocator,
+      inventoryMutationContext: mockedInventoryContext,
+      slotSession: mockedSlotSession,
+      skipInventoryMutexLock: true,
+      persistImmediately: true,
+      equipOptions: { fuyuan: 8 },
     },
   ]);
 });

@@ -28,6 +28,7 @@ import * as database from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import * as inventoryMutex from '../inventoryMutex.js';
 import * as itemServiceModule from '../itemService.js';
+import * as mailServiceModule from '../mailService.js';
 import * as characterBagSlotAllocatorModule from '../shared/characterBagSlotAllocator.js';
 import * as characterInventoryMutationContextModule from '../shared/characterInventoryMutationContext.js';
 import * as inventorySlotSessionModule from '../shared/inventorySlotSession.js';

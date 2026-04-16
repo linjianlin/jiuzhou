@@ -9,6 +9,8 @@
  */
 import { query, withTransactionAuto } from '../config/database.js';
 import type { CreateItemOptions } from './itemService.js';
+import { itemService } from './itemService.js';
+import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordCollectItemEventsBatch } from './taskService.js';
 import {
   grantRewardItemWithAutoDisassemble,
@@ -38,9 +40,12 @@ import {
 } from './shared/characterRewardSettlement.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import {
+  lockCharacterRewardSettlementTargets,
   normalizeCharacterRewardTargetIds,
 } from './shared/characterRewardTargetLock.js';
-import { bufferCharacterItemGrantDeltas } from './shared/characterItemGrantDeltaService.js';
+import { createCharacterBagSlotAllocatorFromSession } from './shared/characterBagSlotAllocator.js';
+import { createCharacterInventoryMutationContextFromSession } from './shared/characterInventoryMutationContext.js';
+import { createInventorySlotSession, type InventorySlotSession } from './shared/inventorySlotSession.js';
 import { getRealmOrderIndex } from './shared/realmRules.js';
 import type {
   IdleBattleRewardSettlementPlan,
@@ -83,6 +88,7 @@ interface DropPool {
 }
 
 const BATTLE_REWARD_SETTLEMENT_SLOW_THRESHOLD_MS = 200;
+const BATTLE_DROP_PENDING_MAIL_CHUNK_SIZE = 10;
 
 type RollDropsOptions = {
   isDungeonBattle?: boolean;
@@ -105,6 +111,33 @@ type RewardItemMeta = {
   effectDefs: unknown;
   qualityRank: number;
   disassemblable: boolean | null;
+};
+
+type BattleDropGrantContext = {
+  slotSession: InventorySlotSession;
+  bagSlotAllocator: ReturnType<typeof createCharacterBagSlotAllocatorFromSession>;
+  inventoryMutationContext: ReturnType<typeof createCharacterInventoryMutationContextFromSession>;
+};
+
+type PendingBattleDropMailEntry = {
+  userId: number;
+  items: MailAttachItem[];
+};
+
+type BattleDropSettlementTransactionResult = {
+  result: DistributeResult;
+  pendingMailByReceiver: Map<number, PendingBattleDropMailEntry>;
+  collectEventCount: number;
+  pendingMailCount: number;
+};
+
+type BattleRewardPendingMailItem = {
+  item_def_id: string;
+  qty: number;
+  options?: {
+    bindType?: string;
+    equipOptions?: unknown;
+  };
 };
 
 // 掉落结果
@@ -214,6 +247,65 @@ class BattleDropService {
   private dropPoolCache = new Map<string, DropPool | null>();
   private rewardMonsterDataCache = new Map<string, MonsterData | null>();
   private rewardItemMetaCache = new Map<string, RewardItemMeta>();
+
+  private pushPendingMailItem(bucket: MailAttachItem[], mailItem: MailAttachItem): void {
+    const buildMergeKey = (entry: MailAttachItem): string => JSON.stringify({
+      itemDefId: String(entry.item_def_id || '').trim(),
+      bindType: String(entry.options?.bindType || '').trim(),
+      metadata: entry.options?.metadata ?? null,
+      quality: entry.options?.quality ?? null,
+      qualityRank: entry.options?.qualityRank ?? null,
+      equipOptions: entry.options?.equipOptions ?? null,
+    });
+
+    const mergeKey = buildMergeKey(mailItem);
+    const found = bucket.find((entry) => buildMergeKey(entry) === mergeKey);
+    if (found) {
+      found.qty += mailItem.qty;
+      return;
+    }
+
+    bucket.push({
+      item_def_id: mailItem.item_def_id,
+      qty: mailItem.qty,
+      ...(mailItem.options ? { options: { ...mailItem.options } } : {}),
+    });
+  }
+
+  private normalizePendingMailItem(mailItem: BattleRewardPendingMailItem): MailAttachItem {
+    const options = mailItem.options
+      ? {
+          ...(mailItem.options.bindType ? { bindType: mailItem.options.bindType } : {}),
+          ...(mailItem.options.equipOptions !== undefined
+            ? { equipOptions: mailItem.options.equipOptions as CreateItemOptions['equipOptions'] }
+            : {}),
+        }
+      : undefined;
+    return {
+      item_def_id: mailItem.item_def_id,
+      qty: mailItem.qty,
+      ...(options ? { options } : {}),
+    };
+  }
+
+  private async getBattleDropGrantContext(
+    characterId: number,
+    contextByCharacterId: Map<number, BattleDropGrantContext>,
+  ): Promise<BattleDropGrantContext> {
+    const existing = contextByCharacterId.get(characterId);
+    if (existing) {
+      return existing;
+    }
+
+    const slotSession = await createInventorySlotSession([characterId]);
+    const context: BattleDropGrantContext = {
+      slotSession,
+      bagSlotAllocator: createCharacterBagSlotAllocatorFromSession(slotSession, [characterId]),
+      inventoryMutationContext: createCharacterInventoryMutationContextFromSession(slotSession),
+    };
+    contextByCharacterId.set(characterId, context);
+    return context;
+  }
 
   private clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
@@ -772,6 +864,9 @@ class BattleDropService {
       }
     }
 
+    const pendingMailItems: MailAttachItem[] = [];
+    const grantContext = await this.getBattleDropGrantContext(receiverCharacterId, new Map());
+
     for (const dropPlan of plan.dropPlans) {
       const sourceMeta = this.getRewardItemMeta(dropPlan.itemDefId);
       const createOptions: CreateItemOptions = {
@@ -803,17 +898,23 @@ class BattleDropService {
         sourceObtainedFrom: 'battle_drop',
         sourceEquipOptions: createOptions.equipOptions,
         createItem: async ({ itemDefId, qty, bindType, obtainedFrom, equipOptions }) => {
-          await bufferCharacterItemGrantDeltas([{
-            characterId: receiverCharacterId,
-            userId: participant.userId,
+          return await itemService.createItem(
+            participant.userId,
+            receiverCharacterId,
             itemDefId,
             qty,
-            obtainedFrom,
-            ...(participant.idleSessionId ? { idleSessionId: participant.idleSessionId } : {}),
-            ...(bindType ? { bindType } : {}),
-            ...(equipOptions ? { equipOptions: equipOptions as CreateItemOptions['equipOptions'] } : {}),
-          }]);
-          return { success: true, message: '奖励物品已写入异步资产 Delta', itemIds: [] };
+            {
+              location: 'bag',
+              bindType,
+              obtainedFrom,
+              bagSlotAllocator: grantContext.bagSlotAllocator,
+              inventoryMutationContext: grantContext.inventoryMutationContext,
+              slotSession: grantContext.slotSession,
+              skipInventoryMutexLock: true,
+              persistImmediately: true,
+              ...(equipOptions ? { equipOptions: equipOptions as CreateItemOptions['equipOptions'] } : {}),
+            },
+          );
         },
         addSilver: async (ownerCharacterId, silverGain) => {
           const safeSilver = Math.max(0, Math.floor(Number(silverGain) || 0));
@@ -829,6 +930,10 @@ class BattleDropService {
 
       for (const warning of grantResult.warnings) {
         console.warn(`挂机奖励兑现告警: ${warning}`);
+      }
+
+      for (const mailItem of grantResult.pendingMailItems) {
+        this.pushPendingMailItem(pendingMailItems, this.normalizePendingMailItem(mailItem));
       }
 
       if (grantResult.gainedSilver > 0) {
@@ -854,6 +959,21 @@ class BattleDropService {
         })),
       },
     ]);
+
+    for (let index = 0; index < pendingMailItems.length; index += BATTLE_DROP_PENDING_MAIL_CHUNK_SIZE) {
+      const chunk = pendingMailItems.slice(index, index + BATTLE_DROP_PENDING_MAIL_CHUNK_SIZE);
+      const mailResult = await sendSystemMail(
+        participant.userId,
+        receiverCharacterId,
+        '战斗掉落补发',
+        '由于背包空间不足，部分战斗掉落已通过邮件补发，请前往邮箱领取。',
+        { items: chunk },
+        30,
+      );
+      if (!mailResult.success) {
+        throw new Error(`挂机奖励补发邮件发送失败: characterId=${receiverCharacterId}, message=${mailResult.message}`);
+      }
+    }
 
     await applyCharacterRewardDeltas(pendingCharacterRewardDeltas);
 
@@ -1112,20 +1232,45 @@ class BattleDropService {
   async settleBattleRewardPlan(
     plan: BattleRewardSettlementPlan,
   ): Promise<DistributeResult> {
-    return withTransactionAuto(() =>
+    const transactionResult = await withTransactionAuto(() =>
       this.settleBattleRewardPlanInTransaction(plan),
     );
+
+    for (const [receiverCharacterId, pendingMailEntry] of transactionResult.pendingMailByReceiver.entries()) {
+      const items = pendingMailEntry.items;
+      for (let index = 0; index < items.length; index += BATTLE_DROP_PENDING_MAIL_CHUNK_SIZE) {
+        const chunk = items.slice(index, index + BATTLE_DROP_PENDING_MAIL_CHUNK_SIZE);
+        const mailResult = await sendSystemMail(
+          pendingMailEntry.userId,
+          receiverCharacterId,
+          '战斗掉落补发',
+          '由于背包空间不足，部分战斗掉落已通过邮件补发，请前往邮箱领取。',
+          { items: chunk },
+          30,
+        );
+        if (!mailResult.success) {
+          throw new Error(`战斗掉落补发邮件发送失败: characterId=${receiverCharacterId}, message=${mailResult.message}`);
+        }
+      }
+    }
+
+    return transactionResult.result;
   }
 
   private async settleBattleRewardPlanInTransaction(
     plan: BattleRewardSettlementPlan,
-  ): Promise<DistributeResult> {
+  ): Promise<BattleDropSettlementTransactionResult> {
     if (plan.perPlayerRewards.length === 0) {
       return {
-        success: true,
-        message: '战斗失败，无奖励',
-        rewards: { exp: 0, silver: 0, items: [] },
-        perPlayerRewards: [],
+        result: {
+          success: true,
+          message: '战斗失败，无奖励',
+          rewards: { exp: 0, silver: 0, items: [] },
+          perPlayerRewards: [],
+        },
+        pendingMailByReceiver: new Map(),
+        collectEventCount: 0,
+        pendingMailCount: 0,
       };
     }
 
@@ -1145,10 +1290,14 @@ class BattleDropService {
       },
     });
     let collectEventCount = 0;
-    const pendingMailCount = 0;
+    let pendingMailCount = 0;
     let success = false;
 
     try {
+      if (requiresInventoryMutation && participantCharacterIds.length > 0) {
+        await lockCharacterRewardSettlementTargets(participantCharacterIds);
+      }
+
       for (const reward of plan.perPlayerRewards) {
         addCharacterRewardDelta(pendingCharacterRewardDeltas, reward.characterId, {
           exp: reward.exp,
@@ -1212,6 +1361,8 @@ class BattleDropService {
       let grantRewardDisassemblePlanBuildCount = 0;
       let grantRewardOriginalItemCreateCallCount = 0;
       let grantRewardDisassembleRewardCreateCallCount = 0;
+      const pendingMailByReceiver = new Map<number, PendingBattleDropMailEntry>();
+      const grantContextByCharacterId = new Map<number, BattleDropGrantContext>();
 
       const appendCollectCount = (characterId: number, itemDefId: string, qty: number): void => {
         const collectEventMap = collectEventMapByCharacter.get(characterId) ?? new Map<string, number>();
@@ -1304,16 +1455,24 @@ class BattleDropService {
           sourceObtainedFrom: 'battle_drop',
           sourceEquipOptions: createOptions.equipOptions,
           createItem: async ({ itemDefId, qty, bindType, obtainedFrom, equipOptions }) => {
-            await bufferCharacterItemGrantDeltas([{
-              characterId: receiverCharacterId,
-              userId: drop.receiverUserId,
+            const grantContext = await this.getBattleDropGrantContext(receiverCharacterId, grantContextByCharacterId);
+            return await itemService.createItem(
+              drop.receiverUserId,
+              receiverCharacterId,
               itemDefId,
               qty,
-              obtainedFrom,
-              ...(bindType ? { bindType } : {}),
-              ...(equipOptions ? { equipOptions: equipOptions as CreateItemOptions['equipOptions'] } : {}),
-            }]);
-            return { success: true, message: '奖励物品已写入异步资产 Delta', itemIds: [] };
+              {
+                location: 'bag',
+                bindType,
+                obtainedFrom,
+                bagSlotAllocator: grantContext.bagSlotAllocator,
+                inventoryMutationContext: grantContext.inventoryMutationContext,
+                slotSession: grantContext.slotSession,
+                skipInventoryMutexLock: true,
+                persistImmediately: true,
+                ...(equipOptions ? { equipOptions: equipOptions as CreateItemOptions['equipOptions'] } : {}),
+              },
+            );
           },
           addSilver: async (ownerCharacterId, silverGain) => {
             const safeSilver = Math.max(0, Math.floor(Number(silverGain) || 0));
@@ -1344,6 +1503,16 @@ class BattleDropService {
 
         const pendingMailStartedAt = Date.now();
         pendingMailItemCount += grantResult.pendingMailItems.length;
+        if (grantResult.pendingMailItems.length > 0) {
+          const pendingMailEntry = pendingMailByReceiver.get(receiverCharacterId) ?? {
+            userId: drop.receiverUserId,
+            items: [],
+          };
+          for (const mailItem of grantResult.pendingMailItems) {
+            this.pushPendingMailItem(pendingMailEntry.items, this.normalizePendingMailItem(mailItem));
+          }
+          pendingMailByReceiver.set(receiverCharacterId, pendingMailEntry);
+        }
         grantRewardPendingMailCostMs += Date.now() - pendingMailStartedAt;
 
         const applyResultStartedAt = Date.now();
@@ -1410,9 +1579,11 @@ class BattleDropService {
         collectEventCount,
       });
 
+      pendingMailCount = [...pendingMailByReceiver.values()].reduce((total, entry) => total + entry.items.length, 0);
+
       slowLogger.mark('sendPendingMail', {
         pendingMailCount,
-        pendingMailReceiverCount: 0,
+        pendingMailReceiverCount: pendingMailByReceiver.size,
       });
 
       await applyCharacterRewardDeltas(pendingCharacterRewardDeltas);
@@ -1422,7 +1593,12 @@ class BattleDropService {
       result.message = '奖励分发成功';
       result.rewards.silver = totalSilver;
       success = true;
-      return result;
+      return {
+        result,
+        pendingMailByReceiver,
+        collectEventCount,
+        pendingMailCount,
+      };
     } finally {
       slowLogger.flush({
         success,

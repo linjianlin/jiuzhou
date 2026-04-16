@@ -709,6 +709,53 @@ test('flush 应为 auto bag mutation 自动分配避开数据库占槽的最终�
   assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
 });
 
+test('flush 应兼容旧格式 battle_drop equipment-create mutation 的自动槽位分配', () => {
+  const resolved = resolveItemInstanceFlushInput(
+    [
+      { id: 850, owner_character_id: 1, location: 'bag', location_slot: 0 },
+      { id: 851, owner_character_id: 1, location: 'bag', location_slot: 1 },
+    ],
+    { bagCapacity: 4, warehouseCapacity: 1000 },
+    [
+      buildMutation({ itemId: 901, characterId: 1, opId: 'equipment-create:901:100', createdAt: 100, kind: 'upsert', snapshot: {
+        id: 901,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 0,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'battle_drop',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+    ],
+  );
+
+  assert.equal(resolved.missingAutoSlotItemIds.length, 0);
+  assert.equal(resolved.effectiveMutations[0]?.slotResolution?.mode, 'auto');
+  assert.equal(resolved.effectiveMutations[0]?.snapshot?.location_slot, 2);
+  assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
+});
+
 test('flush 应让 explicit 槽位优先，auto 槽位自动避开 explicit 目标', () => {
   const resolved = resolveItemInstanceFlushInput(
     [],
