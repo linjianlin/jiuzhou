@@ -30,6 +30,10 @@ export interface CharacterItemInstanceSnapshot extends Omit<InventoryItem, 'loca
   affixes: JsonValue;
 }
 
+export type ItemInstanceSlotResolution = {
+  mode: 'explicit' | 'auto';
+};
+
 export type BufferedCharacterItemInstanceMutation = {
   opId: string;
   characterId: number;
@@ -37,6 +41,7 @@ export type BufferedCharacterItemInstanceMutation = {
   createdAt: number;
   kind: 'upsert' | 'delete';
   snapshot: CharacterItemInstanceSnapshot | null;
+  slotResolution?: ItemInstanceSlotResolution;
 };
 
 type LoadProjectedCharacterItemInstanceOptions = {
@@ -64,11 +69,17 @@ type ResolvedItemInstanceFlushInput = {
   flushPlan: ItemInstanceMutationFlushPlan;
   droppedSortInventoryMutations: boolean;
   droppedTargetConflictingNonSortMutations: boolean;
+  missingAutoSlotItemIds: number[];
 };
 
 type NormalizedItemInstanceMutations = {
   mutations: BufferedCharacterItemInstanceMutation[];
   droppedSortInventoryMutations: boolean;
+};
+
+type InventorySlotCapacities = {
+  bagCapacity: number;
+  warehouseCapacity: number;
 };
 
 export const buildItemInstanceIdArrayParam = (itemIds: readonly number[]): string[] => {
@@ -99,6 +110,179 @@ const getItemInstanceMutationPrefix = (opId: string): string => {
   const normalized = String(opId || '').trim();
   const separatorIndex = normalized.indexOf(':');
   return separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : normalized;
+};
+
+const normalizeSlotResolution = (
+  slotResolution: ItemInstanceSlotResolution | null | undefined,
+): ItemInstanceSlotResolution | undefined => {
+  if (!slotResolution) {
+    return undefined;
+  }
+  return slotResolution.mode === 'auto'
+    ? { mode: 'auto' }
+    : { mode: 'explicit' };
+};
+
+const isAutoSlotResolutionMutation = (
+  mutation: BufferedCharacterItemInstanceMutation,
+): boolean => {
+  if (mutation.kind !== 'upsert' || !mutation.snapshot) {
+    return false;
+  }
+  if (mutation.slotResolution?.mode !== 'auto') {
+    return false;
+  }
+  return mutation.snapshot.location === 'bag' || mutation.snapshot.location === 'warehouse';
+};
+
+const getCapacityForLocation = (
+  capacities: InventorySlotCapacities,
+  location: ItemInstanceLocation,
+): number => {
+  return location === 'warehouse' ? capacities.warehouseCapacity : capacities.bagCapacity;
+};
+
+const buildSlotReleaseItemIds = (
+  existingRows: readonly ExistingItemInstanceLocationRow[],
+  latestMutations: readonly BufferedCharacterItemInstanceMutation[],
+): number[] => {
+  const latestMutationByItemId = new Map<number, BufferedCharacterItemInstanceMutation>();
+  for (const mutation of latestMutations) {
+    latestMutationByItemId.set(mutation.itemId, mutation);
+  }
+
+  const slotReleaseItemIds = new Set<number>();
+  for (const [itemId, mutation] of latestMutationByItemId.entries()) {
+    const existingRow = existingRows.find((row) => normalizePositiveInt(Number(row.id)) === itemId);
+    const normalizedExistingOwnerCharacterId = existingRow
+      ? normalizePositiveInt(Number(existingRow.owner_character_id))
+      : 0;
+    const normalizedExistingLocationSlot = existingRow
+      ? normalizeOptionalInt(existingRow.location_slot === null ? null : Number(existingRow.location_slot))
+      : null;
+    if (
+      existingRow
+      && normalizedExistingOwnerCharacterId > 0
+      && isSlotConstrainedLocation(existingRow.location, normalizedExistingLocationSlot)
+    ) {
+      const keepsCurrentSlot = mutation.kind === 'upsert'
+        && mutation.snapshot !== null
+        && mutation.snapshot.owner_character_id === normalizedExistingOwnerCharacterId
+        && mutation.snapshot.location === existingRow.location
+        && mutation.snapshot.location_slot === normalizedExistingLocationSlot;
+      if (!keepsCurrentSlot) {
+        slotReleaseItemIds.add(itemId);
+      }
+    }
+  }
+
+  return [...slotReleaseItemIds].sort((left, right) => left - right);
+};
+
+const resolveAutoSlotMutations = (
+  existingRows: readonly ExistingItemInstanceLocationRow[],
+  capacities: InventorySlotCapacities,
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+  blockingMutations: readonly BufferedCharacterItemInstanceMutation[] = [],
+): {
+  mutations: BufferedCharacterItemInstanceMutation[];
+  missingAutoSlotItemIds: number[];
+} => {
+  const combinedLatestMutations = collapseBufferedCharacterItemInstanceMutations([
+    ...blockingMutations.map(cloneMutation),
+    ...mutations.map(cloneMutation),
+  ]);
+  const slotReleaseItemIds = new Set(buildSlotReleaseItemIds(existingRows, combinedLatestMutations));
+  const occupiedSlotsByLocation = new Map<'bag' | 'warehouse', Set<number>>([
+    ['bag', new Set<number>()],
+    ['warehouse', new Set<number>()],
+  ]);
+
+  for (const row of existingRows) {
+    const itemId = normalizePositiveInt(Number(row.id));
+    const locationSlot = normalizeOptionalInt(row.location_slot === null ? null : Number(row.location_slot));
+    if (itemId <= 0 || slotReleaseItemIds.has(itemId)) {
+      continue;
+    }
+    if (!isSlotConstrainedLocation(row.location, locationSlot)) {
+      continue;
+    }
+    const key = row.location === 'warehouse' ? 'warehouse' : 'bag';
+    const constrainedLocationSlot = Number(locationSlot);
+    occupiedSlotsByLocation.get(key)?.add(constrainedLocationSlot);
+  }
+
+  const missingAutoSlotItemIds = new Set<number>();
+  for (const mutation of combinedLatestMutations) {
+    if (mutation.kind !== 'upsert' || !mutation.snapshot) {
+      continue;
+    }
+    if (mutation.snapshot.location !== 'bag' && mutation.snapshot.location !== 'warehouse') {
+      continue;
+    }
+    const locationKey = mutation.snapshot.location;
+    const occupiedSlots = occupiedSlotsByLocation.get(locationKey);
+    if (!occupiedSlots) {
+      continue;
+    }
+
+    if (!isAutoSlotResolutionMutation(mutation)) {
+      const currentSlot = normalizeOptionalInt(mutation.snapshot.location_slot);
+      if (currentSlot !== null) {
+        occupiedSlots.add(currentSlot);
+      }
+      continue;
+    }
+
+    const preferredSlot = normalizeOptionalInt(mutation.snapshot.location_slot);
+    const capacity = getCapacityForLocation(capacities, mutation.snapshot.location);
+    let assignedSlot =
+      preferredSlot !== null
+      && preferredSlot >= 0
+      && preferredSlot < capacity
+      && !occupiedSlots.has(preferredSlot)
+        ? preferredSlot
+        : null;
+
+    if (assignedSlot === null) {
+      for (let slot = 0; slot < capacity; slot += 1) {
+        if (occupiedSlots.has(slot)) {
+          continue;
+        }
+        assignedSlot = slot;
+        break;
+      }
+    }
+
+    if (assignedSlot === null) {
+      missingAutoSlotItemIds.add(mutation.itemId);
+      mutation.snapshot.location_slot = null;
+      continue;
+    }
+
+    mutation.snapshot.location_slot = assignedSlot;
+    occupiedSlots.add(assignedSlot);
+  }
+
+  const resolvedLatestByItemId = new Map<number, BufferedCharacterItemInstanceMutation>();
+  for (const mutation of combinedLatestMutations) {
+    resolvedLatestByItemId.set(mutation.itemId, mutation);
+  }
+
+  return {
+    mutations: mutations.map((mutation) => {
+      const resolved = resolvedLatestByItemId.get(mutation.itemId);
+      if (!resolved) {
+        return cloneMutation(mutation);
+      }
+      return cloneMutation({
+        ...mutation,
+        snapshot: resolved.snapshot ? cloneSnapshot(resolved.snapshot) : null,
+        slotResolution: normalizeSlotResolution(resolved.slotResolution),
+      });
+    }),
+    missingAutoSlotItemIds: [...missingAutoSlotItemIds].sort((left, right) => left - right),
+  };
 };
 
 const buildBufferedMutationIdentity = (
@@ -554,6 +738,7 @@ const normalizeMutation = (
       createdAt,
       kind: 'delete',
       snapshot: null,
+      slotResolution: normalizeSlotResolution(mutation.slotResolution),
     };
   }
   const snapshot = normalizeSnapshot(mutation.snapshot);
@@ -567,6 +752,7 @@ const normalizeMutation = (
     createdAt,
     kind: 'upsert',
     snapshot,
+    slotResolution: normalizeSlotResolution(mutation.slotResolution),
   };
 };
 
@@ -577,6 +763,7 @@ const encodeMutation = (mutation: BufferedCharacterItemInstanceMutation): string
     itemId: mutation.itemId,
     createdAt: mutation.createdAt,
     kind: mutation.kind,
+    slotResolution: mutation.slotResolution ?? null,
     snapshot: mutation.snapshot
       ? {
           ...mutation.snapshot,
@@ -592,18 +779,20 @@ const decodeMutation = (raw: string): BufferedCharacterItemInstanceMutation | nu
       opId?: string;
       characterId?: number;
       itemId?: number;
-      createdAt?: number;
-      kind?: 'upsert' | 'delete';
-      snapshot?: CharacterItemInstanceSnapshot | null;
-    };
+       createdAt?: number;
+       kind?: 'upsert' | 'delete';
+       slotResolution?: ItemInstanceSlotResolution | null;
+       snapshot?: CharacterItemInstanceSnapshot | null;
+     };
     return normalizeMutation({
       opId: String(parsed.opId || ''),
       characterId: Number(parsed.characterId),
       itemId: Number(parsed.itemId),
-      createdAt: Number(parsed.createdAt),
-      kind: parsed.kind === 'delete' ? 'delete' : 'upsert',
-      snapshot: parsed.snapshot ?? null,
-    });
+       createdAt: Number(parsed.createdAt),
+       kind: parsed.kind === 'delete' ? 'delete' : 'upsert',
+       slotResolution: parsed.slotResolution ?? undefined,
+       snapshot: parsed.snapshot ?? null,
+     });
   } catch {
     return null;
   }
@@ -615,6 +804,12 @@ const cloneSnapshot = (snapshot: CharacterItemInstanceSnapshot): CharacterItemIn
   socketed_gems: normalizeJsonValue(snapshot.socketed_gems),
   affixes: normalizeJsonValue(snapshot.affixes),
   created_at: new Date(snapshot.created_at),
+});
+
+const cloneMutation = (mutation: BufferedCharacterItemInstanceMutation): BufferedCharacterItemInstanceMutation => ({
+  ...mutation,
+  snapshot: mutation.snapshot ? cloneSnapshot(mutation.snapshot) : null,
+  slotResolution: normalizeSlotResolution(mutation.slotResolution),
 });
 
 const mapRowToSnapshot = (row: Record<string, JsonValue | Date | number | string | boolean | null>): CharacterItemInstanceSnapshot | null => {
@@ -656,6 +851,25 @@ const listDirtyCharacterIds = async (limit: number): Promise<number[]> => {
     .map((characterId) => Math.floor(Number(characterId)))
     .filter((characterId) => Number.isFinite(characterId) && characterId > 0)
     .sort((left, right) => left - right);
+};
+
+const loadCharacterInventorySlotCapacities = async (
+  characterId: number,
+): Promise<InventorySlotCapacities> => {
+  const result = await query<{ bag_capacity: number | string | null; warehouse_capacity: number | string | null }>(
+    `
+      SELECT bag_capacity, warehouse_capacity
+      FROM inventory
+      WHERE character_id = $1
+      LIMIT 1
+    `,
+    [characterId],
+  );
+  const row = result.rows[0];
+  return {
+    bagCapacity: Math.max(0, Math.floor(Number(row?.bag_capacity) || 0)),
+    warehouseCapacity: Math.max(0, Math.floor(Number(row?.warehouse_capacity) || 0)),
+  };
 };
 
 const claimCharacterItemInstanceMutations = async (characterId: number): Promise<boolean> => {
@@ -1019,10 +1233,30 @@ export const buildItemInstanceMutationFlushPlan = (
 
 export const resolveItemInstanceFlushInput = (
   existingRows: readonly ExistingItemInstanceLocationRow[],
+  capacities: InventorySlotCapacities,
   mutations: readonly BufferedCharacterItemInstanceMutation[],
+  blockingMutations: readonly BufferedCharacterItemInstanceMutation[] = [],
 ): ResolvedItemInstanceFlushInput => {
   const normalizedMutations = normalizeBufferedCharacterItemInstanceMutations(mutations);
-  const effectiveMutations = normalizedMutations.mutations;
+  const resolvedAutoSlotMutations = resolveAutoSlotMutations(
+    existingRows,
+    capacities,
+    normalizedMutations.mutations,
+    blockingMutations,
+  );
+  const effectiveMutations = resolvedAutoSlotMutations.mutations;
+  if (resolvedAutoSlotMutations.missingAutoSlotItemIds.length > 0) {
+    return {
+      effectiveMutations,
+      flushPlan: {
+        slotReleaseItemIds: [],
+        duplicateTargetKeys: [],
+      },
+      droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+      droppedTargetConflictingNonSortMutations: false,
+      missingAutoSlotItemIds: resolvedAutoSlotMutations.missingAutoSlotItemIds,
+    };
+  }
   const flushPlan = buildItemInstanceMutationFlushPlan(existingRows, effectiveMutations);
   if (flushPlan.duplicateTargetKeys.length <= 0) {
     return {
@@ -1030,6 +1264,7 @@ export const resolveItemInstanceFlushInput = (
       flushPlan,
       droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
       droppedTargetConflictingNonSortMutations: false,
+      missingAutoSlotItemIds: [],
     };
   }
 
@@ -1047,6 +1282,7 @@ export const resolveItemInstanceFlushInput = (
         flushPlan,
         droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
         droppedTargetConflictingNonSortMutations: false,
+        missingAutoSlotItemIds: [],
       };
     }
     const prunedFlushPlan = buildItemInstanceMutationFlushPlan(existingRows, prunedNonSortMutations.mutations);
@@ -1056,6 +1292,7 @@ export const resolveItemInstanceFlushInput = (
         flushPlan,
         droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
         droppedTargetConflictingNonSortMutations: false,
+        missingAutoSlotItemIds: [],
       };
     }
     return {
@@ -1063,6 +1300,7 @@ export const resolveItemInstanceFlushInput = (
       flushPlan: prunedFlushPlan,
       droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
       droppedTargetConflictingNonSortMutations: true,
+      missingAutoSlotItemIds: [],
     };
   }
 
@@ -1073,6 +1311,7 @@ export const resolveItemInstanceFlushInput = (
       flushPlan,
       droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
       droppedTargetConflictingNonSortMutations: false,
+      missingAutoSlotItemIds: [],
     };
   }
 
@@ -1081,6 +1320,7 @@ export const resolveItemInstanceFlushInput = (
     flushPlan: nonSortFlushPlan,
     droppedSortInventoryMutations: true,
     droppedTargetConflictingNonSortMutations: false,
+    missingAutoSlotItemIds: [],
   };
 };
 
@@ -1665,21 +1905,35 @@ const executeImmediateCharacterItemInstanceMutations = async (
   await lockCharacterInventoryMutexes([...mutationsByCharacter.keys()]);
 
   for (const [characterId, characterMutations] of mutationsByCharacter.entries()) {
-    const existingRowsResult = await query<ExistingItemInstanceLocationRow>(
-      `
-        SELECT id, owner_character_id, location, location_slot
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND location IN ('bag', 'warehouse')
-          AND location_slot IS NOT NULL
-      `,
-      [characterId],
+    const [existingRowsResult, capacities, pendingBlockingMutations] = await Promise.all([
+      query<ExistingItemInstanceLocationRow>(
+        `
+          SELECT id, owner_character_id, location, location_slot
+          FROM item_instance
+          WHERE owner_character_id = $1
+            AND location IN ('bag', 'warehouse')
+            AND location_slot IS NOT NULL
+        `,
+        [characterId],
+      ),
+      loadCharacterInventorySlotCapacities(characterId),
+      loadCharacterPendingItemInstanceMutations(characterId),
+    ]);
+
+    const {
+      effectiveMutations,
+      flushPlan,
+      missingAutoSlotItemIds,
+    } = resolveItemInstanceFlushInput(
+      existingRowsResult.rows,
+      capacities,
+      characterMutations,
+      pendingBlockingMutations,
     );
 
-    const { effectiveMutations, flushPlan } = resolveItemInstanceFlushInput(
-      existingRowsResult.rows,
-      characterMutations,
-    );
+    if (missingAutoSlotItemIds.length > 0) {
+      throw new Error(`slot-conflict:auto:${missingAutoSlotItemIds.join(',')}`);
+    }
 
     if (flushPlan.duplicateTargetKeys.length > 0) {
       throw new Error(`slot-conflict:${flushPlan.duplicateTargetKeys.join(',')}`);
@@ -1783,22 +2037,26 @@ const flushSingleCharacterItemInstanceMutations = async (
   if (mutations.length <= 0) return;
   await withTransaction(async () => {
     await lockCharacterInventoryMutex(characterId);
-    const existingRowsResult = await query<ExistingItemInstanceLocationRow>(
-      `
-        SELECT id, owner_character_id, location, location_slot
-        FROM item_instance
-        WHERE owner_character_id = $1
-          AND location IN ('bag', 'warehouse')
-          AND location_slot IS NOT NULL
-      `,
-      [characterId],
-    );
+    const [existingRowsResult, capacities] = await Promise.all([
+      query<ExistingItemInstanceLocationRow>(
+        `
+          SELECT id, owner_character_id, location, location_slot
+          FROM item_instance
+          WHERE owner_character_id = $1
+            AND location IN ('bag', 'warehouse')
+            AND location_slot IS NOT NULL
+        `,
+        [characterId],
+      ),
+      loadCharacterInventorySlotCapacities(characterId),
+    ]);
     const {
       effectiveMutations,
       flushPlan,
       droppedSortInventoryMutations,
       droppedTargetConflictingNonSortMutations,
-    } = resolveItemInstanceFlushInput(existingRowsResult.rows, mutations);
+      missingAutoSlotItemIds,
+    } = resolveItemInstanceFlushInput(existingRowsResult.rows, capacities, mutations);
     if (droppedSortInventoryMutations) {
       itemInstanceMutationLogger.warn(
         { characterId, droppedMutationCount: mutations.length - effectiveMutations.length },
@@ -1810,6 +2068,9 @@ const flushSingleCharacterItemInstanceMutations = async (
         { characterId, droppedMutationCount: mutations.length - effectiveMutations.length },
         '实例 mutation flush 检测到同槽旧快照冲突，已丢弃较旧的非 sort mutation',
       );
+    }
+    if (missingAutoSlotItemIds.length > 0) {
+      throw new Error(`实例 mutation 自动槽位分配失败: ${missingAutoSlotItemIds.join(', ')}`);
     }
     if (flushPlan.duplicateTargetKeys.length > 0) {
       throw new Error(`实例 mutation 目标槽位冲突: ${flushPlan.duplicateTargetKeys.join(', ')}`);

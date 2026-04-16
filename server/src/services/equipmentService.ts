@@ -10,9 +10,8 @@
  */
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
-import { findEmptySlots, getInventoryInfo } from './inventory/index.js';
+import { findEmptySlots } from './inventory/index.js';
 import type { SlottedInventoryLocation } from './inventory/shared/types.js';
-import { getSlottedCapacity } from './inventory/shared/helpers.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import {
   QUALITY_MULTIPLIER_BY_RANK,
@@ -48,143 +47,13 @@ import { roundAffixResultValue } from './shared/affixPrecision.js';
 import {
   bufferCharacterItemInstanceMutations,
   type BufferedCharacterItemInstanceMutation,
+  type ItemInstanceSlotResolution,
   type JsonValue,
   loadProjectedCharacterItemInstances,
   reserveItemInstanceIds,
   tryApplyCharacterItemInstanceMutationsImmediately,
 } from './shared/characterItemInstanceMutationService.js';
 import type { InventorySlotSession } from './shared/inventorySlotSession.js';
-
-type BufferedEquipmentCreateSlotResolutionResult =
-  | { success: true; locationSlot: number | null }
-  | { success: false; message: string };
-
-type BufferedEquipmentCreateSlotResolutionDependencies = {
-  getCapacity: () => Promise<number> | number;
-  listEmptySlots: () => Promise<readonly number[]> | readonly number[];
-  isConcreteSlotOccupied: (slot: number) => Promise<boolean>;
-};
-
-/**
- * buffered 装备创建槽位收敛。
- *
- * 作用：
- * 1. 基于 projected/session 提供的候选空槽，再用数据库当前占槽状态做二次过滤。
- * 2. 只处理 buffered equipment-create 的最终槽位决策，不负责生成实例、不负责写 Redis。
- *
- * 输入 / 输出：
- * - 输入：目标 location、预选槽位、是否允许 fallback，以及容量/候选槽/数据库占槽检查依赖。
- * - 输出：最终可写入的 locationSlot，或明确失败消息。
- *
- * 数据流 / 状态流：
- * - 调用方先按 projected 视图给出 locationSlot 或候选空槽；
- * - 这里逐个过滤数据库仍占用的槽；
- * - 若允许 fallback，则选择第一个真实可用槽，否则保留严格失败语义。
- *
- * 复用设计说明：
- * - 把 buffered equipment-create 的“projected 选槽 + DB 二次校验”集中到单一入口，避免事务分支各自复制占槽修复逻辑。
- * - 只对 bag/warehouse 生效，保持非槽位位置与 persistImmediately 语义不受影响。
- *
- * 关键边界条件与坑点：
- * 1. projected 视图可能因为 pending mutation 提前释放旧槽，导致候选空槽在数据库底表中仍被占用；这里必须以数据库为准做最终兜底。
- * 2. 显式指定槽位但不允许 fallback 时，必须直接失败，不能擅自改写到其他格子。
- */
-export const resolveBufferedEquipmentCreateSlot = async (
-  options: {
-    location: string;
-    locationSlot: number | null;
-    shouldFallbackOnSlotConflict: boolean;
-  },
-  deps: BufferedEquipmentCreateSlotResolutionDependencies,
-): Promise<BufferedEquipmentCreateSlotResolutionResult> => {
-  if (options.location !== 'bag' && options.location !== 'warehouse') {
-    return {
-      success: true,
-      locationSlot: options.locationSlot,
-    };
-  }
-
-  const capacity = Math.max(0, Math.floor(Number(await deps.getCapacity()) || 0));
-  const collectCandidateSlots = async (): Promise<number[]> => {
-    const candidates = await deps.listEmptySlots();
-    return [...new Set(
-      candidates
-        .map((slot) => Math.floor(Number(slot)))
-        .filter((slot) => Number.isInteger(slot) && slot >= 0 && slot < capacity),
-    )].sort((left, right) => left - right);
-  };
-
-  const findConcreteAvailableSlot = async (): Promise<number | null> => {
-    for (const slot of await collectCandidateSlots()) {
-      if (!await deps.isConcreteSlotOccupied(slot)) {
-        return slot;
-      }
-    }
-    return null;
-  };
-
-  const currentSlot = options.locationSlot;
-  if (currentSlot !== null && currentSlot !== undefined) {
-    if (!await deps.isConcreteSlotOccupied(currentSlot)) {
-      return {
-        success: true,
-        locationSlot: currentSlot,
-      };
-    }
-    if (!options.shouldFallbackOnSlotConflict) {
-      return {
-        success: false,
-        message: '目标格子已被占用',
-      };
-    }
-  }
-
-  const nextSlot = await findConcreteAvailableSlot();
-  if (nextSlot === null) {
-    return {
-      success: false,
-      message: '背包已满',
-    };
-  }
-  return {
-    success: true,
-    locationSlot: nextSlot,
-  };
-};
-
-const isConcreteInventorySlotOccupied = async (
-  characterId: number,
-  location: SlottedInventoryLocation,
-  slot: number,
-): Promise<boolean> => {
-  const result = await query<{ exists: number }>(
-    `
-      SELECT 1 AS exists
-      FROM item_instance
-      WHERE owner_character_id = $1
-        AND location = $2
-        AND location_slot = $3
-      LIMIT 1
-    `,
-    [characterId, location, slot],
-  );
-  return result.rows.length > 0;
-};
-
-const getBufferedCreateCandidateSlots = async (
-  characterId: number,
-  location: SlottedInventoryLocation,
-  slotSession?: InventorySlotSession,
-): Promise<number[]> => {
-  const capacity = slotSession?.getSlottedCapacity(characterId, location)
-    ?? getSlottedCapacity(await getInventoryInfo(characterId), location);
-  if (capacity <= 0) {
-    return [];
-  }
-  return slotSession
-    ? slotSession.listEmptySlots(characterId, location, capacity)
-    : await findEmptySlots(characterId, location, capacity);
-};
 
 // ============================================
 // 类型定义
@@ -959,6 +828,7 @@ class EquipmentService {
       obtained_ref_id: null;
       created_at: Date;
     },
+    slotResolution?: ItemInstanceSlotResolution,
   ): BufferedCharacterItemInstanceMutation {
     return {
       opId: `equipment-create:${snapshot.id}:${Date.now()}`,
@@ -967,6 +837,7 @@ class EquipmentService {
       createdAt: Date.now(),
       kind: 'upsert',
       snapshot,
+      slotResolution,
     };
   }
 
@@ -1002,6 +873,7 @@ class EquipmentService {
       obtained_ref_id: null;
       created_at: Date;
     },
+    slotResolution?: ItemInstanceSlotResolution,
   ): BufferedCharacterItemInstanceMutation {
     return {
       opId: `equipment-create:${snapshot.id}:${Date.now()}`,
@@ -1010,6 +882,7 @@ class EquipmentService {
       createdAt: Date.now(),
       kind: 'upsert',
       snapshot,
+      slotResolution,
     };
   }
 
@@ -1085,28 +958,14 @@ class EquipmentService {
       }
       locationSlot = slots[0] ?? null;
     }
-
-    if (!options.persistImmediately && (location === 'bag' || location === 'warehouse')) {
-      const slottedLocation: SlottedInventoryLocation = location === 'warehouse' ? 'warehouse' : 'bag';
-      const resolvedSlotResult = await resolveBufferedEquipmentCreateSlot(
-        {
-          location,
-          locationSlot,
-          shouldFallbackOnSlotConflict,
-        },
-        {
-          getCapacity: async () => (
-            slotSession?.getSlottedCapacity(characterId, slottedLocation)
-            ?? getSlottedCapacity(await getInventoryInfo(characterId), slottedLocation)
-          ),
-          listEmptySlots: async () => getBufferedCreateCandidateSlots(characterId, slottedLocation, slotSession),
-          isConcreteSlotOccupied: async (slot) => isConcreteInventorySlotOccupied(characterId, slottedLocation, slot),
-        },
-      );
-      if (!resolvedSlotResult.success) {
-        return resolvedSlotResult;
-      }
-      locationSlot = resolvedSlotResult.locationSlot;
+    const shouldUseAutoSlotResolution =
+      (location === 'bag' || location === 'warehouse')
+      && shouldFallbackOnSlotConflict;
+    const autoSlotResolution: ItemInstanceSlotResolution | undefined = shouldUseAutoSlotResolution
+      ? { mode: 'auto' }
+      : undefined;
+    if (shouldUseAutoSlotResolution) {
+      locationSlot = null;
     }
 
     const [instanceId] = await reserveItemInstanceIds(1);
@@ -1165,7 +1024,7 @@ class EquipmentService {
           this.buildImmediateCreateMutation(characterId, {
             ...baseSnapshot,
             location_slot: nextLocationSlot,
-          }),
+          }, shouldUseAutoSlotResolution ? { mode: 'auto' } : undefined),
         ]);
 
         if (persisted) {
@@ -1195,7 +1054,7 @@ class EquipmentService {
       const pendingMutation = this.buildBufferedCreateMutation(characterId, {
         ...baseSnapshot,
         location_slot: locationSlot,
-      });
+      }, autoSlotResolution);
       if (options.deferBufferedMutation) {
         return {
           success: true,

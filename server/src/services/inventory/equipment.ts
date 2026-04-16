@@ -74,7 +74,7 @@ import {
   getEquippedSetBonusDelta,
 } from "./shared/attrDelta.js";
 import type { CharacterAttrKey } from "./shared/types.js";
-import type { InventoryLocation, SlottedInventoryLocation } from "./shared/types.js";
+import type { SlottedInventoryLocation } from "./shared/types.js";
 import { consumeMaterialByDefId, consumeCharacterCurrencies } from "./shared/consume.js";
 import { getEnhanceItemState, getRefineItemState, getRerollItemState } from "./shared/validation.js";
 import { clampInt, getStaticItemDef } from "./shared/helpers.js";
@@ -89,6 +89,8 @@ import { findEmptySlots } from "./bag.js";
 import {
   applyCharacterItemInstanceMutationsImmediately,
   bufferCharacterItemInstanceMutations,
+  type BufferedCharacterItemInstanceMutation,
+  type ItemInstanceSlotResolution,
   type JsonValue,
   loadProjectedCharacterItemInstanceById,
   loadProjectedCharacterItemInstancesByLocation,
@@ -196,14 +198,7 @@ export const equipItem = async (
   let swappedOutItemId: number | undefined;
   const currentEquippedItems = await loadProjectedCharacterItemInstancesByLocation(characterId, "equipped");
   const equippedInSlot = currentEquippedItems.find((entry) => entry.equipped_slot === equipSlot) ?? null;
-  const pendingMutations = [] as Array<{
-    opId: string;
-    characterId: number;
-    itemId: number;
-    createdAt: number;
-    kind: "upsert" | "delete";
-    snapshot: typeof item | null;
-  }>;
+  const pendingMutations: Array<BufferedCharacterItemInstanceMutation> = [];
   if (equippedInSlot) {
     swappedOutItemId = Number(equippedInSlot.id);
     if (Number.isFinite(swappedOutItemId)) {
@@ -229,9 +224,10 @@ export const equipItem = async (
         snapshot: {
           ...equippedInSlot,
           location: "bag",
-          location_slot: emptySlots[0],
+          location_slot: null,
           equipped_slot: null,
         },
+        slotResolution: { mode: 'auto' } satisfies ItemInstanceSlotResolution,
       });
 
       await applyCharacterAttrDelta(
@@ -352,9 +348,10 @@ export const unequipItem = async (
       snapshot: {
         ...item,
         location: targetLocation,
-        location_slot: slot,
+        location_slot: null,
         equipped_slot: null,
       },
+      slotResolution: { mode: 'auto' } satisfies ItemInstanceSlotResolution,
     },
   ]);
 

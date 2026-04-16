@@ -72,6 +72,7 @@ import {
   applyCharacterItemInstanceMutations,
   bufferCharacterItemInstanceMutations,
   type BufferedCharacterItemInstanceMutation,
+  type ItemInstanceSlotResolution,
   loadProjectedCharacterItemInstanceById,
   loadProjectedCharacterItemInstances,
   loadProjectedCharacterItemInstancesByLocation,
@@ -328,6 +329,7 @@ const buildUpsertItemMutation = (
   characterId: number,
   snapshot: CharacterItemInstanceSnapshot,
   index: number,
+  slotResolution?: ItemInstanceSlotResolution,
 ): BufferedCharacterItemInstanceMutation => ({
   opId: buildItemInstanceMutationOpId(prefix, snapshot.id, index),
   characterId,
@@ -335,6 +337,7 @@ const buildUpsertItemMutation = (
   createdAt: Date.now() + index,
   kind: "upsert",
   snapshot,
+  slotResolution,
 });
 
 const buildDeleteItemMutation = (
@@ -561,7 +564,7 @@ export const buildMoveItemInstanceToBagMutations = async (
       ...source,
       qty: remainingQty,
       location: "bag",
-      location_slot: targetSlot,
+      location_slot: null,
       equipped_slot: null,
       bind_type: bindType,
       metadata: sourceCanAutoStack ? null : source.metadata,
@@ -569,6 +572,7 @@ export const buildMoveItemInstanceToBagMutations = async (
       quality_rank: sourceCanAutoStack ? null : source.quality_rank,
     },
     pendingMutations.length,
+    { mode: 'auto' },
   ));
 
   return {
@@ -1719,6 +1723,7 @@ export const moveItem = async (
 
   let finalSlot: number | null | undefined = targetSlot;
   const localProjectedItems = applyBufferedMutationsToProjectedItems(projectedItems, pendingMutations);
+  const shouldAutoResolveTargetSlot = finalSlot === undefined;
   if (finalSlot === undefined) {
     finalSlot = findFirstEmptyProjectedSlot(localProjectedItems, targetLocation, capacity);
     if (finalSlot === null) {
@@ -1755,13 +1760,14 @@ export const moveItem = async (
       ...item,
       qty: remainingQty,
       location: targetLocation,
-      location_slot: finalSlot,
+      location_slot: shouldAutoResolveTargetSlot ? null : finalSlot,
       bind_type: normalizedBindType,
       metadata: sourceCanAutoStack ? null : item.metadata,
       quality: sourceCanAutoStack ? null : item.quality,
       quality_rank: sourceCanAutoStack ? null : item.quality_rank,
     },
     pendingMutations.length,
+    shouldAutoResolveTargetSlot ? { mode: 'auto' } : undefined,
   ));
   await bufferCharacterItemInstanceMutations(pendingMutations);
   return { success: true, message: "移动成功" };
