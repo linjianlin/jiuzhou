@@ -462,7 +462,7 @@ test('flush 应在同槽存在非 sort upsert 时保留非 sort 并裁掉 sort',
   assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
 });
 
-test('flush 遇到两个非 sort upsert 同槽时仍应报冲突', () => {
+test('flush 遇到两个非 sort upsert 同槽时应只保留最新 mutation', () => {
   const resolved = resolveItemInstanceFlushInput(
     [],
     [
@@ -530,6 +530,82 @@ test('flush 遇到两个非 sort upsert 同槽时仍应报冲突', () => {
   );
 
   assert.equal(resolved.droppedSortInventoryMutations, false);
+  assert.equal(resolved.effectiveMutations.length, 1);
+  assert.equal(resolved.effectiveMutations[0]?.itemId, 502);
+  assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, []);
+});
+
+test('flush 裁掉旧的非 sort 同槽 mutation 后若仍撞上现有库存则继续报冲突', () => {
+  const resolved = resolveItemInstanceFlushInput(
+    [
+      { id: 900, owner_character_id: 1, location: 'bag', location_slot: 11 },
+    ],
+    [
+      buildMutation({ itemId: 501, characterId: 1, opId: 'move-item:501:100:0', createdAt: 100, kind: 'upsert', snapshot: {
+        id: 501,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-001',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'mail',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+      buildMutation({ itemId: 502, characterId: 1, opId: 'grant-item:502:200:0', createdAt: 200, kind: 'upsert', snapshot: {
+        id: 502,
+        owner_user_id: 1,
+        owner_character_id: 1,
+        item_def_id: 'equip-weapon-002',
+        qty: 1,
+        quality: null,
+        quality_rank: null,
+        metadata: null,
+        location: 'bag',
+        location_slot: 11,
+        equipped_slot: null,
+        strengthen_level: 0,
+        refine_level: 0,
+        socketed_gems: [],
+        affixes: [],
+        identified: true,
+        locked: false,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+        random_seed: null,
+        affix_gen_version: 0,
+        affix_roll_meta: null,
+        custom_name: null,
+        expire_at: null,
+        obtained_from: 'grant',
+        obtained_ref_id: null,
+        created_at: new Date('2026-04-08T09:00:00.000Z'),
+      } }),
+    ],
+  );
+
+  assert.equal(resolved.droppedSortInventoryMutations, false);
+  assert.equal(resolved.effectiveMutations.length, 2);
   assert.deepEqual(resolved.flushPlan.duplicateTargetKeys, ['1:bag:11']);
 });
 

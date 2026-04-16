@@ -63,6 +63,7 @@ type ResolvedItemInstanceFlushInput = {
   effectiveMutations: BufferedCharacterItemInstanceMutation[];
   flushPlan: ItemInstanceMutationFlushPlan;
   droppedSortInventoryMutations: boolean;
+  droppedTargetConflictingNonSortMutations: boolean;
 };
 
 type NormalizedItemInstanceMutations = {
@@ -99,6 +100,10 @@ const getItemInstanceMutationPrefix = (opId: string): string => {
   const separatorIndex = normalized.indexOf(':');
   return separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : normalized;
 };
+
+const buildBufferedMutationIdentity = (
+  mutation: BufferedCharacterItemInstanceMutation,
+): string => `${mutation.itemId}:${mutation.opId}:${mutation.createdAt}`;
 
 export const pruneStaleSortInventoryMutations = (
   mutations: readonly BufferedCharacterItemInstanceMutation[],
@@ -169,8 +174,8 @@ export const pruneSlotConflictingSortInventoryMutations = (
     }
     keptSortMutationIds.add(`${latestSortMutation.itemId}:${latestSortMutation.opId}:${latestSortMutation.createdAt}`);
     for (const mutation of sortUpserts) {
-      const mutationKey = `${mutation.itemId}:${mutation.opId}:${mutation.createdAt}`;
-      if (mutationKey === `${latestSortMutation.itemId}:${latestSortMutation.opId}:${latestSortMutation.createdAt}`) {
+      const mutationKey = buildBufferedMutationIdentity(mutation);
+      if (mutationKey === buildBufferedMutationIdentity(latestSortMutation)) {
         continue;
       }
       droppedSortMutationIds.add(mutationKey);
@@ -186,13 +191,77 @@ export const pruneSlotConflictingSortInventoryMutations = (
 
   return {
     mutations: mutations.filter((mutation) => {
-      const mutationKey = `${mutation.itemId}:${mutation.opId}:${mutation.createdAt}`;
+      const mutationKey = buildBufferedMutationIdentity(mutation);
       if (keptSortMutationIds.has(mutationKey)) {
         return true;
       }
       return !droppedSortMutationIds.has(mutationKey);
     }),
     droppedSortInventoryMutations: true,
+  };
+};
+
+const pruneTargetConflictingNonSortMutations = (
+  mutations: readonly BufferedCharacterItemInstanceMutation[],
+  duplicateTargetKeys: readonly string[],
+): {
+  mutations: BufferedCharacterItemInstanceMutation[];
+  droppedTargetConflictingNonSortMutations: boolean;
+} => {
+  if (duplicateTargetKeys.length <= 0) {
+    return {
+      mutations: [...mutations],
+      droppedTargetConflictingNonSortMutations: false,
+    };
+  }
+
+  const duplicateTargetKeySet = new Set(duplicateTargetKeys);
+  const mutationsByTargetKey = new Map<string, BufferedCharacterItemInstanceMutation[]>();
+  for (const mutation of mutations) {
+    const targetKey = buildSlotTargetKey(mutation);
+    if (!targetKey || !duplicateTargetKeySet.has(targetKey)) {
+      continue;
+    }
+    const group = mutationsByTargetKey.get(targetKey) ?? [];
+    group.push(mutation);
+    mutationsByTargetKey.set(targetKey, group);
+  }
+
+  const droppedMutationIds = new Set<string>();
+  for (const group of mutationsByTargetKey.values()) {
+    if (group.length <= 1) {
+      continue;
+    }
+    const nonSortUpserts = group.filter((mutation) => getItemInstanceMutationPrefix(mutation.opId) !== 'sort-inventory');
+    if (nonSortUpserts.length !== group.length) {
+      continue;
+    }
+    const latestMutation = [...nonSortUpserts].sort(
+      (left, right) => left.createdAt - right.createdAt || left.opId.localeCompare(right.opId),
+    )[nonSortUpserts.length - 1];
+    if (!latestMutation) {
+      continue;
+    }
+    const latestMutationId = buildBufferedMutationIdentity(latestMutation);
+    for (const mutation of nonSortUpserts) {
+      const mutationId = buildBufferedMutationIdentity(mutation);
+      if (mutationId === latestMutationId) {
+        continue;
+      }
+      droppedMutationIds.add(mutationId);
+    }
+  }
+
+  if (droppedMutationIds.size <= 0) {
+    return {
+      mutations: [...mutations],
+      droppedTargetConflictingNonSortMutations: false,
+    };
+  }
+
+  return {
+    mutations: mutations.filter((mutation) => !droppedMutationIds.has(buildBufferedMutationIdentity(mutation))),
+    droppedTargetConflictingNonSortMutations: true,
   };
 };
 
@@ -960,6 +1029,7 @@ export const resolveItemInstanceFlushInput = (
       effectiveMutations,
       flushPlan,
       droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+      droppedTargetConflictingNonSortMutations: false,
     };
   }
 
@@ -967,10 +1037,32 @@ export const resolveItemInstanceFlushInput = (
     getItemInstanceMutationPrefix(mutation.opId) !== 'sort-inventory'
   ));
   if (nonSortMutations.length === effectiveMutations.length) {
-    return {
+    const prunedNonSortMutations = pruneTargetConflictingNonSortMutations(
       effectiveMutations,
-      flushPlan,
+      flushPlan.duplicateTargetKeys,
+    );
+    if (!prunedNonSortMutations.droppedTargetConflictingNonSortMutations) {
+      return {
+        effectiveMutations,
+        flushPlan,
+        droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+        droppedTargetConflictingNonSortMutations: false,
+      };
+    }
+    const prunedFlushPlan = buildItemInstanceMutationFlushPlan(existingRows, prunedNonSortMutations.mutations);
+    if (prunedFlushPlan.duplicateTargetKeys.length > 0) {
+      return {
+        effectiveMutations,
+        flushPlan,
+        droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+        droppedTargetConflictingNonSortMutations: false,
+      };
+    }
+    return {
+      effectiveMutations: prunedNonSortMutations.mutations,
+      flushPlan: prunedFlushPlan,
       droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+      droppedTargetConflictingNonSortMutations: true,
     };
   }
 
@@ -980,6 +1072,7 @@ export const resolveItemInstanceFlushInput = (
       effectiveMutations,
       flushPlan,
       droppedSortInventoryMutations: normalizedMutations.droppedSortInventoryMutations,
+      droppedTargetConflictingNonSortMutations: false,
     };
   }
 
@@ -987,6 +1080,7 @@ export const resolveItemInstanceFlushInput = (
     effectiveMutations: nonSortMutations,
     flushPlan: nonSortFlushPlan,
     droppedSortInventoryMutations: true,
+    droppedTargetConflictingNonSortMutations: false,
   };
 };
 
@@ -1703,11 +1797,18 @@ const flushSingleCharacterItemInstanceMutations = async (
       effectiveMutations,
       flushPlan,
       droppedSortInventoryMutations,
+      droppedTargetConflictingNonSortMutations,
     } = resolveItemInstanceFlushInput(existingRowsResult.rows, mutations);
     if (droppedSortInventoryMutations) {
       itemInstanceMutationLogger.warn(
         { characterId, droppedMutationCount: mutations.length - effectiveMutations.length },
         '实例 mutation flush 检测到过期整理快照冲突，已丢弃 sort-inventory mutation',
+      );
+    }
+    if (droppedTargetConflictingNonSortMutations) {
+      itemInstanceMutationLogger.warn(
+        { characterId, droppedMutationCount: mutations.length - effectiveMutations.length },
+        '实例 mutation flush 检测到同槽旧快照冲突，已丢弃较旧的非 sort mutation',
       );
     }
     if (flushPlan.duplicateTargetKeys.length > 0) {
