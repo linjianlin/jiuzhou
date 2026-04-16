@@ -84,6 +84,7 @@ import { loadPartnerMarketTradeStateMap, loadActivePartnerMarketListing } from '
 import {
   consumeCharacterStoredResourcesAndMaterialsAtomically,
 } from './inventory/shared/consume.js';
+import { loadCharacterSettlementResourceSnapshot } from './shared/characterSettlementResourceDeltaService.js';
 import {
   loadActivePartnerFusionMaterial,
   loadPartnerFusionLockStateMap,
@@ -1413,12 +1414,14 @@ class PartnerService {
 
       const [
         character,
+        resourceSnapshot,
         rows,
         books,
         partnerConsumables,
         pendingTechniqueLearnPreviewResult,
       ] = await Promise.all([
         loadCharacterPartnerContext(characterId, false),
+        loadCharacterSettlementResourceSnapshot(characterId),
         loadPartnerRows(characterId, false),
         loadPartnerBooks(characterId),
         loadPartnerConsumables(characterId),
@@ -1455,7 +1458,7 @@ class PartnerService {
         data: {
           unlocked: true,
           featureCode: PARTNER_SYSTEM_FEATURE_CODE,
-          characterExp: character.exp,
+          characterExp: resourceSnapshot?.exp ?? character.exp,
           activePartnerId:
             partners.find((entry) => entry.isActive)?.id ?? null,
           partners,

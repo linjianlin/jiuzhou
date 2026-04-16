@@ -56,6 +56,12 @@ type FlushOptions = {
   limit?: number;
 };
 
+type StartupInflightRecoveryTask = {
+  dirtyIndexKey: string;
+  buildInflightKey: (characterId: number) => string;
+  restoreClaimedDelta: (characterId: number) => Promise<void>;
+};
+
 type ClaimedCharacterDelta = {
   characterId: number;
   delta: CharacterSettlementResourceDelta;
@@ -740,10 +746,97 @@ const runFlushLoopOnce = async (): Promise<void> => {
   }
 };
 
+/**
+ * 启动时恢复旧 inflight 资源 Delta。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：扫描 dirty index 中仍残留 inflight hash 的角色，把异常退出前 claim 走但未 finalize/restore 的增量恢复回 main。
+ * 2. 做什么：复用现有 restore Lua，保证恢复语义与正常 flush 失败回滚完全一致。
+ * 3. 不做什么：不直接写数据库，不跳过现有 flush 协议，也不扫描不在 dirty index 中的全量 Redis key。
+ *
+ * 输入 / 输出：
+ * - 输入：dirty index key、inflight key 生成器、restore 实现。
+ * - 输出：返回本次实际恢复的角色数量。
+ *
+ * 数据流 / 状态流：
+ * dirty index -> EXISTS inflight hash -> restoreClaimedDelta -> main hash + dirty index -> 后续 flush 正常落库。
+ *
+ * 复用设计说明：
+ * - 启动恢复只前移“失败回滚”时机，不新增第二套账本协议，后续 flush 仍然复用同一条链路。
+ * - 以 dirty index 为候选集合，避免全量扫描 Redis，降低启动成本与误恢复范围。
+ *
+ * 关键边界条件与坑点：
+ * 1. 只恢复 dirty index 内仍存在 inflight 的角色，避免误碰正常已 finalize 的历史角色。
+ * 2. 恢复后仍需跑一次 flush，才能把旧 inflight 重新合并后的 main delta 尽快落表。
+ */
+const recoverClaimedSettlementInflightByDirtyIndex = async (
+  task: StartupInflightRecoveryTask,
+): Promise<number> => {
+  const dirtyCharacterIds = (await redis.smembers(task.dirtyIndexKey))
+    .map((characterId) => Math.floor(Number(characterId)))
+    .filter((characterId) => Number.isFinite(characterId) && characterId > 0)
+    .sort((left, right) => left - right);
+  if (dirtyCharacterIds.length <= 0) {
+    return 0;
+  }
+
+  const pipeline = redis.pipeline();
+  for (const characterId of dirtyCharacterIds) {
+    pipeline.exists(task.buildInflightKey(characterId));
+  }
+  const existsResults = await pipeline.exec();
+  if (!existsResults) {
+    return 0;
+  }
+
+  let recoveredCount = 0;
+  for (const [index, characterId] of dirtyCharacterIds.entries()) {
+    const existsValue = Number(existsResults[index]?.[1] ?? 0);
+    if (existsValue !== 1) {
+      continue;
+    }
+    await task.restoreClaimedDelta(characterId);
+    recoveredCount += 1;
+  }
+
+  return recoveredCount;
+};
+
+const recoverCharacterSettlementInflightDeltasOnStartup = async (): Promise<void> => {
+  const [resourceRecoveredCount, exactRecoveredCount] = await Promise.all([
+    recoverClaimedSettlementInflightByDirtyIndex({
+      dirtyIndexKey: RESOURCE_DELTA_DIRTY_INDEX_KEY,
+      buildInflightKey: buildInflightResourceDeltaKey,
+      restoreClaimedDelta: restoreClaimedCharacterResourceDelta,
+    }),
+    recoverClaimedSettlementInflightByDirtyIndex({
+      dirtyIndexKey: RESOURCE_EXACT_DELTA_DIRTY_INDEX_KEY,
+      buildInflightKey: buildInflightResourceExactDeltaKey,
+      restoreClaimedDelta: restoreClaimedCharacterResourceExactDelta,
+    }),
+  ]);
+
+  if (resourceRecoveredCount <= 0 && exactRecoveredCount <= 0) {
+    return;
+  }
+
+  resourceDeltaLogger.warn(
+    {
+      resourceRecoveredCount,
+      exactRecoveredCount,
+    },
+    '启动时检测到残留 inflight 角色资源 Delta，已回滚到主账本等待重新 flush',
+  );
+};
+
 export const initializeCharacterSettlementResourceDeltaService = async (): Promise<void> => {
   if (flushTimer) {
     return;
   }
+
+  await recoverCharacterSettlementInflightDeltasOnStartup();
+
+  await runFlushLoopOnce();
 
   flushTimer = setInterval(() => {
     void runFlushLoopOnce();
