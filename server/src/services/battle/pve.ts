@@ -131,7 +131,9 @@ const startPVEBattleByPolicy = async (
       setBonusEffects: characterBattleLoadout.setBonusEffects,
     };
 
-    if (characterWithSetBonus.qixue <= 0) {
+    const character = withBattleStartResources(characterWithSetBonus);
+
+    if (character.qixue <= 0) {
       slowLogger.flush({
         success: false,
         reason: "qixue_empty",
@@ -163,8 +165,6 @@ const startPVEBattleByPolicy = async (
         );
       }
     }
-    const character = withBattleStartResources(characterWithSetBonus);
-
     const requestedMonsterIds = monsterIds.filter(
       (x) => typeof x === "string" && x.length > 0,
     );
@@ -418,7 +418,9 @@ export const startResolvedPVEBattleByPolicy = async (params: {
       ...baseCharacter,
       setBonusEffects: characterBattleLoadout.setBonusEffects,
     };
-    if (characterWithSetBonus.qixue <= 0) {
+    const character = withBattleStartResources(characterWithSetBonus);
+
+    if (character.qixue <= 0) {
       return { success: false, message: '气血不足，无法战斗' };
     }
     const selfInBattleResult = buildCharacterInBattleResult(
@@ -439,8 +441,6 @@ export const startResolvedPVEBattleByPolicy = async (params: {
     if (params.monsters.length <= 0) {
       return { success: false, message: '请指定战斗目标' };
     }
-
-    const character = withBattleStartResources(characterWithSetBonus);
 
     const validTeamMembersPromise = params.allowTeamBattle
       ? (

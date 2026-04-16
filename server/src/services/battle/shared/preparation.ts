@@ -301,11 +301,12 @@ export async function prepareTeamBattleParticipants(
     ) {
       continue;
     }
-    if (member.data.qixue <= 0) continue;
+    const recoveredMemberData = withBattleStartResources(member.data);
+    if (recoveredMemberData.qixue <= 0) continue;
 
     validTeamMembers.push({
       ...member,
-      data: withBattleStartResources(member.data),
+      data: recoveredMemberData,
     });
     participantUserIds.push(member.data.user_id);
   }

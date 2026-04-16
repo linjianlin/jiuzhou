@@ -29,6 +29,7 @@ import {
   type DungeonEntryCountProjectionRecord,
   getDungeonProjection,
   getOnlineBattleCharacterSnapshotsByCharacterIds,
+  getTeamProjectionByUserId,
   type OnlineBattleCharacterSnapshot,
   upsertDungeonProjection,
 } from '../onlineBattleProjectionService.js';
@@ -131,6 +132,65 @@ const buildDeferredSettlementParticipants = async (
   return out;
 };
 
+const buildSortedUniqueParticipantCharacterIds = (
+  participants: DungeonInstanceParticipant[],
+): number[] => Array.from(
+  new Set(
+    participants
+      .map((participant) => participant.characterId)
+      .filter((characterId) => Number.isFinite(characterId) && characterId > 0),
+  ),
+).sort((left, right) => left - right);
+
+const isSameSortedCharacterIdList = (
+  left: number[],
+  right: number[],
+): boolean => {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const ensurePreparingDungeonTeamConsistency = async (
+  userId: number,
+  projection: {
+    teamId: string | null;
+    participants: DungeonInstanceParticipant[];
+  },
+): Promise<string | null> => {
+  if (!projection.teamId) {
+    return null;
+  }
+
+  const currentTeamProjection = await getTeamProjectionByUserId(userId);
+  if (
+    !currentTeamProjection
+    || currentTeamProjection.teamId !== projection.teamId
+    || currentTeamProjection.role !== 'leader'
+  ) {
+    return '队伍已变更，请重新创建秘境';
+  }
+
+  const projectionParticipantCharacterIds = buildSortedUniqueParticipantCharacterIds(projection.participants);
+  const currentMemberCharacterIds = Array.from(
+    new Set(
+      currentTeamProjection.memberCharacterIds.filter((characterId) => characterId > 0),
+    ),
+  ).sort((left, right) => left - right);
+
+  if (!isSameSortedCharacterIdList(projectionParticipantCharacterIds, currentMemberCharacterIds)) {
+    return '队伍已变更，请重新创建秘境';
+  }
+
+  return null;
+};
+
 /** 开启秘境战斗。 */
 export const startDungeonInstance = async (
   userId: number,
@@ -160,6 +220,11 @@ export const startDungeonInstance = async (
   }
   if (projection.creatorCharacterId !== user.characterId) {
     return { success: false, message: '只有创建者可以开始秘境' };
+  }
+
+  const teamConsistencyError = await ensurePreparingDungeonTeamConsistency(userId, projection);
+  if (teamConsistencyError) {
+    return { success: false, message: teamConsistencyError };
   }
 
   const dungeonDef = getDungeonDefById(projection.dungeonId);

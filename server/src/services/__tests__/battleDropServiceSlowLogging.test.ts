@@ -89,7 +89,7 @@ test('battleDropService.settleBattleRewardPlan: 应输出真实发奖分段慢�
   t.mock.method(database, 'withTransactionAuto', async <T>(callback: () => Promise<T>) => callback());
   t.mock.method(
     characterRewardTargetLock,
-    'lockCharacterRewardSettlementTargets',
+    'lockCharacterRewardInventoryTargets',
     async (characterIds: number[]) => {
       assert.deepEqual(characterIds, [1001]);
       return characterIds;
@@ -132,7 +132,7 @@ test('battleDropService.settleBattleRewardPlan: 应输出真实发奖分段慢�
 
   assert.deepEqual(marks.map((entry) => entry.name), [
     'aggregateRewardDeltas',
-    'lockCharacterRewardSettlementTargets',
+    'lockCharacterRewardInventoryTargets',
     'loadAutoDisassembleSettings',
     'grantRewardDrops',
     'recordCollectItemEvents',
@@ -193,7 +193,7 @@ test('battleDropService.settleBattleRewardPlan: 应按角色批量记录收集�
   };
 
   t.mock.method(database, 'withTransactionAuto', async <T>(callback: () => Promise<T>) => callback());
-  t.mock.method(characterRewardTargetLock, 'lockCharacterRewardSettlementTargets', async () => undefined);
+  t.mock.method(characterRewardTargetLock, 'lockCharacterRewardInventoryTargets', async () => undefined);
   t.mock.method(database, 'query', async () => ({
     rows: [
       {
@@ -295,7 +295,7 @@ test('battleDropService.settleBattleRewardPlan: battle_drop 装备应同步入�
   const createItemCalls: Array<Parameters<typeof itemService.createItem>> = [];
 
   t.mock.method(database, 'withTransactionAuto', async <T>(callback: () => Promise<T>) => callback());
-  t.mock.method(characterRewardTargetLock, 'lockCharacterRewardSettlementTargets', async () => undefined);
+  t.mock.method(characterRewardTargetLock, 'lockCharacterRewardInventoryTargets', async () => undefined);
   t.mock.method(database, 'query', async () => ({
     rows: [{ id: 1001, auto_disassemble_enabled: false, auto_disassemble_rules: null }],
     rowCount: 1,

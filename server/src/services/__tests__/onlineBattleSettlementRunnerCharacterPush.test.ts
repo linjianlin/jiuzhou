@@ -172,3 +172,129 @@ test('flushOnlineBattleSettlementTasks: 组队发奖落库后应再次推送角�
   assert.deepEqual(pushedUserIds, [101, 102]);
   assert.equal(pendingTasks.length, 0);
 });
+
+test('flushOnlineBattleSettlementTasks: 奖励结算失败时也应先记录击杀任务进度', async (t) => {
+  const task: DeferredSettlementTask = {
+    taskId: 'task-kill-before-reward',
+    battleId: 'battle-kill-before-reward',
+    status: 'pending',
+    attempts: 0,
+    maxAttempts: 5,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    errorMessage: null,
+    payload: {
+      battleId: 'battle-kill-before-reward',
+      battleType: 'pve',
+      result: 'attacker_win',
+      participants: [
+        {
+          userId: 101,
+          characterId: 1001,
+          nickname: '甲',
+          realm: '炼气期',
+          fuyuan: 1,
+        },
+      ],
+      rewardParticipants: [
+        {
+          userId: 101,
+          characterId: 1001,
+          nickname: '甲',
+          realm: '炼气期',
+          fuyuan: 1,
+        },
+      ],
+      isDungeonBattle: false,
+      isTowerBattle: false,
+      rewardsPreview: null,
+      battleRewardPlan: {
+        totalExp: 120,
+        totalSilver: 30,
+        drops: [],
+        perPlayerRewards: [
+          {
+            characterId: 1001,
+            userId: 101,
+            exp: 120,
+            silver: 30,
+            drops: [],
+          },
+        ],
+      },
+      monsters: [
+        {
+          id: 'wolf-king',
+          name: '狼王',
+          realm: '炼气期',
+          expReward: 120,
+          silverRewardMin: 20,
+          silverRewardMax: 30,
+          dropPoolId: null,
+          kind: 'boss',
+        },
+      ],
+      arenaDelta: null,
+      dungeonContext: null,
+      dungeonStartConsumption: null,
+      dungeonSettlement: null,
+      session: null,
+    },
+  };
+
+  let pendingTasks: DeferredSettlementTask[] = [task];
+  const executionOrder: string[] = [];
+
+  t.mock.method(
+    onlineBattleProjectionService,
+    'listPendingDeferredSettlementTasks',
+    () => pendingTasks,
+  );
+  t.mock.method(
+    onlineBattleProjectionService,
+    'getDeferredSettlementTask',
+    async (taskId: string) => pendingTasks.find((entry) => entry.taskId === taskId) ?? null,
+  );
+  t.mock.method(
+    onlineBattleProjectionService,
+    'updateDeferredSettlementTaskStatus',
+    async (
+      params: Parameters<typeof onlineBattleProjectionService.updateDeferredSettlementTaskStatus>[0],
+    ) => {
+      const current = pendingTasks.find((entry) => entry.taskId === params.taskId) ?? null;
+      if (!current) return null;
+      const nextTask: DeferredSettlementTask = {
+        ...current,
+        status: params.status,
+        attempts: params.incrementAttempt ? current.attempts + 1 : current.attempts,
+        updatedAt: Date.now(),
+        errorMessage: params.errorMessage ?? null,
+      };
+      pendingTasks = pendingTasks.map((entry) => (entry.taskId === params.taskId ? nextTask : entry));
+      return nextTask;
+    },
+  );
+  t.mock.method(
+    onlineBattleProjectionService,
+    'deleteDeferredSettlementTask',
+    async () => {
+      throw new Error('不应在奖励结算失败时删除任务');
+    },
+  );
+  t.mock.method(taskService, 'recordKillMonsterEvents', async () => {
+    executionOrder.push('kill');
+  });
+  t.mock.method(battleDropService, 'settleBattleRewardPlan', async () => {
+    executionOrder.push('reward');
+    throw new Error('reward failed');
+  });
+  t.mock.method(gameServerModule, 'getGameServer', () => ({
+    pushCharacterUpdate: async () => undefined,
+  }) as never);
+
+  await flushOnlineBattleSettlementTasks();
+
+  assert.deepEqual(executionOrder, ['kill', 'reward']);
+  assert.equal(pendingTasks[0]?.status, 'failed');
+  assert.equal(pendingTasks[0]?.errorMessage, 'reward failed');
+});

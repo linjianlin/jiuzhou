@@ -853,6 +853,14 @@ const executeDeferredSettlementTask = async (
     }
 
     if (task.payload.battleType === 'pve') {
+      if (task.payload.result === 'attacker_win' && task.payload.rewardParticipants.length > 0) {
+        const killMonsterEvents = buildKillMonsterEventsFromSnapshots(task.payload.monsters);
+        await recordKillMonsterEventsForParticipants(task.payload.rewardParticipants, killMonsterEvents);
+        slowLogger.mark('recordKillMonsterEventsForParticipants', {
+          killMonsterEventCount: killMonsterEvents.length,
+        });
+      }
+
       if (
         task.payload.result === 'attacker_win' &&
         task.payload.rewardParticipants.length > 0 &&
@@ -870,14 +878,6 @@ const executeDeferredSettlementTask = async (
           participants: task.payload.rewardParticipants,
         });
         slowLogger.mark('settleTowerBattle');
-      }
-
-      if (task.payload.result === 'attacker_win' && task.payload.rewardParticipants.length > 0) {
-        const killMonsterEvents = buildKillMonsterEventsFromSnapshots(task.payload.monsters);
-        await recordKillMonsterEventsForParticipants(task.payload.rewardParticipants, killMonsterEvents);
-        slowLogger.mark('recordKillMonsterEventsForParticipants', {
-          killMonsterEventCount: killMonsterEvents.length,
-        });
       }
 
       if (task.payload.dungeonSettlement && task.payload.result === 'attacker_win') {

@@ -40,7 +40,7 @@ import {
 } from './shared/characterRewardSettlement.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import {
-  lockCharacterRewardSettlementTargets,
+  lockCharacterRewardInventoryTargets,
   normalizeCharacterRewardTargetIds,
 } from './shared/characterRewardTargetLock.js';
 import { createCharacterBagSlotAllocatorFromSession } from './shared/characterBagSlotAllocator.js';
@@ -806,6 +806,11 @@ class BattleDropService {
       };
     }
 
+    const requiresInventoryMutation = plan.dropPlans.length > 0;
+    if (requiresInventoryMutation) {
+      await lockCharacterRewardInventoryTargets([receiverCharacterId]);
+    }
+
     const pendingCharacterRewardDeltas = new Map<number, CharacterRewardDelta>();
     addCharacterRewardDelta(pendingCharacterRewardDeltas, receiverCharacterId, {
       exp: plan.expGained,
@@ -1295,7 +1300,7 @@ class BattleDropService {
 
     try {
       if (requiresInventoryMutation && participantCharacterIds.length > 0) {
-        await lockCharacterRewardSettlementTargets(participantCharacterIds);
+        await lockCharacterRewardInventoryTargets(participantCharacterIds);
       }
 
       for (const reward of plan.perPlayerRewards) {
