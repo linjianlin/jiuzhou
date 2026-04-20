@@ -721,6 +721,22 @@ model dungeon_record {
   @@index([dungeon_id, completed_at(sort: Desc)], map: "idx_dungeon_record_dungeon")
 }
 
+model online_battle_settlement_task {
+  id            String   @id @db.VarChar(128)
+  battle_id     String   @db.VarChar(128)
+  kind          String   @db.VarChar(64)
+  status        String   @default("pending") @db.VarChar(32)
+  attempt_count Int      @default(0)
+  max_attempts  Int      @default(5)
+  payload       Json
+  error_message String?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([status, updated_at(sort: Asc)], map: "idx_online_battle_settlement_status")
+  @@index([battle_id], map: "idx_online_battle_settlement_battle")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model game_time {
   id              Int      @id @db.SmallInt

@@ -1,0 +1,16 @@
+pub mod battle_persistence;
+pub mod aliyun_sms;
+pub mod cos;
+pub mod database;
+pub mod http_client;
+pub mod redis;
+pub mod partner_ai;
+pub mod redis_item_grant_delta;
+pub mod redis_item_instance_mutation;
+pub mod redis_progress_delta;
+pub mod redis_resource_delta;
+pub mod technique_ai;
+pub mod text_model_config;
+pub mod tencent_captcha;
+pub mod uploads;
+pub mod wander_ai;
