@@ -1,0 +1,36 @@
+[package]
+name = "server-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+axum = { version = "0.8", features = ["http1", "json", "multipart", "tokio", "tracing"] }
+base64 = "0.22"
+bcrypt = "0.17"
+config = { version = "0.15", default-features = false, features = ["toml"] }
+dotenvy = "0.15"
+engineioxide-core = "0.2"
+hex = "0.4"
+holiday-cn = "0.1.20250331"
+hmac = "0.12"
+http = "1.3"
+jsonwebtoken = "9.3"
+md5 = "0.7"
+sha1 = "0.10"
+redis = { version = "0.32", features = ["tokio-comp"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+rand = "0.8"
+socketioxide = "0.18"
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+thiserror = "2.0"
+time = { version = "0.3", features = ["formatting", "macros"] }
+tokio = { version = "1.48", features = ["fs", "macros", "rt-multi-thread", "signal", "time"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+urlencoding = "2.1"
