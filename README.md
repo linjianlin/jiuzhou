@@ -5,7 +5,8 @@
 ## 技术栈
 
 - **前端**: React 19 + TypeScript + Vite + Socket.IO + Zustand
-- **后端**: Express 5 + Node.js + TypeScript + Socket.IO
+- **当前后端**: Rust + Axum + Socket.IO（`server-rs/`）
+- **遗留基线/参考实现**: Node.js + TypeScript（`server/`，用于协议对照、seed 与回归参考）
 - **数据库**: PostgreSQL 16 + Redis 7
 - **部署**: Docker Swarm + Caddy
 
@@ -17,19 +18,16 @@
 # 安装依赖
 pnpm install
 
-# 启动开发服务器（server 启动前会自动执行 Prisma db push）
+# 启动前端 + Rust 后端（默认开发入口）
 pnpm dev
+
+# 若需对照遗留 Node 基线
+pnpm dev:server:node
 ```
 
 ### 生产部署
 
-#### 使用 Docker Compose（简单）
-
-```bash
-docker-compose up -d
-```
-
-#### 使用 Docker Swarm（推荐，支持零停机更新）
+#### 使用 Docker Swarm（当前部署入口）
 
 ```bash
 # 初始化 Swarm（首次）
@@ -48,14 +46,14 @@ docker stack services jiuzhou
 # 更新前端
 docker service update --with-registry-auth --image ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-client:latest jiuzhou_client
 
-# 更新后端
-docker service update --with-registry-auth --image ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-server:latest jiuzhou_server
+# 更新 Rust 后端
+docker service update --with-registry-auth --image ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-server-rs:latest jiuzhou_server
 
 # 或重新部署整个 stack
 docker stack deploy --with-registry-auth -c docker-stack.yml jiuzhou
 ```
 
-后端容器启动时会先自动执行 Prisma `db push`，再启动应用服务。
+当前 Swarm 配置默认部署 Rust 后端；遗留 Node `server/` 保留为协议/seed/参考实现，不再作为默认生产服务入口。
 
 **常用管理命令：**
 
@@ -91,15 +89,17 @@ docker stack rm jiuzhou
 │   │   └── services/      # API 服务
 │   ├── Dockerfile
 │   └── Caddyfile
-├── server/                 # 后端项目
+├── server-rs/              # Rust 后端项目（当前实现）
 │   ├── src/
-│   │   ├── battle/        # 战斗系统
-│   │   ├── config/        # 配置
-│   │   ├── game/          # 游戏服务器
-│   │   ├── routes/        # API 路由
-│   │   └── services/      # 业务服务
 │   └── Dockerfile
-├── docker-compose.yml      # Docker Compose 配置
+├── server/                 # 遗留 Node 基线 / 协议参考 / seed 数据
+│   ├── src/
+│   │   ├── battle/
+│   │   ├── config/
+│   │   ├── game/
+│   │   ├── routes/
+│   │   └── services/
+│   └── Dockerfile
 ├── docker-stack.yml        # Docker Swarm 配置（零停机更新）
 └── docker-build.sh         # 构建脚本
 ```
@@ -109,7 +109,7 @@ docker stack rm jiuzhou
 | 文件 | 说明 |
 |------|------|
 | `client/.env.example` | 前端环境变量示例 |
-| `docker-compose.yml` | Docker Compose 配置 |
+| `server-rs/.env.example` | Rust 后端环境变量示例 |
 | `docker-stack.yml` | Docker Swarm 配置 |
 
 ## License

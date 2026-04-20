@@ -24,7 +24,7 @@ usage() {
 
 参数:
   版本号              镜像标签，默认 latest
-  --server-only, -s   只构建并推送服务端镜像
+  --server-only, -s   只构建并推送 Rust 服务端镜像
 USAGE
 }
 
@@ -57,6 +57,10 @@ fi
 
 get_image_name() {
     local target="$1"
+    if [ "$target" = "server" ]; then
+        echo "$REGISTRY/jiuzhou-server-rs:$VERSION"
+        return
+    fi
     echo "$REGISTRY/jiuzhou-$target:$VERSION"
 }
 
@@ -74,8 +78,8 @@ build_image() {
         return
     fi
 
-    log_info "📦 Building server..."
-    docker build -t "$(get_image_name server)" -f server/Dockerfile .
+    log_info "📦 Building Rust server..."
+    docker build -t "$(get_image_name server)" -f server-rs/Dockerfile .
 }
 
 push_image() {
@@ -86,8 +90,16 @@ push_image() {
 
 tag_latest_image() {
     local target="$1"
-    local version_image="$REGISTRY/jiuzhou-$target:$VERSION"
-    local latest_image="$REGISTRY/jiuzhou-$target:latest"
+    local version_image
+    local latest_image
+
+    if [ "$target" = "server" ]; then
+        version_image="$REGISTRY/jiuzhou-server-rs:$VERSION"
+        latest_image="$REGISTRY/jiuzhou-server-rs:latest"
+    else
+        version_image="$REGISTRY/jiuzhou-$target:$VERSION"
+        latest_image="$REGISTRY/jiuzhou-$target:latest"
+    fi
 
     docker tag "$version_image" "$latest_image"
     docker push "$latest_image"

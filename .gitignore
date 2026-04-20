@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-ssr/
 *.tsbuildinfo
+server-rs/target/
 
 # Environment variables (keep .example files)
 .env

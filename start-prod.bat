@@ -17,14 +17,12 @@ cd /d %~dp0
 echo   [0/5] 设置国内镜像源...
 call npm config set registry https://registry.npmmirror.com >nul 2>&1
 
-echo   [1/5] 检查后端依赖...
-pushd server
-if not exist node_modules (
-    echo        正在安装后端依赖...
-    call npm install
-    if errorlevel 1 goto :FAIL
+echo   [1/5] 检查 Rust 后端工具链...
+where cargo >nul 2>&1
+if errorlevel 1 (
+    echo        未检测到 cargo，请先安装 Rust 工具链。
+    goto :FAIL
 )
-popd
 
 echo   [2/5] 检查前端依赖...
 pushd client
@@ -49,20 +47,20 @@ if errorlevel 1 (
 echo        前端构建完成
 popd
 
-echo   [4/5] 构建后端项目...
-pushd server
-call npm run build
+echo   [4/5] 构建 Rust 后端项目...
+pushd server-rs
+cargo build --release
 if errorlevel 1 (
-    echo   X 后端构建失败!
+    echo   X Rust 后端构建失败!
     popd
     goto :FAIL
 )
-echo        后端构建完成
+echo        Rust 后端构建完成
 popd
 
 echo   [5/5] 启动服务...
-echo        启动后端 (6011)...
-start "" /b /min cmd /c "cd server && set HOST=0.0.0.0 && set PORT=6011 && set NODE_ENV=production && set CORS_ORIGIN=* && npm run start"
+echo        启动 Rust 后端 (6011)...
+start "" /b /min cmd /c "cd server-rs && set HOST=0.0.0.0 && set PORT=6011 && set NODE_ENV=production && cargo run --release"
 timeout /t 2 /nobreak >nul
 echo        启动前端 (6010)...
 start "" /b /min cmd /c "cd client && npm run preview -- --host 0.0.0.0 --port 6010 --strictPort"

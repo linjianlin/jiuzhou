@@ -47,23 +47,19 @@ services:
         window: 120s
 
   server:
-    image: ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-server:latest
+    image: ccr.ccs.tencentyun.com/tcb-100001011660-qtgo/jiuzhou-server-rs:latest
     ports:
       - "6011:6011"
     environment:
       - NODE_ENV=production
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=jiuzhou
-      - DB_USER=postgres
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
       - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-postgres}@postgres:5432/jiuzhou
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - JWT_EXPIRES_IN=7d
+      - HOST=0.0.0.0
       - PORT=6011
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
-      - IDLE_WORKER_COUNT=${IDLE_WORKER_COUNT:-12}
+      - UPLOADS_DIR=/app/server/uploads
       - COS_SECRET_ID=${COS_SECRET_ID}
       - COS_SECRET_KEY=${COS_SECRET_KEY}
       - COS_BUCKET=${COS_BUCKET}
@@ -71,6 +67,21 @@ services:
       - COS_AVATAR_PREFIX=${COS_AVATAR_PREFIX:-avatars/}
       - COS_GENERATED_IMAGE_PREFIX=${COS_GENERATED_IMAGE_PREFIX:-generated/}
       - COS_DOMAIN=${COS_DOMAIN}
+      - AFDIAN_OPEN_API_BASE_URL=${AFDIAN_OPEN_API_BASE_URL:-https://ifdian.net}
+      - AFDIAN_OPEN_USER_ID=${AFDIAN_OPEN_USER_ID}
+      - AFDIAN_OPEN_TOKEN=${AFDIAN_OPEN_TOKEN}
+      - AI_TECHNIQUE_MODEL_PROVIDER=${AI_TECHNIQUE_MODEL_PROVIDER}
+      - AI_TECHNIQUE_MODEL_URL=${AI_TECHNIQUE_MODEL_URL}
+      - AI_TECHNIQUE_MODEL_KEY=${AI_TECHNIQUE_MODEL_KEY}
+      - AI_TECHNIQUE_MODEL_NAME=${AI_TECHNIQUE_MODEL_NAME}
+      - AI_PARTNER_MODEL_PROVIDER=${AI_PARTNER_MODEL_PROVIDER}
+      - AI_PARTNER_MODEL_URL=${AI_PARTNER_MODEL_URL}
+      - AI_PARTNER_MODEL_KEY=${AI_PARTNER_MODEL_KEY}
+      - AI_PARTNER_MODEL_NAME=${AI_PARTNER_MODEL_NAME}
+      - AI_WANDER_MODEL_PROVIDER=${AI_WANDER_MODEL_PROVIDER}
+      - AI_WANDER_MODEL_URL=${AI_WANDER_MODEL_URL}
+      - AI_WANDER_MODEL_KEY=${AI_WANDER_MODEL_KEY}
+      - AI_WANDER_MODEL_NAME=${AI_WANDER_MODEL_NAME}
     volumes:
       - uploads:/app/server/uploads
     networks:
