@@ -275,6 +275,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose, onRecruitSta
     }
   }, [open]);
 
+  const latestRecruitResultKeyRef = useRef<string | null>(null);
+  const latestFusionResultKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!open) {
       setPanel('overview');
@@ -297,6 +300,8 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose, onRecruitSta
       setTechniqueDetailOpen(false);
       setTechniqueDetailLoading(false);
       setTechniqueDetail(null);
+      latestRecruitResultKeyRef.current = null;
+      latestFusionResultKeyRef.current = null;
       setPendingTechniqueLearnPreview(null);
       setActionKey('');
       shownReboneResultRef.current = null;
@@ -547,6 +552,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose, onRecruitSta
     const unsubscribe = gameSocket.onPartnerRecruitResult((payload) => {
       const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
       if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
+      const resultKey = `${payload.generationId}:${payload.status}`;
+      if (latestRecruitResultKeyRef.current === resultKey) return;
+      latestRecruitResultKeyRef.current = resultKey;
       if (payload.status === 'generated_draft') {
         message.success(payload.message);
       } else {
@@ -556,11 +564,29 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose, onRecruitSta
     const unsubscribeFusion = gameSocket.onPartnerFusionResult((payload) => {
       const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
       if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
+      const resultKey = `${payload.fusionId}:${payload.status}`;
+      if (latestFusionResultKeyRef.current === resultKey) return;
+      latestFusionResultKeyRef.current = resultKey;
       if (payload.status === 'generated_preview') {
         message.success(payload.message);
       } else {
         message.warning(payload.errorMessage || payload.message);
       }
+    });
+    const unsubscribeRebone = gameSocket.onPartnerReboneResult((payload) => {
+      const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
+      if (!currentCharacterId || payload.characterId !== currentCharacterId) return;
+      const resultKey = `${payload.reboneId}:${payload.status}`;
+      if (shownReboneResultRef.current === resultKey) return;
+      shownReboneResultRef.current = resultKey;
+      if (payload.status === 'succeeded') {
+        message.success(payload.message);
+      } else {
+        message.warning(payload.errorMessage || payload.message);
+      }
+      void refreshOverview();
+      dispatchPartnerChangedEvent();
+      window.dispatchEvent(new Event('inventory:changed'));
     });
     return () => {
       unsubscribeStatus();
@@ -568,8 +594,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose, onRecruitSta
       unsubscribeReboneStatus();
       unsubscribe();
       unsubscribeFusion();
+      unsubscribeRebone();
     };
-  }, [applyFusionStatus, applyReboneStatus, applyRecruitStatus, message, open]);
+  }, [applyFusionStatus, applyReboneStatus, applyRecruitStatus, message, open, refreshOverview]);
 
   useEffect(() => {
     if (!open || panel !== 'recruit' || !recruitStatus?.hasUnreadResult || markingRecruitViewedRef.current) {

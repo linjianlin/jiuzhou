@@ -283,6 +283,11 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   const markingResearchViewedRef = useRef(false);
   const researchStatusRef = useRef<TechniqueResearchStatusData | null>(null);
   const [researchVisitToken, setResearchVisitToken] = useState(0);
+  const latestResearchResultKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    latestResearchResultKeyRef.current = null;
+  }, [characterId]);
 
   const resetResearchPublishState = useCallback(() => {
     setPublishDialogOpen(false);
@@ -467,10 +472,25 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
 
   useEffect(() => {
     if (!open || panel !== 'research' || !characterId) return undefined;
-    return gameSocket.onTechniqueResearchStatusUpdate((payload) => {
+    const unsubscribeStatus = gameSocket.onTechniqueResearchStatusUpdate((payload) => {
       if (payload.characterId !== characterId) return;
       applyResearchStatus(payload.status);
     });
+    const unsubscribeResult = gameSocket.onTechniqueResearchResult((payload) => {
+      if (payload.characterId !== characterId) return;
+      const resultKey = `${payload.generationId}:${payload.status}`;
+      if (latestResearchResultKeyRef.current === resultKey) return;
+      latestResearchResultKeyRef.current = resultKey;
+      if (payload.status === 'generated_draft') {
+        message.success(payload.message);
+      } else {
+        message.warning(payload.errorMessage || payload.message);
+      }
+    });
+    return () => {
+      unsubscribeStatus();
+      unsubscribeResult();
+    };
   }, [applyResearchStatus, characterId, open, panel]);
 
   useEffect(() => {

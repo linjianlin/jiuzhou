@@ -10,6 +10,7 @@ import type {
   PartnerReboneStatusResponse,
   PartnerRecruitStatusResponse,
   TechniqueResearchStatusResponse,
+  WanderOverviewDto,
 } from "./api";
 import {
   type BattleRealtimePayload,
@@ -237,6 +238,10 @@ export interface TaskOverviewUpdatePayload {
 type TaskOverviewUpdateListener = (data: TaskOverviewUpdatePayload) => void;
 export type GameTimeSyncPayload = GameTimeSnapshotDto;
 type GameTimeSyncListener = (data: GameTimeSyncPayload) => void;
+export interface WanderUpdatePayload {
+  overview: WanderOverviewDto;
+}
+type WanderUpdateListener = (data: WanderUpdatePayload) => void;
 
 export interface TechniqueResearchResultPayload {
   characterId: number;
@@ -491,6 +496,7 @@ class GameSocketService {
   private achievementUpdateListeners: Set<AchievementUpdateListener> = new Set();
   private taskOverviewUpdateListeners: Set<TaskOverviewUpdateListener> = new Set();
   private gameTimeSyncListeners: Set<GameTimeSyncListener> = new Set();
+  private wanderUpdateListeners: Set<WanderUpdateListener> = new Set();
   private techniqueResearchResultListeners: Set<TechniqueResearchResultListener> = new Set();
   private techniqueResearchStatusListeners: Set<TechniqueResearchStatusListener> =
     new Set();
@@ -508,11 +514,21 @@ class GameSocketService {
   private currentOnlinePlayers: OnlinePlayersPayloadDto | null = null;
   private currentMailIndicator: MailIndicatorPayload | null = null;
   private currentAchievementUpdate: AchievementUpdatePayload | null = null;
+  private currentTaskOverviewUpdate: TaskOverviewUpdatePayload | null = null;
   private currentGameTimeSync: GameTimeSyncPayload | null = null;
+  private currentWanderUpdate: WanderUpdatePayload | null = null;
+  private currentArenaUpdate: unknown = null;
+  private currentTeamUpdate: unknown = null;
+  private currentIdleUpdate: IdleUpdatePayload | null = null;
+  private currentIdleFinished: IdleFinishedPayload | null = null;
+  private currentTechniqueResearchResult: TechniqueResearchResultPayload | null = null;
   private currentTechniqueResearchStatus: TechniqueResearchStatusPayload | null =
     null;
+  private currentPartnerRecruitResult: PartnerRecruitResultPayload | null = null;
   private currentPartnerRecruitStatus: PartnerRecruitStatusPayload | null = null;
+  private currentPartnerFusionResult: PartnerFusionResultPayload | null = null;
   private currentPartnerFusionStatus: PartnerFusionStatusPayload | null = null;
+  private currentPartnerReboneResult: PartnerReboneResultPayload | null = null;
   private currentPartnerReboneStatus: PartnerReboneStatusPayload | null = null;
   private currentBattleUpdate: BattleRealtimePayload | null = null;
   private currentBattleCooldownState: BattleCooldownState | null = null;
@@ -556,10 +572,20 @@ class GameSocketService {
       this.currentOnlinePlayers = null;
       this.currentMailIndicator = null;
       this.currentAchievementUpdate = null;
+      this.currentTaskOverviewUpdate = null;
       this.currentGameTimeSync = null;
+      this.currentWanderUpdate = null;
+      this.currentArenaUpdate = null;
+      this.currentTeamUpdate = null;
+      this.currentIdleUpdate = null;
+      this.currentIdleFinished = null;
+      this.currentTechniqueResearchResult = null;
       this.currentTechniqueResearchStatus = null;
+      this.currentPartnerRecruitResult = null;
       this.currentPartnerRecruitStatus = null;
+      this.currentPartnerFusionResult = null;
       this.currentPartnerFusionStatus = null;
+      this.currentPartnerReboneResult = null;
       this.currentPartnerReboneStatus = null;
       this.currentBattleUpdate = null;
       this.currentBattleCooldownState = null;
@@ -599,6 +625,7 @@ class GameSocketService {
     });
 
     this.socket.on("team:update", (data: unknown) => {
+      this.currentTeamUpdate = data;
       this.notifyTeamUpdateListeners(data);
     });
 
@@ -649,14 +676,17 @@ class GameSocketService {
     });
 
     this.socket.on("arena:update", (data: unknown) => {
+      this.currentArenaUpdate = data;
       this.notifyArenaUpdateListeners(data);
     });
 
     this.socket.on("idle:update", (data: IdleUpdatePayload) => {
+      this.currentIdleUpdate = data;
       this.notifyIdleUpdateListeners(data);
     });
 
     this.socket.on("idle:finished", (data: IdleFinishedPayload) => {
+      this.currentIdleFinished = data;
       this.notifyIdleFinishedListeners(data);
     });
 
@@ -671,6 +701,7 @@ class GameSocketService {
     });
 
     this.socket.on("task:update", (data: TaskOverviewUpdatePayload) => {
+      this.currentTaskOverviewUpdate = data;
       this.notifyTaskOverviewUpdateListeners(data);
     });
 
@@ -679,7 +710,13 @@ class GameSocketService {
       this.notifyGameTimeSyncListeners(data);
     });
 
+    this.socket.on("wander:update", (data: WanderUpdatePayload) => {
+      this.currentWanderUpdate = data;
+      this.notifyWanderUpdateListeners(data);
+    });
+
     this.socket.on("techniqueResearchResult", (data: TechniqueResearchResultPayload) => {
+      this.currentTechniqueResearchResult = data;
       this.notifyTechniqueResearchResultListeners(data);
     });
 
@@ -692,6 +729,7 @@ class GameSocketService {
     );
 
     this.socket.on("partnerRecruitResult", (data: PartnerRecruitResultPayload) => {
+      this.currentPartnerRecruitResult = data;
       this.notifyPartnerRecruitResultListeners(data);
     });
 
@@ -704,6 +742,7 @@ class GameSocketService {
     );
 
     this.socket.on("partnerFusionResult", (data: PartnerFusionResultPayload) => {
+      this.currentPartnerFusionResult = data;
       this.notifyPartnerFusionResultListeners(data);
     });
 
@@ -716,6 +755,7 @@ class GameSocketService {
     );
 
     this.socket.on("partnerReboneResult", (data: PartnerReboneResultPayload) => {
+      this.currentPartnerReboneResult = data;
       this.notifyPartnerReboneResultListeners(data);
     });
 
@@ -859,10 +899,20 @@ class GameSocketService {
       this.currentOnlinePlayers = null;
       this.currentMailIndicator = null;
       this.currentAchievementUpdate = null;
+      this.currentTaskOverviewUpdate = null;
       this.currentGameTimeSync = null;
+      this.currentWanderUpdate = null;
+      this.currentArenaUpdate = null;
+      this.currentTeamUpdate = null;
+      this.currentIdleUpdate = null;
+      this.currentIdleFinished = null;
+      this.currentTechniqueResearchResult = null;
       this.currentTechniqueResearchStatus = null;
+      this.currentPartnerRecruitResult = null;
       this.currentPartnerRecruitStatus = null;
+      this.currentPartnerFusionResult = null;
       this.currentPartnerFusionStatus = null;
+      this.currentPartnerReboneResult = null;
       this.currentPartnerReboneStatus = null;
       this.currentBattleUpdate = null;
       this.currentBattleCooldownState = null;
@@ -908,6 +958,9 @@ class GameSocketService {
 
   onTeamUpdate(listener: TeamUpdateListener): () => void {
     this.teamUpdateListeners.add(listener);
+    if (this.currentTeamUpdate !== null) {
+      listener(this.currentTeamUpdate);
+    }
     return () => this.teamUpdateListeners.delete(listener);
   }
 
@@ -960,16 +1013,25 @@ class GameSocketService {
 
   onArenaUpdate(listener: ArenaUpdateListener): () => void {
     this.arenaUpdateListeners.add(listener);
+    if (this.currentArenaUpdate !== null) {
+      listener(this.currentArenaUpdate);
+    }
     return () => this.arenaUpdateListeners.delete(listener);
   }
 
   onIdleUpdate(listener: IdleUpdateListener): () => void {
     this.idleUpdateListeners.add(listener);
+    if (this.currentIdleUpdate) {
+      listener(this.currentIdleUpdate);
+    }
     return () => this.idleUpdateListeners.delete(listener);
   }
 
   onIdleFinished(listener: IdleFinishedListener): () => void {
     this.idleFinishedListeners.add(listener);
+    if (this.currentIdleFinished) {
+      listener(this.currentIdleFinished);
+    }
     return () => this.idleFinishedListeners.delete(listener);
   }
 
@@ -1000,13 +1062,27 @@ class GameSocketService {
     return () => this.gameTimeSyncListeners.delete(listener);
   }
 
+  onWanderUpdate(listener: WanderUpdateListener): () => void {
+    this.wanderUpdateListeners.add(listener);
+    if (this.currentWanderUpdate) {
+      listener(this.currentWanderUpdate);
+    }
+    return () => this.wanderUpdateListeners.delete(listener);
+  }
+
   onTaskOverviewUpdate(listener: TaskOverviewUpdateListener): () => void {
     this.taskOverviewUpdateListeners.add(listener);
+    if (this.currentTaskOverviewUpdate) {
+      listener(this.currentTaskOverviewUpdate);
+    }
     return () => this.taskOverviewUpdateListeners.delete(listener);
   }
 
   onTechniqueResearchResult(listener: TechniqueResearchResultListener): () => void {
     this.techniqueResearchResultListeners.add(listener);
+    if (this.currentTechniqueResearchResult) {
+      listener(this.currentTechniqueResearchResult);
+    }
     return () => this.techniqueResearchResultListeners.delete(listener);
   }
 
@@ -1022,6 +1098,9 @@ class GameSocketService {
 
   onPartnerRecruitResult(listener: PartnerRecruitResultListener): () => void {
     this.partnerRecruitResultListeners.add(listener);
+    if (this.currentPartnerRecruitResult) {
+      listener(this.currentPartnerRecruitResult);
+    }
     return () => this.partnerRecruitResultListeners.delete(listener);
   }
 
@@ -1037,6 +1116,9 @@ class GameSocketService {
 
   onPartnerFusionResult(listener: PartnerFusionResultListener): () => void {
     this.partnerFusionResultListeners.add(listener);
+    if (this.currentPartnerFusionResult) {
+      listener(this.currentPartnerFusionResult);
+    }
     return () => this.partnerFusionResultListeners.delete(listener);
   }
 
@@ -1052,6 +1134,9 @@ class GameSocketService {
 
   onPartnerReboneResult(listener: PartnerReboneResultListener): () => void {
     this.partnerReboneResultListeners.add(listener);
+    if (this.currentPartnerReboneResult) {
+      listener(this.currentPartnerReboneResult);
+    }
     return () => this.partnerReboneResultListeners.delete(listener);
   }
 
@@ -1207,6 +1292,10 @@ class GameSocketService {
 
   private notifyGameTimeSyncListeners(data: GameTimeSyncPayload): void {
     this.gameTimeSyncListeners.forEach((listener) => listener(data));
+  }
+
+  private notifyWanderUpdateListeners(data: WanderUpdatePayload): void {
+    this.wanderUpdateListeners.forEach((listener) => listener(data));
   }
 
   private notifyTechniqueResearchResultListeners(data: TechniqueResearchResultPayload): void {

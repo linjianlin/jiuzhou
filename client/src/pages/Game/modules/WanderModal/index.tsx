@@ -1,5 +1,6 @@
 import { App, Button, Modal, Spin, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { gameSocket } from '../../../../services/gameSocket';
 import {
   chooseWanderEpisodeOption,
   generateWanderEpisode,
@@ -142,6 +143,24 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
 
     return () => window.clearInterval(timer);
   }, [currentGenerationJob?.generationId, currentGenerationJob?.status, open, refreshOverview]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    return gameSocket.onWanderUpdate((payload) => {
+      const nextOverview = payload.overview ?? null;
+      setOverview(nextOverview);
+      onOverviewChange?.(nextOverview);
+    });
+  }, [onOverviewChange, open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    return gameSocket.onWanderUpdate((payload) => {
+      const nextOverview = payload.overview ?? null;
+      setOverview(nextOverview);
+      onOverviewChange?.(nextOverview);
+    });
+  }, [onOverviewChange, open]);
 
   return (
     <Modal
