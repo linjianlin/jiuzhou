@@ -16,6 +16,7 @@ import {
 } from '../shared/accountPasswordFormRules';
 import { IMG_LOGO as logo } from '../Game/shared/imageAssets';
 import AuthCaptchaField, { type AuthCaptchaFieldHandle } from './components/AuthCaptchaField';
+import { buildAuthRequestPayload } from './authCaptchaSubmission';
 import './index.scss';
 
 interface AuthProps {
@@ -107,20 +108,35 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
   const handleLogin = async (values: LoginFormValues) => {
     // beforeSubmit: tencent 模式返回 { ticket, randstr }，local 模式返回 null（用表单已有值）
     const captchaOverride = await loginCaptchaRef.current?.beforeSubmit();
+    const isTencent = loginCaptchaRef.current?.isTencent ?? false;
     // tencent 模式下 null 表示用户取消
-    if (loginCaptchaRef.current?.isTencent && !captchaOverride) return;
+    if (isTencent && !captchaOverride) return;
+    const latestLoginValues = loginForm.getFieldsValue([
+      'username',
+      'password',
+      'captchaId',
+      'captchaCode',
+    ]);
+
+    const { blockedMessage, payload } = buildAuthRequestPayload({
+      credentials: {
+        username: latestLoginValues.username ?? values.username,
+        password: latestLoginValues.password ?? values.password,
+      },
+      latestLocalCaptchaValues: latestLoginValues,
+      captchaOverride,
+      isTencent,
+    });
+    if (!payload) {
+      if (blockedMessage) {
+        message.warning(blockedMessage);
+      }
+      return;
+    }
 
     setLoading(true);
     try {
-      const result = await apiLogin({
-        username: values.username,
-        password: values.password,
-        // local 模式用表单值，tencent 模式用 beforeSubmit 返回的载荷
-        ...(captchaOverride ?? {
-          captchaId: values.captchaId,
-          captchaCode: values.captchaCode,
-        }),
-      });
+      const result = await apiLogin(payload);
 
       if (!result.data) {
         throw new Error('登录响应缺少账号数据');
@@ -149,18 +165,34 @@ const Auth: React.FC<AuthProps> = ({ onLoginSuccess }) => {
 
   const handleRegister = async (values: RegisterFormValues) => {
     const captchaOverride = await registerCaptchaRef.current?.beforeSubmit();
-    if (registerCaptchaRef.current?.isTencent && !captchaOverride) return;
+    const isTencent = registerCaptchaRef.current?.isTencent ?? false;
+    if (isTencent && !captchaOverride) return;
+    const latestRegisterValues = registerForm.getFieldsValue([
+      'username',
+      'password',
+      'captchaId',
+      'captchaCode',
+    ]);
+
+    const { blockedMessage, payload } = buildAuthRequestPayload({
+      credentials: {
+        username: latestRegisterValues.username ?? values.username,
+        password: latestRegisterValues.password ?? values.password,
+      },
+      latestLocalCaptchaValues: latestRegisterValues,
+      captchaOverride,
+      isTencent,
+    });
+    if (!payload) {
+      if (blockedMessage) {
+        message.warning(blockedMessage);
+      }
+      return;
+    }
 
     setLoading(true);
     try {
-      await apiRegister({
-        username: values.username,
-        password: values.password,
-        ...(captchaOverride ?? {
-          captchaId: values.captchaId,
-          captchaCode: values.captchaCode,
-        }),
-      });
+      await apiRegister(payload);
 
       message.success('注册成功，请登录');
       refreshRegisterCaptcha();
