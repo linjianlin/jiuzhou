@@ -1,0 +1,43 @@
+# Rust 后端外部依赖接入清单
+
+本文档补齐 `RUST_BACKEND_REWRITE_PLAN.md` 中“外部依赖接入清单 / 外部依赖样本清单”的落盘产物。
+
+## 1. 数据与基础设施
+
+- PostgreSQL：`DATABASE_URL`
+- Redis：`REDIS_URL`
+
+## 2. 上传与对象存储
+
+- 本地上传：`UPLOADS_DIR`
+- COS：`COS_SECRET_ID` / `COS_SECRET_KEY` / `COS_BUCKET` / `COS_REGION` / `COS_AVATAR_PREFIX` / `COS_GENERATED_IMAGE_PREFIX` / `COS_DOMAIN` / `COS_STS_DURATION_SECONDS`
+
+## 3. 验证码 / 短信 / 风控
+
+- 图形 / 腾讯验证码：`CAPTCHA_PROVIDER`、`TENCENT_CAPTCHA_*`
+- 坊市手机号绑定 / 短信：`MARKET_PHONE_BINDING_*`、`ALIYUN_*`
+
+## 4. Afdian
+
+- `AFDIAN_OPEN_API_BASE_URL`
+- `AFDIAN_OPEN_USER_ID`
+- `AFDIAN_OPEN_TOKEN`
+- `AFDIAN_MESSAGE_RETRY_ENABLED`
+- `AFDIAN_MESSAGE_RETRY_INTERVAL_SECONDS`
+- `AFDIAN_MESSAGE_RETRY_BATCH_SIZE`
+
+## 5. AI provider
+
+- 功法：`AI_TECHNIQUE_MODEL_PROVIDER` / `AI_TECHNIQUE_MODEL_URL` / `AI_TECHNIQUE_MODEL_KEY` / `AI_TECHNIQUE_MODEL_NAME`
+- 伙伴：`AI_PARTNER_MODEL_PROVIDER` / `AI_PARTNER_MODEL_URL` / `AI_PARTNER_MODEL_KEY` / `AI_PARTNER_MODEL_NAME`
+- 云游：`AI_WANDER_MODEL_PROVIDER` / `AI_WANDER_MODEL_URL` / `AI_WANDER_MODEL_KEY` / `AI_WANDER_MODEL_NAME`
+
+## 6. 权威配置样例
+
+- 当前 `.env` 基线：`server-rs/.env.example`
+- phase 7 本地验证：`docs/rust-backend/phase-7-verification.md`
+
+## 7. 当前约束
+
+- 未配置 AI / Afdian / COS 时，Rust 应保持安全降级，而不是把基础服务整体拒绝启动。
+- 需要真实外部依赖的高风险测试，应优先通过 mock 或 phase 7 gate 分批执行。

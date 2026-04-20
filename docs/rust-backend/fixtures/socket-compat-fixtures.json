@@ -1,0 +1,57 @@
+{
+  "authReadySequence": [
+    {
+      "event": "game:character",
+      "payload": {
+        "type": "full",
+        "character": {
+          "id": 1001,
+          "nickname": "韩立"
+        }
+      }
+    },
+    {
+      "event": "mail:update",
+      "payload": {
+        "unreadCount": 3,
+        "unclaimedCount": 1,
+        "source": "auth_sync"
+      }
+    },
+    {
+      "event": "task:update",
+      "payload": {
+        "characterId": 1001,
+        "scopes": [
+          "task"
+        ]
+      }
+    },
+    {
+      "event": "game:time-sync",
+      "payload": {
+        "eraName": "末法纪元",
+        "weather": "晴"
+      }
+    },
+    {
+      "event": "game:auth-ready",
+      "payload": {}
+    }
+  ],
+  "battleSyncAbandoned": {
+    "event": "battle:update",
+    "payload": {
+      "kind": "battle_abandoned",
+      "battleId": "missing-battle",
+      "authoritative": true,
+      "message": "战斗不存在或已结束"
+    }
+  },
+  "gameErrorUnauthorized": {
+    "event": "game:error",
+    "payload": {
+      "message": "未认证"
+    }
+  }
+}

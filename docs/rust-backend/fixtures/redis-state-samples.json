@@ -1,0 +1,50 @@
+{
+  "resourceDelta": {
+    "dirtyIndexKey": "resource_delta:dirty",
+    "characterKey": "resource_delta:character:1001",
+    "inflightKey": "resource_delta:inflight:character:1001",
+    "fields": {
+      "silver": 120,
+      "exp": 45
+    }
+  },
+  "itemGrantDelta": {
+    "dirtyIndexKey": "item_grant_delta:dirty",
+    "characterKey": "item_grant_delta:character:1001",
+    "inflightKey": "item_grant_delta:inflight:character:1001",
+    "payload": {
+      "userId": 7,
+      "itemDefId": "mat-005",
+      "bindType": "none",
+      "obtainedFrom": "battle_reward",
+      "obtainedRefId": "generic_pve_v1"
+    },
+    "qty": 2
+  },
+  "itemInstanceMutation": {
+    "dirtyIndexKey": "item_instance_mutation:dirty",
+    "characterKey": "item_instance_mutation:character:1001",
+    "inflightKey": "item_instance_mutation:inflight:character:1001",
+    "mutation": {
+      "opId": "market-cancel:1:1",
+      "characterId": 1001,
+      "itemId": 77,
+      "kind": "upsert",
+      "snapshot": {
+        "id": 77,
+        "location": "mail",
+        "itemDefId": "equip-weapon-001",
+        "qty": 1
+      }
+    }
+  },
+  "progressDelta": {
+    "dirtyIndexKey": "progress_delta:dirty",
+    "characterKey": "progress_delta:character:1001",
+    "inflightKey": "progress_delta:inflight:character:1001",
+    "fields": {
+      "task:main-1-001": 1,
+      "achievement_points:total": 10
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "root": {
+    "request": {
+      "method": "GET",
+      "path": "/"
+    },
+    "response": {
+      "name": "九州修仙录 Rust Backend",
+      "version": "0.1.0",
+      "status": "running"
+    }
+  },
+  "health": {
+    "request": {
+      "method": "GET",
+      "path": "/api/health"
+    },
+    "response": {
+      "status": "ok",
+      "timestamp": 1713427200000
+    }
+  },
+  "inventoryUseSuccess": {
+    "request": {
+      "method": "POST",
+      "path": "/api/inventory/use",
+      "body": {
+        "itemId": 10001,
+        "qty": 1
+      }
+    },
+    "response": {
+      "success": true,
+      "message": "使用成功",
+      "character": {
+        "id": 1001
+      },
+      "lootResults": []
+    }
+  },
+  "inventoryUseFailure": {
+    "request": {
+      "method": "POST",
+      "path": "/api/inventory/use",
+      "body": {
+        "itemId": 0,
+        "qty": 1
+      }
+    },
+    "response": {
+      "success": false,
+      "message": "itemId参数错误"
+    }
+  }
+}
