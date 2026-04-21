@@ -731,11 +731,7 @@ fn reward_item_meta(
     let quality_rank = quality_override
         .map(|(_, rank)| rank)
         .unwrap_or_else(|| map_quality_rank(&quality));
-    let can_disassemble = def
-        .row
-        .get("can_disassemble")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
+    let can_disassemble = resolve_item_can_disassemble(&def.row);
     Ok(RewardItemMeta {
         item_name,
         category,
@@ -762,6 +758,10 @@ fn should_auto_disassemble(setting: &AutoDisassembleSetting, meta: &RewardItemMe
         .rules
         .iter()
         .any(|rule| auto_disassemble_rule_matches(rule, meta))
+}
+
+fn resolve_item_can_disassemble(row: &serde_json::Value) -> bool {
+    row.get("disassemblable").and_then(|value| value.as_bool()) != Some(false)
 }
 
 fn auto_disassemble_rule_matches(rule: &AutoDisassembleRuleSet, meta: &RewardItemMeta) -> bool {
@@ -1292,7 +1292,7 @@ mod tests {
         ArenaBattleSettlementTaskPayload, DungeonClearSettlementTaskPayload,
         DungeonSettlementRewardRecipient, GenericPveSettlementTaskPayload,
         OnlineBattleSettlementTaskKind, TowerWinSettlementTaskPayload, compute_arena_rating_change,
-        load_dungeon_first_clear_reward_items,
+        load_dungeon_first_clear_reward_items, resolve_item_can_disassemble,
     };
     use crate::battle_runtime::MinimalBattleRewardItemDto;
 
@@ -1341,6 +1341,17 @@ mod tests {
             "DUNGEON_FIRST_CLEAR_REWARDS={}",
             serde_json::to_value(rewards).expect("rewards should serialize")
         );
+    }
+
+    #[test]
+    fn item_can_disassemble_matches_node_contract() {
+        assert!(resolve_item_can_disassemble(&serde_json::json!({})));
+        assert!(resolve_item_can_disassemble(
+            &serde_json::json!({"disassemblable": true})
+        ));
+        assert!(!resolve_item_can_disassemble(
+            &serde_json::json!({"disassemblable": false})
+        ));
     }
 
     #[test]

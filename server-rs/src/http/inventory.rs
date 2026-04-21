@@ -480,7 +480,16 @@ pub struct InventoryUseLootResultDto {
 #[serde(rename_all = "camelCase")]
 pub struct InventoryDisassembleRewardsDto {
     pub silver: i64,
-    pub items: Vec<InventoryUseLootResultDto>,
+    pub items: Vec<InventoryDisassembleItemRewardDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InventoryDisassembleItemRewardDto {
+    pub item_def_id: String,
+    pub name: String,
+    pub qty: i64,
+    pub item_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -4284,16 +4293,8 @@ async fn disassemble_inventory_item_tx(
         .rewards
         .items
         .iter()
-        .filter_map(|reward| {
-            (reward.r#type == "item" && reward.amount > 0)
-                .then(|| {
-                    reward
-                        .item_def_id
-                        .as_deref()
-                        .map(|item_def_id| (item_def_id.to_string(), reward.amount))
-                })
-                .flatten()
-        })
+        .filter(|reward| reward.qty > 0)
+        .map(|reward| (reward.item_def_id.clone(), reward.qty))
         .collect::<Vec<_>>();
     let disassemble_ref_id = item_instance_id.to_string();
     if !buffer_inventory_item_reward_deltas(
@@ -4308,22 +4309,18 @@ async fn disassemble_inventory_item_tx(
     .await?
     {
         for reward in &plan.rewards.items {
-            if reward.r#type != "item" || reward.amount <= 0 {
+            if reward.qty <= 0 {
                 continue;
             }
-            let item_def_id = reward
-                .item_def_id
-                .as_deref()
-                .ok_or_else(|| AppError::config("分解奖励配置错误"))?;
             let defs = load_inventory_def_map()?;
             let bind_type = defs
-                .get(item_def_id)
+                .get(reward.item_def_id.as_str())
                 .and_then(|seed| seed.row.get("bind_type"))
                 .and_then(|value| value.as_str())
                 .unwrap_or("none");
             state.database.fetch_one(
                 "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'disassemble', $6) RETURNING id",
-                |q| q.bind(user_id).bind(character_id).bind(item_def_id).bind(reward.amount).bind(bind_type).bind(item_instance_id.to_string()),
+                |q| q.bind(user_id).bind(character_id).bind(reward.item_def_id.as_str()).bind(reward.qty).bind(bind_type).bind(item_instance_id.to_string()),
             ).await?;
         }
         if plan.rewards.silver > 0 {
@@ -4361,7 +4358,8 @@ async fn disassemble_inventory_items_batch_tx(
     let defs = load_inventory_def_map()?;
     let qty_by_id = items.into_iter().collect::<BTreeMap<_, _>>();
     let mut total_silver = 0_i64;
-    let mut reward_items_by_def: BTreeMap<String, InventoryUseLootResultDto> = BTreeMap::new();
+    let mut reward_items_by_def: BTreeMap<String, InventoryDisassembleItemRewardDto> =
+        BTreeMap::new();
     let mut consume_operations = Vec::new();
     let mut skipped_locked_count = 0_i64;
     let mut skipped_locked_qty_total = 0_i64;
@@ -4426,9 +4424,9 @@ async fn disassemble_inventory_items_batch_tx(
         )?;
         total_silver += plan.rewards.silver;
         for reward in plan.rewards.items {
-            let key = reward.item_def_id.clone().unwrap_or_default();
-            if let Some(existing) = reward_items_by_def.get_mut(&key) {
-                existing.amount += reward.amount;
+            let key = reward.item_def_id.clone();
+            if let Some(existing) = reward_items_by_def.get_mut(key.as_str()) {
+                existing.qty += reward.qty;
             } else {
                 reward_items_by_def.insert(key, reward);
             }
@@ -4437,19 +4435,13 @@ async fn disassemble_inventory_items_batch_tx(
         disassembled_qty_total += request_qty;
     }
 
-    for (snapshot, consume_qty) in consume_operations {
-        consume_inventory_used_item_instance_tx(state, &snapshot, consume_qty).await?;
-    }
+    consume_inventory_used_item_instances_batch_tx(state, consume_operations).await?;
 
     let reward_items = reward_items_by_def.into_values().collect::<Vec<_>>();
     let reward_item_pairs = reward_items
         .iter()
-        .filter_map(|reward| {
-            reward
-                .item_def_id
-                .as_ref()
-                .map(|item_def_id| (item_def_id.clone(), reward.amount))
-        })
+        .filter(|reward| reward.qty > 0)
+        .map(|reward| (reward.item_def_id.clone(), reward.qty))
         .collect::<Vec<_>>();
     if !buffer_inventory_item_reward_deltas(
         state,
@@ -4463,21 +4455,17 @@ async fn disassemble_inventory_items_batch_tx(
     .await?
     {
         for reward in &reward_items {
-            if reward.r#type != "item" || reward.amount <= 0 {
+            if reward.qty <= 0 {
                 continue;
             }
-            let item_def_id = reward
-                .item_def_id
-                .as_deref()
-                .ok_or_else(|| AppError::config("分解奖励配置错误"))?;
             let bind_type = defs
-                .get(item_def_id)
+                .get(reward.item_def_id.as_str())
                 .and_then(|seed| seed.row.get("bind_type"))
                 .and_then(|value| value.as_str())
                 .unwrap_or("none");
             state.database.fetch_one(
                 "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'disassemble', 'batch') RETURNING id",
-                |q| q.bind(user_id).bind(character_id).bind(item_def_id).bind(reward.amount).bind(bind_type),
+                |q| q.bind(user_id).bind(character_id).bind(reward.item_def_id.as_str()).bind(reward.qty).bind(bind_type),
             ).await?;
         }
         if total_silver > 0 {
@@ -7163,6 +7151,92 @@ async fn consume_inventory_used_item_instance_tx(
     Ok(())
 }
 
+async fn consume_inventory_used_item_instances_batch_tx(
+    state: &AppState,
+    operations: Vec<(ItemInstanceMutationSnapshot, i64)>,
+) -> Result<(), AppError> {
+    let operations = operations
+        .into_iter()
+        .filter(|(snapshot, consume_qty)| {
+            snapshot.id > 0 && snapshot.owner_character_id > 0 && *consume_qty > 0
+        })
+        .collect::<Vec<_>>();
+    if operations.is_empty() {
+        return Ok(());
+    }
+    let character_id = operations[0].0.owner_character_id;
+    if operations
+        .iter()
+        .any(|(snapshot, _)| snapshot.owner_character_id != character_id)
+    {
+        return Err(AppError::config("批量扣除物品角色不一致"));
+    }
+
+    if state.redis_available {
+        if let Some(redis_client) = state.redis.clone() {
+            let redis = RedisRuntime::new(redis_client);
+            let now_ms = inventory_item_mutation_timestamp_ms();
+            let mutations = operations
+                .into_iter()
+                .map(|(snapshot, consume_qty)| {
+                    let remaining_qty = (snapshot.qty - consume_qty).max(0);
+                    if remaining_qty == 0 {
+                        BufferedItemInstanceMutation {
+                            op_id: format!("inventory-use-delete:{}:{now_ms}", snapshot.id),
+                            character_id: snapshot.owner_character_id,
+                            item_id: snapshot.id,
+                            created_at_ms: now_ms,
+                            kind: "delete".to_string(),
+                            snapshot: None,
+                        }
+                    } else {
+                        let mut next_snapshot = snapshot.clone();
+                        next_snapshot.qty = remaining_qty;
+                        BufferedItemInstanceMutation {
+                            op_id: format!("inventory-use-consume:{}:{now_ms}", snapshot.id),
+                            character_id: snapshot.owner_character_id,
+                            item_id: snapshot.id,
+                            created_at_ms: now_ms,
+                            kind: "upsert".to_string(),
+                            snapshot: Some(next_snapshot),
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+            buffer_item_instance_mutations(&redis, &mutations).await?;
+            flush_inventory_item_instance_mutations_now(state, character_id).await?;
+            return Ok(());
+        }
+    }
+
+    let mut delete_ids = Vec::new();
+    let mut update_rows = Vec::new();
+    for (snapshot, consume_qty) in operations {
+        let remaining_qty = (snapshot.qty - consume_qty).max(0);
+        if remaining_qty == 0 {
+            delete_ids.push(snapshot.id);
+        } else {
+            update_rows.push((snapshot.id, remaining_qty));
+        }
+    }
+    if !delete_ids.is_empty() {
+        state
+            .database
+            .execute(
+                "DELETE FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2)",
+                |q| q.bind(character_id).bind(&delete_ids),
+            )
+            .await?;
+    }
+    for (item_id, remaining_qty) in update_rows {
+        state.database.execute(
+            "UPDATE item_instance SET qty = $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
+            |q| q.bind(remaining_qty).bind(item_id).bind(character_id),
+        ).await?;
+    }
+    Ok(())
+}
+
 async fn apply_inventory_item_snapshot_mutation_tx(
     state: &AppState,
     snapshot: ItemInstanceMutationSnapshot,
@@ -7935,12 +8009,11 @@ fn build_inventory_disassemble_plan(
         return Ok(InventoryDisassemblePlan {
             rewards: InventoryDisassembleRewardsDto {
                 silver: 0,
-                items: vec![InventoryUseLootResultDto {
-                    r#type: "item".to_string(),
-                    name: Some(name.to_string()),
-                    amount: qty,
-                    item_def_id: Some(reward_item_def_id.to_string()),
-                    item_ids: Some(vec![]),
+                items: vec![InventoryDisassembleItemRewardDto {
+                    item_def_id: reward_item_def_id.to_string(),
+                    name: name.to_string(),
+                    qty,
+                    item_ids: vec![],
                 }],
             },
         });
@@ -7974,12 +8047,11 @@ fn build_inventory_disassemble_plan(
         return Ok(InventoryDisassemblePlan {
             rewards: InventoryDisassembleRewardsDto {
                 silver: 0,
-                items: vec![InventoryUseLootResultDto {
-                    r#type: "item".to_string(),
-                    name: Some(name.to_string()),
-                    amount: reward_qty,
-                    item_def_id: Some(reward_item_def_id.to_string()),
-                    item_ids: Some(vec![]),
+                items: vec![InventoryDisassembleItemRewardDto {
+                    item_def_id: reward_item_def_id.to_string(),
+                    name: name.to_string(),
+                    qty: reward_qty,
+                    item_ids: vec![],
                 }],
             },
         });
@@ -10078,10 +10150,7 @@ async fn map_item_def_lite(
             .get("sub_category")
             .and_then(|value| value.as_str())
             .map(|value| value.to_string()),
-        can_disassemble: row
-            .get("can_disassemble")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false),
+        can_disassemble: resolve_item_can_disassemble(row),
         stack_max: row
             .get("stack_max")
             .and_then(|value| value.as_i64())
@@ -10626,6 +10695,10 @@ fn reroll_effect_targets_equipment(effect: &serde_json::Value, target: &str) -> 
         == Some("equipment")
 }
 
+fn resolve_item_can_disassemble(row: &serde_json::Value) -> bool {
+    row.get("disassemblable").and_then(|value| value.as_bool()) != Some(false)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -10636,9 +10709,9 @@ mod tests {
     fn inventory_info_payload_matches_contract() {
         let payload = serde_json::json!({
             "success": true,
-            "data": {"bagCapacity": 100, "warehouseCapacity": 1000, "bagUsed": 5, "warehouseUsed": 1}
+            "data": {"bag_capacity": 100, "warehouse_capacity": 1000, "bag_used": 5, "warehouse_used": 1}
         });
-        assert_eq!(payload["data"]["bagCapacity"], 100);
+        assert_eq!(payload["data"]["bag_capacity"], 100);
         println!("INVENTORY_INFO_RESPONSE={}", payload);
     }
 
@@ -11978,7 +12051,7 @@ mod tests {
     fn inventory_snapshot_payload_matches_contract() {
         let payload = serde_json::json!({
             "success": true,
-            "data": {"info": {"bagCapacity": 100}, "bagItems": [], "equippedItems": []}
+            "data": {"info": {"bag_capacity": 100}, "bagItems": [], "equippedItems": []}
         });
         assert_eq!(payload["data"]["bagItems"], serde_json::json!([]));
         println!("INVENTORY_SNAPSHOT_RESPONSE={}", payload);
@@ -11988,10 +12061,22 @@ mod tests {
     fn inventory_items_payload_matches_contract() {
         let payload = serde_json::json!({
             "success": true,
-            "data": {"items": [{"id": 1, "itemDefId": "cons-001", "qty": 3, "location": "bag"}], "total": 1, "page": 1, "pageSize": 100}
+            "data": {"items": [{"id": 1, "item_def_id": "cons-001", "qty": 3, "location": "bag", "def": {"can_disassemble": true}}], "total": 1, "page": 1, "pageSize": 100}
         });
-        assert_eq!(payload["data"]["items"][0]["itemDefId"], "cons-001");
+        assert_eq!(payload["data"]["items"][0]["item_def_id"], "cons-001");
+        assert_eq!(payload["data"]["items"][0]["def"]["can_disassemble"], true);
         println!("INVENTORY_ITEMS_RESPONSE={}", payload);
+    }
+
+    #[test]
+    fn item_can_disassemble_matches_node_contract() {
+        assert!(resolve_item_can_disassemble(&serde_json::json!({})));
+        assert!(resolve_item_can_disassemble(
+            &serde_json::json!({"disassemblable": true})
+        ));
+        assert!(!resolve_item_can_disassemble(
+            &serde_json::json!({"disassemblable": false})
+        ));
     }
 
     #[test]
@@ -12071,7 +12156,6 @@ mod tests {
             "rewards": {
                 "silver": 0,
                 "items": [{
-                    "type": "item",
                     "itemDefId": "enhance-001",
                     "name": "淬灵石",
                     "qty": 1,
@@ -12110,7 +12194,6 @@ mod tests {
             "rewards": {
                 "silver": 50,
                 "items": [{
-                    "type": "item",
                     "itemDefId": "enhance-001",
                     "name": "淬灵石",
                     "qty": 2,
