@@ -463,6 +463,9 @@ pub async fn advance_battle_session(
         .get_by_session_id(&session_id)
         .ok_or_else(|| AppError::not_found("战斗会话不存在"))?;
     ensure_session_visible_to_user(&session, actor.user_id)?;
+    if !session.can_advance {
+        return Err(AppError::config("当前战斗会话不可推进"));
+    }
     let previous_battle_id = session.current_battle_id.clone();
     let previous_participants = session.participant_user_ids.clone();
     let should_emit_abandoned = session.next_action == "return_to_map";
@@ -484,6 +487,46 @@ pub async fn advance_battle_session(
                     record.can_advance = false;
                     record.context = BattleSessionContextDto::Pve { monster_ids };
                 })
+            } else if session.next_action == "advance" {
+                let Some(character_id) =
+                    auth::get_character_id_by_user_id(&state, actor.user_id).await?
+                else {
+                    return Err(AppError::config("角色不存在"));
+                };
+                if let Some(current_battle_id) = session.current_battle_id.clone() {
+                    state.battle_runtime.clear(&current_battle_id);
+                    state.online_battle_projections.clear(&current_battle_id);
+                    clear_battle_persistence(&state, &current_battle_id, Some(&session_id)).await?;
+                }
+                let next_battle_id = format!("pve-battle-{}-{}", actor.user_id, now_millis());
+                let mut next_battle_state =
+                    build_minimal_pve_battle_state(&next_battle_id, character_id, &monster_ids);
+                hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id)
+                    .await?;
+                state.battle_runtime.register(next_battle_state.clone());
+                let projection = OnlineBattleProjectionRecord {
+                    battle_id: next_battle_id.clone(),
+                    owner_user_id: actor.user_id,
+                    participant_user_ids: vec![actor.user_id],
+                    r#type: "pve".to_string(),
+                    session_id: Some(session_id.clone()),
+                };
+                state.online_battle_projections.register(projection.clone());
+                let updated_session = state.battle_sessions.update(&session_id, |record| {
+                    record.current_battle_id = Some(next_battle_id.clone());
+                    record.participant_user_ids = vec![actor.user_id];
+                    record.status = "running".to_string();
+                    record.next_action = "none".to_string();
+                    record.can_advance = false;
+                    record.last_result = None;
+                    record.context = BattleSessionContextDto::Pve { monster_ids };
+                });
+                if let Some(updated_session_ref) = updated_session.as_ref() {
+                    persist_battle_session(&state, updated_session_ref).await?;
+                    persist_battle_snapshot(&state, &next_battle_state).await?;
+                    persist_battle_projection(&state, &projection).await?;
+                }
+                updated_session
             } else {
                 return Err(AppError::config("当前战斗会话不可推进"));
             }

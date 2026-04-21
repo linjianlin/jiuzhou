@@ -389,7 +389,7 @@ async fn apply_generic_pve_settlement(
                             item_def_id: reward_item.item_def_id.clone(),
                             qty: reward_item.qty,
                             bind_type: reward_item.bind_type.clone(),
-                            obtained_from: "battle_reward".to_string(),
+                            obtained_from: "battle_drop".to_string(),
                             obtained_ref_id: Some("generic_pve_v1".to_string()),
                         }
                     })
@@ -410,7 +410,7 @@ async fn apply_generic_pve_settlement(
                 continue;
             }
             state.database.execute(
-                "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'battle_reward', 'generic_pve_v1')",
+                "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'battle_drop', 'generic_pve_v1')",
                 |q| q
                     .bind(payload.user_id)
                     .bind(payload.character_id)

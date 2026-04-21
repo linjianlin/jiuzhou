@@ -1464,7 +1464,7 @@ async fn abandon_dungeon_instance_tx(
     })
 }
 
-async fn next_dungeon_instance_tx(
+pub(crate) async fn next_dungeon_instance_tx(
     state: &AppState,
     user_id: i64,
     instance_id: &str,

@@ -141,6 +141,7 @@ pub struct MinimalBattleActionOutcome {
     pub result: Option<String>,
     pub exp_gained: i64,
     pub silver_gained: i64,
+    pub logs: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,7 +296,7 @@ fn build_skill_value(
 
 fn player_battle_skills() -> Vec<serde_json::Value> {
     vec![
-        build_skill_value("sk-basic-slash", "普通攻击", 0, 0, 0),
+        build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0),
         build_skill_value("sk-heavy-slash", "重斩", 20, 0, 1),
     ]
 }
@@ -691,6 +692,12 @@ pub fn apply_minimal_pve_action(
     }
     tick_down_runtime_skill_cooldowns(state);
     consume_runtime_skill_cost_and_validate_cooldown(state, &expected_actor_id, skill_id)?;
+    let (actor_name, skill_name) = resolve_unit_name_and_skill_name(
+        &state.teams.attacker.units,
+        &expected_actor_id,
+        skill_id,
+    )?;
+    let action_round = state.round_count.max(1);
     let target_id = target_ids.first().cloned().or_else(|| {
         state
             .teams
@@ -714,9 +721,31 @@ pub fn apply_minimal_pve_action(
     };
 
     let damage = resolve_player_skill_damage(skill_id);
+    let target_name = target.name.clone();
+    let target_qixue_before = target.qixue;
     target.qixue = (target.qixue - damage).max(0);
+    let actual_damage = (target_qixue_before - target.qixue).max(0);
     target.is_alive = target.qixue > 0;
     target.can_act = target.is_alive;
+    let mut logs = vec![build_minimal_action_log(MinimalActionLogDraft {
+        round: action_round,
+        actor_id: &expected_actor_id,
+        actor_name: &actor_name,
+        skill_id: skill_id.trim(),
+        skill_name: &skill_name,
+        target_id: &target_id,
+        target_name: &target_name,
+        damage: actual_damage,
+    })];
+    if !target.is_alive {
+        logs.push(build_minimal_death_log(
+            action_round,
+            &target_id,
+            &target_name,
+            Some(&expected_actor_id),
+            Some(&actor_name),
+        ));
+    }
 
     let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
     if !enemy_alive {
@@ -729,9 +758,28 @@ pub fn apply_minimal_pve_action(
             result: Some("attacker_win".to_string()),
             exp_gained,
             silver_gained,
+            logs,
         });
     }
 
+    let counter_actions = state
+        .teams
+        .defender
+        .units
+        .iter()
+        .filter(|unit| unit.is_alive)
+        .map(|unit| {
+            let skill_id = "sk-bite";
+            let skill_name = resolve_unit_skill_name(unit, skill_id)?;
+            Ok((
+                unit.id.clone(),
+                unit.name.clone(),
+                skill_id.to_string(),
+                skill_name,
+                resolve_monster_counter_damage(unit),
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let Some(player) = state
         .teams
         .attacker
@@ -741,15 +789,37 @@ pub fn apply_minimal_pve_action(
     else {
         return Err("当前不可行动".to_string());
     };
-    let total_enemy_damage = state
-        .teams
-        .defender
-        .units
-        .iter()
-        .filter(|unit| unit.is_alive)
-        .map(resolve_monster_counter_damage)
-        .sum::<i64>();
-    player.qixue = (player.qixue - total_enemy_damage).max(0);
+    let mut killer_id = None;
+    let mut killer_name = None;
+    for (
+        counter_actor_id,
+        counter_actor_name,
+        counter_skill_id,
+        counter_skill_name,
+        counter_damage,
+    ) in counter_actions
+    {
+        if player.qixue <= 0 {
+            break;
+        }
+        let qixue_before = player.qixue;
+        player.qixue = (player.qixue - counter_damage).max(0);
+        let actual_counter_damage = (qixue_before - player.qixue).max(0);
+        logs.push(build_minimal_action_log(MinimalActionLogDraft {
+            round: action_round,
+            actor_id: &counter_actor_id,
+            actor_name: &counter_actor_name,
+            skill_id: &counter_skill_id,
+            skill_name: &counter_skill_name,
+            target_id: &expected_actor_id,
+            target_name: &actor_name,
+            damage: actual_counter_damage,
+        }));
+        if player.qixue <= 0 {
+            killer_id = Some(counter_actor_id);
+            killer_name = Some(counter_actor_name);
+        }
+    }
     player.is_alive = player.qixue > 0;
     player.can_act = player.is_alive;
     state.round_count += 1;
@@ -758,11 +828,19 @@ pub fn apply_minimal_pve_action(
         state.phase = "finished".to_string();
         state.result = Some("defender_win".to_string());
         state.current_unit_id = None;
+        logs.push(build_minimal_death_log(
+            action_round,
+            &expected_actor_id,
+            &actor_name,
+            killer_id.as_deref(),
+            killer_name.as_deref(),
+        ));
         return Ok(MinimalBattleActionOutcome {
             finished: true,
             result: Some("defender_win".to_string()),
             exp_gained: 0,
             silver_gained: 0,
+            logs,
         });
     }
 
@@ -774,6 +852,7 @@ pub fn apply_minimal_pve_action(
         result: None,
         exp_gained: 0,
         silver_gained: 0,
+        logs,
     })
 }
 
@@ -797,6 +876,13 @@ pub fn apply_minimal_pvp_action(
     }
     tick_down_runtime_skill_cooldowns(state);
     consume_runtime_skill_cost_and_validate_cooldown(state, &expected_actor_id, "sk-heavy-slash")?;
+    let skill_id = "sk-heavy-slash";
+    let (actor_name, skill_name) = resolve_unit_name_and_skill_name(
+        &state.teams.attacker.units,
+        &expected_actor_id,
+        skill_id,
+    )?;
+    let action_round = state.round_count.max(1);
     let target_id = target_ids.first().cloned().or_else(|| {
         state
             .teams
@@ -819,9 +905,31 @@ pub fn apply_minimal_pvp_action(
         return Err("目标不存在或已死亡".to_string());
     };
 
+    let target_name = target.name.clone();
+    let target_qixue_before = target.qixue;
     target.qixue = 0;
+    let actual_damage = target_qixue_before.max(0);
     target.is_alive = false;
     target.can_act = false;
+    let logs = vec![
+        build_minimal_action_log(MinimalActionLogDraft {
+            round: action_round,
+            actor_id: &expected_actor_id,
+            actor_name: &actor_name,
+            skill_id,
+            skill_name: &skill_name,
+            target_id: &target_id,
+            target_name: &target_name,
+            damage: actual_damage,
+        }),
+        build_minimal_death_log(
+            action_round,
+            &target_id,
+            &target_name,
+            Some(&expected_actor_id),
+            Some(&actor_name),
+        ),
+    ];
     state.round_count += 1;
 
     let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
@@ -834,6 +942,7 @@ pub fn apply_minimal_pvp_action(
             result: Some("attacker_win".to_string()),
             exp_gained: 0,
             silver_gained: 0,
+            logs,
         });
     }
 
@@ -845,7 +954,87 @@ pub fn apply_minimal_pvp_action(
         result: None,
         exp_gained: 0,
         silver_gained: 0,
+        logs,
     })
+}
+
+struct MinimalActionLogDraft<'a> {
+    round: i64,
+    actor_id: &'a str,
+    actor_name: &'a str,
+    skill_id: &'a str,
+    skill_name: &'a str,
+    target_id: &'a str,
+    target_name: &'a str,
+    damage: i64,
+}
+
+fn build_minimal_action_log(draft: MinimalActionLogDraft<'_>) -> serde_json::Value {
+    serde_json::json!({
+        "type": "action",
+        "round": draft.round,
+        "actorId": draft.actor_id,
+        "actorName": draft.actor_name,
+        "skillId": draft.skill_id,
+        "skillName": draft.skill_name,
+        "targets": [{
+            "targetId": draft.target_id,
+            "targetName": draft.target_name,
+            "hits": [{
+                "index": 1,
+                "damage": draft.damage.max(0),
+                "isMiss": false,
+                "isCrit": false,
+                "isParry": false,
+                "isElementBonus": false,
+                "shieldAbsorbed": 0
+            }],
+            "damage": draft.damage.max(0)
+        }]
+    })
+}
+
+fn build_minimal_death_log(
+    round: i64,
+    unit_id: &str,
+    unit_name: &str,
+    killer_id: Option<&str>,
+    killer_name: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "death",
+        "round": round,
+        "unitId": unit_id,
+        "unitName": unit_name,
+        "killerId": killer_id,
+        "killerName": killer_name
+    })
+}
+
+fn resolve_unit_name_and_skill_name(
+    units: &[BattleUnitDto],
+    unit_id: &str,
+    skill_id: &str,
+) -> Result<(String, String), String> {
+    let Some(unit) = units.iter().find(|unit| unit.id == unit_id) else {
+        return Err("当前不可行动".to_string());
+    };
+    Ok((unit.name.clone(), resolve_unit_skill_name(unit, skill_id)?))
+}
+
+fn resolve_unit_skill_name(unit: &BattleUnitDto, skill_id: &str) -> Result<String, String> {
+    let normalized_skill_id = skill_id.trim();
+    if normalized_skill_id == "skill-normal-attack" {
+        return Ok("普通攻击".to_string());
+    }
+    unit.skills
+        .iter()
+        .find(|skill| {
+            skill.get("id").and_then(serde_json::Value::as_str) == Some(normalized_skill_id)
+        })
+        .and_then(|skill| skill.get("name").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .ok_or_else(|| format!("战斗技能不存在: {normalized_skill_id}"))
 }
 
 fn tick_down_runtime_skill_cooldowns(state: &mut BattleStateDto) {
@@ -930,7 +1119,7 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
 
 fn battle_skill_runtime_config(skill_id: &str) -> Option<BattleSkillRuntimeConfig> {
     match skill_id.trim() {
-        "sk-basic-slash" => Some(BattleSkillRuntimeConfig {
+        "skill-normal-attack" => Some(BattleSkillRuntimeConfig {
             cost_lingqi: 0,
             cost_qixue: 0,
             cooldown_turns: 0,
@@ -952,7 +1141,7 @@ fn battle_skill_runtime_config(skill_id: &str) -> Option<BattleSkillRuntimeConfi
 fn resolve_player_skill_damage(skill_id: &str) -> i64 {
     match skill_id.trim() {
         "sk-heavy-slash" => 220,
-        "sk-basic-slash" => 32,
+        "skill-normal-attack" => 32,
         "sk-bite" => 24,
         _ => 28,
     }
@@ -1254,7 +1443,7 @@ mod tests {
         BattleCharacterUnitProfile, BattleUnitCurrentAttrsDto,
         apply_character_profile_to_battle_state, apply_minimal_pve_action,
         apply_minimal_pvp_action, build_minimal_pve_battle_state, build_minimal_pvp_battle_state,
-        resolve_minimal_pve_item_rewards,
+        build_skill_value, resolve_minimal_pve_item_rewards,
     };
 
     #[test]
@@ -1288,7 +1477,7 @@ mod tests {
             attacker
                 .skills
                 .iter()
-                .any(|skill| skill["id"] == "sk-basic-slash")
+                .any(|skill| skill["id"] == "skill-normal-attack")
         );
         assert!(attacker.skill_cooldowns.is_empty());
         assert_eq!(attacker.stats.damage_dealt, 0);
@@ -1319,6 +1508,23 @@ mod tests {
         assert_eq!(state.current_unit_id, None);
         assert!(outcome.exp_gained > 0);
         assert!(outcome.silver_gained > 0);
+        assert_eq!(outcome.logs[0]["type"], "action");
+        assert_eq!(outcome.logs[0]["actorId"], "player-1");
+        assert_eq!(outcome.logs[0]["actorName"], "修士1");
+        assert_eq!(outcome.logs[0]["skillId"], "sk-heavy-slash");
+        assert_eq!(outcome.logs[0]["skillName"], "重斩");
+        assert_eq!(
+            outcome.logs[0]["targets"][0]["targetId"],
+            "monster-1-monster-gray-wolf"
+        );
+        assert!(
+            outcome.logs[0]["targets"][0]["hits"][0]["damage"]
+                .as_i64()
+                .unwrap_or_default()
+                > 0
+        );
+        assert_eq!(outcome.logs[1]["type"], "death");
+        assert_eq!(outcome.logs[1]["unitName"], "灰狼");
         println!(
             "BATTLE_RUNTIME_PVE_FINISH_OUTCOME={{\"finished\":{},\"result\":{:?},\"expGained\":{},\"silverGained\":{}}}",
             outcome.finished, outcome.result, outcome.exp_gained, outcome.silver_gained
@@ -1334,7 +1540,7 @@ mod tests {
         let error = apply_minimal_pve_action(
             &mut state,
             1,
-            "sk-basic-slash",
+            "skill-normal-attack",
             &["monster-1-monster-gray-wolf".to_string()],
         )
         .expect_err("action should fail");
@@ -1350,7 +1556,7 @@ mod tests {
         let outcome = apply_minimal_pve_action(
             &mut state,
             1,
-            "sk-basic-slash",
+            "skill-normal-attack",
             &["monster-1-monster-gray-wolf".to_string()],
         )
         .expect("action should succeed");
@@ -1364,6 +1570,13 @@ mod tests {
                 < state.teams.attacker.units[0].current_attrs.max_qixue
         );
         assert!(state.round_count >= 2);
+        assert_eq!(outcome.logs[0]["type"], "action");
+        assert_eq!(outcome.logs[0]["actorName"], "修士1");
+        assert_eq!(outcome.logs[0]["skillName"], "普通攻击");
+        assert_eq!(outcome.logs[1]["type"], "action");
+        assert_eq!(outcome.logs[1]["actorName"], "灰狼");
+        assert_eq!(outcome.logs[1]["skillName"], "撕咬");
+        assert_eq!(outcome.logs[1]["targets"][0]["targetName"], "修士1");
         println!(
             "BATTLE_RUNTIME_PVE_PROGRESS_STATE={{\"finished\":{},\"attackerQixue\":{},\"defenderQixue\":{},\"roundCount\":{}}}",
             outcome.finished,
@@ -1371,6 +1584,31 @@ mod tests {
             state.teams.defender.units[0].qixue,
             state.round_count
         );
+    }
+
+    #[test]
+    fn minimal_pve_action_allows_innate_normal_attack_when_snapshot_skills_are_stale() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].skills = vec![build_skill_value(
+            "sk-stale-snapshot-normal",
+            "旧快照普攻",
+            0,
+            0,
+            0,
+        )];
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("innate normal attack should be resolved");
+
+        assert_eq!(outcome.logs[0]["type"], "action");
+        assert_eq!(outcome.logs[0]["skillId"], "skill-normal-attack");
+        assert_eq!(outcome.logs[0]["skillName"], "普通攻击");
     }
 
     #[test]
@@ -1444,6 +1682,11 @@ mod tests {
         assert!(outcome.finished);
         assert_eq!(state.phase, "finished");
         assert_eq!(state.result.as_deref(), Some("attacker_win"));
+        assert_eq!(outcome.logs[0]["type"], "action");
+        assert_eq!(outcome.logs[0]["actorName"], "修士1");
+        assert_eq!(outcome.logs[0]["skillName"], "重斩");
+        assert_eq!(outcome.logs[1]["type"], "death");
+        assert_eq!(outcome.logs[1]["unitName"], "对手2");
     }
 
     #[test]

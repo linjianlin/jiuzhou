@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn item_grant_payload_decodes_expected_shape() {
         let decoded = decode_item_grant_payload(
-            r#"{"userId":7,"itemDefId":"mat-005","bindType":"none","obtainedFrom":"battle_reward","obtainedRefId":"generic_pve_v1"}"#,
+            r#"{"userId":7,"itemDefId":"mat-005","bindType":"none","obtainedFrom":"battle_drop","obtainedRefId":"generic_pve_v1"}"#,
             2,
         )
         .expect("payload should decode");
@@ -348,7 +348,7 @@ mod tests {
     fn parse_item_grant_delta_hash_ignores_invalid_rows() {
         let parsed = parse_item_grant_delta_hash(HashMap::from([
             (
-                r#"{"userId":7,"itemDefId":"mat-005","bindType":"none","obtainedFrom":"battle_reward","obtainedRefId":"generic_pve_v1"}"#.to_string(),
+                r#"{"userId":7,"itemDefId":"mat-005","bindType":"none","obtainedFrom":"battle_drop","obtainedRefId":"generic_pve_v1"}"#.to_string(),
                 "2".to_string(),
             ),
             ("invalid".to_string(), "1".to_string()),

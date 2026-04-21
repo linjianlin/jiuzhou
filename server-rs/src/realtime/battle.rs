@@ -278,14 +278,34 @@ pub fn build_battle_cooldown_ready_payload(actor_id: Option<&str>) -> BattleCool
     }
 }
 
-pub fn build_reward_item_values(items: &[MinimalBattleRewardItemDto]) -> Vec<serde_json::Value> {
+pub fn build_reward_item_values(
+    items: &[MinimalBattleRewardItemDto],
+    receiver_id: i64,
+) -> Vec<serde_json::Value> {
+    items
+        .iter()
+        .map(|item| {
+            serde_json::json!({
+                "itemDefId": item.item_def_id,
+                "name": item.item_name,
+                "quantity": item.qty,
+                "receiverId": receiver_id,
+            })
+        })
+        .collect()
+}
+
+fn build_single_player_reward_item_values(
+    items: &[MinimalBattleRewardItemDto],
+) -> Vec<serde_json::Value> {
     items
         .iter()
         .map(|item| {
             serde_json::json!({
                 "itemDefId": item.item_def_id,
                 "itemName": item.item_name,
-                "qty": item.qty,
+                "quantity": item.qty,
+                "instanceIds": [],
             })
         })
         .collect()
@@ -303,7 +323,7 @@ pub fn build_single_player_reward_values(
         "characterId": character_id,
         "exp": exp,
         "silver": silver,
-        "items": build_reward_item_values(items),
+        "items": build_single_player_reward_item_values(items),
     })]
 }
 
@@ -560,11 +580,15 @@ mod tests {
             qty: 2,
             bind_type: "none".to_string(),
         }];
-        let item_values = build_reward_item_values(&items);
+        let item_values = build_reward_item_values(&items, 22);
         let player_values = build_single_player_reward_values(11, 22, 33, 44, &items);
         assert_eq!(item_values[0]["itemDefId"], "mat-005");
+        assert_eq!(item_values[0]["name"], "铁木芯");
+        assert_eq!(item_values[0]["quantity"], 2);
+        assert_eq!(item_values[0]["receiverId"], 22);
         assert_eq!(player_values[0]["userId"], 11);
-        assert_eq!(player_values[0]["items"][0]["qty"], 2);
+        assert_eq!(player_values[0]["items"][0]["itemName"], "铁木芯");
+        assert_eq!(player_values[0]["items"][0]["quantity"], 2);
         println!(
             "BATTLE_REWARD_ITEM_VALUES={}",
             serde_json::json!({

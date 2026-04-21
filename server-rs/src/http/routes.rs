@@ -14831,7 +14831,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn battle_route_generic_pve_actions_progress_then_finish_with_non_zero_rewards() {
+    async fn battle_route_generic_pve_finish_sets_auto_advance_contract() {
         let state = test_state();
         let Some(pool) = connect_fixture_db_or_skip(
             &state,
@@ -14844,7 +14844,7 @@ mod tests {
 
         let suffix = format!("battle-route-pve-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        sqlx::query("UPDATE characters SET current_map_id = 'map-qingyun-outskirts', current_room_id = 'room-south-forest' WHERE id = $1")
+        sqlx::query("UPDATE characters SET current_map_id = 'map-qingyun-outskirts', current_room_id = 'room-south-forest', jing = 100, qi = 100 WHERE id = $1")
             .bind(fixture.character_id)
             .execute(&pool)
             .await
@@ -14878,7 +14878,7 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"sk-basic-slash\",\"targetIds\":[\"monster-1-monster-wild-rabbit\"]}}", battle_id))
+            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-1-monster-wild-rabbit\"]}}", battle_id))
             .send()
             .await
             .expect("first battle action should succeed");
@@ -14895,7 +14895,7 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"monster-1-monster-wild-rabbit\"]}}", battle_id))
+            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-1-monster-wild-rabbit\"]}}", battle_id))
             .send()
             .await
             .expect("second battle action should succeed");
@@ -14930,7 +14930,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("character row should load");
-        let reward_item_row = sqlx::query("SELECT item_def_id, qty FROM item_instance WHERE owner_character_id = $1 AND obtained_from = 'battle_reward' ORDER BY id DESC LIMIT 1")
+        let reward_item_row = sqlx::query("SELECT item_def_id, qty FROM item_instance WHERE owner_character_id = $1 AND obtained_from = 'battle_drop' ORDER BY id DESC LIMIT 1")
             .bind(fixture.character_id)
             .fetch_optional(&pool)
             .await
@@ -14951,6 +14951,21 @@ mod tests {
         assert_eq!(
             second_action_body["data"]["debugRealtime"]["kind"],
             "battle_finished"
+        );
+        assert_eq!(
+            second_action_body["data"]["session"]["status"],
+            "waiting_transition"
+        );
+        assert_eq!(
+            second_action_body["data"]["session"]["nextAction"],
+            "advance"
+        );
+        assert_eq!(second_action_body["data"]["session"]["canAdvance"], true);
+        assert_eq!(second_action_body["data"]["battleStartCooldownMs"], 3000);
+        assert!(
+            second_action_body["data"]["nextBattleAvailableAt"]
+                .as_i64()
+                .is_some()
         );
         assert!(
             second_action_body["data"]["debugRealtime"]["rewards"]["exp"]

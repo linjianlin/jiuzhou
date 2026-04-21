@@ -41,6 +41,9 @@ use crate::state::{
     AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
 };
 
+const BATTLE_START_COOLDOWN_MS: i64 = 3000;
+const DUNGEON_SESSION_SERVER_AUTO_ADVANCE_DELAY_MS: u64 = 200;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BattleStartPayload {
@@ -81,6 +84,12 @@ pub struct BattleActionDataDto {
     pub logs: Option<Vec<serde_json::Value>>,
     pub debug_realtime: Option<BattleRealtimePayload>,
     pub debug_cooldown_realtime: Option<BattleCooldownPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battle_start_cooldown_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_battle_available_at: Option<i64>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -315,19 +324,7 @@ pub async fn battle_action(
     let session = projection.session_id.as_deref().and_then(|session_id| {
         state.battle_sessions.update(session_id, |record| {
             if action_outcome.finished {
-                match &record.context {
-                    BattleSessionContextDto::Tower { .. }
-                        if matches!(action_outcome.result.as_deref(), Some("attacker_win")) =>
-                    {
-                        record.status = "waiting_transition".to_string();
-                        record.next_action = "advance".to_string();
-                        record.can_advance = true;
-                    }
-                    _ => {
-                        record.next_action = "return_to_map".to_string();
-                        record.can_advance = true;
-                    }
-                }
+                apply_battle_session_finished_policy(record, action_outcome.result.as_deref());
                 record.last_result = action_outcome.result.clone();
             }
         })
@@ -416,12 +413,14 @@ pub async fn battle_action(
         persist_battle_session(&state, session).await?;
     }
 
-    let logs = vec![serde_json::json!({
-        "type": if action_outcome.finished { "finish" } else { "action" },
-        "round": state_snapshot.round_count,
-        "result": action_outcome.result,
-        "skillId": skill_id.trim(),
-    })];
+    let logs = action_outcome.logs.clone();
+    let apply_start_cooldown =
+        action_outcome.finished && should_apply_finished_battle_start_cooldown(session.as_ref());
+    let next_battle_available_at = if apply_start_cooldown {
+        Some(now_millis() as i64 + BATTLE_START_COOLDOWN_MS)
+    } else {
+        None
+    };
     let debug_realtime = if action_outcome.finished {
         build_battle_finished_payload(
             battle_id.trim(),
@@ -435,7 +434,7 @@ pub async fn battle_action(
                     total_exp: None,
                     total_silver: None,
                     participant_count: Some(projection.participant_user_ids.len() as i64),
-                    items: Some(build_reward_item_values(&reward_items)),
+                    items: Some(build_reward_item_values(&reward_items, character_id)),
                     per_player_rewards: Some(build_single_player_reward_values(
                         actor.user_id,
                         character_id,
@@ -455,9 +454,9 @@ pub async fn battle_action(
                     Some("draw") => "战斗平局".to_string(),
                     _ => "战斗结束".to_string(),
                 }),
-                battle_start_cooldown_ms: None,
+                battle_start_cooldown_ms: apply_start_cooldown.then_some(BATTLE_START_COOLDOWN_MS),
                 retry_after_ms: None,
-                next_battle_available_at: None,
+                next_battle_available_at,
             },
         )
     } else {
@@ -470,7 +469,14 @@ pub async fn battle_action(
     };
     emit_battle_update_to_participants(&state, &projection.participant_user_ids, &debug_realtime);
     let debug_cooldown_realtime = if action_outcome.finished {
-        build_battle_cooldown_ready_payload(state_snapshot.current_unit_id.as_deref())
+        if apply_start_cooldown {
+            build_battle_cooldown_sync_payload(
+                Some(&format!("player-{character_id}")),
+                BATTLE_START_COOLDOWN_MS,
+            )
+        } else {
+            build_battle_cooldown_ready_payload(state_snapshot.current_unit_id.as_deref())
+        }
     } else {
         build_battle_cooldown_sync_payload(state_snapshot.current_unit_id.as_deref(), 1500)
     };
@@ -479,6 +485,20 @@ pub async fn battle_action(
         &projection.participant_user_ids,
         &debug_cooldown_realtime,
     );
+    if apply_start_cooldown {
+        schedule_battle_cooldown_ready_push(
+            state.clone(),
+            projection.participant_user_ids.clone(),
+            character_id,
+        );
+    }
+    if action_outcome.finished {
+        schedule_dungeon_session_auto_advance_if_needed(
+            state.clone(),
+            session.as_ref(),
+            state_snapshot.result.as_deref(),
+        );
+    }
     if action_outcome.finished
         && projection.owner_user_id == actor.user_id
         && !defer_character_full_refresh
@@ -503,8 +523,95 @@ pub async fn battle_action(
             logs: Some(logs),
             debug_realtime: Some(debug_realtime),
             debug_cooldown_realtime: Some(debug_cooldown_realtime),
+            battle_start_cooldown_ms: apply_start_cooldown.then_some(BATTLE_START_COOLDOWN_MS),
+            retry_after_ms: None,
+            next_battle_available_at,
         }),
     }))
+}
+
+fn apply_battle_session_finished_policy(
+    record: &mut BattleSessionSnapshotDto,
+    result: Option<&str>,
+) {
+    record.status = "waiting_transition".to_string();
+    let next_action = match &record.context {
+        BattleSessionContextDto::Pvp { .. } => "return_to_map",
+        BattleSessionContextDto::Tower { .. } if matches!(result, Some("attacker_win")) => {
+            "advance"
+        }
+        BattleSessionContextDto::Pve { .. } | BattleSessionContextDto::Dungeon { .. }
+            if matches!(result, Some("attacker_win")) =>
+        {
+            "advance"
+        }
+        _ => "return_to_map",
+    };
+    record.next_action = next_action.to_string();
+    record.can_advance = true;
+}
+
+fn should_apply_finished_battle_start_cooldown(session: Option<&BattleSessionSnapshotDto>) -> bool {
+    session.is_some_and(|session| {
+        !matches!(
+            &session.context,
+            BattleSessionContextDto::Dungeon { .. } | BattleSessionContextDto::Tower { .. }
+        )
+    })
+}
+
+fn schedule_battle_cooldown_ready_push(
+    state: AppState,
+    participant_user_ids: Vec<i64>,
+    character_id: i64,
+) {
+    let actor_id = format!("player-{character_id}");
+    let _ = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(
+            BATTLE_START_COOLDOWN_MS as u64,
+        ))
+        .await;
+        let payload = build_battle_cooldown_ready_payload(Some(&actor_id));
+        emit_battle_cooldown_to_participants(&state, &participant_user_ids, &payload);
+    });
+}
+
+fn schedule_dungeon_session_auto_advance_if_needed(
+    state: AppState,
+    session: Option<&BattleSessionSnapshotDto>,
+    result: Option<&str>,
+) {
+    if !matches!(result, Some("attacker_win")) {
+        return;
+    }
+    let Some(session) = session else {
+        return;
+    };
+    let BattleSessionContextDto::Dungeon { instance_id } = &session.context else {
+        return;
+    };
+    if session.status != "waiting_transition" || session.next_action != "advance" {
+        return;
+    }
+    let instance_id = instance_id.clone();
+    let owner_user_id = session.owner_user_id;
+    let _ = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(
+            DUNGEON_SESSION_SERVER_AUTO_ADVANCE_DELAY_MS,
+        ))
+        .await;
+        if let Err(error) = state
+            .database
+            .with_transaction(|| async {
+                crate::http::dungeon::next_dungeon_instance_tx(&state, owner_user_id, &instance_id)
+                    .await
+                    .map(|_| ())
+            })
+            .await
+        {
+            tracing::warn!(error = %error, instance_id = %instance_id, "dungeon session auto advance failed");
+        }
+    });
 }
 
 fn arena_refresh_target_user_id(
@@ -618,24 +725,56 @@ mod tests {
                     "phase": "finished",
                     "result": "attacker_win"
                 },
-                "logs": [{"type": "finish", "round": 1, "result": "attacker_win"}],
+                "logs": [{
+                    "type": "action",
+                    "round": 1,
+                    "actorId": "player-1",
+                    "actorName": "修士1",
+                    "skillId": "sk-heavy-slash",
+                    "skillName": "重斩",
+                    "targets": [{
+                        "targetId": "monster-1-monster-gray-wolf",
+                        "targetName": "灰狼",
+                        "hits": [{
+                            "index": 1,
+                            "damage": 120,
+                            "isMiss": false,
+                            "isCrit": false,
+                            "isParry": false,
+                            "isElementBonus": false,
+                            "shieldAbsorbed": 0
+                        }],
+                        "damage": 120
+                    }]
+                }],
                 "debugRealtime": {"kind": "battle_finished"},
-                "debugCooldownRealtime": {"kind": "battle:cooldown-ready", "cooldownMs": 0},
+                "debugCooldownRealtime": {"kind": "battle:cooldown-sync", "remainingMs": 3000},
+                "battleStartCooldownMs": 3000,
+                "nextBattleAvailableAt": 1770000003000_i64,
                 "session": {
                     "sessionId": "pve-session-pve-battle-1-123",
-                    "nextAction": "return_to_map",
+                    "status": "waiting_transition",
+                    "nextAction": "advance",
                     "canAdvance": true,
                     "lastResult": "attacker_win"
                 }
             }
         });
-        assert_eq!(payload["data"]["session"]["nextAction"], "return_to_map");
+        assert_eq!(payload["data"]["session"]["status"], "waiting_transition");
+        assert_eq!(payload["data"]["session"]["nextAction"], "advance");
+        assert_eq!(payload["data"]["battleStartCooldownMs"], 3000);
         assert_eq!(payload["data"]["state"]["phase"], "finished");
-        assert_eq!(payload["data"]["logs"][0]["type"], "finish");
+        assert_eq!(payload["data"]["logs"][0]["type"], "action");
+        assert_eq!(payload["data"]["logs"][0]["actorName"], "修士1");
+        assert_eq!(payload["data"]["logs"][0]["skillName"], "重斩");
+        assert_eq!(
+            payload["data"]["logs"][0]["targets"][0]["hits"][0]["damage"],
+            120
+        );
         assert_eq!(payload["data"]["debugRealtime"]["kind"], "battle_finished");
         assert_eq!(
             payload["data"]["debugCooldownRealtime"]["kind"],
-            "battle:cooldown-ready"
+            "battle:cooldown-sync"
         );
         println!("BATTLE_ACTION_RESPONSE={}", payload);
     }

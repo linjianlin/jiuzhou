@@ -1133,7 +1133,10 @@ fn build_battle_sync_payload_for_user(
                             participant_count: session_snapshot
                                 .as_ref()
                                 .map(|s| s.participant_user_ids.len() as i64),
-                            items: Some(build_reward_item_values(&reward_items)),
+                            items: Some(build_reward_item_values(
+                                &reward_items,
+                                parse_battle_owner_character_id(&state_snapshot),
+                            )),
                             per_player_rewards: Some(build_single_player_reward_values(
                                 user_id,
                                 parse_battle_owner_character_id(&state_snapshot),
