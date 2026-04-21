@@ -22,7 +22,11 @@ use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_coun
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
 use crate::state::AppState;
 use crate::http::technique::load_technique_detail_data;
-use crate::http::partner::build_effective_partner_skill;
+use crate::http::partner::{
+    build_effective_partner_skill,
+    clear_pending_partner_technique_preview_by_partner_ids,
+    has_pending_partner_technique_preview_for_partner,
+};
 use crate::http::inventory::resolve_generated_technique_book_display;
 
 fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
@@ -1588,6 +1592,13 @@ async fn create_partner_market_listing_tx(
     if partner.is_active {
         return Ok(ServiceResult { success: false, message: Some("出战中的伙伴不可上架".to_string()), data: None });
     }
+    if has_pending_partner_technique_preview_for_partner(state, character_id, partner_id, true).await? {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("存在待处理的打书预览，请先确认或放弃".to_string()),
+            data: None,
+        });
+    }
     let active_listing = state.database.fetch_optional(
         "SELECT id FROM market_partner_listing WHERE partner_id = $1 AND status = 'active' LIMIT 1",
         |q| q.bind(partner_id),
@@ -2160,6 +2171,7 @@ async fn buy_partner_market_listing_tx(
         "UPDATE characters SET spirit_stones = COALESCE(spirit_stones, 0) + $2, updated_at = NOW() WHERE id = $1",
         |q| q.bind(seller_character_id).bind(unit_price_spirit_stones),
     ).await?;
+    clear_pending_partner_technique_preview_by_partner_ids(state, seller_character_id, &[partner_id], true).await?;
     state.database.execute(
         "UPDATE character_partner SET character_id = $1, is_active = FALSE, updated_at = NOW() WHERE id = $2",
         |q| q.bind(buyer_character_id).bind(partner_id),

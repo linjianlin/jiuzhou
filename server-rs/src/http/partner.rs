@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -409,6 +409,14 @@ pub struct PartnerBookDto {
     pub preview_learned_technique_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_replaced_technique_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PartnerTechniquePreviewItemRow {
+    id: i64,
+    item_def_id: String,
+    qty: i64,
+    metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1137,6 +1145,7 @@ async fn confirm_partner_fusion_preview_tx(
     if partners.iter().any(|row| row.try_get::<Option<bool>, _>("is_active").ok().flatten().unwrap_or(false)) {
         return Ok(ServiceResult { success: false, message: Some("归契素材状态异常，请稍后重试".to_string()), data: None });
     }
+    clear_pending_partner_technique_preview_by_partner_ids(state, character_id, &material_partner_ids, true).await?;
     state.database.execute(
         "DELETE FROM character_partner WHERE character_id = $1 AND id = ANY($2::bigint[])",
         |q| q.bind(character_id).bind(&material_partner_ids),
@@ -3085,14 +3094,26 @@ pub async fn confirm_partner_technique_learn_preview(
                 data: None,
             });
         };
-        let book = load_partner_book_context(&state, actor.character_id, item_instance_id).await?;
-        let Some(book) = book else {
+        let rows = load_partner_technique_preview_items(&state, actor.character_id, true).await?;
+        let matched_row = rows.into_iter().find(|row| row.id == item_instance_id);
+        let Some(preview_row) = matched_row else {
             return Ok(ServiceResult::<PartnerLearnTechniqueResultDto> {
                 success: false,
-                message: Some("待处理打书预览与当前伙伴不匹配".to_string()),
+                message: Some("待处理打书预览不存在".to_string()),
                 data: None,
             });
         };
+        let pending_preview = match resolve_partner_pending_preview_from_row(&state, actor.character_id, &preview_row, true).await? {
+            PartnerPendingPreviewResolution::Valid(preview) => preview,
+            PartnerPendingPreviewResolution::Invalid { message } => {
+                return Ok(ServiceResult::<PartnerLearnTechniqueResultDto> {
+                    success: false,
+                    message: Some(message.to_string()),
+                    data: None,
+                });
+            }
+        };
+        let book = pending_preview.book.clone();
         let def = load_partner_def_resolved(&state, row.partner_def_id.trim()).await?
             .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
         let mut technique_rows = load_partner_technique_rows(&state, vec![row.id]).await?;
@@ -3112,9 +3133,14 @@ pub async fn confirm_partner_technique_learn_preview(
                 data: None,
             });
         }
-        let preview_partner_id = book.preview_partner_id.unwrap_or_default();
-        let preview_replaced_technique_id = book.preview_replaced_technique_id.clone().unwrap_or_default();
-        if preview_partner_id != partner_id || preview_replaced_technique_id.trim() != replaced_technique_id.trim() {
+        if pending_preview.preview.partner_id != partner_id {
+            return Ok(ServiceResult::<PartnerLearnTechniqueResultDto> {
+                success: false,
+                message: Some("待处理打书预览与当前伙伴不匹配".to_string()),
+                data: None,
+            });
+        }
+        if pending_preview.preview.replaced_technique.technique_id.trim() != replaced_technique_id.trim() {
             return Ok(ServiceResult::<PartnerLearnTechniqueResultDto> {
                 success: false,
                 message: Some("预览已失效，请重新选择功法书".to_string()),
@@ -3175,28 +3201,36 @@ pub async fn discard_partner_technique_learn_preview(
             data: None,
         }));
     }
-    let book = load_partner_book_context(&state, actor.character_id, item_instance_id).await?;
-    let Some(book) = book else {
-        return Ok(send_result(ServiceResult::<PartnerDiscardLearnTechniqueData> {
-            success: false,
-            message: Some("预览不存在".to_string()),
-            data: None,
-        }));
-    };
-    if book.preview_partner_id.is_none() || book.preview_replaced_technique_id.as_deref().unwrap_or_default().trim().is_empty() {
-        return Ok(send_result(ServiceResult::<PartnerDiscardLearnTechniqueData> {
-            success: false,
-            message: Some("预览不存在".to_string()),
-            data: None,
-        }));
-    }
-    consume_specific_item_instance(&state, actor.user_id, actor.character_id, item_instance_id, 1, &book.item_def_id).await?;
-    let remaining_books = load_partner_books(&state, actor.character_id).await?;
-    Ok(send_result(ServiceResult {
-        success: true,
-        message: Some("已放弃学习，本次功法书已消耗".to_string()),
-        data: Some(PartnerDiscardLearnTechniqueData { remaining_books }),
-    }))
+    let result = state.database.with_transaction(|| async {
+        let rows = load_partner_technique_preview_items(&state, actor.character_id, true).await?;
+        let matched_row = rows.into_iter().find(|row| row.id == item_instance_id);
+        let Some(row) = matched_row else {
+            return Ok(ServiceResult::<PartnerDiscardLearnTechniqueData> {
+                success: false,
+                message: Some("待处理打书预览不存在".to_string()),
+                data: None,
+            });
+        };
+        let pending_preview = match resolve_partner_pending_preview_from_row(&state, actor.character_id, &row, true).await? {
+            PartnerPendingPreviewResolution::Valid(preview) => preview,
+            PartnerPendingPreviewResolution::Invalid { message } => {
+                return Ok(ServiceResult::<PartnerDiscardLearnTechniqueData> {
+                    success: false,
+                    message: Some(message.to_string()),
+                    data: None,
+                });
+            }
+        };
+        let book = pending_preview.book;
+        consume_specific_item_instance(&state, actor.user_id, actor.character_id, item_instance_id, 1, &book.item_def_id).await?;
+        let remaining_books = load_partner_books(&state, actor.character_id).await?;
+        Ok(ServiceResult {
+            success: true,
+            message: Some("已放弃学习，本次功法书已消耗".to_string()),
+            data: Some(PartnerDiscardLearnTechniqueData { remaining_books }),
+        })
+    }).await?;
+    Ok(send_result(result))
 }
 
 pub async fn get_partner_technique_upgrade_cost(
@@ -3468,13 +3502,25 @@ async fn load_partner_technique_rows(
     state: &AppState,
     partner_ids: Vec<i64>,
 ) -> Result<HashMap<i64, Vec<PartnerTechniqueRow>>, AppError> {
+    load_partner_technique_rows_with_lock(state, partner_ids, false).await
+}
+
+async fn load_partner_technique_rows_with_lock(
+    state: &AppState,
+    partner_ids: Vec<i64>,
+    for_update: bool,
+) -> Result<HashMap<i64, Vec<PartnerTechniqueRow>>, AppError> {
     if partner_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    let lock_sql = if for_update { " FOR UPDATE" } else { "" };
     let rows = state
         .database
         .fetch_all(
-            "SELECT partner_id, technique_id, current_layer, is_innate, learned_from_item_def_id FROM character_partner_technique WHERE partner_id = ANY($1::bigint[]) ORDER BY partner_id ASC, is_innate DESC, created_at ASC, id ASC",
+            &format!(
+                "SELECT partner_id, technique_id, current_layer, is_innate, learned_from_item_def_id FROM character_partner_technique WHERE partner_id = ANY($1::bigint[]) ORDER BY partner_id ASC, is_innate DESC, created_at ASC, id ASC{}",
+                lock_sql,
+            ),
             |query| query.bind(partner_ids),
         )
         .await?;
@@ -4313,6 +4359,255 @@ pub(crate) async fn load_partner_books(
     Ok(books)
 }
 
+async fn load_partner_technique_preview_items(
+    state: &AppState,
+    character_id: i64,
+    for_update: bool,
+) -> Result<Vec<PartnerTechniquePreviewItemRow>, AppError> {
+    let lock_sql = if for_update { " FOR UPDATE" } else { "" };
+    let rows = state
+        .database
+        .fetch_all(
+            &format!(
+                "SELECT id, item_def_id, qty, metadata FROM item_instance WHERE owner_character_id = $1 AND location = 'partner_preview' ORDER BY created_at ASC, id ASC{}",
+                lock_sql,
+            ),
+            |query| query.bind(character_id),
+        )
+        .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(PartnerTechniquePreviewItemRow {
+                id: row.try_get::<Option<i64>, _>("id")?.unwrap_or_default(),
+                item_def_id: row
+                    .try_get::<Option<String>, _>("item_def_id")?
+                    .unwrap_or_default(),
+                qty: row
+                    .try_get::<Option<i32>, _>("qty")?
+                    .map(i64::from)
+                    .unwrap_or(1)
+                    .max(1),
+                metadata: row.try_get::<Option<serde_json::Value>, _>("metadata")?,
+            })
+        })
+        .collect()
+}
+
+fn read_pending_partner_technique_preview_partner_id(
+    metadata: Option<&serde_json::Value>,
+) -> Option<i64> {
+    metadata
+        .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+        .and_then(|value| value.get("partnerId"))
+        .and_then(|value| value.as_i64())
+        .filter(|partner_id| *partner_id > 0)
+}
+
+async fn delete_partner_technique_preview_items_by_ids(
+    state: &AppState,
+    character_id: i64,
+    item_instance_ids: &[i64],
+) -> Result<(), AppError> {
+    let normalized_ids = item_instance_ids
+        .iter()
+        .copied()
+        .filter(|item_instance_id| *item_instance_id > 0)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if normalized_ids.is_empty() {
+        return Ok(());
+    }
+
+    state
+        .database
+        .execute(
+            "DELETE FROM item_instance WHERE owner_character_id = $1 AND location = 'partner_preview' AND id = ANY($2::bigint[])",
+            |query| query.bind(character_id).bind(&normalized_ids),
+        )
+        .await?;
+    Ok(())
+}
+
+pub(crate) async fn has_pending_partner_technique_preview_for_partner(
+    state: &AppState,
+    character_id: i64,
+    partner_id: i64,
+    for_update: bool,
+) -> Result<bool, AppError> {
+    if partner_id <= 0 {
+        return Ok(false);
+    }
+
+    let rows = load_partner_technique_preview_items(state, character_id, for_update).await?;
+    Ok(rows.into_iter().any(|row| {
+        read_pending_partner_technique_preview_partner_id(row.metadata.as_ref()) == Some(partner_id)
+    }))
+}
+
+pub(crate) async fn clear_pending_partner_technique_preview_by_partner_ids(
+    state: &AppState,
+    character_id: i64,
+    partner_ids: &[i64],
+    for_update: bool,
+) -> Result<Vec<i64>, AppError> {
+    let normalized_partner_ids = partner_ids
+        .iter()
+        .copied()
+        .filter(|partner_id| *partner_id > 0)
+        .collect::<BTreeSet<_>>();
+    if normalized_partner_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = load_partner_technique_preview_items(state, character_id, for_update).await?;
+    let matched_item_ids = rows
+        .into_iter()
+        .filter(|row| {
+            read_pending_partner_technique_preview_partner_id(row.metadata.as_ref())
+                .is_some_and(|partner_id| normalized_partner_ids.contains(&partner_id))
+        })
+        .map(|row| row.id)
+        .collect::<Vec<_>>();
+
+    delete_partner_technique_preview_items_by_ids(state, character_id, &matched_item_ids).await?;
+    Ok(matched_item_ids)
+}
+
+async fn build_partner_preview_book_from_item_row(
+    state: &AppState,
+    row: &PartnerTechniquePreviewItemRow,
+) -> Result<Option<PartnerBookDto>, AppError> {
+    let Some(mut book) = resolve_partner_book(state, row.item_def_id.trim(), row.metadata.as_ref()).await? else {
+        return Ok(None);
+    };
+    enrich_generated_partner_book_display(state, &mut book, row.metadata.as_ref()).await?;
+    book.item_instance_id = row.id;
+    book.qty = row.qty;
+    Ok(Some(book))
+}
+
+enum PartnerPendingPreviewResolution {
+    Valid(PartnerPendingTechniqueLearnPreviewDto),
+    Invalid { message: &'static str },
+}
+
+async fn resolve_partner_pending_preview_from_row(
+    state: &AppState,
+    character_id: i64,
+    row: &PartnerTechniquePreviewItemRow,
+    for_update: bool,
+) -> Result<PartnerPendingPreviewResolution, AppError> {
+    let Some(book) = build_partner_preview_book_from_item_row(state, row).await? else {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "待处理打书预览中的功法书数据异常",
+        });
+    };
+
+    let preview_partner_id = book.preview_partner_id.unwrap_or_default();
+    let preview_learned_technique_id = book
+        .preview_learned_technique_id
+        .as_deref()
+        .unwrap_or_default()
+        .trim();
+    let preview_replaced_technique_id = book
+        .preview_replaced_technique_id
+        .as_deref()
+        .unwrap_or_default()
+        .trim();
+
+    if preview_partner_id <= 0 || preview_learned_technique_id.is_empty() || preview_replaced_technique_id.is_empty() {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "待处理打书预览数据异常",
+        });
+    }
+    if book.technique_id.trim() != preview_learned_technique_id {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "待处理打书预览与功法书不匹配",
+        });
+    }
+
+    let Some(partner_row) = load_single_partner_row(state, character_id, preview_partner_id, for_update).await? else {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "伙伴不存在",
+        });
+    };
+    let listing_lock_sql = if for_update { " FOR UPDATE" } else { "" };
+    let active_listing = state.database.fetch_optional(
+        &format!(
+            "SELECT id FROM market_partner_listing WHERE partner_id = $1 AND status = 'active' LIMIT 1{}",
+            listing_lock_sql,
+        ),
+        |query| query.bind(preview_partner_id),
+    ).await?;
+    if active_listing.is_some() {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "已在坊市挂单的伙伴不可学习功法",
+        });
+    }
+    let fusion_lock_sql = if for_update { " FOR UPDATE" } else { "" };
+    let fusion_material = state.database.fetch_optional(
+        &format!(
+            "SELECT material.partner_id FROM partner_fusion_job_material AS material INNER JOIN partner_fusion_job AS job ON job.id = material.fusion_job_id WHERE material.partner_id = $1 AND job.status IN ('pending','generated_preview') LIMIT 1{}",
+            fusion_lock_sql,
+        ),
+        |query| query.bind(preview_partner_id),
+    ).await?;
+    if fusion_material.is_some() {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "归契中的伙伴不可学习功法",
+        });
+    }
+    let def = load_partner_def_resolved(state, partner_row.partner_def_id.trim()).await?
+        .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", partner_row.partner_def_id)))?;
+    let technique_map = load_partner_technique_rows_with_lock(state, vec![partner_row.id], for_update).await?;
+    let current_techniques = build_partner_techniques_with_generated(
+        state,
+        &def,
+        technique_map.get(&partner_row.id).cloned().unwrap_or_default(),
+    )
+    .await?;
+    if current_techniques
+        .iter()
+        .any(|technique| technique.technique_id == preview_learned_technique_id)
+    {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "伙伴已掌握该功法",
+        });
+    }
+
+    let learned_technique = match build_partner_preview_technique(state, preview_learned_technique_id).await {
+        Ok(technique) => technique,
+        Err(_) => {
+            return Ok(PartnerPendingPreviewResolution::Invalid {
+                message: "伙伴功法不存在或未开放",
+            });
+        }
+    };
+    let Some(replaced_technique) = current_techniques
+        .iter()
+        .find(|technique| technique.technique_id == preview_replaced_technique_id && !technique.is_innate)
+        .cloned()
+    else {
+        return Ok(PartnerPendingPreviewResolution::Invalid {
+            message: "待处理打书预览中的被替换功法已失效",
+        });
+    };
+
+    Ok(PartnerPendingPreviewResolution::Valid(
+        PartnerPendingTechniqueLearnPreviewDto {
+            book,
+            preview: PartnerTechniqueLearnPreviewDto {
+                partner_id: preview_partner_id,
+                item_instance_id: row.id,
+                learned_technique,
+                replaced_technique,
+            },
+        },
+    ))
+}
+
 async fn resolve_partner_book(
     state: &AppState,
     item_def_id: &str,
@@ -4434,106 +4729,47 @@ async fn enrich_generated_partner_book_display(
 async fn load_pending_partner_technique_learn_preview(
     state: &AppState,
     character_id: i64,
-    partner_rows: &[PartnerRow],
-    technique_map: &HashMap<i64, Vec<PartnerTechniqueRow>>,
-    owner: &PartnerOwnerContext,
+    _partner_rows: &[PartnerRow],
+    _technique_map: &HashMap<i64, Vec<PartnerTechniqueRow>>,
+    _owner: &PartnerOwnerContext,
 ) -> Result<Option<PartnerPendingTechniqueLearnPreviewDto>, AppError> {
-    let rows = state
-        .database
-        .fetch_all(
-            "SELECT id, item_def_id, qty, metadata FROM item_instance WHERE owner_character_id = $1 AND location = 'partner_preview' ORDER BY created_at ASC, id ASC",
-            |query| query.bind(character_id),
-        )
-        .await?;
+    let rows = load_partner_technique_preview_items(state, character_id, false).await?;
     let mut invalid_item_ids = Vec::new();
-    let mut matched_book: Option<PartnerBookDto> = None;
-    let mut matched_item_instance_id = 0_i64;
-    let mut matched_preview_partner_id = 0_i64;
-    let mut matched_preview_replaced_technique_id = String::new();
+    let mut valid_previews = Vec::new();
     for row in rows {
-        let item_instance_id = row.try_get::<Option<i64>, _>("id")?.unwrap_or_default();
-        let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
-        let metadata = row.try_get::<Option<serde_json::Value>, _>("metadata")?;
-        let Some(mut book) = resolve_partner_book(state, item_def_id.trim(), metadata.as_ref()).await? else {
-            if item_instance_id > 0 {
-                invalid_item_ids.push(item_instance_id);
+        let item_instance_id = row.id;
+        match resolve_partner_pending_preview_from_row(state, character_id, &row, false).await? {
+            PartnerPendingPreviewResolution::Valid(preview) => valid_previews.push(preview),
+            PartnerPendingPreviewResolution::Invalid { .. } => {
+                if item_instance_id > 0 {
+                    invalid_item_ids.push(item_instance_id);
+                }
             }
-            continue;
-        };
-        enrich_generated_partner_book_display(state, &mut book, metadata.as_ref()).await?;
-        let preview_partner_id = book.preview_partner_id.unwrap_or_default();
-        let preview_replaced_technique_id = book.preview_replaced_technique_id.clone().unwrap_or_default();
-        if preview_partner_id <= 0 || preview_replaced_technique_id.trim().is_empty() {
-            if item_instance_id > 0 {
-                invalid_item_ids.push(item_instance_id);
-            }
-            continue;
         }
-        book.item_instance_id = item_instance_id;
-        book.qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or(1).max(1);
-        matched_item_instance_id = item_instance_id;
-        matched_preview_partner_id = preview_partner_id;
-        matched_preview_replaced_technique_id = preview_replaced_technique_id;
-        matched_book = Some(book);
-        break;
     }
     if !invalid_item_ids.is_empty() {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE owner_character_id = $1 AND location = 'partner_preview' AND id = ANY($2)",
-            |q| q.bind(character_id).bind(&invalid_item_ids),
-        ).await?;
+        delete_partner_technique_preview_items_by_ids(state, character_id, &invalid_item_ids).await?;
     }
-    let Some(book) = matched_book else { return Ok(None); };
-    let learned_technique_id = book.preview_learned_technique_id.clone().unwrap_or_else(|| book.technique_id.clone());
-    let partner_row = partner_rows.iter().find(|partner| partner.id == matched_preview_partner_id).cloned();
-    let Some(partner_row) = partner_row else {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2 AND location = 'partner_preview'",
-            |q| q.bind(matched_item_instance_id).bind(character_id),
-        ).await?;
+    if valid_previews.is_empty() {
         return Ok(None);
-    };
-    let partner = build_partner_details_with_generated(state, vec![partner_row], technique_map, owner).await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| AppError::config("伙伴刷新失败"))?;
-    let learned_technique = match build_partner_preview_technique(state, &learned_technique_id).await {
-        Ok(technique) => technique,
-        Err(_) => {
-            state.database.execute(
-                "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2 AND location = 'partner_preview'",
-                |q| q.bind(matched_item_instance_id).bind(character_id),
-            ).await?;
-            return Ok(None);
-        }
-    };
-    let replaced_technique = partner
-        .techniques
-        .iter()
-        .find(|technique| technique.technique_id == matched_preview_replaced_technique_id)
-        .cloned();
-    let Some(replaced_technique) = replaced_technique else {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2 AND location = 'partner_preview'",
-            |q| q.bind(matched_item_instance_id).bind(character_id),
-        ).await?;
-        return Ok(None);
-    };
-    Ok(Some(PartnerPendingTechniqueLearnPreviewDto {
-        book,
-        preview: PartnerTechniqueLearnPreviewDto {
-            partner_id: matched_preview_partner_id,
-            item_instance_id: matched_item_instance_id,
-            learned_technique,
-            replaced_technique,
-        },
-    }))
+    }
+    if valid_previews.len() > 1 {
+        return Err(AppError::Business {
+            message: "存在多个待处理的伙伴打书预览，请先清理异常数据".to_string(),
+            status: axum::http::StatusCode::BAD_REQUEST,
+            extra: serde_json::Map::new(),
+        });
+    }
+    Ok(valid_previews.into_iter().next())
 }
 
 async fn build_partner_preview_technique(state: &AppState, technique_id: &str) -> Result<PartnerTechniqueDto, AppError> {
     let Some(detail) = load_technique_detail_data(state, technique_id, None, true).await? else {
         return Err(AppError::config("伙伴功法详情不存在"));
     };
+    if detail.layers.is_empty() {
+        return Err(AppError::config("伙伴功法详情不存在"));
+    }
     let layers = serde_json::to_value(&detail.layers)
         .map_err(|error| AppError::config(format!("伙伴预览功法层级序列化失败: {error}")))?
         .as_array()
@@ -4617,7 +4853,10 @@ async fn consume_specific_item_instance(
     if owned_item_def_id.trim() != item_def_id {
         return Err(AppError::config("功法书已变化，请刷新后重试"));
     }
-    let current_qty = row.try_get::<Option<i64>, _>("qty")?.unwrap_or_default();
+    let current_qty = row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if current_qty < qty {
         return Err(AppError::config("功法书数量不足"));
     }
@@ -4831,7 +5070,7 @@ fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::build_effective_partner_skill;
-    use super::resolve_partner_book;
+    use std::collections::BTreeSet;
 
     #[test]
     fn partner_overview_payload_matches_contract() {
@@ -5097,6 +5336,29 @@ mod tests {
         assert_eq!(effective.trigger_type.as_deref(), Some("counter"));
         assert_eq!(effective.cooldown, Some(2));
         assert_eq!(effective.target_count, Some(3));
+    }
+
+    #[test]
+    fn build_partner_techniques_counts_innate_entries_without_persisted_rows() {
+        let defs = super::load_partner_def_map().expect("partner defs should load");
+        let tech_defs = super::load_technique_def_map().expect("tech defs should load");
+        let skill_defs = super::load_skill_def_map().expect("skill defs should load");
+        let def = defs
+            .get("partner-qingmu-xiaoou")
+            .expect("partner-qingmu-xiaoou should exist");
+
+        let techniques = super::build_partner_techniques(def, Vec::new(), &tech_defs, &skill_defs)
+            .expect("partner techniques should build");
+        let innate_count = def
+            .innate_technique_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .len();
+
+        assert!(innate_count > 0);
+        assert_eq!(techniques.len(), innate_count);
     }
 
     #[test]

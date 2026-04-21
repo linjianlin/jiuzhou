@@ -7771,6 +7771,994 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
+    async fn partner_market_list_route_rejects_partner_with_pending_technique_preview() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_MARKET_PREVIEW_BLOCK_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("partner-market-preview-{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        sqlx::query("UPDATE characters SET silver = 100000 WHERE id = $1")
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("character silver should update");
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test')")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":"gt-preview","replacedTechniqueId":"gt-old"}}).to_string())
+            .execute(&pool)
+            .await
+            .expect("preview item should insert");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/market/partner/list"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerId\":{},\"unitPriceSpiritStones\":10}}", partner_id))
+            .send()
+            .await
+            .expect("partner market list should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("market list body should be json");
+        let listing_exists = sqlx::query("SELECT 1 FROM market_partner_listing WHERE partner_id = $1 AND status = 'active'")
+            .bind(partner_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("listing existence query should succeed")
+            .is_some();
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "存在待处理的打书预览，请先确认或放弃");
+        assert!(!listing_exists);
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_overview_route_keeps_single_valid_preview_and_cleans_later_invalid_rows() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_OVERVIEW_PREVIEW_MIXED_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("ppm{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        sqlx::query("INSERT INTO character_feature_unlocks (character_id, feature_code, obtained_from, obtained_ref_id, unlocked_at) VALUES ($1, 'partner_system', 'test', 'partner-preview-mixed', NOW()) ON CONFLICT DO NOTHING")
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("partner feature unlock should insert");
+
+        let partner_def_id = format!("ppm-partner-{suffix}");
+        let old_technique_id = format!("ppm-old-tech-{suffix}");
+        let old_skill_id = format!("ppm-old-skill-{suffix}");
+        let new_technique_id = format!("ppm-new-tech-{suffix}");
+        let new_skill_id = format!("ppm-new-skill-{suffix}");
+
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, innate_technique_ids, base_attrs, level_attr_gains, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·预览校验灵伴', '测试混合预览伙伴', NULL, '玄', 'wood', 'support', 1, ARRAY[]::text[], '{\"max_qixue\":120}'::jsonb, '{\"max_qixue\":8}'::jsonb, TRUE, $2, $3, NOW(), NOW())")
+            .bind(&partner_def_id)
+            .bind(fixture.character_id)
+            .bind(format!("job-partner-{suffix}"))
+            .execute(&pool)
+            .await
+            .expect("generated partner def should insert");
+
+        for (technique_id, skill_id, name) in [
+            (&old_technique_id, &old_skill_id, "旧诀"),
+            (&new_technique_id, &new_skill_id, "新诀"),
+        ] {
+            sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $4, '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+                .bind(technique_id)
+                .bind(format!("job-tech-{technique_id}"))
+                .bind(fixture.character_id)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .expect("generated technique def should insert");
+            sqlx::query("INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, name, target_type, target_count, effects, trigger_type, cooldown, sort_weight, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, 'self', 1, '[{\"type\":\"buff\",\"buffKind\":\"aura\"}]'::jsonb, 'active', 4, 10, TRUE, 1, NOW(), NOW())")
+                .bind(skill_id)
+                .bind(format!("job-skill-{skill_id}"))
+                .bind(technique_id)
+                .bind(format!("{name}技能"))
+                .execute(&pool)
+                .await
+                .expect("generated skill def should insert");
+            sqlx::query("INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, 50, 25, '[]'::jsonb, '[{\"key\":\"atk\",\"value\":12}]'::jsonb, ARRAY[$3], ARRAY[]::varchar[], '凡人', 'generated-layer-desc', TRUE, NOW(), NOW())")
+                .bind(format!("job-layer-{technique_id}"))
+                .bind(technique_id)
+                .bind(skill_id)
+                .execute(&pool)
+                .await
+                .expect("generated technique layer should insert");
+        }
+
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·预览校验灵伴", true).await;
+        sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, learned_from_item_def_id, created_at, updated_at) VALUES ($1, $2, 1, FALSE, 'book-old', NOW(), NOW())")
+            .bind(partner_id)
+            .bind(&old_technique_id)
+            .execute(&pool)
+            .await
+            .expect("existing partner technique should insert");
+
+        let valid_preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":new_technique_id,"generatedTechniqueName":"新诀","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":new_technique_id,"replacedTechniqueId":old_technique_id}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("valid preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("valid preview id should exist");
+        let invalid_preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":new_technique_id,"generatedTechniqueName":"新诀","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":new_technique_id,"replacedTechniqueId":"missing-tech"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("invalid preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("invalid preview id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://{address}/api/partner/overview"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .send()
+            .await
+            .expect("partner overview should succeed");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("overview body should be json");
+        let valid_preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
+            .bind(valid_preview_item_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("valid preview existence query should succeed")
+            .is_some();
+        let invalid_preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
+            .bind(invalid_preview_item_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("invalid preview existence query should succeed")
+            .is_some();
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"]["pendingTechniqueLearnPreview"]["book"]["itemInstanceId"], valid_preview_item_id);
+        assert_eq!(body["data"]["pendingTechniqueLearnPreview"]["preview"]["partnerId"], partner_id);
+        assert!(valid_preview_exists);
+        assert!(!invalid_preview_exists);
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_confirm_learn_route_rejects_bag_item_with_preview_metadata() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_BAG_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pcbp{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let bag_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'bag', 0, NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":"gt-bag-preview","generatedTechniqueName":"袋中残留预览","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":"gt-bag-preview","replacedTechniqueId":"tech-old"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("bag preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("bag item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}", partner_id, bag_item_id))
+            .send()
+            .await
+            .expect("partner confirm learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("confirm body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "待处理打书预览不存在");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_discard_learn_route_rejects_bag_item_with_preview_metadata() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_BAG_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pdbp{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let bag_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'bag', 0, NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":"gt-bag-discard","generatedTechniqueName":"袋中残留预览","partnerTechniqueLearnPreview":{"partnerId":999,"learnedTechniqueId":"gt-bag-discard","replacedTechniqueId":"tech-old"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("bag preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("bag item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"itemInstanceId\":{}}}", bag_item_id))
+            .send()
+            .await
+            .expect("partner discard learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("discard body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "待处理打书预览不存在");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_confirm_learn_route_reports_invalid_partner_preview_row() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_INVALID_PREVIEW_ROW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pcipr{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":"gt-invalid-preview","generatedTechniqueName":"坏预览书"}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("invalid preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("invalid preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}", partner_id, preview_item_id))
+            .send()
+            .await
+            .expect("partner confirm learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("confirm body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "待处理打书预览中的功法书数据异常");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_discard_learn_route_reports_invalid_partner_preview_row() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_INVALID_PREVIEW_ROW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pdipr{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":"gt-invalid-preview","generatedTechniqueName":"坏预览书"}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("invalid preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("invalid preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
+            .send()
+            .await
+            .expect("partner discard learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("discard body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "待处理打书预览中的功法书数据异常");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_confirm_learn_route_rejects_preview_when_book_mismatches_learned_technique() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_PREVIEW_BOOK_MISMATCH_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pcbm{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let generated_technique_id = format!("gt-mismatch-book-{suffix}");
+        sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '错配功法', '错配功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_technique_id)
+            .bind(format!("job-tech-mismatch-{suffix}"))
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique def should insert");
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":generated_technique_id,"generatedTechniqueName":"错配功法","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":"gt-preview-other","replacedTechniqueId":"tech-old"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("mismatch preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("mismatch preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}", partner_id, preview_item_id))
+            .send()
+            .await
+            .expect("partner confirm learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("confirm body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "待处理打书预览与功法书不匹配");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_discard_learn_route_rejects_preview_when_replaced_technique_is_stale() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_PREVIEW_STALE_REPLACED_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pdst{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let generated_technique_id = format!("gt-stale-replaced-{suffix}");
+        let generated_skill_id = format!("skill-stale-replaced-{suffix}");
+        sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '失效替换功法预览书', '失效替换功法预览书', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_technique_id)
+            .bind(format!("job-tech-stale-{suffix}"))
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique def should insert");
+        sqlx::query("INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, name, target_type, target_count, effects, trigger_type, cooldown, sort_weight, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, '失效替换功法预览书技能', 'self', 1, '[{\"type\":\"buff\",\"buffKind\":\"aura\"}]'::jsonb, 'active', 4, 10, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_skill_id)
+            .bind(format!("job-skill-stale-{suffix}"))
+            .bind(&generated_technique_id)
+            .execute(&pool)
+            .await
+            .expect("generated skill def should insert");
+        sqlx::query("INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, 50, 25, '[]'::jsonb, '[{\"key\":\"atk\",\"value\":12}]'::jsonb, ARRAY[$3], ARRAY[]::varchar[], '凡人', 'generated-layer-desc', TRUE, NOW(), NOW())")
+            .bind(format!("job-layer-stale-{suffix}"))
+            .bind(&generated_technique_id)
+            .bind(&generated_skill_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique layer should insert");
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":generated_technique_id,"generatedTechniqueName":"失效替换功法预览书","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":generated_technique_id,"replacedTechniqueId":"missing-tech"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("stale replaced preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("stale replaced preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
+            .send()
+            .await
+            .expect("partner discard learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("discard body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "待处理打书预览中的被替换功法已失效");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_discard_learn_route_succeeds_with_valid_pending_preview() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_VALID_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pdvp{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_def_id = format!("pdvp-partner-{suffix}");
+        let old_technique_id = format!("pdvp-old-tech-{suffix}");
+        let old_skill_id = format!("pdvp-old-skill-{suffix}");
+        let new_technique_id = format!("pdvp-new-tech-{suffix}");
+        let new_skill_id = format!("pdvp-new-skill-{suffix}");
+
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, innate_technique_ids, base_attrs, level_attr_gains, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·放弃预览灵伴', '测试放弃预览伙伴', NULL, '玄', 'wood', 'support', 1, ARRAY[]::text[], '{\"max_qixue\":120}'::jsonb, '{\"max_qixue\":8}'::jsonb, TRUE, $2, $3, NOW(), NOW())")
+            .bind(&partner_def_id)
+            .bind(fixture.character_id)
+            .bind(format!("job-partner-{suffix}"))
+            .execute(&pool)
+            .await
+            .expect("generated partner def should insert");
+
+        for (technique_id, skill_id, name) in [
+            (&old_technique_id, &old_skill_id, "旧诀"),
+            (&new_technique_id, &new_skill_id, "新诀"),
+        ] {
+            sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $4, '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+                .bind(technique_id)
+                .bind(format!("job-tech-{technique_id}"))
+                .bind(fixture.character_id)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .expect("generated technique def should insert");
+            sqlx::query("INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, name, target_type, target_count, effects, trigger_type, cooldown, sort_weight, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, 'self', 1, '[{\"type\":\"buff\",\"buffKind\":\"aura\"}]'::jsonb, 'active', 4, 10, TRUE, 1, NOW(), NOW())")
+                .bind(skill_id)
+                .bind(format!("job-skill-{skill_id}"))
+                .bind(technique_id)
+                .bind(format!("{name}技能"))
+                .execute(&pool)
+                .await
+                .expect("generated skill def should insert");
+            sqlx::query("INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, 50, 25, '[]'::jsonb, '[{\"key\":\"atk\",\"value\":12}]'::jsonb, ARRAY[$3], ARRAY[]::varchar[], '凡人', 'generated-layer-desc', TRUE, NOW(), NOW())")
+                .bind(format!("job-layer-{technique_id}"))
+                .bind(technique_id)
+                .bind(skill_id)
+                .execute(&pool)
+                .await
+                .expect("generated technique layer should insert");
+        }
+
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·放弃预览灵伴", false).await;
+        sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, learned_from_item_def_id, created_at, updated_at) VALUES ($1, $2, 1, FALSE, 'book-old', NOW(), NOW())")
+            .bind(partner_id)
+            .bind(&old_technique_id)
+            .execute(&pool)
+            .await
+            .expect("existing partner technique should insert");
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":new_technique_id,"generatedTechniqueName":"新诀","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":new_technique_id,"replacedTechniqueId":old_technique_id}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("valid preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("valid preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
+            .send()
+            .await
+            .expect("partner discard learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("discard body should be json");
+        let preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
+            .bind(preview_item_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("preview existence query should succeed")
+            .is_some();
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], true);
+        assert_eq!(body["message"], "已放弃学习，本次功法书已消耗");
+        assert!(!preview_exists);
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_confirm_learn_route_rejects_preview_for_market_listed_partner() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_MARKET_LISTED_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pcml{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let generated_technique_id = format!("gt-market-blocked-{suffix}");
+        let generated_skill_id = format!("skill-market-blocked-{suffix}");
+        sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '坊市阻塞功法', '坊市阻塞功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_technique_id)
+            .bind(format!("job-tech-market-{suffix}"))
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique def should insert");
+        sqlx::query("INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, name, target_type, target_count, effects, trigger_type, cooldown, sort_weight, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, '坊市阻塞功法技能', 'self', 1, '[{\"type\":\"buff\",\"buffKind\":\"aura\"}]'::jsonb, 'active', 4, 10, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_skill_id)
+            .bind(format!("job-skill-market-{suffix}"))
+            .bind(&generated_technique_id)
+            .execute(&pool)
+            .await
+            .expect("generated skill def should insert");
+        sqlx::query("INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, 50, 25, '[]'::jsonb, '[{\"key\":\"atk\",\"value\":12}]'::jsonb, ARRAY[$3], ARRAY[]::varchar[], '凡人', 'generated-layer-desc', TRUE, NOW(), NOW())")
+            .bind(format!("job-layer-market-{suffix}"))
+            .bind(&generated_technique_id)
+            .bind(&generated_skill_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique layer should insert");
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":generated_technique_id,"generatedTechniqueName":"坊市阻塞功法","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":generated_technique_id,"replacedTechniqueId":"missing-tech"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("preview item id should exist");
+        sqlx::query("INSERT INTO market_partner_listing (seller_user_id, seller_character_id, partner_id, partner_snapshot, partner_def_id, partner_name, partner_nickname, partner_quality, partner_element, partner_level, unit_price_spirit_stones, listing_fee_silver, status, listed_at, updated_at) VALUES ($1, $2, $3, $4::jsonb, 'partner-qingmu-xiaoou', '青木灵伴', '青木灵伴', '玄', 'wood', 12, 10, 5, 'active', NOW(), NOW())")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(partner_id)
+            .bind(serde_json::json!({"partnerDefId":"partner-qingmu-xiaoou","name":"青木灵伴","nickname":"青木灵伴","quality":"玄","element":"wood","level":12}))
+            .execute(&pool)
+            .await
+            .expect("market listing should insert");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"missing-tech\"}}", partner_id, preview_item_id))
+            .send()
+            .await
+            .expect("partner confirm learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("confirm body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "已在坊市挂单的伙伴不可学习功法");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_discard_learn_route_rejects_preview_for_fusion_material_partner() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_FUSION_BLOCKED_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pdfb{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let generated_technique_id = format!("gt-fusion-blocked-{suffix}");
+        let generated_skill_id = format!("skill-fusion-blocked-{suffix}");
+        let partner_ids = [
+            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
+            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
+            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+        ];
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":generated_technique_id,"generatedTechniqueName":"归契阻塞功法","partnerTechniqueLearnPreview":{"partnerId":partner_ids[0],"learnedTechniqueId":generated_technique_id,"replacedTechniqueId":"missing-tech"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("preview item id should exist");
+        sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '归契阻塞功法', '归契阻塞功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_technique_id)
+            .bind(format!("job-tech-fusion-{suffix}"))
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique def should insert");
+        sqlx::query("INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, name, target_type, target_count, effects, trigger_type, cooldown, sort_weight, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, '归契阻塞功法技能', 'self', 1, '[{\"type\":\"buff\",\"buffKind\":\"aura\"}]'::jsonb, 'active', 4, 10, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_skill_id)
+            .bind(format!("job-skill-fusion-{suffix}"))
+            .bind(&generated_technique_id)
+            .execute(&pool)
+            .await
+            .expect("generated skill def should insert");
+        sqlx::query("INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, 50, 25, '[]'::jsonb, '[{\"key\":\"atk\",\"value\":12}]'::jsonb, ARRAY[$3], ARRAY[]::varchar[], '凡人', 'generated-layer-desc', TRUE, NOW(), NOW())")
+            .bind(format!("job-layer-fusion-{suffix}"))
+            .bind(&generated_technique_id)
+            .bind(&generated_skill_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique layer should insert");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let start_response = client
+            .post(format!("http://{address}/api/partner/fusion/start"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .send()
+            .await
+            .expect("partner fusion start should succeed");
+        assert_eq!(start_response.status(), StatusCode::OK);
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
+            .send()
+            .await
+            .expect("partner discard learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("discard body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "归契中的伙伴不可学习功法");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_confirm_learn_route_rejects_preview_when_technique_detail_is_unavailable() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_MISSING_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pcmtd{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let generated_technique_id = format!("gt-missing-detail-{suffix}");
+        sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '缺失详情功法', '缺失详情功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_technique_id)
+            .bind(format!("job-tech-missing-detail-{suffix}"))
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique def should insert");
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":generated_technique_id,"generatedTechniqueName":"缺失详情功法","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":generated_technique_id,"replacedTechniqueId":"missing-tech"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"missing-tech\"}}", partner_id, preview_item_id))
+            .send()
+            .await
+            .expect("partner confirm learn should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("confirm body should be json");
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["success"], false);
+        assert_eq!(body["message"], "伙伴功法不存在或未开放");
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_overview_route_cleans_preview_when_technique_detail_is_unavailable() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_OVERVIEW_MISSING_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("pomtd{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        sqlx::query("INSERT INTO character_feature_unlocks (character_id, feature_code, obtained_from, obtained_ref_id, unlocked_at) VALUES ($1, 'partner_system', 'test', 'partner-preview-missing-detail', NOW()) ON CONFLICT DO NOTHING")
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("partner feature unlock should insert");
+        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let generated_technique_id = format!("gt-overview-missing-detail-{suffix}");
+        sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '缺失详情总览功法', '缺失详情总览功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
+            .bind(&generated_technique_id)
+            .bind(format!("job-tech-overview-missing-detail-{suffix}"))
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("generated technique def should insert");
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"generatedTechniqueId":generated_technique_id,"generatedTechniqueName":"缺失详情总览功法","partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":generated_technique_id,"replacedTechniqueId":"missing-tech"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://{address}/api/partner/overview"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .send()
+            .await
+            .expect("partner overview should respond");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("overview body should be json");
+        let preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
+            .bind(preview_item_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("preview existence query should succeed")
+            .is_some();
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], true);
+        assert!(body["data"]["pendingTechniqueLearnPreview"].is_null());
+        assert!(!preview_exists);
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_fusion_confirm_clears_pending_technique_preview_for_material_partners() {
+        let _guard = partner_ai_test_lock();
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_FUSION_PREVIEW_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let suffix = format!("partner-fusion-preview-clear-{}", super::chrono_like_timestamp_ms());
+        let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        let partner_ids = [
+            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
+            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
+            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+        ];
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(fixture.user_id)
+            .bind(fixture.character_id)
+            .bind(serde_json::json!({"partnerTechniqueLearnPreview":{"partnerId":partner_ids[0],"learnedTechniqueId":"gt-preview","replacedTechniqueId":"gt-old"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("preview item id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+
+        let start_response = client
+            .post(format!("http://{address}/api/partner/fusion/start"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .send()
+            .await
+            .expect("partner fusion start should succeed");
+        let start_body: Value = serde_json::from_str(&start_response.text().await.expect("start body should read"))
+            .expect("start body should be json");
+        let fusion_id = start_body["data"]["fusionId"]
+            .as_str()
+            .expect("fusion id should exist")
+            .to_string();
+
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+
+        let confirm_response = client
+            .post(format!("http://{address}/api/partner/fusion/{fusion_id}/confirm"))
+            .header("authorization", format!("Bearer {}", fixture.token))
+            .send()
+            .await
+            .expect("partner fusion confirm should succeed");
+        let status = confirm_response.status();
+        let body: Value = serde_json::from_str(&confirm_response.text().await.expect("confirm body should read"))
+            .expect("confirm body should be json");
+        let preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
+            .bind(preview_item_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("preview existence query should succeed")
+            .is_some();
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], true);
+        assert!(!preview_exists);
+
+        cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
+    }
+
+    #[tokio::test]
+    async fn partner_market_buy_route_clears_seller_pending_preview_for_sold_partner() {
+        let state = test_state();
+        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_MARKET_BUY_PREVIEW_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+            return;
+        };
+
+        let seller_suffix = format!("seller-preview-clear-{}", super::chrono_like_timestamp_ms());
+        let buyer_suffix = format!("buyer-preview-clear-{}", super::chrono_like_timestamp_ms());
+        let seller = insert_auth_fixture(&state, &pool, "socket", &seller_suffix, 0).await;
+        let buyer = insert_auth_fixture(&state, &pool, "socket", &buyer_suffix, 0).await;
+
+        sqlx::query("UPDATE characters SET spirit_stones = 1000 WHERE id = $1")
+            .bind(buyer.character_id)
+            .execute(&pool)
+            .await
+            .expect("buyer spirit stones should update");
+
+        let partner_id = insert_partner_fixture(&pool, seller.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
+            .bind(seller.user_id)
+            .bind(seller.character_id)
+            .bind(serde_json::json!({"partnerTechniqueLearnPreview":{"partnerId":partner_id,"learnedTechniqueId":"gt-preview","replacedTechniqueId":"gt-old"}}).to_string())
+            .fetch_one(&pool)
+            .await
+            .expect("seller preview item should insert")
+            .try_get::<i64, _>("id")
+            .expect("seller preview item id should exist");
+        let listing_id = sqlx::query(
+            "INSERT INTO market_partner_listing (seller_user_id, seller_character_id, partner_id, partner_snapshot, partner_def_id, partner_name, partner_nickname, partner_quality, partner_element, partner_level, unit_price_spirit_stones, listing_fee_silver, status, listed_at, updated_at) VALUES ($1, $2, $3, $4::jsonb, 'partner-qingmu-xiaoou', '青木灵伴', '青木灵伴', '玄', 'wood', 12, 10, 5, 'active', NOW(), NOW()) RETURNING id",
+        )
+        .bind(seller.user_id)
+        .bind(seller.character_id)
+        .bind(partner_id)
+        .bind(serde_json::json!({
+            "partnerDefId": "partner-qingmu-xiaoou",
+            "name": "青木灵伴",
+            "nickname": "青木灵伴",
+            "quality": "玄",
+            "element": "wood",
+            "level": 12
+        }))
+        .fetch_one(&pool)
+        .await
+        .expect("partner listing should insert")
+        .try_get::<i64, _>("id")
+        .expect("listing id should exist");
+
+        let app = build_router(state.clone()).expect("router should build");
+        let (address, server) = spawn_test_server(app).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://{address}/api/market/partner/buy"))
+            .header("authorization", format!("Bearer {}", buyer.token))
+            .header("content-type", "application/json")
+            .body(format!("{{\"listingId\":{}}}", listing_id))
+            .send()
+            .await
+            .expect("partner market buy request should succeed");
+        let status = response.status();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("buy body should be json");
+        let preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
+            .bind(preview_item_id)
+            .fetch_optional(&pool)
+            .await
+            .expect("preview existence query should succeed")
+            .is_some();
+
+        server.abort();
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["success"], true);
+        assert!(!preview_exists);
+
+        cleanup_auth_fixture(&pool, seller.character_id, seller.user_id).await;
+        cleanup_auth_fixture(&pool, buyer.character_id, buyer.user_id).await;
+    }
+
+    #[tokio::test]
         async fn inventory_use_generated_technique_book_ignores_required_realm_gate() {
         let state = test_state();
         let Some(pool) = connect_fixture_db_or_skip(&state, "GENERATED_TECHNIQUE_NO_REALM_GATE_SKIPPED_DB_UNAVAILABLE").await else {
