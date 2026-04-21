@@ -32,7 +32,7 @@ use crate::realtime::battle::{
     BattleCooldownPayload, BattleFinishedMeta, BattleRealtimePayload, BattleRewardsPayload,
     build_battle_abandoned_payload, build_battle_cooldown_ready_payload,
     build_battle_cooldown_sync_payload, build_battle_finished_payload,
-    build_battle_state_payload, build_reward_item_values, build_single_player_reward_values,
+    build_battle_started_sync_payload, build_reward_item_values, build_single_player_reward_values,
 };
 use crate::realtime::achievement::AchievementIndicatorPayload;
 use crate::realtime::idle::IdleRealtimePayload;
@@ -536,7 +536,11 @@ async fn handle_battle_sync(socket: SocketRef, payload: BattleSyncPayload, state
         if let Some(io) = state.socket_io() {
             if let Ok(sid) = Sid::from_str(&socket.id.to_string()) {
                 if let Some(target_socket) = io.get_socket(sid) {
-                    target_socket.emit(&cooldown_payload.kind, &cooldown_payload).ok();
+                    let adjusted_payload = adjust_battle_cooldown_payload_for_character(
+                        &cooldown_payload,
+                        session.character_id,
+                    );
+                    target_socket.emit(&adjusted_payload.kind, &adjusted_payload).ok();
                 }
             }
         }
@@ -820,10 +824,13 @@ fn build_battle_sync_payload_for_user(
                             Some("draw") => "战斗平局".to_string(),
                             _ => "战斗结束".to_string(),
                         }),
+                        battle_start_cooldown_ms: None,
+                        retry_after_ms: None,
+                        next_battle_available_at: None,
                     },
                 )
             } else {
-                build_battle_state_payload(battle_id, state_snapshot, logs, session_snapshot)
+                build_battle_started_sync_payload(battle_id, state_snapshot, logs, session_snapshot)
             }
         }
         None => build_battle_abandoned_payload(
@@ -1645,18 +1652,24 @@ fn build_battle_cooldown_recipient_payloads(
         let Some(record) = state.realtime_sessions.get_by_user_id(*user_id) else {
             continue;
         };
-        let character_id = record.character_id.unwrap_or(payload.character_id).max(0);
         values.push((
             record.socket_id,
-            BattleCooldownPayload {
-                kind: payload.kind.clone(),
-                character_id,
-                remaining_ms: payload.remaining_ms,
-                timestamp: payload.timestamp,
-            },
+            adjust_battle_cooldown_payload_for_character(payload, record.character_id),
         ));
     }
     values
+}
+
+fn adjust_battle_cooldown_payload_for_character(
+    payload: &BattleCooldownPayload,
+    character_id: Option<i64>,
+) -> BattleCooldownPayload {
+    BattleCooldownPayload {
+        kind: payload.kind.clone(),
+        character_id: character_id.unwrap_or(payload.character_id).max(0),
+        remaining_ms: payload.remaining_ms,
+        timestamp: payload.timestamp,
+    }
 }
 
 fn collect_connected_socket_ids_for_users(state: &AppState, participant_user_ids: &[i64]) -> Vec<String> {
@@ -1871,7 +1884,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn battle_sync_existing_battle_builds_state_payload_without_database() {
+    async fn battle_sync_existing_battle_builds_started_snapshot_without_database() {
         let state = test_state();
         state.battle_sessions.register(BattleSessionSnapshotDto {
             session_id: "session-88".to_string(),
@@ -1895,9 +1908,15 @@ mod tests {
 
         let payload = serde_json::to_value(build_battle_sync_payload_for_user(&state, 88, "battle-88"))
             .expect("payload should serialize");
-        assert_eq!(payload["kind"], "battle_state");
+        assert_eq!(payload["kind"], "battle_started");
         assert_eq!(payload["battleId"], "battle-88");
         assert_eq!(payload["authoritative"], true);
+        assert!(payload.get("unitsDelta").is_none());
+        assert!(
+            payload["state"]["teams"]["attacker"]["units"][0]
+                .get("baseAttrs")
+                .is_some()
+        );
         println!("BATTLE_SYNC_EXISTING_PAYLOAD={payload}");
     }
 
@@ -2029,7 +2048,7 @@ mod tests {
             &BattleCooldownPayload {
                 kind: "battle:cooldown-sync".to_string(),
                 character_id: 999,
-                remaining_ms: 1500,
+                remaining_ms: Some(1500),
                 timestamp: 123456,
             },
         );

@@ -455,6 +455,9 @@ pub async fn battle_action(
                     Some("draw") => "战斗平局".to_string(),
                     _ => "战斗结束".to_string(),
                 }),
+                battle_start_cooldown_ms: None,
+                retry_after_ms: None,
+                next_battle_available_at: None,
             },
         )
     } else {

@@ -2483,6 +2483,9 @@ async fn insert_test_sect(
                 result: Some("attacker_win".to_string()),
                 success: Some(true),
                 message: Some("战斗胜利".to_string()),
+                battle_start_cooldown_ms: None,
+                retry_after_ms: None,
+                next_battle_available_at: None,
             },
         );
         crate::realtime::public_socket::emit_battle_update_to_participants(&state, &[14], &payload);
