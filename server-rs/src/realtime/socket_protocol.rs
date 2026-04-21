@@ -179,9 +179,9 @@ pub fn build_game_character_full_payload(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_game_auth_payload, build_game_character_delta_payload,
-        build_game_character_full_payload, build_game_kicked_payload, build_game_ready_payload,
-        GameCharacterFullSnapshot, GameCharacterGlobalBuff,
+        GameCharacterFullSnapshot, GameCharacterGlobalBuff, build_game_auth_payload,
+        build_game_character_delta_payload, build_game_character_full_payload,
+        build_game_kicked_payload, build_game_ready_payload,
     };
 
     #[test]

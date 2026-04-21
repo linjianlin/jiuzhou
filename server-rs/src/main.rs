@@ -19,10 +19,13 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(bind_address, "Rust backend is ready to accept traffic");
 
-    axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(wait_for_shutdown_signal())
-        .await
-        .context("Rust backend server exited with error")?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(wait_for_shutdown_signal())
+    .await
+    .context("Rust backend server exited with error")?;
 
     tracing::info!("HTTP server stopped accepting new requests, delegating to shutdown sequence");
     shutdown_application(state, realtime_runtime, job_runtime).await;

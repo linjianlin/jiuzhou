@@ -10,12 +10,17 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas};
-use crate::integrations::redis_progress_delta::{CharacterProgressDeltaField, buffer_character_progress_delta_fields};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
+};
+use crate::integrations::redis_progress_delta::{
+    CharacterProgressDeltaField, buffer_character_progress_delta_fields,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::realtime::achievement::{
-    AchievementUpdatePayload, build_achievement_indicator_payload,
-    build_achievement_update_payload,
+    AchievementUpdatePayload, build_achievement_indicator_payload, build_achievement_update_payload,
 };
 use crate::realtime::public_socket::emit_achievement_update_to_user;
 use crate::shared::error::AppError;
@@ -23,7 +28,10 @@ use crate::shared::response::{SuccessResponse, send_success};
 use crate::state::AppState;
 
 fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> Result<i64, AppError> {
-    Ok(row.try_get::<Option<i32>, _>(column)?.map(i64::from).unwrap_or_default())
+    Ok(row
+        .try_get::<Option<i32>, _>(column)?
+        .map(i64::from)
+        .unwrap_or_default())
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,7 +202,7 @@ struct AchievementDefSeed {
     track_key: String,
     target_value: i64,
     target_list: Option<Vec<serde_json::Value>>,
-    rewards: Option<Vec<AchievementRewardSeed>>, 
+    rewards: Option<Vec<AchievementRewardSeed>>,
     title_id: Option<String>,
     sort_weight: i64,
     enabled: Option<bool>,
@@ -243,11 +251,20 @@ pub async fn get_achievement_list(
         })
         .filter(|item| filter_achievement_status(item, status.as_deref()))
         .collect();
-    rows.sort_by(|left, right| right.sort_weight.cmp(&left.sort_weight).then_with(|| left.id.cmp(&right.id)));
+    rows.sort_by(|left, right| {
+        right
+            .sort_weight
+            .cmp(&left.sort_weight)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     let total = rows.len() as i64;
     let start = ((page - 1) * limit) as usize;
     let end = (start + limit as usize).min(rows.len());
-    let paged = if start >= rows.len() { vec![] } else { rows[start..end].to_vec() };
+    let paged = if start >= rows.len() {
+        vec![]
+    } else {
+        rows[start..end].to_vec()
+    };
 
     Ok(send_success(AchievementListData {
         achievements: paged,
@@ -276,7 +293,10 @@ pub async fn get_achievement_detail(
     let item_meta = load_item_meta_map()?;
     let achievement = build_achievement_item(def, progress_map.get(achievement_id), &item_meta);
     let progress = achievement.progress.clone();
-    Ok(send_success(AchievementDetailData { achievement, progress }))
+    Ok(send_success(AchievementDetailData {
+        achievement,
+        progress,
+    }))
 }
 
 pub async fn get_achievement_points_rewards(
@@ -286,7 +306,8 @@ pub async fn get_achievement_points_rewards(
     let actor = auth::require_character(&state, &headers).await?;
     let defs = load_achievement_defs_file()?;
     let points = load_achievement_points_info(&state, actor.character_id).await?;
-    let claimed_thresholds = load_claimed_achievement_point_thresholds(&state, actor.character_id).await?;
+    let claimed_thresholds =
+        load_claimed_achievement_point_thresholds(&state, actor.character_id).await?;
     let item_meta = load_item_meta_map()?;
     let rewards = defs
         .point_rewards
@@ -299,7 +320,8 @@ pub async fn get_achievement_points_rewards(
             description: row.description,
             rewards: build_achievement_rewards(row.rewards, &item_meta),
             title: row.title,
-            claimable: points.total >= row.threshold && !claimed_thresholds.contains(&row.threshold),
+            claimable: points.total >= row.threshold
+                && !claimed_thresholds.contains(&row.threshold),
             claimed: claimed_thresholds.contains(&row.threshold),
         })
         .collect();
@@ -326,11 +348,13 @@ pub async fn claim_achievement_reward(
     }
     let defs = load_enabled_achievement_defs()?;
     let Some(def) = defs.into_iter().find(|def| def.id == achievement_id) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<AchievementClaimData> {
-            success: false,
-            message: Some("成就不存在或未解锁".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<AchievementClaimData> {
+                success: false,
+                message: Some("成就不存在或未解锁".to_string()),
+                data: None,
+            },
+        ));
     };
     let item_meta = load_item_meta_map()?;
     let title_meta_map = load_title_meta_map()?;
@@ -412,19 +436,28 @@ pub async fn claim_achievement_points_reward(
     let actor = auth::require_character(&state, &headers).await?;
     let threshold = payload.threshold.or(payload.points_threshold).unwrap_or(-1);
     if threshold < 0 {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<AchievementPointClaimData> {
-            success: false,
-            message: Some("阈值无效".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<AchievementPointClaimData> {
+                success: false,
+                message: Some("阈值无效".to_string()),
+                data: None,
+            },
+        ));
     }
     let defs = load_achievement_defs_file()?;
-    let Some(def) = defs.point_rewards.unwrap_or_default().into_iter().find(|row| row.threshold == threshold) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<AchievementPointClaimData> {
-            success: false,
-            message: Some("点数奖励不存在".to_string()),
-            data: None,
-        }));
+    let Some(def) = defs
+        .point_rewards
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.threshold == threshold)
+    else {
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<AchievementPointClaimData> {
+                success: false,
+                message: Some("点数奖励不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     let item_meta = load_item_meta_map()?;
     let title_meta_map = load_title_meta_map()?;
@@ -537,7 +570,11 @@ pub async fn record_dungeon_clear_achievement_event(
     let defs = load_enabled_achievement_defs()?;
     let matched_defs = defs
         .into_iter()
-        .filter(|def| candidate_track_keys.iter().any(|candidate| candidate == def.track_key.trim()))
+        .filter(|def| {
+            candidate_track_keys
+                .iter()
+                .any(|candidate| candidate == def.track_key.trim())
+        })
         .collect::<Vec<_>>();
     if matched_defs.is_empty() {
         return Ok(());
@@ -694,7 +731,11 @@ pub async fn record_craft_item_achievement_event(
     let defs = load_enabled_achievement_defs()?;
     let matched_defs = defs
         .into_iter()
-        .filter(|def| candidate_track_keys.iter().any(|candidate| candidate == def.track_key.trim()))
+        .filter(|def| {
+            candidate_track_keys
+                .iter()
+                .any(|candidate| candidate == def.track_key.trim())
+        })
         .collect::<Vec<_>>();
     if matched_defs.is_empty() {
         return Ok(());
@@ -772,7 +813,10 @@ pub async fn record_craft_item_achievement_event(
     Ok(())
 }
 
-pub(crate) async fn load_claimable_achievement_count(state: &AppState, character_id: i64) -> Result<i64, AppError> {
+pub(crate) async fn load_claimable_achievement_count(
+    state: &AppState,
+    character_id: i64,
+) -> Result<i64, AppError> {
     let row = state
         .database
         .fetch_one(
@@ -780,7 +824,9 @@ pub(crate) async fn load_claimable_achievement_count(state: &AppState, character
             |query| query.bind(character_id),
         )
         .await?;
-    Ok(row.try_get::<Option<i64>, _>("claimable_count")?.unwrap_or_default())
+    Ok(row
+        .try_get::<Option<i64>, _>("claimable_count")?
+        .unwrap_or_default())
 }
 
 async fn apply_achievement_rewards_tx(
@@ -800,7 +846,9 @@ async fn apply_achievement_rewards_tx(
         match reward.reward_type.as_str() {
             "silver" | "spirit_stones" | "exp" => {
                 let amount = reward.amount.unwrap_or_default().max(0);
-                if amount <= 0 { continue; }
+                if amount <= 0 {
+                    continue;
+                }
                 match reward.reward_type.as_str() {
                     "silver" => silver_delta += amount,
                     "spirit_stones" => spirit_stones_delta += amount,
@@ -819,7 +867,9 @@ async fn apply_achievement_rewards_tx(
             "item" => {
                 let item_def_id = reward.item_def_id.unwrap_or_default();
                 let qty = reward.qty.unwrap_or(1).max(1);
-                if item_def_id.trim().is_empty() { continue; }
+                if item_def_id.trim().is_empty() {
+                    continue;
+                }
                 item_grants.push(CharacterItemGrantDelta {
                     character_id,
                     user_id,
@@ -921,20 +971,32 @@ fn load_title_meta_map() -> Result<HashMap<String, AchievementClaimTitleDto>, Ap
     .map_err(|error| AppError::config(format!("failed to read title_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse title_def.json: {error}")))?;
-    let titles = payload.get("titles").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let titles = payload
+        .get("titles")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(titles
         .into_iter()
         .filter_map(|title| {
             let id = title.get("id")?.as_str()?.trim().to_string();
             let name = title.get("name")?.as_str()?.trim().to_string();
-            if id.is_empty() || name.is_empty() { return None; }
+            if id.is_empty() || name.is_empty() {
+                return None;
+            }
             Some((
                 id.clone(),
                 AchievementClaimTitleDto {
                     id,
                     name,
-                    color: title.get("color").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                    icon: title.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
+                    color: title
+                        .get("color")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    icon: title
+                        .get("icon")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
                 },
             ))
         })
@@ -953,20 +1015,37 @@ fn build_achievement_item(
     progress: Option<&CharacterAchievementProgressRow>,
     item_meta: &HashMap<String, (String, Option<String>)>,
 ) -> AchievementItemDto {
-    let status = progress.map(|progress| progress.status.clone()).unwrap_or_else(|| "in_progress".to_string());
+    let status = progress
+        .map(|progress| progress.status.clone())
+        .unwrap_or_else(|| "in_progress".to_string());
     let track_type = def.track_type.clone();
     let target = if track_type == "multi" {
-        def.target_list.as_ref().map(|items| items.len() as i64).filter(|v| *v > 0).unwrap_or(def.target_value.max(1))
+        def.target_list
+            .as_ref()
+            .map(|items| items.len() as i64)
+            .filter(|v| *v > 0)
+            .unwrap_or(def.target_value.max(1))
     } else {
         def.target_value.max(1)
     };
-    let current = progress.map(|progress| progress.progress.max(0)).unwrap_or_default().min(target);
+    let current = progress
+        .map(|progress| progress.progress.max(0))
+        .unwrap_or_default()
+        .min(target);
     let done = status == "completed" || status == "claimed" || current >= target;
     let hidden_unfinished = def.hidden == Some(true) && status == "in_progress";
     AchievementItemDto {
         id: def.id.clone(),
-        name: if hidden_unfinished { "？？？".to_string() } else { def.name.clone() },
-        description: if hidden_unfinished { "隐藏成就，完成后解锁描述".to_string() } else { def.description.clone() },
+        name: if hidden_unfinished {
+            "？？？".to_string()
+        } else {
+            def.name.clone()
+        },
+        description: if hidden_unfinished {
+            "隐藏成就，完成后解锁描述".to_string()
+        } else {
+            def.description.clone()
+        },
         category: def.category,
         points: def.points.max(0),
         icon: def.icon,
@@ -978,10 +1057,16 @@ fn build_achievement_item(
         progress: AchievementProgressDto {
             current,
             target,
-            percent: if target > 0 { ((current as f64 / target as f64) * 100.0).clamp(0.0, 100.0) } else { 0.0 },
+            percent: if target > 0 {
+                ((current as f64 / target as f64) * 100.0).clamp(0.0, 100.0)
+            } else {
+                0.0
+            },
             done,
             status,
-            progress_data: (track_type == "multi").then(|| progress.and_then(|progress| progress.progress_data.clone())).flatten(),
+            progress_data: (track_type == "multi")
+                .then(|| progress.and_then(|progress| progress.progress_data.clone()))
+                .flatten(),
         },
         rewards: build_achievement_rewards(def.rewards.unwrap_or_default(), item_meta),
         title_id: def.title_id,
@@ -1041,14 +1126,18 @@ async fn load_character_achievement_progress_map(
         .await?;
     let mut map = HashMap::new();
     for row in rows {
-        let achievement_id = row.try_get::<Option<String>, _>("achievement_id")?.unwrap_or_default();
+        let achievement_id = row
+            .try_get::<Option<String>, _>("achievement_id")?
+            .unwrap_or_default();
         if achievement_id.trim().is_empty() {
             continue;
         }
         map.insert(
             achievement_id,
             CharacterAchievementProgressRow {
-                status: row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "in_progress".to_string()),
+                status: row
+                    .try_get::<Option<String>, _>("status")?
+                    .unwrap_or_else(|| "in_progress".to_string()),
                 progress: opt_i64_from_i32(&row, "progress")?,
                 progress_data: row.try_get::<Option<serde_json::Value>, _>("progress_data")?,
             },
@@ -1104,7 +1193,11 @@ async fn load_claimed_achievement_point_thresholds(
         )
         .await?;
     Ok(row
-        .and_then(|row| row.try_get::<Option<serde_json::Value>, _>("claimed_thresholds").ok().flatten())
+        .and_then(|row| {
+            row.try_get::<Option<serde_json::Value>, _>("claimed_thresholds")
+                .ok()
+                .flatten()
+        })
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default()
         .into_iter()
@@ -1114,7 +1207,8 @@ async fn load_claimed_achievement_point_thresholds(
 
 fn load_achievement_defs_file() -> Result<AchievementDefFile, AppError> {
     let content = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/achievement_def.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/achievement_def.json"),
     )
     .map_err(|error| AppError::config(format!("failed to read achievement_def.json: {error}")))?;
     serde_json::from_str(&content)
@@ -1171,29 +1265,56 @@ fn build_track_key_candidates(track_key: &str) -> Vec<String> {
 }
 
 fn is_nightmare_dungeon_difficulty(difficulty_id: Option<&str>) -> Result<bool, AppError> {
-    let Some(difficulty_id) = difficulty_id.map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(difficulty_id) = difficulty_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(false);
     };
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds");
     let mut paths = fs::read_dir(&base)
-        .map_err(|error| AppError::config(format!("failed to read dungeon seed dir {}: {error}", base.display())))?
+        .map_err(|error| {
+            AppError::config(format!(
+                "failed to read dungeon seed dir {}: {error}",
+                base.display()
+            ))
+        })?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.file_name().and_then(|v| v.to_str()).map(|name| name.starts_with("dungeon_") && name.ends_with(".json")).unwrap_or(false))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|v| v.to_str())
+                .map(|name| name.starts_with("dungeon_") && name.ends_with(".json"))
+                .unwrap_or(false)
+        })
         .collect::<Vec<_>>();
     paths.sort();
     for path in paths {
-        let content = fs::read_to_string(&path)
-            .map_err(|error| AppError::config(format!("failed to read {}: {error}", path.display())))?;
-        let payload: serde_json::Value = serde_json::from_str(&content)
-            .map_err(|error| AppError::config(format!("failed to parse {}: {error}", path.display())))?;
-        let dungeons = payload.get("dungeons").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let content = fs::read_to_string(&path).map_err(|error| {
+            AppError::config(format!("failed to read {}: {error}", path.display()))
+        })?;
+        let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+            AppError::config(format!("failed to parse {}: {error}", path.display()))
+        })?;
+        let dungeons = payload
+            .get("dungeons")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for dungeon in dungeons {
-            let difficulties = dungeon.get("difficulties").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+            let difficulties = dungeon
+                .get("difficulties")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
             for difficulty in difficulties {
                 if difficulty.get("id").and_then(|value| value.as_str()) != Some(difficulty_id) {
                     continue;
                 }
-                return Ok(difficulty.get("name").and_then(|value| value.as_str()).map(str::trim) == Some("噩梦"));
+                return Ok(difficulty
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    == Some("噩梦"));
             }
         }
     }
@@ -1204,19 +1325,37 @@ fn load_item_meta_map() -> Result<HashMap<String, (String, Option<String>)>, App
     let mut out = HashMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
         let content = fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
         )
         .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
             if id.is_empty() || name.is_empty() {
                 continue;
             }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
@@ -1312,7 +1451,10 @@ mod tests {
             }
         });
         assert_eq!(payload["data"]["achievementId"], "ach-rabbit-001");
-        assert_eq!(payload["data"]["debugRealtime"]["kind"], "achievement:update");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["kind"],
+            "achievement:update"
+        );
         println!("ACHIEVEMENT_CLAIM_RESPONSE={}", payload);
     }
 
@@ -1329,21 +1471,33 @@ mod tests {
             }
         });
         assert_eq!(payload["data"]["threshold"], 10);
-        assert_eq!(payload["data"]["debugRealtime"]["source"], "claim_points_reward");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["source"],
+            "claim_points_reward"
+        );
         println!("ACHIEVEMENT_POINTS_CLAIM_RESPONSE={}", payload);
     }
 
     #[test]
     fn dungeon_clear_achievement_track_candidates_cover_wildcard_team_and_nightmare() {
         let mut keys = Vec::new();
-        keys.extend(super::build_track_key_candidates("dungeon:clear:dungeon-qiqi-wolf-den"));
-        keys.extend(super::build_track_key_candidates("team:dungeon:clear:dungeon-qiqi-wolf-den"));
-        keys.extend(super::build_track_key_candidates("dungeon:clear:difficulty:nightmare"));
+        keys.extend(super::build_track_key_candidates(
+            "dungeon:clear:dungeon-qiqi-wolf-den",
+        ));
+        keys.extend(super::build_track_key_candidates(
+            "team:dungeon:clear:dungeon-qiqi-wolf-den",
+        ));
+        keys.extend(super::build_track_key_candidates(
+            "dungeon:clear:difficulty:nightmare",
+        ));
         let keys = keys.into_iter().collect::<std::collections::BTreeSet<_>>();
         assert!(keys.contains("dungeon:clear:dungeon-qiqi-wolf-den"));
         assert!(keys.contains("dungeon:clear:*"));
         assert!(keys.contains("team:dungeon:clear:*"));
         assert!(keys.contains("dungeon:clear:difficulty:nightmare"));
-        println!("DUNGEON_CLEAR_ACHIEVEMENT_CANDIDATES={}", serde_json::to_value(keys).expect("keys should serialize"));
+        println!(
+            "DUNGEON_CLEAR_ACHIEVEMENT_CANDIDATES={}",
+            serde_json::to_value(keys).expect("keys should serialize")
+        );
     }
 }

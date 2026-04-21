@@ -10,21 +10,33 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
+use crate::http::inventory::{load_inventory_def_map, resolve_generated_technique_book_display};
+use crate::http::technique::load_technique_detail_data;
 use crate::integrations::partner_ai::generate_partner_ai_preview_draft;
-use crate::integrations::text_model_config::{TextModelScope, read_text_model_config, require_text_model_config};
+use crate::integrations::text_model_config::{
+    TextModelScope, read_text_model_config, require_text_model_config,
+};
 use crate::jobs;
 use crate::realtime::partner::{PartnerUpdatePayload, build_partner_update_payload};
-use crate::realtime::partner_fusion::{build_partner_fusion_result_payload, build_partner_fusion_status_payload};
-use crate::realtime::partner_recruit::{build_partner_recruit_result_payload, build_partner_recruit_status_payload};
-use crate::realtime::partner_rebone::{build_partner_rebone_result_payload, build_partner_rebone_status_payload};
-use crate::realtime::public_socket::{emit_partner_fusion_result_to_user, emit_partner_fusion_status_to_user, emit_partner_rebone_result_to_user, emit_partner_rebone_status_to_user, emit_partner_recruit_result_to_user, emit_partner_recruit_status_to_user};
+use crate::realtime::partner_fusion::{
+    build_partner_fusion_result_payload, build_partner_fusion_status_payload,
+};
+use crate::realtime::partner_rebone::{
+    build_partner_rebone_result_payload, build_partner_rebone_status_payload,
+};
+use crate::realtime::partner_recruit::{
+    build_partner_recruit_result_payload, build_partner_recruit_status_payload,
+};
+use crate::realtime::public_socket::{
+    emit_partner_fusion_result_to_user, emit_partner_fusion_status_to_user,
+    emit_partner_rebone_result_to_user, emit_partner_rebone_status_to_user,
+    emit_partner_recruit_result_to_user, emit_partner_recruit_status_to_user,
+};
 use crate::realtime::rank::build_rank_update_payload;
 use crate::shared::error::AppError;
 use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_counter_deltas};
 use crate::shared::response::{ServiceResult, send_result};
 use crate::state::AppState;
-use crate::http::technique::load_technique_detail_data;
-use crate::http::inventory::{resolve_generated_technique_book_display, load_inventory_def_map};
 
 fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
     row.try_get::<Option<i32>, _>(column)
@@ -669,18 +681,28 @@ pub async fn get_partner_overview(
 
     let character = load_partner_owner_context(&state, actor.character_id).await?;
     let rows = load_partner_rows(&state, actor.character_id).await?;
-    let techniques = load_partner_technique_rows(&state, rows.iter().map(|row| row.id).collect()).await?;
+    let techniques =
+        load_partner_technique_rows(&state, rows.iter().map(|row| row.id).collect()).await?;
     let books = load_partner_books(&state, actor.character_id).await?;
-    let pending_preview = load_pending_partner_technique_learn_preview(&state, actor.character_id, &rows, &techniques, &character).await?;
+    let pending_preview = load_pending_partner_technique_learn_preview(
+        &state,
+        actor.character_id,
+        &rows,
+        &techniques,
+        &character,
+    )
+    .await?;
     let overview = PartnerOverviewDto {
         unlocked: true,
         feature_code: "partner_system".to_string(),
         character_exp: character.exp,
         active_partner_id: rows.iter().find(|row| row.is_active).map(|row| row.id),
-        partners: build_partner_details_with_generated(&state, rows, &techniques, &character).await?,
+        partners: build_partner_details_with_generated(&state, rows, &techniques, &character)
+            .await?,
         books,
         partner_consumables: vec![],
-        pending_technique_learn_preview: pending_preview.map(|preview| serde_json::to_value(preview).unwrap_or(serde_json::Value::Null)),
+        pending_technique_learn_preview: pending_preview
+            .map(|preview| serde_json::to_value(preview).unwrap_or(serde_json::Value::Null)),
     };
     Ok(send_result(ServiceResult {
         success: true,
@@ -713,10 +735,13 @@ pub(crate) async fn load_partner_recruit_status_data(
     let Some(row) = row else {
         return Err(AppError::config("角色不存在"));
     };
-    let realm = row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
+    let realm = row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
     let sub_realm = row.try_get::<Option<String>, _>("sub_realm")?;
     let unlock_realm = "炼神返虚·养神期".to_string();
-    let unlocked = realm_rank_with_subrealm(&realm, sub_realm.as_deref()) >= realm_rank_with_full_name(&unlock_realm);
+    let unlocked = realm_rank_with_subrealm(&realm, sub_realm.as_deref())
+        >= realm_rank_with_full_name(&unlock_realm);
     let non_heaven_count = row
         .try_get::<Option<i32>, _>("partner_recruit_generated_non_heaven_count")?
         .map(i64::from)
@@ -729,72 +754,147 @@ pub(crate) async fn load_partner_recruit_status_data(
     let current_job = if let Some(job) = latest_job.as_ref() {
         let preview_partner_def_id = job.try_get::<Option<String>, _>("preview_partner_def_id")?;
         let preview = if let Some(preview_partner_def_id) = preview_partner_def_id.clone() {
-            build_generated_partner_preview_dto(&state, &preview_partner_def_id, job.try_get::<Option<String>, _>("preview_avatar_url").unwrap_or(None)).await?
-        } else { None };
+            build_generated_partner_preview_dto(
+                &state,
+                &preview_partner_def_id,
+                job.try_get::<Option<String>, _>("preview_avatar_url")
+                    .unwrap_or(None),
+            )
+            .await?
+        } else {
+            None
+        };
         Some(PartnerRecruitJobLiteDto {
             generation_id: job.try_get::<Option<String>, _>("id")?.unwrap_or_default(),
-            status: job.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "pending".to_string()),
-            started_at: job.try_get::<Option<String>, _>("cooldown_started_at_text")?.unwrap_or_default(),
+            status: job
+                .try_get::<Option<String>, _>("status")?
+                .unwrap_or_else(|| "pending".to_string()),
+            started_at: job
+                .try_get::<Option<String>, _>("cooldown_started_at_text")?
+                .unwrap_or_default(),
             finished_at: job.try_get::<Option<String>, _>("finished_at_text")?,
-            preview_expire_at: job.try_get::<Option<String>, _>("finished_at_text")?.and_then(|finished_at| {
-                time::OffsetDateTime::parse(&finished_at, &time::format_description::well_known::Rfc3339)
+            preview_expire_at: job
+                .try_get::<Option<String>, _>("finished_at_text")?
+                .and_then(|finished_at| {
+                    time::OffsetDateTime::parse(
+                        &finished_at,
+                        &time::format_description::well_known::Rfc3339,
+                    )
                     .ok()
-                    .and_then(|value| (value + time::Duration::hours(24)).format(&time::format_description::well_known::Rfc3339).ok())
-            }),
+                    .and_then(|value| {
+                        (value + time::Duration::hours(24))
+                            .format(&time::format_description::well_known::Rfc3339)
+                            .ok()
+                    })
+                }),
             requested_base_model: job.try_get::<Option<String>, _>("requested_base_model")?,
             preview,
             error_message: job.try_get::<Option<String>, _>("error_message")?,
         })
-    } else { None };
-    let latest_started_at = current_job.as_ref().map(|job| job.started_at.as_str()).filter(|value| !value.is_empty());
+    } else {
+        None
+    };
+    let latest_started_at = current_job
+        .as_ref()
+        .map(|job| job.started_at.as_str())
+        .filter(|value| !value.is_empty());
     let cooldown = build_partner_recruit_cooldown_state(latest_started_at);
-    let has_unread_result = latest_job.as_ref().map(|job| {
-        let status = job.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-        let viewed = job.try_get::<Option<String>, _>("viewed_at_text").unwrap_or(None);
-        matches!(status.as_str(), "generated_draft" | "failed" | "refunded" | "discarded") && viewed.is_none()
-    }).unwrap_or(false);
-    let result_status = current_job.as_ref().and_then(|job| match job.status.as_str() {
-        "generated_draft" => Some("generated_draft".to_string()),
-        "failed" | "refunded" | "discarded" => Some("failed".to_string()),
-        _ => None,
-    });
+    let has_unread_result = latest_job
+        .as_ref()
+        .map(|job| {
+            let status = job
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            let viewed = job
+                .try_get::<Option<String>, _>("viewed_at_text")
+                .unwrap_or(None);
+            matches!(
+                status.as_str(),
+                "generated_draft" | "failed" | "refunded" | "discarded"
+            ) && viewed.is_none()
+        })
+        .unwrap_or(false);
+    let result_status = current_job
+        .as_ref()
+        .and_then(|job| match job.status.as_str() {
+            "generated_draft" => Some("generated_draft".to_string()),
+            "failed" | "refunded" | "discarded" => Some("failed".to_string()),
+            _ => None,
+        });
     let token_qty = state.database.fetch_optional(
         "SELECT COALESCE(SUM(qty), 0) AS qty FROM item_instance WHERE owner_character_id = $1 AND item_def_id = 'token-004' AND location IN ('bag','warehouse')",
         |q| q.bind(character_id),
     ).await?.and_then(|row| row.try_get::<Option<i32>, _>("qty").ok().flatten().map(i64::from)).unwrap_or_default();
     Ok(PartnerRecruitStatusDto {
-            feature_code: "partner_system".to_string(),
-            unlock_realm,
-            unlocked,
-            spirit_stone_cost: 0,
-            cooldown_hours: 72,
-            cooldown_until: cooldown.0,
-            cooldown_remaining_seconds: cooldown.1,
-            custom_base_model_bypasses_cooldown: true,
-            custom_base_model_max_length: 12,
-            custom_base_model_token_cost: 1,
-            custom_base_model_token_item_name: "自定义底模令".to_string(),
-            custom_base_model_token_available_qty: token_qty,
-            current_job,
-            has_unread_result,
-            result_status,
-            remaining_until_guaranteed_heaven: if non_heaven_count >= 19 { 1 } else { (20 - non_heaven_count).max(1) },
-            quality_rates: if non_heaven_count >= 19 {
-                vec![
-                    PartnerRecruitQualityRateDto { quality: "黄".to_string(), weight: 0, rate: 0.0 },
-                    PartnerRecruitQualityRateDto { quality: "玄".to_string(), weight: 0, rate: 0.0 },
-                    PartnerRecruitQualityRateDto { quality: "地".to_string(), weight: 0, rate: 0.0 },
-                    PartnerRecruitQualityRateDto { quality: "天".to_string(), weight: 1, rate: 100.0 },
-                ]
-            } else {
-                vec![
-                    PartnerRecruitQualityRateDto { quality: "黄".to_string(), weight: 4, rate: 40.0 },
-                    PartnerRecruitQualityRateDto { quality: "玄".to_string(), weight: 3, rate: 30.0 },
-                    PartnerRecruitQualityRateDto { quality: "地".to_string(), weight: 2, rate: 20.0 },
-                    PartnerRecruitQualityRateDto { quality: "天".to_string(), weight: 1, rate: 10.0 },
-                ]
-            },
-        })
+        feature_code: "partner_system".to_string(),
+        unlock_realm,
+        unlocked,
+        spirit_stone_cost: 0,
+        cooldown_hours: 72,
+        cooldown_until: cooldown.0,
+        cooldown_remaining_seconds: cooldown.1,
+        custom_base_model_bypasses_cooldown: true,
+        custom_base_model_max_length: 12,
+        custom_base_model_token_cost: 1,
+        custom_base_model_token_item_name: "自定义底模令".to_string(),
+        custom_base_model_token_available_qty: token_qty,
+        current_job,
+        has_unread_result,
+        result_status,
+        remaining_until_guaranteed_heaven: if non_heaven_count >= 19 {
+            1
+        } else {
+            (20 - non_heaven_count).max(1)
+        },
+        quality_rates: if non_heaven_count >= 19 {
+            vec![
+                PartnerRecruitQualityRateDto {
+                    quality: "黄".to_string(),
+                    weight: 0,
+                    rate: 0.0,
+                },
+                PartnerRecruitQualityRateDto {
+                    quality: "玄".to_string(),
+                    weight: 0,
+                    rate: 0.0,
+                },
+                PartnerRecruitQualityRateDto {
+                    quality: "地".to_string(),
+                    weight: 0,
+                    rate: 0.0,
+                },
+                PartnerRecruitQualityRateDto {
+                    quality: "天".to_string(),
+                    weight: 1,
+                    rate: 100.0,
+                },
+            ]
+        } else {
+            vec![
+                PartnerRecruitQualityRateDto {
+                    quality: "黄".to_string(),
+                    weight: 4,
+                    rate: 40.0,
+                },
+                PartnerRecruitQualityRateDto {
+                    quality: "玄".to_string(),
+                    weight: 3,
+                    rate: 30.0,
+                },
+                PartnerRecruitQualityRateDto {
+                    quality: "地".to_string(),
+                    weight: 2,
+                    rate: 20.0,
+                },
+                PartnerRecruitQualityRateDto {
+                    quality: "天".to_string(),
+                    weight: 1,
+                    rate: 10.0,
+                },
+            ]
+        },
+    })
 }
 
 pub async fn mark_partner_recruit_result_viewed(
@@ -815,7 +915,11 @@ pub async fn mark_partner_recruit_result_viewed(
     }
     Ok(send_result(ServiceResult {
         success: true,
-        message: Some(if updated.is_some() { "已标记查看".to_string() } else { "无未查看结果".to_string() }),
+        message: Some(if updated.is_some() {
+            "已标记查看".to_string()
+        } else {
+            "无未查看结果".to_string()
+        }),
         data: Some(serde_json::json!({
             "generationId": updated.and_then(|row| row.try_get::<Option<String>, _>("id_text").ok().flatten()),
             "debugRealtime": build_partner_update_payload("partner_recruit_mark_viewed", None, None, None, None)
@@ -845,12 +949,22 @@ pub(crate) async fn load_partner_fusion_status_data(
         |q| q.bind(character_id),
     ).await?;
     let preview = if let Some(row) = job.as_ref() {
-        if let Some(preview_partner_def_id) = row.try_get::<Option<String>, _>("preview_partner_def_id").unwrap_or(None) {
+        if let Some(preview_partner_def_id) = row
+            .try_get::<Option<String>, _>("preview_partner_def_id")
+            .unwrap_or(None)
+        {
             build_generated_partner_preview_dto(state, &preview_partner_def_id, None).await?
-        } else { None }
-    } else { None };
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let material_partner_ids = if let Some(row) = job.as_ref() {
-        let fusion_id = row.try_get::<Option<String>, _>("id_text").unwrap_or(None).unwrap_or_default();
+        let fusion_id = row
+            .try_get::<Option<String>, _>("id_text")
+            .unwrap_or(None)
+            .unwrap_or_default();
         if fusion_id.is_empty() {
             Vec::new()
         } else {
@@ -862,32 +976,61 @@ pub(crate) async fn load_partner_fusion_status_data(
                 .filter_map(|row| row.try_get::<Option<i32>, _>("partner_id").ok().flatten().map(i64::from))
                 .collect()
         }
-    } else { Vec::new() };
+    } else {
+        Vec::new()
+    };
     let current_job = job.as_ref().map(|row| PartnerFusionJobLiteDto {
-        fusion_id: row.try_get::<Option<String>, _>("id_text").unwrap_or(None).unwrap_or_default(),
-        status: row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_else(|| "pending".to_string()),
-        source_quality: row.try_get::<Option<String>, _>("source_quality").unwrap_or(None).unwrap_or_else(|| "黄".to_string()),
-        result_quality: row.try_get::<Option<String>, _>("result_quality").unwrap_or(None),
+        fusion_id: row
+            .try_get::<Option<String>, _>("id_text")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        status: row
+            .try_get::<Option<String>, _>("status")
+            .unwrap_or(None)
+            .unwrap_or_else(|| "pending".to_string()),
+        source_quality: row
+            .try_get::<Option<String>, _>("source_quality")
+            .unwrap_or(None)
+            .unwrap_or_else(|| "黄".to_string()),
+        result_quality: row
+            .try_get::<Option<String>, _>("result_quality")
+            .unwrap_or(None),
         material_partner_ids: material_partner_ids.clone(),
         preview: preview.clone(),
-        error_message: row.try_get::<Option<String>, _>("error_message").unwrap_or(None),
-        viewed_at: row.try_get::<Option<String>, _>("viewed_at_text").unwrap_or(None),
-        finished_at: row.try_get::<Option<String>, _>("finished_at_text").unwrap_or(None),
-        started_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
+        error_message: row
+            .try_get::<Option<String>, _>("error_message")
+            .unwrap_or(None),
+        viewed_at: row
+            .try_get::<Option<String>, _>("viewed_at_text")
+            .unwrap_or(None),
+        finished_at: row
+            .try_get::<Option<String>, _>("finished_at_text")
+            .unwrap_or(None),
+        started_at: row
+            .try_get::<Option<String>, _>("created_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default(),
     });
-    let has_unread_result = current_job.as_ref().map(|job| job.viewed_at.is_none() && matches!(job.status.as_str(), "generated_preview" | "failed")).unwrap_or(false);
-    let result_status = current_job.as_ref().and_then(|job| match job.status.as_str() {
-        "generated_preview" => Some("generated_preview".to_string()),
-        "failed" => Some("failed".to_string()),
-        _ => None,
-    });
-    Ok(PartnerFusionStatusDto {
-            feature_code: "partner_system".to_string(),
-            unlocked: true,
-            current_job,
-            has_unread_result,
-            result_status,
+    let has_unread_result = current_job
+        .as_ref()
+        .map(|job| {
+            job.viewed_at.is_none() && matches!(job.status.as_str(), "generated_preview" | "failed")
         })
+        .unwrap_or(false);
+    let result_status = current_job
+        .as_ref()
+        .and_then(|job| match job.status.as_str() {
+            "generated_preview" => Some("generated_preview".to_string()),
+            "failed" => Some("failed".to_string()),
+            _ => None,
+        });
+    Ok(PartnerFusionStatusDto {
+        feature_code: "partner_system".to_string(),
+        unlocked: true,
+        current_job,
+        has_unread_result,
+        result_status,
+    })
 }
 
 async fn build_generated_partner_preview_dto(
@@ -900,7 +1043,9 @@ async fn build_generated_partner_preview_dto(
     };
     let mut innate_techniques = Vec::new();
     for technique_id in def.innate_technique_ids.clone().unwrap_or_default() {
-        if let Some(detail) = load_technique_detail_data(state, technique_id.as_str(), None, true).await? {
+        if let Some(detail) =
+            load_technique_detail_data(state, technique_id.as_str(), None, true).await?
+        {
             innate_techniques.push(PartnerGeneratedInnateTechniquePreviewDto {
                 technique_id: detail.technique.id,
                 name: detail.technique.name,
@@ -928,15 +1073,45 @@ async fn build_generated_partner_preview_dto(
 
 fn fill_partner_base_attr_map(value: serde_json::Value) -> BTreeMap<String, f64> {
     const KEYS: &[&str] = &[
-        "max_qixue", "max_lingqi", "wugong", "fagong", "wufang", "fafang", "mingzhong", "shanbi", "zhaojia", "baoji", "baoshang", "jianbaoshang", "jianfantan", "kangbao", "zengshang", "zhiliao", "jianliao", "xixue", "lengque", "sudu", "kongzhi_kangxing", "jin_kangxing", "mu_kangxing", "shui_kangxing", "huo_kangxing", "tu_kangxing", "qixue_huifu", "lingqi_huifu",
+        "max_qixue",
+        "max_lingqi",
+        "wugong",
+        "fagong",
+        "wufang",
+        "fafang",
+        "mingzhong",
+        "shanbi",
+        "zhaojia",
+        "baoji",
+        "baoshang",
+        "jianbaoshang",
+        "jianfantan",
+        "kangbao",
+        "zengshang",
+        "zhiliao",
+        "jianliao",
+        "xixue",
+        "lengque",
+        "sudu",
+        "kongzhi_kangxing",
+        "jin_kangxing",
+        "mu_kangxing",
+        "shui_kangxing",
+        "huo_kangxing",
+        "tu_kangxing",
+        "qixue_huifu",
+        "lingqi_huifu",
     ];
     let source = value.as_object().cloned().unwrap_or_default();
-    KEYS.iter().map(|key| {
-        let number = source.get(*key)
-            .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|n| n as f64)))
-            .unwrap_or_default();
-        ((*key).to_string(), number)
-    }).collect()
+    KEYS.iter()
+        .map(|key| {
+            let number = source
+                .get(*key)
+                .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|n| n as f64)))
+                .unwrap_or_default();
+            ((*key).to_string(), number)
+        })
+        .collect()
 }
 
 pub async fn start_partner_fusion(
@@ -947,16 +1122,23 @@ pub async fn start_partner_fusion(
     let actor = auth::require_character(&state, &headers).await?;
     let partner_ids = payload.partner_ids.unwrap_or_default();
     let state_for_enqueue = state.clone();
-    let result = state.database.with_transaction(|| async {
-        start_partner_fusion_tx(&state, actor.character_id, partner_ids).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            start_partner_fusion_tx(&state, actor.character_id, partner_ids).await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             let character_id = actor.character_id;
             let fusion_id = data.fusion_id.clone();
-            state.database.after_transaction_commit(async move {
-                jobs::enqueue_partner_fusion_job(state_for_enqueue, character_id, fusion_id).await
-            }).await?;
+            state
+                .database
+                .after_transaction_commit(async move {
+                    jobs::enqueue_partner_fusion_job(state_for_enqueue, character_id, fusion_id)
+                        .await
+                })
+                .await?;
         }
         if let Ok(status) = load_partner_fusion_status_data(&state, actor.character_id).await {
             emit_partner_fusion_status_to_user(
@@ -977,11 +1159,18 @@ pub async fn confirm_partner_fusion_preview(
     let actor = auth::require_character(&state, &headers).await?;
     let fusion_id = fusion_id.trim();
     if fusion_id.is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("fusionId 参数无效".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("fusionId 参数无效".to_string()),
+            data: None,
+        }));
     }
-    let result = state.database.with_transaction(|| async {
-        confirm_partner_fusion_preview_tx(&state, actor.character_id, fusion_id).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            confirm_partner_fusion_preview_tx(&state, actor.character_id, fusion_id).await
+        })
+        .await?;
     if result.success {
         if let Ok(status) = load_partner_fusion_status_data(&state, actor.character_id).await {
             emit_partner_fusion_status_to_user(
@@ -1012,7 +1201,11 @@ pub async fn mark_partner_fusion_result_viewed(
     }
     Ok(send_result(ServiceResult {
         success: true,
-        message: Some(if updated.is_some() { "已标记查看".to_string() } else { "无未查看结果".to_string() }),
+        message: Some(if updated.is_some() {
+            "已标记查看".to_string()
+        } else {
+            "无未查看结果".to_string()
+        }),
         data: Some(serde_json::json!({
             "fusionId": updated.and_then(|row| row.try_get::<Option<String>, _>("id_text").ok().flatten()),
             "debugRealtime": build_partner_update_payload("partner_fusion_mark_viewed", None, None, None, None)
@@ -1032,41 +1225,76 @@ async fn start_partner_fusion_tx(
     normalized.sort();
     normalized.dedup();
     if normalized.len() != 3 {
-        return Ok(ServiceResult { success: false, message: Some("必须选择3个不同伙伴进行归契".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("必须选择3个不同伙伴进行归契".to_string()),
+            data: None,
+        });
     }
     let active_job = state.database.fetch_optional(
         "SELECT id FROM partner_fusion_job WHERE character_id = $1 AND status IN ('pending','generated_preview') ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
         |q| q.bind(character_id),
     ).await?;
     if active_job.is_some() {
-        return Ok(ServiceResult { success: false, message: Some("当前已有三魂归契进行中".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前已有三魂归契进行中".to_string()),
+            data: None,
+        });
     }
 
     let owner = load_partner_owner_context(state, character_id).await?;
     let all_rows = load_partner_rows(state, character_id).await?;
-    let selected_rows = all_rows.into_iter().filter(|row| normalized.contains(&row.id)).collect::<Vec<_>>();
+    let selected_rows = all_rows
+        .into_iter()
+        .filter(|row| normalized.contains(&row.id))
+        .collect::<Vec<_>>();
     if selected_rows.len() != 3 {
-        return Ok(ServiceResult { success: false, message: Some("归契素材伙伴不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契素材伙伴不存在".to_string()),
+            data: None,
+        });
     }
-    let techniques = load_partner_technique_rows(state, selected_rows.iter().map(|row| row.id).collect()).await?;
-    let details = build_partner_details_with_generated(state, selected_rows.clone(), &techniques, &owner).await?;
+    let techniques =
+        load_partner_technique_rows(state, selected_rows.iter().map(|row| row.id).collect())
+            .await?;
+    let details =
+        build_partner_details_with_generated(state, selected_rows.clone(), &techniques, &owner)
+            .await?;
 
     let mut source_quality = None::<String>;
     let mut elements = Vec::new();
     for detail in &details {
         if detail.is_active {
-            return Ok(ServiceResult { success: false, message: Some("出战中的伙伴不可参与三魂归契".to_string()), data: None });
+            return Ok(ServiceResult {
+                success: false,
+                message: Some("出战中的伙伴不可参与三魂归契".to_string()),
+                data: None,
+            });
         }
         if detail.trade_status == "market_listed" {
-            return Ok(ServiceResult { success: false, message: Some("坊市中的伙伴不可参与三魂归契".to_string()), data: None });
+            return Ok(ServiceResult {
+                success: false,
+                message: Some("坊市中的伙伴不可参与三魂归契".to_string()),
+                data: None,
+            });
         }
         if detail.fusion_status == "fusion_locked" {
-            return Ok(ServiceResult { success: false, message: Some("归契中的伙伴不可重复参与三魂归契".to_string()), data: None });
+            return Ok(ServiceResult {
+                success: false,
+                message: Some("归契中的伙伴不可重复参与三魂归契".to_string()),
+                data: None,
+            });
         }
         let quality = detail.quality.clone();
         if let Some(current) = source_quality.as_deref() {
             if current != quality {
-                return Ok(ServiceResult { success: false, message: Some("三魂归契素材必须为同品级伙伴".to_string()), data: None });
+                return Ok(ServiceResult {
+                    success: false,
+                    message: Some("三魂归契素材必须为同品级伙伴".to_string()),
+                    data: None,
+                });
             }
         } else {
             source_quality = Some(quality);
@@ -1093,7 +1321,13 @@ async fn start_partner_fusion_tx(
             fusion_id: fusion_id.clone(),
             source_quality,
             result_quality,
-            debug_realtime: Some(build_partner_update_payload("partner_fusion_start", None, Some(fusion_id.as_str()), None, None)),
+            debug_realtime: Some(build_partner_update_payload(
+                "partner_fusion_start",
+                None,
+                Some(fusion_id.as_str()),
+                None,
+                None,
+            )),
         }),
     })
 }
@@ -1108,12 +1342,28 @@ async fn confirm_partner_fusion_preview_tx(
         |q| q.bind(fusion_id).bind(character_id),
     ).await?;
     let Some(job) = job else {
-        return Ok(ServiceResult { success: false, message: Some("归契任务不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契任务不存在".to_string()),
+            data: None,
+        });
     };
-    let status = job.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = job
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     let preview_partner_def_id = job.try_get::<Option<String>, _>("preview_partner_def_id")?;
-    if status != "generated_preview" || preview_partner_def_id.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
-        return Ok(ServiceResult { success: false, message: Some("当前归契结果不可确认".to_string()), data: None });
+    if status != "generated_preview"
+        || preview_partner_def_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前归契结果不可确认".to_string()),
+            data: None,
+        });
     }
     let preview_partner_def_id = preview_partner_def_id.unwrap_or_default();
     let generated = state.database.fetch_optional(
@@ -1121,34 +1371,69 @@ async fn confirm_partner_fusion_preview_tx(
         |q| q.bind(&preview_partner_def_id),
     ).await?;
     let Some(generated) = generated else {
-        return Ok(ServiceResult { success: false, message: Some("归契预览伙伴定义不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契预览伙伴定义不存在".to_string()),
+            data: None,
+        });
     };
     let material_rows = state.database.fetch_all(
         "SELECT partner_id FROM partner_fusion_job_material WHERE fusion_job_id = $1 ORDER BY material_order ASC FOR UPDATE",
         |q| q.bind(fusion_id),
     ).await?;
     if material_rows.len() != 3 {
-        return Ok(ServiceResult { success: false, message: Some("归契素材数据异常".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契素材数据异常".to_string()),
+            data: None,
+        });
     }
     let material_partner_ids = material_rows
         .into_iter()
-        .filter_map(|row| row.try_get::<Option<i32>, _>("partner_id").ok().flatten().map(i64::from))
+        .filter_map(|row| {
+            row.try_get::<Option<i32>, _>("partner_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .collect::<Vec<_>>();
     let partners = state.database.fetch_all(
         "SELECT id, is_active FROM character_partner WHERE character_id = $1 AND id = ANY($2::bigint[]) FOR UPDATE",
         |q| q.bind(character_id).bind(&material_partner_ids),
     ).await?;
     if partners.len() != 3 {
-        return Ok(ServiceResult { success: false, message: Some("归契素材伙伴已失效".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契素材伙伴已失效".to_string()),
+            data: None,
+        });
     }
-    if partners.iter().any(|row| row.try_get::<Option<bool>, _>("is_active").ok().flatten().unwrap_or(false)) {
-        return Ok(ServiceResult { success: false, message: Some("归契素材状态异常，请稍后重试".to_string()), data: None });
+    if partners.iter().any(|row| {
+        row.try_get::<Option<bool>, _>("is_active")
+            .ok()
+            .flatten()
+            .unwrap_or(false)
+    }) {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契素材状态异常，请稍后重试".to_string()),
+            data: None,
+        });
     }
-    clear_pending_partner_technique_preview_by_partner_ids(state, character_id, &material_partner_ids, true).await?;
-    state.database.execute(
-        "DELETE FROM character_partner WHERE character_id = $1 AND id = ANY($2::bigint[])",
-        |q| q.bind(character_id).bind(&material_partner_ids),
-    ).await?;
+    clear_pending_partner_technique_preview_by_partner_ids(
+        state,
+        character_id,
+        &material_partner_ids,
+        true,
+    )
+    .await?;
+    state
+        .database
+        .execute(
+            "DELETE FROM character_partner WHERE character_id = $1 AND id = ANY($2::bigint[])",
+            |q| q.bind(character_id).bind(&material_partner_ids),
+        )
+        .await?;
     let partner_row = state.database.fetch_one(
         "INSERT INTO character_partner (character_id, partner_def_id, nickname, description, avatar, level, progress_exp, growth_max_qixue, growth_wugong, growth_fagong, growth_wufang, growth_fafang, growth_sudu, is_active, obtained_from, obtained_ref_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, 0, 1000, 1000, 1000, 1000, 1000, 1000, FALSE, 'partner_fusion', $6, NOW(), NOW()) RETURNING id",
         |q| q
@@ -1161,7 +1446,11 @@ async fn confirm_partner_fusion_preview_tx(
     ).await?;
     let partner_id = i64::from(partner_row.try_get::<i32, _>("id")?);
     if let Some(innate_ids) = generated.try_get::<Option<Vec<String>>, _>("innate_technique_ids")? {
-        for technique_id in innate_ids.into_iter().map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+        for technique_id in innate_ids
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
             state.database.execute(
                 "INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, created_at, updated_at) VALUES ($1, $2, 1, TRUE, NOW(), NOW())",
                 |q| q.bind(partner_id).bind(technique_id),
@@ -1188,10 +1477,17 @@ async fn confirm_partner_fusion_preview_tx(
     })
 }
 
-fn roll_partner_fusion_result_quality(source_quality: &str, material_elements: &[String]) -> String {
+fn roll_partner_fusion_result_quality(
+    source_quality: &str,
+    material_elements: &[String],
+) -> String {
     let source_rank = quality_rank(source_quality);
     let mut counts = BTreeMap::<String, i64>::new();
-    for element in material_elements.iter().map(|value| value.trim().to_string()).filter(|value| !value.is_empty() && value != "none") {
+    for element in material_elements
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty() && value != "none")
+    {
         *counts.entry(element).or_insert(0) += 1;
     }
     let max_same = counts.values().copied().max().unwrap_or(1);
@@ -1242,7 +1538,11 @@ fn quality_name(rank: i64) -> String {
 }
 
 fn build_generated_partner_fusion_name(quality: &str, material_name: Option<&str>) -> String {
-    let quality = if quality.trim().is_empty() { "黄" } else { quality.trim() };
+    let quality = if quality.trim().is_empty() {
+        "黄"
+    } else {
+        quality.trim()
+    };
     let material_name = material_name
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1250,8 +1550,15 @@ fn build_generated_partner_fusion_name(quality: &str, material_name: Option<&str
     format!("{}·{}归灵", quality, material_name)
 }
 
-fn build_generated_partner_recruit_name(quality: &str, requested_base_model: Option<&str>) -> String {
-    let quality = if quality.trim().is_empty() { "黄" } else { quality.trim() };
+fn build_generated_partner_recruit_name(
+    quality: &str,
+    requested_base_model: Option<&str>,
+) -> String {
+    let quality = if quality.trim().is_empty() {
+        "黄"
+    } else {
+        quality.trim()
+    };
     let base = requested_base_model
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1289,8 +1596,18 @@ async fn persist_generated_partner_innate_technique_preview(
 ) -> Result<String, AppError> {
     let technique_id = format!("generated-partner-technique-{source_job_id}");
     let skill_id = format!("generated-partner-skill-{source_job_id}");
-    let technique_type = if role.trim() == "support" { "辅修" } else if element.trim() == "none" { "武技" } else { "法诀" };
-    let attribute_type = if technique_type == "武技" { "physical" } else { "magic" };
+    let technique_type = if role.trim() == "support" {
+        "辅修"
+    } else if element.trim() == "none" {
+        "武技"
+    } else {
+        "法诀"
+    };
+    let attribute_type = if technique_type == "武技" {
+        "physical"
+    } else {
+        "magic"
+    };
     let technique_name = build_generated_partner_innate_technique_name(partner_name);
     let skill_name = build_generated_partner_innate_skill_name(partner_name);
     let aura_effects = if role.trim() == "support" {
@@ -1338,7 +1655,10 @@ fn build_partner_recruit_refund_mail_markdown(reason: &str) -> String {
     if normalized.is_empty() {
         "本次伙伴招募未能完成，系统已返还灵石与底模令牌，请查收附件。".to_string()
     } else {
-        format!("本次伙伴招募未能完成：{}\n\n系统已返还灵石与底模令牌，请查收附件。", normalized)
+        format!(
+            "本次伙伴招募未能完成：{}\n\n系统已返还灵石与底模令牌，请查收附件。",
+            normalized
+        )
     }
 }
 
@@ -1356,17 +1676,35 @@ async fn refund_partner_recruit_job_tx(
     let Some(row) = row else {
         return Ok(());
     };
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
-    if matches!(status.as_str(), "accepted" | "discarded" | "failed" | "refunded") {
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
+    if matches!(
+        status.as_str(),
+        "accepted" | "discarded" | "failed" | "refunded"
+    ) {
         return Ok(());
     }
-    let spirit_stones_cost = row.try_get::<Option<i64>, _>("spirit_stones_cost")?.unwrap_or_default().max(0);
-    let used_custom_base_model_token = row.try_get::<Option<bool>, _>("used_custom_base_model_token")?.unwrap_or(false);
-    let user_id = state.database.fetch_optional(
-        "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?
-        .and_then(|row| row.try_get::<Option<i32>, _>("user_id").ok().flatten().map(i64::from))
+    let spirit_stones_cost = row
+        .try_get::<Option<i64>, _>("spirit_stones_cost")?
+        .unwrap_or_default()
+        .max(0);
+    let used_custom_base_model_token = row
+        .try_get::<Option<bool>, _>("used_custom_base_model_token")?
+        .unwrap_or(false);
+    let user_id = state
+        .database
+        .fetch_optional(
+            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?
+        .and_then(|row| {
+            row.try_get::<Option<i32>, _>("user_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .unwrap_or_default();
     if user_id <= 0 {
         return Err(AppError::config("退款邮件发送失败：角色不存在"));
@@ -1421,29 +1759,58 @@ pub(crate) async fn load_partner_rebone_status_data(
         |q| q.bind(character_id),
     ).await?;
     let current_job = job.as_ref().map(|row| PartnerReboneJobLiteDto {
-        rebone_id: row.try_get::<Option<String>, _>("id_text").unwrap_or(None).unwrap_or_default(),
-        status: row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_else(|| "pending".to_string()),
-        partner_id: row.try_get::<Option<i64>, _>("partner_id").unwrap_or(None).unwrap_or_default(),
-        item_def_id: row.try_get::<Option<String>, _>("item_def_id").unwrap_or(None).unwrap_or_default(),
-        item_qty: row.try_get::<Option<i64>, _>("item_qty").unwrap_or(None).unwrap_or(1),
-        error_message: row.try_get::<Option<String>, _>("error_message").unwrap_or(None),
-        viewed_at: row.try_get::<Option<String>, _>("viewed_at_text").unwrap_or(None),
-        finished_at: row.try_get::<Option<String>, _>("finished_at_text").unwrap_or(None),
-        created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
+        rebone_id: row
+            .try_get::<Option<String>, _>("id_text")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        status: row
+            .try_get::<Option<String>, _>("status")
+            .unwrap_or(None)
+            .unwrap_or_else(|| "pending".to_string()),
+        partner_id: row
+            .try_get::<Option<i64>, _>("partner_id")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        item_def_id: row
+            .try_get::<Option<String>, _>("item_def_id")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        item_qty: row
+            .try_get::<Option<i64>, _>("item_qty")
+            .unwrap_or(None)
+            .unwrap_or(1),
+        error_message: row
+            .try_get::<Option<String>, _>("error_message")
+            .unwrap_or(None),
+        viewed_at: row
+            .try_get::<Option<String>, _>("viewed_at_text")
+            .unwrap_or(None),
+        finished_at: row
+            .try_get::<Option<String>, _>("finished_at_text")
+            .unwrap_or(None),
+        created_at: row
+            .try_get::<Option<String>, _>("created_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default(),
     });
-    let has_unread_result = current_job.as_ref().map(|job| job.viewed_at.is_none() && matches!(job.status.as_str(), "succeeded" | "failed")).unwrap_or(false);
-    let result_status = current_job.as_ref().and_then(|job| match job.status.as_str() {
-        "succeeded" => Some("succeeded".to_string()),
-        "failed" => Some("failed".to_string()),
-        _ => None,
-    });
+    let has_unread_result = current_job
+        .as_ref()
+        .map(|job| job.viewed_at.is_none() && matches!(job.status.as_str(), "succeeded" | "failed"))
+        .unwrap_or(false);
+    let result_status = current_job
+        .as_ref()
+        .and_then(|job| match job.status.as_str() {
+            "succeeded" => Some("succeeded".to_string()),
+            "failed" => Some("failed".to_string()),
+            _ => None,
+        });
     Ok(PartnerReboneStatusDto {
-            feature_code: "partner_system".to_string(),
-            unlocked: true,
-            current_job,
-            has_unread_result,
-            result_status,
-        })
+        feature_code: "partner_system".to_string(),
+        unlocked: true,
+        current_job,
+        has_unread_result,
+        result_status,
+    })
 }
 
 pub async fn start_partner_rebone(
@@ -1456,16 +1823,30 @@ pub async fn start_partner_rebone(
     let item_def_id = payload.item_def_id.unwrap_or_default();
     let item_qty = payload.item_qty.unwrap_or_default();
     let state_for_enqueue = state.clone();
-    let result = state.database.with_transaction(|| async {
-        start_partner_rebone_tx(&state, actor.character_id, partner_id, item_def_id.trim(), item_qty).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            start_partner_rebone_tx(
+                &state,
+                actor.character_id,
+                partner_id,
+                item_def_id.trim(),
+                item_qty,
+            )
+            .await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             let character_id = actor.character_id;
             let rebone_id = data.rebone_id.clone();
-            state.database.after_transaction_commit(async move {
-                jobs::enqueue_partner_rebone_job(state_for_enqueue, character_id, rebone_id).await
-            }).await?;
+            state
+                .database
+                .after_transaction_commit(async move {
+                    jobs::enqueue_partner_rebone_job(state_for_enqueue, character_id, rebone_id)
+                        .await
+                })
+                .await?;
         }
         if let Ok(status) = load_partner_rebone_status_data(&state, actor.character_id).await {
             emit_partner_rebone_status_to_user(
@@ -1496,7 +1877,11 @@ pub async fn mark_partner_rebone_result_viewed(
     }
     Ok(send_result(ServiceResult {
         success: true,
-        message: Some(if updated.is_some() { "已标记查看".to_string() } else { "无未查看结果".to_string() }),
+        message: Some(if updated.is_some() {
+            "已标记查看".to_string()
+        } else {
+            "无未查看结果".to_string()
+        }),
         data: Some(serde_json::json!({
             "reboneId": updated.and_then(|row| row.try_get::<Option<String>, _>("id_text").ok().flatten()),
             "debugRealtime": build_partner_update_payload("partner_rebone_mark_viewed", None, None, None, None)
@@ -1512,37 +1897,69 @@ pub(crate) async fn start_partner_rebone_tx(
     item_qty: i64,
 ) -> Result<ServiceResult<PartnerReboneStartDataDto>, AppError> {
     if partner_id <= 0 {
-        return Ok(ServiceResult { success: false, message: Some("partnerId 参数无效".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("partnerId 参数无效".to_string()),
+            data: None,
+        });
     }
     if item_def_id.trim().is_empty() {
-        return Ok(ServiceResult { success: false, message: Some("itemDefId 参数无效".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("itemDefId 参数无效".to_string()),
+            data: None,
+        });
     }
     if item_qty <= 0 {
-        return Ok(ServiceResult { success: false, message: Some("itemQty 参数无效".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("itemQty 参数无效".to_string()),
+            data: None,
+        });
     }
     let pending = state.database.fetch_optional(
         "SELECT id FROM partner_rebone_job WHERE character_id = $1 AND status = 'pending' LIMIT 1 FOR UPDATE",
         |q| q.bind(character_id),
     ).await?;
     if pending.is_some() {
-        return Ok(ServiceResult { success: false, message: Some("当前已有归元洗髓进行中".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前已有归元洗髓进行中".to_string()),
+            data: None,
+        });
     }
     let partner = state.database.fetch_optional(
         "SELECT id, is_active FROM character_partner WHERE character_id = $1 AND id = $2 LIMIT 1 FOR UPDATE",
         |q| q.bind(character_id).bind(partner_id),
     ).await?;
     let Some(partner) = partner else {
-        return Ok(ServiceResult { success: false, message: Some("伙伴不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("伙伴不存在".to_string()),
+            data: None,
+        });
     };
-    if partner.try_get::<Option<bool>, _>("is_active")?.unwrap_or(false) {
-        return Ok(ServiceResult { success: false, message: Some("出战中的伙伴不可归元洗髓".to_string()), data: None });
+    if partner
+        .try_get::<Option<bool>, _>("is_active")?
+        .unwrap_or(false)
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("出战中的伙伴不可归元洗髓".to_string()),
+            data: None,
+        });
     }
     let user_id = load_character_user_id(state, character_id)
         .await?
         .ok_or_else(|| AppError::config("角色不存在"))?;
-    let consumed = consume_character_item_qty(state, user_id, character_id, item_def_id, item_qty).await;
+    let consumed =
+        consume_character_item_qty(state, user_id, character_id, item_def_id, item_qty).await;
     if consumed.is_err() {
-        return Ok(ServiceResult { success: false, message: Some("归元洗髓露不足".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归元洗髓露不足".to_string()),
+            data: None,
+        });
     }
     let rebone_id = format!("partner-rebone-{}-{}", character_id, now_millis());
     state.database.execute(
@@ -1555,7 +1972,13 @@ pub(crate) async fn start_partner_rebone_tx(
         data: Some(PartnerReboneStartDataDto {
             rebone_id: rebone_id.clone(),
             partner_id,
-            debug_realtime: Some(build_partner_update_payload("partner_rebone_start", None, None, Some(rebone_id.as_str()), Some(partner_id))),
+            debug_realtime: Some(build_partner_update_payload(
+                "partner_rebone_start",
+                None,
+                None,
+                Some(rebone_id.as_str()),
+                Some(partner_id),
+            )),
         }),
     })
 }
@@ -1567,41 +1990,82 @@ pub async fn generate_partner_recruit_draft(
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     let requested_base_model = payload.requested_base_model.unwrap_or_default();
-    if payload.custom_base_model_enabled.unwrap_or(false) && requested_base_model.trim().is_empty() {
-        return Ok(send_result(ServiceResult::<PartnerRecruitGenerateDataDto> { success: false, message: Some("requestedBaseModel 参数无效".to_string()), data: None }));
+    if payload.custom_base_model_enabled.unwrap_or(false) && requested_base_model.trim().is_empty()
+    {
+        return Ok(send_result(
+            ServiceResult::<PartnerRecruitGenerateDataDto> {
+                success: false,
+                message: Some("requestedBaseModel 参数无效".to_string()),
+                data: None,
+            },
+        ));
     }
     if requested_base_model.chars().count() > 12 {
-        return Ok(send_result(ServiceResult::<PartnerRecruitGenerateDataDto> { success: false, message: Some("自定义底模最多 12 个中文字符".to_string()), data: None }));
+        return Ok(send_result(
+            ServiceResult::<PartnerRecruitGenerateDataDto> {
+                success: false,
+                message: Some("自定义底模最多 12 个中文字符".to_string()),
+                data: None,
+            },
+        ));
     }
-    if !requested_base_model.trim().is_empty() && !requested_base_model.chars().all(|ch| (' '..='~').contains(&ch) == false) {
-        return Ok(send_result(ServiceResult::<PartnerRecruitGenerateDataDto> { success: false, message: Some("requestedBaseModel 参数无效".to_string()), data: None }));
+    if !requested_base_model.trim().is_empty()
+        && !requested_base_model
+            .chars()
+            .all(|ch| (' '..='~').contains(&ch) == false)
+    {
+        return Ok(send_result(
+            ServiceResult::<PartnerRecruitGenerateDataDto> {
+                success: false,
+                message: Some("requestedBaseModel 参数无效".to_string()),
+                data: None,
+            },
+        ));
     }
-    if (payload.custom_base_model_enabled.unwrap_or(false) || !requested_base_model.trim().is_empty())
+    if (payload.custom_base_model_enabled.unwrap_or(false)
+        || !requested_base_model.trim().is_empty())
         && let Err(error) = require_text_model_config(TextModelScope::Partner)
     {
-        return Ok(send_result(ServiceResult::<PartnerRecruitGenerateDataDto> {
-            success: false,
-            message: Some(error.to_string()),
-            data: None,
-        }));
+        return Ok(send_result(
+            ServiceResult::<PartnerRecruitGenerateDataDto> {
+                success: false,
+                message: Some(error.to_string()),
+                data: None,
+            },
+        ));
     }
     let state_for_enqueue = state.clone();
-    let result = state.database.with_transaction(|| async {
-        generate_partner_recruit_draft_tx(
-            &state,
-            actor.character_id,
-            payload.custom_base_model_enabled.unwrap_or(false),
-            if requested_base_model.trim().is_empty() { None } else { Some(requested_base_model.trim()) },
-        )
-        .await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            generate_partner_recruit_draft_tx(
+                &state,
+                actor.character_id,
+                payload.custom_base_model_enabled.unwrap_or(false),
+                if requested_base_model.trim().is_empty() {
+                    None
+                } else {
+                    Some(requested_base_model.trim())
+                },
+            )
+            .await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             let character_id = actor.character_id;
             let generation_id = data.generation_id.clone();
-            state.database.after_transaction_commit(async move {
-                jobs::enqueue_partner_recruit_job(state_for_enqueue, character_id, generation_id).await
-            }).await?;
+            state
+                .database
+                .after_transaction_commit(async move {
+                    jobs::enqueue_partner_recruit_job(
+                        state_for_enqueue,
+                        character_id,
+                        generation_id,
+                    )
+                    .await
+                })
+                .await?;
         }
         if let Ok(status) = load_partner_recruit_status_data(&state, actor.character_id).await {
             emit_partner_recruit_status_to_user(
@@ -1622,11 +2086,18 @@ pub async fn confirm_partner_recruit_draft(
     let actor = auth::require_character(&state, &headers).await?;
     let generation_id = generation_id.trim();
     if generation_id.is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("generationId 参数无效".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("generationId 参数无效".to_string()),
+            data: None,
+        }));
     }
-    let result = state.database.with_transaction(|| async {
-        confirm_partner_recruit_draft_tx(&state, actor.character_id, generation_id).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            confirm_partner_recruit_draft_tx(&state, actor.character_id, generation_id).await
+        })
+        .await?;
     if result.success {
         if let Ok(status) = load_partner_recruit_status_data(&state, actor.character_id).await {
             emit_partner_recruit_status_to_user(
@@ -1650,20 +2121,36 @@ async fn generate_partner_recruit_draft_tx(
         |q| q.bind(character_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     };
-    let realm = row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
+    let realm = row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
     let sub_realm = row.try_get::<Option<String>, _>("sub_realm")?;
     let unlock_realm = "炼神返虚·养神期".to_string();
-    if realm_rank_with_subrealm(&realm, sub_realm.as_deref()) < realm_rank_with_full_name(&unlock_realm) {
-        return Ok(ServiceResult { success: false, message: Some(format!("伙伴招募需达到{}后开放", unlock_realm)), data: None });
+    if realm_rank_with_subrealm(&realm, sub_realm.as_deref())
+        < realm_rank_with_full_name(&unlock_realm)
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some(format!("伙伴招募需达到{}后开放", unlock_realm)),
+            data: None,
+        });
     }
     let existing = state.database.fetch_optional(
         "SELECT id FROM partner_recruit_job WHERE character_id = $1 AND status IN ('pending','generated_draft') ORDER BY created_at DESC LIMIT 1",
         |q| q.bind(character_id),
     ).await?;
     if existing.is_some() {
-        return Ok(ServiceResult { success: false, message: Some("当前已有待处理的招募结果".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前已有待处理的招募结果".to_string()),
+            data: None,
+        });
     }
     let latest_started_at = state.database.fetch_optional(
         "SELECT cooldown_started_at::text AS cooldown_started_at_text FROM partner_recruit_job WHERE character_id = $1 AND status IN ('pending','generated_draft','accepted','discarded') ORDER BY created_at DESC LIMIT 1",
@@ -1671,7 +2158,11 @@ async fn generate_partner_recruit_draft_tx(
     ).await?.and_then(|row| row.try_get::<Option<String>, _>("cooldown_started_at_text").ok().flatten());
     let cooldown = build_partner_recruit_cooldown_state(latest_started_at.as_deref());
     if cooldown.1 > 0 && !custom_base_model_enabled {
-        return Ok(ServiceResult { success: false, message: Some(format!("伙伴招募冷却中，剩余{}秒", cooldown.1)), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some(format!("伙伴招募冷却中，剩余{}秒", cooldown.1)),
+            data: None,
+        });
     }
     if custom_base_model_enabled {
         let user_id = load_character_user_id(state, character_id)
@@ -1697,7 +2188,13 @@ async fn generate_partner_recruit_draft_tx(
             generation_id: generation_id.clone(),
             quality: quality.to_string(),
             status: "pending".to_string(),
-            debug_realtime: Some(build_partner_update_payload("partner_recruit_generate", Some(generation_id.as_str()), None, None, None)),
+            debug_realtime: Some(build_partner_update_payload(
+                "partner_recruit_generate",
+                Some(generation_id.as_str()),
+                None,
+                None,
+                None,
+            )),
         }),
     })
 }
@@ -1712,23 +2209,44 @@ async fn confirm_partner_recruit_draft_tx(
         |q| q.bind(generation_id).bind(character_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResult { success: false, message: Some("招募任务不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("招募任务不存在".to_string()),
+            data: None,
+        });
     };
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     let preview_partner_def_id = row.try_get::<Option<String>, _>("preview_partner_def_id")?;
-    if status != "generated_draft" || preview_partner_def_id.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
-        return Ok(ServiceResult { success: false, message: Some("当前预览不可确认收下".to_string()), data: None });
+    if status != "generated_draft"
+        || preview_partner_def_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前预览不可确认收下".to_string()),
+            data: None,
+        });
     }
     let finished_at = row.try_get::<Option<String>, _>("finished_at_text")?;
     if let Some(finished_at) = finished_at.as_deref()
-        && let Ok(finished_at) = time::OffsetDateTime::parse(finished_at, &time::format_description::well_known::Rfc3339)
+        && let Ok(finished_at) =
+            time::OffsetDateTime::parse(finished_at, &time::format_description::well_known::Rfc3339)
         && finished_at + time::Duration::hours(24) < time::OffsetDateTime::now_utc()
     {
         state.database.execute(
             "UPDATE partner_recruit_job SET status = 'discarded', viewed_at = COALESCE(viewed_at, NOW()), updated_at = NOW() WHERE id = $1 AND character_id = $2",
             |q| q.bind(generation_id).bind(character_id),
         ).await?;
-        return Ok(ServiceResult { success: false, message: Some("预览已过期，无法确认收下".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("预览已过期，无法确认收下".to_string()),
+            data: None,
+        });
     }
     let preview_partner_def_id = preview_partner_def_id.unwrap_or_default();
     let generated = state.database.fetch_optional(
@@ -1736,7 +2254,11 @@ async fn confirm_partner_recruit_draft_tx(
         |q| q.bind(&preview_partner_def_id),
     ).await?;
     let Some(generated) = generated else {
-        return Ok(ServiceResult { success: false, message: Some("预览伙伴定义不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("预览伙伴定义不存在".to_string()),
+            data: None,
+        });
     };
     let partner_row = state.database.fetch_one(
         "INSERT INTO character_partner (character_id, partner_def_id, nickname, description, avatar, level, progress_exp, growth_max_qixue, growth_wugong, growth_fagong, growth_wufang, growth_fafang, growth_sudu, is_active, obtained_from, obtained_ref_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, 0, 1000, 1000, 1000, 1000, 1000, 1000, FALSE, 'partner_recruit', $6, NOW(), NOW()) RETURNING id",
@@ -1752,7 +2274,11 @@ async fn confirm_partner_recruit_draft_tx(
     println!("PARTNER_RECRUIT_CONFIRM_TRACE: inserted_partner_id={partner_id}");
 
     if let Some(innate_ids) = generated.try_get::<Option<Vec<String>>, _>("innate_technique_ids")? {
-        for technique_id in innate_ids.into_iter().map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+        for technique_id in innate_ids
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
             state.database.execute(
                 "INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, created_at, updated_at) VALUES ($1, $2, 1, TRUE, NOW(), NOW())",
                 |q| q.bind(partner_id).bind(technique_id),
@@ -1790,14 +2316,22 @@ pub async fn discard_partner_recruit_draft(
     let actor = auth::require_character(&state, &headers).await?;
     let generation_id = generation_id.trim();
     if generation_id.is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("generationId 参数无效".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("generationId 参数无效".to_string()),
+            data: None,
+        }));
     }
     let updated = state.database.fetch_optional(
         "UPDATE partner_recruit_job SET status = 'discarded', viewed_at = COALESCE(viewed_at, NOW()), updated_at = NOW() WHERE character_id = $1 AND id = $2 AND status = 'generated_draft' RETURNING id::text AS id_text",
         |q| q.bind(actor.character_id).bind(generation_id),
     ).await?;
     if updated.is_none() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("当前草稿不可放弃".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("当前草稿不可放弃".to_string()),
+            data: None,
+        }));
     }
     if let Ok(status) = load_partner_recruit_status_data(&state, actor.character_id).await {
         emit_partner_recruit_status_to_user(
@@ -1823,13 +2357,25 @@ fn build_partner_recruit_cooldown_state(latest_started_at: Option<&str>) -> (Opt
     let Some(started_at) = latest_started_at else {
         return (None, 0);
     };
-    let Ok(started_at) = time::OffsetDateTime::parse(started_at, &time::format_description::well_known::Rfc3339) else {
+    let Ok(started_at) =
+        time::OffsetDateTime::parse(started_at, &time::format_description::well_known::Rfc3339)
+    else {
         return (None, 0);
     };
     let cooldown_until = started_at + time::Duration::hours(72);
     let now = time::OffsetDateTime::now_utc();
-    let remaining = ((cooldown_until.unix_timestamp_nanos() - now.unix_timestamp_nanos()).max(0) / 1_000_000 + 999) / 1000;
-    (Some(cooldown_until.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()), remaining as i64)
+    let remaining = ((cooldown_until.unix_timestamp_nanos() - now.unix_timestamp_nanos()).max(0)
+        / 1_000_000
+        + 999)
+        / 1000;
+    (
+        Some(
+            cooldown_until
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+        ),
+        remaining as i64,
+    )
 }
 
 pub async fn process_pending_partner_recruit_job(
@@ -2299,12 +2845,23 @@ pub async fn process_pending_partner_rebone_job(
     }).await
 }
 
-async fn load_character_user_id(state: &AppState, character_id: i64) -> Result<Option<i64>, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
-    Ok(row.and_then(|row| row.try_get::<Option<i32>, _>("user_id").ok().flatten().map(i64::from)))
+async fn load_character_user_id(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Option<i64>, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
+    Ok(row.and_then(|row| {
+        row.try_get::<Option<i32>, _>("user_id")
+            .ok()
+            .flatten()
+            .map(i64::from)
+    }))
 }
 
 async fn refund_partner_rebone_consumed_item(
@@ -2324,10 +2881,13 @@ async fn partner_def_quality_rank(
     partner_def_id: &str,
     state: &AppState,
 ) -> Result<Option<i64>, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT quality FROM generated_partner_def WHERE id = $1 LIMIT 1",
-        |q| q.bind(partner_def_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT quality FROM generated_partner_def WHERE id = $1 LIMIT 1",
+            |q| q.bind(partner_def_id),
+        )
+        .await?;
     Ok(row
         .and_then(|row| row.try_get::<Option<String>, _>("quality").ok().flatten())
         .map(|quality| quality_rank(quality.as_str())))
@@ -2340,7 +2900,11 @@ fn reroll_partner_rebone_attrs(
 ) -> serde_json::Value {
     let mut out = source.as_object().cloned().unwrap_or_default();
     for key in ["max_qixue", "wugong", "fagong", "wufang", "fafang", "sudu"] {
-        let base = source.get(key).and_then(|value| value.as_i64()).unwrap_or_default().max(1);
+        let base = source
+            .get(key)
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default()
+            .max(1);
         let digest = md5::compute(format!("{seed}:{key}").as_bytes());
         let roll = i16::from_be_bytes([digest[0], digest[1]]) as i64;
         let delta = (roll.rem_euclid(7) - 3) + quality_rank.max(0);
@@ -2374,14 +2938,16 @@ pub async fn get_partner_preview(
     };
     let owner = load_partner_owner_context(&state, row.character_id).await?;
     let techniques = load_partner_technique_rows(&state, vec![row.id]).await?;
-    let partner = build_partner_details_with_generated(&state, vec![row], &techniques, &owner).await?.into_iter().next();
+    let partner = build_partner_details_with_generated(&state, vec![row], &techniques, &owner)
+        .await?
+        .into_iter()
+        .next();
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
         data: partner,
     }))
 }
-
 
 pub async fn get_partner_skill_policy(
     State(state): State<AppState>,
@@ -2407,11 +2973,20 @@ pub async fn get_partner_skill_policy(
     };
     let technique_rows = load_partner_technique_rows(&state, vec![row.id]).await?;
     let policy_rows = load_partner_skill_policy_rows(&state, row.id).await?;
-    let entries = build_partner_skill_policy_entries_with_generated(&state, &row, technique_rows.get(&row.id).cloned().unwrap_or_default(), policy_rows).await?;
+    let entries = build_partner_skill_policy_entries_with_generated(
+        &state,
+        &row,
+        technique_rows.get(&row.id).cloned().unwrap_or_default(),
+        policy_rows,
+    )
+    .await?;
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(PartnerSkillPolicyDto { partner_id: row.id, entries }),
+        data: Some(PartnerSkillPolicyDto {
+            partner_id: row.id,
+            entries,
+        }),
     }))
 }
 
@@ -2439,8 +3014,13 @@ pub async fn update_partner_skill_policy(
         }));
     };
     let technique_rows = load_partner_technique_rows(&state, vec![row.id]).await?;
-    let available_entries = build_partner_skill_policy_entries(&row, technique_rows.get(&row.id).cloned().unwrap_or_default(), vec![])?;
-    let normalized_slots = normalize_partner_skill_policy_slots_for_save(&available_entries, slots)?;
+    let available_entries = build_partner_skill_policy_entries(
+        &row,
+        technique_rows.get(&row.id).cloned().unwrap_or_default(),
+        vec![],
+    )?;
+    let normalized_slots =
+        normalize_partner_skill_policy_slots_for_save(&available_entries, slots)?;
     state.database.with_transaction(|| async {
         state.database.execute(
             "DELETE FROM character_partner_skill_policy WHERE partner_id = $1",
@@ -2454,11 +3034,18 @@ pub async fn update_partner_skill_policy(
         }
         Ok::<(), AppError>(())
     }).await?;
-    let entries = build_partner_skill_policy_entries(&row, technique_rows.get(&row.id).cloned().unwrap_or_default(), load_partner_skill_policy_rows(&state, row.id).await?)?;
+    let entries = build_partner_skill_policy_entries(
+        &row,
+        technique_rows.get(&row.id).cloned().unwrap_or_default(),
+        load_partner_skill_policy_rows(&state, row.id).await?,
+    )?;
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(PartnerSkillPolicyDto { partner_id: row.id, entries }),
+        data: Some(PartnerSkillPolicyDto {
+            partner_id: row.id,
+            entries,
+        }),
     }))
 }
 
@@ -2555,7 +3142,9 @@ pub async fn dismiss_partner(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("出战伙伴已下阵".to_string()),
-        data: Some(PartnerDismissData { active_partner_id: None }),
+        data: Some(PartnerDismissData {
+            active_partner_id: None,
+        }),
     }))
 }
 
@@ -2907,7 +3496,9 @@ pub async fn learn_partner_technique(
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     if !is_partner_unlocked(&state, actor.character_id).await? {
-        return Ok(send_result(ServiceResult::<PartnerLearnTechniqueActionData> {
+        return Ok(send_result(ServiceResult::<
+            PartnerLearnTechniqueActionData,
+        > {
             success: false,
             message: Some("伙伴功能尚未解锁".to_string()),
             data: None,
@@ -2916,7 +3507,9 @@ pub async fn learn_partner_technique(
     let partner_id = payload.partner_id.unwrap_or_default();
     let item_instance_id = payload.item_instance_id.unwrap_or_default();
     if partner_id <= 0 || item_instance_id <= 0 {
-        return Ok(send_result(ServiceResult::<PartnerLearnTechniqueActionData> {
+        return Ok(send_result(ServiceResult::<
+            PartnerLearnTechniqueActionData,
+        > {
             success: false,
             message: Some("参数错误".to_string()),
             data: None,
@@ -3076,11 +3669,13 @@ pub async fn confirm_partner_technique_learn_preview(
     let item_instance_id = payload.item_instance_id.unwrap_or_default();
     let replaced_technique_id = payload.replaced_technique_id.unwrap_or_default();
     if partner_id <= 0 || item_instance_id <= 0 || replaced_technique_id.trim().is_empty() {
-        return Ok(send_result(ServiceResult::<PartnerLearnTechniqueResultDto> {
-            success: false,
-            message: Some("参数错误".to_string()),
-            data: None,
-        }));
+        return Ok(send_result(
+            ServiceResult::<PartnerLearnTechniqueResultDto> {
+                success: false,
+                message: Some("参数错误".to_string()),
+                data: None,
+            },
+        ));
     }
 
     let result = state.database.with_transaction(|| async {
@@ -3194,41 +3789,62 @@ pub async fn discard_partner_technique_learn_preview(
     let actor = auth::require_character(&state, &headers).await?;
     let item_instance_id = payload.item_instance_id.unwrap_or_default();
     if item_instance_id <= 0 {
-        return Ok(send_result(ServiceResult::<PartnerDiscardLearnTechniqueData> {
+        return Ok(send_result(ServiceResult::<
+            PartnerDiscardLearnTechniqueData,
+        > {
             success: false,
             message: Some("参数错误".to_string()),
             data: None,
         }));
     }
-    let result = state.database.with_transaction(|| async {
-        let rows = load_partner_technique_preview_items(&state, actor.character_id, true).await?;
-        let matched_row = rows.into_iter().find(|row| row.id == item_instance_id);
-        let Some(row) = matched_row else {
-            return Ok(ServiceResult::<PartnerDiscardLearnTechniqueData> {
-                success: false,
-                message: Some("待处理打书预览不存在".to_string()),
-                data: None,
-            });
-        };
-        let pending_preview = match resolve_partner_pending_preview_from_row(&state, actor.character_id, &row, true).await? {
-            PartnerPendingPreviewResolution::Valid(preview) => preview,
-            PartnerPendingPreviewResolution::Invalid { message } => {
+    let result = state
+        .database
+        .with_transaction(|| async {
+            let rows =
+                load_partner_technique_preview_items(&state, actor.character_id, true).await?;
+            let matched_row = rows.into_iter().find(|row| row.id == item_instance_id);
+            let Some(row) = matched_row else {
                 return Ok(ServiceResult::<PartnerDiscardLearnTechniqueData> {
                     success: false,
-                    message: Some(message.to_string()),
+                    message: Some("待处理打书预览不存在".to_string()),
                     data: None,
                 });
-            }
-        };
-        let book = pending_preview.book;
-        consume_specific_item_instance(&state, actor.user_id, actor.character_id, item_instance_id, 1, &book.item_def_id).await?;
-        let remaining_books = load_partner_books(&state, actor.character_id).await?;
-        Ok(ServiceResult {
-            success: true,
-            message: Some("已放弃学习，本次功法书已消耗".to_string()),
-            data: Some(PartnerDiscardLearnTechniqueData { remaining_books }),
+            };
+            let pending_preview = match resolve_partner_pending_preview_from_row(
+                &state,
+                actor.character_id,
+                &row,
+                true,
+            )
+            .await?
+            {
+                PartnerPendingPreviewResolution::Valid(preview) => preview,
+                PartnerPendingPreviewResolution::Invalid { message } => {
+                    return Ok(ServiceResult::<PartnerDiscardLearnTechniqueData> {
+                        success: false,
+                        message: Some(message.to_string()),
+                        data: None,
+                    });
+                }
+            };
+            let book = pending_preview.book;
+            consume_specific_item_instance(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                item_instance_id,
+                1,
+                &book.item_def_id,
+            )
+            .await?;
+            let remaining_books = load_partner_books(&state, actor.character_id).await?;
+            Ok(ServiceResult {
+                success: true,
+                message: Some("已放弃学习，本次功法书已消耗".to_string()),
+                data: Some(PartnerDiscardLearnTechniqueData { remaining_books }),
+            })
         })
-    }).await?;
+        .await?;
     Ok(send_result(result))
 }
 
@@ -3241,52 +3857,74 @@ pub async fn get_partner_technique_upgrade_cost(
     let partner_id = query.partner_id.unwrap_or_default();
     let technique_id = query.technique_id.unwrap_or_default();
     if partner_id <= 0 || technique_id.trim().is_empty() {
-        return Ok(send_result(ServiceResult::<PartnerTechniqueUpgradeCostDto> {
-            success: false,
-            message: Some("参数错误".to_string()),
-            data: None,
-        }));
+        return Ok(send_result(
+            ServiceResult::<PartnerTechniqueUpgradeCostDto> {
+                success: false,
+                message: Some("参数错误".to_string()),
+                data: None,
+            },
+        ));
     }
     let row = load_single_partner_row(&state, actor.character_id, partner_id, false).await?;
     let Some(row) = row else {
-        return Ok(send_result(ServiceResult::<PartnerTechniqueUpgradeCostDto> {
-            success: false,
-            message: Some("伙伴不存在".to_string()),
-            data: None,
-        }));
+        return Ok(send_result(
+            ServiceResult::<PartnerTechniqueUpgradeCostDto> {
+                success: false,
+                message: Some("伙伴不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     let technique_rows = load_partner_technique_rows(&state, vec![row.id]).await?;
-    let def = load_partner_def_resolved(&state, row.partner_def_id.trim()).await?
+    let def = load_partner_def_resolved(&state, row.partner_def_id.trim())
+        .await?
         .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
-    let techniques = build_partner_techniques_with_generated(&state, &def, technique_rows.get(&row.id).cloned().unwrap_or_default()).await?;
-    let Some(technique) = techniques.into_iter().find(|technique| technique.technique_id == technique_id.trim()) else {
-        return Ok(send_result(ServiceResult::<PartnerTechniqueUpgradeCostDto> {
-            success: false,
-            message: Some("伙伴功法不存在".to_string()),
-            data: None,
-        }));
+    let techniques = build_partner_techniques_with_generated(
+        &state,
+        &def,
+        technique_rows.get(&row.id).cloned().unwrap_or_default(),
+    )
+    .await?;
+    let Some(technique) = techniques
+        .into_iter()
+        .find(|technique| technique.technique_id == technique_id.trim())
+    else {
+        return Ok(send_result(
+            ServiceResult::<PartnerTechniqueUpgradeCostDto> {
+                success: false,
+                message: Some("伙伴功法不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     if technique.current_layer >= technique.max_layer {
-        return Ok(send_result(ServiceResult::<PartnerTechniqueUpgradeCostDto> {
-            success: false,
-            message: Some("已达最高层数".to_string()),
-            data: None,
-        }));
+        return Ok(send_result(
+            ServiceResult::<PartnerTechniqueUpgradeCostDto> {
+                success: false,
+                message: Some("已达最高层数".to_string()),
+                data: None,
+            },
+        ));
     }
-    let Some(detail) = load_technique_detail_data(&state, technique_id.trim(), None, true).await? else {
-        return Ok(send_result(ServiceResult::<PartnerTechniqueUpgradeCostDto> {
-            success: false,
-            message: Some("伙伴功法不存在".to_string()),
-            data: None,
-        }));
+    let Some(detail) = load_technique_detail_data(&state, technique_id.trim(), None, true).await?
+    else {
+        return Ok(send_result(
+            ServiceResult::<PartnerTechniqueUpgradeCostDto> {
+                success: false,
+                message: Some("伙伴功法不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     let next_layer = technique.current_layer + 1;
     let Some(layer) = detail.layers.iter().find(|layer| layer.layer == next_layer) else {
-        return Ok(send_result(ServiceResult::<PartnerTechniqueUpgradeCostDto> {
-            success: false,
-            message: Some("已达最高层数".to_string()),
-            data: None,
-        }));
+        return Ok(send_result(
+            ServiceResult::<PartnerTechniqueUpgradeCostDto> {
+                success: false,
+                message: Some("已达最高层数".to_string()),
+                data: None,
+            },
+        ));
     };
     let item_meta = load_item_meta_map()?;
     let materials = layer
@@ -3295,7 +3933,9 @@ pub async fn get_partner_technique_upgrade_cost(
         .filter_map(|row| {
             let item_id = row.item_id.trim().to_string();
             let qty = row.qty.max(0);
-            if item_id.is_empty() || qty <= 0 { return None; }
+            if item_id.is_empty() || qty <= 0 {
+                return None;
+            }
             let meta = item_meta.get(item_id.as_str()).cloned();
             Some(PartnerTechniqueUpgradeCostMaterialDto {
                 item_id,
@@ -3343,17 +3983,27 @@ pub async fn get_partner_technique_detail(
         }));
     };
     let technique_rows = load_partner_technique_rows(&state, vec![row.id]).await?;
-    let def = load_partner_def_resolved(&state, row.partner_def_id.trim()).await?
+    let def = load_partner_def_resolved(&state, row.partner_def_id.trim())
+        .await?
         .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
-    let techniques = build_partner_techniques_with_generated(&state, &def, technique_rows.get(&row.id).cloned().unwrap_or_default()).await?;
-    let Some(technique) = techniques.into_iter().find(|technique| technique.technique_id == technique_id.trim()) else {
+    let techniques = build_partner_techniques_with_generated(
+        &state,
+        &def,
+        technique_rows.get(&row.id).cloned().unwrap_or_default(),
+    )
+    .await?;
+    let Some(technique) = techniques
+        .into_iter()
+        .find(|technique| technique.technique_id == technique_id.trim())
+    else {
         return Ok(send_result(ServiceResult::<PartnerTechniqueDetailDto> {
             success: false,
             message: Some("伙伴功法不存在".to_string()),
             data: None,
         }));
     };
-    let Some(detail) = load_technique_detail_data(&state, technique_id.trim(), None, true).await? else {
+    let Some(detail) = load_technique_detail_data(&state, technique_id.trim(), None, true).await?
+    else {
         return Ok(send_result(ServiceResult::<PartnerTechniqueDetailDto> {
             success: false,
             message: Some("伙伴功法详情不存在".to_string()),
@@ -3364,9 +4014,18 @@ pub async fn get_partner_technique_detail(
         success: true,
         message: Some("ok".to_string()),
         data: Some(PartnerTechniqueDetailDto {
-            technique: serde_json::to_value(detail.technique).map_err(|error| AppError::config(format!("伙伴功法详情序列化失败: {error}")))?,
-            layers: serde_json::to_value(detail.layers).map_err(|error| AppError::config(format!("伙伴功法层级序列化失败: {error}")))?.as_array().cloned().unwrap_or_default(),
-            skills: serde_json::to_value(detail.skills).map_err(|error| AppError::config(format!("伙伴功法技能序列化失败: {error}")))?.as_array().cloned().unwrap_or_default(),
+            technique: serde_json::to_value(detail.technique)
+                .map_err(|error| AppError::config(format!("伙伴功法详情序列化失败: {error}")))?,
+            layers: serde_json::to_value(detail.layers)
+                .map_err(|error| AppError::config(format!("伙伴功法层级序列化失败: {error}")))?
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+            skills: serde_json::to_value(detail.skills)
+                .map_err(|error| AppError::config(format!("伙伴功法技能序列化失败: {error}")))?
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
             current_layer: technique.current_layer,
             is_innate: technique.is_innate,
         }),
@@ -3399,7 +4058,10 @@ async fn is_partner_unlocked(state: &AppState, character_id: i64) -> Result<bool
     Ok(row.is_some())
 }
 
-async fn load_partner_owner_context(state: &AppState, character_id: i64) -> Result<PartnerOwnerContext, AppError> {
+async fn load_partner_owner_context(
+    state: &AppState,
+    character_id: i64,
+) -> Result<PartnerOwnerContext, AppError> {
     let row = state
         .database
         .fetch_optional(
@@ -3409,13 +4071,20 @@ async fn load_partner_owner_context(state: &AppState, character_id: i64) -> Resu
         .await?
         .ok_or_else(|| AppError::config("角色不存在"))?;
     Ok(PartnerOwnerContext {
-        realm: row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string()),
-        sub_realm: row.try_get::<Option<String>, _>("sub_realm")?.unwrap_or_default(),
+        realm: row
+            .try_get::<Option<String>, _>("realm")?
+            .unwrap_or_else(|| "凡人".to_string()),
+        sub_realm: row
+            .try_get::<Option<String>, _>("sub_realm")?
+            .unwrap_or_default(),
         exp: row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default(),
     })
 }
 
-async fn load_partner_rows(state: &AppState, character_id: i64) -> Result<Vec<PartnerRow>, AppError> {
+async fn load_partner_rows(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Vec<PartnerRow>, AppError> {
     let rows = state
         .database
         .fetch_all(
@@ -3426,7 +4095,10 @@ async fn load_partner_rows(state: &AppState, character_id: i64) -> Result<Vec<Pa
     rows.into_iter().map(parse_partner_row).collect()
 }
 
-async fn load_partner_def_resolved(state: &AppState, partner_def_id: &str) -> Result<Option<PartnerDefSeed>, AppError> {
+async fn load_partner_def_resolved(
+    state: &AppState,
+    partner_def_id: &str,
+) -> Result<Option<PartnerDefSeed>, AppError> {
     let defs = load_partner_def_map()?;
     if let Some(def) = defs.get(partner_def_id).cloned() {
         return Ok(Some(def));
@@ -3439,23 +4111,36 @@ async fn load_partner_def_resolved(state: &AppState, partner_def_id: &str) -> Re
         return Ok(None);
     };
     Ok(Some(PartnerDefSeed {
-        id: row.try_get::<Option<String>, _>("id")?.unwrap_or_else(|| partner_def_id.to_string()),
+        id: row
+            .try_get::<Option<String>, _>("id")?
+            .unwrap_or_else(|| partner_def_id.to_string()),
         source_job_id: row.try_get::<Option<String>, _>("source_job_id")?,
-        name: row.try_get::<Option<String>, _>("name")?.unwrap_or_else(|| partner_def_id.to_string()),
+        name: row
+            .try_get::<Option<String>, _>("name")?
+            .unwrap_or_else(|| partner_def_id.to_string()),
         description: row.try_get::<Option<String>, _>("description")?,
         avatar: row.try_get::<Option<String>, _>("avatar")?,
         quality: row.try_get::<Option<String>, _>("quality")?,
         attribute_element: row.try_get::<Option<String>, _>("attribute_element")?,
         role: row.try_get::<Option<String>, _>("role")?,
-        max_technique_slots: row.try_get::<Option<i32>, _>("max_technique_slots")?.map(i64::from),
+        max_technique_slots: row
+            .try_get::<Option<i32>, _>("max_technique_slots")?
+            .map(i64::from),
         innate_technique_ids: row.try_get::<Option<Vec<String>>, _>("innate_technique_ids")?,
-        base_attrs: row.try_get::<Option<serde_json::Value>, _>("base_attrs")?.unwrap_or_else(|| serde_json::json!({})),
-        level_attr_gains: row.try_get::<Option<serde_json::Value>, _>("level_attr_gains")?.unwrap_or_else(|| serde_json::json!({})),
+        base_attrs: row
+            .try_get::<Option<serde_json::Value>, _>("base_attrs")?
+            .unwrap_or_else(|| serde_json::json!({})),
+        level_attr_gains: row
+            .try_get::<Option<serde_json::Value>, _>("level_attr_gains")?
+            .unwrap_or_else(|| serde_json::json!({})),
         enabled: row.try_get::<Option<bool>, _>("enabled")?,
     }))
 }
 
-async fn load_partner_row_by_id(state: &AppState, partner_id: i64) -> Result<Option<PartnerRow>, AppError> {
+async fn load_partner_row_by_id(
+    state: &AppState,
+    partner_id: i64,
+) -> Result<Option<PartnerRow>, AppError> {
     let row = state
         .database
         .fetch_optional(
@@ -3466,13 +4151,21 @@ async fn load_partner_row_by_id(state: &AppState, partner_id: i64) -> Result<Opt
     row.map(parse_partner_row).transpose()
 }
 
-async fn load_single_partner_row(state: &AppState, character_id: i64, partner_id: i64, for_update: bool) -> Result<Option<PartnerRow>, AppError> {
+async fn load_single_partner_row(
+    state: &AppState,
+    character_id: i64,
+    partner_id: i64,
+    for_update: bool,
+) -> Result<Option<PartnerRow>, AppError> {
     let sql = if for_update {
         "SELECT * FROM character_partner WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE"
     } else {
         "SELECT * FROM character_partner WHERE id = $1 AND character_id = $2 LIMIT 1"
     };
-    let row = state.database.fetch_optional(sql, |query| query.bind(partner_id).bind(character_id)).await?;
+    let row = state
+        .database
+        .fetch_optional(sql, |query| query.bind(partner_id).bind(character_id))
+        .await?;
     row.map(parse_partner_row).transpose()
 }
 
@@ -3480,19 +4173,27 @@ fn parse_partner_row(row: sqlx::postgres::PgRow) -> Result<PartnerRow, AppError>
     Ok(PartnerRow {
         id: i64::from(row.try_get::<i32, _>("id")?),
         character_id: i64::from(row.try_get::<i32, _>("character_id")?),
-        partner_def_id: row.try_get::<Option<String>, _>("partner_def_id")?.unwrap_or_default(),
-        nickname: row.try_get::<Option<String>, _>("nickname")?.unwrap_or_default(),
+        partner_def_id: row
+            .try_get::<Option<String>, _>("partner_def_id")?
+            .unwrap_or_default(),
+        nickname: row
+            .try_get::<Option<String>, _>("nickname")?
+            .unwrap_or_default(),
         description: row.try_get::<Option<String>, _>("description")?,
         avatar: row.try_get::<Option<String>, _>("avatar")?,
         level: row.try_get::<Option<i64>, _>("level")?.unwrap_or(1),
-        progress_exp: row.try_get::<Option<i64>, _>("progress_exp")?.unwrap_or_default(),
+        progress_exp: row
+            .try_get::<Option<i64>, _>("progress_exp")?
+            .unwrap_or_default(),
         growth_max_qixue: opt_i64_from_i32(&row, "growth_max_qixue"),
         growth_wugong: opt_i64_from_i32(&row, "growth_wugong"),
         growth_fagong: opt_i64_from_i32(&row, "growth_fagong"),
         growth_wufang: opt_i64_from_i32(&row, "growth_wufang"),
         growth_fafang: opt_i64_from_i32(&row, "growth_fafang"),
         growth_sudu: opt_i64_from_i32(&row, "growth_sudu"),
-        is_active: row.try_get::<Option<bool>, _>("is_active")?.unwrap_or(false),
+        is_active: row
+            .try_get::<Option<bool>, _>("is_active")?
+            .unwrap_or(false),
         obtained_from: row.try_get::<Option<String>, _>("obtained_from")?,
     })
 }
@@ -3526,13 +4227,20 @@ async fn load_partner_technique_rows_with_lock(
     let mut map = HashMap::new();
     for row in rows {
         let partner_id = opt_i64_from_i32(&row, "partner_id");
-        map.entry(partner_id).or_insert_with(Vec::new).push(PartnerTechniqueRow {
-            partner_id,
-            technique_id: row.try_get::<Option<String>, _>("technique_id")?.unwrap_or_default(),
-            current_layer: opt_i64_from_i32_default(&row, "current_layer", 1),
-            is_innate: row.try_get::<Option<bool>, _>("is_innate")?.unwrap_or(false),
-            learned_from_item_def_id: row.try_get::<Option<String>, _>("learned_from_item_def_id")?,
-        });
+        map.entry(partner_id)
+            .or_insert_with(Vec::new)
+            .push(PartnerTechniqueRow {
+                partner_id,
+                technique_id: row
+                    .try_get::<Option<String>, _>("technique_id")?
+                    .unwrap_or_default(),
+                current_layer: opt_i64_from_i32_default(&row, "current_layer", 1),
+                is_innate: row
+                    .try_get::<Option<bool>, _>("is_innate")?
+                    .unwrap_or(false),
+                learned_from_item_def_id: row
+                    .try_get::<Option<String>, _>("learned_from_item_def_id")?,
+            });
     }
     Ok(map)
 }
@@ -3551,9 +4259,15 @@ async fn load_partner_skill_policy_rows(
     Ok(rows
         .into_iter()
         .map(|row| CharacterPartnerSkillPolicyRow {
-            skill_id: row.try_get::<Option<String>, _>("skill_id").unwrap_or(None).unwrap_or_default(),
+            skill_id: row
+                .try_get::<Option<String>, _>("skill_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
             priority: opt_i64_from_i32(&row, "priority"),
-            enabled: row.try_get::<Option<bool>, _>("enabled").unwrap_or(None).unwrap_or(false),
+            enabled: row
+                .try_get::<Option<bool>, _>("enabled")
+                .unwrap_or(None)
+                .unwrap_or(false),
         })
         .collect())
 }
@@ -3567,46 +4281,74 @@ fn build_partner_details(
     let defs = load_partner_def_map()?;
     let tech_defs = load_technique_def_map()?;
     let skill_defs = load_skill_def_map()?;
-    rows.into_iter().map(|row| {
-        let def = defs.get(row.partner_def_id.trim()).ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
-        let effective_level = resolve_partner_effective_level(&owner.realm, &owner.sub_realm, row.level);
-        let techniques = build_partner_techniques(def, technique_map.get(&row.id).cloned().unwrap_or_default(), &tech_defs, &skill_defs)?;
-        let computed = build_partner_computed_attrs(def, &row, effective_level, &techniques);
-        Ok(PartnerDetailDto {
-            id: row.id,
-            partner_def_id: def.id.clone(),
-            name: def.name.clone(),
-            nickname: if row.nickname.trim().is_empty() { def.name.clone() } else { row.nickname.clone() },
-            description: row.description.clone().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| def.description.clone().unwrap_or_default()),
-            avatar: row.avatar.clone().filter(|value| !value.trim().is_empty()).or_else(|| def.avatar.clone()),
-            element: def.attribute_element.clone().unwrap_or_else(|| "none".to_string()),
-            role: def.role.clone().unwrap_or_else(|| "伙伴".to_string()),
-            quality: def.quality.clone().unwrap_or_else(|| "黄".to_string()),
-            level: row.level.max(1),
-            current_effective_level: effective_level,
-            progress_exp: row.progress_exp.max(0),
-            next_level_cost_exp: calc_partner_upgrade_exp_by_target_level(row.level.max(1) + 1, &growth_cfg),
-            slot_count: def.max_technique_slots.unwrap_or_default().max(0),
-            is_active: row.is_active,
-            is_generated: def.id.starts_with("partner-gen-"),
-            obtained_from: row.obtained_from.clone(),
-            growth: PartnerGrowthDto {
-                max_qixue: row.growth_max_qixue.max(0),
-                wugong: row.growth_wugong.max(0),
-                fagong: row.growth_fagong.max(0),
-                wufang: row.growth_wufang.max(0),
-                fafang: row.growth_fafang.max(0),
-                sudu: row.growth_sudu.max(0),
-            },
-            level_attr_gains: to_number_map(def.level_attr_gains.clone()),
-            computed_attrs: computed,
-            techniques,
-            trade_status: "none".to_string(),
-            market_listing_id: None,
-            fusion_status: "none".to_string(),
-            fusion_job_id: None,
+    rows.into_iter()
+        .map(|row| {
+            let def = defs.get(row.partner_def_id.trim()).ok_or_else(|| {
+                AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id))
+            })?;
+            let effective_level =
+                resolve_partner_effective_level(&owner.realm, &owner.sub_realm, row.level);
+            let techniques = build_partner_techniques(
+                def,
+                technique_map.get(&row.id).cloned().unwrap_or_default(),
+                &tech_defs,
+                &skill_defs,
+            )?;
+            let computed = build_partner_computed_attrs(def, &row, effective_level, &techniques);
+            Ok(PartnerDetailDto {
+                id: row.id,
+                partner_def_id: def.id.clone(),
+                name: def.name.clone(),
+                nickname: if row.nickname.trim().is_empty() {
+                    def.name.clone()
+                } else {
+                    row.nickname.clone()
+                },
+                description: row
+                    .description
+                    .clone()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| def.description.clone().unwrap_or_default()),
+                avatar: row
+                    .avatar
+                    .clone()
+                    .filter(|value| !value.trim().is_empty())
+                    .or_else(|| def.avatar.clone()),
+                element: def
+                    .attribute_element
+                    .clone()
+                    .unwrap_or_else(|| "none".to_string()),
+                role: def.role.clone().unwrap_or_else(|| "伙伴".to_string()),
+                quality: def.quality.clone().unwrap_or_else(|| "黄".to_string()),
+                level: row.level.max(1),
+                current_effective_level: effective_level,
+                progress_exp: row.progress_exp.max(0),
+                next_level_cost_exp: calc_partner_upgrade_exp_by_target_level(
+                    row.level.max(1) + 1,
+                    &growth_cfg,
+                ),
+                slot_count: def.max_technique_slots.unwrap_or_default().max(0),
+                is_active: row.is_active,
+                is_generated: def.id.starts_with("partner-gen-"),
+                obtained_from: row.obtained_from.clone(),
+                growth: PartnerGrowthDto {
+                    max_qixue: row.growth_max_qixue.max(0),
+                    wugong: row.growth_wugong.max(0),
+                    fagong: row.growth_fagong.max(0),
+                    wufang: row.growth_wufang.max(0),
+                    fafang: row.growth_fafang.max(0),
+                    sudu: row.growth_sudu.max(0),
+                },
+                level_attr_gains: to_number_map(def.level_attr_gains.clone()),
+                computed_attrs: computed,
+                techniques,
+                trade_status: "none".to_string(),
+                market_listing_id: None,
+                fusion_status: "none".to_string(),
+                fusion_job_id: None,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn build_partner_techniques(
@@ -3639,79 +4381,146 @@ fn build_partner_techniques(
     effective_rows
         .into_iter()
         .map(|row| {
-        let tech = tech_defs.get(row.technique_id.as_str());
-        let max_layer = tech.and_then(|value| value.get("max_layer").and_then(|value| value.as_i64())).unwrap_or(1).max(1);
-        let current_layer = row.current_layer.clamp(1, max_layer);
-        let all_layers = if tech.is_some() {
-            load_technique_layers_for(&row.technique_id)?
-        } else {
-            Vec::new()
-        };
-        let mut unlock_skill_ids = Vec::new();
-        let mut upgrade_skill_ids = Vec::new();
-        let mut passive_attrs = BTreeMap::new();
-        for layer in all_layers.iter().filter(|layer| layer.get("layer").and_then(|value| value.as_i64()).unwrap_or_default() <= current_layer) {
-            if let Some(skills) = layer.get("unlock_skill_ids").and_then(|value| value.as_array()) {
-                for skill in skills {
-                    if let Some(skill_id) = skill.as_str() {
-                        unlock_skill_ids.push(skill_id.to_string());
+            let tech = tech_defs.get(row.technique_id.as_str());
+            let max_layer = tech
+                .and_then(|value| value.get("max_layer").and_then(|value| value.as_i64()))
+                .unwrap_or(1)
+                .max(1);
+            let current_layer = row.current_layer.clamp(1, max_layer);
+            let all_layers = if tech.is_some() {
+                load_technique_layers_for(&row.technique_id)?
+            } else {
+                Vec::new()
+            };
+            let mut unlock_skill_ids = Vec::new();
+            let mut upgrade_skill_ids = Vec::new();
+            let mut passive_attrs = BTreeMap::new();
+            for layer in all_layers.iter().filter(|layer| {
+                layer
+                    .get("layer")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default()
+                    <= current_layer
+            }) {
+                if let Some(skills) = layer
+                    .get("unlock_skill_ids")
+                    .and_then(|value| value.as_array())
+                {
+                    for skill in skills {
+                        if let Some(skill_id) = skill.as_str() {
+                            unlock_skill_ids.push(skill_id.to_string());
+                        }
+                    }
+                }
+                if let Some(skills) = layer
+                    .get("upgrade_skill_ids")
+                    .and_then(|value| value.as_array())
+                {
+                    for skill in skills {
+                        if let Some(skill_id) = skill.as_str() {
+                            upgrade_skill_ids.push(skill_id.to_string());
+                        }
+                    }
+                }
+                if let Some(passives) = layer.get("passives").and_then(|value| value.as_array()) {
+                    for passive in passives {
+                        if let (Some(key), Some(value)) = (
+                            passive.get("key").and_then(|value| value.as_str()),
+                            passive.get("value").and_then(|value| {
+                                value.as_f64().or_else(|| value.as_i64().map(|v| v as f64))
+                            }),
+                        ) {
+                            *passive_attrs.entry(key.to_string()).or_insert(0.0) += value;
+                        }
                     }
                 }
             }
-            if let Some(skills) = layer.get("upgrade_skill_ids").and_then(|value| value.as_array()) {
-                for skill in skills {
-                    if let Some(skill_id) = skill.as_str() {
-                        upgrade_skill_ids.push(skill_id.to_string());
-                    }
-                }
-            }
-            if let Some(passives) = layer.get("passives").and_then(|value| value.as_array()) {
-                for passive in passives {
-                    if let (Some(key), Some(value)) = (passive.get("key").and_then(|value| value.as_str()), passive.get("value").and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))) {
-                        *passive_attrs.entry(key.to_string()).or_insert(0.0) += value;
-                    }
-                }
-            }
-        }
-        let mut skill_ids = unlock_skill_ids;
-        skill_ids.sort();
-        skill_ids.dedup();
-        let skills = skill_ids
-            .iter()
-            .filter_map(|skill_id| skill_defs.get(skill_id.as_str()).map(|skill| PartnerTechniqueSkillDto {
-                id: skill_id.clone(),
-                name: skill.get("name").and_then(|value| value.as_str()).unwrap_or(skill_id).to_string(),
-                icon: skill.get("icon").and_then(|value| value.as_str()).unwrap_or("").to_string(),
-                description: skill.get("description").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                cost_lingqi: skill.get("cost_lingqi").and_then(|value| value.as_i64()),
-                cost_lingqi_rate: skill.get("cost_lingqi_rate").and_then(|value| value.as_f64()),
-                cost_qixue: skill.get("cost_qixue").and_then(|value| value.as_i64()),
-                cost_qixue_rate: skill.get("cost_qixue_rate").and_then(|value| value.as_f64()),
-                cooldown: skill.get("cooldown").and_then(|value| value.as_i64()),
-                target_type: skill.get("target_type").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                target_count: skill.get("target_count").and_then(|value| value.as_i64()),
-                damage_type: skill.get("damage_type").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                element: skill.get("element").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                effects: skill.get("effects").and_then(|value| value.as_array()).cloned(),
-                trigger_type: skill.get("trigger_type").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                ai_priority: skill.get("ai_priority").and_then(|value| value.as_i64()),
-            }))
-            .collect();
-        let _ = upgrade_skill_ids;
-        Ok(PartnerTechniqueDto {
-            technique_id: row.technique_id.clone(),
-            name: tech.and_then(|value| value.get("name").and_then(|value| value.as_str())).unwrap_or(&row.technique_id).to_string(),
-            description: tech.and_then(|value| value.get("description").and_then(|value| value.as_str())).map(|value| value.to_string()),
-            icon: tech.and_then(|value| value.get("icon").and_then(|value| value.as_str())).map(|value| value.to_string()),
-            quality: tech.and_then(|value| value.get("quality").and_then(|value| value.as_str())).unwrap_or("玄").to_string(),
-            current_layer,
-            max_layer,
-            skill_ids,
-            skills,
-            passive_attrs,
-            is_innate: row.is_innate,
+            let mut skill_ids = unlock_skill_ids;
+            skill_ids.sort();
+            skill_ids.dedup();
+            let skills = skill_ids
+                .iter()
+                .filter_map(|skill_id| {
+                    skill_defs
+                        .get(skill_id.as_str())
+                        .map(|skill| PartnerTechniqueSkillDto {
+                            id: skill_id.clone(),
+                            name: skill
+                                .get("name")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or(skill_id)
+                                .to_string(),
+                            icon: skill
+                                .get("icon")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            description: skill
+                                .get("description")
+                                .and_then(|value| value.as_str())
+                                .map(|value| value.to_string()),
+                            cost_lingqi: skill.get("cost_lingqi").and_then(|value| value.as_i64()),
+                            cost_lingqi_rate: skill
+                                .get("cost_lingqi_rate")
+                                .and_then(|value| value.as_f64()),
+                            cost_qixue: skill.get("cost_qixue").and_then(|value| value.as_i64()),
+                            cost_qixue_rate: skill
+                                .get("cost_qixue_rate")
+                                .and_then(|value| value.as_f64()),
+                            cooldown: skill.get("cooldown").and_then(|value| value.as_i64()),
+                            target_type: skill
+                                .get("target_type")
+                                .and_then(|value| value.as_str())
+                                .map(|value| value.to_string()),
+                            target_count: skill
+                                .get("target_count")
+                                .and_then(|value| value.as_i64()),
+                            damage_type: skill
+                                .get("damage_type")
+                                .and_then(|value| value.as_str())
+                                .map(|value| value.to_string()),
+                            element: skill
+                                .get("element")
+                                .and_then(|value| value.as_str())
+                                .map(|value| value.to_string()),
+                            effects: skill
+                                .get("effects")
+                                .and_then(|value| value.as_array())
+                                .cloned(),
+                            trigger_type: skill
+                                .get("trigger_type")
+                                .and_then(|value| value.as_str())
+                                .map(|value| value.to_string()),
+                            ai_priority: skill.get("ai_priority").and_then(|value| value.as_i64()),
+                        })
+                })
+                .collect();
+            let _ = upgrade_skill_ids;
+            Ok(PartnerTechniqueDto {
+                technique_id: row.technique_id.clone(),
+                name: tech
+                    .and_then(|value| value.get("name").and_then(|value| value.as_str()))
+                    .unwrap_or(&row.technique_id)
+                    .to_string(),
+                description: tech
+                    .and_then(|value| value.get("description").and_then(|value| value.as_str()))
+                    .map(|value| value.to_string()),
+                icon: tech
+                    .and_then(|value| value.get("icon").and_then(|value| value.as_str()))
+                    .map(|value| value.to_string()),
+                quality: tech
+                    .and_then(|value| value.get("quality").and_then(|value| value.as_str()))
+                    .unwrap_or("玄")
+                    .to_string(),
+                current_layer,
+                max_layer,
+                skill_ids,
+                skills,
+                passive_attrs,
+                is_innate: row.is_innate,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 async fn build_partner_details_with_generated(
@@ -3723,27 +4532,57 @@ async fn build_partner_details_with_generated(
     let growth_cfg = load_partner_growth_config()?;
     let mut out = Vec::new();
     for row in rows {
-        let def = load_partner_def_resolved(state, row.partner_def_id.trim()).await?
+        let def = load_partner_def_resolved(state, row.partner_def_id.trim())
+            .await?
             .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
-        let effective_level = resolve_partner_effective_level(&owner.realm, &owner.sub_realm, row.level);
-        let techniques = build_partner_techniques_with_generated(state, &def, technique_map.get(&row.id).cloned().unwrap_or_default()).await?;
+        let effective_level =
+            resolve_partner_effective_level(&owner.realm, &owner.sub_realm, row.level);
+        let techniques = build_partner_techniques_with_generated(
+            state,
+            &def,
+            technique_map.get(&row.id).cloned().unwrap_or_default(),
+        )
+        .await?;
         out.push(PartnerDetailDto {
             id: row.id,
             partner_def_id: def.id.clone(),
             name: def.name.clone(),
-            nickname: if row.nickname.trim().is_empty() { def.name.clone() } else { row.nickname.clone() },
-            description: row.description.clone().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| def.description.clone().unwrap_or_default()),
-            avatar: row.avatar.clone().filter(|value| !value.trim().is_empty()).or_else(|| def.avatar.clone()),
-            element: def.attribute_element.clone().unwrap_or_else(|| "none".to_string()),
+            nickname: if row.nickname.trim().is_empty() {
+                def.name.clone()
+            } else {
+                row.nickname.clone()
+            },
+            description: row
+                .description
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| def.description.clone().unwrap_or_default()),
+            avatar: row
+                .avatar
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| def.avatar.clone()),
+            element: def
+                .attribute_element
+                .clone()
+                .unwrap_or_else(|| "none".to_string()),
             role: def.role.clone().unwrap_or_else(|| "伙伴".to_string()),
             quality: def.quality.clone().unwrap_or_else(|| "黄".to_string()),
             level: row.level.max(1),
             current_effective_level: effective_level,
             progress_exp: row.progress_exp.max(0),
-            next_level_cost_exp: calc_partner_upgrade_exp_by_target_level(row.level.max(1) + 1, &growth_cfg),
+            next_level_cost_exp: calc_partner_upgrade_exp_by_target_level(
+                row.level.max(1) + 1,
+                &growth_cfg,
+            ),
             slot_count: def.max_technique_slots.unwrap_or_default().max(0),
             is_active: row.is_active,
-            is_generated: def.source_job_id.as_ref().is_some_and(|value| !value.trim().is_empty()) || def.id.starts_with("partner-gen-") || def.id.starts_with("generated-"),
+            is_generated: def
+                .source_job_id
+                .as_ref()
+                .is_some_and(|value| !value.trim().is_empty())
+                || def.id.starts_with("partner-gen-")
+                || def.id.starts_with("generated-"),
             obtained_from: row.obtained_from.clone(),
             growth: PartnerGrowthDto {
                 max_qixue: row.growth_max_qixue.max(0),
@@ -3793,7 +4632,9 @@ async fn build_partner_techniques_with_generated(
 
     let mut out = Vec::new();
     for row in effective_rows {
-        let Some(detail) = load_technique_detail_data(state, row.technique_id.as_str(), None, true).await? else {
+        let Some(detail) =
+            load_technique_detail_data(state, row.technique_id.as_str(), None, true).await?
+        else {
             continue;
         };
         let max_layer = detail.technique.max_layer.max(1);
@@ -3801,7 +4642,11 @@ async fn build_partner_techniques_with_generated(
         let mut skill_ids = Vec::new();
         let mut upgrade_counts = BTreeMap::<String, i64>::new();
         let mut passive_attrs = BTreeMap::new();
-        for layer in detail.layers.iter().filter(|layer| layer.layer <= current_layer) {
+        for layer in detail
+            .layers
+            .iter()
+            .filter(|layer| layer.layer <= current_layer)
+        {
             skill_ids.extend(layer.unlock_skill_ids.iter().cloned());
             skill_ids.extend(layer.upgrade_skill_ids.iter().cloned());
             for skill_id in &layer.upgrade_skill_ids {
@@ -3813,7 +4658,8 @@ async fn build_partner_techniques_with_generated(
         }
         skill_ids.sort();
         skill_ids.dedup();
-        let skills = detail.skills
+        let skills = detail
+            .skills
             .into_iter()
             .filter(|skill| skill_ids.iter().any(|skill_id| skill_id == &skill.id))
             .map(|skill| {
@@ -3838,7 +4684,10 @@ async fn build_partner_techniques_with_generated(
     Ok(out)
 }
 
-pub(crate) fn build_effective_partner_skill(skill: crate::http::technique::SkillDefDto, upgrade_count: i64) -> PartnerTechniqueSkillDto {
+pub(crate) fn build_effective_partner_skill(
+    skill: crate::http::technique::SkillDefDto,
+    upgrade_count: i64,
+) -> PartnerTechniqueSkillDto {
     let mut cost_lingqi = skill.cost_lingqi;
     let mut cost_lingqi_rate = skill.cost_lingqi_rate;
     let mut cost_qixue = skill.cost_qixue;
@@ -3847,11 +4696,21 @@ pub(crate) fn build_effective_partner_skill(skill: crate::http::technique::Skill
     let mut target_count = skill.target_count.max(1);
     let mut ai_priority = skill.ai_priority.max(0);
     let mut effects = skill.effects.clone();
-    let damage_effect = effects.iter().find(|effect| effect.get("type").and_then(|value| value.as_str()) == Some("damage")).cloned();
+    let damage_effect = effects
+        .iter()
+        .find(|effect| effect.get("type").and_then(|value| value.as_str()) == Some("damage"))
+        .cloned();
     let mut upgrades = skill.upgrades.clone().unwrap_or_default();
-    upgrades.sort_by_key(|upgrade| upgrade.get("layer").and_then(|value| value.as_i64()).unwrap_or(i64::MAX));
+    upgrades.sort_by_key(|upgrade| {
+        upgrade
+            .get("layer")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(i64::MAX)
+    });
     for upgrade in upgrades.into_iter().take(upgrade_count.max(0) as usize) {
-        let Some(changes) = upgrade.get("changes").and_then(|value| value.as_object()) else { continue; };
+        let Some(changes) = upgrade.get("changes").and_then(|value| value.as_object()) else {
+            continue;
+        };
         if let Some(value) = changes.get("target_count").and_then(|value| value.as_i64()) {
             target_count = value.max(1);
         }
@@ -3861,13 +4720,19 @@ pub(crate) fn build_effective_partner_skill(skill: crate::http::technique::Skill
         if let Some(value) = changes.get("cost_lingqi").and_then(|value| value.as_i64()) {
             cost_lingqi = (cost_lingqi + value).max(0);
         }
-        if let Some(value) = changes.get("cost_lingqi_rate").and_then(|value| value.as_f64()) {
+        if let Some(value) = changes
+            .get("cost_lingqi_rate")
+            .and_then(|value| value.as_f64())
+        {
             cost_lingqi_rate = (cost_lingqi_rate + value).max(0.0);
         }
         if let Some(value) = changes.get("cost_qixue").and_then(|value| value.as_i64()) {
             cost_qixue = (cost_qixue + value).max(0);
         }
-        if let Some(value) = changes.get("cost_qixue_rate").and_then(|value| value.as_f64()) {
+        if let Some(value) = changes
+            .get("cost_qixue_rate")
+            .and_then(|value| value.as_f64())
+        {
             cost_qixue_rate = (cost_qixue_rate + value).max(0.0);
         }
         if let Some(value) = changes.get("ai_priority").and_then(|value| value.as_i64()) {
@@ -3875,7 +4740,11 @@ pub(crate) fn build_effective_partner_skill(skill: crate::http::technique::Skill
         }
         if let Some(next_effects) = changes.get("effects") {
             let mut replaced = next_effects.as_array().cloned().unwrap_or_default();
-            if damage_effect.is_some() && !replaced.iter().any(|effect| effect.get("type").and_then(|value| value.as_str()) == Some("damage")) {
+            if damage_effect.is_some()
+                && !replaced.iter().any(|effect| {
+                    effect.get("type").and_then(|value| value.as_str()) == Some("damage")
+                })
+            {
                 replaced.insert(0, damage_effect.clone().unwrap_or_default());
             }
             effects = replaced;
@@ -3886,8 +4755,15 @@ pub(crate) fn build_effective_partner_skill(skill: crate::http::technique::Skill
             }
         }
     }
-    let trigger_type = crate::http::technique::resolve_skill_trigger_type(Some(skill.trigger_type.as_str()), &effects);
-    let cooldown = if trigger_type == "passive" { 0 } else { cooldown };
+    let trigger_type = crate::http::technique::resolve_skill_trigger_type(
+        Some(skill.trigger_type.as_str()),
+        &effects,
+    );
+    let cooldown = if trigger_type == "passive" {
+        0
+    } else {
+        cooldown
+    };
     PartnerTechniqueSkillDto {
         id: skill.id,
         name: skill.name,
@@ -3924,7 +4800,8 @@ fn build_partner_computed_attrs(
     for (key, value) in level_gain {
         *attrs.entry(key).or_insert(0.0) += value * level_offset;
     }
-    *attrs.entry("max_qixue".to_string()).or_insert(0.0) += row.growth_max_qixue as f64 * level_offset;
+    *attrs.entry("max_qixue".to_string()).or_insert(0.0) +=
+        row.growth_max_qixue as f64 * level_offset;
     *attrs.entry("wugong".to_string()).or_insert(0.0) += row.growth_wugong as f64 * level_offset;
     *attrs.entry("fagong".to_string()).or_insert(0.0) += row.growth_fagong as f64 * level_offset;
     *attrs.entry("wufang".to_string()).or_insert(0.0) += row.growth_wufang as f64 * level_offset;
@@ -3977,7 +4854,8 @@ async fn build_partner_skill_policy_entries_with_generated(
     technique_rows: Vec<PartnerTechniqueRow>,
     persisted_rows: Vec<CharacterPartnerSkillPolicyRow>,
 ) -> Result<Vec<PartnerSkillPolicyEntryDto>, AppError> {
-    let def = load_partner_def_resolved(state, row.partner_def_id.trim()).await?
+    let def = load_partner_def_resolved(state, row.partner_def_id.trim())
+        .await?
         .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
     let techniques = build_partner_techniques_with_generated(state, &def, technique_rows).await?;
     let mut available = Vec::new();
@@ -4008,14 +4886,21 @@ async fn build_partner_skill_policy_entries_with_generated(
             });
         }
     }
-    let persisted_map = persisted_rows.into_iter().map(|entry| (entry.skill_id.clone(), entry)).collect::<HashMap<_, _>>();
+    let persisted_map = persisted_rows
+        .into_iter()
+        .map(|entry| (entry.skill_id.clone(), entry))
+        .collect::<HashMap<_, _>>();
     for entry in &mut available {
         if let Some(saved) = persisted_map.get(entry.skill_id.as_str()) {
             entry.priority = saved.priority;
             entry.enabled = saved.enabled;
         }
     }
-    available.sort_by(|left, right| left.priority.cmp(&right.priority).then_with(|| left.skill_id.cmp(&right.skill_id)));
+    available.sort_by(|left, right| {
+        left.priority
+            .cmp(&right.priority)
+            .then_with(|| left.skill_id.cmp(&right.skill_id))
+    });
     Ok(available)
 }
 
@@ -4095,13 +4980,18 @@ fn realm_rank(realm: &str, sub_realm: &str) -> i64 {
         "炼虚合道·历劫期",
         "炼虚合道·成圣期",
     ];
-    ORDER.iter().position(|item| *item == full).map(|idx| idx as i64 + 1).unwrap_or(1)
+    ORDER
+        .iter()
+        .position(|item| *item == full)
+        .map(|idx| idx as i64 + 1)
+        .unwrap_or(1)
 }
 
 fn calc_partner_upgrade_exp_by_target_level(target_level: i64, growth: &PartnerGrowthFile) -> i64 {
     let safe_target = target_level.max(2);
     let level_offset = (safe_target - 2).max(0) as f64;
-    let raw = (growth.exp_base_exp.max(1) as f64) * growth.exp_growth_rate.max(1.0).powf(level_offset);
+    let raw =
+        (growth.exp_base_exp.max(1) as f64) * growth.exp_growth_rate.max(1.0).powf(level_offset);
     raw.floor().max(1.0) as i64
 }
 
@@ -4121,7 +5011,9 @@ fn build_partner_skill_policy_entries(
     persisted_rows: Vec<CharacterPartnerSkillPolicyRow>,
 ) -> Result<Vec<PartnerSkillPolicyEntryDto>, AppError> {
     let defs = load_partner_def_map()?;
-    let def = defs.get(row.partner_def_id.trim()).ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
+    let def = defs
+        .get(row.partner_def_id.trim())
+        .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
     let tech_defs = load_technique_def_map()?;
     let skill_defs = load_skill_def_map()?;
     let techniques = build_partner_techniques(def, technique_rows, &tech_defs, &skill_defs)?;
@@ -4178,8 +5070,12 @@ fn build_partner_skill_policy_entries(
             enabled.push((entry, natural_order));
         }
     }
-    enabled.sort_by(|(left, lo), (right, ro)| left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro)));
-    disabled.sort_by(|(left, lo), (right, ro)| left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro)));
+    enabled.sort_by(|(left, lo), (right, ro)| {
+        left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro))
+    });
+    disabled.sort_by(|(left, lo), (right, ro)| {
+        left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro))
+    });
     let mut out = Vec::new();
     for (idx, (mut entry, _)) in enabled.into_iter().chain(disabled.into_iter()).enumerate() {
         entry.priority = (idx + 1) as i64;
@@ -4192,7 +5088,10 @@ fn normalize_partner_skill_policy_slots_for_save(
     available_entries: &[PartnerSkillPolicyEntryDto],
     slots: Vec<PartnerSkillPolicySlotDto>,
 ) -> Result<Vec<PartnerSkillPolicySlotDto>, AppError> {
-    let available_ids: std::collections::BTreeSet<_> = available_entries.iter().map(|entry| entry.skill_id.clone()).collect();
+    let available_ids: std::collections::BTreeSet<_> = available_entries
+        .iter()
+        .map(|entry| entry.skill_id.clone())
+        .collect();
     if slots.len() != available_entries.len() {
         return Err(AppError::config("技能策略必须覆盖伙伴当前全部可配置技能"));
     }
@@ -4201,7 +5100,11 @@ fn normalize_partner_skill_policy_slots_for_save(
     let mut disabled = Vec::new();
     for (natural_order, slot) in slots.into_iter().enumerate() {
         let skill_id = slot.skill_id.trim().to_string();
-        if skill_id.is_empty() || slot.priority <= 0 || !available_ids.contains(skill_id.as_str()) || !seen.insert(skill_id.clone()) {
+        if skill_id.is_empty()
+            || slot.priority <= 0
+            || !available_ids.contains(skill_id.as_str())
+            || !seen.insert(skill_id.clone())
+        {
             return Err(AppError::config("技能策略存在重复、缺失或非法技能"));
         }
         let normalized = PartnerSkillPolicySlotDto {
@@ -4215,85 +5118,166 @@ fn normalize_partner_skill_policy_slots_for_save(
             disabled.push((normalized, natural_order));
         }
     }
-    enabled.sort_by(|(left, lo), (right, ro)| left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro)));
-    disabled.sort_by(|(left, lo), (right, ro)| left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro)));
+    enabled.sort_by(|(left, lo), (right, ro)| {
+        left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro))
+    });
+    disabled.sort_by(|(left, lo), (right, ro)| {
+        left.priority.cmp(&right.priority).then_with(|| lo.cmp(ro))
+    });
     Ok(enabled
         .into_iter()
         .chain(disabled.into_iter())
         .enumerate()
-        .map(|(idx, (slot, _))| PartnerSkillPolicySlotDto { priority: (idx + 1) as i64, ..slot })
+        .map(|(idx, (slot, _))| PartnerSkillPolicySlotDto {
+            priority: (idx + 1) as i64,
+            ..slot
+        })
         .collect())
 }
 
 fn load_partner_def_map() -> Result<HashMap<String, PartnerDefSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read partner_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read partner_def.json: {error}")))?;
     let payload: PartnerDefFile = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse partner_def.json: {error}")))?;
-    Ok(payload.partners.into_iter().filter(|row| row.enabled != Some(false)).map(|row| (row.id.clone(), row)).collect())
+    Ok(payload
+        .partners
+        .into_iter()
+        .filter(|row| row.enabled != Some(false))
+        .map(|row| (row.id.clone(), row))
+        .collect())
 }
 
 fn load_partner_growth_config() -> Result<PartnerGrowthFile, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_growth.json"))
-        .map_err(|error| AppError::config(format!("failed to read partner_growth.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/partner_growth.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read partner_growth.json: {error}")))?;
     serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse partner_growth.json: {error}")))
 }
 
 fn load_technique_def_map() -> Result<HashMap<String, serde_json::Value>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    let techniques = payload.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(techniques.into_iter().filter_map(|row| row.get("id").and_then(|v| v.as_str()).map(|id| (id.to_string(), row.clone()))).collect())
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_def.json: {error}"))
+    })?;
+    let techniques = payload
+        .get("techniques")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(techniques
+        .into_iter()
+        .filter_map(|row| {
+            row.get("id")
+                .and_then(|v| v.as_str())
+                .map(|id| (id.to_string(), row.clone()))
+        })
+        .collect())
 }
 
 fn load_skill_def_map() -> Result<HashMap<String, serde_json::Value>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/skill_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read skill_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/skill_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read skill_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse skill_def.json: {error}")))?;
-    let skills = payload.get("skills").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(skills.into_iter().filter_map(|row| row.get("id").and_then(|v| v.as_str()).map(|id| (id.to_string(), row.clone()))).collect())
+    let skills = payload
+        .get("skills")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(skills
+        .into_iter()
+        .filter_map(|row| {
+            row.get("id")
+                .and_then(|v| v.as_str())
+                .map(|id| (id.to_string(), row.clone()))
+        })
+        .collect())
 }
 
 fn load_item_meta_map() -> Result<BTreeMap<String, (String, Option<String>)>, AppError> {
     let mut out = BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
         let content = fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
         )
         .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
             if id.is_empty() || name.is_empty() {
                 continue;
             }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
     Ok(out)
 }
 
-fn load_technique_meta_map() -> Result<BTreeMap<String, (String, Option<String>, Option<String>)>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    let techniques = payload.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(techniques.into_iter().filter_map(|technique| {
-        let id = technique.get("id")?.as_str()?.trim().to_string();
-        let name = technique.get("name")?.as_str()?.trim().to_string();
-        let icon = technique.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
-        let quality = technique.get("quality").and_then(|value| value.as_str()).map(|value| value.to_string());
-        (!id.is_empty() && !name.is_empty()).then_some((id, (name, icon, quality)))
-    }).collect())
+fn load_technique_meta_map()
+-> Result<BTreeMap<String, (String, Option<String>, Option<String>)>, AppError> {
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_def.json: {error}"))
+    })?;
+    let techniques = payload
+        .get("techniques")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(techniques
+        .into_iter()
+        .filter_map(|technique| {
+            let id = technique.get("id")?.as_str()?.trim().to_string();
+            let name = technique.get("name")?.as_str()?.trim().to_string();
+            let icon = technique
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            let quality = technique
+                .get("quality")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            (!id.is_empty() && !name.is_empty()).then_some((id, (name, icon, quality)))
+        })
+        .collect())
 }
 
 pub(crate) async fn load_partner_book_context(
@@ -4308,20 +5292,40 @@ pub(crate) async fn load_partner_book_context(
             |query| query.bind(item_instance_id).bind(character_id),
         )
         .await?;
-    let Some(row) = row else { return Ok(None); };
-    let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let item_def_id = row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     let metadata = row.try_get::<Option<serde_json::Value>, _>("metadata")?;
-    let Some(mut book) = resolve_partner_book(state, item_def_id.trim(), metadata.as_ref()).await? else {
+    let Some(mut book) = resolve_partner_book(state, item_def_id.trim(), metadata.as_ref()).await?
+    else {
         return Ok(None);
     };
     if item_def_id.trim() == "book-generated-technique"
-        && resolve_generated_technique_book_display(state, item_def_id.trim(), &load_inventory_def_map()?.get(item_def_id.trim()).ok_or_else(|| AppError::config("生成功法书定义缺失"))?.row, metadata.as_ref()).await?.is_none()
+        && resolve_generated_technique_book_display(
+            state,
+            item_def_id.trim(),
+            &load_inventory_def_map()?
+                .get(item_def_id.trim())
+                .ok_or_else(|| AppError::config("生成功法书定义缺失"))?
+                .row,
+            metadata.as_ref(),
+        )
+        .await?
+        .is_none()
     {
         return Ok(None);
     }
     enrich_generated_partner_book_display(state, &mut book, metadata.as_ref()).await?;
     book.item_instance_id = item_instance_id;
-    book.qty = row.try_get::<Option<i32>, _>("qty").unwrap_or(None).map(i64::from).unwrap_or(1).max(1);
+    book.qty = row
+        .try_get::<Option<i32>, _>("qty")
+        .unwrap_or(None)
+        .map(i64::from)
+        .unwrap_or(1)
+        .max(1);
     Ok(Some(book))
 }
 
@@ -4339,19 +5343,37 @@ pub(crate) async fn load_partner_books(
     let mut books = Vec::new();
     for row in rows {
         let item_instance_id = row.try_get::<Option<i64>, _>("id")?.unwrap_or_default();
-        let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+        let item_def_id = row
+            .try_get::<Option<String>, _>("item_def_id")?
+            .unwrap_or_default();
         let metadata = row.try_get::<Option<serde_json::Value>, _>("metadata")?;
-        let Some(mut book) = resolve_partner_book(state, item_def_id.trim(), metadata.as_ref()).await? else {
+        let Some(mut book) =
+            resolve_partner_book(state, item_def_id.trim(), metadata.as_ref()).await?
+        else {
             continue;
         };
         if item_def_id.trim() == "book-generated-technique"
-            && resolve_generated_technique_book_display(state, item_def_id.trim(), &load_inventory_def_map()?.get(item_def_id.trim()).ok_or_else(|| AppError::config("生成功法书定义缺失"))?.row, metadata.as_ref()).await?.is_none()
+            && resolve_generated_technique_book_display(
+                state,
+                item_def_id.trim(),
+                &load_inventory_def_map()?
+                    .get(item_def_id.trim())
+                    .ok_or_else(|| AppError::config("生成功法书定义缺失"))?
+                    .row,
+                metadata.as_ref(),
+            )
+            .await?
+            .is_none()
         {
             continue;
         }
         enrich_generated_partner_book_display(state, &mut book, metadata.as_ref()).await?;
         book.item_instance_id = item_instance_id;
-        book.qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or(1).max(1);
+        book.qty = row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or(1)
+            .max(1);
         books.push(book);
     }
     Ok(books)
@@ -4477,7 +5499,9 @@ async fn build_partner_preview_book_from_item_row(
     state: &AppState,
     row: &PartnerTechniquePreviewItemRow,
 ) -> Result<Option<PartnerBookDto>, AppError> {
-    let Some(mut book) = resolve_partner_book(state, row.item_def_id.trim(), row.metadata.as_ref()).await? else {
+    let Some(mut book) =
+        resolve_partner_book(state, row.item_def_id.trim(), row.metadata.as_ref()).await?
+    else {
         return Ok(None);
     };
     enrich_generated_partner_book_display(state, &mut book, row.metadata.as_ref()).await?;
@@ -4515,7 +5539,10 @@ async fn resolve_partner_pending_preview_from_row(
         .unwrap_or_default()
         .trim();
 
-    if preview_partner_id <= 0 || preview_learned_technique_id.is_empty() || preview_replaced_technique_id.is_empty() {
+    if preview_partner_id <= 0
+        || preview_learned_technique_id.is_empty()
+        || preview_replaced_technique_id.is_empty()
+    {
         return Ok(PartnerPendingPreviewResolution::Invalid {
             message: "待处理打书预览数据异常",
         });
@@ -4526,7 +5553,9 @@ async fn resolve_partner_pending_preview_from_row(
         });
     }
 
-    let Some(partner_row) = load_single_partner_row(state, character_id, preview_partner_id, for_update).await? else {
+    let Some(partner_row) =
+        load_single_partner_row(state, character_id, preview_partner_id, for_update).await?
+    else {
         return Ok(PartnerPendingPreviewResolution::Invalid {
             message: "伙伴不存在",
         });
@@ -4557,13 +5586,20 @@ async fn resolve_partner_pending_preview_from_row(
             message: "归契中的伙伴不可学习功法",
         });
     }
-    let def = load_partner_def_resolved(state, partner_row.partner_def_id.trim()).await?
-        .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", partner_row.partner_def_id)))?;
-    let technique_map = load_partner_technique_rows_with_lock(state, vec![partner_row.id], for_update).await?;
+    let def = load_partner_def_resolved(state, partner_row.partner_def_id.trim())
+        .await?
+        .ok_or_else(|| {
+            AppError::config(format!("伙伴模板不存在: {}", partner_row.partner_def_id))
+        })?;
+    let technique_map =
+        load_partner_technique_rows_with_lock(state, vec![partner_row.id], for_update).await?;
     let current_techniques = build_partner_techniques_with_generated(
         state,
         &def,
-        technique_map.get(&partner_row.id).cloned().unwrap_or_default(),
+        technique_map
+            .get(&partner_row.id)
+            .cloned()
+            .unwrap_or_default(),
     )
     .await?;
     if current_techniques
@@ -4575,17 +5611,20 @@ async fn resolve_partner_pending_preview_from_row(
         });
     }
 
-    let learned_technique = match build_partner_preview_technique(state, preview_learned_technique_id).await {
-        Ok(technique) => technique,
-        Err(_) => {
-            return Ok(PartnerPendingPreviewResolution::Invalid {
-                message: "伙伴功法不存在或未开放",
-            });
-        }
-    };
+    let learned_technique =
+        match build_partner_preview_technique(state, preview_learned_technique_id).await {
+            Ok(technique) => technique,
+            Err(_) => {
+                return Ok(PartnerPendingPreviewResolution::Invalid {
+                    message: "伙伴功法不存在或未开放",
+                });
+            }
+        };
     let Some(replaced_technique) = current_techniques
         .iter()
-        .find(|technique| technique.technique_id == preview_replaced_technique_id && !technique.is_innate)
+        .find(|technique| {
+            technique.technique_id == preview_replaced_technique_id && !technique.is_innate
+        })
         .cloned()
     else {
         return Ok(PartnerPendingPreviewResolution::Invalid {
@@ -4611,8 +5650,10 @@ async fn resolve_partner_book(
     item_def_id: &str,
     metadata: Option<&serde_json::Value>,
 ) -> Result<Option<PartnerBookDto>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read item_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read item_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse item_def.json: {error}")))?;
     let item = payload
@@ -4621,41 +5662,106 @@ async fn resolve_partner_book(
         .cloned()
         .unwrap_or_default()
         .into_iter()
-        .find(|item| item.get("id").and_then(|value| value.as_str()).map(str::trim) == Some(item_def_id));
-    let Some(item) = item else { return Ok(None); };
-    let effect_defs = item.get("effect_defs").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        .find(|item| {
+            item.get("id")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                == Some(item_def_id)
+        });
+    let Some(item) = item else {
+        return Ok(None);
+    };
+    let effect_defs = item
+        .get("effect_defs")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     for effect in effect_defs {
-        if effect.get("trigger").and_then(|value| value.as_str()).map(str::trim) != Some("use") {
+        if effect
+            .get("trigger")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            != Some("use")
+        {
             continue;
         }
-        let effect_type = effect.get("effect_type").and_then(|value| value.as_str()).unwrap_or_default().trim();
+        let effect_type = effect
+            .get("effect_type")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim();
         if effect_type == "learn_technique" {
-            let technique_id = effect.get("params").and_then(|value| value.get("technique_id")).and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if technique_id.is_empty() { return Ok(None); }
-            let technique_meta = load_technique_meta_map()?.get(technique_id.as_str()).cloned();
+            let technique_id = effect
+                .get("params")
+                .and_then(|value| value.get("technique_id"))
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if technique_id.is_empty() {
+                return Ok(None);
+            }
+            let technique_meta = load_technique_meta_map()?
+                .get(technique_id.as_str())
+                .cloned();
             return Ok(Some(PartnerBookDto {
                 item_instance_id: 0,
                 item_def_id: item_def_id.to_string(),
                 technique_id: technique_id.clone(),
-                technique_name: technique_meta.as_ref().map(|value| value.0.clone()).unwrap_or_else(|| technique_id.clone()),
-                name: item.get("name").and_then(|value| value.as_str()).unwrap_or(item_def_id).to_string(),
-                icon: item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                quality: item.get("quality").and_then(|value| value.as_str()).unwrap_or("黄").to_string(),
+                technique_name: technique_meta
+                    .as_ref()
+                    .map(|value| value.0.clone())
+                    .unwrap_or_else(|| technique_id.clone()),
+                name: item
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or(item_def_id)
+                    .to_string(),
+                icon: item
+                    .get("icon")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
+                quality: item
+                    .get("quality")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("黄")
+                    .to_string(),
                 qty: 1,
-                preview_partner_id: metadata.and_then(|value| value.get("partnerTechniqueLearnPreview")).and_then(|value| value.get("partnerId")).and_then(|value| value.as_i64()),
-                preview_learned_technique_id: metadata.and_then(|value| value.get("partnerTechniqueLearnPreview")).and_then(|value| value.get("learnedTechniqueId")).and_then(|value| value.as_str()).map(|value| value.to_string()),
-                preview_replaced_technique_id: metadata.and_then(|value| value.get("partnerTechniqueLearnPreview")).and_then(|value| value.get("replacedTechniqueId")).and_then(|value| value.as_str()).map(|value| value.to_string()),
+                preview_partner_id: metadata
+                    .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+                    .and_then(|value| value.get("partnerId"))
+                    .and_then(|value| value.as_i64()),
+                preview_learned_technique_id: metadata
+                    .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+                    .and_then(|value| value.get("learnedTechniqueId"))
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
+                preview_replaced_technique_id: metadata
+                    .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+                    .and_then(|value| value.get("replacedTechniqueId"))
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
             }));
         }
         if effect_type == "learn_generated_technique" {
-            let technique_id = metadata.and_then(|value| value.get("generatedTechniqueId")).and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if technique_id.is_empty() { return Ok(None); }
+            let technique_id = metadata
+                .and_then(|value| value.get("generatedTechniqueId"))
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if technique_id.is_empty() {
+                return Ok(None);
+            }
             let generated_row = state.database.fetch_optional(
                 "SELECT COALESCE(display_name, name) AS name, quality FROM generated_technique_def WHERE id = $1 AND is_published = TRUE AND enabled = TRUE LIMIT 1",
                 |q| q.bind(&technique_id),
             ).await?;
-            let static_meta = load_technique_meta_map()?.get(technique_id.as_str()).cloned();
-            let generated_name = generated_row.as_ref()
+            let static_meta = load_technique_meta_map()?
+                .get(technique_id.as_str())
+                .cloned();
+            let generated_name = generated_row
+                .as_ref()
                 .and_then(|row| row.try_get::<Option<String>, _>("name").ok().flatten())
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
@@ -4663,10 +5769,15 @@ async fn resolve_partner_book(
             let Some(generated_name) = generated_name else {
                 return Ok(None);
             };
-            let resolved_quality = generated_row.as_ref()
+            let resolved_quality = generated_row
+                .as_ref()
                 .and_then(|row| row.try_get::<Option<String>, _>("quality").ok().flatten())
                 .or_else(|| static_meta.as_ref().and_then(|value| value.2.clone()))
-                .or_else(|| item.get("quality").and_then(|value| value.as_str()).map(|value| value.to_string()))
+                .or_else(|| {
+                    item.get("quality")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string())
+                })
                 .unwrap_or_else(|| "黄".to_string());
             return Ok(Some(PartnerBookDto {
                 item_instance_id: 0,
@@ -4674,12 +5785,26 @@ async fn resolve_partner_book(
                 technique_id: technique_id.clone(),
                 technique_name: generated_name.clone(),
                 name: format!("《{}》秘卷", generated_name),
-                icon: item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
+                icon: item
+                    .get("icon")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
                 quality: resolved_quality,
                 qty: 1,
-                preview_partner_id: metadata.and_then(|value| value.get("partnerTechniqueLearnPreview")).and_then(|value| value.get("partnerId")).and_then(|value| value.as_i64()),
-                preview_learned_technique_id: metadata.and_then(|value| value.get("partnerTechniqueLearnPreview")).and_then(|value| value.get("learnedTechniqueId")).and_then(|value| value.as_str()).map(|value| value.to_string()),
-                preview_replaced_technique_id: metadata.and_then(|value| value.get("partnerTechniqueLearnPreview")).and_then(|value| value.get("replacedTechniqueId")).and_then(|value| value.as_str()).map(|value| value.to_string()),
+                preview_partner_id: metadata
+                    .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+                    .and_then(|value| value.get("partnerId"))
+                    .and_then(|value| value.as_i64()),
+                preview_learned_technique_id: metadata
+                    .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+                    .and_then(|value| value.get("learnedTechniqueId"))
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
+                preview_replaced_technique_id: metadata
+                    .and_then(|value| value.get("partnerTechniqueLearnPreview"))
+                    .and_then(|value| value.get("replacedTechniqueId"))
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
             }));
         }
     }
@@ -4717,7 +5842,10 @@ async fn enrich_generated_partner_book_display(
         }
         return Ok(());
     }
-    if let Some((name, _icon, _quality)) = load_technique_meta_map()?.get(generated_technique_id).cloned() {
+    if let Some((name, _icon, _quality)) = load_technique_meta_map()?
+        .get(generated_technique_id)
+        .cloned()
+    {
         book.technique_name = name.clone();
         book.name = format!("《{}》秘卷", name);
     }
@@ -4746,7 +5874,8 @@ async fn load_pending_partner_technique_learn_preview(
         }
     }
     if !invalid_item_ids.is_empty() {
-        delete_partner_technique_preview_items_by_ids(state, character_id, &invalid_item_ids).await?;
+        delete_partner_technique_preview_items_by_ids(state, character_id, &invalid_item_ids)
+            .await?;
     }
     if valid_previews.is_empty() {
         return Ok(None);
@@ -4761,7 +5890,10 @@ async fn load_pending_partner_technique_learn_preview(
     Ok(valid_previews.into_iter().next())
 }
 
-async fn build_partner_preview_technique(state: &AppState, technique_id: &str) -> Result<PartnerTechniqueDto, AppError> {
+async fn build_partner_preview_technique(
+    state: &AppState,
+    technique_id: &str,
+) -> Result<PartnerTechniqueDto, AppError> {
     let Some(detail) = load_technique_detail_data(state, technique_id, None, true).await? else {
         return Err(AppError::config("伙伴功法详情不存在"));
     };
@@ -4776,11 +5908,17 @@ async fn build_partner_preview_technique(state: &AppState, technique_id: &str) -
     let current_layer = 1_i64;
     let mut skill_ids = Vec::new();
     let mut passive_attrs = BTreeMap::new();
-    for layer in layers
-        .iter()
-        .filter(|layer| layer.get("layer").and_then(|value| value.as_i64()).unwrap_or_default() <= current_layer)
-    {
-        if let Some(skills) = layer.get("unlock_skill_ids").and_then(|value| value.as_array()) {
+    for layer in layers.iter().filter(|layer| {
+        layer
+            .get("layer")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default()
+            <= current_layer
+    }) {
+        if let Some(skills) = layer
+            .get("unlock_skill_ids")
+            .and_then(|value| value.as_array())
+        {
             for skill in skills {
                 if let Some(skill_id) = skill.as_str() {
                     skill_ids.push(skill_id.to_string());
@@ -4791,7 +5929,11 @@ async fn build_partner_preview_technique(state: &AppState, technique_id: &str) -
             for passive in passives {
                 if let (Some(key), Some(value)) = (
                     passive.get("key").and_then(|value| value.as_str()),
-                    passive.get("value").and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|value| value as f64))),
+                    passive.get("value").and_then(|value| {
+                        value
+                            .as_f64()
+                            .or_else(|| value.as_i64().map(|value| value as f64))
+                    }),
                 ) {
                     *passive_attrs.entry(key.to_string()).or_insert(0.0) += value;
                 }
@@ -4800,26 +5942,29 @@ async fn build_partner_preview_technique(state: &AppState, technique_id: &str) -
     }
     skill_ids.sort();
     skill_ids.dedup();
-    let skills = detail.skills.into_iter()
+    let skills = detail
+        .skills
+        .into_iter()
         .filter(|skill| skill_ids.iter().any(|skill_id| skill_id == &skill.id))
         .map(|skill| PartnerTechniqueSkillDto {
-        id: skill.id,
-        name: skill.name,
-        icon: skill.icon.unwrap_or_default(),
-        description: skill.description,
-        cost_lingqi: Some(skill.cost_lingqi),
-        cost_lingqi_rate: Some(skill.cost_lingqi_rate),
-        cost_qixue: Some(skill.cost_qixue),
-        cost_qixue_rate: Some(skill.cost_qixue_rate),
-        cooldown: Some(skill.cooldown),
-        target_type: Some(skill.target_type),
-        target_count: Some(skill.target_count),
-        damage_type: skill.damage_type,
-        element: Some(skill.element),
-        effects: Some(skill.effects),
-        trigger_type: Some(skill.trigger_type),
-        ai_priority: Some(skill.ai_priority),
-    }).collect();
+            id: skill.id,
+            name: skill.name,
+            icon: skill.icon.unwrap_or_default(),
+            description: skill.description,
+            cost_lingqi: Some(skill.cost_lingqi),
+            cost_lingqi_rate: Some(skill.cost_lingqi_rate),
+            cost_qixue: Some(skill.cost_qixue),
+            cost_qixue_rate: Some(skill.cost_qixue_rate),
+            cooldown: Some(skill.cooldown),
+            target_type: Some(skill.target_type),
+            target_count: Some(skill.target_count),
+            damage_type: skill.damage_type,
+            element: Some(skill.element),
+            effects: Some(skill.effects),
+            trigger_type: Some(skill.trigger_type),
+            ai_priority: Some(skill.ai_priority),
+        })
+        .collect();
     Ok(PartnerTechniqueDto {
         technique_id: technique_id.to_string(),
         name: detail.technique.name,
@@ -4847,7 +5992,9 @@ async fn consume_specific_item_instance(
         "SELECT qty, item_def_id FROM item_instance WHERE id = $1 AND owner_user_id = $2 AND owner_character_id = $3 LIMIT 1 FOR UPDATE",
         |query| query.bind(item_instance_id).bind(user_id).bind(character_id),
     ).await?.ok_or_else(|| AppError::config("功法书不存在"))?;
-    let owned_item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+    let owned_item_def_id = row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     if owned_item_def_id.trim() != item_def_id {
         return Err(AppError::config("功法书已变化，请刷新后重试"));
     }
@@ -4859,9 +6006,20 @@ async fn consume_specific_item_instance(
         return Err(AppError::config("功法书数量不足"));
     }
     if current_qty == qty {
-        state.database.execute("DELETE FROM item_instance WHERE id = $1", |query| query.bind(item_instance_id)).await?;
+        state
+            .database
+            .execute("DELETE FROM item_instance WHERE id = $1", |query| {
+                query.bind(item_instance_id)
+            })
+            .await?;
     } else {
-        state.database.execute("UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1", |query| query.bind(item_instance_id).bind(qty)).await?;
+        state
+            .database
+            .execute(
+                "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                |query| query.bind(item_instance_id).bind(qty),
+            )
+            .await?;
     }
     Ok(())
 }
@@ -4882,15 +6040,23 @@ fn normalize_partner_name(raw: &str) -> Result<String, AppError> {
 }
 
 fn normalize_partner_description(raw: Option<String>) -> Result<Option<String>, AppError> {
-    let normalized = raw.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
-    if normalized.as_deref().map(|value| value.chars().count() > 80).unwrap_or(false) {
+    let normalized = raw
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if normalized
+        .as_deref()
+        .map(|value| value.chars().count() > 80)
+        .unwrap_or(false)
+    {
         return Err(AppError::config("伙伴描述最多80个字符"));
     }
     Ok(normalized)
 }
 
 fn normalize_partner_avatar(raw: Option<String>) -> Result<Option<String>, AppError> {
-    let normalized = raw.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let normalized = raw
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     if let Some(value) = normalized.as_deref() {
         let valid = value.starts_with("/uploads/")
             || value.starts_with("https://")
@@ -4918,7 +6084,9 @@ async fn consume_partner_rename_card(
     let Some(row) = row else {
         return Err(AppError::config("易名符不存在"));
     };
-    let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+    let item_def_id = row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     if !is_rename_card_item_definition(item_def_id.trim())? {
         return Err(AppError::config("该物品不能用于改名"));
     }
@@ -4927,39 +6095,74 @@ async fn consume_partner_rename_card(
         return Err(AppError::config("易名符数量不足"));
     }
     if qty == 1 {
-        state.database.execute("DELETE FROM item_instance WHERE id = $1", |query| query.bind(item_instance_id)).await?;
+        state
+            .database
+            .execute("DELETE FROM item_instance WHERE id = $1", |query| {
+                query.bind(item_instance_id)
+            })
+            .await?;
     } else {
-        state.database.execute("UPDATE item_instance SET qty = qty - 1, updated_at = NOW() WHERE id = $1", |query| query.bind(item_instance_id)).await?;
+        state
+            .database
+            .execute(
+                "UPDATE item_instance SET qty = qty - 1, updated_at = NOW() WHERE id = $1",
+                |query| query.bind(item_instance_id),
+            )
+            .await?;
     }
     Ok(())
 }
 
 fn is_rename_card_item_definition(item_def_id: &str) -> Result<bool, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read item_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read item_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse item_def.json: {error}")))?;
-    let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let items = payload
+        .get("items")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(items.into_iter().any(|item| {
-        item.get("id").and_then(|value| value.as_str()).map(str::trim) == Some(item_def_id)
+        item.get("id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            == Some(item_def_id)
             && item
                 .get("effect_defs")
                 .and_then(|value| value.as_array())
-                .map(|effects| effects.iter().any(|effect| effect.get("effect_type").and_then(|value| value.as_str()).map(str::trim) == Some("rename_character")))
+                .map(|effects| {
+                    effects.iter().any(|effect| {
+                        effect
+                            .get("effect_type")
+                            .and_then(|value| value.as_str())
+                            .map(str::trim)
+                            == Some("rename_character")
+                    })
+                })
                 .unwrap_or(false)
     }))
 }
 
 fn local_sensitive_words_contain(content: &str) -> Result<bool, AppError> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_name_sensitive_words.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../server/src/data/seeds/technique_name_sensitive_words.json");
     if !path.exists() {
         return Ok(false);
     }
-    let raw = fs::read_to_string(path)
-        .map_err(|error| AppError::config(format!("failed to read local sensitive words: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|error| AppError::config(format!("failed to parse local sensitive words: {error}")))?;
-    let words = payload.get("words").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let raw = fs::read_to_string(path).map_err(|error| {
+        AppError::config(format!("failed to read local sensitive words: {error}"))
+    })?;
+    let payload: serde_json::Value = serde_json::from_str(&raw).map_err(|error| {
+        AppError::config(format!("failed to parse local sensitive words: {error}"))
+    })?;
+    let words = payload
+        .get("words")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     let normalized = content.trim().to_lowercase();
     Ok(words
         .into_iter()
@@ -4969,15 +6172,30 @@ fn local_sensitive_words_contain(content: &str) -> Result<bool, AppError> {
 }
 
 fn load_technique_layers_for(technique_id: &str) -> Result<Vec<serde_json::Value>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_layer.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_layer.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_layer.json: {error}")))?;
-    let layers = payload.get("layers").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(layers.into_iter().filter(|row| row.get("technique_id").and_then(|v| v.as_str()) == Some(technique_id)).collect())
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_layer.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_layer.json: {error}")))?;
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_layer.json: {error}"))
+    })?;
+    let layers = payload
+        .get("layers")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(layers
+        .into_iter()
+        .filter(|row| row.get("technique_id").and_then(|v| v.as_str()) == Some(technique_id))
+        .collect())
 }
 
-async fn count_character_item_qty(state: &AppState, character_id: i64, item_def_id: &str) -> Result<i64, AppError> {
+async fn count_character_item_qty(
+    state: &AppState,
+    character_id: i64,
+    item_def_id: &str,
+) -> Result<i64, AppError> {
     let row = state
         .database
         .fetch_one(
@@ -5004,19 +6222,34 @@ async fn consume_character_item_qty(
         .await?;
     let mut remaining = qty.max(0);
     for row in rows {
-        if remaining <= 0 { break; }
+        if remaining <= 0 {
+            break;
+        }
         let item_id: i64 = row.try_get("id")?;
         let item_qty = row
             .try_get::<Option<i32>, _>("qty")?
             .map(i64::from)
             .unwrap_or_default()
             .max(0);
-        if item_qty <= 0 { continue; }
+        if item_qty <= 0 {
+            continue;
+        }
         let consume_qty = remaining.min(item_qty);
         if consume_qty == item_qty {
-            state.database.execute("DELETE FROM item_instance WHERE id = $1", |query| query.bind(item_id)).await?;
+            state
+                .database
+                .execute("DELETE FROM item_instance WHERE id = $1", |query| {
+                    query.bind(item_id)
+                })
+                .await?;
         } else {
-            state.database.execute("UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1", |query| query.bind(item_id).bind(consume_qty)).await?;
+            state
+                .database
+                .execute(
+                    "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                    |query| query.bind(item_id).bind(consume_qty),
+                )
+                .await?;
         }
         remaining -= consume_qty;
     }
@@ -5027,7 +6260,17 @@ async fn consume_character_item_qty(
 }
 
 fn to_number_map(value: serde_json::Value) -> BTreeMap<String, f64> {
-    value.as_object().cloned().unwrap_or_default().into_iter().filter_map(|(k,v)| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64)).map(|n| (k,n))).collect()
+    value
+        .as_object()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(k, v)| {
+            v.as_f64()
+                .or_else(|| v.as_i64().map(|n| n as f64))
+                .map(|n| (k, n))
+        })
+        .collect()
 }
 
 fn realm_rank_with_full_name(full_realm: &str) -> i64 {
@@ -5046,7 +6289,11 @@ fn realm_rank_with_full_name(full_realm: &str) -> i64 {
         "炼虚合道·历劫期",
         "炼虚合道·成圣期",
     ];
-    ORDER.iter().position(|item| *item == full_realm.trim()).map(|idx| idx as i64).unwrap_or(0)
+    ORDER
+        .iter()
+        .position(|item| *item == full_realm.trim())
+        .map(|idx| idx as i64)
+        .unwrap_or(0)
 }
 
 fn realm_rank_with_subrealm(realm: &str, sub_realm: Option<&str>) -> i64 {
@@ -5112,7 +6359,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["pendingTechniqueLearnPreview"]["preview"]["partnerId"], 1);
+        assert_eq!(
+            payload["data"]["pendingTechniqueLearnPreview"]["preview"]["partnerId"],
+            1
+        );
         println!("PARTNER_OVERVIEW_PREVIEW_RESPONSE={}", payload);
     }
 
@@ -5294,8 +6544,14 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["result"]["learnedTechnique"]["name"], "云水诀");
-        assert_eq!(payload["data"]["result"]["learnedTechnique"]["quality"], "玄");
+        assert_eq!(
+            payload["data"]["result"]["learnedTechnique"]["name"],
+            "云水诀"
+        );
+        assert_eq!(
+            payload["data"]["result"]["learnedTechnique"]["quality"],
+            "玄"
+        );
     }
 
     #[test]
@@ -5387,7 +6643,10 @@ mod tests {
             "message": "伙伴打书成功",
             "data": {"partner": {"id": 1}, "learnedTechnique": {"techniqueId": "tech-jichu-daofa"}, "replacedTechnique": {"techniqueId": "tech-huifu-shu"}, "remainingBooks": []}
         });
-        assert_eq!(payload["data"]["learnedTechnique"]["techniqueId"], "tech-jichu-daofa");
+        assert_eq!(
+            payload["data"]["learnedTechnique"]["techniqueId"],
+            "tech-jichu-daofa"
+        );
         println!("PARTNER_CONFIRM_LEARN_RESPONSE={}", payload);
     }
 
@@ -5507,7 +6766,9 @@ mod tests {
         let fallback = super::build_generated_partner_recruit_name("黄", None);
         assert_eq!(seeded, "玄·青木灵伴");
         assert_eq!(fallback, "黄·无相灵伴");
-        println!("PARTNER_RECRUIT_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}");
+        println!(
+            "PARTNER_RECRUIT_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}"
+        );
     }
 
     #[test]
@@ -5516,6 +6777,8 @@ mod tests {
         let fallback = super::build_generated_partner_fusion_name("黄", None);
         assert_eq!(seeded, "地·青木灵伴归灵");
         assert_eq!(fallback, "黄·无相归灵");
-        println!("PARTNER_FUSION_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}");
+        println!(
+            "PARTNER_FUSION_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}"
+        );
     }
 }

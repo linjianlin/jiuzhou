@@ -72,11 +72,15 @@ pub async fn get_title_list(
     let mut equipped = String::new();
     let mut titles = Vec::new();
     for row in rows {
-        let title_id = row.try_get::<Option<String>, _>("title_id")?.unwrap_or_default();
+        let title_id = row
+            .try_get::<Option<String>, _>("title_id")?
+            .unwrap_or_default();
         let Some(def) = defs.get(title_id.trim()) else {
             continue;
         };
-        let is_equipped = row.try_get::<Option<bool>, _>("is_equipped")?.unwrap_or(false);
+        let is_equipped = row
+            .try_get::<Option<bool>, _>("is_equipped")?
+            .unwrap_or(false);
         if is_equipped {
             equipped = title_id.clone();
         }
@@ -193,10 +197,19 @@ fn load_title_definition_map() -> Result<BTreeMap<String, TitleDefinitionSeed>, 
 }
 
 fn normalize_title_effects(raw: Option<serde_json::Value>) -> BTreeMap<String, f64> {
-    let Some(raw) = raw else { return BTreeMap::new(); };
-    let Some(obj) = raw.as_object() else { return BTreeMap::new(); };
+    let Some(raw) = raw else {
+        return BTreeMap::new();
+    };
+    let Some(obj) = raw.as_object() else {
+        return BTreeMap::new();
+    };
     obj.iter()
-        .filter_map(|(key, value)| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)).map(|v| (key.clone(), v)))
+        .filter_map(|(key, value)| {
+            value
+                .as_f64()
+                .or_else(|| value.as_i64().map(|v| v as f64))
+                .map(|v| (key.clone(), v))
+        })
         .collect()
 }
 

@@ -13,8 +13,12 @@ use crate::auth;
 use crate::integrations::technique_ai::generate_technique_ai_draft;
 use crate::integrations::text_model_config::{TextModelScope, require_text_model_config};
 use crate::jobs;
-use crate::realtime::public_socket::{emit_technique_research_result_to_user, emit_technique_research_status_to_user};
-use crate::realtime::technique_research::{build_technique_research_result_payload, build_technique_research_status_payload};
+use crate::realtime::public_socket::{
+    emit_technique_research_result_to_user, emit_technique_research_status_to_user,
+};
+use crate::realtime::technique_research::{
+    build_technique_research_result_payload, build_technique_research_status_payload,
+};
 use crate::shared::error::AppError;
 use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_counter_deltas};
 use crate::shared::response::{ServiceResult, send_result};
@@ -26,7 +30,8 @@ const TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID: &str = "token-005";
 const TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_COST: i64 = 1;
 const TECHNIQUE_RESEARCH_FULL_REFUND_RATE: f64 = 1.0;
 const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE: f64 = 0.5;
-const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE: &str = "草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟";
+const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE: &str =
+    "草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟";
 
 fn append_technique_research_refund_hint(reason: &str) -> String {
     let normalized = reason.trim();
@@ -39,7 +44,10 @@ fn append_technique_research_refund_hint(reason: &str) -> String {
     format!("{}（相关消耗已通过邮件返还）", normalized)
 }
 
-fn build_technique_research_refund_mail_markdown(reason: &str, refund_cooldown_bypass_token: bool) -> String {
+fn build_technique_research_refund_mail_markdown(
+    reason: &str,
+    refund_cooldown_bypass_token: bool,
+) -> String {
     let normalized = reason.trim();
     let mut lines = vec![
         "## 结果说明".to_string(),
@@ -103,7 +111,9 @@ async fn refund_technique_generation_job_tx(
     let Some(row) = row else {
         return Ok(());
     };
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if matches!(status.as_str(), "refunded" | "failed" | "published") {
         return Ok(());
     }
@@ -124,7 +134,12 @@ async fn refund_technique_generation_job_tx(
             |q| q.bind(character_id),
         )
         .await?
-        .and_then(|row| row.try_get::<Option<i32>, _>("user_id").ok().flatten().map(i64::from))
+        .and_then(|row| {
+            row.try_get::<Option<i32>, _>("user_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .unwrap_or_default();
     if user_id <= 0 {
         return Err(AppError::config("退款邮件发送失败：角色不存在"));
@@ -468,11 +483,21 @@ pub async fn get_character_technique_status(
     require_owned_character(&state, &headers, character_id).await?;
     let techniques = load_character_techniques(&state, character_id).await?;
     let available_skills = build_available_skills(&techniques)?;
-    let available_ids = available_skills.iter().map(|entry| entry.skill_id.clone()).collect::<BTreeSet<_>>();
+    let available_ids = available_skills
+        .iter()
+        .map(|entry| entry.skill_id.clone())
+        .collect::<BTreeSet<_>>();
     let equipped_skills = load_equipped_skills(&state, character_id, &available_ids).await?;
     let passives = calculate_technique_passives(&techniques)?;
-    let equipped_main = techniques.iter().find(|entry| entry.slot_type.as_deref() == Some("main")).cloned();
-    let equipped_subs = techniques.iter().filter(|entry| entry.slot_type.as_deref() == Some("sub")).cloned().collect::<Vec<_>>();
+    let equipped_main = techniques
+        .iter()
+        .find(|entry| entry.slot_type.as_deref() == Some("main"))
+        .cloned();
+    let equipped_subs = techniques
+        .iter()
+        .filter(|entry| entry.slot_type.as_deref() == Some("sub"))
+        .cloned()
+        .collect::<Vec<_>>();
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("获取成功".to_string()),
@@ -507,8 +532,15 @@ pub async fn get_equipped_techniques(
 ) -> Result<axum::response::Response, AppError> {
     require_owned_character(&state, &headers, character_id).await?;
     let techniques = load_character_techniques(&state, character_id).await?;
-    let main = techniques.iter().find(|entry| entry.slot_type.as_deref() == Some("main")).cloned();
-    let subs = techniques.iter().filter(|entry| entry.slot_type.as_deref() == Some("sub")).cloned().collect::<Vec<_>>();
+    let main = techniques
+        .iter()
+        .find(|entry| entry.slot_type.as_deref() == Some("main"))
+        .cloned();
+    let subs = techniques
+        .iter()
+        .filter(|entry| entry.slot_type.as_deref() == Some("sub"))
+        .cloned()
+        .collect::<Vec<_>>();
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("获取成功".to_string()),
@@ -523,40 +555,68 @@ pub async fn get_character_technique_upgrade_cost(
 ) -> Result<axum::response::Response, AppError> {
     require_owned_character(&state, &headers, character_id).await?;
     let techniques = load_character_techniques(&state, character_id).await?;
-    let Some(entry) = techniques.iter().find(|entry| entry.technique_id == technique_id.trim()) else {
-        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> { success: false, message: Some("未学习该功法".to_string()), data: None }));
+    let Some(entry) = techniques
+        .iter()
+        .find(|entry| entry.technique_id == technique_id.trim())
+    else {
+        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> {
+            success: false,
+            message: Some("未学习该功法".to_string()),
+            data: None,
+        }));
     };
     let defs = load_visible_technique_def_map()?;
     let Some(def) = defs.get(technique_id.trim()) else {
-        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> { success: false, message: Some("功法不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> {
+            success: false,
+            message: Some("功法不存在".to_string()),
+            data: None,
+        }));
     };
     let max_layer = def.max_layer.unwrap_or(1).max(1);
     if entry.current_layer >= max_layer {
-        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> { success: false, message: Some("已达最高层数".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> {
+            success: false,
+            message: Some("已达最高层数".to_string()),
+            data: None,
+        }));
     }
     let next_layer = entry.current_layer + 1;
     let layers = load_technique_layers_by_id()?;
     let Some(layer) = layers.get(&(technique_id.trim().to_string(), next_layer)) else {
-        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> { success: false, message: Some("层级配置不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<TechniqueUpgradeCostDto> {
+            success: false,
+            message: Some("层级配置不存在".to_string()),
+            data: None,
+        }));
     };
     let item_meta = load_item_meta_map()?;
     let quality_multiplier = quality_multiplier(def.quality.as_deref());
-    let materials = layer.cost_materials.clone().unwrap_or_default().into_iter().map(|cost| {
-        let meta = item_meta.get(cost.item_id.trim());
-        TechniqueUpgradeCostMaterialDto {
-            item_id: cost.item_id,
-            qty: cost.qty.max(0),
-            item_name: meta.map(|row| row.0.clone()),
-            item_icon: meta.and_then(|row| row.1.clone()),
-        }
-    }).collect::<Vec<_>>();
+    let materials = layer
+        .cost_materials
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|cost| {
+            let meta = item_meta.get(cost.item_id.trim());
+            TechniqueUpgradeCostMaterialDto {
+                item_id: cost.item_id,
+                qty: cost.qty.max(0),
+                item_name: meta.map(|row| row.0.clone()),
+                item_icon: meta.and_then(|row| row.1.clone()),
+            }
+        })
+        .collect::<Vec<_>>();
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("获取成功".to_string()),
         data: Some(TechniqueUpgradeCostDto {
             current_layer: entry.current_layer,
             max_layer,
-            spirit_stones: scale_cost(layer.cost_spirit_stones.unwrap_or_default(), quality_multiplier),
+            spirit_stones: scale_cost(
+                layer.cost_spirit_stones.unwrap_or_default(),
+                quality_multiplier,
+            ),
             exp: scale_cost(layer.cost_exp.unwrap_or_default(), quality_multiplier),
             materials,
         }),
@@ -572,7 +632,9 @@ pub async fn get_available_skills(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("获取成功".to_string()),
-        data: Some(build_available_skills(&load_character_techniques(&state, character_id).await?)?),
+        data: Some(build_available_skills(
+            &load_character_techniques(&state, character_id).await?,
+        )?),
     }))
 }
 
@@ -582,8 +644,12 @@ pub async fn get_equipped_skills(
     Path(character_id): Path<i64>,
 ) -> Result<axum::response::Response, AppError> {
     require_owned_character(&state, &headers, character_id).await?;
-    let available = build_available_skills(&load_character_techniques(&state, character_id).await?)?;
-    let available_ids = available.iter().map(|entry| entry.skill_id.clone()).collect::<BTreeSet<_>>();
+    let available =
+        build_available_skills(&load_character_techniques(&state, character_id).await?)?;
+    let available_ids = available
+        .iter()
+        .map(|entry| entry.skill_id.clone())
+        .collect::<BTreeSet<_>>();
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("获取成功".to_string()),
@@ -600,7 +666,9 @@ pub async fn get_technique_passives(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("计算成功".to_string()),
-        data: Some(calculate_technique_passives(&load_character_techniques(&state, character_id).await?)?),
+        data: Some(calculate_technique_passives(
+            &load_character_techniques(&state, character_id).await?,
+        )?),
     }))
 }
 
@@ -645,10 +713,13 @@ pub(crate) async fn load_technique_research_status_data(
         .map(i64::from)
         .unwrap_or_default()
         .max(0);
-    let realm = character_row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
+    let realm = character_row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
     let sub_realm = character_row.try_get::<Option<String>, _>("sub_realm")?;
     let unlock_realm = "炼炁化神·结胎期".to_string();
-    let unlocked = realm_rank_with_subrealm(&realm, sub_realm.as_deref()) >= realm_rank_with_full_name(&unlock_realm);
+    let unlocked = realm_rank_with_subrealm(&realm, sub_realm.as_deref())
+        >= realm_rank_with_full_name(&unlock_realm);
     let latest_job = state.database.fetch_optional(
         "SELECT id, status, quality_rolled, model_name, burning_word_prompt, draft_technique_id, created_at::text AS created_at_text, finished_at::text AS finished_at_text, draft_expire_at::text AS draft_expire_at_text, error_message, viewed_at::text AS viewed_at_text, failed_viewed_at::text AS failed_viewed_at_text FROM technique_generation_job WHERE character_id = $1 ORDER BY created_at DESC LIMIT 1",
         |q| q.bind(character_id),
@@ -656,70 +727,165 @@ pub(crate) async fn load_technique_research_status_data(
     let current_job = if let Some(row) = latest_job.as_ref() {
         Some(TechniqueResearchJobDto {
             generation_id: row.try_get::<Option<String>, _>("id")?.unwrap_or_default(),
-            status: row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "pending".to_string()),
-            quality: row.try_get::<Option<String>, _>("quality_rolled")?.unwrap_or_else(|| "黄".to_string()),
+            status: row
+                .try_get::<Option<String>, _>("status")?
+                .unwrap_or_else(|| "pending".to_string()),
+            quality: row
+                .try_get::<Option<String>, _>("quality_rolled")?
+                .unwrap_or_else(|| "黄".to_string()),
             model_name: row.try_get::<Option<String>, _>("model_name")?,
             burning_word_prompt: row.try_get::<Option<String>, _>("burning_word_prompt")?,
             draft_technique_id: row.try_get::<Option<String>, _>("draft_technique_id")?,
-            started_at: row.try_get::<Option<String>, _>("created_at_text")?.unwrap_or_default(),
+            started_at: row
+                .try_get::<Option<String>, _>("created_at_text")?
+                .unwrap_or_default(),
             finished_at: row.try_get::<Option<String>, _>("finished_at_text")?,
             draft_expire_at: row.try_get::<Option<String>, _>("draft_expire_at_text")?,
             preview: None,
             error_message: row.try_get::<Option<String>, _>("error_message")?,
         })
-    } else { None };
-    let current_draft = if let Some(draft_id) = current_job.as_ref().and_then(|job| job.draft_technique_id.as_deref()) {
+    } else {
+        None
+    };
+    let current_draft = if let Some(draft_id) = current_job
+        .as_ref()
+        .and_then(|job| job.draft_technique_id.as_deref())
+    {
         let row = state.database.fetch_optional(
             "SELECT id, quality, type, max_layer, description, long_desc, name FROM generated_technique_def WHERE id = $1 LIMIT 1",
             |q| q.bind(draft_id),
         ).await?;
         row.map(|row| TechniqueResearchDraftDto {
-            generation_id: current_job.as_ref().map(|job| job.generation_id.clone()).unwrap_or_default(),
-            id: row.try_get::<Option<String>, _>("id").unwrap_or(None).unwrap_or_default(),
-            quality: row.try_get::<Option<String>, _>("quality").unwrap_or(None).unwrap_or_else(|| "黄".to_string()),
-            r#type: row.try_get::<Option<String>, _>("type").unwrap_or(None).unwrap_or_else(|| "武技".to_string()),
-            max_layer: row.try_get::<Option<i32>, _>("max_layer").unwrap_or(None).map(i64::from).unwrap_or(1),
-            description: row.try_get::<Option<String>, _>("description").unwrap_or(None).unwrap_or_default(),
-            long_desc: row.try_get::<Option<String>, _>("long_desc").unwrap_or(None).unwrap_or_default(),
-            suggested_name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-            draft_expire_at: current_job.as_ref().and_then(|job| job.draft_expire_at.clone()).unwrap_or_default(),
+            generation_id: current_job
+                .as_ref()
+                .map(|job| job.generation_id.clone())
+                .unwrap_or_default(),
+            id: row
+                .try_get::<Option<String>, _>("id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            quality: row
+                .try_get::<Option<String>, _>("quality")
+                .unwrap_or(None)
+                .unwrap_or_else(|| "黄".to_string()),
+            r#type: row
+                .try_get::<Option<String>, _>("type")
+                .unwrap_or(None)
+                .unwrap_or_else(|| "武技".to_string()),
+            max_layer: row
+                .try_get::<Option<i32>, _>("max_layer")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or(1),
+            description: row
+                .try_get::<Option<String>, _>("description")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            long_desc: row
+                .try_get::<Option<String>, _>("long_desc")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            suggested_name: row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            draft_expire_at: current_job
+                .as_ref()
+                .and_then(|job| job.draft_expire_at.clone())
+                .unwrap_or_default(),
         })
-    } else { None };
+    } else {
+        None
+    };
     let latest_started_at = if let Some(row) = latest_job.as_ref() {
-        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
-        if matches!(status.as_str(), "pending" | "generated_draft" | "published" | "refunded") {
+        let status = row
+            .try_get::<Option<String>, _>("status")?
+            .unwrap_or_default();
+        if matches!(
+            status.as_str(),
+            "pending" | "generated_draft" | "published" | "refunded"
+        ) {
             row.try_get::<Option<String>, _>("created_at_text")?
         } else {
             None
         }
-    } else { None };
+    } else {
+        None
+    };
     let cooldown = build_technique_research_cooldown_state(latest_started_at.as_deref());
-    let has_unread_result = latest_job.as_ref().map(|row| {
-        let status = row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-        if status == "generated_draft" {
-            return row.try_get::<Option<String>, _>("viewed_at_text").unwrap_or(None).is_none();
-        }
-        matches!(status.as_str(), "failed" | "refunded") && row.try_get::<Option<String>, _>("failed_viewed_at_text").unwrap_or(None).is_none()
-    }).unwrap_or(false);
-    let result_status = current_job.as_ref().and_then(|job| match job.status.as_str() {
-        "generated_draft" => Some("generated_draft".to_string()),
-        "failed" | "refunded" => Some("failed".to_string()),
-        _ => None,
-    });
+    let has_unread_result = latest_job
+        .as_ref()
+        .map(|row| {
+            let status = row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            if status == "generated_draft" {
+                return row
+                    .try_get::<Option<String>, _>("viewed_at_text")
+                    .unwrap_or(None)
+                    .is_none();
+            }
+            matches!(status.as_str(), "failed" | "refunded")
+                && row
+                    .try_get::<Option<String>, _>("failed_viewed_at_text")
+                    .unwrap_or(None)
+                    .is_none()
+        })
+        .unwrap_or(false);
+    let result_status = current_job
+        .as_ref()
+        .and_then(|job| match job.status.as_str() {
+            "generated_draft" => Some("generated_draft".to_string()),
+            "failed" | "refunded" => Some("failed".to_string()),
+            _ => None,
+        });
     let guaranteed = generated_non_heaven_count >= 19;
     let quality_rates = if guaranteed {
         vec![
-            TechniqueResearchQualityRateDto { quality: "黄".to_string(), weight: 0, rate: 0.0 },
-            TechniqueResearchQualityRateDto { quality: "玄".to_string(), weight: 0, rate: 0.0 },
-            TechniqueResearchQualityRateDto { quality: "地".to_string(), weight: 0, rate: 0.0 },
-            TechniqueResearchQualityRateDto { quality: "天".to_string(), weight: 1, rate: 100.0 },
+            TechniqueResearchQualityRateDto {
+                quality: "黄".to_string(),
+                weight: 0,
+                rate: 0.0,
+            },
+            TechniqueResearchQualityRateDto {
+                quality: "玄".to_string(),
+                weight: 0,
+                rate: 0.0,
+            },
+            TechniqueResearchQualityRateDto {
+                quality: "地".to_string(),
+                weight: 0,
+                rate: 0.0,
+            },
+            TechniqueResearchQualityRateDto {
+                quality: "天".to_string(),
+                weight: 1,
+                rate: 100.0,
+            },
         ]
     } else {
         vec![
-            TechniqueResearchQualityRateDto { quality: "黄".to_string(), weight: 4, rate: 40.0 },
-            TechniqueResearchQualityRateDto { quality: "玄".to_string(), weight: 3, rate: 30.0 },
-            TechniqueResearchQualityRateDto { quality: "地".to_string(), weight: 2, rate: 20.0 },
-            TechniqueResearchQualityRateDto { quality: "天".to_string(), weight: 1, rate: 10.0 },
+            TechniqueResearchQualityRateDto {
+                quality: "黄".to_string(),
+                weight: 4,
+                rate: 40.0,
+            },
+            TechniqueResearchQualityRateDto {
+                quality: "玄".to_string(),
+                weight: 3,
+                rate: 30.0,
+            },
+            TechniqueResearchQualityRateDto {
+                quality: "地".to_string(),
+                weight: 2,
+                rate: 20.0,
+            },
+            TechniqueResearchQualityRateDto {
+                quality: "天".to_string(),
+                weight: 1,
+                rate: 10.0,
+            },
         ]
     };
     let fragment_balance = state.database.fetch_optional(
@@ -732,34 +898,40 @@ pub(crate) async fn load_technique_research_status_data(
     ).await?.and_then(|row| row.try_get::<Option<i64>, _>("qty").ok().flatten()).unwrap_or_default();
 
     Ok(TechniqueResearchStatusDto {
-            unlock_realm,
-            unlocked,
-            fragment_balance,
-            fragment_cost: 3500,
-            cooldown_bypass_fragment_cost: 2800,
-            cooldown_hours: 72,
-            cooldown_until: cooldown.0,
-            cooldown_remaining_seconds: cooldown.1,
-            cooldown_bypass_token_bypasses_cooldown: true,
-            cooldown_bypass_token_cost: 1,
-            cooldown_bypass_token_item_name: "冷却绕过令牌".to_string(),
-            cooldown_bypass_token_available_qty: cooldown_token_available_qty,
-            burning_word_prompt_max_length: 2,
-            current_draft: current_draft.clone(),
-            draft_expire_at: current_draft.as_ref().map(|row| row.draft_expire_at.clone()),
-            name_rules: TechniqueResearchNameRulesDto {
-                min_length: 2,
-                max_length: 14,
-                fixed_prefix: "『研』".to_string(),
-                pattern_hint: "仅支持纯中文（不含空格、符号、字母、数字）".to_string(),
-                immutable_after_publish: true,
-            },
-            current_job,
-            has_unread_result,
-            result_status,
-            remaining_until_guaranteed_heaven: if guaranteed { 1 } else { (20 - generated_non_heaven_count).max(1) },
-            quality_rates,
-        })
+        unlock_realm,
+        unlocked,
+        fragment_balance,
+        fragment_cost: 3500,
+        cooldown_bypass_fragment_cost: 2800,
+        cooldown_hours: 72,
+        cooldown_until: cooldown.0,
+        cooldown_remaining_seconds: cooldown.1,
+        cooldown_bypass_token_bypasses_cooldown: true,
+        cooldown_bypass_token_cost: 1,
+        cooldown_bypass_token_item_name: "冷却绕过令牌".to_string(),
+        cooldown_bypass_token_available_qty: cooldown_token_available_qty,
+        burning_word_prompt_max_length: 2,
+        current_draft: current_draft.clone(),
+        draft_expire_at: current_draft
+            .as_ref()
+            .map(|row| row.draft_expire_at.clone()),
+        name_rules: TechniqueResearchNameRulesDto {
+            min_length: 2,
+            max_length: 14,
+            fixed_prefix: "『研』".to_string(),
+            pattern_hint: "仅支持纯中文（不含空格、符号、字母、数字）".to_string(),
+            immutable_after_publish: true,
+        },
+        current_job,
+        has_unread_result,
+        result_status,
+        remaining_until_guaranteed_heaven: if guaranteed {
+            1
+        } else {
+            (20 - generated_non_heaven_count).max(1)
+        },
+        quality_rates,
+    })
 }
 
 pub async fn mark_technique_research_result_viewed(
@@ -782,7 +954,11 @@ pub async fn mark_technique_research_result_viewed(
     }
     Ok(send_result(ServiceResult {
         success: true,
-        message: Some(if updated.is_some() { "已标记查看".to_string() } else { "无未查看结果".to_string() }),
+        message: Some(if updated.is_some() {
+            "已标记查看".to_string()
+        } else {
+            "无未查看结果".to_string()
+        }),
         data: Some(serde_json::json!({ "marked": updated.is_some() })),
     }))
 }
@@ -799,49 +975,81 @@ pub async fn generate_technique_research_draft(
     if !burning_word_prompt.trim().is_empty() {
         let char_count = burning_word_prompt.chars().count();
         if char_count > 2 {
-            return Ok(send_result(ServiceResult::<TechniqueResearchGenerateDataDto> {
+            return Ok(send_result(ServiceResult::<
+                TechniqueResearchGenerateDataDto,
+            > {
                 success: false,
                 message: Some("提示词最多 2 个中文字符".to_string()),
                 data: None,
             }));
         }
-        if !burning_word_prompt.chars().all(|ch| (' '..='').contains(&ch) == false) {
-            return Ok(send_result(ServiceResult::<TechniqueResearchGenerateDataDto> {
+        if !burning_word_prompt
+            .chars()
+            .all(|ch| (' '..='').contains(&ch) == false)
+        {
+            return Ok(send_result(ServiceResult::<
+                TechniqueResearchGenerateDataDto,
+            > {
                 success: false,
                 message: Some("提示词只能包含中文字符".to_string()),
                 data: None,
             }));
         }
         if let Err(error) = require_text_model_config(TextModelScope::Technique) {
-            return Ok(send_result(ServiceResult::<TechniqueResearchGenerateDataDto> {
+            return Ok(send_result(ServiceResult::<
+                TechniqueResearchGenerateDataDto,
+            > {
                 success: false,
                 message: Some(error.to_string()),
                 data: None,
             }));
         }
     }
-    let result = state.database.with_transaction(|| async {
-        generate_technique_research_draft_tx(
-            &state,
-            character_id,
-            payload.cooldown_bypass_enabled.unwrap_or(false),
-            if burning_word_prompt.trim().is_empty() { None } else { Some(burning_word_prompt.trim()) },
-        )
-        .await
-    }).await?;
-    println!("TECH_RESEARCH_TRACE: after_generate_tx success={}", result.success);
+    let result = state
+        .database
+        .with_transaction(|| async {
+            generate_technique_research_draft_tx(
+                &state,
+                character_id,
+                payload.cooldown_bypass_enabled.unwrap_or(false),
+                if burning_word_prompt.trim().is_empty() {
+                    None
+                } else {
+                    Some(burning_word_prompt.trim())
+                },
+            )
+            .await
+        })
+        .await?;
+    println!(
+        "TECH_RESEARCH_TRACE: after_generate_tx success={}",
+        result.success
+    );
     if result.success {
         if let Some(data) = result.data.as_ref() {
-            println!("TECH_RESEARCH_TRACE: enqueue node_env={}", state.config.service.node_env);
-            let enqueue_result = jobs::enqueue_technique_generation_job(state.clone(), character_id, data.generation_id.clone()).await;
+            println!(
+                "TECH_RESEARCH_TRACE: enqueue node_env={}",
+                state.config.service.node_env
+            );
+            let enqueue_result = jobs::enqueue_technique_generation_job(
+                state.clone(),
+                character_id,
+                data.generation_id.clone(),
+            )
+            .await;
             match &enqueue_result {
                 Ok(_) => println!("TECH_RESEARCH_TRACE: enqueue_result_ok=true"),
-                Err(error) => println!("TECH_RESEARCH_TRACE: enqueue_result_ok=false error={error}"),
+                Err(error) => {
+                    println!("TECH_RESEARCH_TRACE: enqueue_result_ok=false error={error}")
+                }
             }
         }
         println!("TECH_RESEARCH_TRACE: before_require_auth");
         let actor = auth::require_auth(&state, &headers).await?;
-        println!("TECH_RESEARCH_TRACE: after_require_auth user_id={}", actor.user_id);
+        println!(
+            "TECH_RESEARCH_TRACE: after_require_auth user_id={}",
+            actor.user_id
+        );
         if let Ok(status) = load_technique_research_status_data(&state, character_id).await {
             println!("TECH_RESEARCH_TRACE: after_load_status");
             emit_technique_research_status_to_user(
@@ -862,11 +1070,18 @@ pub async fn discard_technique_research_draft(
     require_owned_character(&state, &headers, character_id).await?;
     let generation_id = generation_id.trim();
     if generation_id.is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("缺少生成任务ID".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("缺少生成任务ID".to_string()),
+            data: None,
+        }));
     }
-    let result = state.database.with_transaction(|| async {
-        discard_technique_research_draft_tx(&state, character_id, generation_id).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            discard_technique_research_draft_tx(&state, character_id, generation_id).await
+        })
+        .await?;
     if result.success {
         let actor = auth::require_auth(&state, &headers).await?;
         if let Ok(status) = load_technique_research_status_data(&state, character_id).await {
@@ -889,17 +1104,30 @@ pub async fn publish_technique_research_draft(
     require_owned_character(&state, &headers, character_id).await?;
     let generation_id = generation_id.trim();
     if generation_id.is_empty() {
-        return Ok((axum::http::StatusCode::BAD_REQUEST, Json(ServiceResultWithCode::<TechniqueResearchPublishDataDto> {
-            success: false,
-            message: "缺少生成任务ID".to_string(),
-            code: Some("GENERATION_NOT_READY".to_string()),
-            data: None,
-        })).into_response());
+        return Ok((
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(ServiceResultWithCode::<TechniqueResearchPublishDataDto> {
+                success: false,
+                message: "缺少生成任务ID".to_string(),
+                code: Some("GENERATION_NOT_READY".to_string()),
+                data: None,
+            }),
+        )
+            .into_response());
     }
     let custom_name = payload.custom_name.unwrap_or_default();
-    let result = state.database.with_transaction(|| async {
-        publish_technique_research_draft_tx(&state, character_id, generation_id, custom_name.trim()).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            publish_technique_research_draft_tx(
+                &state,
+                character_id,
+                generation_id,
+                custom_name.trim(),
+            )
+            .await
+        })
+        .await?;
     if result.success {
         let actor = auth::require_auth(&state, &headers).await?;
         if let Ok(status) = load_technique_research_status_data(&state, character_id).await {
@@ -910,7 +1138,15 @@ pub async fn publish_technique_research_draft(
             );
         }
     }
-    Ok((if result.success { axum::http::StatusCode::OK } else { axum::http::StatusCode::BAD_REQUEST }, Json(result)).into_response())
+    Ok((
+        if result.success {
+            axum::http::StatusCode::OK
+        } else {
+            axum::http::StatusCode::BAD_REQUEST
+        },
+        Json(result),
+    )
+        .into_response())
 }
 
 pub async fn dissipate_character_technique(
@@ -938,7 +1174,9 @@ pub async fn dissipate_character_technique(
             data: None,
         }));
     };
-    let slot_type = row.try_get::<Option<String>, _>("slot_type")?.unwrap_or_default();
+    let slot_type = row
+        .try_get::<Option<String>, _>("slot_type")?
+        .unwrap_or_default();
     if !slot_type.trim().is_empty() {
         return Ok(send_result(ServiceResult::<serde_json::Value> {
             success: false,
@@ -947,10 +1185,12 @@ pub async fn dissipate_character_technique(
         }));
     }
     let id = row.try_get::<i64, _>("id")?;
-    state.database.execute(
-        "DELETE FROM character_technique WHERE id = $1",
-        |q| q.bind(id),
-    ).await?;
+    state
+        .database
+        .execute("DELETE FROM character_technique WHERE id = $1", |q| {
+            q.bind(id)
+        })
+        .await?;
     Ok(send_result(ServiceResult::<serde_json::Value> {
         success: true,
         message: Some("散功成功".to_string()),
@@ -1008,14 +1248,30 @@ pub async fn equip_character_skill(
     let skill_id = payload.skill_id.unwrap_or_default();
     let slot_index = payload.slot_index.unwrap_or_default();
     if skill_id.trim().is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("缺少技能ID".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("缺少技能ID".to_string()),
+            data: None,
+        }));
     }
     if !(1..=10).contains(&slot_index) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("技能槽位必须为1-10".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("技能槽位必须为1-10".to_string()),
+            data: None,
+        }));
     }
-    let available = build_available_skills(&load_character_techniques(&state, character_id).await?)?;
-    if !available.iter().any(|entry| entry.skill_id == skill_id.trim()) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("技能不可用（未解锁或功法未装备）".to_string()), data: None }));
+    let available =
+        build_available_skills(&load_character_techniques(&state, character_id).await?)?;
+    if !available
+        .iter()
+        .any(|entry| entry.skill_id == skill_id.trim())
+    {
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("技能不可用（未解锁或功法未装备）".to_string()),
+            data: None,
+        }));
     }
     state.database.execute(
         "DELETE FROM character_skill_slot WHERE character_id = $1 AND (skill_id = $2 OR slot_index = $3)",
@@ -1025,7 +1281,11 @@ pub async fn equip_character_skill(
         "INSERT INTO character_skill_slot (character_id, slot_index, skill_id, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
         |q| q.bind(character_id).bind(slot_index).bind(skill_id.trim()),
     ).await?;
-    Ok(send_result(ServiceResult::<serde_json::Value> { success: true, message: Some("装备成功".to_string()), data: None }))
+    Ok(send_result(ServiceResult::<serde_json::Value> {
+        success: true,
+        message: Some("装备成功".to_string()),
+        data: None,
+    }))
 }
 
 pub async fn unequip_character_skill(
@@ -1037,16 +1297,28 @@ pub async fn unequip_character_skill(
     require_owned_character(&state, &headers, character_id).await?;
     let slot_index = payload.slot_index.unwrap_or_default();
     if !(1..=10).contains(&slot_index) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("缺少槽位索引".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("缺少槽位索引".to_string()),
+            data: None,
+        }));
     }
     let deleted = state.database.fetch_optional(
         "DELETE FROM character_skill_slot WHERE character_id = $1 AND slot_index = $2 RETURNING id",
         |q| q.bind(character_id).bind(slot_index),
     ).await?;
     if deleted.is_none() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("该槽位未装备技能".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("该槽位未装备技能".to_string()),
+            data: None,
+        }));
     }
-    Ok(send_result(ServiceResult::<serde_json::Value> { success: true, message: Some("卸下成功".to_string()), data: None }))
+    Ok(send_result(ServiceResult::<serde_json::Value> {
+        success: true,
+        message: Some("卸下成功".to_string()),
+        data: None,
+    }))
 }
 
 pub async fn equip_character_technique(
@@ -1059,31 +1331,55 @@ pub async fn equip_character_technique(
     let technique_id = payload.technique_id.unwrap_or_default();
     let slot_type = payload.slot_type.unwrap_or_default();
     if technique_id.trim().is_empty() || slot_type.trim().is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("缺少必要参数".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("缺少必要参数".to_string()),
+            data: None,
+        }));
     }
     if slot_type != "main" && slot_type != "sub" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无效的槽位类型".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无效的槽位类型".to_string()),
+            data: None,
+        }));
     }
     let row = state.database.fetch_optional(
         "SELECT id, slot_type, slot_index FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1 FOR UPDATE",
         |q| q.bind(character_id).bind(technique_id.trim()),
     ).await?;
     let Some(row) = row else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未学习该功法".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未学习该功法".to_string()),
+            data: None,
+        }));
     };
-    let current_slot_type = row.try_get::<Option<String>, _>("slot_type")?.unwrap_or_default();
+    let current_slot_type = row
+        .try_get::<Option<String>, _>("slot_type")?
+        .unwrap_or_default();
     let current_slot_index = row.try_get::<Option<i64>, _>("slot_index")?;
     let requested_slot_index = if slot_type == "sub" {
         let slot_index = payload.slot_index.unwrap_or_default();
         if !(1..=3).contains(&slot_index) {
-            return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("副功法槽位必须为1-3".to_string()), data: None }));
+            return Ok(send_result(ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some("副功法槽位必须为1-3".to_string()),
+                data: None,
+            }));
         }
         Some(slot_index)
     } else {
         None
     };
-    if current_slot_type == slot_type && (slot_type == "main" || current_slot_index == requested_slot_index) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: true, message: Some("功法已在该位置".to_string()), data: None }));
+    if current_slot_type == slot_type
+        && (slot_type == "main" || current_slot_index == requested_slot_index)
+    {
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: true,
+            message: Some("功法已在该位置".to_string()),
+            data: None,
+        }));
     }
 
     if slot_type == "main" {
@@ -1116,7 +1412,11 @@ pub async fn equip_character_technique(
         }
     }
 
-    Ok(send_result(ServiceResult::<serde_json::Value> { success: true, message: Some("装备成功".to_string()), data: None }))
+    Ok(send_result(ServiceResult::<serde_json::Value> {
+        success: true,
+        message: Some("装备成功".to_string()),
+        data: None,
+    }))
 }
 
 pub async fn upgrade_character_technique(
@@ -1127,61 +1427,115 @@ pub async fn upgrade_character_technique(
     require_owned_character(&state, &headers, character_id).await?;
     let technique_id = technique_id.trim();
     if technique_id.is_empty() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("缺少功法ID".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("缺少功法ID".to_string()),
+            data: None,
+        }));
     }
     let row = state.database.fetch_optional(
         "SELECT id, current_layer FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1 FOR UPDATE",
         |q| q.bind(character_id).bind(technique_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未学习该功法".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未学习该功法".to_string()),
+            data: None,
+        }));
     };
-    let current_layer = row.try_get::<Option<i32>, _>("current_layer")?.map(i64::from).unwrap_or(1);
+    let current_layer = row
+        .try_get::<Option<i32>, _>("current_layer")?
+        .map(i64::from)
+        .unwrap_or(1);
     let defs = load_visible_technique_def_map()?;
     let Some(def) = defs.get(technique_id) else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("功法不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("功法不存在".to_string()),
+            data: None,
+        }));
     };
     let max_layer = def.max_layer.unwrap_or(1).max(1);
     if current_layer >= max_layer {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("已达最高层数".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("已达最高层数".to_string()),
+            data: None,
+        }));
     }
     let next_layer = current_layer + 1;
     let layers = load_technique_layers_by_id()?;
     let Some(layer) = layers.get(&(technique_id.to_string(), next_layer)) else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("层级配置不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("层级配置不存在".to_string()),
+            data: None,
+        }));
     };
     let quality_mul = quality_multiplier(def.quality.as_deref());
     let cost_spirit_stones = scale_cost(layer.cost_spirit_stones.unwrap_or_default(), quality_mul);
     let cost_exp = scale_cost(layer.cost_exp.unwrap_or_default(), quality_mul);
-    let character_row = state.database.fetch_optional(
-        "SELECT spirit_stones, exp FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(character_id),
-    ).await?;
+    let character_row = state
+        .database
+        .fetch_optional(
+            "SELECT spirit_stones, exp FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(character_row) = character_row else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("角色不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        }));
     };
-    let spirit_stones = character_row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
-    let exp = character_row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default();
+    let spirit_stones = character_row
+        .try_get::<Option<i64>, _>("spirit_stones")?
+        .unwrap_or_default();
+    let exp = character_row
+        .try_get::<Option<i64>, _>("exp")?
+        .unwrap_or_default();
     if spirit_stones < cost_spirit_stones {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("灵石不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("灵石不足".to_string()),
+            data: None,
+        }));
     }
     if exp < cost_exp {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("经验不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("经验不足".to_string()),
+            data: None,
+        }));
     }
     for material in layer.cost_materials.clone().unwrap_or_default() {
-        let remaining = consume_material_qty(&state, character_id, &material.item_id, material.qty.max(0)).await?;
+        let remaining =
+            consume_material_qty(&state, character_id, &material.item_id, material.qty.max(0))
+                .await?;
         if !remaining {
-            return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some(format!("材料不足：{}", material.item_id)), data: None }));
+            return Ok(send_result(ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some(format!("材料不足：{}", material.item_id)),
+                data: None,
+            }));
         }
     }
     state.database.execute(
         "UPDATE characters SET spirit_stones = COALESCE(spirit_stones, 0) - $2, exp = COALESCE(exp, 0) - $3, updated_at = NOW() WHERE id = $1",
         |q| q.bind(character_id).bind(cost_spirit_stones).bind(cost_exp),
     ).await?;
-    state.database.execute(
-        "UPDATE character_technique SET current_layer = $1, updated_at = NOW() WHERE id = $2",
-        |q| q.bind(next_layer).bind(row.try_get::<i64, _>("id").unwrap_or_default()),
-    ).await?;
+    state
+        .database
+        .execute(
+            "UPDATE character_technique SET current_layer = $1, updated_at = NOW() WHERE id = $2",
+            |q| {
+                q.bind(next_layer)
+                    .bind(row.try_get::<i64, _>("id").unwrap_or_default())
+            },
+        )
+        .await?;
     Ok(send_result(ServiceResult {
         success: true,
         message: Some(format!("{}修炼至第{}层", def.name, next_layer)),
@@ -1204,13 +1558,25 @@ async fn generate_technique_research_draft_tx(
         |q| q.bind(character_id),
     ).await?;
     let Some(character_row) = character_row else {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     };
-    let realm = character_row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
+    let realm = character_row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
     let sub_realm = character_row.try_get::<Option<String>, _>("sub_realm")?;
     let unlock_realm = "炼炁化神·结胎期".to_string();
-    if realm_rank_with_subrealm(&realm, sub_realm.as_deref()) < realm_rank_with_full_name(&unlock_realm) {
-        return Ok(ServiceResult { success: false, message: Some(format!("洞府研修需要达到{}", unlock_realm)), data: None });
+    if realm_rank_with_subrealm(&realm, sub_realm.as_deref())
+        < realm_rank_with_full_name(&unlock_realm)
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some(format!("洞府研修需要达到{}", unlock_realm)),
+            data: None,
+        });
     }
 
     let existing = state.database.fetch_optional(
@@ -1218,7 +1584,11 @@ async fn generate_technique_research_draft_tx(
         |q| q.bind(character_id),
     ).await?;
     if existing.is_some() {
-        return Ok(ServiceResult { success: false, message: Some("当前已有待处理的研修结果".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前已有待处理的研修结果".to_string()),
+            data: None,
+        });
     }
 
     let latest_started_at = state.database.fetch_optional(
@@ -1227,18 +1597,31 @@ async fn generate_technique_research_draft_tx(
     ).await?.and_then(|row| row.try_get::<Option<String>, _>("created_at_text").ok().flatten());
     let cooldown = build_technique_research_cooldown_state(latest_started_at.as_deref());
     if cooldown.1 > 0 && !cooldown_bypass_enabled {
-        return Ok(ServiceResult { success: false, message: Some(format!("洞府研修冷却中，剩余{}秒", cooldown.1)), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some(format!("洞府研修冷却中，剩余{}秒", cooldown.1)),
+            data: None,
+        });
     }
 
     let fragment_cost = if cooldown_bypass_enabled { 2800 } else { 3500 };
-    let fragments_ok = consume_material_qty(state, character_id, "mat-gongfa-canye", fragment_cost).await?;
+    let fragments_ok =
+        consume_material_qty(state, character_id, "mat-gongfa-canye", fragment_cost).await?;
     if !fragments_ok {
-        return Ok(ServiceResult { success: false, message: Some("功法残页不足".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("功法残页不足".to_string()),
+            data: None,
+        });
     }
     if cooldown_bypass_enabled {
         let token_ok = consume_material_qty(state, character_id, "token-005", 1).await?;
         if !token_ok {
-            return Ok(ServiceResult { success: false, message: Some("冷却绕过令牌不足".to_string()), data: None });
+            return Ok(ServiceResult {
+                success: false,
+                message: Some("冷却绕过令牌不足".to_string()),
+                data: None,
+            });
         }
     }
 
@@ -1304,7 +1687,9 @@ pub async fn process_pending_technique_generation_job(
     let Some(row) = row else {
         return Ok(());
     };
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "pending" {
         return Ok(());
     }
@@ -1318,7 +1703,11 @@ pub async fn process_pending_technique_generation_job(
     let burning_word_prompt = row.try_get::<Option<String>, _>("burning_word_prompt")?;
     let draft_technique_id = format!("generated-technique-{generation_id}");
     let draft_skill_id = format!("generated-skill-{generation_id}-1");
-    let ai_draft = if let Some(prompt) = burning_word_prompt.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    let ai_draft = if let Some(prompt) = burning_word_prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         Some(generate_technique_ai_draft(state, &technique_type, &quality, prompt).await)
     } else {
         None
@@ -1349,7 +1738,12 @@ pub async fn process_pending_technique_generation_job(
                     |q| q.bind(character_id),
                 )
                 .await?
-                .and_then(|row| row.try_get::<Option<i32>, _>("user_id").ok().flatten().map(i64::from));
+                .and_then(|row| {
+                    row.try_get::<Option<i32>, _>("user_id")
+                        .ok()
+                        .flatten()
+                        .map(i64::from)
+                });
             if let Some(user_id) = user_id {
                 emit_technique_research_result_to_user(
                     state,
@@ -1376,11 +1770,19 @@ pub async fn process_pending_technique_generation_job(
         None => (
             build_generated_technique_name(&quality, burning_word_prompt.as_deref()),
             format!("{}品质{}草稿", quality.trim(), technique_type.trim()),
-            format!("以{}推演而成的{}草稿，可于洞府研修中进一步命名发布。", burning_word_prompt.as_deref().unwrap_or("无字诀"), technique_type.trim()),
+            format!(
+                "以{}推演而成的{}草稿，可于洞府研修中进一步命名发布。",
+                burning_word_prompt.as_deref().unwrap_or("无字诀"),
+                technique_type.trim()
+            ),
             "rust-deterministic".to_string(),
         ),
     };
-    let damage_type = if technique_type.trim() == "身法" { "support" } else { "physical" };
+    let damage_type = if technique_type.trim() == "身法" {
+        "support"
+    } else {
+        "physical"
+    };
     let (attribute_type, attribute_element) = if technique_type.trim() == "神通" {
         ("spell", "wood")
     } else {
@@ -1461,11 +1863,21 @@ async fn discard_technique_research_draft_tx(
         |q| q.bind(generation_id).bind(character_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResult { success: false, message: Some("生成任务不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("生成任务不存在".to_string()),
+            data: None,
+        });
     };
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "generated_draft" {
-        return Ok(ServiceResult { success: false, message: Some("当前草稿不可放弃".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前草稿不可放弃".to_string()),
+            data: None,
+        });
     }
     refund_technique_generation_job_tx(
         state,
@@ -1477,10 +1889,19 @@ async fn discard_technique_research_draft_tx(
         TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
     )
     .await?;
-    let user_id = state.database.fetch_optional(
-        "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?.and_then(|row| row.try_get::<Option<i32>, _>("user_id").ok().flatten().map(i64::from));
+    let user_id = state
+        .database
+        .fetch_optional(
+            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?
+        .and_then(|row| {
+            row.try_get::<Option<i32>, _>("user_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        });
     if let Some(user_id) = user_id {
         emit_technique_research_result_to_user(
             state,
@@ -1491,7 +1912,9 @@ async fn discard_technique_research_draft_tx(
                 "failed",
                 "洞府推演失败，请前往功法查看",
                 None,
-                Some(append_technique_research_refund_hint(TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE)),
+                Some(append_technique_research_refund_hint(
+                    TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
+                )),
             ),
         );
     }
@@ -1510,14 +1933,29 @@ async fn publish_technique_research_draft_tx(
 ) -> Result<ServiceResultWithCode<TechniqueResearchPublishDataDto>, AppError> {
     let custom_name = custom_name.trim();
     if custom_name.is_empty() {
-        return Ok(ServiceResultWithCode { success: false, message: "缺少自定义名称".to_string(), code: Some("NAME_INVALID".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "缺少自定义名称".to_string(),
+            code: Some("NAME_INVALID".to_string()),
+            data: None,
+        });
     }
     let char_count = custom_name.chars().count();
     if !(2..=14).contains(&char_count) {
-        return Ok(ServiceResultWithCode { success: false, message: "名称长度需在2~14之间".to_string(), code: Some("NAME_INVALID".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "名称长度需在2~14之间".to_string(),
+            code: Some("NAME_INVALID".to_string()),
+            data: None,
+        });
     }
     if !custom_name.chars().all(|ch| ('一'..='龥').contains(&ch)) {
-        return Ok(ServiceResultWithCode { success: false, message: "名称仅支持纯中文".to_string(), code: Some("NAME_INVALID".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "名称仅支持纯中文".to_string(),
+            code: Some("NAME_INVALID".to_string()),
+            data: None,
+        });
     }
 
     let row = state.database.fetch_optional(
@@ -1525,28 +1963,66 @@ async fn publish_technique_research_draft_tx(
         |q| q.bind(generation_id).bind(character_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResultWithCode { success: false, message: "生成任务不存在".to_string(), code: Some("GENERATION_NOT_READY".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "生成任务不存在".to_string(),
+            code: Some("GENERATION_NOT_READY".to_string()),
+            data: None,
+        });
     };
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status == "published" {
-        return Ok(ServiceResultWithCode { success: false, message: "该草稿已发布".to_string(), code: Some("GENERATION_NOT_READY".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "该草稿已发布".to_string(),
+            code: Some("GENERATION_NOT_READY".to_string()),
+            data: None,
+        });
     }
     if status != "generated_draft" {
-        return Ok(ServiceResultWithCode { success: false, message: "草稿尚未就绪".to_string(), code: Some("GENERATION_NOT_READY".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "草稿尚未就绪".to_string(),
+            code: Some("GENERATION_NOT_READY".to_string()),
+            data: None,
+        });
     }
     let Some(technique_id) = row.try_get::<Option<String>, _>("draft_technique_id")? else {
-        return Ok(ServiceResultWithCode { success: false, message: "草稿功法不存在".to_string(), code: Some("GENERATION_NOT_READY".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "草稿功法不存在".to_string(),
+            code: Some("GENERATION_NOT_READY".to_string()),
+            data: None,
+        });
     };
 
-    let generated_row = state.database.fetch_optional(
-        "SELECT id, name_locked FROM generated_technique_def WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(&technique_id),
-    ).await?;
+    let generated_row = state
+        .database
+        .fetch_optional(
+            "SELECT id, name_locked FROM generated_technique_def WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(&technique_id),
+        )
+        .await?;
     let Some(generated_row) = generated_row else {
-        return Ok(ServiceResultWithCode { success: false, message: "草稿功法不存在".to_string(), code: Some("GENERATION_NOT_READY".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "草稿功法不存在".to_string(),
+            code: Some("GENERATION_NOT_READY".to_string()),
+            data: None,
+        });
     };
-    if generated_row.try_get::<Option<bool>, _>("name_locked")?.unwrap_or(false) {
-        return Ok(ServiceResultWithCode { success: false, message: "名称已锁定，不可修改".to_string(), code: Some("GENERATION_NOT_READY".to_string()), data: None });
+    if generated_row
+        .try_get::<Option<bool>, _>("name_locked")?
+        .unwrap_or(false)
+    {
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "名称已锁定，不可修改".to_string(),
+            code: Some("GENERATION_NOT_READY".to_string()),
+            data: None,
+        });
     }
 
     let final_name = format!("『研』{}", custom_name);
@@ -1556,7 +2032,12 @@ async fn publish_technique_research_draft_tx(
         |q| q.bind(&normalized).bind(&technique_id),
     ).await?;
     if duplicate.is_some() {
-        return Ok(ServiceResultWithCode { success: false, message: "名称已存在，请更换其他名称".to_string(), code: Some("NAME_INVALID".to_string()), data: None });
+        return Ok(ServiceResultWithCode {
+            success: false,
+            message: "名称已存在，请更换其他名称".to_string(),
+            code: Some("NAME_INVALID".to_string()),
+            data: None,
+        });
     }
 
     let book_item_row = state.database.fetch_one(
@@ -1589,20 +2070,30 @@ async fn publish_technique_research_draft_tx(
     })
 }
 
-async fn require_owned_character(state: &AppState, headers: &HeaderMap, character_id: i64) -> Result<(), AppError> {
+async fn require_owned_character(
+    state: &AppState,
+    headers: &HeaderMap,
+    character_id: i64,
+) -> Result<(), AppError> {
     tracing::info!(target: "technique_research_test_trace", character_id, "entered require_owned_character");
     let actor = auth::require_auth(state, headers).await?;
-    let row = state.database.fetch_optional(
-        "SELECT 1 AS ok FROM characters WHERE id = $1 AND user_id = $2 LIMIT 1",
-        |q| q.bind(character_id).bind(actor.user_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT 1 AS ok FROM characters WHERE id = $1 AND user_id = $2 LIMIT 1",
+            |q| q.bind(character_id).bind(actor.user_id),
+        )
+        .await?;
     if row.is_none() {
         return Err(AppError::unauthorized("无权限访问该角色"));
     }
     Ok(())
 }
 
-async fn load_character_techniques(state: &AppState, character_id: i64) -> Result<Vec<CharacterTechniqueDto>, AppError> {
+async fn load_character_techniques(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Vec<CharacterTechniqueDto>, AppError> {
     let defs = load_visible_technique_def_map()?;
     let rows = state.database.fetch_all(
         "SELECT id, character_id, technique_id, current_layer, slot_type, slot_index, acquired_at::text AS acquired_at_text FROM character_technique WHERE character_id = $1",
@@ -1610,9 +2101,15 @@ async fn load_character_techniques(state: &AppState, character_id: i64) -> Resul
     ).await?;
     let generated_ids = rows
         .iter()
-        .filter_map(|row| row.try_get::<Option<String>, _>("technique_id").ok().flatten())
+        .filter_map(|row| {
+            row.try_get::<Option<String>, _>("technique_id")
+                .ok()
+                .flatten()
+        })
         .map(|value| value.trim().to_string())
-        .filter(|technique_id| !technique_id.is_empty() && !defs.contains_key(technique_id.as_str()))
+        .filter(|technique_id| {
+            !technique_id.is_empty() && !defs.contains_key(technique_id.as_str())
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -1637,12 +2134,35 @@ async fn load_character_techniques(state: &AppState, character_id: i64) -> Resul
                         slot_type: None,
                         slot_index: None,
                         acquired_at: None,
-                        technique_name: Some(row.try_get::<Option<String>, _>("name").ok().flatten().unwrap_or_default()),
-                        technique_type: Some(row.try_get::<Option<String>, _>("type").ok().flatten().unwrap_or_default()),
-                        technique_quality: row.try_get::<Option<String>, _>("quality").ok().flatten(),
-                        max_layer: row.try_get::<Option<i32>, _>("max_layer").ok().flatten().map(i64::from),
-                        attribute_type: row.try_get::<Option<String>, _>("attribute_type").ok().flatten(),
-                        attribute_element: row.try_get::<Option<String>, _>("attribute_element").ok().flatten(),
+                        technique_name: Some(
+                            row.try_get::<Option<String>, _>("name")
+                                .ok()
+                                .flatten()
+                                .unwrap_or_default(),
+                        ),
+                        technique_type: Some(
+                            row.try_get::<Option<String>, _>("type")
+                                .ok()
+                                .flatten()
+                                .unwrap_or_default(),
+                        ),
+                        technique_quality: row
+                            .try_get::<Option<String>, _>("quality")
+                            .ok()
+                            .flatten(),
+                        max_layer: row
+                            .try_get::<Option<i32>, _>("max_layer")
+                            .ok()
+                            .flatten()
+                            .map(i64::from),
+                        attribute_type: row
+                            .try_get::<Option<String>, _>("attribute_type")
+                            .ok()
+                            .flatten(),
+                        attribute_element: row
+                            .try_get::<Option<String>, _>("attribute_element")
+                            .ok()
+                            .flatten(),
                     },
                 ))
             })
@@ -1651,23 +2171,50 @@ async fn load_character_techniques(state: &AppState, character_id: i64) -> Resul
     let mut techniques = rows
         .into_iter()
         .filter_map(|row| {
-            let technique_id = row.try_get::<Option<String>, _>("technique_id").ok().flatten()?;
+            let technique_id = row
+                .try_get::<Option<String>, _>("technique_id")
+                .ok()
+                .flatten()?;
             let static_def = defs.get(technique_id.trim());
             let generated_def = generated_defs.get(technique_id.trim());
-            let def_name = static_def.map(|def| def.name.clone()).or_else(|| generated_def.and_then(|def| def.technique_name.clone()))?;
-            let def_type = static_def.map(|def| def.technique_type.clone()).or_else(|| generated_def.and_then(|def| def.technique_type.clone()));
-            let def_quality = static_def.and_then(|def| def.quality.clone()).or_else(|| generated_def.and_then(|def| def.technique_quality.clone()));
-            let def_max_layer = static_def.and_then(|def| def.max_layer).or_else(|| generated_def.and_then(|def| def.max_layer));
-            let def_attr_type = static_def.and_then(|def| def.attribute_type.clone()).or_else(|| generated_def.and_then(|def| def.attribute_type.clone()));
-            let def_attr_element = static_def.and_then(|def| def.attribute_element.clone()).or_else(|| generated_def.and_then(|def| def.attribute_element.clone()));
+            let def_name = static_def
+                .map(|def| def.name.clone())
+                .or_else(|| generated_def.and_then(|def| def.technique_name.clone()))?;
+            let def_type = static_def
+                .map(|def| def.technique_type.clone())
+                .or_else(|| generated_def.and_then(|def| def.technique_type.clone()));
+            let def_quality = static_def
+                .and_then(|def| def.quality.clone())
+                .or_else(|| generated_def.and_then(|def| def.technique_quality.clone()));
+            let def_max_layer = static_def
+                .and_then(|def| def.max_layer)
+                .or_else(|| generated_def.and_then(|def| def.max_layer));
+            let def_attr_type = static_def
+                .and_then(|def| def.attribute_type.clone())
+                .or_else(|| generated_def.and_then(|def| def.attribute_type.clone()));
+            let def_attr_element = static_def
+                .and_then(|def| def.attribute_element.clone())
+                .or_else(|| generated_def.and_then(|def| def.attribute_element.clone()));
             Some(CharacterTechniqueDto {
                 id: i64::from(row.try_get::<i32, _>("id").ok()?),
                 character_id: i64::from(row.try_get::<i32, _>("character_id").ok()?),
                 technique_id: technique_id.trim().to_string(),
-                current_layer: row.try_get::<Option<i32>, _>("current_layer").ok().flatten().map(i64::from).unwrap_or(1),
+                current_layer: row
+                    .try_get::<Option<i32>, _>("current_layer")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+                    .unwrap_or(1),
                 slot_type: row.try_get::<Option<String>, _>("slot_type").ok().flatten(),
-                slot_index: row.try_get::<Option<i32>, _>("slot_index").ok().flatten().map(i64::from),
-                acquired_at: row.try_get::<Option<String>, _>("acquired_at_text").ok().flatten(),
+                slot_index: row
+                    .try_get::<Option<i32>, _>("slot_index")
+                    .ok()
+                    .flatten()
+                    .map(i64::from),
+                acquired_at: row
+                    .try_get::<Option<String>, _>("acquired_at_text")
+                    .ok()
+                    .flatten(),
                 technique_name: Some(def_name),
                 technique_type: def_type,
                 technique_quality: def_quality,
@@ -1677,7 +2224,14 @@ async fn load_character_techniques(state: &AppState, character_id: i64) -> Resul
             })
         })
         .collect::<Vec<_>>();
-    techniques.sort_by(|left, right| technique_slot_rank(&left.slot_type, left.slot_index).cmp(&technique_slot_rank(&right.slot_type, right.slot_index)).then_with(|| quality_multiplier(right.technique_quality.as_deref()).cmp(&quality_multiplier(left.technique_quality.as_deref()))));
+    techniques.sort_by(|left, right| {
+        technique_slot_rank(&left.slot_type, left.slot_index)
+            .cmp(&technique_slot_rank(&right.slot_type, right.slot_index))
+            .then_with(|| {
+                quality_multiplier(right.technique_quality.as_deref())
+                    .cmp(&quality_multiplier(left.technique_quality.as_deref()))
+            })
+    });
     Ok(techniques)
 }
 
@@ -1702,32 +2256,52 @@ async fn load_equipped_skills(
     Ok(rows
         .into_iter()
         .filter_map(|row| {
-            let skill_id = row.try_get::<Option<String>, _>("skill_id").ok().flatten()?;
+            let skill_id = row
+                .try_get::<Option<String>, _>("skill_id")
+                .ok()
+                .flatten()?;
             if !available_ids.contains(skill_id.trim()) {
                 return None;
             }
             let def = skill_defs.get(skill_id.trim());
             Some(CharacterSkillSlotDto {
-                slot_index: row.try_get::<Option<i32>, _>("slot_index").ok().flatten().map(i64::from).unwrap_or_default(),
+                slot_index: row
+                    .try_get::<Option<i32>, _>("slot_index")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+                    .unwrap_or_default(),
                 skill_id: skill_id.trim().to_string(),
-                skill_name: def.map(|row| row.name.clone()).unwrap_or_else(|| skill_id.trim().to_string()),
+                skill_name: def
+                    .map(|row| row.name.clone())
+                    .unwrap_or_else(|| skill_id.trim().to_string()),
                 skill_icon: def.and_then(|row| row.icon.clone()).unwrap_or_default(),
             })
         })
         .collect())
 }
 
-fn build_available_skills(techniques: &[CharacterTechniqueDto]) -> Result<Vec<CharacterAvailableSkillDto>, AppError> {
+fn build_available_skills(
+    techniques: &[CharacterTechniqueDto],
+) -> Result<Vec<CharacterAvailableSkillDto>, AppError> {
     let skill_defs = load_skill_def_map()?;
     let layers = load_technique_layers_grouped()?;
     let defs = load_visible_technique_def_map()?;
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     for technique in techniques.iter().filter(|entry| entry.slot_type.is_some()) {
-        let Some(def) = defs.get(technique.technique_id.as_str()) else { continue; };
-        let unlocked_layers = layers.get(technique.technique_id.as_str()).cloned().unwrap_or_default();
+        let Some(def) = defs.get(technique.technique_id.as_str()) else {
+            continue;
+        };
+        let unlocked_layers = layers
+            .get(technique.technique_id.as_str())
+            .cloned()
+            .unwrap_or_default();
         let mut skill_ids = Vec::new();
-        for layer in unlocked_layers.into_iter().filter(|layer| layer.layer <= technique.current_layer) {
+        for layer in unlocked_layers
+            .into_iter()
+            .filter(|layer| layer.layer <= technique.current_layer)
+        {
             skill_ids.extend(layer.unlock_skill_ids.unwrap_or_default());
             skill_ids.extend(layer.upgrade_skill_ids.unwrap_or_default());
         }
@@ -1737,7 +2311,9 @@ fn build_available_skills(techniques: &[CharacterTechniqueDto]) -> Result<Vec<Ch
             if !seen.insert(skill_id.clone()) {
                 continue;
             }
-            let Some(skill) = skill_defs.get(skill_id.as_str()) else { continue; };
+            let Some(skill) = skill_defs.get(skill_id.as_str()) else {
+                continue;
+            };
             out.push(CharacterAvailableSkillDto {
                 skill_id: skill.id.clone(),
                 skill_name: skill.name.clone(),
@@ -1750,7 +2326,10 @@ fn build_available_skills(techniques: &[CharacterTechniqueDto]) -> Result<Vec<Ch
                 cost_qixue: skill.cost_qixue.unwrap_or_default(),
                 cost_qixue_rate: skill.cost_qixue_rate.unwrap_or_default(),
                 cooldown: skill.cooldown.unwrap_or_default(),
-                target_type: skill.target_type.clone().unwrap_or_else(|| "single_enemy".to_string()),
+                target_type: skill
+                    .target_type
+                    .clone()
+                    .unwrap_or_else(|| "single_enemy".to_string()),
                 target_count: skill.target_count.unwrap_or(1),
                 damage_type: skill.damage_type.clone(),
                 element: skill.element.clone().unwrap_or_else(|| "none".to_string()),
@@ -1761,12 +2340,24 @@ fn build_available_skills(techniques: &[CharacterTechniqueDto]) -> Result<Vec<Ch
     Ok(out)
 }
 
-fn calculate_technique_passives(techniques: &[CharacterTechniqueDto]) -> Result<BTreeMap<String, f64>, AppError> {
+fn calculate_technique_passives(
+    techniques: &[CharacterTechniqueDto],
+) -> Result<BTreeMap<String, f64>, AppError> {
     let layers = load_technique_layers_grouped()?;
     let mut passives = BTreeMap::new();
     for technique in techniques.iter().filter(|entry| entry.slot_type.is_some()) {
-        let ratio = if technique.slot_type.as_deref() == Some("main") { 1.0 } else { 0.3 };
-        for layer in layers.get(technique.technique_id.as_str()).cloned().unwrap_or_default().into_iter().filter(|layer| layer.layer <= technique.current_layer) {
+        let ratio = if technique.slot_type.as_deref() == Some("main") {
+            1.0
+        } else {
+            0.3
+        };
+        for layer in layers
+            .get(technique.technique_id.as_str())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|layer| layer.layer <= technique.current_layer)
+        {
             for passive in layer.passives.unwrap_or_default() {
                 *passives.entry(passive.key).or_insert(0.0) += passive.value * ratio;
             }
@@ -1776,20 +2367,40 @@ fn calculate_technique_passives(techniques: &[CharacterTechniqueDto]) -> Result<
 }
 
 fn load_visible_technique_def_map() -> Result<BTreeMap<String, TechniqueDefSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: TechniqueDefFile = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    Ok(payload.techniques.into_iter().filter(|row| row.enabled != Some(false)).map(|row| (row.id.clone(), row)).collect())
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
+    let payload: TechniqueDefFile = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_def.json: {error}"))
+    })?;
+    Ok(payload
+        .techniques
+        .into_iter()
+        .filter(|row| row.enabled != Some(false))
+        .map(|row| (row.id.clone(), row))
+        .collect())
 }
 
 fn load_technique_layers_by_id() -> Result<BTreeMap<(String, i64), TechniqueLayerSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_layer.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_layer.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_layer.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_layer.json: {error}")))?;
     let normalized_content = content.replace("\"itemId\"", "\"item_id\"");
-    let payload: TechniqueLayerFile = serde_json::from_str(&normalized_content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_layer.json [character_technique.rs::by_id]: {error}")))?;
-    Ok(payload.layers.into_iter().map(|row| ((row.technique_id.clone(), row.layer), row)).collect())
+    let payload: TechniqueLayerFile =
+        serde_json::from_str(&normalized_content).map_err(|error| {
+            AppError::config(format!(
+                "failed to parse technique_layer.json [character_technique.rs::by_id]: {error}"
+            ))
+        })?;
+    Ok(payload
+        .layers
+        .into_iter()
+        .map(|row| ((row.technique_id.clone(), row.layer), row))
+        .collect())
 }
 
 fn load_technique_layers_grouped() -> Result<BTreeMap<String, Vec<TechniqueLayerSeed>>, AppError> {
@@ -1804,26 +2415,60 @@ fn load_technique_layers_grouped() -> Result<BTreeMap<String, Vec<TechniqueLayer
 }
 
 fn load_skill_def_map() -> Result<BTreeMap<String, SkillDefSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/skill_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read skill_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/skill_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read skill_def.json: {error}")))?;
     let payload: SkillDefFile = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse skill_def.json: {error}")))?;
-    Ok(payload.skills.into_iter().filter(|row| row.enabled != Some(false)).map(|row| (row.id.clone(), row)).collect())
+    Ok(payload
+        .skills
+        .into_iter()
+        .filter(|row| row.enabled != Some(false))
+        .map(|row| (row.id.clone(), row))
+        .collect())
 }
 
 fn load_item_meta_map() -> Result<BTreeMap<String, (String, Option<String>)>, AppError> {
     let mut out = BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
-        let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")))
-            .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
+        let content = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
+        )
+        .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            out.insert(id, (name, item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string())));
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            out.insert(
+                id,
+                (
+                    name,
+                    item.get("icon")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                ),
+            );
         }
     }
     Ok(out)
@@ -1840,7 +2485,11 @@ fn quality_multiplier(quality: Option<&str>) -> i64 {
 }
 
 fn build_generated_technique_name(quality: &str, burning_word_prompt: Option<&str>) -> String {
-    let quality = if quality.trim().is_empty() { "黄" } else { quality.trim() };
+    let quality = if quality.trim().is_empty() {
+        "黄"
+    } else {
+        quality.trim()
+    };
     let prompt = burning_word_prompt
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1881,18 +2530,30 @@ async fn consume_material_qty(
     let mut remaining = qty;
     for row in rows {
         let instance_id = row.try_get::<i64, _>("id")?;
-        let stack_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default().max(0);
+        let stack_qty = row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default()
+            .max(0);
         if stack_qty <= 0 {
             continue;
         }
         if stack_qty <= remaining {
-            state.database.execute("DELETE FROM item_instance WHERE id = $1", |q| q.bind(instance_id)).await?;
+            state
+                .database
+                .execute("DELETE FROM item_instance WHERE id = $1", |q| {
+                    q.bind(instance_id)
+                })
+                .await?;
             remaining -= stack_qty;
         } else {
-            state.database.execute(
-                "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
-                |q| q.bind(instance_id).bind(remaining),
-            ).await?;
+            state
+                .database
+                .execute(
+                    "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                    |q| q.bind(instance_id).bind(remaining),
+                )
+                .await?;
             remaining = 0;
         }
         if remaining == 0 {
@@ -1902,25 +2563,57 @@ async fn consume_material_qty(
     Ok(remaining == 0)
 }
 
-fn build_technique_research_cooldown_state(latest_started_at: Option<&str>) -> (Option<String>, i64) {
+fn build_technique_research_cooldown_state(
+    latest_started_at: Option<&str>,
+) -> (Option<String>, i64) {
     if std::env::var("NODE_ENV").ok().as_deref() == Some("development") {
         return (None, 0);
     }
     let Some(started_at) = latest_started_at else {
         return (None, 0);
     };
-    let Ok(started_at) = time::OffsetDateTime::parse(started_at, &time::format_description::well_known::Rfc3339) else {
+    let Ok(started_at) =
+        time::OffsetDateTime::parse(started_at, &time::format_description::well_known::Rfc3339)
+    else {
         return (None, 0);
     };
     let cooldown_until = started_at + time::Duration::hours(72);
     let now = time::OffsetDateTime::now_utc();
-    let remaining = ((cooldown_until.unix_timestamp_nanos() - now.unix_timestamp_nanos()).max(0) / 1_000_000 + 999) / 1000;
-    (Some(cooldown_until.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()), remaining as i64)
+    let remaining = ((cooldown_until.unix_timestamp_nanos() - now.unix_timestamp_nanos()).max(0)
+        / 1_000_000
+        + 999)
+        / 1000;
+    (
+        Some(
+            cooldown_until
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+        ),
+        remaining as i64,
+    )
 }
 
 fn realm_rank_with_full_name(full_realm: &str) -> i64 {
-    const ORDER: &[&str] = &["凡人","炼精化炁·养气期","炼精化炁·通脉期","炼精化炁·凝炁期","炼炁化神·炼己期","炼炁化神·采药期","炼炁化神·结胎期","炼神返虚·养神期","炼神返虚·还虚期","炼神返虚·合道期","炼虚合道·证道期","炼虚合道·历劫期","炼虚合道·成圣期"];
-    ORDER.iter().position(|item| *item == full_realm.trim()).map(|idx| idx as i64).unwrap_or(0)
+    const ORDER: &[&str] = &[
+        "凡人",
+        "炼精化炁·养气期",
+        "炼精化炁·通脉期",
+        "炼精化炁·凝炁期",
+        "炼炁化神·炼己期",
+        "炼炁化神·采药期",
+        "炼炁化神·结胎期",
+        "炼神返虚·养神期",
+        "炼神返虚·还虚期",
+        "炼神返虚·合道期",
+        "炼虚合道·证道期",
+        "炼虚合道·历劫期",
+        "炼虚合道·成圣期",
+    ];
+    ORDER
+        .iter()
+        .position(|item| *item == full_realm.trim())
+        .map(|idx| idx as i64)
+        .unwrap_or(0)
 }
 
 fn realm_rank_with_subrealm(realm: &str, sub_realm: Option<&str>) -> i64 {
@@ -2030,7 +2723,10 @@ mod tests {
             "data": {"marked": true}
         });
         assert_eq!(payload["data"]["marked"], true);
-        println!("CHARACTER_TECHNIQUE_RESEARCH_MARK_VIEWED_RESPONSE={}", payload);
+        println!(
+            "CHARACTER_TECHNIQUE_RESEARCH_MARK_VIEWED_RESPONSE={}",
+            payload
+        );
     }
 
     #[test]
@@ -2133,6 +2829,8 @@ mod tests {
         let fallback = super::build_generated_technique_name("黄", None);
         assert_eq!(seeded, "玄·青木研法");
         assert_eq!(fallback, "黄·无字研法");
-        println!("TECHNIQUE_RESEARCH_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}");
+        println!(
+            "TECHNIQUE_RESEARCH_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}"
+        );
     }
 }

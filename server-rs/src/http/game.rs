@@ -6,7 +6,9 @@ use sqlx::Row;
 use crate::auth;
 use crate::http::idle;
 use crate::http::inventory;
-use crate::http::main_quest::{MainQuestChapterDto, MainQuestProgressDto, MainQuestSectionDto, MainQuestSectionObjectiveDto};
+use crate::http::main_quest::{
+    MainQuestChapterDto, MainQuestProgressDto, MainQuestSectionDto, MainQuestSectionObjectiveDto,
+};
 use crate::realtime::online_players::{OnlinePlayersPayload, build_online_players_payload};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
@@ -81,7 +83,10 @@ pub async fn get_game_home_overview(
         },
         task,
         main_quest,
-        debug_realtime: Some(build_online_players_payload(state.online_players.count_total(), None)),
+        debug_realtime: Some(build_online_players_payload(
+            state.online_players.count_total(),
+            None,
+        )),
     }))
 }
 
@@ -96,11 +101,21 @@ async fn load_phone_binding_status(
             |query| query.bind(user_id),
         )
         .await?;
-    let phone_number = row.and_then(|row| row.try_get::<Option<String>, _>("phone_number").ok().flatten());
+    let phone_number = row.and_then(|row| {
+        row.try_get::<Option<String>, _>("phone_number")
+            .ok()
+            .flatten()
+    });
     Ok(crate::http::account::PhoneBindingStatusDto {
         enabled: state.config.market_phone_binding.enabled,
-        is_bound: phone_number.as_deref().map(str::trim).filter(|value| !value.is_empty()).is_some(),
-        masked_phone_number: phone_number.as_deref().and_then(crate::shared::phone_number::mask_phone_number),
+        is_bound: phone_number
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some(),
+        masked_phone_number: phone_number
+            .as_deref()
+            .and_then(crate::shared::phone_number::mask_phone_number),
     })
 }
 
@@ -109,7 +124,12 @@ async fn load_sign_in_snapshot(
     user_id: i64,
 ) -> Result<GameHomeSignInDto, AppError> {
     let now = time::OffsetDateTime::now_utc();
-    let today = format!("{:04}-{:02}-{:02}", now.year(), u8::from(now.month()), now.day());
+    let today = format!(
+        "{:04}-{:02}-{:02}",
+        now.year(),
+        u8::from(now.month()),
+        now.day()
+    );
     let current_month = format!("{:04}-{:02}", now.year(), u8::from(now.month()));
     let signed_today = state
         .database
@@ -150,7 +170,9 @@ async fn load_realm_overview_snapshot(
         "SELECT id, realm, sub_realm, exp, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
         |query| query.bind(user_id),
     ).await?;
-    let Some(character_row) = character_row else { return Ok(None); };
+    let Some(character_row) = character_row else {
+        return Ok(None);
+    };
     let config_path = None;
     let realm_order = vec![
         "凡人".to_string(),
@@ -158,17 +180,35 @@ async fn load_realm_overview_snapshot(
         "炼精化炁·通脉期".to_string(),
         "炼精化炁·凝炁期".to_string(),
     ];
-    let realm = character_row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
-    let sub_realm = character_row.try_get::<Option<String>, _>("sub_realm")?.unwrap_or_default();
-    let current_realm = if realm == "凡人" || sub_realm.trim().is_empty() { realm } else { format!("{}·{}", realm, sub_realm) };
+    let realm = character_row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
+    let sub_realm = character_row
+        .try_get::<Option<String>, _>("sub_realm")?
+        .unwrap_or_default();
+    let current_realm = if realm == "凡人" || sub_realm.trim().is_empty() {
+        realm
+    } else {
+        format!("{}·{}", realm, sub_realm)
+    };
     Ok(Some(crate::http::realm::RealmOverviewDto {
         config_path,
         realm_order: realm_order.clone(),
         current_realm: current_realm.clone(),
-        current_index: realm_order.iter().position(|value| value == &current_realm).unwrap_or(0) as i64,
-        next_realm: realm_order.iter().position(|value| value == &current_realm).and_then(|idx| realm_order.get(idx + 1).cloned()),
-        exp: character_row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default(),
-        spirit_stones: character_row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default(),
+        current_index: realm_order
+            .iter()
+            .position(|value| value == &current_realm)
+            .unwrap_or(0) as i64,
+        next_realm: realm_order
+            .iter()
+            .position(|value| value == &current_realm)
+            .and_then(|idx| realm_order.get(idx + 1).cloned()),
+        exp: character_row
+            .try_get::<Option<i64>, _>("exp")?
+            .unwrap_or_default(),
+        spirit_stones: character_row
+            .try_get::<Option<i64>, _>("spirit_stones")?
+            .unwrap_or_default(),
         requirements: vec![],
         costs: vec![],
         rewards: vec![],
@@ -181,7 +221,9 @@ async fn load_task_summary_snapshot(
     user_id: i64,
 ) -> Result<GameHomeTaskDto, AppError> {
     let character_id = auth::get_character_id_by_user_id(state, user_id).await?;
-    let Some(character_id) = character_id else { return Ok(GameHomeTaskDto { tasks: vec![] }); };
+    let Some(character_id) = character_id else {
+        return Ok(GameHomeTaskDto { tasks: vec![] });
+    };
     let rows = state.database.fetch_all(
         "SELECT task_id, status, tracked FROM character_task_progress WHERE character_id = $1 AND tracked = true ORDER BY updated_at DESC LIMIT 20",
         |query| query.bind(character_id),
@@ -200,12 +242,18 @@ async fn load_idle_session_snapshot(
     user_id: i64,
 ) -> Result<Option<serde_json::Value>, AppError> {
     let character_id = auth::get_character_id_by_user_id(state, user_id).await?;
-    let Some(character_id) = character_id else { return Ok(None); };
+    let Some(character_id) = character_id else {
+        return Ok(None);
+    };
     let session = idle::load_active_idle_session(state, character_id).await?;
     session
         .map(serde_json::to_value)
         .transpose()
-        .map_err(|error| AppError::config(format!("failed to serialize idle session snapshot: {error}")))
+        .map_err(|error| {
+            AppError::config(format!(
+                "failed to serialize idle session snapshot: {error}"
+            ))
+        })
 }
 
 async fn load_equipped_items_snapshot(
@@ -216,13 +264,18 @@ async fn load_equipped_items_snapshot(
     let Some(character_id) = character_id else {
         return Ok(Vec::new());
     };
-    let items = inventory::load_inventory_items_with_defs(state, character_id, "equipped", 1, 200).await?;
+    let items =
+        inventory::load_inventory_items_with_defs(state, character_id, "equipped", 1, 200).await?;
     items
         .items
         .into_iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| AppError::config(format!("failed to serialize equipped items snapshot: {error}")))
+        .map_err(|error| {
+            AppError::config(format!(
+                "failed to serialize equipped items snapshot: {error}"
+            ))
+        })
 }
 
 async fn load_main_quest_progress_snapshot(
@@ -231,17 +284,35 @@ async fn load_main_quest_progress_snapshot(
 ) -> Result<MainQuestProgressDto, AppError> {
     let character_id = auth::get_character_id_by_user_id(state, user_id).await?;
     let Some(character_id) = character_id else {
-        return Ok(MainQuestProgressDto { current_chapter: None, current_section: None, completed_chapters: vec![], completed_sections: vec![], dialogue_state: None, tracked: true });
+        return Ok(MainQuestProgressDto {
+            current_chapter: None,
+            current_section: None,
+            completed_chapters: vec![],
+            completed_sections: vec![],
+            dialogue_state: None,
+            tracked: true,
+        });
     };
     let row = state.database.fetch_optional(
         "SELECT current_chapter_id, current_section_id, section_status, completed_chapters, completed_sections, dialogue_state, tracked FROM character_main_quest_progress WHERE character_id = $1 LIMIT 1",
         |query| query.bind(character_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(MainQuestProgressDto { current_chapter: None, current_section: None, completed_chapters: vec![], completed_sections: vec![], dialogue_state: None, tracked: true });
+        return Ok(MainQuestProgressDto {
+            current_chapter: None,
+            current_section: None,
+            completed_chapters: vec![],
+            completed_sections: vec![],
+            dialogue_state: None,
+            tracked: true,
+        });
     };
-    let current_chapter_id = row.try_get::<Option<String>, _>("current_chapter_id")?.unwrap_or_default();
-    let current_section_id = row.try_get::<Option<String>, _>("current_section_id")?.unwrap_or_default();
+    let current_chapter_id = row
+        .try_get::<Option<String>, _>("current_chapter_id")?
+        .unwrap_or_default();
+    let current_section_id = row
+        .try_get::<Option<String>, _>("current_section_id")?
+        .unwrap_or_default();
     Ok(MainQuestProgressDto {
         current_chapter: (!current_chapter_id.is_empty()).then_some(MainQuestChapterDto {
             id: current_chapter_id,
@@ -262,13 +333,27 @@ async fn load_main_quest_progress_snapshot(
             npc_id: None,
             map_id: None,
             room_id: None,
-            status: row.try_get::<Option<String>, _>("section_status")?.unwrap_or_else(|| "not_started".to_string()),
+            status: row
+                .try_get::<Option<String>, _>("section_status")?
+                .unwrap_or_else(|| "not_started".to_string()),
             objectives: Vec::<MainQuestSectionObjectiveDto>::new(),
             rewards: serde_json::json!({}),
             is_chapter_final: false,
         }),
-        completed_chapters: row.try_get::<Option<serde_json::Value>, _>("completed_chapters")?.and_then(|v| v.as_array().cloned()).unwrap_or_default().into_iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
-        completed_sections: row.try_get::<Option<serde_json::Value>, _>("completed_sections")?.and_then(|v| v.as_array().cloned()).unwrap_or_default().into_iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
+        completed_chapters: row
+            .try_get::<Option<serde_json::Value>, _>("completed_chapters")?
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect(),
+        completed_sections: row
+            .try_get::<Option<serde_json::Value>, _>("completed_sections")?
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect(),
         dialogue_state: row.try_get::<Option<serde_json::Value>, _>("dialogue_state")?,
         tracked: row.try_get::<Option<bool>, _>("tracked")?.unwrap_or(true),
     })
@@ -295,7 +380,10 @@ mod tests {
         });
         assert_eq!(payload["data"]["achievement"]["claimableCount"], 2);
         assert_eq!(payload["data"]["idleSession"]["status"], "active");
-        assert_eq!(payload["data"]["debugRealtime"]["kind"], "game:onlinePlayers");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["kind"],
+            "game:onlinePlayers"
+        );
         println!("GAME_HOME_OVERVIEW_RESPONSE={}", payload);
     }
 }

@@ -14,7 +14,11 @@ pub async fn log_slow_request(request: Request, next: Next) -> Response {
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let path = strip_query_from_path(uri.path_and_query().map(|value| value.as_str()).unwrap_or(uri.path()));
+    let path = strip_query_from_path(
+        uri.path_and_query()
+            .map(|value| value.as_str())
+            .unwrap_or(uri.path()),
+    );
 
     if path.starts_with("/uploads") {
         return next.run(request).await;

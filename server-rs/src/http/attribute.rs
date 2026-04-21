@@ -66,7 +66,8 @@ pub async fn remove(
         return Err(AppError::config("请指定属性类型"));
     }
     let result = remove_attribute_point(&state, user.user_id, attribute.trim(), amount).await?;
-    emit_attribute_character_refresh_if_success(&state, user.user_id, result.success, "remove").await;
+    emit_attribute_character_refresh_if_success(&state, user.user_id, result.success, "remove")
+        .await;
     Ok(send_result(result))
 }
 
@@ -77,7 +78,8 @@ pub async fn batch(
 ) -> Result<axum::response::Response, AppError> {
     let user = auth::require_auth(&state, &headers).await?;
     let result = batch_add_points(&state, user.user_id, payload).await?;
-    emit_attribute_character_refresh_if_success(&state, user.user_id, result.success, "batch").await;
+    emit_attribute_character_refresh_if_success(&state, user.user_id, result.success, "batch")
+        .await;
     Ok(send_result(result))
 }
 
@@ -87,7 +89,8 @@ pub async fn reset(
 ) -> Result<axum::response::Response, AppError> {
     let user = auth::require_auth(&state, &headers).await?;
     let result = reset_attribute_points(&state, user.user_id).await?;
-    emit_attribute_character_refresh_if_success(&state, user.user_id, result.success, "reset").await;
+    emit_attribute_character_refresh_if_success(&state, user.user_id, result.success, "reset")
+        .await;
     Ok(send_result(result))
 }
 
@@ -170,10 +173,18 @@ async fn run_single_attribute_mutation(
         return Ok(failure("角色不存在"));
     }
     if !updated {
-        return Ok(failure(if add_mode { "属性点不足" } else { "属性点不足以减少" }));
+        return Ok(failure(if add_mode {
+            "属性点不足"
+        } else {
+            "属性点不足以减少"
+        }));
     }
     Ok(success(
-        if add_mode { "加点成功" } else { "减点成功" },
+        if add_mode {
+            "加点成功"
+        } else {
+            "减点成功"
+        },
         AttributeMutationData {
             attribute: attribute.to_string(),
             new_value: required_i64_from_i32(&row, "new_value")?,
@@ -228,24 +239,42 @@ async fn reset_attribute_points(
     let character_exists: bool = row.try_get("character_exists")?;
     let updated: bool = row.try_get("updated")?;
     if !character_exists {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     }
     if !updated {
-        return Ok(ServiceResult { success: false, message: Some("重置失败".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("重置失败".to_string()),
+            data: None,
+        });
     }
     Ok(ServiceResult {
         success: true,
         message: Some("属性点已重置".to_string()),
-        data: Some(serde_json::json!({"totalPoints": required_i64_from_i32(&row, "refunded_points")?})),
+        data: Some(
+            serde_json::json!({"totalPoints": required_i64_from_i32(&row, "refunded_points")?}),
+        ),
     })
 }
 
 fn failure<T>(message: &str) -> ServiceResult<T> {
-    ServiceResult { success: false, message: Some(message.to_string()), data: None }
+    ServiceResult {
+        success: false,
+        message: Some(message.to_string()),
+        data: None,
+    }
 }
 
 fn success<T: serde::Serialize>(message: &str, data: T) -> ServiceResult<T> {
-    ServiceResult { success: true, message: Some(message.to_string()), data: Some(data) }
+    ServiceResult {
+        success: true,
+        message: Some(message.to_string()),
+        data: Some(data),
+    }
 }
 
 #[cfg(test)]

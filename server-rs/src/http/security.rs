@@ -63,7 +63,11 @@ fn normalize_part(value: &str) -> Result<String, AppError> {
     Ok(urlencoding::encode(&normalized).to_string())
 }
 
-fn build_attempt_keys(action: AttemptAction, subject: &str, ip: &str) -> Result<[String; 6], AppError> {
+fn build_attempt_keys(
+    action: AttemptAction,
+    subject: &str,
+    ip: &str,
+) -> Result<[String; 6], AppError> {
     let action = normalize_part(action_key(action))?;
     let subject = normalize_part(subject)?;
     let ip = normalize_part(ip)?;
@@ -79,12 +83,9 @@ fn build_attempt_keys(action: AttemptAction, subject: &str, ip: &str) -> Result<
 }
 
 fn redis_runtime(state: &AppState) -> Result<RedisRuntime, AppError> {
-    Ok(RedisRuntime::new(
-        state
-            .redis
-            .clone()
-            .ok_or_else(|| AppError::service_unavailable("Redis 不可用，无法执行安全校验"))?,
-    ))
+    Ok(RedisRuntime::new(state.redis.clone().ok_or_else(|| {
+        AppError::service_unavailable("Redis 不可用，无法执行安全校验")
+    })?))
 }
 
 pub async fn assert_action_attempt_allowed(
@@ -98,7 +99,10 @@ pub async fn assert_action_attempt_allowed(
     let keys = build_attempt_keys(action, subject, ip)?;
     let refs = [&keys[3][..], &keys[4][..], &keys[5][..]];
     let values = redis.mget(&refs).await?;
-    if values.into_iter().any(|value| value.as_deref() == Some("1")) {
+    if values
+        .into_iter()
+        .any(|value| value.as_deref() == Some("1"))
+    {
         return Err(AppError::too_many_requests(policy.blocked_message));
     }
     Ok(())
@@ -163,7 +167,10 @@ pub async fn enforce_qps_limit(
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default())
         / window_ms;
-    let redis_key = format!("{key_prefix}:{}:{current_window}", normalize_part(scope_key)?);
+    let redis_key = format!(
+        "{key_prefix}:{}:{current_window}",
+        normalize_part(scope_key)?
+    );
     let count = redis.incr(&redis_key).await?;
     if count == 1 {
         redis.pexpire(&redis_key, window_ms * 2).await?;

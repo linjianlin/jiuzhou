@@ -1,7 +1,7 @@
+use sha1::{Digest, Sha1};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use sha1::{Digest, Sha1};
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -11,23 +11,24 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::config::CaptchaProvider;
+use crate::http::inventory::resolve_generated_technique_book_display;
+use crate::http::partner::{
+    build_effective_partner_skill, clear_pending_partner_technique_preview_by_partner_ids,
+    has_pending_partner_technique_preview_for_partner,
+};
+use crate::http::technique::load_technique_detail_data;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_instance_mutation::{BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, buffer_item_instance_mutations};
-use crate::realtime::public_socket::{emit_market_update_to_user, emit_rank_update_to_user};
+use crate::integrations::redis_item_instance_mutation::{
+    BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, buffer_item_instance_mutations,
+};
 use crate::integrations::tencent_captcha;
 use crate::realtime::market::{MarketUpdatePayload, build_market_update_payload};
+use crate::realtime::public_socket::{emit_market_update_to_user, emit_rank_update_to_user};
 use crate::realtime::rank::{RankUpdatePayload, build_rank_update_payload};
 use crate::shared::error::AppError;
 use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_counter_deltas};
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
 use crate::state::AppState;
-use crate::http::technique::load_technique_detail_data;
-use crate::http::partner::{
-    build_effective_partner_skill,
-    clear_pending_partner_technique_preview_by_partner_ids,
-    has_pending_partner_technique_preview_for_partner,
-};
-use crate::http::inventory::resolve_generated_technique_book_display;
 
 fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
     row.try_get::<Option<i32>, _>(column)
@@ -393,7 +394,8 @@ pub async fn get_market_listings(
         &state,
         user.user_id,
         build_item_market_risk_query_signature(&query, page, page_size),
-    ).await?;
+    )
+    .await?;
     let sort_sql = match query.sort.as_deref().unwrap_or("timeDesc") {
         "priceAsc" => "ml.unit_price_spirit_stones ASC, ml.id ASC",
         "priceDesc" => "ml.unit_price_spirit_stones DESC, ml.id DESC",
@@ -404,7 +406,10 @@ pub async fn get_market_listings(
         "SELECT ml.id, ml.item_instance_id, ml.item_def_id, ml.qty, ml.unit_price_spirit_stones, ml.seller_character_id, ml.listed_at::text AS listed_at_text, ii.quality AS instance_quality, ii.strengthen_level, ii.refine_level, ii.identified, ii.affixes, ii.socketed_gems, ii.metadata, c.nickname AS seller_name FROM market_listing ml LEFT JOIN item_instance ii ON ii.id = ml.item_instance_id JOIN characters c ON c.id = ml.seller_character_id WHERE ml.status = 'active' ORDER BY {} LIMIT $1 OFFSET $2",
         sort_sql
     );
-    let rows = state.database.fetch_all(&sql, |q| q.bind(page_size).bind(offset)).await?;
+    let rows = state
+        .database
+        .fetch_all(&sql, |q| q.bind(page_size).bind(offset))
+        .await?;
     let metas = load_market_item_meta_map()?;
     let mut listings = Vec::new();
     for row in rows {
@@ -427,7 +432,12 @@ pub async fn get_my_market_listings(
     let page = clamp_page(query.page);
     let page_size = clamp_page_size(query.page_size);
     let offset = (page - 1) * page_size;
-    let status = query.status.as_deref().map(str::trim).filter(|v| !v.is_empty()).unwrap_or("active");
+    let status = query
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("active");
     let rows = state.database.fetch_all(
         "SELECT ml.id, ml.item_instance_id, ml.item_def_id, ml.qty, ml.unit_price_spirit_stones, ml.seller_character_id, ml.listed_at::text AS listed_at_text, ii.quality AS instance_quality, ii.strengthen_level, ii.refine_level, ii.identified, ii.affixes, ii.socketed_gems, ii.metadata, c.nickname AS seller_name FROM market_listing ml LEFT JOIN item_instance ii ON ii.id = ml.item_instance_id JOIN characters c ON c.id = ml.seller_character_id WHERE ml.seller_character_id = $1 AND ml.status = $2 ORDER BY ml.listed_at DESC LIMIT $3 OFFSET $4",
         |q| q.bind(actor.character_id).bind(status).bind(page_size).bind(offset),
@@ -436,7 +446,9 @@ pub async fn get_my_market_listings(
         "SELECT COUNT(*)::bigint AS cnt FROM market_listing WHERE seller_character_id = $1 AND status = $2",
         |q| q.bind(actor.character_id).bind(status),
     ).await?;
-    let total = count_row.and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten()).unwrap_or_default();
+    let total = count_row
+        .and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten())
+        .unwrap_or_default();
     let metas = load_market_item_meta_map()?;
     let mut listings = Vec::new();
     for row in rows {
@@ -465,7 +477,9 @@ pub async fn get_market_trade_records(
         "SELECT COUNT(*)::bigint AS cnt FROM market_trade_record WHERE buyer_character_id = $1 OR seller_character_id = $1",
         |q| q.bind(actor.character_id),
     ).await?;
-    let total = count_row.and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten()).unwrap_or_default();
+    let total = count_row
+        .and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten())
+        .unwrap_or_default();
     let metas = load_market_item_meta_map()?;
     let records = rows
         .into_iter()
@@ -484,13 +498,22 @@ pub async fn get_market_purchase_captcha(
         return Err(AppError::config("当前验证码模式不支持此操作"));
     }
     let redis = RedisRuntime::new(
-        state.redis.clone().ok_or_else(|| AppError::service_unavailable("当前验证码服务不可用"))?,
+        state
+            .redis
+            .clone()
+            .ok_or_else(|| AppError::service_unavailable("当前验证码服务不可用"))?,
     );
     let captcha_id = format!("market-captcha-{}", now_millis());
     let answer = generate_market_captcha_answer();
     let expires_at = now_secs() + MARKET_CAPTCHA_TTL_SECONDS;
     let payload = serde_json::json!({"answer": answer, "expiresAt": expires_at});
-    redis.set_string_ex(&format!("{MARKET_CAPTCHA_KEY_PREFIX}{captcha_id}"), &payload.to_string(), MARKET_CAPTCHA_TTL_SECONDS).await?;
+    redis
+        .set_string_ex(
+            &format!("{MARKET_CAPTCHA_KEY_PREFIX}{captcha_id}"),
+            &payload.to_string(),
+            MARKET_CAPTCHA_TTL_SECONDS,
+        )
+        .await?;
     Ok(send_success(MarketCaptchaChallengeDto {
         captcha_id,
         image_data: build_market_captcha_image_data(&answer),
@@ -516,7 +539,10 @@ pub async fn verify_market_purchase_captcha(
         .to_string();
     verify_market_captcha_payload(&state, &payload, &request_ip).await?;
     let redis = RedisRuntime::new(
-        state.redis.clone().ok_or_else(|| AppError::service_unavailable("Redis 不可用，无法写入坊市放行凭证"))?,
+        state
+            .redis
+            .clone()
+            .ok_or_else(|| AppError::service_unavailable("Redis 不可用，无法写入坊市放行凭证"))?,
     );
     let pass_expires_at = now_millis() + MARKET_CAPTCHA_PASS_TTL_MS;
     redis
@@ -526,7 +552,9 @@ pub async fn verify_market_purchase_captcha(
             MARKET_CAPTCHA_PASS_TTL_MS / 1000,
         )
         .await?;
-    Ok(send_success(MarketCaptchaVerifyResultDto { pass_expires_at }))
+    Ok(send_success(MarketCaptchaVerifyResultDto {
+        pass_expires_at,
+    }))
 }
 
 pub async fn cancel_partner_market_listing(
@@ -544,16 +572,25 @@ pub async fn cancel_partner_market_listing(
             data: None,
         }));
     }
-    let result = state.database.with_transaction(|| async {
-        cancel_partner_market_listing_tx(&state, actor.character_id, listing_id).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            cancel_partner_market_listing_tx(&state, actor.character_id, listing_id).await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             if let Some(debug) = data.get("debugRealtime") {
                 let payload = build_market_update_payload(
-                    debug.get("source").and_then(|value| value.as_str()).unwrap_or_default(),
+                    debug
+                        .get("source")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
                     debug.get("listingId").and_then(|value| value.as_i64()),
-                    debug.get("marketType").and_then(|value| value.as_str()).unwrap_or_default(),
+                    debug
+                        .get("marketType")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
                 );
                 emit_market_update_to_user(&state, actor.user_id, &payload);
             }
@@ -572,14 +609,32 @@ pub async fn create_partner_market_listing(
     let partner_id = payload.partner_id.unwrap_or_default();
     let unit_price = payload.unit_price_spirit_stones.unwrap_or_default();
     if partner_id <= 0 {
-        return Ok(send_result(ServiceResult::<MarketPartnerListDataDto> { success: false, message: Some("partnerId参数错误".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<MarketPartnerListDataDto> {
+            success: false,
+            message: Some("partnerId参数错误".to_string()),
+            data: None,
+        }));
     }
     if unit_price <= 0 {
-        return Ok(send_result(ServiceResult::<MarketPartnerListDataDto> { success: false, message: Some("unitPriceSpiritStones参数错误".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<MarketPartnerListDataDto> {
+            success: false,
+            message: Some("unitPriceSpiritStones参数错误".to_string()),
+            data: None,
+        }));
     }
-    let result = state.database.with_transaction(|| async {
-        create_partner_market_listing_tx(&state, actor.user_id, actor.character_id, partner_id, unit_price).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            create_partner_market_listing_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                partner_id,
+                unit_price,
+            )
+            .await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             if let Some(payload) = data.debug_realtime.as_ref() {
@@ -605,16 +660,25 @@ pub async fn cancel_market_listing(
             data: None,
         }));
     }
-    let result = state.database.with_transaction(|| async {
-        cancel_market_listing_tx(&state, actor.user_id, actor.character_id, listing_id).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            cancel_market_listing_tx(&state, actor.user_id, actor.character_id, listing_id).await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             if let Some(debug) = data.get("debugRealtime") {
                 let payload = build_market_update_payload(
-                    debug.get("source").and_then(|value| value.as_str()).unwrap_or_default(),
+                    debug
+                        .get("source")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
                     debug.get("listingId").and_then(|value| value.as_i64()),
-                    debug.get("marketType").and_then(|value| value.as_str()).unwrap_or_default(),
+                    debug
+                        .get("marketType")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default(),
                 );
                 emit_market_update_to_user(&state, actor.user_id, &payload);
             }
@@ -654,9 +718,20 @@ pub async fn create_market_listing(
             data: None,
         }));
     }
-    let result = state.database.with_transaction(|| async {
-        create_market_listing_tx(&state, actor.user_id, actor.character_id, item_instance_id, qty, unit_price).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            create_market_listing_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                item_instance_id,
+                qty,
+                unit_price,
+            )
+            .await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             if let Some(payload) = data.debug_realtime.as_ref() {
@@ -688,13 +763,20 @@ pub async fn buy_partner_market_listing(
             return Err(AppError::Business {
                 message: "坊市购买需要验证码".to_string(),
                 status: axum::http::StatusCode::BAD_REQUEST,
-                extra: serde_json::Map::from_iter([(String::from("code"), serde_json::Value::String(MARKET_CAPTCHA_REQUIRED_ERROR_CODE.to_string()))]),
+                extra: serde_json::Map::from_iter([(
+                    String::from("code"),
+                    serde_json::Value::String(MARKET_CAPTCHA_REQUIRED_ERROR_CODE.to_string()),
+                )]),
             });
         }
     }
-    let result = state.database.with_transaction(|| async {
-        buy_partner_market_listing_tx(&state, actor.user_id, actor.character_id, listing_id).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            buy_partner_market_listing_tx(&state, actor.user_id, actor.character_id, listing_id)
+                .await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             if let Some(payload) = data.debug_realtime.as_ref() {
@@ -739,13 +821,19 @@ pub async fn buy_market_listing(
             return Err(AppError::Business {
                 message: "坊市购买需要验证码".to_string(),
                 status: axum::http::StatusCode::BAD_REQUEST,
-                extra: serde_json::Map::from_iter([(String::from("code"), serde_json::Value::String(MARKET_CAPTCHA_REQUIRED_ERROR_CODE.to_string()))]),
+                extra: serde_json::Map::from_iter([(
+                    String::from("code"),
+                    serde_json::Value::String(MARKET_CAPTCHA_REQUIRED_ERROR_CODE.to_string()),
+                )]),
             });
         }
     }
-    let result = state.database.with_transaction(|| async {
-        buy_market_listing_tx(&state, actor.user_id, actor.character_id, listing_id, qty).await
-    }).await?;
+    let result = state
+        .database
+        .with_transaction(|| async {
+            buy_market_listing_tx(&state, actor.user_id, actor.character_id, listing_id, qty).await
+        })
+        .await?;
     if result.success {
         if let Some(data) = result.data.as_ref() {
             if let Some(payload) = data.debug_realtime.as_ref() {
@@ -771,7 +859,8 @@ pub async fn get_partner_market_listings(
         &state,
         user.user_id,
         build_partner_market_risk_query_signature(&query, page, page_size),
-    ).await?;
+    )
+    .await?;
     let sort_sql = match query.sort.as_deref().unwrap_or("timeDesc") {
         "priceAsc" => "mpl.unit_price_spirit_stones ASC, mpl.listed_at DESC",
         "priceDesc" => "mpl.unit_price_spirit_stones DESC, mpl.listed_at DESC",
@@ -782,11 +871,20 @@ pub async fn get_partner_market_listings(
         "SELECT mpl.id, mpl.partner_snapshot, mpl.unit_price_spirit_stones, mpl.seller_character_id, seller.nickname AS seller_name, mpl.listed_at::text AS listed_at_text, mpl.partner_quality, mpl.partner_element, mpl.partner_name, mpl.partner_nickname FROM market_partner_listing mpl JOIN characters seller ON seller.id = mpl.seller_character_id WHERE mpl.status = 'active' ORDER BY {} LIMIT $1 OFFSET $2",
         sort_sql
     );
-    let rows = state.database.fetch_all(&sql, |q| q.bind(page_size).bind(offset)).await?;
-    let mut listings = rows.into_iter().map(build_market_partner_listing_dto).collect::<Result<Vec<_>, _>>()?;
+    let rows = state
+        .database
+        .fetch_all(&sql, |q| q.bind(page_size).bind(offset))
+        .await?;
+    let mut listings = rows
+        .into_iter()
+        .map(build_market_partner_listing_dto)
+        .collect::<Result<Vec<_>, _>>()?;
     apply_partner_listing_filters(&mut listings, &query);
     let total = listings.len() as i64;
-    Ok(send_success(MarketPartnerListingsDataDto { listings, total }))
+    Ok(send_success(MarketPartnerListingsDataDto {
+        listings,
+        total,
+    }))
 }
 
 pub async fn get_my_partner_market_listings(
@@ -799,7 +897,12 @@ pub async fn get_my_partner_market_listings(
     let page = clamp_page(query.page);
     let page_size = clamp_page_size(query.page_size);
     let offset = (page - 1) * page_size;
-    let status = query.status.as_deref().map(str::trim).filter(|v| !v.is_empty()).unwrap_or("active");
+    let status = query
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("active");
     let rows = state.database.fetch_all(
         "SELECT mpl.id, mpl.partner_snapshot, mpl.unit_price_spirit_stones, mpl.seller_character_id, seller.nickname AS seller_name, mpl.listed_at::text AS listed_at_text FROM market_partner_listing mpl JOIN characters seller ON seller.id = mpl.seller_character_id WHERE mpl.seller_character_id = $1 AND mpl.status = $2 ORDER BY mpl.listed_at DESC LIMIT $3 OFFSET $4",
         |q| q.bind(actor.character_id).bind(status).bind(page_size).bind(offset),
@@ -808,9 +911,17 @@ pub async fn get_my_partner_market_listings(
         "SELECT COUNT(*)::bigint AS cnt FROM market_partner_listing WHERE seller_character_id = $1 AND status = $2",
         |q| q.bind(actor.character_id).bind(status),
     ).await?;
-    let total = count_row.and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten()).unwrap_or_default();
-    let listings = rows.into_iter().map(build_market_partner_listing_dto).collect::<Result<Vec<_>, _>>()?;
-    Ok(send_success(MarketPartnerListingsDataDto { listings, total }))
+    let total = count_row
+        .and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten())
+        .unwrap_or_default();
+    let listings = rows
+        .into_iter()
+        .map(build_market_partner_listing_dto)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(send_success(MarketPartnerListingsDataDto {
+        listings,
+        total,
+    }))
 }
 
 pub async fn get_partner_market_trade_records(
@@ -831,9 +942,17 @@ pub async fn get_partner_market_trade_records(
         "SELECT COUNT(*)::bigint AS cnt FROM market_partner_trade_record WHERE buyer_character_id = $1 OR seller_character_id = $1",
         |q| q.bind(actor.character_id),
     ).await?;
-    let total = count_row.and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten()).unwrap_or_default();
-    let records = rows.into_iter().map(|row| build_market_partner_trade_record_dto(&row, actor.character_id)).collect::<Result<Vec<_>, _>>()?;
-    Ok(send_success(MarketPartnerTradeRecordsDataDto { records, total }))
+    let total = count_row
+        .and_then(|r| r.try_get::<Option<i64>, _>("cnt").ok().flatten())
+        .unwrap_or_default();
+    let records = rows
+        .into_iter()
+        .map(|row| build_market_partner_trade_record_dto(&row, actor.character_id))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(send_success(MarketPartnerTradeRecordsDataDto {
+        records,
+        total,
+    }))
 }
 
 pub async fn get_market_partner_technique_detail(
@@ -846,18 +965,22 @@ pub async fn get_market_partner_technique_detail(
     let listing_id = query.listing_id.unwrap_or_default();
     let technique_id = query.technique_id.unwrap_or_default();
     if listing_id <= 0 {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
-            success: false,
-            message: Some("listingId 参数无效".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
+                success: false,
+                message: Some("listingId 参数无效".to_string()),
+                data: None,
+            },
+        ));
     }
     if technique_id.trim().is_empty() {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
-            success: false,
-            message: Some("techniqueId 参数无效".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
+                success: false,
+                message: Some("techniqueId 参数无效".to_string()),
+                data: None,
+            },
+        ));
     }
 
     let row = state.database.fetch_optional(
@@ -865,196 +988,437 @@ pub async fn get_market_partner_technique_detail(
         |q| q.bind(listing_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
-            success: false,
-            message: Some("伙伴挂单不存在".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
+                success: false,
+                message: Some("伙伴挂单不存在".to_string()),
+                data: None,
+            },
+        ));
     };
-        let seller_character_id = row
-            .try_get::<Option<i32>, _>("seller_character_id")?
-            .map(i64::from)
-            .unwrap_or_default();
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let seller_character_id = row
+        .try_get::<Option<i32>, _>("seller_character_id")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "active" && seller_character_id != actor.character_id {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
-            success: false,
-            message: Some("当前挂单不可查看功法详情".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
+                success: false,
+                message: Some("当前挂单不可查看功法详情".to_string()),
+                data: None,
+            },
+        ));
     }
-    let snapshot = row.try_get::<Option<serde_json::Value>, _>("partner_snapshot")?.unwrap_or_else(|| serde_json::json!({}));
-    let Some(technique_entry) = snapshot.get("techniques").and_then(|v| v.as_array()).and_then(|entries| entries.iter().find(|entry| entry.get("techniqueId").and_then(|v| v.as_str()) == Some(technique_id.trim()))) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
-            success: false,
-            message: Some("伙伴未学习该功法".to_string()),
-            data: None,
-        }));
+    let snapshot = row
+        .try_get::<Option<serde_json::Value>, _>("partner_snapshot")?
+        .unwrap_or_else(|| serde_json::json!({}));
+    let Some(technique_entry) = snapshot
+        .get("techniques")
+        .and_then(|v| v.as_array())
+        .and_then(|entries| {
+            entries.iter().find(|entry| {
+                entry.get("techniqueId").and_then(|v| v.as_str()) == Some(technique_id.trim())
+            })
+        })
+    else {
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
+                success: false,
+                message: Some("伙伴未学习该功法".to_string()),
+                data: None,
+            },
+        ));
     };
-    let Some(detail) = load_technique_detail_data(&state, technique_id.trim(), None, true).await? else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
-            success: false,
-            message: Some("伙伴功法详情不存在".to_string()),
-            data: None,
-        }));
+    let Some(detail) = load_technique_detail_data(&state, technique_id.trim(), None, true).await?
+    else {
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<MarketPartnerTechniqueDetailDto> {
+                success: false,
+                message: Some("伙伴功法详情不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     let response = MarketPartnerTechniqueDetailDto {
-        technique: serde_json::to_value(detail.technique).map_err(|error| AppError::config(format!("坊市伙伴功法详情序列化失败: {error}")))?,
-        layers: serde_json::to_value(detail.layers).map_err(|error| AppError::config(format!("坊市伙伴功法层级序列化失败: {error}")))?.as_array().cloned().unwrap_or_default(),
-        skills: serde_json::to_value(detail.skills).map_err(|error| AppError::config(format!("坊市伙伴功法技能序列化失败: {error}")))?.as_array().cloned().unwrap_or_default(),
-        current_layer: technique_entry.get("currentLayer").and_then(|v| v.as_i64()).unwrap_or(1),
-        is_innate: technique_entry.get("isInnate").and_then(|v| v.as_bool()).unwrap_or(false),
+        technique: serde_json::to_value(detail.technique)
+            .map_err(|error| AppError::config(format!("坊市伙伴功法详情序列化失败: {error}")))?,
+        layers: serde_json::to_value(detail.layers)
+            .map_err(|error| AppError::config(format!("坊市伙伴功法层级序列化失败: {error}")))?
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+        skills: serde_json::to_value(detail.skills)
+            .map_err(|error| AppError::config(format!("坊市伙伴功法技能序列化失败: {error}")))?
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+        current_layer: technique_entry
+            .get("currentLayer")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1),
+        is_innate: technique_entry
+            .get("isInnate")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     };
-    Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-        success: true,
-        message: Some("获取成功".to_string()),
-        data: Some(response),
-    }))
+    Ok(crate::shared::response::send_result(
+        crate::shared::response::ServiceResult {
+            success: true,
+            message: Some("获取成功".to_string()),
+            data: Some(response),
+        },
+    ))
 }
 
-pub(crate) async fn assert_market_phone_bound(state: &AppState, user_id: i64) -> Result<(), AppError> {
+pub(crate) async fn assert_market_phone_bound(
+    state: &AppState,
+    user_id: i64,
+) -> Result<(), AppError> {
     if !state.config.market_phone_binding.enabled {
         return Ok(());
     }
-    let row = state.database.fetch_optional(
-        "SELECT phone_number FROM users WHERE id = $1 LIMIT 1",
-        |q| q.bind(user_id),
-    ).await?;
-    let phone_number = row.and_then(|r| r.try_get::<Option<String>, _>("phone_number").ok().flatten()).unwrap_or_default();
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT phone_number FROM users WHERE id = $1 LIMIT 1",
+            |q| q.bind(user_id),
+        )
+        .await?;
+    let phone_number = row
+        .and_then(|r| {
+            r.try_get::<Option<String>, _>("phone_number")
+                .ok()
+                .flatten()
+        })
+        .unwrap_or_default();
     if phone_number.trim().is_empty() {
         return Err(AppError::config("坊市功能需要先完成手机号绑定"));
     }
     Ok(())
 }
 
-fn clamp_page(value: Option<i64>) -> i64 { value.unwrap_or(1).max(1) }
-fn clamp_page_size(value: Option<i64>) -> i64 { value.unwrap_or(20).clamp(1, 100) }
+fn clamp_page(value: Option<i64>) -> i64 {
+    value.unwrap_or(1).max(1)
+}
+fn clamp_page_size(value: Option<i64>) -> i64 {
+    value.unwrap_or(20).clamp(1, 100)
+}
 
 fn apply_market_listing_filters(listings: &mut Vec<MarketListingDto>, query: &MarketListingsQuery) {
-    let category = query.category.as_deref().map(str::trim).filter(|v| !v.is_empty() && *v != "all").map(|v| v.to_lowercase());
-    let quality = query.quality.as_deref().map(str::trim).filter(|v| !v.is_empty() && *v != "all").map(|v| v.to_string());
-    let text = query.query.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(|v| v.to_lowercase());
+    let category = query
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "all")
+        .map(|v| v.to_lowercase());
+    let quality = query
+        .quality
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "all")
+        .map(|v| v.to_string());
+    let text = query
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_lowercase());
     let min_price = query.min_price.unwrap_or(0);
     let max_price = query.max_price.unwrap_or(i64::MAX);
     listings.retain(|listing| {
-        let category_ok = category.as_ref().map(|value| listing.category.as_deref().map(str::to_lowercase) == Some(value.clone())).unwrap_or(true);
-        let quality_ok = quality.as_ref().map(|value| listing.quality.as_deref() == Some(value.as_str())).unwrap_or(true);
-        let text_ok = text.as_ref().map(|value| listing.name.to_lowercase().contains(value) || listing.description.as_deref().unwrap_or_default().to_lowercase().contains(value)).unwrap_or(true);
-        let price_ok = listing.unit_price_spirit_stones >= min_price && listing.unit_price_spirit_stones <= max_price;
+        let category_ok = category
+            .as_ref()
+            .map(|value| listing.category.as_deref().map(str::to_lowercase) == Some(value.clone()))
+            .unwrap_or(true);
+        let quality_ok = quality
+            .as_ref()
+            .map(|value| listing.quality.as_deref() == Some(value.as_str()))
+            .unwrap_or(true);
+        let text_ok = text
+            .as_ref()
+            .map(|value| {
+                listing.name.to_lowercase().contains(value)
+                    || listing
+                        .description
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(value)
+            })
+            .unwrap_or(true);
+        let price_ok = listing.unit_price_spirit_stones >= min_price
+            && listing.unit_price_spirit_stones <= max_price;
         category_ok && quality_ok && text_ok && price_ok
     });
 }
 
-async fn build_market_listing_dto(state: &AppState, row: &sqlx::postgres::PgRow, metas: &BTreeMap<String, MarketItemMeta>) -> Result<Option<MarketListingDto>, AppError> {
-    let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+async fn build_market_listing_dto(
+    state: &AppState,
+    row: &sqlx::postgres::PgRow,
+    metas: &BTreeMap<String, MarketItemMeta>,
+) -> Result<Option<MarketListingDto>, AppError> {
+    let item_def_id = row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     let item_def_id = item_def_id.trim().to_string();
-    if item_def_id.is_empty() { return Ok(None); }
-    let Some(meta) = metas.get(&item_def_id) else { return Ok(None); };
-    let generated_display = resolve_generated_technique_book_display(state, item_def_id.as_str(), &meta.raw, row.try_get::<Option<serde_json::Value>, _>("metadata")?.as_ref()).await?;
+    if item_def_id.is_empty() {
+        return Ok(None);
+    }
+    let Some(meta) = metas.get(&item_def_id) else {
+        return Ok(None);
+    };
+    let generated_display = resolve_generated_technique_book_display(
+        state,
+        item_def_id.as_str(),
+        &meta.raw,
+        row.try_get::<Option<serde_json::Value>, _>("metadata")?
+            .as_ref(),
+    )
+    .await?;
     Ok(Some(MarketListingDto {
         id: row.try_get::<Option<i64>, _>("id")?.unwrap_or_default(),
-        item_instance_id: row.try_get::<Option<i64>, _>("item_instance_id")?.unwrap_or_default(),
+        item_instance_id: row
+            .try_get::<Option<i64>, _>("item_instance_id")?
+            .unwrap_or_default(),
         item_def_id,
-        name: generated_display.as_ref().map(|display| display.name.clone()).unwrap_or_else(|| meta.name.clone()),
+        name: generated_display
+            .as_ref()
+            .map(|display| display.name.clone())
+            .unwrap_or_else(|| meta.name.clone()),
         icon: meta.icon.clone(),
-        quality: row.try_get::<Option<String>, _>("instance_quality")?.or_else(|| generated_display.as_ref().and_then(|display| display.quality.clone())).or_else(|| meta.quality.clone()),
+        quality: row
+            .try_get::<Option<String>, _>("instance_quality")?
+            .or_else(|| {
+                generated_display
+                    .as_ref()
+                    .and_then(|display| display.quality.clone())
+            })
+            .or_else(|| meta.quality.clone()),
         category: meta.category.clone(),
         sub_category: meta.sub_category.clone(),
-        description: generated_display.as_ref().map(|display| display.description.clone()).or_else(|| meta.description.clone()),
-        long_desc: generated_display.as_ref().map(|display| display.long_desc.clone()).or_else(|| meta.long_desc.clone()),
-        tags: generated_display.as_ref().map(|display| display.tags.clone()).unwrap_or_else(|| meta.tags.clone()),
+        description: generated_display
+            .as_ref()
+            .map(|display| display.description.clone())
+            .or_else(|| meta.description.clone()),
+        long_desc: generated_display
+            .as_ref()
+            .map(|display| display.long_desc.clone())
+            .or_else(|| meta.long_desc.clone()),
+        tags: generated_display
+            .as_ref()
+            .map(|display| display.tags.clone())
+            .unwrap_or_else(|| meta.tags.clone()),
         effect_defs: meta.effect_defs.clone(),
         base_attrs: meta.base_attrs.clone(),
         equip_slot: meta.equip_slot.clone(),
         equip_req_realm: meta.equip_req_realm.clone(),
         use_type: meta.use_type.clone(),
-        strengthen_level: row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-        refine_level: row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-        identified: row.try_get::<Option<bool>, _>("identified")?.unwrap_or(true),
-        affixes: row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-        socketed_gems: row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
-        generated_technique_id: generated_display.as_ref().map(|display| display.generated_technique_id.clone()),
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default(),
-        unit_price_spirit_stones: row.try_get::<Option<i64>, _>("unit_price_spirit_stones")?.unwrap_or_default(),
-            seller_character_id: row.try_get::<Option<i32>, _>("seller_character_id")?.map(i64::from).unwrap_or_default(),
-        seller_name: row.try_get::<Option<String>, _>("seller_name")?.unwrap_or_default(),
+        strengthen_level: row
+            .try_get::<Option<i32>, _>("strengthen_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        refine_level: row
+            .try_get::<Option<i32>, _>("refine_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        identified: row
+            .try_get::<Option<bool>, _>("identified")?
+            .unwrap_or(true),
+        affixes: row
+            .try_get::<Option<serde_json::Value>, _>("affixes")?
+            .unwrap_or_else(|| serde_json::json!([])),
+        socketed_gems: row
+            .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+            .unwrap_or_else(|| serde_json::json!([])),
+        generated_technique_id: generated_display
+            .as_ref()
+            .map(|display| display.generated_technique_id.clone()),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        unit_price_spirit_stones: row
+            .try_get::<Option<i64>, _>("unit_price_spirit_stones")?
+            .unwrap_or_default(),
+        seller_character_id: row
+            .try_get::<Option<i32>, _>("seller_character_id")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        seller_name: row
+            .try_get::<Option<String>, _>("seller_name")?
+            .unwrap_or_default(),
         listed_at: parse_time_ms(row.try_get::<Option<String>, _>("listed_at_text")?),
     }))
 }
 
-fn build_market_trade_record_dto(row: &sqlx::postgres::PgRow, character_id: i64, metas: &BTreeMap<String, MarketItemMeta>) -> Result<MarketTradeRecordDto, AppError> {
+fn build_market_trade_record_dto(
+    row: &sqlx::postgres::PgRow,
+    character_id: i64,
+    metas: &BTreeMap<String, MarketItemMeta>,
+) -> Result<MarketTradeRecordDto, AppError> {
     let buyer_character_id = opt_i64_from_i32(row, "buyer_character_id");
-    let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+    let item_def_id = row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     let meta = metas.get(item_def_id.trim());
-    let trade_type = if character_id == buyer_character_id { "买入" } else { "卖出" };
-    let counterparty = if trade_type == "买入" {
-        row.try_get::<Option<String>, _>("seller_name")?.unwrap_or_default()
+    let trade_type = if character_id == buyer_character_id {
+        "买入"
     } else {
-        row.try_get::<Option<String>, _>("buyer_name")?.unwrap_or_default()
+        "卖出"
+    };
+    let counterparty = if trade_type == "买入" {
+        row.try_get::<Option<String>, _>("seller_name")?
+            .unwrap_or_default()
+    } else {
+        row.try_get::<Option<String>, _>("buyer_name")?
+            .unwrap_or_default()
     };
     Ok(MarketTradeRecordDto {
         id: row.try_get::<Option<i64>, _>("id")?.unwrap_or_default(),
         r#type: trade_type.to_string(),
         item_def_id: item_def_id.trim().to_string(),
-        name: meta.map(|m| m.name.clone()).unwrap_or_else(|| item_def_id.trim().to_string()),
+        name: meta
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| item_def_id.trim().to_string()),
         icon: meta.and_then(|m| m.icon.clone()),
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default(),
-        unit_price_spirit_stones: row.try_get::<Option<i64>, _>("unit_price_spirit_stones")?.unwrap_or_default(),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        unit_price_spirit_stones: row
+            .try_get::<Option<i64>, _>("unit_price_spirit_stones")?
+            .unwrap_or_default(),
         counterparty,
         time: parse_time_ms(row.try_get::<Option<String>, _>("created_at_text")?),
     })
 }
 
-fn build_market_partner_listing_dto(row: sqlx::postgres::PgRow) -> Result<MarketPartnerListingDto, AppError> {
+fn build_market_partner_listing_dto(
+    row: sqlx::postgres::PgRow,
+) -> Result<MarketPartnerListingDto, AppError> {
     Ok(MarketPartnerListingDto {
         id: row.try_get::<Option<i64>, _>("id")?.unwrap_or_default(),
-        partner: row.try_get::<Option<serde_json::Value>, _>("partner_snapshot")?.unwrap_or_else(|| serde_json::json!({})),
-        unit_price_spirit_stones: row.try_get::<Option<i64>, _>("unit_price_spirit_stones")?.unwrap_or_default(),
-            seller_character_id: row.try_get::<Option<i32>, _>("seller_character_id")?.map(i64::from).unwrap_or_default(),
-        seller_name: row.try_get::<Option<String>, _>("seller_name")?.unwrap_or_default(),
+        partner: row
+            .try_get::<Option<serde_json::Value>, _>("partner_snapshot")?
+            .unwrap_or_else(|| serde_json::json!({})),
+        unit_price_spirit_stones: row
+            .try_get::<Option<i64>, _>("unit_price_spirit_stones")?
+            .unwrap_or_default(),
+        seller_character_id: row
+            .try_get::<Option<i32>, _>("seller_character_id")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        seller_name: row
+            .try_get::<Option<String>, _>("seller_name")?
+            .unwrap_or_default(),
         listed_at: parse_time_ms(row.try_get::<Option<String>, _>("listed_at_text")?),
     })
 }
 
-fn build_market_partner_trade_record_dto(row: &sqlx::postgres::PgRow, viewer_character_id: i64) -> Result<MarketPartnerTradeRecordDto, AppError> {
+fn build_market_partner_trade_record_dto(
+    row: &sqlx::postgres::PgRow,
+    viewer_character_id: i64,
+) -> Result<MarketPartnerTradeRecordDto, AppError> {
     let buyer_character_id = opt_i64_from_i32(row, "buyer_character_id");
-    let trade_type = if buyer_character_id == viewer_character_id { "买入" } else { "卖出" };
-    let counterparty = if trade_type == "买入" {
-        row.try_get::<Option<String>, _>("seller_name")?.unwrap_or_default()
+    let trade_type = if buyer_character_id == viewer_character_id {
+        "买入"
     } else {
-        row.try_get::<Option<String>, _>("buyer_name")?.unwrap_or_default()
+        "卖出"
+    };
+    let counterparty = if trade_type == "买入" {
+        row.try_get::<Option<String>, _>("seller_name")?
+            .unwrap_or_default()
+    } else {
+        row.try_get::<Option<String>, _>("buyer_name")?
+            .unwrap_or_default()
     };
     Ok(MarketPartnerTradeRecordDto {
         id: row.try_get::<Option<i64>, _>("id")?.unwrap_or_default(),
         r#type: trade_type.to_string(),
-        partner: row.try_get::<Option<serde_json::Value>, _>("partner_snapshot")?.unwrap_or_else(|| serde_json::json!({})),
-        unit_price_spirit_stones: row.try_get::<Option<i64>, _>("unit_price_spirit_stones")?.unwrap_or_default(),
-        total_price_spirit_stones: row.try_get::<Option<i64>, _>("total_price_spirit_stones")?.unwrap_or_default(),
+        partner: row
+            .try_get::<Option<serde_json::Value>, _>("partner_snapshot")?
+            .unwrap_or_else(|| serde_json::json!({})),
+        unit_price_spirit_stones: row
+            .try_get::<Option<i64>, _>("unit_price_spirit_stones")?
+            .unwrap_or_default(),
+        total_price_spirit_stones: row
+            .try_get::<Option<i64>, _>("total_price_spirit_stones")?
+            .unwrap_or_default(),
         counterparty,
         time: parse_time_ms(row.try_get::<Option<String>, _>("created_at_text")?),
     })
 }
 
-fn apply_partner_listing_filters(listings: &mut Vec<MarketPartnerListingDto>, query: &MarketPartnerListingsQuery) {
-    let quality = query.quality.as_deref().map(str::trim).filter(|v| !v.is_empty() && *v != "all").map(|v| v.to_string());
-    let element = query.element.as_deref().map(str::trim).filter(|v| !v.is_empty() && *v != "all").map(|v| v.to_string());
-    let text = query.query.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(|v| v.to_lowercase());
+fn apply_partner_listing_filters(
+    listings: &mut Vec<MarketPartnerListingDto>,
+    query: &MarketPartnerListingsQuery,
+) {
+    let quality = query
+        .quality
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "all")
+        .map(|v| v.to_string());
+    let element = query
+        .element
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && *v != "all")
+        .map(|v| v.to_string());
+    let text = query
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_lowercase());
     listings.retain(|listing| {
         let partner = listing.partner.as_object();
-        let quality_ok = quality.as_ref().map(|value| partner.and_then(|p| p.get("quality")).and_then(|v| v.as_str()) == Some(value.as_str())).unwrap_or(true);
-        let element_ok = element.as_ref().map(|value| partner.and_then(|p| p.get("element")).and_then(|v| v.as_str()) == Some(value.as_str())).unwrap_or(true);
-        let text_ok = text.as_ref().map(|value| {
-            let nickname = partner.and_then(|p| p.get("nickname")).and_then(|v| v.as_str()).unwrap_or_default().to_lowercase();
-            let name = partner.and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or_default().to_lowercase();
-            nickname.contains(value) || name.contains(value)
-        }).unwrap_or(true);
+        let quality_ok = quality
+            .as_ref()
+            .map(|value| {
+                partner
+                    .and_then(|p| p.get("quality"))
+                    .and_then(|v| v.as_str())
+                    == Some(value.as_str())
+            })
+            .unwrap_or(true);
+        let element_ok = element
+            .as_ref()
+            .map(|value| {
+                partner
+                    .and_then(|p| p.get("element"))
+                    .and_then(|v| v.as_str())
+                    == Some(value.as_str())
+            })
+            .unwrap_or(true);
+        let text_ok = text
+            .as_ref()
+            .map(|value| {
+                let nickname = partner
+                    .and_then(|p| p.get("nickname"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_lowercase();
+                let name = partner
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_lowercase();
+                nickname.contains(value) || name.contains(value)
+            })
+            .unwrap_or(true);
         quality_ok && element_ok && text_ok
     });
 }
 
 fn parse_time_ms(raw: Option<String>) -> i64 {
     raw.as_deref()
-        .and_then(|value| time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|value| {
+            time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).ok()
+        })
         .map(|value| (value.unix_timestamp_nanos() / 1_000_000) as i64)
         .unwrap_or_default()
 }
@@ -1062,33 +1426,108 @@ fn parse_time_ms(raw: Option<String>) -> i64 {
 fn load_market_item_meta_map() -> Result<BTreeMap<String, MarketItemMeta>, AppError> {
     let mut out = BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
-        let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")))
-            .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
+        let content = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
+        )
+        .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            out.insert(id, MarketItemMeta {
-                raw: item.clone(),
-                name,
-                icon: item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                quality: item.get("quality").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                category: item.get("category").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                sub_category: item.get("sub_category").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                description: item.get("description").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                long_desc: item.get("long_desc").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                base_attrs: item.get("base_attrs").and_then(|value| value.as_object()).map(|map| map.iter().filter_map(|(k,v)| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64)).map(|n| (k.clone(), n))).collect()).unwrap_or_default(),
-                equip_slot: item.get("equip_slot").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                equip_req_realm: item.get("equip_req_realm").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                use_type: item.get("use_type").and_then(|value| value.as_str()).map(|value| value.to_string()),
-                tags: item.get("tags").cloned().unwrap_or_else(|| serde_json::json!([])),
-                effect_defs: item.get("effect_defs").cloned().unwrap_or_else(|| serde_json::json!([])),
-                tradeable: item.get("tradeable").and_then(|value| value.as_bool()).unwrap_or(false),
-                tax_rate: item.get("tax_rate").and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64))).unwrap_or(0.0),
-            });
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            out.insert(
+                id,
+                MarketItemMeta {
+                    raw: item.clone(),
+                    name,
+                    icon: item
+                        .get("icon")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    quality: item
+                        .get("quality")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    category: item
+                        .get("category")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    sub_category: item
+                        .get("sub_category")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    description: item
+                        .get("description")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    long_desc: item
+                        .get("long_desc")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    base_attrs: item
+                        .get("base_attrs")
+                        .and_then(|value| value.as_object())
+                        .map(|map| {
+                            map.iter()
+                                .filter_map(|(k, v)| {
+                                    v.as_f64()
+                                        .or_else(|| v.as_i64().map(|n| n as f64))
+                                        .map(|n| (k.clone(), n))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    equip_slot: item
+                        .get("equip_slot")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    equip_req_realm: item
+                        .get("equip_req_realm")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    use_type: item
+                        .get("use_type")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string()),
+                    tags: item
+                        .get("tags")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!([])),
+                    effect_defs: item
+                        .get("effect_defs")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!([])),
+                    tradeable: item
+                        .get("tradeable")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false),
+                    tax_rate: item
+                        .get("tax_rate")
+                        .and_then(|value| {
+                            value.as_f64().or_else(|| value.as_i64().map(|v| v as f64))
+                        })
+                        .unwrap_or(0.0),
+                },
+            );
         }
     }
     Ok(out)
@@ -1102,7 +1541,11 @@ async fn verify_market_captcha_payload(
     match state.config.captcha.provider {
         CaptchaProvider::Tencent => {
             let ticket = payload.ticket.as_deref().map(str::trim).unwrap_or_default();
-            let randstr = payload.randstr.as_deref().map(str::trim).unwrap_or_default();
+            let randstr = payload
+                .randstr
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
             if ticket.is_empty() || randstr.is_empty() {
                 return Err(AppError::config("验证码票据不能为空"));
             }
@@ -1118,21 +1561,42 @@ async fn verify_market_captcha_payload(
         CaptchaProvider::Local => {}
     }
 
-    let captcha_id = payload.captcha_id.as_deref().map(str::trim).unwrap_or_default();
-    let captcha_code = payload.captcha_code.as_deref().map(str::trim).unwrap_or_default();
+    let captcha_id = payload
+        .captcha_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
+    let captcha_code = payload
+        .captcha_code
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
     if captcha_id.is_empty() || captcha_code.is_empty() {
         return Err(AppError::config("图片验证码不能为空"));
     }
     let redis = RedisRuntime::new(
-        state.redis.clone().ok_or_else(|| AppError::service_unavailable("当前验证码服务不可用"))?,
+        state
+            .redis
+            .clone()
+            .ok_or_else(|| AppError::service_unavailable("当前验证码服务不可用"))?,
     );
     let key = format!("{MARKET_CAPTCHA_KEY_PREFIX}{captcha_id}");
-    let raw = redis.get_string(&key).await?.ok_or_else(|| AppError::config("验证码不存在或已失效"))?;
+    let raw = redis
+        .get_string(&key)
+        .await?
+        .ok_or_else(|| AppError::config("验证码不存在或已失效"))?;
     redis.del(&key).await?;
     let stored: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|error| AppError::config(format!("failed to decode captcha payload: {error}")))?;
-    let answer = stored.get("answer").and_then(|value| value.as_str()).unwrap_or_default().to_ascii_uppercase();
-    let expires_at = stored.get("expiresAt").and_then(|value| value.as_u64()).unwrap_or_default();
+    let answer = stored
+        .get("answer")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let expires_at = stored
+        .get("expiresAt")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_default();
     if expires_at < now_secs() {
         return Err(AppError::config("验证码已过期"));
     }
@@ -1157,7 +1621,10 @@ fn build_market_captcha_image_data(answer: &str) -> String {
     let svg = format!(
         r#"<svg xmlns='http://www.w3.org/2000/svg' width='120' height='44'><rect width='120' height='44' fill='#10141f'/><text x='60' y='29' text-anchor='middle' font-size='22' font-family='monospace' fill='#f8d66d'>{answer}</text></svg>"#
     );
-    format!("data:image/svg+xml;base64,{}", base64::engine::general_purpose::STANDARD.encode(svg))
+    format!(
+        "data:image/svg+xml;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(svg)
+    )
 }
 
 fn now_secs() -> u64 {
@@ -1184,24 +1651,41 @@ async fn cancel_partner_market_listing_tx(
         |q| q.bind(listing_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResult { success: false, message: Some("上架记录不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("上架记录不存在".to_string()),
+            data: None,
+        });
     };
-        let seller_character_id = row
-            .try_get::<Option<i32>, _>("seller_character_id")?
-            .map(i64::from)
-            .unwrap_or_default();
+    let seller_character_id = row
+        .try_get::<Option<i32>, _>("seller_character_id")?
+        .map(i64::from)
+        .unwrap_or_default();
     if seller_character_id != character_id {
-        return Ok(ServiceResult { success: false, message: Some("上架记录归属异常".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("上架记录归属异常".to_string()),
+            data: None,
+        });
     }
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "active" {
-        return Ok(ServiceResult { success: false, message: Some("该上架记录不可下架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该上架记录不可下架".to_string()),
+            data: None,
+        });
     }
     state.database.execute(
         "UPDATE market_partner_listing SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1",
         |q| q.bind(listing_id),
     ).await?;
-    let refund_fee_silver = row.try_get::<Option<i64>, _>("listing_fee_silver")?.unwrap_or_default().max(0);
+    let refund_fee_silver = row
+        .try_get::<Option<i64>, _>("listing_fee_silver")?
+        .unwrap_or_default()
+        .max(0);
     if refund_fee_silver > 0 {
         state.database.execute(
             "UPDATE characters SET silver = COALESCE(silver, 0) + $2, updated_at = NOW() WHERE id = $1",
@@ -1228,39 +1712,83 @@ async fn cancel_market_listing_tx(
         |q| q.bind(listing_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResult { success: false, message: Some("上架记录不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("上架记录不存在".to_string()),
+            data: None,
+        });
     };
-        let seller_character_id = row
-            .try_get::<Option<i32>, _>("seller_character_id")?
-            .map(i64::from)
-            .unwrap_or_default();
+    let seller_character_id = row
+        .try_get::<Option<i32>, _>("seller_character_id")?
+        .map(i64::from)
+        .unwrap_or_default();
     if seller_character_id != character_id {
-        return Ok(ServiceResult { success: false, message: Some("无权限操作该上架记录".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("无权限操作该上架记录".to_string()),
+            data: None,
+        });
     }
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "active" {
-        return Ok(ServiceResult { success: false, message: Some("该上架记录不可下架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该上架记录不可下架".to_string()),
+            data: None,
+        });
     }
-    let item_instance_id = row.try_get::<Option<i64>, _>("item_instance_id")?.unwrap_or_default();
+    let item_instance_id = row
+        .try_get::<Option<i64>, _>("item_instance_id")?
+        .unwrap_or_default();
     let item_row = state.database.fetch_optional(
         "SELECT id, owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, bind_owner_user_id, bind_owner_character_id, location, location_slot, equipped_slot, strengthen_level, refine_level, socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta, custom_name, locked, expire_at::text AS expire_at_text, obtained_from, obtained_ref_id, metadata FROM item_instance WHERE id = $1 LIMIT 1 FOR UPDATE",
         |q| q.bind(item_instance_id),
     ).await?;
     let Some(item_row) = item_row else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
-    let owner_character_id = item_row.try_get::<Option<i64>, _>("owner_character_id")?.unwrap_or_default();
+    let owner_character_id = item_row
+        .try_get::<Option<i64>, _>("owner_character_id")?
+        .unwrap_or_default();
     if owner_character_id != character_id {
-        return Ok(ServiceResult { success: false, message: Some("物品归属异常，无法下架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品归属异常，无法下架".to_string()),
+            data: None,
+        });
     }
-    let location = item_row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = item_row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if location != "auction" {
-        return Ok(ServiceResult { success: false, message: Some("物品不在坊市中，无法下架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不在坊市中，无法下架".to_string()),
+            data: None,
+        });
     }
-    let refund_fee_silver = row.try_get::<Option<i64>, _>("listing_fee_silver")?.unwrap_or_default().max(0);
-    let item_def_id = item_row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
-    let item_qty = item_row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or(1).max(1);
-    let item_name = load_market_item_meta_map()?.get(item_def_id.trim()).map(|meta| meta.name.clone()).unwrap_or_else(|| item_def_id.trim().to_string());
+    let refund_fee_silver = row
+        .try_get::<Option<i64>, _>("listing_fee_silver")?
+        .unwrap_or_default()
+        .max(0);
+    let item_def_id = item_row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
+    let item_qty = item_row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or(1)
+        .max(1);
+    let item_name = load_market_item_meta_map()?
+        .get(item_def_id.trim())
+        .map(|meta| meta.name.clone())
+        .unwrap_or_else(|| item_def_id.trim().to_string());
 
     if state.redis_available {
         if let Some(redis_client) = state.redis.clone() {
@@ -1274,28 +1802,54 @@ async fn cancel_market_listing_tx(
                 kind: "upsert".to_string(),
                 snapshot: Some(ItemInstanceMutationSnapshot {
                     id: item_instance_id,
-                    owner_user_id: item_row.try_get::<Option<i64>, _>("owner_user_id")?.unwrap_or_default(),
+                    owner_user_id: item_row
+                        .try_get::<Option<i64>, _>("owner_user_id")?
+                        .unwrap_or_default(),
                     owner_character_id: character_id,
                     item_def_id: item_def_id.clone(),
                     qty: item_qty,
                     quality: item_row.try_get::<Option<String>, _>("quality")?,
-                    quality_rank: item_row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-                    bind_type: item_row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
+                    quality_rank: item_row
+                        .try_get::<Option<i32>, _>("quality_rank")?
+                        .map(i64::from),
+                    bind_type: item_row
+                        .try_get::<Option<String>, _>("bind_type")?
+                        .unwrap_or_else(|| "none".to_string()),
                     bind_owner_user_id: item_row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
-                    bind_owner_character_id: item_row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
+                    bind_owner_character_id: item_row
+                        .try_get::<Option<i64>, _>("bind_owner_character_id")?,
                     location: "mail".to_string(),
                     location_slot: None,
                     equipped_slot: None,
-                    strengthen_level: item_row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-                    refine_level: item_row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-                    socketed_gems: item_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+                    strengthen_level: item_row
+                        .try_get::<Option<i32>, _>("strengthen_level")?
+                        .map(i64::from)
+                        .unwrap_or_default(),
+                    refine_level: item_row
+                        .try_get::<Option<i32>, _>("refine_level")?
+                        .map(i64::from)
+                        .unwrap_or_default(),
+                    socketed_gems: item_row
+                        .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+                        .unwrap_or_else(|| serde_json::json!([])),
                     random_seed: item_row.try_get::<Option<i64>, _>("random_seed")?,
-                    affixes: item_row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-                    identified: item_row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-                    affix_gen_version: item_row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-                    affix_roll_meta: item_row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+                    affixes: item_row
+                        .try_get::<Option<serde_json::Value>, _>("affixes")?
+                        .unwrap_or_else(|| serde_json::json!([])),
+                    identified: item_row
+                        .try_get::<Option<bool>, _>("identified")?
+                        .unwrap_or(false),
+                    affix_gen_version: item_row
+                        .try_get::<Option<i32>, _>("affix_gen_version")?
+                        .map(i64::from)
+                        .unwrap_or_default(),
+                    affix_roll_meta: item_row
+                        .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+                        .unwrap_or_else(|| serde_json::json!({})),
                     custom_name: item_row.try_get::<Option<String>, _>("custom_name")?,
-                    locked: item_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
+                    locked: item_row
+                        .try_get::<Option<bool>, _>("locked")?
+                        .unwrap_or(false),
                     expire_at: item_row.try_get::<Option<String>, _>("expire_at_text")?,
                     obtained_from: Some("market".to_string()),
                     obtained_ref_id: Some(listing_id.to_string()),
@@ -1346,7 +1900,10 @@ async fn cancel_market_listing_tx(
     .await?;
     Ok(ServiceResult {
         success: true,
-        message: Some(format!("下架成功，物品已通过邮件返还，并退还{}银两手续费", refund_fee_silver)),
+        message: Some(format!(
+            "下架成功，物品已通过邮件返还，并退还{}银两手续费",
+            refund_fee_silver
+        )),
         data: Some(serde_json::json!({
             "debugRealtime": build_market_update_payload("cancel_market_listing", Some(listing_id), "item")
         })),
@@ -1366,52 +1923,122 @@ async fn create_market_listing_tx(
         |q| q.bind(item_instance_id).bind(character_id),
     ).await?;
     let Some(item_row) = item_row else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
-    let owner_user_id = item_row.try_get::<Option<i64>, _>("owner_user_id")?.unwrap_or_default();
+    let owner_user_id = item_row
+        .try_get::<Option<i64>, _>("owner_user_id")?
+        .unwrap_or_default();
     if owner_user_id != user_id {
-        return Ok(ServiceResult { success: false, message: Some("物品归属异常".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品归属异常".to_string()),
+            data: None,
+        });
     }
-    let item_def_id = item_row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+    let item_def_id = item_row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     let item_metas = load_market_item_meta_map()?;
     let Some(item_meta) = item_metas.get(item_def_id.trim()) else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
     if !item_meta.tradeable {
-        return Ok(ServiceResult { success: false, message: Some("该物品不可交易".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该物品不可交易".to_string()),
+            data: None,
+        });
     }
-    let bind_type = item_row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string());
+    let bind_type = item_row
+        .try_get::<Option<String>, _>("bind_type")?
+        .unwrap_or_else(|| "none".to_string());
     if bind_type != "none" {
-        return Ok(ServiceResult { success: false, message: Some("该物品已绑定，无法上架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该物品已绑定，无法上架".to_string()),
+            data: None,
+        });
     }
-    let locked = item_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false);
+    let locked = item_row
+        .try_get::<Option<bool>, _>("locked")?
+        .unwrap_or(false);
     if locked {
-        return Ok(ServiceResult { success: false, message: Some("该物品已锁定，无法上架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该物品已锁定，无法上架".to_string()),
+            data: None,
+        });
     }
-    let location = item_row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = item_row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     let equipped_slot = item_row.try_get::<Option<String>, _>("equipped_slot")?;
-    if location == "equipped" || equipped_slot.as_deref().map(str::trim).filter(|value| !value.is_empty()).is_some() {
-        return Ok(ServiceResult { success: false, message: Some("已穿戴物品无法上架".to_string()), data: None });
+    if location == "equipped"
+        || equipped_slot
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("已穿戴物品无法上架".to_string()),
+            data: None,
+        });
     }
     if location != "bag" && location != "warehouse" {
-        return Ok(ServiceResult { success: false, message: Some("该物品当前位置无法上架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该物品当前位置无法上架".to_string()),
+            data: None,
+        });
     }
-    let current_qty = item_row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+    let current_qty = item_row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if qty > current_qty {
-        return Ok(ServiceResult { success: false, message: Some("数量不足".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("数量不足".to_string()),
+            data: None,
+        });
     }
 
-    let listing_fee_silver = unit_price_spirit_stones.saturating_mul(qty).saturating_mul(5);
-    let character_row = state.database.fetch_optional(
-        "SELECT silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(character_id),
-    ).await?;
+    let listing_fee_silver = unit_price_spirit_stones
+        .saturating_mul(qty)
+        .saturating_mul(5);
+    let character_row = state
+        .database
+        .fetch_optional(
+            "SELECT silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(character_row) = character_row else {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     };
-    let silver = character_row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default();
+    let silver = character_row
+        .try_get::<Option<i64>, _>("silver")?
+        .unwrap_or_default();
     if listing_fee_silver > silver {
-        return Ok(ServiceResult { success: false, message: Some(format!("银两不足，上架手续费需要{}", listing_fee_silver)), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some(format!("银两不足，上架手续费需要{}", listing_fee_silver)),
+            data: None,
+        });
     }
 
     let auction_item_id = if qty < current_qty {
@@ -1436,36 +2063,63 @@ async fn create_market_listing_tx(
                         item_def_id: item_def_id.clone(),
                         qty: current_qty - qty,
                         quality: item_row.try_get::<Option<String>, _>("quality")?,
-                        quality_rank: item_row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
+                        quality_rank: item_row
+                            .try_get::<Option<i32>, _>("quality_rank")?
+                            .map(i64::from),
                         bind_type: bind_type.clone(),
-                        bind_owner_user_id: item_row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
-                        bind_owner_character_id: item_row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
+                        bind_owner_user_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_user_id")?,
+                        bind_owner_character_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_character_id")?,
                         location: location.clone(),
-                        location_slot: item_row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+                        location_slot: item_row
+                            .try_get::<Option<i32>, _>("location_slot")?
+                            .map(i64::from),
                         equipped_slot: item_row.try_get::<Option<String>, _>("equipped_slot")?,
-                        strengthen_level: item_row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-                        refine_level: item_row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-                        socketed_gems: item_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+                        strengthen_level: item_row
+                            .try_get::<Option<i32>, _>("strengthen_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        refine_level: item_row
+                            .try_get::<Option<i32>, _>("refine_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        socketed_gems: item_row
+                            .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+                            .unwrap_or_else(|| serde_json::json!([])),
                         random_seed: item_row.try_get::<Option<i64>, _>("random_seed")?,
-                        affixes: item_row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-                        identified: item_row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-                        affix_gen_version: item_row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-                        affix_roll_meta: item_row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+                        affixes: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affixes")?
+                            .unwrap_or_else(|| serde_json::json!([])),
+                        identified: item_row
+                            .try_get::<Option<bool>, _>("identified")?
+                            .unwrap_or(false),
+                        affix_gen_version: item_row
+                            .try_get::<Option<i32>, _>("affix_gen_version")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        affix_roll_meta: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+                            .unwrap_or_else(|| serde_json::json!({})),
                         custom_name: item_row.try_get::<Option<String>, _>("custom_name")?,
                         locked: locked,
                         expire_at: item_row.try_get::<Option<String>, _>("expire_at_text")?,
                         obtained_from: item_row.try_get::<Option<String>, _>("obtained_from")?,
-                        obtained_ref_id: item_row.try_get::<Option<String>, _>("obtained_ref_id")?,
+                        obtained_ref_id: item_row
+                            .try_get::<Option<String>, _>("obtained_ref_id")?,
                         metadata: item_row.try_get::<Option<serde_json::Value>, _>("metadata")?,
                     }),
                 };
                 buffer_item_instance_mutations(&redis, &[mutation]).await?;
             }
         } else {
-            state.database.execute(
-                "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
-                |q| q.bind(item_instance_id).bind(qty),
-            ).await?;
+            state
+                .database
+                .execute(
+                    "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                    |q| q.bind(item_instance_id).bind(qty),
+                )
+                .await?;
         }
         inserted.try_get::<i64, _>("id")?
     } else {
@@ -1486,26 +2140,50 @@ async fn create_market_listing_tx(
                         item_def_id: item_def_id.clone(),
                         qty: current_qty,
                         quality: item_row.try_get::<Option<String>, _>("quality")?,
-                        quality_rank: item_row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
+                        quality_rank: item_row
+                            .try_get::<Option<i32>, _>("quality_rank")?
+                            .map(i64::from),
                         bind_type: bind_type.clone(),
-                        bind_owner_user_id: item_row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
-                        bind_owner_character_id: item_row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
+                        bind_owner_user_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_user_id")?,
+                        bind_owner_character_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_character_id")?,
                         location: "auction".to_string(),
                         location_slot: None,
                         equipped_slot: None,
-                        strengthen_level: item_row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-                        refine_level: item_row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-                        socketed_gems: item_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+                        strengthen_level: item_row
+                            .try_get::<Option<i32>, _>("strengthen_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        refine_level: item_row
+                            .try_get::<Option<i32>, _>("refine_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        socketed_gems: item_row
+                            .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+                            .unwrap_or_else(|| serde_json::json!([])),
                         random_seed: item_row.try_get::<Option<i64>, _>("random_seed")?,
-                        affixes: item_row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-                        identified: item_row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-                        affix_gen_version: item_row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-                        affix_roll_meta: item_row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+                        affixes: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affixes")?
+                            .unwrap_or_else(|| serde_json::json!([])),
+                        identified: item_row
+                            .try_get::<Option<bool>, _>("identified")?
+                            .unwrap_or(false),
+                        affix_gen_version: item_row
+                            .try_get::<Option<i32>, _>("affix_gen_version")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        affix_roll_meta: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+                            .unwrap_or_else(|| serde_json::json!({})),
                         custom_name: item_row.try_get::<Option<String>, _>("custom_name")?,
-                        locked: item_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
+                        locked: item_row
+                            .try_get::<Option<bool>, _>("locked")?
+                            .unwrap_or(false),
                         expire_at: item_row.try_get::<Option<String>, _>("expire_at_text")?,
                         obtained_from: item_row.try_get::<Option<String>, _>("obtained_from")?,
-                        obtained_ref_id: item_row.try_get::<Option<String>, _>("obtained_ref_id")?,
+                        obtained_ref_id: item_row
+                            .try_get::<Option<String>, _>("obtained_ref_id")?,
                         metadata: item_row.try_get::<Option<serde_json::Value>, _>("metadata")?,
                     }),
                 };
@@ -1531,10 +2209,17 @@ async fn create_market_listing_tx(
     let listing_id = listing_row.try_get::<i64, _>("id")?;
     Ok(ServiceResult {
         success: true,
-        message: Some(format!("上架成功，已收取{}银两手续费（未卖出下架将退还）", listing_fee_silver)),
+        message: Some(format!(
+            "上架成功，已收取{}银两手续费（未卖出下架将退还）",
+            listing_fee_silver
+        )),
         data: Some(MarketItemListDataDto {
             listing_id,
-            debug_realtime: Some(build_market_update_payload("create_market_listing", Some(listing_id), "item")),
+            debug_realtime: Some(build_market_update_payload(
+                "create_market_listing",
+                Some(listing_id),
+                "item",
+            )),
         }),
     })
 }
@@ -1546,26 +2231,47 @@ async fn create_partner_market_listing_tx(
     partner_id: i64,
     unit_price_spirit_stones: i64,
 ) -> Result<ServiceResult<MarketPartnerListDataDto>, AppError> {
-    let character_row = state.database.fetch_optional(
-        "SELECT user_id, realm, sub_realm, silver FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
+    let character_row = state
+        .database
+        .fetch_optional(
+            "SELECT user_id, realm, sub_realm, silver FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(character_row) = character_row else {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     };
     let owner_user_id = opt_i64_from_i32(&character_row, "user_id");
     if owner_user_id != user_id {
-        return Ok(ServiceResult { success: false, message: Some("角色归属异常".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色归属异常".to_string()),
+            data: None,
+        });
     }
 
     let partner = load_market_partner_row_by_id(state, character_id, partner_id).await?;
     let Some(partner) = partner else {
-        return Ok(ServiceResult { success: false, message: Some("伙伴不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("伙伴不存在".to_string()),
+            data: None,
+        });
     };
     if partner.is_active {
-        return Ok(ServiceResult { success: false, message: Some("出战中的伙伴不可上架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("出战中的伙伴不可上架".to_string()),
+            data: None,
+        });
     }
-    if has_pending_partner_technique_preview_for_partner(state, character_id, partner_id, true).await? {
+    if has_pending_partner_technique_preview_for_partner(state, character_id, partner_id, true)
+        .await?
+    {
         return Ok(ServiceResult {
             success: false,
             message: Some("存在待处理的打书预览，请先确认或放弃".to_string()),
@@ -1577,18 +2283,32 @@ async fn create_partner_market_listing_tx(
         |q| q.bind(partner_id),
     ).await?;
     if active_listing.is_some() {
-        return Ok(ServiceResult { success: false, message: Some("该伙伴已在坊市挂单中".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该伙伴已在坊市挂单中".to_string()),
+            data: None,
+        });
     }
 
     let total_price = unit_price_spirit_stones.max(0);
     let listing_fee_silver = total_price.saturating_mul(5);
-    let current_silver = character_row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default();
+    let current_silver = character_row
+        .try_get::<Option<i64>, _>("silver")?
+        .unwrap_or_default();
     if listing_fee_silver > current_silver {
-        return Ok(ServiceResult { success: false, message: Some(format!("银两不足，上架手续费需要{}", listing_fee_silver)), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some(format!("银两不足，上架手续费需要{}", listing_fee_silver)),
+            data: None,
+        });
     }
 
-    let realm = character_row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
-    let sub_realm = character_row.try_get::<Option<String>, _>("sub_realm")?.unwrap_or_default();
+    let realm = character_row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
+    let sub_realm = character_row
+        .try_get::<Option<String>, _>("sub_realm")?
+        .unwrap_or_default();
     let snapshot = build_market_partner_snapshot(state, &partner, &realm, &sub_realm).await?;
     let listing_row = state.database.fetch_one(
         "INSERT INTO market_partner_listing (seller_user_id, seller_character_id, partner_id, partner_snapshot, partner_def_id, partner_name, partner_nickname, partner_quality, partner_element, partner_level, unit_price_spirit_stones, listing_fee_silver, status) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, 'active') RETURNING id",
@@ -1613,10 +2333,17 @@ async fn create_partner_market_listing_tx(
     let listing_id = listing_row.try_get::<i64, _>("id")?;
     Ok(ServiceResult {
         success: true,
-        message: Some(format!("上架成功，已收取{}银两手续费（未卖出下架将退还）", listing_fee_silver)),
+        message: Some(format!(
+            "上架成功，已收取{}银两手续费（未卖出下架将退还）",
+            listing_fee_silver
+        )),
         data: Some(MarketPartnerListDataDto {
             listing_id,
-            debug_realtime: Some(build_market_update_payload("create_partner_listing", Some(listing_id), "partner")),
+            debug_realtime: Some(build_market_update_payload(
+                "create_partner_listing",
+                Some(listing_id),
+                "partner",
+            )),
         }),
     })
 }
@@ -1626,26 +2353,57 @@ async fn load_market_partner_row_by_id(
     character_id: i64,
     partner_id: i64,
 ) -> Result<Option<MarketPartnerRowData>, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT * FROM character_partner WHERE id = $1 AND character_id = $2 LIMIT 1",
-        |q| q.bind(partner_id).bind(character_id),
-    ).await?;
-    let Some(row) = row else { return Ok(None); };
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT * FROM character_partner WHERE id = $1 AND character_id = $2 LIMIT 1",
+            |q| q.bind(partner_id).bind(character_id),
+        )
+        .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
     Ok(Some(MarketPartnerRowData {
         id: i64::from(row.try_get::<i32, _>("id")?),
-        partner_def_id: row.try_get::<Option<String>, _>("partner_def_id")?.unwrap_or_default(),
-        nickname: row.try_get::<Option<String>, _>("nickname")?.unwrap_or_default(),
+        partner_def_id: row
+            .try_get::<Option<String>, _>("partner_def_id")?
+            .unwrap_or_default(),
+        nickname: row
+            .try_get::<Option<String>, _>("nickname")?
+            .unwrap_or_default(),
         description: row.try_get::<Option<String>, _>("description")?,
         avatar: row.try_get::<Option<String>, _>("avatar")?,
         level: row.try_get::<Option<i64>, _>("level")?.unwrap_or(1),
-        progress_exp: row.try_get::<Option<i64>, _>("progress_exp")?.unwrap_or_default(),
-        growth_max_qixue: row.try_get::<Option<i32>, _>("growth_max_qixue")?.map(i64::from).unwrap_or_default(),
-        growth_wugong: row.try_get::<Option<i32>, _>("growth_wugong")?.map(i64::from).unwrap_or_default(),
-        growth_fagong: row.try_get::<Option<i32>, _>("growth_fagong")?.map(i64::from).unwrap_or_default(),
-        growth_wufang: row.try_get::<Option<i32>, _>("growth_wufang")?.map(i64::from).unwrap_or_default(),
-        growth_fafang: row.try_get::<Option<i32>, _>("growth_fafang")?.map(i64::from).unwrap_or_default(),
-        growth_sudu: row.try_get::<Option<i32>, _>("growth_sudu")?.map(i64::from).unwrap_or_default(),
-        is_active: row.try_get::<Option<bool>, _>("is_active")?.unwrap_or(false),
+        progress_exp: row
+            .try_get::<Option<i64>, _>("progress_exp")?
+            .unwrap_or_default(),
+        growth_max_qixue: row
+            .try_get::<Option<i32>, _>("growth_max_qixue")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        growth_wugong: row
+            .try_get::<Option<i32>, _>("growth_wugong")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        growth_fagong: row
+            .try_get::<Option<i32>, _>("growth_fagong")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        growth_wufang: row
+            .try_get::<Option<i32>, _>("growth_wufang")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        growth_fafang: row
+            .try_get::<Option<i32>, _>("growth_fafang")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        growth_sudu: row
+            .try_get::<Option<i32>, _>("growth_sudu")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        is_active: row
+            .try_get::<Option<bool>, _>("is_active")?
+            .unwrap_or(false),
         obtained_from: row.try_get::<Option<String>, _>("obtained_from")?,
     }))
 }
@@ -1658,11 +2416,22 @@ async fn load_market_partner_technique_rows(
         "SELECT technique_id, current_layer, is_innate FROM character_partner_technique WHERE partner_id = $1 ORDER BY is_innate DESC, created_at ASC, id ASC",
         |q| q.bind(partner_id),
     ).await?;
-    rows.into_iter().map(|row| Ok(MarketPartnerTechniqueRowData {
-        technique_id: row.try_get::<Option<String>, _>("technique_id")?.unwrap_or_default(),
-        current_layer: row.try_get::<Option<i32>, _>("current_layer")?.map(i64::from).unwrap_or(1),
-        is_innate: row.try_get::<Option<bool>, _>("is_innate")?.unwrap_or(false),
-    })).collect()
+    rows.into_iter()
+        .map(|row| {
+            Ok(MarketPartnerTechniqueRowData {
+                technique_id: row
+                    .try_get::<Option<String>, _>("technique_id")?
+                    .unwrap_or_default(),
+                current_layer: row
+                    .try_get::<Option<i32>, _>("current_layer")?
+                    .map(i64::from)
+                    .unwrap_or(1),
+                is_innate: row
+                    .try_get::<Option<bool>, _>("is_innate")?
+                    .unwrap_or(false),
+            })
+        })
+        .collect()
 }
 
 async fn build_market_partner_snapshot(
@@ -1672,12 +2441,14 @@ async fn build_market_partner_snapshot(
     sub_realm: &str,
 ) -> Result<serde_json::Value, AppError> {
     let growth_cfg = load_market_partner_growth_config()?;
-    let def = load_market_partner_def_resolved(state, row.partner_def_id.trim()).await?
+    let def = load_market_partner_def_resolved(state, row.partner_def_id.trim())
+        .await?
         .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
     let technique_rows = load_market_partner_technique_rows(state, row.id).await?;
     let techniques = build_market_partner_snapshot_techniques(state, &def, technique_rows).await?;
     let effective_level = resolve_market_partner_effective_level(realm, sub_realm, row.level);
-    let computed_attrs = build_market_partner_computed_attrs(&def, row, effective_level, &techniques);
+    let computed_attrs =
+        build_market_partner_computed_attrs(&def, row, effective_level, &techniques);
     Ok(serde_json::json!({
         "id": row.id,
         "partnerDefId": def.id,
@@ -1715,14 +2486,24 @@ async fn build_market_partner_snapshot(
 }
 
 fn load_market_partner_def_map() -> Result<BTreeMap<String, MarketPartnerDefSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read partner_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read partner_def.json: {error}")))?;
     let payload: MarketPartnerDefFile = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse partner_def.json: {error}")))?;
-    Ok(payload.partners.into_iter().filter(|row| row.enabled != Some(false)).map(|row| (row.id.clone(), row)).collect())
+    Ok(payload
+        .partners
+        .into_iter()
+        .filter(|row| row.enabled != Some(false))
+        .map(|row| (row.id.clone(), row))
+        .collect())
 }
 
-async fn load_market_partner_def_resolved(state: &AppState, partner_def_id: &str) -> Result<Option<MarketPartnerDefSeed>, AppError> {
+async fn load_market_partner_def_resolved(
+    state: &AppState,
+    partner_def_id: &str,
+) -> Result<Option<MarketPartnerDefSeed>, AppError> {
     let defs = load_market_partner_def_map()?;
     if let Some(def) = defs.get(partner_def_id).cloned() {
         return Ok(Some(def));
@@ -1735,26 +2516,40 @@ async fn load_market_partner_def_resolved(state: &AppState, partner_def_id: &str
         return Ok(None);
     };
     Ok(Some(MarketPartnerDefSeed {
-        id: row.try_get::<Option<String>, _>("id")?.unwrap_or_else(|| partner_def_id.to_string()),
+        id: row
+            .try_get::<Option<String>, _>("id")?
+            .unwrap_or_else(|| partner_def_id.to_string()),
         source_job_id: row.try_get::<Option<String>, _>("source_job_id")?,
-        name: row.try_get::<Option<String>, _>("name")?.unwrap_or_else(|| partner_def_id.to_string()),
+        name: row
+            .try_get::<Option<String>, _>("name")?
+            .unwrap_or_else(|| partner_def_id.to_string()),
         description: row.try_get::<Option<String>, _>("description")?,
         avatar: row.try_get::<Option<String>, _>("avatar")?,
         quality: row.try_get::<Option<String>, _>("quality")?,
         attribute_element: row.try_get::<Option<String>, _>("attribute_element")?,
         role: row.try_get::<Option<String>, _>("role")?,
-        max_technique_slots: row.try_get::<Option<i32>, _>("max_technique_slots")?.map(i64::from),
+        max_technique_slots: row
+            .try_get::<Option<i32>, _>("max_technique_slots")?
+            .map(i64::from),
         innate_technique_ids: row.try_get::<Option<Vec<String>>, _>("innate_technique_ids")?,
-        base_attrs: row.try_get::<Option<serde_json::Value>, _>("base_attrs")?.unwrap_or_else(|| serde_json::json!({})),
-        level_attr_gains: row.try_get::<Option<serde_json::Value>, _>("level_attr_gains")?.unwrap_or_else(|| serde_json::json!({})),
+        base_attrs: row
+            .try_get::<Option<serde_json::Value>, _>("base_attrs")?
+            .unwrap_or_else(|| serde_json::json!({})),
+        level_attr_gains: row
+            .try_get::<Option<serde_json::Value>, _>("level_attr_gains")?
+            .unwrap_or_else(|| serde_json::json!({})),
         enabled: row.try_get::<Option<bool>, _>("enabled")?,
     }))
 }
 
 fn load_market_partner_growth_config() -> Result<MarketPartnerGrowthFile, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_growth.json"))
-        .map_err(|error| AppError::config(format!("failed to read partner_growth.json: {error}")))?;
-    serde_json::from_str(&content).map_err(|error| AppError::config(format!("failed to parse partner_growth.json: {error}")))
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/partner_growth.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read partner_growth.json: {error}")))?;
+    serde_json::from_str(&content)
+        .map_err(|error| AppError::config(format!("failed to parse partner_growth.json: {error}")))
 }
 
 async fn build_market_partner_snapshot_techniques(
@@ -1782,8 +2577,13 @@ async fn build_market_partner_snapshot_techniques(
     }
     let mut out = Vec::new();
     for row in effective_rows {
-        let Some(detail) = load_technique_detail_data(state, row.technique_id.as_str(), None, true).await? else {
-            return Err(AppError::config(format!("伙伴功法不存在: {}", row.technique_id)));
+        let Some(detail) =
+            load_technique_detail_data(state, row.technique_id.as_str(), None, true).await?
+        else {
+            return Err(AppError::config(format!(
+                "伙伴功法不存在: {}",
+                row.technique_id
+            )));
         };
         let max_layer = detail.technique.max_layer.max(1);
         let current_layer = row.current_layer.clamp(1, max_layer);
@@ -1795,13 +2595,27 @@ async fn build_market_partner_snapshot_techniques(
         let mut skill_ids = Vec::new();
         let mut upgrade_counts = BTreeMap::<String, i64>::new();
         let mut passive_attrs = BTreeMap::new();
-        for layer in all_layers.iter().filter(|layer| layer.get("layer").and_then(|value| value.as_i64()).unwrap_or_default() <= current_layer) {
-            if let Some(skills) = layer.get("unlock_skill_ids").and_then(|value| value.as_array()) {
+        for layer in all_layers.iter().filter(|layer| {
+            layer
+                .get("layer")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default()
+                <= current_layer
+        }) {
+            if let Some(skills) = layer
+                .get("unlock_skill_ids")
+                .and_then(|value| value.as_array())
+            {
                 for skill in skills {
-                    if let Some(skill_id) = skill.as_str() { skill_ids.push(skill_id.to_string()); }
+                    if let Some(skill_id) = skill.as_str() {
+                        skill_ids.push(skill_id.to_string());
+                    }
                 }
             }
-            if let Some(skills) = layer.get("upgrade_skill_ids").and_then(|value| value.as_array()) {
+            if let Some(skills) = layer
+                .get("upgrade_skill_ids")
+                .and_then(|value| value.as_array())
+            {
                 for skill in skills {
                     if let Some(skill_id) = skill.as_str() {
                         skill_ids.push(skill_id.to_string());
@@ -1811,7 +2625,12 @@ async fn build_market_partner_snapshot_techniques(
             }
             if let Some(passives) = layer.get("passives").and_then(|value| value.as_array()) {
                 for passive in passives {
-                    if let (Some(key), Some(value)) = (passive.get("key").and_then(|value| value.as_str()), passive.get("value").and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))) {
+                    if let (Some(key), Some(value)) = (
+                        passive.get("key").and_then(|value| value.as_str()),
+                        passive.get("value").and_then(|value| {
+                            value.as_f64().or_else(|| value.as_i64().map(|v| v as f64))
+                        }),
+                    ) {
                         *passive_attrs.entry(key.to_string()).or_insert(0.0) += value;
                     }
                 }
@@ -1819,14 +2638,19 @@ async fn build_market_partner_snapshot_techniques(
         }
         skill_ids.sort();
         skill_ids.dedup();
-        let skills = detail.skills
+        let skills = detail
+            .skills
             .into_iter()
             .filter(|skill| skill_ids.iter().any(|skill_id| skill_id == &skill.id))
             .map(|skill| {
                 let skill_id = skill.id.clone();
                 build_effective_partner_skill(skill, *upgrade_counts.get(&skill_id).unwrap_or(&0))
             })
-            .map(|skill| serde_json::to_value(skill).map_err(|error| AppError::config(format!("坊市伙伴功法技能序列化失败: {error}"))))
+            .map(|skill| {
+                serde_json::to_value(skill).map_err(|error| {
+                    AppError::config(format!("坊市伙伴功法技能序列化失败: {error}"))
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         out.push(serde_json::json!({
             "techniqueId": row.technique_id,
@@ -1855,9 +2679,14 @@ fn build_market_partner_computed_attrs(
     let level_gain = to_number_map(def.level_attr_gains.clone());
     let level_offset = (effective_level - 1).max(0) as f64;
     let mut attrs = BTreeMap::new();
-    for (key, value) in base { attrs.insert(key, value); }
-    for (key, value) in level_gain { *attrs.entry(key).or_insert(0.0) += value * level_offset; }
-    *attrs.entry("max_qixue".to_string()).or_insert(0.0) += row.growth_max_qixue as f64 * level_offset;
+    for (key, value) in base {
+        attrs.insert(key, value);
+    }
+    for (key, value) in level_gain {
+        *attrs.entry(key).or_insert(0.0) += value * level_offset;
+    }
+    *attrs.entry("max_qixue".to_string()).or_insert(0.0) +=
+        row.growth_max_qixue as f64 * level_offset;
     *attrs.entry("wugong".to_string()).or_insert(0.0) += row.growth_wugong as f64 * level_offset;
     *attrs.entry("fagong".to_string()).or_insert(0.0) += row.growth_fagong as f64 * level_offset;
     *attrs.entry("wufang".to_string()).or_insert(0.0) += row.growth_wufang as f64 * level_offset;
@@ -1909,17 +2738,43 @@ fn build_market_partner_computed_attrs(
 }
 
 fn resolve_market_partner_effective_level(realm: &str, sub_realm: &str, level: i64) -> i64 {
-    let full = if realm.trim() == "凡人" || sub_realm.trim().is_empty() { realm.trim().to_string() } else { format!("{}·{}", realm.trim(), sub_realm.trim()) };
-    const ORDER: &[&str] = &["凡人","炼精化炁·养气期","炼精化炁·通脉期","炼精化炁·凝炁期","炼炁化神·炼己期","炼炁化神·采药期","炼炁化神·结胎期","炼神返虚·养神期","炼神返虚·还虚期","炼神返虚·合道期","炼虚合道·证道期","炼虚合道·历劫期","炼虚合道·成圣期"];
-    let rank = ORDER.iter().position(|item| *item == full).map(|idx| idx as i64 + 1).unwrap_or(1);
+    let full = if realm.trim() == "凡人" || sub_realm.trim().is_empty() {
+        realm.trim().to_string()
+    } else {
+        format!("{}·{}", realm.trim(), sub_realm.trim())
+    };
+    const ORDER: &[&str] = &[
+        "凡人",
+        "炼精化炁·养气期",
+        "炼精化炁·通脉期",
+        "炼精化炁·凝炁期",
+        "炼炁化神·炼己期",
+        "炼炁化神·采药期",
+        "炼炁化神·结胎期",
+        "炼神返虚·养神期",
+        "炼神返虚·还虚期",
+        "炼神返虚·合道期",
+        "炼虚合道·证道期",
+        "炼虚合道·历劫期",
+        "炼虚合道·成圣期",
+    ];
+    let rank = ORDER
+        .iter()
+        .position(|item| *item == full)
+        .map(|idx| idx as i64 + 1)
+        .unwrap_or(1);
     let cap = (rank * 10).max(10);
     level.max(1).min(cap)
 }
 
-fn calc_market_partner_upgrade_exp_by_target_level(target_level: i64, growth: &MarketPartnerGrowthFile) -> i64 {
+fn calc_market_partner_upgrade_exp_by_target_level(
+    target_level: i64,
+    growth: &MarketPartnerGrowthFile,
+) -> i64 {
     let safe_target = target_level.max(2);
     let level_offset = (safe_target - 2).max(0) as f64;
-    let raw = (growth.exp_base_exp.max(1) as f64) * growth.exp_growth_rate.max(1.0).powf(level_offset);
+    let raw =
+        (growth.exp_base_exp.max(1) as f64) * growth.exp_growth_rate.max(1.0).powf(level_offset);
     raw.floor().max(1.0) as i64
 }
 
@@ -1929,7 +2784,11 @@ fn to_number_map(value: serde_json::Value) -> BTreeMap<String, f64> {
         .cloned()
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|(k, v)| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64)).map(|n| (k, n)))
+        .filter_map(|(k, v)| {
+            v.as_f64()
+                .or_else(|| v.as_i64().map(|n| n as f64))
+                .map(|n| (k, n))
+        })
         .collect()
 }
 
@@ -1949,17 +2808,39 @@ async fn record_market_risk_query_access(
     let last_signature_key = format!("market:risk:user:{}:last-signature", user_id);
     let event_member = format!("{}:{}", occurred_at, now_millis());
     let min_score_to_keep = occurred_at - MARKET_RISK_QUERY_LONG_WINDOW_MS;
-    redis.zadd(&query_events_key, occurred_at, &event_member).await?;
-    let _ = redis.zremrangebyscore(&query_events_key, 0, min_score_to_keep).await?;
-    let _ = redis.pexpire(&query_events_key, MARKET_RISK_QUERY_TRACK_TTL_MS).await?;
-    redis.zadd(&signature_events_key, occurred_at, &event_member).await?;
-    let _ = redis.zremrangebyscore(&signature_events_key, 0, min_score_to_keep).await?;
-    let _ = redis.pexpire(&signature_events_key, MARKET_RISK_QUERY_TRACK_TTL_MS).await?;
-    redis.psetex(&last_signature_key, MARKET_RISK_QUERY_TRACK_TTL_MS, &signature_hash).await?;
+    redis
+        .zadd(&query_events_key, occurred_at, &event_member)
+        .await?;
+    let _ = redis
+        .zremrangebyscore(&query_events_key, 0, min_score_to_keep)
+        .await?;
+    let _ = redis
+        .pexpire(&query_events_key, MARKET_RISK_QUERY_TRACK_TTL_MS)
+        .await?;
+    redis
+        .zadd(&signature_events_key, occurred_at, &event_member)
+        .await?;
+    let _ = redis
+        .zremrangebyscore(&signature_events_key, 0, min_score_to_keep)
+        .await?;
+    let _ = redis
+        .pexpire(&signature_events_key, MARKET_RISK_QUERY_TRACK_TTL_MS)
+        .await?;
+    redis
+        .psetex(
+            &last_signature_key,
+            MARKET_RISK_QUERY_TRACK_TTL_MS,
+            &signature_hash,
+        )
+        .await?;
     Ok(())
 }
 
-fn build_item_market_risk_query_signature(query: &MarketListingsQuery, page: i64, page_size: i64) -> String {
+fn build_item_market_risk_query_signature(
+    query: &MarketListingsQuery,
+    page: i64,
+    page_size: i64,
+) -> String {
     serde_json::json!({
         "category": query.category.as_deref().unwrap_or_default().trim(),
         "quality": query.quality.as_deref().unwrap_or_default().trim(),
@@ -1973,7 +2854,11 @@ fn build_item_market_risk_query_signature(query: &MarketListingsQuery, page: i64
     .to_string()
 }
 
-fn build_partner_market_risk_query_signature(query: &MarketPartnerListingsQuery, page: i64, page_size: i64) -> String {
+fn build_partner_market_risk_query_signature(
+    query: &MarketPartnerListingsQuery,
+    page: i64,
+    page_size: i64,
+) -> String {
     serde_json::json!({
         "quality": query.quality.as_deref().unwrap_or_default().trim(),
         "element": query.element.as_deref().unwrap_or_default().trim(),
@@ -1991,12 +2876,19 @@ fn hash_market_signature(signature: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-async fn has_valid_market_purchase_pass(state: &AppState, user_id: i64, character_id: i64) -> Result<bool, AppError> {
+async fn has_valid_market_purchase_pass(
+    state: &AppState,
+    user_id: i64,
+    character_id: i64,
+) -> Result<bool, AppError> {
     let Some(redis_client) = state.redis.clone() else {
         return Ok(false);
     };
     let redis = RedisRuntime::new(redis_client);
-    Ok(redis.get_string(&format!("market:risk:pass:{}:{}", user_id, character_id)).await?.is_some())
+    Ok(redis
+        .get_string(&format!("market:risk:pass:{}:{}", user_id, character_id))
+        .await?
+        .is_some())
 }
 
 #[derive(Debug)]
@@ -2004,36 +2896,75 @@ struct MarketPurchaseRiskAssessmentDto {
     requires_captcha: bool,
 }
 
-async fn get_market_purchase_risk_assessment(state: &AppState, user_id: i64) -> Result<MarketPurchaseRiskAssessmentDto, AppError> {
+async fn get_market_purchase_risk_assessment(
+    state: &AppState,
+    user_id: i64,
+) -> Result<MarketPurchaseRiskAssessmentDto, AppError> {
     let Some(redis_client) = state.redis.clone() else {
-        return Ok(MarketPurchaseRiskAssessmentDto { requires_captcha: false });
+        return Ok(MarketPurchaseRiskAssessmentDto {
+            requires_captcha: false,
+        });
     };
     let redis = RedisRuntime::new(redis_client);
     let now_ms = now_millis() as i64;
     let query_events_key = format!("market:risk:user:{}:queries", user_id);
-    let last_signature_hash = redis.get_string(&format!("market:risk:user:{}:last-signature", user_id)).await?;
+    let last_signature_hash = redis
+        .get_string(&format!("market:risk:user:{}:last-signature", user_id))
+        .await?;
     let latest_signature_count_60s = if let Some(hash) = last_signature_hash {
-        redis.zcount(&format!("market:risk:user:{}:signature:{}", user_id, hash), now_ms - MARKET_RISK_QUERY_SHORT_WINDOW_MS, now_ms).await?
+        redis
+            .zcount(
+                &format!("market:risk:user:{}:signature:{}", user_id, hash),
+                now_ms - MARKET_RISK_QUERY_SHORT_WINDOW_MS,
+                now_ms,
+            )
+            .await?
     } else {
         0
     };
-    let query_count_60s = redis.zcount(&query_events_key, now_ms - MARKET_RISK_QUERY_SHORT_WINDOW_MS, now_ms).await?;
-    let query_count_5m = redis.zcount(&query_events_key, now_ms - MARKET_RISK_QUERY_LONG_WINDOW_MS, now_ms).await?;
-    let recent_query_with_scores = redis.zrange_withscores(&query_events_key, -MARKET_RISK_RECENT_TIMESTAMP_COUNT, -1).await?;
+    let query_count_60s = redis
+        .zcount(
+            &query_events_key,
+            now_ms - MARKET_RISK_QUERY_SHORT_WINDOW_MS,
+            now_ms,
+        )
+        .await?;
+    let query_count_5m = redis
+        .zcount(
+            &query_events_key,
+            now_ms - MARKET_RISK_QUERY_LONG_WINDOW_MS,
+            now_ms,
+        )
+        .await?;
+    let recent_query_with_scores = redis
+        .zrange_withscores(&query_events_key, -MARKET_RISK_RECENT_TIMESTAMP_COUNT, -1)
+        .await?;
     let recent_query_timestamps = parse_sorted_set_scores(recent_query_with_scores);
     let interval_stats = calculate_market_interval_stats(&recent_query_timestamps);
     let mut score = 0;
-    if query_count_60s >= 18 { score += 20; }
-    if query_count_60s >= 30 { score += 15; }
-    if query_count_5m >= 90 { score += 15; }
-    if latest_signature_count_60s >= 10 { score += 20; }
-    if latest_signature_count_60s >= 16 { score += 15; }
+    if query_count_60s >= 18 {
+        score += 20;
+    }
+    if query_count_60s >= 30 {
+        score += 15;
+    }
+    if query_count_5m >= 90 {
+        score += 15;
+    }
+    if latest_signature_count_60s >= 10 {
+        score += 20;
+    }
+    if latest_signature_count_60s >= 16 {
+        score += 15;
+    }
     if let Some((average_interval_ms, coefficient_of_variation)) = interval_stats {
         if average_interval_ms <= 1800.0 && coefficient_of_variation <= 0.2 {
             score += 25;
         }
     }
-    Ok(MarketPurchaseRiskAssessmentDto { requires_captcha: score >= 60 })
+    Ok(MarketPurchaseRiskAssessmentDto {
+        requires_captcha: score >= 60,
+    })
 }
 
 fn parse_sorted_set_scores(values: Vec<String>) -> Vec<i64> {
@@ -2050,20 +2981,32 @@ fn parse_sorted_set_scores(values: Vec<String>) -> Vec<i64> {
 }
 
 fn calculate_market_interval_stats(timestamps: &[i64]) -> Option<(f64, f64)> {
-    if timestamps.len() < 8 { return None; }
+    if timestamps.len() < 8 {
+        return None;
+    }
     let mut intervals = Vec::new();
     for window in timestamps.windows(2) {
         let interval = window[1] - window[0];
-        if interval <= 0 { return None; }
+        if interval <= 0 {
+            return None;
+        }
         intervals.push(interval as f64);
     }
-    if intervals.len() < 7 { return None; }
+    if intervals.len() < 7 {
+        return None;
+    }
     let average = intervals.iter().sum::<f64>() / intervals.len() as f64;
-    if average <= 0.0 { return None; }
-    let variance = intervals.iter().map(|value| {
-        let delta = *value - average;
-        delta * delta
-    }).sum::<f64>() / intervals.len() as f64;
+    if average <= 0.0 {
+        return None;
+    }
+    let variance = intervals
+        .iter()
+        .map(|value| {
+            let delta = *value - average;
+            delta * delta
+        })
+        .sum::<f64>()
+        / intervals.len() as f64;
     Some((average, variance.sqrt() / average))
 }
 
@@ -2078,61 +3021,105 @@ async fn buy_partner_market_listing_tx(
         |q| q.bind(listing_id),
     ).await?;
     let Some(listing) = listing else {
-        return Ok(ServiceResult { success: false, message: Some("上架记录不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("上架记录不存在".to_string()),
+            data: None,
+        });
     };
-        let seller_user_id = listing
-            .try_get::<Option<i32>, _>("seller_user_id")?
-            .map(i64::from)
-            .unwrap_or_default();
-        let seller_character_id = listing
-            .try_get::<Option<i32>, _>("seller_character_id")?
-            .map(i64::from)
-            .unwrap_or_default();
+    let seller_user_id = listing
+        .try_get::<Option<i32>, _>("seller_user_id")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let seller_character_id = listing
+        .try_get::<Option<i32>, _>("seller_character_id")?
+        .map(i64::from)
+        .unwrap_or_default();
     if seller_character_id == buyer_character_id {
-        return Ok(ServiceResult { success: false, message: Some("不能购买自己上架的伙伴".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("不能购买自己上架的伙伴".to_string()),
+            data: None,
+        });
     }
-    let status = listing.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = listing
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "active" {
-        return Ok(ServiceResult { success: false, message: Some("该伙伴已被购买或下架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该伙伴已被购买或下架".to_string()),
+            data: None,
+        });
     }
-        let partner_id = listing
-            .try_get::<Option<i32>, _>("partner_id")?
-            .map(i64::from)
-            .unwrap_or_default();
-    let unit_price_spirit_stones = listing.try_get::<Option<i64>, _>("unit_price_spirit_stones")?.unwrap_or_default();
+    let partner_id = listing
+        .try_get::<Option<i32>, _>("partner_id")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let unit_price_spirit_stones = listing
+        .try_get::<Option<i64>, _>("unit_price_spirit_stones")?
+        .unwrap_or_default();
 
     let partner_row = state.database.fetch_optional(
         "SELECT character_id, is_active FROM character_partner WHERE id = $1 LIMIT 1 FOR UPDATE",
         |q| q.bind(partner_id),
     ).await?;
     let Some(partner_row) = partner_row else {
-        return Ok(ServiceResult { success: false, message: Some("伙伴不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("伙伴不存在".to_string()),
+            data: None,
+        });
     };
     let current_owner_character_id = partner_row
         .try_get::<Option<i32>, _>("character_id")?
         .map(i64::from)
         .unwrap_or_default();
     if current_owner_character_id != seller_character_id {
-        return Ok(ServiceResult { success: false, message: Some("伙伴归属异常，请刷新后重试".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("伙伴归属异常，请刷新后重试".to_string()),
+            data: None,
+        });
     }
-    if partner_row.try_get::<Option<bool>, _>("is_active")?.unwrap_or(false) {
-        return Ok(ServiceResult { success: false, message: Some("出战中的伙伴不可交易".to_string()), data: None });
+    if partner_row
+        .try_get::<Option<bool>, _>("is_active")?
+        .unwrap_or(false)
+    {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("出战中的伙伴不可交易".to_string()),
+            data: None,
+        });
     }
 
     let buyer_row = state.database.fetch_optional(
         "SELECT spirit_stones, realm, sub_realm FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
         |q| q.bind(buyer_character_id),
     ).await?;
-    let seller_row = state.database.fetch_optional(
-        "SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(seller_character_id),
-    ).await?;
+    let seller_row = state
+        .database
+        .fetch_optional(
+            "SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(seller_character_id),
+        )
+        .await?;
     let (Some(buyer_row), Some(_seller_row)) = (buyer_row, seller_row) else {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     };
-    let buyer_spirit_stones = buyer_row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
+    let buyer_spirit_stones = buyer_row
+        .try_get::<Option<i64>, _>("spirit_stones")?
+        .unwrap_or_default();
     if buyer_spirit_stones < unit_price_spirit_stones {
-        return Ok(ServiceResult { success: false, message: Some("灵石不足".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("灵石不足".to_string()),
+            data: None,
+        });
     }
 
     state.database.execute(
@@ -2143,17 +3130,29 @@ async fn buy_partner_market_listing_tx(
         "UPDATE characters SET spirit_stones = COALESCE(spirit_stones, 0) + $2, updated_at = NOW() WHERE id = $1",
         |q| q.bind(seller_character_id).bind(unit_price_spirit_stones),
     ).await?;
-    clear_pending_partner_technique_preview_by_partner_ids(state, seller_character_id, &[partner_id], true).await?;
+    clear_pending_partner_technique_preview_by_partner_ids(
+        state,
+        seller_character_id,
+        &[partner_id],
+        true,
+    )
+    .await?;
     state.database.execute(
         "UPDATE character_partner SET character_id = $1, is_active = FALSE, updated_at = NOW() WHERE id = $2",
         |q| q.bind(buyer_character_id).bind(partner_id),
     ).await?;
 
-    let buyer_realm = buyer_row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string());
-    let buyer_sub_realm = buyer_row.try_get::<Option<String>, _>("sub_realm")?.unwrap_or_default();
-    let snapshot_row = load_market_partner_row_by_id(state, buyer_character_id, partner_id).await?
+    let buyer_realm = buyer_row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_else(|| "凡人".to_string());
+    let buyer_sub_realm = buyer_row
+        .try_get::<Option<String>, _>("sub_realm")?
+        .unwrap_or_default();
+    let snapshot_row = load_market_partner_row_by_id(state, buyer_character_id, partner_id)
+        .await?
         .ok_or_else(|| AppError::config("伙伴快照构建失败"))?;
-    let sold_snapshot = build_market_partner_snapshot(state, &snapshot_row, &buyer_realm, &buyer_sub_realm).await?;
+    let sold_snapshot =
+        build_market_partner_snapshot(state, &snapshot_row, &buyer_realm, &buyer_sub_realm).await?;
 
     state.database.execute(
         "UPDATE market_partner_listing SET status = 'sold', buyer_user_id = $1, buyer_character_id = $2, partner_snapshot = $3::jsonb, sold_at = NOW(), updated_at = NOW() WHERE id = $4",
@@ -2179,8 +3178,15 @@ async fn buy_partner_market_listing_tx(
         message: Some("购买成功，伙伴已转入麾下".to_string()),
         data: Some(MarketPartnerBuyDataDto {
             seller_user_id,
-            debug_realtime: Some(build_market_update_payload("buy_partner_listing", Some(listing_id), "partner")),
-            debug_rank_realtime: Some(build_rank_update_payload("buy_partner_listing", &["partner", "power"])),
+            debug_realtime: Some(build_market_update_payload(
+                "buy_partner_listing",
+                Some(listing_id),
+                "partner",
+            )),
+            debug_rank_realtime: Some(build_rank_update_payload(
+                "buy_partner_listing",
+                &["partner", "power"],
+            )),
         }),
     })
 }
@@ -2197,49 +3203,99 @@ async fn buy_market_listing_tx(
         |q| q.bind(listing_id),
     ).await?;
     let Some(listing) = listing else {
-        return Ok(ServiceResult { success: false, message: Some("上架记录不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("上架记录不存在".to_string()),
+            data: None,
+        });
     };
-        let seller_user_id = listing
-            .try_get::<Option<i32>, _>("seller_user_id")?
-            .map(i64::from)
-            .unwrap_or_default();
-        let seller_character_id = listing
-            .try_get::<Option<i32>, _>("seller_character_id")?
-            .map(i64::from)
-            .unwrap_or_default();
+    let seller_user_id = listing
+        .try_get::<Option<i32>, _>("seller_user_id")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let seller_character_id = listing
+        .try_get::<Option<i32>, _>("seller_character_id")?
+        .map(i64::from)
+        .unwrap_or_default();
     if seller_character_id == buyer_character_id {
-        return Ok(ServiceResult { success: false, message: Some("不能购买自己上架的物品".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("不能购买自己上架的物品".to_string()),
+            data: None,
+        });
     }
-    let status = listing.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = listing
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "active" {
-        return Ok(ServiceResult { success: false, message: Some("该物品已被购买或下架".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该物品已被购买或下架".to_string()),
+            data: None,
+        });
     }
-    let listing_qty = listing.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+    let listing_qty = listing
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if requested_qty > listing_qty || requested_qty <= 0 {
-        return Ok(ServiceResult { success: false, message: Some("购买数量不合法，请刷新后重试".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("购买数量不合法，请刷新后重试".to_string()),
+            data: None,
+        });
     }
-    let item_instance_id = listing.try_get::<Option<i64>, _>("item_instance_id")?.unwrap_or_default();
-    let item_def_id = listing.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
-    let unit_price_spirit_stones = listing.try_get::<Option<i64>, _>("unit_price_spirit_stones")?.unwrap_or_default();
+    let item_instance_id = listing
+        .try_get::<Option<i64>, _>("item_instance_id")?
+        .unwrap_or_default();
+    let item_def_id = listing
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
+    let unit_price_spirit_stones = listing
+        .try_get::<Option<i64>, _>("unit_price_spirit_stones")?
+        .unwrap_or_default();
 
     let item_row = state.database.fetch_optional(
         "SELECT id, owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, bind_owner_user_id, bind_owner_character_id, location, location_slot, equipped_slot, strengthen_level, refine_level, socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta, custom_name, locked, expire_at::text AS expire_at_text, obtained_from, obtained_ref_id, metadata FROM item_instance WHERE id = $1 LIMIT 1 FOR UPDATE",
         |q| q.bind(item_instance_id),
     ).await?;
     let Some(item_row) = item_row else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
-    let item_location = item_row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let item_location = item_row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if item_location != "auction" {
-        return Ok(ServiceResult { success: false, message: Some("物品不在坊市中".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不在坊市中".to_string()),
+            data: None,
+        });
     }
-    let item_owner_character_id = item_row.try_get::<Option<i64>, _>("owner_character_id")?.unwrap_or_default();
+    let item_owner_character_id = item_row
+        .try_get::<Option<i64>, _>("owner_character_id")?
+        .unwrap_or_default();
     if item_owner_character_id != seller_character_id {
-        return Ok(ServiceResult { success: false, message: Some("物品归属异常，请刷新后重试".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品归属异常，请刷新后重试".to_string()),
+            data: None,
+        });
     }
-    let item_qty = item_row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+    let item_qty = item_row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if item_qty != listing_qty {
-        return Ok(ServiceResult { success: false, message: Some("物品数量异常，请刷新后重试".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品数量异常，请刷新后重试".to_string()),
+            data: None,
+        });
     }
 
     let item_metas = load_market_item_meta_map()?;
@@ -2249,16 +3305,29 @@ async fn buy_market_listing_tx(
     let tax_amount = calculate_market_tax_amount(total_price, tax_rate);
     let seller_gain = total_price.saturating_sub(tax_amount);
 
-    let buyer_row = state.database.fetch_optional(
-        "SELECT spirit_stones FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(buyer_character_id),
-    ).await?;
+    let buyer_row = state
+        .database
+        .fetch_optional(
+            "SELECT spirit_stones FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(buyer_character_id),
+        )
+        .await?;
     let Some(buyer_row) = buyer_row else {
-        return Ok(ServiceResult { success: false, message: Some("角色不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("角色不存在".to_string()),
+            data: None,
+        });
     };
-    let buyer_spirit_stones = buyer_row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
+    let buyer_spirit_stones = buyer_row
+        .try_get::<Option<i64>, _>("spirit_stones")?
+        .unwrap_or_default();
     if buyer_spirit_stones < total_price {
-        return Ok(ServiceResult { success: false, message: Some("灵石不足".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("灵石不足".to_string()),
+            data: None,
+        });
     }
 
     state.database.execute(
@@ -2292,41 +3361,75 @@ async fn buy_market_listing_tx(
                         item_def_id: item_def_id.clone(),
                         qty: listing_qty - requested_qty,
                         quality: item_row.try_get::<Option<String>, _>("quality")?,
-                        quality_rank: item_row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-                        bind_type: item_row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
-                        bind_owner_user_id: item_row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
-                        bind_owner_character_id: item_row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
+                        quality_rank: item_row
+                            .try_get::<Option<i32>, _>("quality_rank")?
+                            .map(i64::from),
+                        bind_type: item_row
+                            .try_get::<Option<String>, _>("bind_type")?
+                            .unwrap_or_else(|| "none".to_string()),
+                        bind_owner_user_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_user_id")?,
+                        bind_owner_character_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_character_id")?,
                         location: item_location.clone(),
-                        location_slot: item_row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+                        location_slot: item_row
+                            .try_get::<Option<i32>, _>("location_slot")?
+                            .map(i64::from),
                         equipped_slot: item_row.try_get::<Option<String>, _>("equipped_slot")?,
-                        strengthen_level: item_row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-        refine_level: item_row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-                        socketed_gems: item_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+                        strengthen_level: item_row
+                            .try_get::<Option<i32>, _>("strengthen_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        refine_level: item_row
+                            .try_get::<Option<i32>, _>("refine_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        socketed_gems: item_row
+                            .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+                            .unwrap_or_else(|| serde_json::json!([])),
                         random_seed: item_row.try_get::<Option<i64>, _>("random_seed")?,
-                        affixes: item_row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-                        identified: item_row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-                        affix_gen_version: item_row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-                        affix_roll_meta: item_row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+                        affixes: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affixes")?
+                            .unwrap_or_else(|| serde_json::json!([])),
+                        identified: item_row
+                            .try_get::<Option<bool>, _>("identified")?
+                            .unwrap_or(false),
+                        affix_gen_version: item_row
+                            .try_get::<Option<i32>, _>("affix_gen_version")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        affix_roll_meta: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+                            .unwrap_or_else(|| serde_json::json!({})),
                         custom_name: item_row.try_get::<Option<String>, _>("custom_name")?,
-                        locked: item_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
+                        locked: item_row
+                            .try_get::<Option<bool>, _>("locked")?
+                            .unwrap_or(false),
                         expire_at: item_row.try_get::<Option<String>, _>("expire_at_text")?,
                         obtained_from: item_row.try_get::<Option<String>, _>("obtained_from")?,
-                        obtained_ref_id: item_row.try_get::<Option<String>, _>("obtained_ref_id")?,
+                        obtained_ref_id: item_row
+                            .try_get::<Option<String>, _>("obtained_ref_id")?,
                         metadata: item_row.try_get::<Option<serde_json::Value>, _>("metadata")?,
                     }),
                 };
                 buffer_item_instance_mutations(&redis, &[mutation]).await?;
             }
         } else {
-            state.database.execute(
-                "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
-                |q| q.bind(item_instance_id).bind(requested_qty),
-            ).await?;
+            state
+                .database
+                .execute(
+                    "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                    |q| q.bind(item_instance_id).bind(requested_qty),
+                )
+                .await?;
         }
-        state.database.execute(
-            "UPDATE market_listing SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
-            |q| q.bind(listing_id).bind(requested_qty),
-        ).await?;
+        state
+            .database
+            .execute(
+                "UPDATE market_listing SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                |q| q.bind(listing_id).bind(requested_qty),
+            )
+            .await?;
         inserted.try_get::<i64, _>("id")?
     } else {
         if state.redis_available {
@@ -2346,23 +3449,48 @@ async fn buy_market_listing_tx(
                         item_def_id: item_def_id.clone(),
                         qty: requested_qty,
                         quality: item_row.try_get::<Option<String>, _>("quality")?,
-                        quality_rank: item_row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-                        bind_type: item_row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
-                        bind_owner_user_id: item_row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
-                        bind_owner_character_id: item_row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
+                        quality_rank: item_row
+                            .try_get::<Option<i32>, _>("quality_rank")?
+                            .map(i64::from),
+                        bind_type: item_row
+                            .try_get::<Option<String>, _>("bind_type")?
+                            .unwrap_or_else(|| "none".to_string()),
+                        bind_owner_user_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_user_id")?,
+                        bind_owner_character_id: item_row
+                            .try_get::<Option<i64>, _>("bind_owner_character_id")?,
                         location: "mail".to_string(),
                         location_slot: None,
                         equipped_slot: None,
-                        strengthen_level: item_row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-        refine_level: item_row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-                        socketed_gems: item_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+                        strengthen_level: item_row
+                            .try_get::<Option<i32>, _>("strengthen_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        refine_level: item_row
+                            .try_get::<Option<i32>, _>("refine_level")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        socketed_gems: item_row
+                            .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+                            .unwrap_or_else(|| serde_json::json!([])),
                         random_seed: item_row.try_get::<Option<i64>, _>("random_seed")?,
-                        affixes: item_row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-                        identified: item_row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-                        affix_gen_version: item_row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-                        affix_roll_meta: item_row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+                        affixes: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affixes")?
+                            .unwrap_or_else(|| serde_json::json!([])),
+                        identified: item_row
+                            .try_get::<Option<bool>, _>("identified")?
+                            .unwrap_or(false),
+                        affix_gen_version: item_row
+                            .try_get::<Option<i32>, _>("affix_gen_version")?
+                            .map(i64::from)
+                            .unwrap_or_default(),
+                        affix_roll_meta: item_row
+                            .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+                            .unwrap_or_else(|| serde_json::json!({})),
                         custom_name: item_row.try_get::<Option<String>, _>("custom_name")?,
-                        locked: item_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
+                        locked: item_row
+                            .try_get::<Option<bool>, _>("locked")?
+                            .unwrap_or(false),
                         expire_at: item_row.try_get::<Option<String>, _>("expire_at_text")?,
                         obtained_from: Some("market".to_string()),
                         obtained_ref_id: Some(listing_id.to_string()),
@@ -2388,7 +3516,9 @@ async fn buy_market_listing_tx(
         "INSERT INTO market_trade_record (listing_id, buyer_user_id, buyer_character_id, seller_user_id, seller_character_id, item_def_id, qty, unit_price_spirit_stones, total_price_spirit_stones, tax_spirit_stones) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         |q| q.bind(listing_id).bind(buyer_user_id).bind(buyer_character_id).bind(seller_user_id).bind(seller_character_id).bind(item_def_id.trim()).bind(requested_qty).bind(unit_price_spirit_stones).bind(total_price).bind(tax_amount),
     ).await?;
-    let item_name = item_meta.map(|meta| meta.name.clone()).unwrap_or_else(|| item_def_id.trim().to_string());
+    let item_name = item_meta
+        .map(|meta| meta.name.clone())
+        .unwrap_or_else(|| item_def_id.trim().to_string());
     state.database.execute(
         "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_instance_ids, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '坊市', 'trade', $3, $4, $5::jsonb, 'market', $6, $7::jsonb, NOW(), NOW())",
         |q| q
@@ -2418,7 +3548,11 @@ async fn buy_market_listing_tx(
         message: Some("购买成功，物品已通过邮件发放".to_string()),
         data: Some(MarketItemBuyDataDto {
             seller_user_id,
-            debug_realtime: Some(build_market_update_payload("buy_market_listing", Some(listing_id), "item")),
+            debug_realtime: Some(build_market_update_payload(
+                "buy_market_listing",
+                Some(listing_id),
+                "item",
+            )),
         }),
     })
 }
@@ -2469,7 +3603,10 @@ mod tests {
             "success": true,
             "data": {"listings": [{"id": 1, "partner": {"id": 9, "nickname": "青木小偶"}, "unitPriceSpiritStones": 300}], "total": 1}
         });
-        assert_eq!(payload["data"]["listings"][0]["partner"]["nickname"], "青木小偶");
+        assert_eq!(
+            payload["data"]["listings"][0]["partner"]["nickname"],
+            "青木小偶"
+        );
         println!("MARKET_PARTNER_LISTINGS_RESPONSE={}", payload);
     }
 
@@ -2534,7 +3671,10 @@ mod tests {
             "data": {"listingId": 99, "debugRealtime": {"kind": "market:update", "source": "create_partner_listing", "listingId": 99, "marketType": "partner"}}
         });
         assert_eq!(payload["data"]["listingId"], 99);
-        assert_eq!(payload["data"]["debugRealtime"]["source"], "create_partner_listing");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["source"],
+            "create_partner_listing"
+        );
         println!("MARKET_PARTNER_LIST_RESPONSE={}", payload);
     }
 
@@ -2545,7 +3685,10 @@ mod tests {
             "message": "下架成功，物品已通过邮件返还，并退还15银两手续费",
             "data": {"debugRealtime": {"kind": "market:update", "source": "cancel_market_listing", "listingId": 1, "marketType": "item"}}
         });
-        assert_eq!(payload["message"], "下架成功，物品已通过邮件返还，并退还15银两手续费");
+        assert_eq!(
+            payload["message"],
+            "下架成功，物品已通过邮件返还，并退还15银两手续费"
+        );
         assert_eq!(payload["data"]["debugRealtime"]["marketType"], "item");
         println!("MARKET_ITEM_CANCEL_RESPONSE={}", payload);
     }
@@ -2558,7 +3701,10 @@ mod tests {
             "data": {"listingId": 88, "debugRealtime": {"kind": "market:update", "source": "create_market_listing", "listingId": 88, "marketType": "item"}}
         });
         assert_eq!(payload["data"]["listingId"], 88);
-        assert_eq!(payload["data"]["debugRealtime"]["source"], "create_market_listing");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["source"],
+            "create_market_listing"
+        );
         println!("MARKET_ITEM_LIST_RESPONSE={}", payload);
     }
 
@@ -2589,7 +3735,10 @@ mod tests {
             "data": {"sellerUserId": 12, "debugRealtime": {"kind": "market:update", "source": "buy_market_listing", "listingId": 1, "marketType": "item"}}
         });
         assert_eq!(payload["data"]["sellerUserId"], 12);
-        assert_eq!(payload["data"]["debugRealtime"]["source"], "buy_market_listing");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["source"],
+            "buy_market_listing"
+        );
         println!("MARKET_ITEM_BUY_RESPONSE={}", payload);
     }
 }

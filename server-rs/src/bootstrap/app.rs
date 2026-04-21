@@ -1,5 +1,5 @@
-use axum::http::{HeaderValue, Uri};
 use axum::Router;
+use axum::http::{HeaderValue, Uri};
 use socketioxide::SocketIo;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
@@ -36,21 +36,27 @@ fn build_cors_layer(cors_origin: &str) -> Result<CorsLayer, AppError> {
     let raw = cors_origin.trim();
 
     if raw.is_empty() {
-        return Ok(CorsLayer::very_permissive().allow_origin(AllowOrigin::predicate(
-            |origin: &HeaderValue, _request_parts| {
-                std::str::from_utf8(origin.as_bytes())
-                    .ok()
-                    .and_then(|value| value.parse::<Uri>().ok())
-                    .map(|uri: Uri| {
-                        let scheme = uri.scheme_str().unwrap_or("http");
-                        let port = uri
-                            .port_u16()
-                            .unwrap_or(if scheme.eq_ignore_ascii_case("https") { 443 } else { 80 });
-                        port == 6010
-                    })
-                    .unwrap_or(false)
-            },
-        )));
+        return Ok(
+            CorsLayer::very_permissive().allow_origin(AllowOrigin::predicate(
+                |origin: &HeaderValue, _request_parts| {
+                    std::str::from_utf8(origin.as_bytes())
+                        .ok()
+                        .and_then(|value| value.parse::<Uri>().ok())
+                        .map(|uri: Uri| {
+                            let scheme = uri.scheme_str().unwrap_or("http");
+                            let port =
+                                uri.port_u16()
+                                    .unwrap_or(if scheme.eq_ignore_ascii_case("https") {
+                                        443
+                                    } else {
+                                        80
+                                    });
+                            port == 6010
+                        })
+                        .unwrap_or(false)
+                },
+            )),
+        );
     }
 
     if raw == "*" {
@@ -76,9 +82,7 @@ fn build_cors_layer(cors_origin: &str) -> Result<CorsLayer, AppError> {
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
-    Ok(CorsLayer::very_permissive()
-        .allow_origin(origins)
-    )
+    Ok(CorsLayer::very_permissive().allow_origin(origins))
 }
 
 #[cfg(test)]

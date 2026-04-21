@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::http::security::{AttemptAction, assert_action_attempt_allowed, clear_action_attempt_failures, record_action_attempt_failure};
+use crate::http::security::{
+    AttemptAction, assert_action_attempt_allowed, clear_action_attempt_failures,
+    record_action_attempt_failure,
+};
 use crate::shared::error::AppError;
 use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_counter_deltas};
 use crate::shared::request_ip::resolve_request_ip_with_socket_addr;
@@ -172,8 +175,16 @@ pub async fn redeem_code(
 
 fn build_redeem_reward_preview(raw: &serde_json::Value) -> Result<Vec<RedeemRewardDto>, AppError> {
     let mut rewards = Vec::new();
-    let exp = raw.get("exp").and_then(|value| value.as_i64()).unwrap_or_default().max(0);
-    let silver = raw.get("silver").and_then(|value| value.as_i64()).unwrap_or_default().max(0);
+    let exp = raw
+        .get("exp")
+        .and_then(|value| value.as_i64())
+        .unwrap_or_default()
+        .max(0);
+    let silver = raw
+        .get("silver")
+        .and_then(|value| value.as_i64())
+        .unwrap_or_default()
+        .max(0);
     let spirit_stones = raw
         .get("spiritStones")
         .or_else(|| raw.get("spirit_stones"))
@@ -187,11 +198,18 @@ fn build_redeem_reward_preview(raw: &serde_json::Value) -> Result<Vec<RedeemRewa
         rewards.push(RedeemRewardDto::Silver { amount: silver });
     }
     if spirit_stones > 0 {
-        rewards.push(RedeemRewardDto::SpiritStones { amount: spirit_stones });
+        rewards.push(RedeemRewardDto::SpiritStones {
+            amount: spirit_stones,
+        });
     }
 
     let item_meta_map = load_item_meta_map()?;
-    for item in raw.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default() {
+    for item in raw
+        .get("items")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         let item_def_id = item
             .get("itemDefId")
             .or_else(|| item.get("item_def_id"))
@@ -218,7 +236,12 @@ fn build_redeem_reward_preview(raw: &serde_json::Value) -> Result<Vec<RedeemRewa
     }
 
     let technique_meta_map = load_technique_meta_map()?;
-    for technique_id in raw.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default() {
+    for technique_id in raw
+        .get("techniques")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         let technique_id = technique_id.as_str().unwrap_or_default().trim().to_string();
         if technique_id.is_empty() {
             continue;
@@ -230,7 +253,12 @@ fn build_redeem_reward_preview(raw: &serde_json::Value) -> Result<Vec<RedeemRewa
             technique_icon: meta.and_then(|value| value.1),
         });
     }
-    for title in raw.get("titles").and_then(|value| value.as_array()).cloned().unwrap_or_default() {
+    for title in raw
+        .get("titles")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         let title = title.as_str().unwrap_or_default().trim().to_string();
         if !title.is_empty() {
             rewards.push(RedeemRewardDto::Title { title });
@@ -251,37 +279,72 @@ fn build_redeem_reward_preview(raw: &serde_json::Value) -> Result<Vec<RedeemRewa
     Ok(rewards)
 }
 
-fn load_item_meta_map() -> Result<std::collections::BTreeMap<String, (String, Option<String>)>, AppError> {
+fn load_item_meta_map()
+-> Result<std::collections::BTreeMap<String, (String, Option<String>)>, AppError> {
     let mut out = std::collections::BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
-        let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")))
-            .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
+        let content = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
+        )
+        .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
     Ok(out)
 }
 
-fn load_technique_meta_map() -> Result<std::collections::BTreeMap<String, (String, Option<String>)>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    let items = payload.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+fn load_technique_meta_map()
+-> Result<std::collections::BTreeMap<String, (String, Option<String>)>, AppError> {
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_def.json: {error}"))
+    })?;
+    let items = payload
+        .get("techniques")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(items
         .into_iter()
         .filter_map(|item| {
             let id = item.get("id")?.as_str()?.trim().to_string();
             let name = item.get("name")?.as_str()?.trim().to_string();
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             (!id.is_empty() && !name.is_empty()).then_some((id, (name, icon)))
         })
         .collect())

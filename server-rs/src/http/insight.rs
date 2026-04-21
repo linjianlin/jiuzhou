@@ -70,7 +70,11 @@ pub async fn get_overview(
         }));
     };
     let progress = load_insight_progress(&state, character.character_id, false).await?;
-    let unlocked = is_insight_unlocked(&character.realm, character.sub_realm.as_deref(), &config.unlock_realm);
+    let unlocked = is_insight_unlocked(
+        &character.realm,
+        character.sub_realm.as_deref(),
+        &config.unlock_realm,
+    );
 
     Ok(send_result(ServiceResult {
         success: true,
@@ -202,10 +206,14 @@ struct InsightInjectPlan {
 }
 
 fn load_insight_config() -> Result<InsightConfig, AppError> {
-    let content = std::fs::read_to_string(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/insight_growth.json"))
-        .map_err(|error| AppError::config(format!("failed to read insight_growth.json: {error}")))?;
-    let payload: InsightConfigFile = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse insight_growth.json: {error}")))?;
+    let content = std::fs::read_to_string(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/insight_growth.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read insight_growth.json: {error}")))?;
+    let payload: InsightConfigFile = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse insight_growth.json: {error}"))
+    })?;
     Ok(payload.config)
 }
 
@@ -219,13 +227,18 @@ async fn load_character_insight_row(
     } else {
         "SELECT id, realm, sub_realm, exp FROM characters WHERE user_id = $1 LIMIT 1"
     };
-    let row = state.database.fetch_optional(sql, |query| query.bind(user_id)).await?;
+    let row = state
+        .database
+        .fetch_optional(sql, |query| query.bind(user_id))
+        .await?;
     let Some(row) = row else {
         return Ok(None);
     };
     Ok(Some(CharacterInsightRow {
         character_id: row.try_get("id")?,
-        realm: row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string()),
+        realm: row
+            .try_get::<Option<String>, _>("realm")?
+            .unwrap_or_else(|| "凡人".to_string()),
         sub_realm: row.try_get::<Option<String>, _>("sub_realm")?,
         exp: row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default(),
     }))
@@ -247,18 +260,27 @@ async fn load_insight_progress(
     } else {
         "SELECT level, progress_exp FROM character_insight_progress WHERE character_id = $1 LIMIT 1"
     };
-    let row = state.database.fetch_optional(sql, |query| query.bind(character_id)).await?;
+    let row = state
+        .database
+        .fetch_optional(sql, |query| query.bind(character_id))
+        .await?;
     let Some(row) = row else {
-        return Ok(InsightProgressRow { level: 0, progress_exp: 0 });
+        return Ok(InsightProgressRow {
+            level: 0,
+            progress_exp: 0,
+        });
     };
     Ok(InsightProgressRow {
         level: row.try_get::<Option<i64>, _>("level")?.unwrap_or_default(),
-        progress_exp: row.try_get::<Option<i64>, _>("progress_exp")?.unwrap_or_default(),
+        progress_exp: row
+            .try_get::<Option<i64>, _>("progress_exp")?
+            .unwrap_or_default(),
     })
 }
 
 fn is_insight_unlocked(realm: &str, sub_realm: Option<&str>, unlock_realm: &str) -> bool {
-    realm_rank(build_full_realm(realm, sub_realm.unwrap_or_default())) >= realm_rank(unlock_realm.to_string())
+    realm_rank(build_full_realm(realm, sub_realm.unwrap_or_default()))
+        >= realm_rank(unlock_realm.to_string())
 }
 
 fn build_full_realm(realm: &str, sub_realm: &str) -> String {
@@ -289,7 +311,10 @@ fn realm_rank(realm: String) -> i64 {
         "炼虚合道·历劫期",
         "炼虚合道·成圣期",
     ];
-    ORDER.iter().position(|item| *item == realm.trim()).unwrap_or(0) as i64
+    ORDER
+        .iter()
+        .position(|item| *item == realm.trim())
+        .unwrap_or(0) as i64
 }
 
 fn calc_insight_cost_by_level(level: i64, config: &InsightConfig) -> i64 {

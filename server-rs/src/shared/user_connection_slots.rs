@@ -87,7 +87,10 @@ fn promote_queued_slots(channel: UserConnectionSlotChannel, user_id: i64) {
 
     {
         let mut store = slot_store().lock().expect("slot store lock poisoned");
-        let Some(user_slots) = store.get_mut(&channel).and_then(|channel_slots| channel_slots.get_mut(&user_id)) else {
+        let Some(user_slots) = store
+            .get_mut(&channel)
+            .and_then(|channel_slots| channel_slots.get_mut(&user_id))
+        else {
             return;
         };
 
@@ -95,7 +98,10 @@ fn promote_queued_slots(channel: UserConnectionSlotChannel, user_id: i64) {
             if user_slots.active_slots.len() >= next_pending.limit {
                 break;
             }
-            let next_pending = user_slots.pending_queue.pop_front().expect("pending queue should contain item");
+            let next_pending = user_slots
+                .pending_queue
+                .pop_front()
+                .expect("pending queue should contain item");
             user_slots.active_slots.insert(next_pending.slot_id.clone());
             pending_to_resume.push(next_pending);
         }
@@ -116,7 +122,10 @@ fn promote_queued_slots(channel: UserConnectionSlotChannel, user_id: i64) {
 fn release_slot(channel: UserConnectionSlotChannel, user_id: i64, slot_id: &str) {
     {
         let mut store = slot_store().lock().expect("slot store lock poisoned");
-        if let Some(user_slots) = store.get_mut(&channel).and_then(|channel_slots| channel_slots.get_mut(&user_id)) {
+        if let Some(user_slots) = store
+            .get_mut(&channel)
+            .and_then(|channel_slots| channel_slots.get_mut(&user_id))
+        {
             user_slots.active_slots.remove(slot_id);
         }
     }
@@ -208,8 +217,13 @@ pub async fn wait_for_user_connection_slot(
         Ok(Ok(lease)) => Some(lease),
         _ => {
             let mut store = slot_store().lock().expect("slot store lock poisoned");
-            if let Some(user_slots) = store.get_mut(&channel).and_then(|channel_slots| channel_slots.get_mut(&user_id)) {
-                user_slots.pending_queue.retain(|pending| pending.slot_id != slot_id);
+            if let Some(user_slots) = store
+                .get_mut(&channel)
+                .and_then(|channel_slots| channel_slots.get_mut(&user_id))
+            {
+                user_slots
+                    .pending_queue
+                    .retain(|pending| pending.slot_id != slot_id);
             }
             drop(store);
             cleanup_user_slots(channel, user_id);
@@ -219,7 +233,10 @@ pub async fn wait_for_user_connection_slot(
 }
 
 pub fn reset_user_connection_slots_for_test() {
-    slot_store().lock().expect("slot store lock poisoned").clear();
+    slot_store()
+        .lock()
+        .expect("slot store lock poisoned")
+        .clear();
 }
 
 #[cfg(test)]
@@ -244,14 +261,20 @@ mod tests {
         let _guard = test_lock().lock().expect("test lock poisoned");
         reset_user_connection_slots_for_test();
 
-        let first = acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 1001, "req-1", 2);
-        let second = acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 1001, "req-2", 2);
-        let rejected = acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 1001, "req-3", 2);
+        let first =
+            acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 1001, "req-1", 2);
+        let second =
+            acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 1001, "req-2", 2);
+        let rejected =
+            acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 1001, "req-3", 2);
 
         assert!(first.is_some());
         assert!(second.is_some());
         assert!(rejected.is_none());
-        assert_eq!(get_active_user_connection_slot_count(UserConnectionSlotChannel::HttpRequest, 1001), 2);
+        assert_eq!(
+            get_active_user_connection_slot_count(UserConnectionSlotChannel::HttpRequest, 1001),
+            2
+        );
     }
 
     #[test]
@@ -259,12 +282,17 @@ mod tests {
         let _guard = test_lock().lock().expect("test lock poisoned");
         reset_user_connection_slots_for_test();
 
-        let first = acquire_user_connection_slot(UserConnectionSlotChannel::GameAuth, 2002, "socket-1", 1);
-        let repeated = acquire_user_connection_slot(UserConnectionSlotChannel::GameAuth, 2002, "socket-1", 1);
+        let first =
+            acquire_user_connection_slot(UserConnectionSlotChannel::GameAuth, 2002, "socket-1", 1);
+        let repeated =
+            acquire_user_connection_slot(UserConnectionSlotChannel::GameAuth, 2002, "socket-1", 1);
 
         assert!(first.is_some());
         assert!(repeated.is_some());
-        assert_eq!(get_active_user_connection_slot_count(UserConnectionSlotChannel::GameAuth, 2002), 1);
+        assert_eq!(
+            get_active_user_connection_slot_count(UserConnectionSlotChannel::GameAuth, 2002),
+            1
+        );
     }
 
     #[tokio::test]
@@ -272,8 +300,9 @@ mod tests {
         let _guard = test_lock().lock().expect("test lock poisoned");
         reset_user_connection_slots_for_test();
 
-        let first = acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 5005, "req-1", 1)
-            .expect("first lease should be acquired");
+        let first =
+            acquire_user_connection_slot(UserConnectionSlotChannel::HttpRequest, 5005, "req-1", 1)
+                .expect("first lease should be acquired");
 
         let waiting = tokio::spawn(async move {
             let lease = wait_for_user_connection_slot(
@@ -292,7 +321,10 @@ mod tests {
         sleep(Duration::from_millis(20)).await;
         first.release();
         waiting.await.expect("task should finish");
-        assert_eq!(get_active_user_connection_slot_count(UserConnectionSlotChannel::HttpRequest, 5005), 0);
+        assert_eq!(
+            get_active_user_connection_slot_count(UserConnectionSlotChannel::HttpRequest, 5005),
+            0
+        );
     }
 
     #[tokio::test]
@@ -300,8 +332,9 @@ mod tests {
         let _guard = test_lock().lock().expect("test lock poisoned");
         reset_user_connection_slots_for_test();
 
-        let first = acquire_user_connection_slot(UserConnectionSlotChannel::GameAuth, 6006, "socket-1", 1)
-            .expect("first lease should be acquired");
+        let first =
+            acquire_user_connection_slot(UserConnectionSlotChannel::GameAuth, 6006, "socket-1", 1)
+                .expect("first lease should be acquired");
 
         let waited = wait_for_user_connection_slot(
             UserConnectionSlotChannel::GameAuth,

@@ -58,12 +58,14 @@ mod tests {
     use crate::bootstrap::app::build_router;
     use crate::config::{
         AppConfig, CaptchaConfig, CaptchaProvider, CosConfig, DatabaseConfig, HttpConfig,
-        LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig, StorageConfig,
-        WanderConfig,
+        LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig,
+        StorageConfig, WanderConfig,
     };
     use crate::http::tower::resolve_tower_floor_monster_ids;
     use crate::integrations::database::DatabaseRuntime;
-    use crate::state::{AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord};
+    use crate::state::{
+        AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
+    };
 
     fn technique_research_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -169,7 +171,13 @@ mod tests {
         );
         let http_client = reqwest::Client::new();
 
-        AppState::new(config, DatabaseRuntime::new(database), redis, http_client, true)
+        AppState::new(
+            config,
+            DatabaseRuntime::new(database),
+            redis,
+            http_client,
+            true,
+        )
     }
 
     fn test_state_with_wander_ai(ai_enabled: bool) -> AppState {
@@ -207,7 +215,10 @@ mod tests {
         (sid, handshake_text)
     }
 
-    async fn handshake_sid(client: &reqwest::Client, address: std::net::SocketAddr) -> (String, String) {
+    async fn handshake_sid(
+        client: &reqwest::Client,
+        address: std::net::SocketAddr,
+    ) -> (String, String) {
         handshake_sid_for_path(client, address, "/game-socket/").await
     }
 
@@ -225,9 +236,20 @@ mod tests {
         socket_connect_for_path(client, address, "/game-socket/", sid).await;
     }
 
-    async fn socket_auth(client: &reqwest::Client, address: std::net::SocketAddr, sid: &str, token: &str) {
+    async fn socket_auth(
+        client: &reqwest::Client,
+        address: std::net::SocketAddr,
+        sid: &str,
+        token: &str,
+    ) {
         socket_connect(client, address, sid).await;
-        socket_emit_raw(client, address, sid, &format!("42[\"game:auth\",\"{token}\"]")).await;
+        socket_emit_raw(
+            client,
+            address,
+            sid,
+            &format!("42[\"game:auth\",\"{token}\"]"),
+        )
+        .await;
     }
 
     async fn socket_auth_for_path(
@@ -238,7 +260,14 @@ mod tests {
         token: &str,
     ) {
         socket_connect_for_path(client, address, path, sid).await;
-        socket_emit_raw_for_path(client, address, path, sid, &format!("42[\"game:auth\",\"{token}\"]")).await;
+        socket_emit_raw_for_path(
+            client,
+            address,
+            path,
+            sid,
+            &format!("42[\"game:auth\",\"{token}\"]"),
+        )
+        .await;
     }
 
     async fn socket_emit_raw_for_path(
@@ -249,7 +278,9 @@ mod tests {
         body: &str,
     ) {
         client
-            .post(format!("http://{address}{path}?EIO=4&transport=polling&sid={sid}"))
+            .post(format!(
+                "http://{address}{path}?EIO=4&transport=polling&sid={sid}"
+            ))
             .header("content-type", "text/plain;charset=UTF-8")
             .body(body.to_string())
             .send()
@@ -273,7 +304,9 @@ mod tests {
         sid: &str,
     ) -> String {
         client
-            .get(format!("http://{address}{path}?EIO=4&transport=polling&sid={sid}"))
+            .get(format!(
+                "http://{address}{path}?EIO=4&transport=polling&sid={sid}"
+            ))
             .send()
             .await
             .expect("poll should succeed")
@@ -282,7 +315,11 @@ mod tests {
             .expect("poll text should read")
     }
 
-    async fn poll_text(client: &reqwest::Client, address: std::net::SocketAddr, sid: &str) -> String {
+    async fn poll_text(
+        client: &reqwest::Client,
+        address: std::net::SocketAddr,
+        sid: &str,
+    ) -> String {
         poll_text_for_path(client, address, "/game-socket/", sid).await
     }
 
@@ -303,7 +340,9 @@ mod tests {
         last
     }
 
-    async fn spawn_test_server(app: axum::Router) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    async fn spawn_test_server(
+        app: axum::Router,
+    ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
@@ -314,10 +353,7 @@ mod tests {
         (address, server)
     }
 
-    async fn connect_fixture_db_or_skip(
-        state: &AppState,
-        skip_tag: &str,
-    ) -> Option<sqlx::PgPool> {
+    async fn connect_fixture_db_or_skip(state: &AppState, skip_tag: &str) -> Option<sqlx::PgPool> {
         match sqlx::PgPool::connect(&state.config.database.url).await {
             Ok(pool) => Some(pool),
             Err(error) => {
@@ -333,30 +369,30 @@ mod tests {
         token: String,
     }
 
-async fn insert_auth_fixture(
-    state: &AppState,
-    pool: &sqlx::PgPool,
-    prefix: &str,
-    suffix: &str,
-    attribute_points: i64,
-) -> AuthFixture {
-    fn truncate_for_fixture(value: String, max_chars: usize) -> String {
-        let chars = value.chars().collect::<Vec<_>>();
-        if chars.len() <= max_chars {
-            return value;
+    async fn insert_auth_fixture(
+        state: &AppState,
+        pool: &sqlx::PgPool,
+        prefix: &str,
+        suffix: &str,
+        attribute_points: i64,
+    ) -> AuthFixture {
+        fn truncate_for_fixture(value: String, max_chars: usize) -> String {
+            let chars = value.chars().collect::<Vec<_>>();
+            if chars.len() <= max_chars {
+                return value;
+            }
+            let digest = format!("{:x}", md5::compute(value.as_bytes()));
+            let suffix = &digest[..8];
+            let head_len = max_chars.saturating_sub(9);
+            let head = chars.into_iter().take(head_len).collect::<String>();
+            format!("{head}-{suffix}")
         }
-        let digest = format!("{:x}", md5::compute(value.as_bytes()));
-        let suffix = &digest[..8];
-        let head_len = max_chars.saturating_sub(9);
-        let head = chars.into_iter().take(head_len).collect::<String>();
-        format!("{head}-{suffix}")
-    }
 
-    let username = truncate_for_fixture(format!("{prefix}-{suffix}"), 40);
-    let session_token = truncate_for_fixture(format!("session-{suffix}"), 48);
-    let nickname = truncate_for_fixture(format!("角色-{suffix}"), 30);
+        let username = truncate_for_fixture(format!("{prefix}-{suffix}"), 40);
+        let session_token = truncate_for_fixture(format!("session-{suffix}"), 48);
+        let nickname = truncate_for_fixture(format!("角色-{suffix}"), 30);
 
-    let inserted_user = sqlx::query(
+        let inserted_user = sqlx::query(
         "INSERT INTO users (username, password, status, session_token, created_at, updated_at) VALUES ($1, $2, 1, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id",
     )
         .bind(&username)
@@ -365,7 +401,11 @@ async fn insert_auth_fixture(
         .fetch_one(pool)
         .await
         .expect("user should insert");
-        let user_id = i64::from(inserted_user.try_get::<i32, _>("id").expect("user id should exist"));
+        let user_id = i64::from(
+            inserted_user
+                .try_get::<i32, _>("id")
+                .expect("user id should exist"),
+        );
 
         let inserted_character = sqlx::query(
             "INSERT INTO characters (user_id, nickname, gender, title, spirit_stones, silver, realm, exp, attribute_points, jing, qi, shen, attribute_type, attribute_element, current_map_id, current_room_id, auto_cast_skills, auto_disassemble_enabled, dungeon_no_stamina_cost) VALUES ($1, $2, 'male', '散修', 0, 0, '凡人', 0, $3, 0, 0, 0, 'physical', 'none', 'map-qingyun-village', 'room-village-center', true, false, false) RETURNING id",
@@ -393,21 +433,21 @@ async fn insert_auth_fixture(
         )
         .expect("token should sign");
 
-    AuthFixture {
-        user_id,
-        character_id,
-        token,
+        AuthFixture {
+            user_id,
+            character_id,
+            token,
+        }
     }
-}
 
-async fn insert_test_team(
-    pool: &sqlx::PgPool,
-    team_id: &str,
-    leader_character_id: i64,
-    suffix: &str,
-) {
-    let team_name = format!("测试队伍-{suffix}");
-    sqlx::query(
+    async fn insert_test_team(
+        pool: &sqlx::PgPool,
+        team_id: &str,
+        leader_character_id: i64,
+        suffix: &str,
+    ) {
+        let team_name = format!("测试队伍-{suffix}");
+        sqlx::query(
         "INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, $3, 'map-qingyun-village', true, 4, false, NOW(), NOW())",
     )
     .bind(team_id)
@@ -416,17 +456,17 @@ async fn insert_test_team(
     .execute(pool)
     .await
     .expect("team should insert");
-}
+    }
 
-async fn insert_test_sect(
-    pool: &sqlx::PgPool,
-    sect_id: &str,
-    leader_character_id: i64,
-    member_count: i64,
-    suffix: &str,
-) {
-    let sect_name = format!("测试宗门-{suffix}");
-    sqlx::query(
+    async fn insert_test_sect(
+        pool: &sqlx::PgPool,
+        sect_id: &str,
+        leader_character_id: i64,
+        member_count: i64,
+        suffix: &str,
+    ) {
+        let sect_name = format!("测试宗门-{suffix}");
+        sqlx::query(
         "INSERT INTO sect_def (id, name, leader_id, level, member_count, created_at, updated_at) VALUES ($1, $2, $3, 1, $4, NOW(), NOW())",
     )
     .bind(sect_id)
@@ -436,7 +476,7 @@ async fn insert_test_sect(
     .execute(pool)
     .await
     .expect("sect should insert");
-}
+    }
 
     async fn cleanup_auth_fixture(pool: &sqlx::PgPool, character_id: i64, user_id: i64) {
         sqlx::query("DELETE FROM characters WHERE id = $1")
@@ -468,7 +508,11 @@ async fn insert_test_sect(
         .fetch_one(pool)
         .await
         .expect("partner should insert");
-        i64::from(inserted.try_get::<i32, _>("id").expect("partner id should exist"))
+        i64::from(
+            inserted
+                .try_get::<i32, _>("id")
+                .expect("partner id should exist"),
+        )
     }
 
     #[tokio::test]
@@ -595,29 +639,53 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 701,
-            character_id: Some(7001),
-            session_token: Some("sess-socketio-room".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 701,
-            character_id: Some(7001),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: Some("room-village-center".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 701,
+                character_id: Some(7001),
+                session_token: Some("sess-socketio-room".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 701,
+                character_id: Some(7001),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: Some("room-village-center".to_string()),
+                connected_at_ms: 1,
+            });
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"join:room\",\"room-fallback\"]").await;
-        let joined = state.online_players.get(701).and_then(|record| record.room_id.clone());
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"join:room\",\"room-fallback\"]",
+        )
+        .await;
+        let joined = state
+            .online_players
+            .get(701)
+            .and_then(|record| record.room_id.clone());
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"leave:room\",\"room-fallback\"]").await;
-        let left = state.online_players.get(701).and_then(|record| record.room_id.clone());
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"leave:room\",\"room-fallback\"]",
+        )
+        .await;
+        let left = state
+            .online_players
+            .get(701)
+            .and_then(|record| record.room_id.clone());
 
         println!("SOCKET_IO_ROOM_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_ROOM_JOINED={:?}", joined);
@@ -638,7 +706,14 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"join:room\",\"room-fallback\"]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"join:room\",\"room-fallback\"]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -660,7 +735,14 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"join:room\",\"\"]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"join:room\",\"\"]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -682,15 +764,24 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 901,
-            character_id: Some(9001),
-            session_token: Some("sess-socketio-battle-sync".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 901,
+                character_id: Some(9001),
+                session_token: Some("sess-socketio-battle-sync".to_string()),
+                connected_at_ms: 1,
+            });
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"battle:sync\",{}]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"battle:sync\",{}]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -712,7 +803,14 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"battle:sync\",{\"battleId\":\"battle-1\"}]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"battle:sync\",{\"battleId\":\"battle-1\"}]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -734,15 +832,24 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 902,
-            character_id: Some(9002),
-            session_token: Some("sess-socketio-add-point-invalid".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 902,
+                character_id: Some(9002),
+                session_token: Some("sess-socketio-add-point-invalid".to_string()),
+                connected_at_ms: 1,
+            });
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"game:addPoint\",{\"attribute\":\"invalid\",\"amount\":1}]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"game:addPoint\",{\"attribute\":\"invalid\",\"amount\":1}]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -764,7 +871,14 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":1}]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":1}]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -787,35 +901,48 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 903,
-            character_id: Some(9003),
-            session_token: Some("sess-socketio-online-players".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 903,
-            character_id: Some(9003),
-            nickname: Some("韩立".to_string()),
-            month_card_active: true,
-            title: Some("散修".to_string()),
-            realm: Some("筑基期".to_string()),
-            room_id: Some("room-alpha".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 904,
-            character_id: Some(9004),
-            nickname: Some("厉飞雨".to_string()),
-            month_card_active: false,
-            title: Some("外门弟子".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 903,
+                character_id: Some(9003),
+                session_token: Some("sess-socketio-online-players".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 903,
+                character_id: Some(9003),
+                nickname: Some("韩立".to_string()),
+                month_card_active: true,
+                title: Some("散修".to_string()),
+                realm: Some("筑基期".to_string()),
+                room_id: Some("room-alpha".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 904,
+                character_id: Some(9004),
+                nickname: Some("厉飞雨".to_string()),
+                month_card_active: false,
+                title: Some("外门弟子".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 2,
+            });
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"game:onlinePlayers:request\"]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"game:onlinePlayers:request\"]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -841,7 +968,14 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"game:onlinePlayers:request\"]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"game:onlinePlayers:request\"]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -863,7 +997,14 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
 
-        socket_emit_raw_for_path(&client, address, "/socket.io/", &sid, "42[\"game:refresh\"]").await;
+        socket_emit_raw_for_path(
+            &client,
+            address,
+            "/socket.io/",
+            &sid,
+            "42[\"game:refresh\"]",
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -891,7 +1032,8 @@ async fn insert_test_sect(
             "/socket.io/",
             &sid,
             "42[\"chat:send\",{\"channel\":\"world\",\"content\":\"hello fallback\"}]",
-        ).await;
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -913,13 +1055,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9031,
-            character_id: Some(90301),
-            session_token: Some("sess-socketio-chat-system".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9031,
+                character_id: Some(90301),
+                session_token: Some("sess-socketio-chat-system".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -927,7 +1071,8 @@ async fn insert_test_sect(
             "/socket.io/",
             &sid,
             "42[\"chat:send\",{\"channel\":\"system\",\"content\":\"hello\"}]",
-        ).await;
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -949,13 +1094,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9032,
-            character_id: Some(90302),
-            session_token: Some("sess-socketio-chat-battle".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9032,
+                character_id: Some(90302),
+                session_token: Some("sess-socketio-chat-battle".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -963,7 +1110,8 @@ async fn insert_test_sect(
             "/socket.io/",
             &sid,
             "42[\"chat:send\",{\"channel\":\"battle\",\"content\":\"hello\"}]",
-        ).await;
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -985,13 +1133,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9033,
-            character_id: Some(90303),
-            session_token: Some("sess-socketio-chat-unsupported".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9033,
+                character_id: Some(90303),
+                session_token: Some("sess-socketio-chat-unsupported".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -999,7 +1149,8 @@ async fn insert_test_sect(
             "/socket.io/",
             &sid,
             "42[\"chat:send\",{\"channel\":\"all\",\"content\":\"hello\"}]",
-        ).await;
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -1021,13 +1172,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9034,
-            character_id: Some(90304),
-            session_token: Some("sess-socketio-chat-private-missing".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9034,
+                character_id: Some(90304),
+                session_token: Some("sess-socketio-chat-private-missing".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -1035,7 +1188,8 @@ async fn insert_test_sect(
             "/socket.io/",
             &sid,
             "42[\"chat:send\",{\"channel\":\"private\",\"content\":\"hello\"}]",
-        ).await;
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -1057,23 +1211,27 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9035,
-            character_id: Some(90305),
-            session_token: Some("sess-socketio-chat-private-offline".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 9035,
-            character_id: Some(90305),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9035,
+                character_id: Some(90305),
+                session_token: Some("sess-socketio-chat-private-offline".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 9035,
+                character_id: Some(90305),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -1103,23 +1261,27 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9039,
-            character_id: Some(90309),
-            session_token: Some("sess-socketio-chat-private-invalid".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 9039,
-            character_id: Some(90309),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9039,
+                character_id: Some(90309),
+                session_token: Some("sess-socketio-chat-private-invalid".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 9039,
+                character_id: Some(90309),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -1149,13 +1311,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid_for_path(&client, address, "/socket.io/").await;
         socket_connect_for_path(&client, address, "/socket.io/", &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9036,
-            character_id: Some(90306),
-            session_token: Some("sess-socketio-chat-empty".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9036,
+                character_id: Some(90306),
+                session_token: Some("sess-socketio-chat-empty".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw_for_path(
             &client,
@@ -1163,7 +1327,8 @@ async fn insert_test_sect(
             "/socket.io/",
             &sid,
             "42[\"chat:send\",{\"channel\":\"world\",\"content\":\"   \"}]",
-        ).await;
+        )
+        .await;
 
         let poll_text = poll_text_for_path(&client, address, "/socket.io/", &sid).await;
 
@@ -1185,23 +1350,27 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 301,
-            character_id: Some(3001),
-            session_token: Some("sess-room".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 301,
-            character_id: Some(3001),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: Some("room-village-center".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 301,
+                character_id: Some(3001),
+                session_token: Some("sess-room".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 301,
+                character_id: Some(3001),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: Some("room-village-center".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"join:room\",\"room-alpha\"]").await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1211,8 +1380,18 @@ async fn insert_test_sect(
             .and_then(|io| io.get_socket(socketioxide::socket::Sid::from_str(&sid).ok()?))
             .expect("socket should exist");
         let joined_rooms = socket_ref.rooms();
-        assert!(joined_rooms.iter().any(|room| room.as_ref() == "room-alpha"));
-        assert_eq!(state.online_players.get(301).and_then(|record| record.room_id), Some("room-alpha".to_string()));
+        assert!(
+            joined_rooms
+                .iter()
+                .any(|room| room.as_ref() == "room-alpha")
+        );
+        assert_eq!(
+            state
+                .online_players
+                .get(301)
+                .and_then(|record| record.room_id),
+            Some("room-alpha".to_string())
+        );
 
         socket_emit_raw(&client, address, &sid, "42[\"leave:room\",\"room-alpha\"]").await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1223,7 +1402,13 @@ async fn insert_test_sect(
             .expect("socket should still exist");
         let left_rooms = socket_ref.rooms();
         assert!(!left_rooms.iter().any(|room| room.as_ref() == "room-alpha"));
-        assert_eq!(state.online_players.get(301).and_then(|record| record.room_id), None);
+        assert_eq!(
+            state
+                .online_players
+                .get(301)
+                .and_then(|record| record.room_id),
+            None
+        );
 
         server.abort();
     }
@@ -1277,25 +1462,35 @@ async fn insert_test_sect(
         socket_connect(&client, address, &sid_joined).await;
         let (sid_other, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid_other).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid_joined.clone(),
-            user_id: 303,
-            character_id: Some(3003),
-            session_token: Some("sess-room-broadcast".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 303,
-            character_id: Some(3003),
-            nickname: Some("墨大夫".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: Some("room-village-center".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid_joined.clone(),
+                user_id: 303,
+                character_id: Some(3003),
+                session_token: Some("sess-room-broadcast".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 303,
+                character_id: Some(3003),
+                nickname: Some("墨大夫".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: Some("room-village-center".to_string()),
+                connected_at_ms: 1,
+            });
 
-        socket_emit_raw(&client, address, &sid_joined, "42[\"join:room\",\"room-alpha\"]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid_joined,
+            "42[\"join:room\",\"room-alpha\"]",
+        )
+        .await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         let io = state.socket_io().expect("socket io should exist");
@@ -1323,23 +1518,27 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 302,
-            character_id: Some(3002),
-            session_token: Some("sess-room-leave".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 302,
-            character_id: Some(3002),
-            nickname: Some("厉飞雨".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: Some("room-village-center".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 302,
+                character_id: Some(3002),
+                session_token: Some("sess-room-leave".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 302,
+                character_id: Some(3002),
+                nickname: Some("厉飞雨".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: Some("room-village-center".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"join:room\",\"room-alpha\"]").await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1359,7 +1558,13 @@ async fn insert_test_sect(
         server.abort();
 
         assert!(!poll.contains("room:test"));
-        assert_eq!(state.online_players.get(302).and_then(|record| record.room_id), None);
+        assert_eq!(
+            state
+                .online_players
+                .get(302)
+                .and_then(|record| record.room_id),
+            None
+        );
     }
 
     #[tokio::test]
@@ -1423,33 +1628,39 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 401,
-            character_id: Some(4001),
-            session_token: Some("sess-online-players".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 401,
-            character_id: Some(4001),
-            nickname: Some("韩立".to_string()),
-            month_card_active: true,
-            title: Some("散修".to_string()),
-            realm: Some("筑基期".to_string()),
-            room_id: Some("room-alpha".to_string()),
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 402,
-            character_id: Some(4002),
-            nickname: Some("厉飞雨".to_string()),
-            month_card_active: false,
-            title: Some("外门弟子".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 401,
+                character_id: Some(4001),
+                session_token: Some("sess-online-players".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 401,
+                character_id: Some(4001),
+                nickname: Some("韩立".to_string()),
+                month_card_active: true,
+                title: Some("散修".to_string()),
+                realm: Some("筑基期".to_string()),
+                room_id: Some("room-alpha".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 402,
+                character_id: Some(4002),
+                nickname: Some("厉飞雨".to_string()),
+                month_card_active: false,
+                title: Some("外门弟子".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 2,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"game:onlinePlayers:request\"]").await;
 
@@ -1499,7 +1710,13 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        socket_emit_raw(&client, address, &sid, "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":1}]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":1}]",
+        )
+        .await;
 
         let poll_text = poll_text(&client, address, &sid).await;
 
@@ -1521,15 +1738,23 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 601,
-            character_id: Some(6001),
-            session_token: Some("sess-add-point-invalid".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 601,
+                character_id: Some(6001),
+                session_token: Some("sess-add-point-invalid".to_string()),
+                connected_at_ms: 1,
+            });
 
-        socket_emit_raw(&client, address, &sid, "42[\"game:addPoint\",{\"attribute\":\"invalid\",\"amount\":1}]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            "42[\"game:addPoint\",{\"attribute\":\"invalid\",\"amount\":1}]",
+        )
+        .await;
 
         let poll_text = poll_text(&client, address, &sid).await;
 
@@ -1551,15 +1776,23 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 602,
-            character_id: Some(6002),
-            session_token: Some("sess-add-point-range".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 602,
+                character_id: Some(6002),
+                session_token: Some("sess-add-point-range".to_string()),
+                connected_at_ms: 1,
+            });
 
-        socket_emit_raw(&client, address, &sid, "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":101}]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":101}]",
+        )
+        .await;
 
         let poll_text = poll_text(&client, address, &sid).await;
 
@@ -1581,7 +1814,13 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        socket_emit_raw(&client, address, &sid, "42[\"battle:sync\",{\"battleId\":\"battle-1\"}]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            "42[\"battle:sync\",{\"battleId\":\"battle-1\"}]",
+        )
+        .await;
 
         let poll_text = poll_text(&client, address, &sid).await;
 
@@ -1603,13 +1842,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 801,
-            character_id: Some(8001),
-            session_token: Some("sess-battle-sync-missing-id".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 801,
+                character_id: Some(8001),
+                session_token: Some("sess-battle-sync-missing-id".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"battle:sync\",{}]").await;
 
@@ -1655,13 +1896,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 1,
-            character_id: Some(101),
-            session_token: Some("sess-chat-too-long".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 1,
+                character_id: Some(101),
+                session_token: Some("sess-chat-too-long".to_string()),
+                connected_at_ms: 1,
+            });
 
         let content = "甲".repeat(201);
         socket_emit_raw(
@@ -1692,13 +1935,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 1,
-            character_id: Some(101),
-            session_token: Some("sess-chat-sensitive".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 1,
+                character_id: Some(101),
+                session_token: Some("sess-chat-sensitive".to_string()),
+                connected_at_ms: 1,
+            });
 
         socket_emit_raw(
             &client,
@@ -1731,40 +1976,48 @@ async fn insert_test_sect(
         let (receiver_sid, receiver_handshake) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &receiver_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sender_sid.clone(),
-            user_id: 1,
-            character_id: Some(101),
-            session_token: Some("sess-1".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: receiver_sid.clone(),
-            user_id: 2,
-            character_id: Some(202),
-            session_token: Some("sess-2".to_string()),
-            connected_at_ms: 2,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 1,
-            character_id: Some(101),
-            nickname: Some("韩立".to_string()),
-            month_card_active: true,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 1,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 2,
-            character_id: Some(202),
-            nickname: Some("张铁".to_string()),
-            month_card_active: false,
-            title: Some("外门弟子".to_string()),
-            realm: Some("凡人".to_string()),
-            room_id: None,
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sender_sid.clone(),
+                user_id: 1,
+                character_id: Some(101),
+                session_token: Some("sess-1".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: receiver_sid.clone(),
+                user_id: 2,
+                character_id: Some(202),
+                session_token: Some("sess-2".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 1,
+                character_id: Some(101),
+                nickname: Some("韩立".to_string()),
+                month_card_active: true,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 1,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 2,
+                character_id: Some(202),
+                nickname: Some("张铁".to_string()),
+                month_card_active: false,
+                title: Some("外门弟子".to_string()),
+                realm: Some("凡人".to_string()),
+                room_id: None,
+                connected_at_ms: 2,
+            });
         let io = state.socket_io().expect("socket io should exist");
         if let Ok(sender_socket_sid) = socketioxide::socket::Sid::from_str(&sender_sid) {
             if let Some(socket) = io.get_socket(sender_socket_sid) {
@@ -1805,13 +2058,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 31,
-            character_id: Some(3101),
-            session_token: Some("sess-31".to_string()),
-            connected_at_ms: 31,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 31,
+                character_id: Some(3101),
+                session_token: Some("sess-31".to_string()),
+                connected_at_ms: 31,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"system\",\"content\":\"系统你好\",\"clientId\":\"client-system\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
@@ -1831,13 +2086,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 32,
-            character_id: Some(3201),
-            session_token: Some("sess-32".to_string()),
-            connected_at_ms: 32,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 32,
+                character_id: Some(3201),
+                session_token: Some("sess-32".to_string()),
+                connected_at_ms: 32,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"battle\",\"content\":\"战况你好\",\"clientId\":\"client-battle\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
@@ -1857,13 +2114,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 3202,
-            character_id: Some(3202),
-            session_token: Some("sess-chat-empty".to_string()),
-            connected_at_ms: 3202,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 3202,
+                character_id: Some(3202),
+                session_token: Some("sess-chat-empty".to_string()),
+                connected_at_ms: 3202,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"world\",\"content\":\"   \",\"clientId\":\"client-empty\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
@@ -1883,13 +2142,15 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 3203,
-            character_id: Some(3203),
-            session_token: Some("sess-chat-unsupported".to_string()),
-            connected_at_ms: 3203,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 3203,
+                character_id: Some(3203),
+                session_token: Some("sess-chat-unsupported".to_string()),
+                connected_at_ms: 3203,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"all\",\"content\":\"hello\",\"clientId\":\"client-unsupported\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
@@ -1914,37 +2175,45 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sender_sid.clone(),
-            user_id: 3,
-            character_id: Some(303),
-            session_token: Some("sess-3".to_string()),
-            connected_at_ms: 3,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 4,
-            character_id: Some(404),
-            session_token: Some("sess-4".to_string()),
-            connected_at_ms: 4,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 5,
-            character_id: Some(505),
-            session_token: Some("sess-5".to_string()),
-            connected_at_ms: 5,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 3,
-            character_id: Some(303),
-            nickname: Some("厉飞雨".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sender_sid.clone(),
+                user_id: 3,
+                character_id: Some(303),
+                session_token: Some("sess-3".to_string()),
+                connected_at_ms: 3,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 4,
+                character_id: Some(404),
+                session_token: Some("sess-4".to_string()),
+                connected_at_ms: 4,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 5,
+                character_id: Some(505),
+                session_token: Some("sess-5".to_string()),
+                connected_at_ms: 5,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 3,
+                character_id: Some(303),
+                nickname: Some("厉飞雨".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 3,
+            });
         let io = state.socket_io().expect("socket io should exist");
         if let Ok(sender_socket_sid) = socketioxide::socket::Sid::from_str(&sender_sid) {
             if let Some(socket) = io.get_socket(sender_socket_sid) {
@@ -1985,23 +2254,27 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 3204,
-            character_id: Some(3204),
-            session_token: Some("sess-chat-private-missing".to_string()),
-            connected_at_ms: 3204,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 3204,
-            character_id: Some(3204),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 3204,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 3204,
+                character_id: Some(3204),
+                session_token: Some("sess-chat-private-missing".to_string()),
+                connected_at_ms: 3204,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 3204,
+                character_id: Some(3204),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 3204,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"private\",\"content\":\"hello\",\"clientId\":\"client-private-missing\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
@@ -2021,23 +2294,27 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 3205,
-            character_id: Some(3205),
-            session_token: Some("sess-chat-private-invalid".to_string()),
-            connected_at_ms: 3205,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 3205,
-            character_id: Some(3205),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 3205,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 3205,
+                character_id: Some(3205),
+                session_token: Some("sess-chat-private-invalid".to_string()),
+                connected_at_ms: 3205,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 3205,
+                character_id: Some(3205),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 3205,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"private\",\"content\":\"hello\",\"pmTargetCharacterId\":0,\"clientId\":\"client-private-invalid\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
@@ -2058,13 +2335,15 @@ async fn insert_test_sect(
         let (sender_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sender_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sender_sid.clone(),
-            user_id: 33,
-            character_id: Some(3303),
-            session_token: Some("sess-33".to_string()),
-            connected_at_ms: 33,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sender_sid.clone(),
+                user_id: 33,
+                character_id: Some(3303),
+                session_token: Some("sess-33".to_string()),
+                connected_at_ms: 33,
+            });
         let io = state.socket_io().expect("socket io should exist");
         if let Ok(sender_socket_sid) = socketioxide::socket::Sid::from_str(&sender_sid) {
             if let Some(socket) = io.get_socket(sender_socket_sid) {
@@ -2091,13 +2370,15 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 6,
-            character_id: None,
-            session_token: Some("sess-6".to_string()),
-            connected_at_ms: 6,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 6,
+                character_id: None,
+                session_token: Some("sess-6".to_string()),
+                connected_at_ms: 6,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"team\",\"content\":\"队伍集合\",\"clientId\":\"client-team-1\"}]").await;
 
@@ -2113,16 +2394,22 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn game_socket_chat_send_team_delivers_to_online_team_members() {
+    async fn game_socket_chat_send_team_delivers_to_online_team_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_CHAT_TEAM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_CHAT_TEAM_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("chat-team-{}", super::chrono_like_timestamp_ms());
-        let sender = insert_auth_fixture(&state, &pool, "socket", &format!("sender-{suffix}"), 0).await;
-        let target = insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let sender =
+            insert_auth_fixture(&state, &pool, "socket", &format!("sender-{suffix}"), 0).await;
+        let target =
+            insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '测试队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
             .bind(format!("team-{suffix}"))
@@ -2152,9 +2439,12 @@ async fn insert_test_sect(
         socket_auth(&client, address, &sender_sid, &sender.token).await;
         socket_auth(&client, address, &target_sid, &target.token).await;
         socket_auth(&client, address, &other_sid, &outsider.token).await;
-        let _sender_auth_poll = poll_until_contains(&client, address, &sender_sid, "game:auth-ready").await;
-        let _target_auth_poll = poll_until_contains(&client, address, &target_sid, "game:auth-ready").await;
-        let _other_auth_poll = poll_until_contains(&client, address, &other_sid, "game:auth-ready").await;
+        let _sender_auth_poll =
+            poll_until_contains(&client, address, &sender_sid, "game:auth-ready").await;
+        let _target_auth_poll =
+            poll_until_contains(&client, address, &target_sid, "game:auth-ready").await;
+        let _other_auth_poll =
+            poll_until_contains(&client, address, &other_sid, "game:auth-ready").await;
 
         socket_emit_raw(&client, address, &sender_sid, "42[\"chat:send\",{\"channel\":\"team\",\"content\":\"队伍集合\",\"clientId\":\"client-team-1\"}]").await;
 
@@ -2199,13 +2489,15 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 7,
-            character_id: None,
-            session_token: Some("sess-7".to_string()),
-            connected_at_ms: 7,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 7,
+                character_id: None,
+                session_token: Some("sess-7".to_string()),
+                connected_at_ms: 7,
+            });
 
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"sect\",\"content\":\"宗门集合\",\"clientId\":\"client-sect-1\"}]").await;
 
@@ -2221,16 +2513,22 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn game_socket_chat_send_sect_delivers_to_online_sect_members() {
+    async fn game_socket_chat_send_sect_delivers_to_online_sect_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_CHAT_SECT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_CHAT_SECT_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("chat-sect-{}", super::chrono_like_timestamp_ms());
-        let sender = insert_auth_fixture(&state, &pool, "socket", &format!("sender-{suffix}"), 0).await;
-        let target = insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let sender =
+            insert_auth_fixture(&state, &pool, "socket", &format!("sender-{suffix}"), 0).await;
+        let target =
+            insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query("INSERT INTO sect_def (id, name, leader_id, level, member_count, created_at, updated_at) VALUES ($1, $2, $3, 1, 2, NOW(), NOW())")
             .bind(format!("sect-{suffix}"))
@@ -2261,9 +2559,12 @@ async fn insert_test_sect(
         socket_auth(&client, address, &sender_sid, &sender.token).await;
         socket_auth(&client, address, &target_sid, &target.token).await;
         socket_auth(&client, address, &other_sid, &outsider.token).await;
-        let _sender_auth_poll = poll_until_contains(&client, address, &sender_sid, "game:auth-ready").await;
-        let _target_auth_poll = poll_until_contains(&client, address, &target_sid, "game:auth-ready").await;
-        let _other_auth_poll = poll_until_contains(&client, address, &other_sid, "game:auth-ready").await;
+        let _sender_auth_poll =
+            poll_until_contains(&client, address, &sender_sid, "game:auth-ready").await;
+        let _target_auth_poll =
+            poll_until_contains(&client, address, &target_sid, "game:auth-ready").await;
+        let _other_auth_poll =
+            poll_until_contains(&client, address, &other_sid, "game:auth-ready").await;
 
         socket_emit_raw(&client, address, &sender_sid, "42[\"chat:send\",{\"channel\":\"sect\",\"content\":\"宗门集合\",\"clientId\":\"client-sect-1\"}]").await;
 
@@ -2310,27 +2611,28 @@ async fn insert_test_sect(
         let (other_sid, other_handshake) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 9,
-            character_id: Some(901),
-            session_token: Some("sess-9".to_string()),
-            connected_at_ms: 9,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 10,
-            character_id: Some(1001),
-            session_token: Some("sess-10".to_string()),
-            connected_at_ms: 10,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 9,
+                character_id: Some(901),
+                session_token: Some("sess-9".to_string()),
+                connected_at_ms: 9,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 10,
+                character_id: Some(1001),
+                session_token: Some("sess-10".to_string()),
+                connected_at_ms: 10,
+            });
 
         let battle_id = "helper-battle-1";
-        let battle_state = build_minimal_pve_battle_state(
-            battle_id,
-            901,
-            &["monster-gray-wolf".to_string()],
-        );
+        let battle_state =
+            build_minimal_pve_battle_state(battle_id, 901, &["monster-gray-wolf".to_string()]);
         let session = BattleSessionSnapshotDto {
             session_id: "helper-session-1".to_string(),
             session_type: "pve".to_string(),
@@ -2356,8 +2658,16 @@ async fn insert_test_sect(
             battle_state.current_unit_id.as_deref(),
         );
 
-        crate::realtime::public_socket::emit_battle_update_to_participants(&state, &[9], &update_payload);
-        crate::realtime::public_socket::emit_battle_cooldown_to_participants(&state, &[9], &cooldown_payload);
+        crate::realtime::public_socket::emit_battle_update_to_participants(
+            &state,
+            &[9],
+            &update_payload,
+        );
+        crate::realtime::public_socket::emit_battle_cooldown_to_participants(
+            &state,
+            &[9],
+            &cooldown_payload,
+        );
 
         let participant_poll = poll_text(&client, address, &sid).await;
         let other_poll = poll_text(&client, address, &other_sid).await;
@@ -2391,30 +2701,41 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: first_sid.clone(),
-            user_id: 11,
-            character_id: Some(1101),
-            session_token: Some("sess-11".to_string()),
-            connected_at_ms: 11,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: second_sid.clone(),
-            user_id: 12,
-            character_id: Some(1202),
-            session_token: Some("sess-12".to_string()),
-            connected_at_ms: 12,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 13,
-            character_id: Some(1303),
-            session_token: Some("sess-13".to_string()),
-            connected_at_ms: 13,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: first_sid.clone(),
+                user_id: 11,
+                character_id: Some(1101),
+                session_token: Some("sess-11".to_string()),
+                connected_at_ms: 11,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: second_sid.clone(),
+                user_id: 12,
+                character_id: Some(1202),
+                session_token: Some("sess-12".to_string()),
+                connected_at_ms: 12,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 13,
+                character_id: Some(1303),
+                session_token: Some("sess-13".to_string()),
+                connected_at_ms: 13,
+            });
 
-        let payload = crate::realtime::battle::build_battle_cooldown_sync_payload(Some("player-999"), 1500);
-        crate::realtime::public_socket::emit_battle_cooldown_to_participants(&state, &[11, 12], &payload);
+        let payload =
+            crate::realtime::battle::build_battle_cooldown_sync_payload(Some("player-999"), 1500);
+        crate::realtime::public_socket::emit_battle_cooldown_to_participants(
+            &state,
+            &[11, 12],
+            &payload,
+        );
 
         let first_poll = poll_text(&client, address, &first_sid).await;
         let second_poll = poll_text(&client, address, &second_sid).await;
@@ -2445,20 +2766,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 14,
-            character_id: Some(1401),
-            session_token: Some("sess-14".to_string()),
-            connected_at_ms: 14,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 15,
-            character_id: Some(1502),
-            session_token: Some("sess-15".to_string()),
-            connected_at_ms: 15,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 14,
+                character_id: Some(1401),
+                session_token: Some("sess-14".to_string()),
+                connected_at_ms: 14,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 15,
+                character_id: Some(1502),
+                session_token: Some("sess-15".to_string()),
+                connected_at_ms: 15,
+            });
 
         let battle_state = build_minimal_pve_battle_state(
             "finished-battle-1",
@@ -2518,20 +2843,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 16,
-            character_id: Some(1601),
-            session_token: Some("sess-16".to_string()),
-            connected_at_ms: 16,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 17,
-            character_id: Some(1702),
-            session_token: Some("sess-17".to_string()),
-            connected_at_ms: 17,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 16,
+                character_id: Some(1601),
+                session_token: Some("sess-16".to_string()),
+                connected_at_ms: 16,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 17,
+                character_id: Some(1702),
+                session_token: Some("sess-17".to_string()),
+                connected_at_ms: 17,
+            });
 
         let payload = crate::realtime::battle::build_battle_abandoned_payload(
             "abandoned-battle-1",
@@ -2567,20 +2896,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 18,
-            character_id: Some(1801),
-            session_token: Some("sess-18".to_string()),
-            connected_at_ms: 18,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 19,
-            character_id: Some(1902),
-            session_token: Some("sess-19".to_string()),
-            connected_at_ms: 19,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 18,
+                character_id: Some(1801),
+                session_token: Some("sess-18".to_string()),
+                connected_at_ms: 18,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 19,
+                character_id: Some(1902),
+                session_token: Some("sess-19".to_string()),
+                connected_at_ms: 19,
+            });
 
         let battle_state = build_minimal_pve_battle_state(
             "state-battle-1",
@@ -2620,22 +2953,26 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 19,
-            character_id: Some(1901),
-            session_token: Some("sess-19".to_string()),
-            connected_at_ms: 19,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 19,
+                character_id: Some(1901),
+                session_token: Some("sess-19".to_string()),
+                connected_at_ms: 19,
+            });
 
-        let payload = crate::realtime::arena::build_arena_status_payload(crate::http::arena::ArenaStatusDto {
-            score: 1200,
-            win_count: 12,
-            lose_count: 3,
-            today_used: 2,
-            today_limit: 5,
-            today_remaining: 3,
-        });
+        let payload = crate::realtime::arena::build_arena_status_payload(
+            crate::http::arena::ArenaStatusDto {
+                score: 1200,
+                win_count: 12,
+                lose_count: 3,
+                today_used: 2,
+                today_limit: 5,
+                today_remaining: 3,
+            },
+        );
         crate::realtime::public_socket::emit_arena_update_to_user(&state, 19, &payload);
 
         let poll_text = poll_text(&client, address, &sid).await;
@@ -2662,20 +2999,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 29,
-            character_id: Some(2901),
-            session_token: Some("sess-29".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 30,
-            character_id: Some(3002),
-            session_token: Some("sess-30".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 29,
+                character_id: Some(2901),
+                session_token: Some("sess-29".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 30,
+                character_id: Some(3002),
+                session_token: Some("sess-30".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::arena::build_arena_refresh_payload();
         crate::realtime::public_socket::emit_arena_update_to_user(&state, 29, &payload);
@@ -2705,22 +3046,30 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 33,
-            character_id: Some(3301),
-            session_token: Some("sess-33".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 34,
-            character_id: Some(3402),
-            session_token: Some("sess-34".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 33,
+                character_id: Some(3301),
+                session_token: Some("sess-33".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 34,
+                character_id: Some(3402),
+                session_token: Some("sess-34".to_string()),
+                connected_at_ms: 2,
+            });
 
-        let payload = crate::realtime::market::build_market_update_payload("buy_market_listing", Some(42), "item");
+        let payload = crate::realtime::market::build_market_update_payload(
+            "buy_market_listing",
+            Some(42),
+            "item",
+        );
         crate::realtime::public_socket::emit_market_update_to_user(&state, 33, &payload);
 
         let target_poll = poll_text(&client, address, &target_sid).await;
@@ -2749,22 +3098,29 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 35,
-            character_id: Some(3501),
-            session_token: Some("sess-35".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 36,
-            character_id: Some(3602),
-            session_token: Some("sess-36".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 35,
+                character_id: Some(3501),
+                session_token: Some("sess-35".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 36,
+                character_id: Some(3602),
+                session_token: Some("sess-36".to_string()),
+                connected_at_ms: 2,
+            });
 
-        let payload = crate::realtime::rank::build_rank_update_payload("buy_partner_listing", &["partner", "power"]);
+        let payload = crate::realtime::rank::build_rank_update_payload(
+            "buy_partner_listing",
+            &["partner", "power"],
+        );
         crate::realtime::public_socket::emit_rank_update_to_user(&state, 35, &payload);
 
         let target_poll = poll_text(&client, address, &target_sid).await;
@@ -2795,27 +3151,33 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: 31,
-            character_id: Some(3101),
-            session_token: Some("sess-31".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: 32,
-            character_id: Some(3202),
-            session_token: Some("sess-32".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 33,
-            character_id: Some(3303),
-            session_token: Some("sess-33".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: 31,
+                character_id: Some(3101),
+                session_token: Some("sess-31".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: 32,
+                character_id: Some(3202),
+                session_token: Some("sess-32".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 33,
+                character_id: Some(3303),
+                session_token: Some("sess-33".to_string()),
+                connected_at_ms: 3,
+            });
 
         let payload = crate::realtime::team::TeamUpdatePayload {
             kind: "team:update".to_string(),
@@ -2823,7 +3185,11 @@ async fn insert_test_sect(
             team_id: Some("team-1".to_string()),
             message: Some("队长已转让".to_string()),
         };
-        crate::realtime::public_socket::emit_team_update_to_characters(&state, &[3101, 3202], &payload);
+        crate::realtime::public_socket::emit_team_update_to_characters(
+            &state,
+            &[3101, 3202],
+            &payload,
+        );
 
         let leader_poll = poll_text(&client, address, &leader_sid).await;
         let member_poll = poll_text(&client, address, &member_sid).await;
@@ -2854,20 +3220,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 41,
-            character_id: Some(4101),
-            session_token: Some("sess-41".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 42,
-            character_id: Some(4202),
-            session_token: Some("sess-42".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 41,
+                character_id: Some(4101),
+                session_token: Some("sess-41".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 42,
+                character_id: Some(4202),
+                session_token: Some("sess-42".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::sect::build_sect_indicator_payload(true, 1, 3, true);
         crate::realtime::public_socket::emit_sect_update_to_user(&state, 41, &payload);
@@ -2898,20 +3268,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 51,
-            character_id: Some(5101),
-            session_token: Some("sess-51".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 52,
-            character_id: Some(5202),
-            session_token: Some("sess-52".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 51,
+                character_id: Some(5101),
+                session_token: Some("sess-51".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 52,
+                character_id: Some(5202),
+                session_token: Some("sess-52".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::mail::build_mail_update_payload(3, 1, "claim_mail");
         crate::realtime::public_socket::emit_mail_update_to_user(&state, 51, &payload);
@@ -2942,20 +3316,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 57,
-            character_id: Some(5701),
-            session_token: Some("sess-57".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 58,
-            character_id: Some(5802),
-            session_token: Some("sess-58".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 57,
+                character_id: Some(5701),
+                session_token: Some("sess-57".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 58,
+                character_id: Some(5802),
+                session_token: Some("sess-58".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::socket_protocol::GameCharacterPayload {
             kind: "game:character".to_string(),
@@ -2994,20 +3372,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 59,
-            character_id: Some(5901),
-            session_token: Some("sess-59".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 60,
-            character_id: Some(6002),
-            session_token: Some("sess-60".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 59,
+                character_id: Some(5901),
+                session_token: Some("sess-59".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 60,
+                character_id: Some(6002),
+                session_token: Some("sess-60".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::socket_protocol::build_game_character_full_payload(Some(
             crate::realtime::socket_protocol::GameCharacterFullSnapshot {
@@ -3109,20 +3491,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 53,
-            character_id: Some(5301),
-            session_token: Some("sess-53".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 54,
-            character_id: Some(5402),
-            session_token: Some("sess-54".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 53,
+                character_id: Some(5301),
+                session_token: Some("sess-53".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 54,
+                character_id: Some(5402),
+                session_token: Some("sess-54".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::idle::build_idle_update_batch_payload(
             "idle-1",
@@ -3160,44 +3546,49 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 55,
-            character_id: Some(5501),
-            session_token: Some("sess-55".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 56,
-            character_id: Some(5602),
-            session_token: Some("sess-56".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 55,
+                character_id: Some(5501),
+                session_token: Some("sess-55".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 56,
+                character_id: Some(5602),
+                session_token: Some("sess-56".to_string()),
+                connected_at_ms: 2,
+            });
 
-        let payload = crate::realtime::idle::build_idle_finished_payload(crate::http::idle::IdleSessionDto {
-            id: "idle-2".to_string(),
-            character_id: 5501,
-            status: "completed".to_string(),
-            map_id: "map-1".to_string(),
-            room_id: "room-1".to_string(),
-            max_duration_ms: 1000,
-            total_battles: 3,
-            win_count: 2,
-            lose_count: 1,
-            total_exp: 30,
-            total_silver: 12,
-            bag_full_flag: false,
-            started_at: "2026-04-13T10:00:00Z".to_string(),
-            ended_at: Some("2026-04-13T10:05:00Z".to_string()),
-            viewed_at: None,
-            target_monster_def_id: None,
-            target_monster_name: None,
-            execution_snapshot: None,
-            raw_snapshot: serde_json::json!({}),
-            buffered_batch_deltas: Vec::new(),
-            buffered_since_ms: None,
-        });
+        let payload =
+            crate::realtime::idle::build_idle_finished_payload(crate::http::idle::IdleSessionDto {
+                id: "idle-2".to_string(),
+                character_id: 5501,
+                status: "completed".to_string(),
+                map_id: "map-1".to_string(),
+                room_id: "room-1".to_string(),
+                max_duration_ms: 1000,
+                total_battles: 3,
+                win_count: 2,
+                lose_count: 1,
+                total_exp: 30,
+                total_silver: 12,
+                bag_full_flag: false,
+                started_at: "2026-04-13T10:00:00Z".to_string(),
+                ended_at: Some("2026-04-13T10:05:00Z".to_string()),
+                viewed_at: None,
+                target_monster_def_id: None,
+                target_monster_name: None,
+                execution_snapshot: None,
+                raw_snapshot: serde_json::json!({}),
+                buffered_batch_deltas: Vec::new(),
+                buffered_since_ms: None,
+            });
         crate::realtime::public_socket::emit_idle_realtime_to_user(&state, 55, &payload);
 
         let target_poll = poll_text(&client, address, &target_sid).await;
@@ -3214,15 +3605,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn idle_start_route_eventually_emits_idle_update_to_target_user() {
+    async fn idle_start_route_eventually_emits_idle_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_IDLE_START_EXECUTION_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_IDLE_START_EXECUTION_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("idle-start-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -3234,8 +3631,10 @@ async fn insert_test_sect(
         socket_connect(&client, address, &other_sid).await;
         socket_auth(&client, address, &target_sid, &fixture.token).await;
         socket_auth(&client, address, &other_sid, &outsider.token).await;
-        let _target_auth_poll = poll_until_contains(&client, address, &target_sid, "game:auth-ready").await;
-        let _other_auth_poll = poll_until_contains(&client, address, &other_sid, "game:auth-ready").await;
+        let _target_auth_poll =
+            poll_until_contains(&client, address, &target_sid, "game:auth-ready").await;
+        let _other_auth_poll =
+            poll_until_contains(&client, address, &other_sid, "game:auth-ready").await;
 
         let response = client
             .post(format!("http://{address}/api/idle/start"))
@@ -3277,9 +3676,11 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn idle_start_route_buffers_resource_delta_when_redis_available() {
+    async fn idle_start_route_buffers_resource_delta_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "IDLE_RESOURCE_DELTA_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "IDLE_RESOURCE_DELTA_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -3313,7 +3714,11 @@ async fn insert_test_sect(
                 .unwrap_or(None)
                 .unwrap_or_else(|| serde_json::json!({}));
             println!("IDLE_RESOURCE_BUFFERED_SNAPSHOT={snapshot}");
-            let buffered = snapshot.get("bufferedBatchDeltas").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+            let buffered = snapshot
+                .get("bufferedBatchDeltas")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
             assert!(!buffered.is_empty());
         } else {
             let row = sqlx::query("SELECT exp, silver FROM characters WHERE id = $1")
@@ -3321,10 +3726,13 @@ async fn insert_test_sect(
                 .fetch_one(&pool)
                 .await
                 .expect("character row should load");
-            println!("IDLE_RESOURCE_DELTA_FALLBACK_ROW={}", serde_json::json!({
-                "exp": row.try_get::<Option<i64>, _>("exp").unwrap_or(None),
-                "silver": row.try_get::<Option<i64>, _>("silver").unwrap_or(None),
-            }));
+            println!(
+                "IDLE_RESOURCE_DELTA_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "exp": row.try_get::<Option<i64>, _>("exp").unwrap_or(None),
+                    "silver": row.try_get::<Option<i64>, _>("silver").unwrap_or(None),
+                })
+            );
         }
 
         server.abort();
@@ -3333,9 +3741,12 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn idle_start_route_sets_bag_full_flag_when_bag_has_no_space() {
+    async fn idle_start_route_sets_bag_full_flag_when_bag_has_no_space() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_IDLE_BAG_FULL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_IDLE_BAG_FULL_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -3374,26 +3785,36 @@ async fn insert_test_sect(
 
         println!(
             "GAME_SOCKET_IDLE_BAG_FULL_FLAG={}",
-            row.try_get::<Option<bool>, _>("bag_full_flag").unwrap_or(None).unwrap_or(false)
+            row.try_get::<Option<bool>, _>("bag_full_flag")
+                .unwrap_or(None)
+                .unwrap_or(false)
         );
 
         server.abort();
 
-        assert_eq!(row.try_get::<Option<bool>, _>("bag_full_flag").unwrap_or(None), Some(true));
+        assert_eq!(
+            row.try_get::<Option<bool>, _>("bag_full_flag")
+                .unwrap_or(None),
+            Some(true)
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn idle_start_route_partner_participation_reduces_round_count() {
+    async fn idle_start_route_partner_participation_reduces_round_count() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_IDLE_PARTNER_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_IDLE_PARTNER_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("idle-partner-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO character_partner (character_id, partner_def_id, nickname, description, avatar, level, progress_exp, growth_max_qixue, growth_wugong, growth_fagong, growth_wufang, growth_fafang, growth_sudu, is_active, obtained_from, obtained_ref_id, created_at, updated_at) VALUES ($1, 'partner-qingmu-xiaoou', '青木小偶', '', NULL, 1, 0, 120, 120, 0, 0, 0, 12, TRUE, 'test', NULL, NOW(), NOW())",
@@ -3430,21 +3851,33 @@ async fn insert_test_sect(
 
             let target_poll = poll_until_contains(client, address, &sid, "idle:update").await;
             let marker = "\"roundCount\":";
-            let idx = target_poll.find(marker).expect("roundCount marker should exist") + marker.len();
+            let idx = target_poll
+                .find(marker)
+                .expect("roundCount marker should exist")
+                + marker.len();
             let tail = &target_poll[idx..];
-            let round_count = tail.chars()
+            let round_count = tail
+                .chars()
                 .take_while(|ch| ch.is_ascii_digit())
                 .collect::<String>()
                 .parse::<i64>()
                 .expect("roundCount should parse");
             let session_marker = "\"sessionId\":\"";
-            let session_idx = target_poll.find(session_marker).expect("sessionId marker should exist") + session_marker.len();
+            let session_idx = target_poll
+                .find(session_marker)
+                .expect("sessionId marker should exist")
+                + session_marker.len();
             let session_tail = &target_poll[session_idx..];
-            let session_id = session_tail.split('"').next().unwrap_or_default().to_string();
+            let session_id = session_tail
+                .split('"')
+                .next()
+                .unwrap_or_default()
+                .to_string();
             (session_id, round_count)
         }
 
-        let (first_session_id, without_partner) = run_idle_and_read_round_count(&client, address, &fixture.token, false).await;
+        let (first_session_id, without_partner) =
+            run_idle_and_read_round_count(&client, address, &fixture.token, false).await;
 
         let stop_response = client
             .post(format!("http://{address}/api/idle/stop"))
@@ -3458,12 +3891,17 @@ async fn insert_test_sect(
         let (stop_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &stop_sid).await;
         socket_auth(&client, address, &stop_sid, &fixture.token).await;
-        let _stop_auth_poll = poll_until_contains(&client, address, &stop_sid, "game:auth-ready").await;
+        let _stop_auth_poll =
+            poll_until_contains(&client, address, &stop_sid, "game:auth-ready").await;
         let _stop_poll = poll_until_contains(&client, address, &stop_sid, "idle:finished").await;
 
-        let (_second_session_id, with_partner) = run_idle_and_read_round_count(&client, address, &fixture.token, true).await;
+        let (_second_session_id, with_partner) =
+            run_idle_and_read_round_count(&client, address, &fixture.token, true).await;
 
-        println!("IDLE_PARTNER_ROUND_COUNTS={{\"without_partner\":{},\"with_partner\":{}}}", without_partner, with_partner);
+        println!(
+            "IDLE_PARTNER_ROUND_COUNTS={{\"without_partner\":{},\"with_partner\":{}}}",
+            without_partner, with_partner
+        );
 
         server.abort();
 
@@ -3474,15 +3912,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn idle_stop_route_eventually_emits_idle_finished_to_target_user() {
+    async fn idle_stop_route_eventually_emits_idle_finished_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_IDLE_STOP_EXECUTION_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_IDLE_STOP_EXECUTION_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("idle-stop-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -3493,20 +3937,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let start_response = client
             .post(format!("http://{address}/api/idle/start"))
@@ -3561,20 +4009,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 61,
-            character_id: Some(6101),
-            session_token: Some("sess-61".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 62,
-            character_id: Some(6202),
-            session_token: Some("sess-62".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 61,
+                character_id: Some(6101),
+                session_token: Some("sess-61".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 62,
+                character_id: Some(6202),
+                session_token: Some("sess-62".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::game_time::build_game_time_sync_payload(
             crate::shared::game_time::GameTimeSnapshot {
@@ -3620,20 +4072,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 96,
-            character_id: Some(9601),
-            session_token: Some("sess-96".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 97,
-            character_id: Some(9702),
-            session_token: Some("sess-97".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 96,
+                character_id: Some(9601),
+                session_token: Some("sess-96".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 97,
+                character_id: Some(9702),
+                session_token: Some("sess-97".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::wander::build_wander_update_payload(
             crate::http::wander::WanderOverviewDto {
@@ -3680,20 +4136,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 91,
-            character_id: Some(9101),
-            session_token: Some("sess-91".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 92,
-            character_id: Some(9202),
-            session_token: Some("sess-92".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 91,
+                character_id: Some(9101),
+                session_token: Some("sess-91".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 92,
+                character_id: Some(9202),
+                session_token: Some("sess-92".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::technique_research::build_technique_research_status_payload(
             9101,
@@ -3727,7 +4187,9 @@ async fn insert_test_sect(
                 quality_rates: vec![],
             },
         );
-        crate::realtime::public_socket::emit_technique_research_status_to_user(&state, 91, &payload);
+        crate::realtime::public_socket::emit_technique_research_status_to_user(
+            &state, 91, &payload,
+        );
 
         let target_poll = poll_text(&client, address, &target_sid).await;
         let other_poll = poll_text(&client, address, &other_sid).await;
@@ -3744,7 +4206,8 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-    async fn game_socket_technique_research_status_helper_pushes_update_only_to_target_user_via_routes() {
+    async fn game_socket_technique_research_status_helper_pushes_update_only_to_target_user_via_routes()
+     {
         let state = test_state();
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -3755,20 +4218,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 91,
-            character_id: Some(9101),
-            session_token: Some("sess-91".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 92,
-            character_id: Some(9202),
-            session_token: Some("sess-92".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 91,
+                character_id: Some(9101),
+                session_token: Some("sess-91".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 92,
+                character_id: Some(9202),
+                session_token: Some("sess-92".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::technique_research::build_technique_research_status_payload(
             9101,
@@ -3802,7 +4269,9 @@ async fn insert_test_sect(
                 quality_rates: vec![],
             },
         );
-        crate::realtime::public_socket::emit_technique_research_status_to_user(&state, 91, &payload);
+        crate::realtime::public_socket::emit_technique_research_status_to_user(
+            &state, 91, &payload,
+        );
 
         let target_poll = poll_text(&client, address, &target_sid).await;
         let other_poll = poll_text(&client, address, &other_sid).await;
@@ -3829,20 +4298,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 93,
-            character_id: Some(9301),
-            session_token: Some("sess-93".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 94,
-            character_id: Some(9402),
-            session_token: Some("sess-94".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 93,
+                character_id: Some(9301),
+                session_token: Some("sess-93".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 94,
+                character_id: Some(9402),
+                session_token: Some("sess-94".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::technique_research::build_technique_research_result_payload(
             9301,
@@ -3852,7 +4325,9 @@ async fn insert_test_sect(
             None,
             Some("已放弃本次研修草稿，并按过期规则结算".to_string()),
         );
-        crate::realtime::public_socket::emit_technique_research_result_to_user(&state, 93, &payload);
+        crate::realtime::public_socket::emit_technique_research_result_to_user(
+            &state, 93, &payload,
+        );
 
         let target_poll = poll_text(&client, address, &target_sid).await;
         let other_poll = poll_text(&client, address, &other_sid).await;
@@ -3880,20 +4355,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 101,
-            character_id: Some(10101),
-            session_token: Some("sess-101".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 102,
-            character_id: Some(10202),
-            session_token: Some("sess-102".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 101,
+                character_id: Some(10101),
+                session_token: Some("sess-101".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 102,
+                character_id: Some(10202),
+                session_token: Some("sess-102".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::partner_recruit::build_partner_recruit_status_payload(
             10101,
@@ -3944,20 +4423,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 111,
-            character_id: Some(11101),
-            session_token: Some("sess-111".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 112,
-            character_id: Some(11202),
-            session_token: Some("sess-112".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 111,
+                character_id: Some(11101),
+                session_token: Some("sess-111".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 112,
+                character_id: Some(11202),
+                session_token: Some("sess-112".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::partner_fusion::build_partner_fusion_status_payload(
             11101,
@@ -3996,20 +4479,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 121,
-            character_id: Some(12101),
-            session_token: Some("sess-121".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 122,
-            character_id: Some(12202),
-            session_token: Some("sess-122".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 121,
+                character_id: Some(12101),
+                session_token: Some("sess-121".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 122,
+                character_id: Some(12202),
+                session_token: Some("sess-122".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::partner_rebone::build_partner_rebone_status_payload(
             12101,
@@ -4048,20 +4535,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 131,
-            character_id: Some(13101),
-            session_token: Some("sess-131".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 132,
-            character_id: Some(13202),
-            session_token: Some("sess-132".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 131,
+                character_id: Some(13101),
+                session_token: Some("sess-131".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 132,
+                character_id: Some(13202),
+                session_token: Some("sess-132".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::partner_recruit::build_partner_recruit_result_payload(
             13101,
@@ -4098,20 +4589,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 141,
-            character_id: Some(14101),
-            session_token: Some("sess-141".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 142,
-            character_id: Some(14202),
-            session_token: Some("sess-142".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 141,
+                character_id: Some(14101),
+                session_token: Some("sess-141".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 142,
+                character_id: Some(14202),
+                session_token: Some("sess-142".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::partner_fusion::build_partner_fusion_result_payload(
             14101,
@@ -4149,20 +4644,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 151,
-            character_id: Some(15101),
-            session_token: Some("sess-151".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 152,
-            character_id: Some(15202),
-            session_token: Some("sess-152".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 151,
+                character_id: Some(15101),
+                session_token: Some("sess-151".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 152,
+                character_id: Some(15202),
+                session_token: Some("sess-152".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::partner_rebone::build_partner_rebone_result_payload(
             15101,
@@ -4200,20 +4699,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 71,
-            character_id: Some(7101),
-            session_token: Some("sess-71".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 72,
-            character_id: Some(7202),
-            session_token: Some("sess-72".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 71,
+                character_id: Some(7101),
+                session_token: Some("sess-71".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 72,
+                character_id: Some(7202),
+                session_token: Some("sess-72".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::achievement::build_achievement_indicator_payload(7101, 2);
         crate::realtime::public_socket::emit_achievement_update_to_user(&state, 71, &payload);
@@ -4244,20 +4747,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: 81,
-            character_id: Some(8101),
-            session_token: Some("sess-81".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: 82,
-            character_id: Some(8202),
-            session_token: Some("sess-82".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: 81,
+                character_id: Some(8101),
+                session_token: Some("sess-81".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: 82,
+                character_id: Some(8202),
+                session_token: Some("sess-82".to_string()),
+                connected_at_ms: 2,
+            });
 
         let payload = crate::realtime::task::build_task_overview_update_payload(8101);
         crate::realtime::public_socket::emit_task_update_to_user(&state, 81, &payload);
@@ -4286,29 +4793,37 @@ async fn insert_test_sect(
         let (sid, handshake_text) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: 21,
-            character_id: Some(2101),
-            session_token: Some("sess-21".to_string()),
-            connected_at_ms: 21,
-        });
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 21,
-            character_id: Some(2101),
-            nickname: Some("韩立".to_string()),
-            month_card_active: false,
-            title: Some("散修".to_string()),
-            realm: Some("炼气期".to_string()),
-            room_id: None,
-            connected_at_ms: 21,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: 21,
+                character_id: Some(2101),
+                session_token: Some("sess-21".to_string()),
+                connected_at_ms: 21,
+            });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 21,
+                character_id: Some(2101),
+                nickname: Some("韩立".to_string()),
+                month_card_active: false,
+                title: Some("散修".to_string()),
+                realm: Some("炼气期".to_string()),
+                room_id: None,
+                connected_at_ms: 21,
+            });
 
         let previous = state.online_players.take_last_broadcasted_players();
         let current = state.online_players.snapshot_dto_map();
-        let full_payload = crate::realtime::online_players::build_online_players_broadcast_payload(&previous, &current)
-            .expect("full payload should exist");
-        state.online_players.replace_last_broadcasted_players(current);
+        let full_payload = crate::realtime::online_players::build_online_players_broadcast_payload(
+            &previous, &current,
+        )
+        .expect("full payload should exist");
+        state
+            .online_players
+            .replace_last_broadcasted_players(current);
         if let Some(io) = state.socket_io() {
             if let Ok(socket_sid) = socketioxide::socket::Sid::from_str(&sid) {
                 if let Some(socket) = io.get_socket(socket_sid) {
@@ -4318,21 +4833,28 @@ async fn insert_test_sect(
         }
         let full_poll = poll_text(&client, address, &sid).await;
 
-        state.online_players.register(crate::state::OnlinePlayerRecord {
-            user_id: 21,
-            character_id: Some(2101),
-            nickname: Some("韩立".to_string()),
-            month_card_active: true,
-            title: Some("散修".to_string()),
-            realm: Some("筑基期".to_string()),
-            room_id: None,
-            connected_at_ms: 21,
-        });
+        state
+            .online_players
+            .register(crate::state::OnlinePlayerRecord {
+                user_id: 21,
+                character_id: Some(2101),
+                nickname: Some("韩立".to_string()),
+                month_card_active: true,
+                title: Some("散修".to_string()),
+                realm: Some("筑基期".to_string()),
+                room_id: None,
+                connected_at_ms: 21,
+            });
         let previous = state.online_players.take_last_broadcasted_players();
         let current = state.online_players.snapshot_dto_map();
-        let delta_payload = crate::realtime::online_players::build_online_players_broadcast_payload(&previous, &current)
+        let delta_payload =
+            crate::realtime::online_players::build_online_players_broadcast_payload(
+                &previous, &current,
+            )
             .expect("delta payload should exist");
-        state.online_players.replace_last_broadcasted_players(current);
+        state
+            .online_players
+            .replace_last_broadcasted_players(current);
         if let Some(io) = state.socket_io() {
             if let Ok(socket_sid) = socketioxide::socket::Sid::from_str(&sid) {
                 if let Some(socket) = io.get_socket(socket_sid) {
@@ -4352,13 +4874,15 @@ async fn insert_test_sect(
         assert!(full_poll.contains("\"type\":\"full\""));
         assert!(full_poll.contains("\"players\":[{"));
         assert!(delta_poll.contains("game:onlinePlayers"));
-        assert!(delta_poll.contains("\"type\":\"delta\"") || delta_poll.contains("\"type\":\"full\""));
+        assert!(
+            delta_poll.contains("\"type\":\"delta\"") || delta_poll.contains("\"type\":\"full\"")
+        );
         assert!(delta_poll.contains("\"monthCardActive\":true"));
         assert!(delta_poll.contains("\"realm\":\"筑基期\""));
     }
 
     #[tokio::test]
-        async fn wander_generate_route_emits_wander_update_to_target_user() {
+    async fn wander_generate_route_emits_wander_update_to_target_user() {
         let state = test_state_with_wander_ai(true);
         let mut config = (*state.config).clone();
         config.wander.model_provider = "openai".to_string();
@@ -4372,13 +4896,19 @@ async fn insert_test_sect(
             state.outbound_http.clone(),
             true,
         );
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_WANDER_GENERATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_WANDER_GENERATE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("wander-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -4389,20 +4919,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/wander/generate"))
@@ -4411,7 +4945,10 @@ async fn insert_test_sect(
             .await
             .expect("wander generate request should succeed");
         let response_status = response.status();
-        let response_text = response.text().await.expect("wander generate body should read");
+        let response_text = response
+            .text()
+            .await
+            .expect("wander generate body should read");
         println!("WANDER_GENERATE_ROUTE_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
 
@@ -4433,9 +4970,11 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn wander_generate_route_eventually_creates_ai_backed_episode() {
+    async fn wander_generate_route_eventually_creates_ai_backed_episode() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "WANDER_AI_GENERATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "WANDER_AI_GENERATE_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
         if !state.config.wander.ai_enabled
@@ -4461,8 +5000,13 @@ async fn insert_test_sect(
             .await
             .expect("wander generate should succeed");
         assert_eq!(generate_response.status(), StatusCode::OK);
-        let generate_body: Value = serde_json::from_str(&generate_response.text().await.expect("generate body should read"))
-            .expect("generate body should be json");
+        let generate_body: Value = serde_json::from_str(
+            &generate_response
+                .text()
+                .await
+                .expect("generate body should read"),
+        )
+        .expect("generate body should be json");
         let generation_id = generate_body["data"]["job"]["generationId"]
             .as_str()
             .expect("generation id should exist")
@@ -4486,23 +5030,60 @@ async fn insert_test_sect(
             .expect("wander episode should exist");
 
         println!("WANDER_AI_GENERATE_ROUTE_RESPONSE={generate_body}");
-        println!("WANDER_AI_GENERATE_JOB_STATUS={}", job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default());
+        println!(
+            "WANDER_AI_GENERATE_JOB_STATUS={}",
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default()
+        );
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated"
+        );
         assert!(!episode_id.is_empty());
-        assert!(!episode_row.try_get::<Option<String>, _>("episode_title").unwrap_or(None).unwrap_or_default().is_empty());
-        assert!(episode_row.try_get::<Option<String>, _>("opening").unwrap_or(None).unwrap_or_default().chars().count() >= 80);
-        assert_eq!(episode_row.try_get::<Option<serde_json::Value>, _>("option_texts").unwrap_or(None).unwrap_or_default().as_array().map(|items| items.len()).unwrap_or_default(), 3);
+        assert!(
+            !episode_row
+                .try_get::<Option<String>, _>("episode_title")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .is_empty()
+        );
+        assert!(
+            episode_row
+                .try_get::<Option<String>, _>("opening")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .chars()
+                .count()
+                >= 80
+        );
+        assert_eq!(
+            episode_row
+                .try_get::<Option<serde_json::Value>, _>("option_texts")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            3
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn wander_generate_route_persists_story_other_player_snapshot() {
+    async fn wander_generate_route_persists_story_other_player_snapshot() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "WANDER_OTHER_PLAYER_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "WANDER_OTHER_PLAYER_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
         if !state.config.wander.ai_enabled
@@ -4516,7 +5097,8 @@ async fn insert_test_sect(
 
         let suffix = format!("wander-other-player-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let other = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let other =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         sqlx::query("UPDATE users SET last_login = NOW() WHERE id = $1")
             .bind(other.user_id)
             .execute(&pool)
@@ -4562,9 +5144,11 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn wander_choose_route_eventually_resolves_episode_and_creates_title() {
+    async fn wander_choose_route_eventually_resolves_episode_and_creates_title() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "WANDER_AI_RESOLUTION_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "WANDER_AI_RESOLUTION_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
         if !state.config.wander.ai_enabled
@@ -4607,13 +5191,21 @@ async fn insert_test_sect(
             .post(format!("http://{address}/api/wander/choose"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"episodeId\":\"{}\",\"optionIndex\":0}}", episode_id))
+            .body(format!(
+                "{{\"episodeId\":\"{}\",\"optionIndex\":0}}",
+                episode_id
+            ))
             .send()
             .await
             .expect("wander choose should succeed");
         assert_eq!(choose_response.status(), StatusCode::OK);
-        let choose_body: Value = serde_json::from_str(&choose_response.text().await.expect("choose body should read"))
-            .expect("choose body should be json");
+        let choose_body: Value = serde_json::from_str(
+            &choose_response
+                .text()
+                .await
+                .expect("choose body should read"),
+        )
+        .expect("choose body should be json");
         let generation_id = choose_body["data"]["job"]["generationId"]
             .as_str()
             .expect("generation id should exist")
@@ -4636,18 +5228,25 @@ async fn insert_test_sect(
             .fetch_one(&pool)
             .await
             .expect("resolved wander story should exist");
-        let reward_title_id = story_row.try_get::<Option<String>, _>("reward_title_id").unwrap_or(None).unwrap_or_default();
-        let title_row = sqlx::query("SELECT id, name, description, color, effects FROM generated_title_def WHERE id = $1")
-            .bind(&reward_title_id)
-            .fetch_one(&pool)
-            .await
-            .expect("generated title should exist");
-        let character_title_row = sqlx::query("SELECT title_id FROM character_title WHERE character_id = $1 AND title_id = $2")
-            .bind(fixture.character_id)
-            .bind(&reward_title_id)
-            .fetch_one(&pool)
-            .await
-            .expect("character title should exist");
+        let reward_title_id = story_row
+            .try_get::<Option<String>, _>("reward_title_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let title_row = sqlx::query(
+            "SELECT id, name, description, color, effects FROM generated_title_def WHERE id = $1",
+        )
+        .bind(&reward_title_id)
+        .fetch_one(&pool)
+        .await
+        .expect("generated title should exist");
+        let character_title_row = sqlx::query(
+            "SELECT title_id FROM character_title WHERE character_id = $1 AND title_id = $2",
+        )
+        .bind(fixture.character_id)
+        .bind(&reward_title_id)
+        .fetch_one(&pool)
+        .await
+        .expect("character title should exist");
         let overview_response = client
             .get(format!("http://{address}/api/wander/overview"))
             .header("authorization", format!("Bearer {}", fixture.token))
@@ -4655,42 +5254,121 @@ async fn insert_test_sect(
             .await
             .expect("wander overview should succeed");
         assert_eq!(overview_response.status(), StatusCode::OK);
-        let overview_body: Value = serde_json::from_str(&overview_response.text().await.expect("overview body should read"))
-            .expect("overview body should be json");
+        let overview_body: Value = serde_json::from_str(
+            &overview_response
+                .text()
+                .await
+                .expect("overview body should read"),
+        )
+        .expect("overview body should be json");
 
         println!("WANDER_AI_RESOLUTION_CHOOSE_RESPONSE={choose_body}");
-        println!("WANDER_AI_RESOLUTION_JOB_STATUS={}", job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default());
+        println!(
+            "WANDER_AI_RESOLUTION_JOB_STATUS={}",
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default()
+        );
         println!("WANDER_AI_RESOLUTION_OVERVIEW={overview_body}");
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated");
-        assert_eq!(job_row.try_get::<Option<String>, _>("generated_episode_id").unwrap_or(None).unwrap_or_default(), episode_id);
-        assert!(episode_row.try_get::<Option<String>, _>("chosen_at_text").unwrap_or(None).is_some());
-        assert!(episode_row.try_get::<Option<String>, _>("episode_summary").unwrap_or(None).unwrap_or_default().chars().count() >= 20);
-        assert_ne!(episode_row.try_get::<Option<String>, _>("ending_type").unwrap_or(None).unwrap_or_default(), "none");
-        assert!(!episode_row.try_get::<Option<String>, _>("reward_title_name").unwrap_or(None).unwrap_or_default().is_empty());
-        assert_eq!(story_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "finished");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("generated_episode_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            episode_id
+        );
+        assert!(
+            episode_row
+                .try_get::<Option<String>, _>("chosen_at_text")
+                .unwrap_or(None)
+                .is_some()
+        );
+        assert!(
+            episode_row
+                .try_get::<Option<String>, _>("episode_summary")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .chars()
+                .count()
+                >= 20
+        );
+        assert_ne!(
+            episode_row
+                .try_get::<Option<String>, _>("ending_type")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "none"
+        );
+        assert!(
+            !episode_row
+                .try_get::<Option<String>, _>("reward_title_name")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .is_empty()
+        );
+        assert_eq!(
+            story_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "finished"
+        );
         assert!(!reward_title_id.is_empty());
-        assert_eq!(title_row.try_get::<Option<String>, _>("id").unwrap_or(None).unwrap_or_default(), reward_title_id);
-        assert_eq!(character_title_row.try_get::<Option<String>, _>("title_id").unwrap_or(None).unwrap_or_default(), reward_title_id);
-        assert_eq!(overview_body["data"]["latestFinishedStory"]["rewardTitleId"], reward_title_id);
-        assert_eq!(overview_body["data"]["generatedTitles"][0]["id"], reward_title_id);
-        assert_eq!(overview_body["data"]["generatedTitles"][0]["isEquipped"], false);
+        assert_eq!(
+            title_row
+                .try_get::<Option<String>, _>("id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            reward_title_id
+        );
+        assert_eq!(
+            character_title_row
+                .try_get::<Option<String>, _>("title_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            reward_title_id
+        );
+        assert_eq!(
+            overview_body["data"]["latestFinishedStory"]["rewardTitleId"],
+            reward_title_id
+        );
+        assert_eq!(
+            overview_body["data"]["generatedTitles"][0]["id"],
+            reward_title_id
+        );
+        assert_eq!(
+            overview_body["data"]["generatedTitles"][0]["isEquipped"],
+            false
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn mail_read_route_emits_mail_update_to_target_user() {
+    async fn mail_read_route_emits_mail_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_READ_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_READ_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("mail-read-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let inserted_mail = sqlx::query(
             "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_rewards, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '测试邮件', '请查收', '[]'::jsonb, 'test', $3, '{}'::jsonb, NOW(), NOW()) RETURNING id",
@@ -4712,20 +5390,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/mail/read"))
@@ -4759,15 +5441,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn mail_delete_all_route_emits_mail_update_to_target_user() {
+    async fn mail_delete_all_route_emits_mail_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_DELETE_ALL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_MAIL_DELETE_ALL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("mail-delete-all-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_rewards, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '测试邮件1', '请查收', '[]'::jsonb, 'test', $3, '{}'::jsonb, NOW(), NOW()), ($1, $2, 'system', '系统', 'reward', '测试邮件2', '请查收', '[]'::jsonb, 'test', $4, '{}'::jsonb, NOW(), NOW())",
@@ -4789,20 +5477,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/mail/delete-all"))
@@ -4836,15 +5528,19 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn mail_claim_all_route_emits_mail_update_to_target_user() {
+    async fn mail_claim_all_route_emits_mail_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_CLAIM_ALL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_CLAIM_ALL_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("mail-claim-all-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_silver, attach_rewards, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '测试奖励邮件', '请查收', 100, '[]'::jsonb, 'test', $3, '{}'::jsonb, NOW(), NOW())",
@@ -4865,20 +5561,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/mail/claim-all"))
@@ -4912,15 +5612,19 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn mail_claim_route_emits_mail_update_to_target_user() {
+    async fn mail_claim_route_emits_mail_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_CLAIM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_MAIL_CLAIM_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("mail-claim-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let inserted_mail = sqlx::query(
             "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_silver, attach_rewards, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '测试奖励邮件', '请查收', 100, '[]'::jsonb, 'test', $3, '{}'::jsonb, NOW(), NOW()) RETURNING id",
@@ -4942,20 +5646,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/mail/claim"))
@@ -4989,9 +5697,11 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn mail_claim_route_moves_instance_attachments_via_mutation_delta() {
+    async fn mail_claim_route_moves_instance_attachments_via_mutation_delta() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIL_INSTANCE_CLAIM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIL_INSTANCE_CLAIM_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -5037,16 +5747,23 @@ async fn insert_test_sect(
             panic!("TECHNIQUE_RESEARCH_GENERATE_HTTP_RESPONSE={response_text}");
         }
         assert_eq!(response_status, StatusCode::OK);
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-instance-mutation:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("mutation hash should load");
-            println!("MAIL_INSTANCE_CLAIM_MUTATION_HASH={}", serde_json::json!(hash));
+            println!(
+                "MAIL_INSTANCE_CLAIM_MUTATION_HASH={}",
+                serde_json::json!(hash)
+            );
             assert!(!hash.is_empty());
         } else {
             let row = sqlx::query("SELECT location FROM item_instance WHERE id = $1")
@@ -5054,10 +5771,18 @@ async fn insert_test_sect(
                 .fetch_one(&pool)
                 .await
                 .expect("item row should load");
-            println!("MAIL_INSTANCE_CLAIM_FALLBACK_ROW={}", serde_json::json!({
-                "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
-            }));
-            assert_eq!(row.try_get::<Option<String>, _>("location").unwrap_or(None).unwrap_or_default(), "bag");
+            println!(
+                "MAIL_INSTANCE_CLAIM_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
+                })
+            );
+            assert_eq!(
+                row.try_get::<Option<String>, _>("location")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                "bag"
+            );
         }
 
         server.abort();
@@ -5069,9 +5794,11 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn mail_claim_route_redeems_attach_rewards_payload() {
+    async fn mail_claim_route_redeems_attach_rewards_payload() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIL_ATTACH_REWARDS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIL_ATTACH_REWARDS_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -5116,20 +5843,40 @@ async fn insert_test_sect(
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
-        assert!(body["rewards"].as_array().is_some_and(|rewards| rewards.iter().any(|reward| reward["type"] == "spirit_stones" && reward["amount"] == 123)));
-        assert!(body["rewards"].as_array().is_some_and(|rewards| rewards.iter().any(|reward| reward["type"] == "item" && reward["item_def_id"] == "cons-001" && reward["quantity"] == 2)));
+        assert!(body["rewards"].as_array().is_some_and(|rewards| {
+            rewards
+                .iter()
+                .any(|reward| reward["type"] == "spirit_stones" && reward["amount"] == 123)
+        }));
+        assert!(
+            body["rewards"]
+                .as_array()
+                .is_some_and(
+                    |rewards| rewards.iter().any(|reward| reward["type"] == "item"
+                        && reward["item_def_id"] == "cons-001"
+                        && reward["quantity"] == 2)
+                )
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn mail_claim_all_route_redeems_attach_rewards_payload() {
+    async fn mail_claim_all_route_redeems_attach_rewards_payload() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIL_ATTACH_REWARDS_CLAIM_ALL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "MAIL_ATTACH_REWARDS_CLAIM_ALL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("mail-attach-rewards-all-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "mail-attach-rewards-all-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query(
             "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_rewards, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '奖励邮件一', '请领取奖励', $3::jsonb, NOW(), NOW()), ($1, $2, 'system', '系统', 'reward', '奖励邮件二', '请领取奖励', $4::jsonb, NOW(), NOW())",
@@ -5179,15 +5926,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn upload_avatar_local_route_emits_game_character_delta_to_target_user() {
+    async fn upload_avatar_local_route_emits_game_character_delta_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_UPLOAD_AVATAR_LOCAL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_UPLOAD_AVATAR_LOCAL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("upload-avatar-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -5198,32 +5951,41 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let boundary = "X-BOUNDARY-avatar-upload";
         let mut body = Vec::new();
         body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(b"Content-Disposition: form-data; name=\"avatar\"; filename=\"avatar.png\"\r\n");
+        body.extend_from_slice(
+            b"Content-Disposition: form-data; name=\"avatar\"; filename=\"avatar.png\"\r\n",
+        );
         body.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
         body.extend_from_slice(b"fake-image");
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
         let response = client
             .post(format!("http://{address}/api/upload/avatar"))
             .header("authorization", format!("Bearer {}", fixture.token))
-            .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
             .body(body)
             .send()
             .await
@@ -5249,15 +6011,19 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn delete_avatar_route_emits_game_character_delta_to_target_user() {
+    async fn delete_avatar_route_emits_game_character_delta_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_DELETE_AVATAR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_DELETE_AVATAR_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("delete-avatar-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query("UPDATE characters SET avatar = '/uploads/avatars/existing-avatar.png', updated_at = NOW() WHERE id = $1")
             .bind(fixture.character_id)
@@ -5274,20 +6040,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .delete(format!("http://{address}/api/upload/avatar"))
@@ -5316,15 +6086,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn inventory_equip_route_emits_full_game_character_to_target_user() {
+    async fn inventory_equip_route_emits_full_game_character_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_INVENTORY_EQUIP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_INVENTORY_EQUIP_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("inventory-equip-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let equipped_item_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at) VALUES ($1, $2, 'equip-weapon-001', 1, 'none', 'bag', 0, NOW(), NOW()) RETURNING id",
@@ -5346,20 +6122,24 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/inventory/equip"))
@@ -5394,15 +6174,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn inventory_unequip_route_emits_full_game_character_to_target_user() {
+    async fn inventory_unequip_route_emits_full_game_character_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_INVENTORY_UNEQUIP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_INVENTORY_UNEQUIP_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("inventory-unequip-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let equipped_item_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, equipped_slot, created_at, updated_at) VALUES ($1, $2, 'equip-weapon-001', 1, 'equip', 'equipped', 'weapon', NOW(), NOW()) RETURNING id",
@@ -5424,26 +6210,32 @@ async fn insert_test_sect(
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/inventory/unequip"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemId\":{equipped_item_id},\"targetLocation\":\"bag\"}}"))
+            .body(format!(
+                "{{\"itemId\":{equipped_item_id},\"targetLocation\":\"bag\"}}"
+            ))
             .send()
             .await
             .expect("inventory unequip request should succeed");
@@ -5472,13 +6264,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn inventory_reroll_cost_preview_route_returns_cost_table() {
+    async fn inventory_reroll_cost_preview_route_returns_cost_table() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_REROLL_COST_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_REROLL_COST_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-reroll-cost-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-reroll-cost-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, location, location_slot, affixes, created_at, updated_at) VALUES ($1, $2, 'equip-weapon-001', 1, '黄', 1, 'bag', 0, '[{\"key\":\"wugong_flat\",\"name\":\"物攻+\",\"applyType\":\"flat\",\"tier\":1,\"value\":12},{\"key\":\"max_qixue_flat\",\"name\":\"气血+\",\"applyType\":\"flat\",\"tier\":1,\"value\":24}]'::jsonb, NOW(), NOW()) RETURNING id",
@@ -5496,7 +6296,9 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/inventory/reroll-affixes/cost-preview"))
+            .post(format!(
+                "http://{address}/api/inventory/reroll-affixes/cost-preview"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemId\":{item_id}}}"))
@@ -5507,8 +6309,7 @@ async fn insert_test_sect(
         let response_text = response.text().await.expect("body should read");
         println!("TECHNIQUE_RESEARCH_GENERATE_HTTP_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         println!("INVENTORY_REROLL_COST_PREVIEW_RESPONSE={body}");
 
@@ -5525,13 +6326,21 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn inventory_reroll_pool_preview_route_returns_affix_pool_shape() {
+    async fn inventory_reroll_pool_preview_route_returns_affix_pool_shape() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_REROLL_POOL_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_REROLL_POOL_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-reroll-pool-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-reroll-pool-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, location, location_slot, affixes, created_at, updated_at) VALUES ($1, $2, 'equip-weapon-001', 1, '黄', 1, 'bag', 0, '[{\"key\":\"wugong_flat\",\"name\":\"物攻+\",\"applyType\":\"flat\",\"tier\":1,\"value\":12}]'::jsonb, NOW(), NOW()) RETURNING id",
@@ -5549,7 +6358,9 @@ async fn insert_test_sect(
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/inventory/reroll-affixes/pool-preview"))
+            .post(format!(
+                "http://{address}/api/inventory/reroll-affixes/pool-preview"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemId\":{item_id}}}"))
@@ -5569,7 +6380,11 @@ async fn insert_test_sect(
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["poolName"], "装备总词条池");
-        assert!(body["data"]["affixes"].as_array().is_some_and(|items| !items.is_empty()));
+        assert!(
+            body["data"]["affixes"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        );
         assert_eq!(body["data"]["affixes"][0]["owned"].is_boolean(), true);
         assert_eq!(body["data"]["affixes"][0]["tiers"].is_array(), true);
 
@@ -5577,13 +6392,19 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn inventory_reroll_route_updates_affixes_and_consumes_costs() {
+    async fn inventory_reroll_route_updates_affixes_and_consumes_costs() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_REROLL_EXECUTE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_REROLL_EXECUTE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-reroll-exec-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-reroll-exec-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET silver = 500000, spirit_stones = 5000 WHERE id = $1")
             .bind(fixture.character_id)
@@ -5626,17 +6447,21 @@ async fn insert_test_sect(
         if response_status != StatusCode::OK {
             panic!("TECHNIQUE_RESEARCH_GENERATE_HTTP_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         let item_row = sqlx::query("SELECT affixes FROM item_instance WHERE id = $1")
             .bind(item_id)
             .fetch_one(&pool)
             .await
             .expect("rerolled item should exist");
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let mutation_hash = redis
-            .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-instance-mutation:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
 
@@ -5646,24 +6471,53 @@ async fn insert_test_sect(
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["lockIndexes"][0], 0);
-        assert_eq!(body["data"]["costs"]["rerollScroll"]["itemDefId"], "scroll-003");
+        assert_eq!(
+            body["data"]["costs"]["rerollScroll"]["itemDefId"],
+            "scroll-003"
+        );
         assert_eq!(body["data"]["costs"]["rerollScroll"]["qty"], 2);
-        assert_eq!(body["data"]["affixes"].as_array().map(|items| items.len()).unwrap_or_default(), 2);
-        assert_eq!(item_row.try_get::<Option<serde_json::Value>, _>("affixes").unwrap_or(None).unwrap_or_default().as_array().map(|items| items.len()).unwrap_or_default(), 2);
-        println!("INVENTORY_REROLL_EXECUTE_MUTATION_HASH={}", serde_json::json!(mutation_hash));
+        assert_eq!(
+            body["data"]["affixes"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            2
+        );
+        assert_eq!(
+            item_row
+                .try_get::<Option<serde_json::Value>, _>("affixes")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            2
+        );
+        println!(
+            "INVENTORY_REROLL_EXECUTE_MUTATION_HASH={}",
+            serde_json::json!(mutation_hash)
+        );
         assert!(mutation_hash.is_empty());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_reroll_on_equipped_item_clears_online_battle_projection() {
+    async fn inventory_reroll_on_equipped_item_clears_online_battle_projection() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_REROLL_EQUIPPED_PROJECTION_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_REROLL_EQUIPPED_PROJECTION_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-reroll-equipped-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-reroll-equipped-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET silver = 500000, spirit_stones = 5000 WHERE id = $1")
             .bind(fixture.character_id)
@@ -5689,13 +6543,15 @@ async fn insert_test_sect(
         .await
         .expect("reroll scroll should insert");
 
-        state.online_battle_projections.register(OnlineBattleProjectionRecord {
-            battle_id: format!("battle-reroll-{suffix}"),
-            owner_user_id: fixture.user_id,
-            participant_user_ids: vec![fixture.user_id],
-            r#type: "pvp".to_string(),
-            session_id: Some(format!("session-reroll-{suffix}")),
-        });
+        state
+            .online_battle_projections
+            .register(OnlineBattleProjectionRecord {
+                battle_id: format!("battle-reroll-{suffix}"),
+                owner_user_id: fixture.user_id,
+                participant_user_ids: vec![fixture.user_id],
+                r#type: "pvp".to_string(),
+                session_id: Some(format!("session-reroll-{suffix}")),
+            });
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -5721,15 +6577,23 @@ async fn insert_test_sect(
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(state.online_battle_projections.get_current_for_user(fixture.user_id).is_none());
+        assert!(
+            state
+                .online_battle_projections
+                .get_current_for_user(fixture.user_id)
+                .is_none()
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_craft_execute_route_supports_non_whitelisted_seed_recipe() {
+    async fn inventory_craft_execute_route_supports_non_whitelisted_seed_recipe() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_CRAFT_EXECUTE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_CRAFT_EXECUTE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -5764,11 +6628,12 @@ async fn insert_test_sect(
         let response_status = response.status();
         let response_text = response.text().await.expect("body should read");
         if response_status != StatusCode::OK {
-            let currency_row = sqlx::query("SELECT silver, spirit_stones FROM characters WHERE id = $1")
-                .bind(fixture.character_id)
-                .fetch_one(&pool)
-                .await
-                .expect("character currencies should query");
+            let currency_row =
+                sqlx::query("SELECT silver, spirit_stones FROM characters WHERE id = $1")
+                    .bind(fixture.character_id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("character currencies should query");
             let material_row = sqlx::query("SELECT COALESCE(SUM(qty), 0)::bigint AS qty FROM item_instance WHERE owner_character_id = $1 AND item_def_id = 'mat-002'")
                 .bind(fixture.character_id)
                 .fetch_one(&pool)
@@ -5776,9 +6641,18 @@ async fn insert_test_sect(
                 .expect("craft material qty should query");
             println!(
                 "INVENTORY_CRAFT_EXECUTE_STATE={{\"silver\":{},\"spiritStones\":{},\"mat002Qty\":{}}}",
-                currency_row.try_get::<Option<i64>, _>("silver").unwrap_or(None).unwrap_or_default(),
-                currency_row.try_get::<Option<i64>, _>("spirit_stones").unwrap_or(None).unwrap_or_default(),
-                material_row.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(),
+                currency_row
+                    .try_get::<Option<i64>, _>("silver")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                currency_row
+                    .try_get::<Option<i64>, _>("spirit_stones")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                material_row
+                    .try_get::<Option<i64>, _>("qty")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
             );
             panic!("INVENTORY_CRAFT_EXECUTE_RESPONSE={response_text}");
         }
@@ -5790,14 +6664,22 @@ async fn insert_test_sect(
             .fetch_optional(&pool)
             .await
             .expect("crafted item query should succeed");
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let mutation_hash = redis
-            .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-instance-mutation:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
 
         println!("INVENTORY_CRAFT_EXECUTE_ROUTE_RESPONSE={body}");
-        println!("INVENTORY_CRAFT_EXECUTE_MUTATION_HASH={}", serde_json::json!(mutation_hash));
+        println!(
+            "INVENTORY_CRAFT_EXECUTE_MUTATION_HASH={}",
+            serde_json::json!(mutation_hash)
+        );
 
         server.abort();
 
@@ -5806,24 +6688,61 @@ async fn insert_test_sect(
         assert_eq!(body["data"]["produced"]["itemDefId"], "equip-weapon-001");
         assert_eq!(body["data"]["successCount"], 1);
         let produced_row = produced_row.expect("crafted item should exist");
-        assert_eq!(produced_row.try_get::<Option<String>, _>("item_def_id").unwrap_or(None).unwrap_or_default(), "equip-weapon-001");
-        assert_eq!(produced_row.try_get::<Option<i32>, _>("qty").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
-        assert_eq!(produced_row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None).unwrap_or_default(), "craft");
-        assert_eq!(produced_row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None).unwrap_or_default(), "recipe-xin-shou-jian");
-        assert!(body["data"]["spent"]["items"].as_array().is_some_and(|items| items.iter().any(|item| item["itemDefId"] == "mat-002" && item["qty"] == 3)));
+        assert_eq!(
+            produced_row
+                .try_get::<Option<String>, _>("item_def_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "equip-weapon-001"
+        );
+        assert_eq!(
+            produced_row
+                .try_get::<Option<i32>, _>("qty")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            produced_row
+                .try_get::<Option<String>, _>("obtained_from")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "craft"
+        );
+        assert_eq!(
+            produced_row
+                .try_get::<Option<String>, _>("obtained_ref_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "recipe-xin-shou-jian"
+        );
+        assert!(
+            body["data"]["spent"]["items"]
+                .as_array()
+                .is_some_and(|items| items
+                    .iter()
+                    .any(|item| item["itemDefId"] == "mat-002" && item["qty"] == 3))
+        );
         assert!(mutation_hash.is_empty());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn main_quest_craft_item_event_advances_matching_section_to_turnin() {
+    async fn main_quest_craft_item_event_advances_matching_section_to_turnin() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIN_QUEST_CRAFT_ITEM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIN_QUEST_CRAFT_ITEM_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("main-quest-craft-item-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "main-quest-craft-item-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query(
             "INSERT INTO character_main_quest_progress (character_id, current_chapter_id, current_section_id, section_status, objectives_progress, dialogue_state, completed_chapters, completed_sections, tracked, updated_at) VALUES ($1, 'mq-chapter-1', 'main-1-010', 'objectives', '{\"obj-1\":1}'::jsonb, '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, true, NOW())",
@@ -5874,13 +6793,19 @@ async fn insert_test_sect(
     }
 
     #[tokio::test]
-        async fn inventory_craft_execute_route_advances_main_quest_craft_item_objective() {
+    async fn inventory_craft_execute_route_advances_main_quest_craft_item_objective() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_CRAFT_MAIN_QUEST_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_CRAFT_MAIN_QUEST_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-craft-main-quest-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-craft-main-quest-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET silver = 100, spirit_stones = 0, exp = 0, realm = '炼精化炁·凝炁期' WHERE id = $1")
             .bind(fixture.character_id)
@@ -5945,35 +6870,83 @@ async fn insert_test_sect(
         assert_eq!(body["data"]["recipeId"], "recipe-hui-qi-dan");
         assert_eq!(body["data"]["produced"]["itemDefId"], "cons-002");
         assert_eq!(body["data"]["successCount"], 1);
-        assert_eq!(quest_row.try_get::<Option<String>, _>("section_status").unwrap_or(None).unwrap_or_default(), "turnin");
-        assert_eq!(quest_row.try_get::<Option<Value>, _>("objectives_progress").unwrap_or(None).unwrap_or_else(|| serde_json::json!({}))["obj-2"], 1);
-        assert_eq!(crafted_row.try_get::<Option<String>, _>("item_def_id").unwrap_or(None).unwrap_or_default(), "cons-002");
-        assert_eq!(crafted_row.try_get::<Option<i32>, _>("qty").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
-        assert_eq!(crafted_row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None).unwrap_or_default(), "craft");
-        assert_eq!(crafted_row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None).unwrap_or_default(), "recipe-hui-qi-dan");
+        assert_eq!(
+            quest_row
+                .try_get::<Option<String>, _>("section_status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "turnin"
+        );
+        assert_eq!(
+            quest_row
+                .try_get::<Option<Value>, _>("objectives_progress")
+                .unwrap_or(None)
+                .unwrap_or_else(|| serde_json::json!({}))["obj-2"],
+            1
+        );
+        assert_eq!(
+            crafted_row
+                .try_get::<Option<String>, _>("item_def_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "cons-002"
+        );
+        assert_eq!(
+            crafted_row
+                .try_get::<Option<i32>, _>("qty")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            crafted_row
+                .try_get::<Option<String>, _>("obtained_from")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "craft"
+        );
+        assert_eq!(
+            crafted_row
+                .try_get::<Option<String>, _>("obtained_ref_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "recipe-hui-qi-dan"
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
-
     #[tokio::test]
-        async fn inventory_use_partner_rebone_elixir_creates_pending_rebone_job() {
+    async fn inventory_use_partner_rebone_elixir_creates_pending_rebone_job() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_PARTNER_REBONE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_USE_PARTNER_REBONE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("inventory-rebone-use-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let partner_def_id = format!("generated-rebone-item-partner-{suffix}");
-sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·青木灵伴', '测试动态伙伴', NULL, '玄', 'wood', 'support', 1, '{\"max_qixue\":120,\"wugong\":20,\"fagong\":12,\"wufang\":10,\"fafang\":10,\"sudu\":8}'::jsonb, '{\"max_qixue\":8,\"wugong\":2,\"fagong\":2,\"wufang\":1,\"fafang\":1,\"sudu\":1}'::jsonb, ARRAY[]::text[], TRUE, $2, $3, NOW(), NOW())")
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·青木灵伴', '测试动态伙伴', NULL, '玄', 'wood', 'support', 1, '{\"max_qixue\":120,\"wugong\":20,\"fagong\":12,\"wufang\":10,\"fafang\":10,\"sudu\":8}'::jsonb, '{\"max_qixue\":8,\"wugong\":2,\"fagong\":2,\"wufang\":1,\"fafang\":1,\"sudu\":1}'::jsonb, ARRAY[]::text[], TRUE, $2, $3, NOW(), NOW())")
             .bind(&partner_def_id)
             .bind(fixture.character_id)
             .bind(format!("partner-recruit-{suffix}"))
             .execute(&pool)
             .await
             .expect("generated partner def should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·青木灵伴",
+            false,
+        )
+        .await;
         sqlx::query("UPDATE character_partner SET growth_max_qixue = 120, growth_wugong = 20, growth_fagong = 12, growth_wufang = 10, growth_fafang = 10, growth_sudu = 8 WHERE id = $1")
             .bind(partner_id)
             .execute(&pool)
@@ -5998,7 +6971,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/inventory/use"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemId\":{},\"qty\":1,\"partnerId\":{}}}", item_instance_id, partner_id))
+            .body(format!(
+                "{{\"itemId\":{},\"qty\":1,\"partnerId\":{}}}",
+                item_instance_id, partner_id
+            ))
             .send()
             .await
             .expect("inventory use should succeed");
@@ -6007,8 +6983,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         if response_status != StatusCode::OK {
             panic!("BATTLE_PASS_CLAIM_ROUTE_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
         let rebone_id = body["data"]["partnerReboneJob"]["reboneId"]
             .as_str()
             .expect("rebone id should exist")
@@ -6026,22 +7001,54 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["partnerReboneJob"]["partnerId"], partner_id);
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "pending");
-        assert_eq!(job_row.try_get::<Option<i32>, _>("partner_id").unwrap_or(None).map(i64::from).unwrap_or_default(), partner_id);
-        assert_eq!(job_row.try_get::<Option<String>, _>("item_def_id").unwrap_or(None).unwrap_or_default(), "cons-partner-rebone-001");
-        assert_eq!(job_row.try_get::<Option<i32>, _>("item_qty").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "pending"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<i32>, _>("partner_id")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            partner_id
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("item_def_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "cons-partner-rebone-001"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<i32>, _>("item_qty")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_use_battle_pass_card_unlocks_premium_track() {
+    async fn inventory_use_battle_pass_card_unlocks_premium_track() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_BATTLE_PASS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_USE_BATTLE_PASS_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-battlepass-use-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-battlepass-use-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_instance_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-battlepass-001', 1, 'pickup', 'bag', 0, NOW(), NOW(), 'test') RETURNING id",
@@ -6071,8 +7078,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         if response_status != StatusCode::OK {
             panic!("BATTLE_PASS_CLAIM_ROUTE_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         let progress_row = sqlx::query("SELECT premium_unlocked FROM battle_pass_progress WHERE character_id = $1 AND season_id = 'bp-season-001'")
             .bind(fixture.character_id)
@@ -6085,18 +7091,31 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("consumed item query should succeed")
             .is_some();
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let mutation_hash = redis
-            .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-instance-mutation:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
         println!("INVENTORY_USE_BATTLE_PASS_RESPONSE={body}");
-        println!("INVENTORY_USE_BATTLE_PASS_MUTATION_HASH={}", serde_json::json!(mutation_hash));
+        println!(
+            "INVENTORY_USE_BATTLE_PASS_MUTATION_HASH={}",
+            serde_json::json!(mutation_hash)
+        );
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert_eq!(progress_row.try_get::<Option<bool>, _>("premium_unlocked").unwrap_or(None), Some(true));
+        assert_eq!(
+            progress_row
+                .try_get::<Option<bool>, _>("premium_unlocked")
+                .unwrap_or(None),
+            Some(true)
+        );
         assert!(!consumed_item_exists);
         assert!(mutation_hash.is_empty());
 
@@ -6104,9 +7123,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_pass_claim_route_buffers_reward_deltas_when_redis_available() {
+    async fn battle_pass_claim_route_buffers_reward_deltas_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_PASS_CLAIM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "BATTLE_PASS_CLAIM_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -6140,27 +7161,47 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("character realm should query");
-            println!("INVENTORY_USE_LINGQI_REALM_STATE={{\"realm\":\"{}\",\"subRealm\":\"{}\"}}",
-                realm_row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                realm_row.try_get::<Option<String>, _>("sub_realm").unwrap_or(None).unwrap_or_default(),
+            println!(
+                "INVENTORY_USE_LINGQI_REALM_STATE={{\"realm\":\"{}\",\"subRealm\":\"{}\"}}",
+                realm_row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("sub_realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
             );
             panic!("INVENTORY_USE_LINGQI_SPEED_PILL_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let resource_hash = redis
-                .hgetall(&format!("character:resource-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:resource-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("resource delta hash should load");
             let item_hash = redis
-                .hgetall(&format!("character:item-grant-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-grant-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("item grant delta hash should load");
-            println!("BATTLE_PASS_CLAIM_RESOURCE_DELTA={}", serde_json::json!(resource_hash));
-            println!("BATTLE_PASS_CLAIM_ITEM_DELTA={}", serde_json::json!(item_hash));
+            println!(
+                "BATTLE_PASS_CLAIM_RESOURCE_DELTA={}",
+                serde_json::json!(resource_hash)
+            );
+            println!(
+                "BATTLE_PASS_CLAIM_ITEM_DELTA={}",
+                serde_json::json!(item_hash)
+            );
             assert!(!resource_hash.is_empty() || !item_hash.is_empty());
         } else {
             let reward_item = sqlx::query("SELECT item_def_id FROM item_instance WHERE owner_character_id = $1 ORDER BY id DESC LIMIT 1")
@@ -6168,9 +7209,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_optional(&pool)
                 .await
                 .expect("reward item query should work");
-            println!("BATTLE_PASS_CLAIM_FALLBACK_ROW={}", serde_json::json!({
-                "hasRewardItem": reward_item.is_some(),
-            }));
+            println!(
+                "BATTLE_PASS_CLAIM_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "hasRewardItem": reward_item.is_some(),
+                })
+            );
         }
 
         server.abort();
@@ -6182,9 +7226,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn main_quest_section_complete_route_buffers_reward_deltas_when_redis_available() {
+    async fn main_quest_section_complete_route_buffers_reward_deltas_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIN_QUEST_COMPLETE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIN_QUEST_COMPLETE_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -6218,25 +7264,45 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .expect("character realm should query");
             println!(
                 "INVENTORY_USE_LINGQI_REALM_STATE={{\"realm\":\"{}\",\"subRealm\":\"{}\"}}",
-                realm_row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                realm_row.try_get::<Option<String>, _>("sub_realm").unwrap_or(None).unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("sub_realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
             );
             panic!("INVENTORY_USE_LINGQI_SPEED_PILL_RESPONSE={response_text}");
         }
         let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let resource_hash = redis
-                .hgetall(&format!("character:resource-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:resource-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("resource delta hash should load");
             let item_hash = redis
-                .hgetall(&format!("character:item-grant-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-grant-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("item grant delta hash should load");
-            println!("MAIN_QUEST_COMPLETE_RESOURCE_DELTA={}", serde_json::json!(resource_hash));
-            println!("MAIN_QUEST_COMPLETE_ITEM_DELTA={}", serde_json::json!(item_hash));
+            println!(
+                "MAIN_QUEST_COMPLETE_RESOURCE_DELTA={}",
+                serde_json::json!(resource_hash)
+            );
+            println!(
+                "MAIN_QUEST_COMPLETE_ITEM_DELTA={}",
+                serde_json::json!(item_hash)
+            );
             assert!(!resource_hash.is_empty() || !item_hash.is_empty());
         } else {
             let reward_item = sqlx::query("SELECT item_def_id FROM item_instance WHERE owner_character_id = $1 ORDER BY id DESC LIMIT 1")
@@ -6244,9 +7310,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_optional(&pool)
                 .await
                 .expect("reward item query should work");
-            println!("MAIN_QUEST_COMPLETE_FALLBACK_ROW={}", serde_json::json!({
-                "hasRewardItem": reward_item.is_some(),
-            }));
+            println!(
+                "MAIN_QUEST_COMPLETE_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "hasRewardItem": reward_item.is_some(),
+                })
+            );
         }
 
         server.abort();
@@ -6258,9 +7327,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn main_quest_dialogue_advance_route_buffers_reward_deltas_when_redis_available() {
+    async fn main_quest_dialogue_advance_route_buffers_reward_deltas_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIN_QUEST_DIALOGUE_REWARD_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIN_QUEST_DIALOGUE_REWARD_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -6295,16 +7367,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("dialogue advance request should succeed");
         assert_eq!(advance_response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&advance_response.text().await.expect("body should read"))
-            .expect("body should be json");
+        let body: Value =
+            serde_json::from_str(&advance_response.text().await.expect("body should read"))
+                .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let item_hash = redis
-                .hgetall(&format!("character:item-grant-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-grant-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("item grant delta hash should load");
-            println!("MAIN_QUEST_DIALOGUE_ITEM_DELTA={}", serde_json::json!(item_hash));
+            println!(
+                "MAIN_QUEST_DIALOGUE_ITEM_DELTA={}",
+                serde_json::json!(item_hash)
+            );
             assert!(!item_hash.is_empty());
         } else {
             let reward_items = sqlx::query("SELECT item_def_id FROM item_instance WHERE owner_character_id = $1 ORDER BY id DESC")
@@ -6312,7 +7393,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_all(&pool)
                 .await
                 .expect("reward items query should work");
-            println!("MAIN_QUEST_DIALOGUE_FALLBACK_ITEMS={}", serde_json::json!(reward_items.iter().filter_map(|row| row.try_get::<Option<String>, _>("item_def_id").ok().flatten()).collect::<Vec<_>>()));
+            println!(
+                "MAIN_QUEST_DIALOGUE_FALLBACK_ITEMS={}",
+                serde_json::json!(
+                    reward_items
+                        .iter()
+                        .filter_map(|row| row
+                            .try_get::<Option<String>, _>("item_def_id")
+                            .ok()
+                            .flatten())
+                        .collect::<Vec<_>>()
+                )
+            );
             assert!(!reward_items.is_empty());
         }
 
@@ -6325,13 +7417,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_use_month_card_item_creates_month_card_ownership() {
+    async fn inventory_use_month_card_item_creates_month_card_ownership() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_MONTH_CARD_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_USE_MONTH_CARD_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-monthcard-use-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-monthcard-use-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_instance_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-monthcard-001', 1, 'none', 'bag', 0, NOW(), NOW(), 'test') RETURNING id",
@@ -6366,13 +7464,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .expect("character realm should query");
             println!(
                 "INVENTORY_USE_LINGQI_REALM_STATE={{\"realm\":\"{}\",\"subRealm\":\"{}\"}}",
-                realm_row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                realm_row.try_get::<Option<String>, _>("sub_realm").unwrap_or(None).unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("sub_realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
             );
             panic!("INVENTORY_USE_LINGQI_SPEED_PILL_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         let ownership_row = sqlx::query("SELECT month_card_id, expire_at::text AS expire_at_text FROM month_card_ownership WHERE character_id = $1 AND month_card_id = 'monthcard-001'")
             .bind(fixture.character_id)
@@ -6390,17 +7493,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert_eq!(ownership_row.try_get::<Option<String>, _>("month_card_id").unwrap_or(None).unwrap_or_default(), "monthcard-001");
-        assert!(ownership_row.try_get::<Option<String>, _>("expire_at_text").unwrap_or(None).is_some());
+        assert_eq!(
+            ownership_row
+                .try_get::<Option<String>, _>("month_card_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "monthcard-001"
+        );
+        assert!(
+            ownership_row
+                .try_get::<Option<String>, _>("expire_at_text")
+                .unwrap_or(None)
+                .is_some()
+        );
         assert!(item_exists.is_none());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn monthcard_claim_route_buffers_resource_delta_when_redis_available() {
+    async fn monthcard_claim_route_buffers_resource_delta_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MONTHCARD_CLAIM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MONTHCARD_CLAIM_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -6433,9 +7549,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:resource-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:resource-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("resource delta hash should load");
             println!("MONTHCARD_CLAIM_RESOURCE_DELTA={}", serde_json::json!(hash));
@@ -6446,9 +7567,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("character row should load");
-            println!("MONTHCARD_CLAIM_FALLBACK_ROW={}", serde_json::json!({
-                "spiritStones": row.try_get::<Option<i64>, _>("spirit_stones").unwrap_or(None),
-            }));
+            println!(
+                "MONTHCARD_CLAIM_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "spiritStones": row.try_get::<Option<i64>, _>("spirit_stones").unwrap_or(None),
+                })
+            );
         }
 
         server.abort();
@@ -6460,9 +7584,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_use_buff_pill_creates_global_buff_row() {
+    async fn inventory_use_buff_pill_creates_global_buff_row() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_BUFF_PILL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_USE_BUFF_PILL_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -6501,13 +7628,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .expect("character realm should query");
             println!(
                 "INVENTORY_USE_LINGQI_REALM_STATE={{\"realm\":\"{}\",\"subRealm\":\"{}\"}}",
-                realm_row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                realm_row.try_get::<Option<String>, _>("sub_realm").unwrap_or(None).unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("sub_realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
             );
             panic!("INVENTORY_USE_LINGQI_SPEED_PILL_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         let buff_row = sqlx::query("SELECT buff_key, source_type, buff_value::text AS buff_value_text FROM character_global_buff WHERE character_id = $1 AND source_type = 'item_use' ORDER BY created_at DESC LIMIT 1")
             .bind(fixture.character_id)
@@ -6520,17 +7652,39 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert_eq!(buff_row.try_get::<Option<String>, _>("buff_key").unwrap_or(None).unwrap_or_default(), "wugong_flat");
-        assert_eq!(buff_row.try_get::<Option<String>, _>("source_type").unwrap_or(None).unwrap_or_default(), "item_use");
-        assert_eq!(buff_row.try_get::<Option<String>, _>("buff_value_text").unwrap_or(None).unwrap_or_default(), "10.000");
+        assert_eq!(
+            buff_row
+                .try_get::<Option<String>, _>("buff_key")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "wugong_flat"
+        );
+        assert_eq!(
+            buff_row
+                .try_get::<Option<String>, _>("source_type")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "item_use"
+        );
+        assert_eq!(
+            buff_row
+                .try_get::<Option<String>, _>("buff_value_text")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "10.000"
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_use_loot_box_persists_reward_items_and_currency_immediately_when_redis_available() {
+    async fn inventory_use_loot_box_persists_reward_items_and_currency_immediately_when_redis_available()
+     {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_LOOT_BOX_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_USE_LOOT_BOX_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -6589,13 +7743,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("consumed loot box query should succeed")
             .is_some();
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let item_grant_hash = redis
-            .hgetall(&format!("character:item-grant-delta:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-grant-delta:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
         let resource_hash = redis
-            .hgetall(&format!("character:resource-delta:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:resource-delta:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
 
@@ -6604,10 +7766,34 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert_eq!(silver_row.try_get::<Option<i64>, _>("silver").unwrap_or(None).unwrap_or_default(), 100);
-        assert_eq!(weapon_count_row.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(), 1);
-        assert_eq!(cons001_count_row.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(), 10);
-        assert_eq!(cons002_count_row.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(), 10);
+        assert_eq!(
+            silver_row
+                .try_get::<Option<i64>, _>("silver")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            100
+        );
+        assert_eq!(
+            weapon_count_row
+                .try_get::<Option<i64>, _>("qty")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            cons001_count_row
+                .try_get::<Option<i64>, _>("qty")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            10
+        );
+        assert_eq!(
+            cons002_count_row
+                .try_get::<Option<i64>, _>("qty")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            10
+        );
         assert!(!loot_box_exists);
         assert!(item_grant_hash.is_empty());
         assert!(resource_hash.is_empty());
@@ -6616,13 +7802,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_use_mortal_gem_bag_consumes_source_and_grants_gem_immediately_when_redis_available() {
+    async fn inventory_use_mortal_gem_bag_consumes_source_and_grants_gem_immediately_when_redis_available()
+     {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_MORTAL_GEM_BAG_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_USE_MORTAL_GEM_BAG_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-mortal-gem-bag-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-mortal-gem-bag-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_instance_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'box-006', 1, 'none', 'bag', 0, NOW(), NOW(), 'test') RETURNING id",
@@ -6669,13 +7864,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("source gem bag query should succeed")
             .is_some();
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let mutation_hash = redis
-            .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-instance-mutation:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
         let item_grant_hash = redis
-            .hgetall(&format!("character:item-grant-delta:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-grant-delta:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
 
@@ -6685,7 +7888,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(body["success"], true);
         assert!(!rewarded_gem_id.is_empty());
-        assert_eq!(rewarded_gem_qty.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(), 1);
+        assert_eq!(
+            rewarded_gem_qty
+                .try_get::<Option<i64>, _>("qty")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            1
+        );
         assert!(!source_exists);
         assert!(mutation_hash.is_empty());
         assert!(item_grant_hash.is_empty());
@@ -6694,13 +7903,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn generated_technique_detail_route_returns_generated_definition_after_book_use() {
+    async fn generated_technique_detail_route_returns_generated_definition_after_book_use() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GENERATED_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GENERATED_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("generated-tech-detail-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "generated-tech-detail-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let generated_technique_id = format!("gen-tech-{}", fixture.character_id);
         let book_id = sqlx::query(
@@ -6763,23 +7978,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(use_response.status(), StatusCode::OK);
 
         let preview_response = client
-            .get(format!("http://{address}/api/technique/{generated_technique_id}"))
+            .get(format!(
+                "http://{address}/api/technique/{generated_technique_id}"
+            ))
             .send()
             .await
             .expect("generated technique preview should succeed");
         assert_eq!(preview_response.status(), StatusCode::OK);
-        let preview_body: Value = serde_json::from_str(&preview_response.text().await.expect("body should read"))
-            .expect("preview body should be json");
+        let preview_body: Value =
+            serde_json::from_str(&preview_response.text().await.expect("body should read"))
+                .expect("preview body should be json");
 
         let detail_response = client
-            .get(format!("http://{address}/api/technique/{generated_technique_id}"))
+            .get(format!(
+                "http://{address}/api/technique/{generated_technique_id}"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("generated technique learned detail should succeed");
         assert_eq!(detail_response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&detail_response.text().await.expect("body should read"))
-            .expect("detail body should be json");
+        let body: Value =
+            serde_json::from_str(&detail_response.text().await.expect("body should read"))
+                .expect("detail body should be json");
 
         println!("GENERATED_TECHNIQUE_DETAIL_RESPONSE={body}");
 
@@ -6788,10 +8009,34 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(preview_body["success"], true);
         assert_eq!(preview_body["data"]["layers"][0]["cost_spirit_stones"], 0);
         assert_eq!(preview_body["data"]["layers"][0]["cost_exp"], 0);
-        assert_eq!(preview_body["data"]["layers"][0]["cost_materials"].as_array().map(|items| items.len()).unwrap_or_default(), 0);
-        assert_eq!(preview_body["data"]["layers"][0]["passives"].as_array().map(|items| items.len()).unwrap_or_default(), 0);
-        assert_eq!(preview_body["data"]["layers"][0]["unlock_skill_ids"].as_array().map(|items| items.len()).unwrap_or_default(), 0);
-        assert_eq!(preview_body["data"]["layers"][0]["upgrade_skill_ids"].as_array().map(|items| items.len()).unwrap_or_default(), 0);
+        assert_eq!(
+            preview_body["data"]["layers"][0]["cost_materials"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            preview_body["data"]["layers"][0]["passives"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            preview_body["data"]["layers"][0]["unlock_skill_ids"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            preview_body["data"]["layers"][0]["upgrade_skill_ids"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            0
+        );
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["technique"]["id"], generated_technique_id);
         assert_eq!(body["data"]["technique"]["name"], "青木诀·真传");
@@ -6801,17 +8046,47 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(body["data"]["technique"]["sort_weight"], 100);
         assert_eq!(body["data"]["layers"][0]["layer"], 1);
         assert_eq!(body["data"]["layers"][0]["cost_spirit_stones"], 200);
-        assert_eq!(body["data"]["layers"][0]["unlock_skill_ids"][0], format!("skill-{generated_technique_id}"));
-        assert_eq!(body["data"]["layers"][0]["cost_materials"][0]["itemId"], "mat-001");
-        assert_eq!(body["data"]["layers"][0]["cost_materials"][0]["itemName"], "灵草");
-        assert!(body["data"]["layers"][0]["cost_materials"][0].get("item_name").is_none());
-        let skills = body["data"]["skills"].as_array().cloned().unwrap_or_default();
-        let active_skill = skills.iter().find(|skill| skill["id"] == format!("skill-{generated_technique_id}")).cloned().unwrap_or_default();
-        let passive_skill = skills.iter().find(|skill| skill["id"] == format!("skill-passive-{generated_technique_id}")).cloned().unwrap_or_default();
+        assert_eq!(
+            body["data"]["layers"][0]["unlock_skill_ids"][0],
+            format!("skill-{generated_technique_id}")
+        );
+        assert_eq!(
+            body["data"]["layers"][0]["cost_materials"][0]["itemId"],
+            "mat-001"
+        );
+        assert_eq!(
+            body["data"]["layers"][0]["cost_materials"][0]["itemName"],
+            "灵草"
+        );
+        assert!(
+            body["data"]["layers"][0]["cost_materials"][0]
+                .get("item_name")
+                .is_none()
+        );
+        let skills = body["data"]["skills"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let active_skill = skills
+            .iter()
+            .find(|skill| skill["id"] == format!("skill-{generated_technique_id}"))
+            .cloned()
+            .unwrap_or_default();
+        let passive_skill = skills
+            .iter()
+            .find(|skill| skill["id"] == format!("skill-passive-{generated_technique_id}"))
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(active_skill["name"], "青木斩");
         assert_eq!(active_skill["trigger_type"], "active");
         assert_eq!(active_skill["cooldown"], 1);
-        assert_eq!(active_skill["upgrades"].as_array().map(|items| items.len()).unwrap_or_default(), 0);
+        assert_eq!(
+            active_skill["upgrades"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            0
+        );
         assert_eq!(passive_skill["trigger_type"], "passive");
         assert_eq!(passive_skill["cooldown"], 0);
 
@@ -6819,13 +8094,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn generated_technique_detail_hides_partner_only_definition_from_character_routes() {
+    async fn generated_technique_detail_hides_partner_only_definition_from_character_routes() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GENERATED_TECHNIQUE_PARTNER_ONLY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GENERATED_TECHNIQUE_PARTNER_ONLY_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("generated-tech-partner-only-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "generated-tech-partner-only-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let generated_technique_id = format!("gen-tech-partner-{}", fixture.character_id);
         sqlx::query(
@@ -6861,11 +8144,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("partner-only generated technique book use should respond");
         let use_status = use_response.status();
-        let use_body: Value = serde_json::from_str(&use_response.text().await.expect("use body should read"))
-            .expect("use body should be json");
+        let use_body: Value =
+            serde_json::from_str(&use_response.text().await.expect("use body should read"))
+                .expect("use body should be json");
 
         let detail_response = client
-            .get(format!("http://{address}/api/technique/{generated_technique_id}"))
+            .get(format!(
+                "http://{address}/api/technique/{generated_technique_id}"
+            ))
             .send()
             .await
             .expect("partner-only generated technique detail should respond");
@@ -6874,16 +8160,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(use_status, StatusCode::BAD_REQUEST);
         assert_eq!(use_body["success"], false);
-        assert!(use_body["message"].as_str().is_some_and(|message| message.contains("该功法仅伙伴可学习")));
+        assert!(
+            use_body["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("该功法仅伙伴可学习"))
+        );
         assert_eq!(detail_response.status(), StatusCode::NOT_FOUND);
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_overview_route_includes_generated_partner_innate_technique_detail() {
+    async fn partner_overview_route_includes_generated_partner_innate_technique_detail() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_OVERVIEW_GENERATED_TECHNIQUE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_OVERVIEW_GENERATED_TECHNIQUE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -6923,7 +8218,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("generated technique layer should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·青木灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·青木灵伴",
+            true,
+        )
+        .await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -6935,11 +8237,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("partner overview should succeed");
         assert_eq!(response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("overview body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("overview body should be json");
 
         server.abort();
 
-        let partner = body["data"]["partners"].as_array().and_then(|items| items.iter().find(|item| item["id"] == partner_id)).cloned().unwrap_or_default();
+        let partner = body["data"]["partners"]
+            .as_array()
+            .and_then(|items| items.iter().find(|item| item["id"] == partner_id))
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(partner["techniques"][0]["techniqueId"], technique_id);
         assert_eq!(partner["techniques"][0]["name"], "青木护诀");
         assert_eq!(partner["techniques"][0]["currentLayer"], 1);
@@ -6950,16 +8257,36 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn market_partner_technique_detail_route_supports_generated_partner_technique() {
+    async fn market_partner_technique_detail_route_supports_generated_partner_technique() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_PARTNER_GENERATED_TECHNIQUE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "MARKET_PARTNER_GENERATED_TECHNIQUE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("mpgt{}", super::chrono_like_timestamp_ms());
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
-        let buyer = insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
-        let buyer_phone = format!("139{}", &suffix.chars().filter(|ch| ch.is_ascii_digit()).collect::<String>().chars().rev().take(8).collect::<String>().chars().rev().collect::<String>());
+        let seller =
+            insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
+        let buyer =
+            insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
+        let buyer_phone = format!(
+            "139{}",
+            &suffix
+                .chars()
+                .filter(|ch| ch.is_ascii_digit())
+                .collect::<String>()
+                .chars()
+                .rev()
+                .take(8)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>()
+        );
         sqlx::query("UPDATE users SET phone_number = $2 WHERE id = $1")
             .bind(buyer.user_id)
             .bind(buyer_phone)
@@ -6995,7 +8322,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("generated market technique layer should insert");
-        let partner_id = insert_partner_fixture(&pool, seller.character_id, &partner_def_id, "玄·坊市灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            seller.character_id,
+            &partner_def_id,
+            "玄·坊市灵伴",
+            true,
+        )
+        .await;
         sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, created_at, updated_at) VALUES ($1, $2, 2, TRUE, NOW(), NOW())")
             .bind(partner_id)
             .bind(&technique_id)
@@ -7033,7 +8367,8 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("market partner technique detail should succeed");
         assert_eq!(response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("market detail body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("market detail body should be json");
 
         server.abort();
 
@@ -7049,9 +8384,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_preview_route_supports_generated_partner_technique() {
+    async fn partner_preview_route_supports_generated_partner_technique() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_PREVIEW_GENERATED_TECHNIQUE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_PREVIEW_GENERATED_TECHNIQUE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7091,19 +8431,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("generated preview technique layer should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·预览灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·预览灵伴",
+            true,
+        )
+        .await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .get(format!("http://{address}/api/partner/preview?partnerId={partner_id}"))
+            .get(format!(
+                "http://{address}/api/partner/preview?partnerId={partner_id}"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("partner preview should succeed");
         assert_eq!(response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("preview body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("preview body should be json");
 
         server.abort();
 
@@ -7118,9 +8468,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_technique_detail_route_supports_generated_partner_technique() {
+    async fn partner_technique_detail_route_supports_generated_partner_technique() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_TECHNIQUE_DETAIL_GENERATED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_TECHNIQUE_DETAIL_GENERATED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7160,7 +8515,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("generated detail technique layer should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·详情灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·详情灵伴",
+            true,
+        )
+        .await;
         sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, created_at, updated_at) VALUES ($1, $2, 2, TRUE, NOW(), NOW())")
             .bind(partner_id)
             .bind(&technique_id)
@@ -7178,7 +8540,8 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("partner technique detail should succeed");
         assert_eq!(response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("detail body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("detail body should be json");
 
         server.abort();
 
@@ -7194,9 +8557,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn technique_list_route_hides_partner_only_generated_technique() {
+    async fn technique_list_route_hides_partner_only_generated_technique() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_LIST_PARTNER_ONLY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "TECHNIQUE_LIST_PARTNER_ONLY_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7219,20 +8587,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("technique list should succeed");
         assert_eq!(response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("list body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("list body should be json");
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(!body["data"]["techniques"].as_array().is_some_and(|items| items.iter().any(|item| item["id"] == technique_id)));
+        assert!(
+            !body["data"]["techniques"]
+                .as_array()
+                .is_some_and(|items| items.iter().any(|item| item["id"] == technique_id))
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_snapshot_prefers_live_generated_book_display_over_metadata() {
+    async fn inventory_snapshot_prefers_live_generated_book_display_over_metadata() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_GENERATED_BOOK_DISPLAY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_GENERATED_BOOK_DISPLAY_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7262,11 +8640,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("inventory snapshot should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("snapshot body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("snapshot body should be json");
 
         server.abort();
 
-        let item = body["data"]["bagItems"].as_array().and_then(|items| items.first()).cloned().unwrap_or_default();
+        let item = body["data"]["bagItems"]
+            .as_array()
+            .and_then(|items| items.first())
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(item["def"]["name"], "《实时灵诀》秘卷");
         assert_eq!(item["def"]["quality"], "天");
         assert_eq!(item["def"]["description"], "实时描述");
@@ -7278,13 +8661,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn market_listings_keep_instance_quality_above_generated_book_quality() {
+    async fn market_listings_keep_instance_quality_above_generated_book_quality() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_GENERATED_BOOK_DISPLAY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "MARKET_GENERATED_BOOK_DISPLAY_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-mgbd{}", super::chrono_like_timestamp_ms()), 0).await;
+        let seller = insert_auth_fixture(
+            &state,
+            &pool,
+            "socket",
+            &format!("seller-mgbd{}", super::chrono_like_timestamp_ms()),
+            0,
+        )
+        .await;
         let seller_phone = format!("138{:08}", seller.user_id.rem_euclid(100_000_000));
         sqlx::query("UPDATE users SET phone_number = $2 WHERE id = $1")
             .bind(seller.user_id)
@@ -7325,12 +8720,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("market listings should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("market body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("market body should be json");
 
         server.abort();
 
-        let item = body["data"]["listings"].as_array()
-            .and_then(|items| items.iter().find(|item| item["generatedTechniqueId"] == generated_technique_id))
+        let item = body["data"]["listings"]
+            .as_array()
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| item["generatedTechniqueId"] == generated_technique_id)
+            })
             .cloned()
             .unwrap_or_default();
         assert_eq!(item["name"], "《坊市灵诀》秘卷");
@@ -7344,13 +8745,23 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn market_listings_fall_back_to_visible_static_generated_technique_definition() {
+    async fn market_listings_fall_back_to_visible_static_generated_technique_definition() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_STATIC_FALLBACK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_STATIC_FALLBACK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-msf{}", super::chrono_like_timestamp_ms()), 0).await;
+        let seller = insert_auth_fixture(
+            &state,
+            &pool,
+            "socket",
+            &format!("seller-msf{}", super::chrono_like_timestamp_ms()),
+            0,
+        )
+        .await;
         let seller_phone = format!("138{:08}", seller.user_id.rem_euclid(100_000_000));
         sqlx::query("UPDATE users SET phone_number = $2 WHERE id = $1")
             .bind(seller.user_id)
@@ -7384,11 +8795,20 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("market listings should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("market body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("market body should be json");
 
         server.abort();
 
-        let item = body["data"]["listings"].as_array().and_then(|items| items.iter().find(|item| item["generatedTechniqueId"] == "tech-qingmu-jue")).cloned().unwrap_or_default();
+        let item = body["data"]["listings"]
+            .as_array()
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| item["generatedTechniqueId"] == "tech-qingmu-jue")
+            })
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(item["name"], "《青木诀》秘卷");
         assert_eq!(item["quality"], "地");
         assert_eq!(item["description"], "木属性法诀，擅长持续治疗");
@@ -7397,13 +8817,23 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn market_listings_fall_back_to_metadata_for_missing_generated_definition() {
+    async fn market_listings_fall_back_to_metadata_for_missing_generated_definition() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_METADATA_FALLBACK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_METADATA_FALLBACK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-mmf{}", super::chrono_like_timestamp_ms()), 0).await;
+        let seller = insert_auth_fixture(
+            &state,
+            &pool,
+            "socket",
+            &format!("seller-mmf{}", super::chrono_like_timestamp_ms()),
+            0,
+        )
+        .await;
         let seller_phone = format!("138{:08}", seller.user_id.rem_euclid(100_000_000));
         sqlx::query("UPDATE users SET phone_number = $2 WHERE id = $1")
             .bind(seller.user_id)
@@ -7438,26 +8868,49 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("market listings should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("market body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("market body should be json");
 
         server.abort();
 
-        let item = body["data"]["listings"].as_array().and_then(|items| items.iter().find(|item| item["generatedTechniqueId"] == generated_id)).cloned().unwrap_or_default();
+        let item = body["data"]["listings"]
+            .as_array()
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|item| item["generatedTechniqueId"] == generated_id)
+            })
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(item["name"], "《失传诀》秘卷");
         assert_eq!(item["quality"], "地");
-        assert!(item["description"].as_str().is_some_and(|value| value.contains("失传诀")));
+        assert!(
+            item["description"]
+                .as_str()
+                .is_some_and(|value| value.contains("失传诀"))
+        );
 
         cleanup_auth_fixture(&pool, seller.character_id, seller.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_overview_books_fall_back_to_visible_static_but_not_metadata_definitions() {
+    async fn partner_overview_books_fall_back_to_visible_static_but_not_metadata_definitions() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_BOOK_FALLBACK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_BOOK_FALLBACK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let fixture = insert_auth_fixture(&state, &pool, "socket", &format!("seller-pbf{}", super::chrono_like_timestamp_ms()), 0).await;
+        let fixture = insert_auth_fixture(
+            &state,
+            &pool,
+            "socket",
+            &format!("seller-pbf{}", super::chrono_like_timestamp_ms()),
+            0,
+        )
+        .await;
         sqlx::query("INSERT INTO character_feature_unlocks (character_id, feature_code, obtained_from, obtained_ref_id, unlocked_at) VALUES ($1, 'partner_system', 'test', 'partner-book-fallback', NOW()) ON CONFLICT DO NOTHING")
             .bind(fixture.character_id)
             .execute(&pool)
@@ -7481,21 +8934,32 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("partner overview should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("overview body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("overview body should be json");
 
         server.abort();
 
-        let books = body["data"]["books"].as_array().cloned().unwrap_or_default();
-        assert!(books.iter().any(|item| item["techniqueName"] == "凌波微步" && item["quality"] == "地"));
+        let books = body["data"]["books"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            books
+                .iter()
+                .any(|item| item["techniqueName"] == "凌波微步" && item["quality"] == "地")
+        );
         assert!(!books.iter().any(|item| item["techniqueName"] == "失传诀"));
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_snapshot_falls_back_to_visible_static_generated_technique_definition() {
+    async fn inventory_snapshot_falls_back_to_visible_static_generated_technique_definition() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_STATIC_FALLBACK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_STATIC_FALLBACK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -7518,11 +8982,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("inventory snapshot should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("snapshot body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("snapshot body should be json");
 
         server.abort();
 
-        let item = body["data"]["bagItems"].as_array().and_then(|items| items.first()).cloned().unwrap_or_default();
+        let item = body["data"]["bagItems"]
+            .as_array()
+            .and_then(|items| items.first())
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(item["def"]["name"], "《青木诀》秘卷");
         assert_eq!(item["def"]["quality"], "玄");
         assert_eq!(item["def"]["description"], "木属性法诀，擅长持续治疗");
@@ -7532,9 +9001,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_snapshot_falls_back_to_metadata_for_missing_generated_technique_definition() {
+    async fn inventory_snapshot_falls_back_to_metadata_for_missing_generated_technique_definition()
+    {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_METADATA_FALLBACK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_METADATA_FALLBACK_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7558,23 +9033,34 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("inventory snapshot should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("snapshot body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("snapshot body should be json");
 
         server.abort();
 
-        let item = body["data"]["bagItems"].as_array().and_then(|items| items.first()).cloned().unwrap_or_default();
+        let item = body["data"]["bagItems"]
+            .as_array()
+            .and_then(|items| items.first())
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(item["def"]["name"], "《失传诀》秘卷");
         assert_eq!(item["def"]["quality"], "玄");
-        assert!(item["def"]["description"].as_str().is_some_and(|value| value.contains("失传诀")));
+        assert!(
+            item["def"]["description"]
+                .as_str()
+                .is_some_and(|value| value.contains("失传诀"))
+        );
         assert_eq!(item["def"]["tags"][0], "研修生成");
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_overview_books_route_uses_generated_book_display_resolver() {
+    async fn partner_overview_books_route_uses_generated_book_display_resolver() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_BOOK_DISPLAY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_BOOK_DISPLAY_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -7609,11 +9095,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("partner overview should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("partner overview body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("partner overview body should be json");
 
         server.abort();
 
-        let book = body["data"]["books"].as_array().and_then(|items| items.first()).cloned().unwrap_or_default();
+        let book = body["data"]["books"]
+            .as_array()
+            .and_then(|items| items.first())
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(book["techniqueName"], "伙伴灵诀");
         assert_eq!(book["name"], "《伙伴灵诀》秘卷");
         assert_eq!(book["quality"], "地");
@@ -7622,9 +9113,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_recruit_and_fusion_status_routes_expose_full_generated_preview_shape() {
+    async fn partner_recruit_and_fusion_status_routes_expose_full_generated_preview_shape() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_STATUS_PREVIEW_SHAPE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_STATUS_PREVIEW_SHAPE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7695,28 +9191,71 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("partner fusion status should succeed");
-        let recruit_body: Value = serde_json::from_str(&recruit_response.text().await.expect("recruit body should read")).expect("recruit body should be json");
-        let fusion_body: Value = serde_json::from_str(&fusion_response.text().await.expect("fusion body should read")).expect("fusion body should be json");
+        let recruit_body: Value = serde_json::from_str(
+            &recruit_response
+                .text()
+                .await
+                .expect("recruit body should read"),
+        )
+        .expect("recruit body should be json");
+        let fusion_body: Value = serde_json::from_str(
+            &fusion_response
+                .text()
+                .await
+                .expect("fusion body should read"),
+        )
+        .expect("fusion body should be json");
 
         server.abort();
 
         assert_eq!(recruit_body["success"], true);
-        assert!(recruit_body["data"]["currentJob"]["preview"].get("avatar").is_some());
-        assert!(recruit_body["data"]["currentJob"]["preview"].get("avatarUrl").is_none());
-        assert_eq!(recruit_body["data"]["currentJob"]["preview"]["slotCount"], 1);
-        assert_eq!(recruit_body["data"]["currentJob"]["preview"]["innateTechniques"][0]["description"], "desc");
+        assert!(
+            recruit_body["data"]["currentJob"]["preview"]
+                .get("avatar")
+                .is_some()
+        );
+        assert!(
+            recruit_body["data"]["currentJob"]["preview"]
+                .get("avatarUrl")
+                .is_none()
+        );
+        assert_eq!(
+            recruit_body["data"]["currentJob"]["preview"]["slotCount"],
+            1
+        );
+        assert_eq!(
+            recruit_body["data"]["currentJob"]["preview"]["innateTechniques"][0]["description"],
+            "desc"
+        );
         assert_eq!(fusion_body["success"], true);
-        assert_eq!(fusion_body["data"]["currentJob"]["startedAt"].as_str().map(|value| value.is_empty()), Some(false));
-        assert_eq!(fusion_body["data"]["currentJob"]["materialPartnerIds"][0], 101);
-        assert!(fusion_body["data"]["currentJob"]["preview"].get("avatar").is_some());
+        assert_eq!(
+            fusion_body["data"]["currentJob"]["startedAt"]
+                .as_str()
+                .map(|value| value.is_empty()),
+            Some(false)
+        );
+        assert_eq!(
+            fusion_body["data"]["currentJob"]["materialPartnerIds"][0],
+            101
+        );
+        assert!(
+            fusion_body["data"]["currentJob"]["preview"]
+                .get("avatar")
+                .is_some()
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_overview_route_self_heals_invalid_pending_preview_item() {
+    async fn partner_overview_route_self_heals_invalid_pending_preview_item() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_OVERVIEW_PREVIEW_HEAL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_OVERVIEW_PREVIEW_HEAL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7735,7 +9274,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("generated partner def should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·预览灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·预览灵伴",
+            true,
+        )
+        .await;
         let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
             .bind(fixture.user_id)
             .bind(fixture.character_id)
@@ -7755,7 +9301,8 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("partner overview should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("overview body should be json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("overview body should be json");
         println!("PARTNER_OVERVIEW_PREVIEW_HEAL_RESPONSE={body}");
         let preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
             .bind(preview_item_id)
@@ -7776,18 +9323,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_market_list_route_rejects_partner_with_pending_technique_preview() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_MARKET_PREVIEW_BLOCK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_MARKET_PREVIEW_BLOCK_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("partner-market-preview-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-market-preview-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET silver = 100000 WHERE id = $1")
             .bind(fixture.character_id)
             .execute(&pool)
             .await
             .expect("character silver should update");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test')")
             .bind(fixture.user_id)
             .bind(fixture.character_id)
@@ -7803,19 +9365,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/market/partner/list"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerId\":{},\"unitPriceSpiritStones\":10}}", partner_id))
+            .body(format!(
+                "{{\"partnerId\":{},\"unitPriceSpiritStones\":10}}",
+                partner_id
+            ))
             .send()
             .await
             .expect("partner market list should respond");
         let status = response.status();
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("market list body should be json");
-        let listing_exists = sqlx::query("SELECT 1 FROM market_partner_listing WHERE partner_id = $1 AND status = 'active'")
-            .bind(partner_id)
-            .fetch_optional(&pool)
-            .await
-            .expect("listing existence query should succeed")
-            .is_some();
+        let listing_exists = sqlx::query(
+            "SELECT 1 FROM market_partner_listing WHERE partner_id = $1 AND status = 'active'",
+        )
+        .bind(partner_id)
+        .fetch_optional(&pool)
+        .await
+        .expect("listing existence query should succeed")
+        .is_some();
 
         server.abort();
 
@@ -7830,7 +9397,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_overview_route_keeps_single_valid_preview_and_cleans_later_invalid_rows() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_OVERVIEW_PREVIEW_MIXED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_OVERVIEW_PREVIEW_MIXED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -7885,7 +9457,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .expect("generated technique layer should insert");
         }
 
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·预览校验灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·预览校验灵伴",
+            true,
+        )
+        .await;
         sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, learned_from_item_def_id, created_at, updated_at) VALUES ($1, $2, 1, FALSE, 'book-old', NOW(), NOW())")
             .bind(partner_id)
             .bind(&old_technique_id)
@@ -7941,8 +9520,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
-        assert_eq!(body["data"]["pendingTechniqueLearnPreview"]["book"]["itemInstanceId"], valid_preview_item_id);
-        assert_eq!(body["data"]["pendingTechniqueLearnPreview"]["preview"]["partnerId"], partner_id);
+        assert_eq!(
+            body["data"]["pendingTechniqueLearnPreview"]["book"]["itemInstanceId"],
+            valid_preview_item_id
+        );
+        assert_eq!(
+            body["data"]["pendingTechniqueLearnPreview"]["preview"]["partnerId"],
+            partner_id
+        );
         assert!(valid_preview_exists);
         assert!(!invalid_preview_exists);
 
@@ -7952,13 +9537,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_confirm_learn_route_rejects_bag_item_with_preview_metadata() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_BAG_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_CONFIRM_BAG_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("pcbp{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let bag_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'bag', 0, NOW(), NOW(), 'test') RETURNING id")
             .bind(fixture.user_id)
             .bind(fixture.character_id)
@@ -7973,10 +9570,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/confirm"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}", partner_id, bag_item_id))
+            .body(format!(
+                "{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}",
+                partner_id, bag_item_id
+            ))
             .send()
             .await
             .expect("partner confirm learn should respond");
@@ -7996,7 +9598,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_discard_learn_route_rejects_bag_item_with_preview_metadata() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_BAG_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_DISCARD_BAG_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8016,7 +9623,9 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/discard"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemInstanceId\":{}}}", bag_item_id))
@@ -8039,13 +9648,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_confirm_learn_route_reports_invalid_partner_preview_row() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_INVALID_PREVIEW_ROW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_CONFIRM_INVALID_PREVIEW_ROW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("pcipr{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
             .bind(fixture.user_id)
             .bind(fixture.character_id)
@@ -8060,10 +9681,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/confirm"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}", partner_id, preview_item_id))
+            .body(format!(
+                "{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}",
+                partner_id, preview_item_id
+            ))
             .send()
             .await
             .expect("partner confirm learn should respond");
@@ -8083,7 +9709,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_discard_learn_route_reports_invalid_partner_preview_row() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_INVALID_PREVIEW_ROW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_DISCARD_INVALID_PREVIEW_ROW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8103,7 +9734,9 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/discard"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
@@ -8126,13 +9759,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_confirm_learn_route_rejects_preview_when_book_mismatches_learned_technique() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_PREVIEW_BOOK_MISMATCH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_CONFIRM_PREVIEW_BOOK_MISMATCH_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("pcbm{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let generated_technique_id = format!("gt-mismatch-book-{suffix}");
         sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '错配功法', '错配功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
             .bind(&generated_technique_id)
@@ -8155,10 +9800,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/confirm"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/confirm"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}", partner_id, preview_item_id))
+            .body(format!(
+                "{{\"partnerId\":{},\"itemInstanceId\":{},\"replacedTechniqueId\":\"tech-old\"}}",
+                partner_id, preview_item_id
+            ))
             .send()
             .await
             .expect("partner confirm learn should respond");
@@ -8178,13 +9828,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_discard_learn_route_rejects_preview_when_replaced_technique_is_stale() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_PREVIEW_STALE_REPLACED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_DISCARD_PREVIEW_STALE_REPLACED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("pdst{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let generated_technique_id = format!("gt-stale-replaced-{suffix}");
         let generated_skill_id = format!("skill-stale-replaced-{suffix}");
         sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '失效替换功法预览书', '失效替换功法预览书', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
@@ -8222,7 +9884,9 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/discard"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
@@ -8245,7 +9909,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_discard_learn_route_succeeds_with_valid_pending_preview() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_VALID_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_DISCARD_VALID_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8294,7 +9963,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .expect("generated technique layer should insert");
         }
 
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·放弃预览灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·放弃预览灵伴",
+            false,
+        )
+        .await;
         sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, learned_from_item_def_id, created_at, updated_at) VALUES ($1, $2, 1, FALSE, 'book-old', NOW(), NOW())")
             .bind(partner_id)
             .bind(&old_technique_id)
@@ -8315,7 +9991,9 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/discard"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
@@ -8345,13 +10023,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_confirm_learn_route_rejects_preview_for_market_listed_partner() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_MARKET_LISTED_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_CONFIRM_MARKET_LISTED_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("pcml{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let generated_technique_id = format!("gt-market-blocked-{suffix}");
         let generated_skill_id = format!("skill-market-blocked-{suffix}");
         sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '坊市阻塞功法', '坊市阻塞功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
@@ -8420,7 +10110,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_discard_learn_route_rejects_preview_for_fusion_material_partner() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_DISCARD_FUSION_BLOCKED_PREVIEW_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_DISCARD_FUSION_BLOCKED_PREVIEW_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8429,9 +10124,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let generated_technique_id = format!("gt-fusion-blocked-{suffix}");
         let generated_skill_id = format!("skill-fusion-blocked-{suffix}");
         let partner_ids = [
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵伴",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵使",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵偶",
+                false,
+            )
+            .await,
         ];
         let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
             .bind(fixture.user_id)
@@ -8471,13 +10187,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/partner/fusion/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .body(format!(
+                "{{\"partnerIds\":[{},{},{}]}}",
+                partner_ids[0], partner_ids[1], partner_ids[2]
+            ))
             .send()
             .await
             .expect("partner fusion start should succeed");
         assert_eq!(start_response.status(), StatusCode::OK);
         let response = client
-            .post(format!("http://{address}/api/partner/learn-technique/discard"))
+            .post(format!(
+                "http://{address}/api/partner/learn-technique/discard"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!("{{\"itemInstanceId\":{}}}", preview_item_id))
@@ -8500,13 +10221,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_confirm_learn_route_rejects_preview_when_technique_detail_is_unavailable() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_CONFIRM_MISSING_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_CONFIRM_MISSING_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("pcmtd{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let generated_technique_id = format!("gt-missing-detail-{suffix}");
         sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '缺失详情功法', '缺失详情功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
             .bind(&generated_technique_id)
@@ -8552,7 +10285,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_overview_route_cleans_preview_when_technique_detail_is_unavailable() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_OVERVIEW_MISSING_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_OVERVIEW_MISSING_TECHNIQUE_DETAIL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8563,7 +10301,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("partner feature unlock should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let generated_technique_id = format!("gt-overview-missing-detail-{suffix}");
         sqlx::query("INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, '缺失详情总览功法', '缺失详情总览功法', '辅修', '玄', 2, '凡人', 'magic', 'wood', 'partner_only', '[]'::jsonb, 'desc', 'long', TRUE, TRUE, 1, NOW(), NOW())")
             .bind(&generated_technique_id)
@@ -8615,16 +10360,45 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     async fn partner_fusion_confirm_clears_pending_technique_preview_for_material_partners() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_FUSION_PREVIEW_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_FUSION_PREVIEW_CLEAR_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("partner-fusion-preview-clear-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-fusion-preview-clear-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let partner_ids = [
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵伴",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵使",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵偶",
+                false,
+            )
+            .await,
         ];
         let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
             .bind(fixture.user_id)
@@ -8644,12 +10418,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/partner/fusion/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .body(format!(
+                "{{\"partnerIds\":[{},{},{}]}}",
+                partner_ids[0], partner_ids[1], partner_ids[2]
+            ))
             .send()
             .await
             .expect("partner fusion start should succeed");
-        let start_body: Value = serde_json::from_str(&start_response.text().await.expect("start body should read"))
-            .expect("start body should be json");
+        let start_body: Value =
+            serde_json::from_str(&start_response.text().await.expect("start body should read"))
+                .expect("start body should be json");
         let fusion_id = start_body["data"]["fusionId"]
             .as_str()
             .expect("fusion id should exist")
@@ -8658,14 +10436,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
         let confirm_response = client
-            .post(format!("http://{address}/api/partner/fusion/{fusion_id}/confirm"))
+            .post(format!(
+                "http://{address}/api/partner/fusion/{fusion_id}/confirm"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("partner fusion confirm should succeed");
         let status = confirm_response.status();
-        let body: Value = serde_json::from_str(&confirm_response.text().await.expect("confirm body should read"))
-            .expect("confirm body should be json");
+        let body: Value = serde_json::from_str(
+            &confirm_response
+                .text()
+                .await
+                .expect("confirm body should read"),
+        )
+        .expect("confirm body should be json");
         let preview_exists = sqlx::query("SELECT 1 FROM item_instance WHERE id = $1")
             .bind(preview_item_id)
             .fetch_optional(&pool)
@@ -8685,7 +10470,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     #[tokio::test]
     async fn partner_market_buy_route_clears_seller_pending_preview_for_sold_partner() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_MARKET_BUY_PREVIEW_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_MARKET_BUY_PREVIEW_CLEAR_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8700,7 +10490,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("buyer spirit stones should update");
 
-        let partner_id = insert_partner_fixture(&pool, seller.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            seller.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let preview_item_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, metadata, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'book-generated-technique', 1, 'pickup', $3::jsonb, 'partner_preview', NOW(), NOW(), 'test') RETURNING id")
             .bind(seller.user_id)
             .bind(seller.character_id)
@@ -8762,9 +10559,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_use_generated_technique_book_ignores_required_realm_gate() {
+    async fn inventory_use_generated_technique_book_ignores_required_realm_gate() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GENERATED_TECHNIQUE_NO_REALM_GATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GENERATED_TECHNIQUE_NO_REALM_GATE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8799,14 +10601,17 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("generated technique use should succeed");
         let status = response.status();
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("body should json");
-        let learned = sqlx::query("SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2")
-            .bind(fixture.character_id)
-            .bind(&generated_technique_id)
-            .fetch_optional(&pool)
-            .await
-            .expect("learned query should succeed")
-            .is_some();
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("body should json");
+        let learned = sqlx::query(
+            "SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2",
+        )
+        .bind(fixture.character_id)
+        .bind(&generated_technique_id)
+        .fetch_optional(&pool)
+        .await
+        .expect("learned query should succeed")
+        .is_some();
 
         server.abort();
 
@@ -8818,9 +10623,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_technique_upgrade_cost_route_supports_generated_partner_technique() {
+    async fn partner_technique_upgrade_cost_route_supports_generated_partner_technique() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_UPGRADE_COST_GENERATED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_UPGRADE_COST_GENERATED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -8860,7 +10670,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .execute(&pool)
             .await
             .expect("generated technique layers should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·升级灵伴", true).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·升级灵伴",
+            true,
+        )
+        .await;
         sqlx::query("INSERT INTO character_partner_technique (partner_id, technique_id, current_layer, is_innate, created_at, updated_at) VALUES ($1, $2, 1, TRUE, NOW(), NOW())")
             .bind(partner_id)
             .bind(&technique_id)
@@ -8877,7 +10694,8 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .send()
             .await
             .expect("partner upgrade cost should succeed");
-        let body: Value = serde_json::from_str(&response.text().await.expect("body should read")).expect("body should json");
+        let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
+            .expect("body should json");
 
         server.abort();
 
@@ -8892,13 +10710,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_use_dispel_pill_removes_poison_buff() {
+    async fn inventory_use_dispel_pill_removes_poison_buff() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_DISPEL_PILL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_USE_DISPEL_PILL_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-dispel-pill-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-dispel-pill-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_instance_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-006', 1, 'none', 'bag', 0, NOW(), NOW(), 'test') RETURNING id",
@@ -8949,13 +10773,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn inventory_use_poison_heal_pill_removes_poison_and_restores_qixue() {
+    async fn inventory_use_poison_heal_pill_removes_poison_and_restores_qixue() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_POISON_HEAL_PILL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_USE_POISON_HEAL_PILL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-poison-heal-pill-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-poison-heal-pill-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET realm = '炼精化炁', sub_realm = '养气期', jing = 20 WHERE id = $1")
             .bind(fixture.character_id)
@@ -9011,26 +10843,43 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(body["success"], true);
         assert_eq!(body["effects"].as_array().map(|items| items.len()), Some(2));
-        assert_eq!(character_row.try_get::<Option<i32>, _>("jing").unwrap_or(None).map(i64::from).unwrap_or_default(), 140);
+        assert_eq!(
+            character_row
+                .try_get::<Option<i32>, _>("jing")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            140
+        );
         assert!(poison_exists.is_none());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_use_lingqi_speed_pill_restores_lingqi_and_applies_buff() {
+    async fn inventory_use_lingqi_speed_pill_restores_lingqi_and_applies_buff() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_LINGQI_SPEED_PILL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_USE_LINGQI_SPEED_PILL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-lingqi-speed-pill-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-lingqi-speed-pill-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        sqlx::query("UPDATE characters SET realm = '炼精化炁', sub_realm = '通脉期', qi = 5 WHERE id = $1")
-            .bind(fixture.character_id)
-            .execute(&pool)
-            .await
-            .expect("character lingqi should update");
+        sqlx::query(
+            "UPDATE characters SET realm = '炼精化炁', sub_realm = '通脉期', qi = 5 WHERE id = $1",
+        )
+        .bind(fixture.character_id)
+        .execute(&pool)
+        .await
+        .expect("character lingqi should update");
         let item_instance_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-010', 1, 'none', 'bag', 0, NOW(), NOW(), 'test') RETURNING id",
         )
@@ -9064,13 +10913,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .expect("character realm should query");
             println!(
                 "INVENTORY_USE_LINGQI_REALM_STATE={{\"realm\":\"{}\",\"subRealm\":\"{}\"}}",
-                realm_row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                realm_row.try_get::<Option<String>, _>("sub_realm").unwrap_or(None).unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm_row
+                    .try_get::<Option<String>, _>("sub_realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
             );
             panic!("INVENTORY_USE_LINGQI_SPEED_PILL_RESPONSE={response_text}");
         }
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         let character_row = sqlx::query("SELECT qi FROM characters WHERE id = $1")
             .bind(fixture.character_id)
@@ -9086,29 +10940,60 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         println!("INVENTORY_USE_LINGQI_SPEED_PILL_RESPONSE={body}");
         println!(
             "INVENTORY_USE_LINGQI_SPEED_PILL_BUFF_ROW={{\"buff_key\":\"{}\",\"buff_value\":\"{}\"}}",
-            buff_row.try_get::<Option<String>, _>("buff_key").unwrap_or(None).unwrap_or_default(),
-            buff_row.try_get::<Option<String>, _>("buff_value_text").unwrap_or(None).unwrap_or_default(),
+            buff_row
+                .try_get::<Option<String>, _>("buff_key")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            buff_row
+                .try_get::<Option<String>, _>("buff_value_text")
+                .unwrap_or(None)
+                .unwrap_or_default(),
         );
 
         server.abort();
 
         assert_eq!(body["success"], true);
         assert_eq!(body["effects"].as_array().map(|items| items.len()), Some(2));
-        assert_eq!(character_row.try_get::<Option<i32>, _>("qi").unwrap_or(None).map(i64::from).unwrap_or_default(), 85);
-        assert_eq!(buff_row.try_get::<Option<String>, _>("buff_key").unwrap_or(None).unwrap_or_default(), "sudu_flat");
-        assert_eq!(buff_row.try_get::<Option<String>, _>("buff_value_text").unwrap_or(None).unwrap_or_default(), "8.000");
+        assert_eq!(
+            character_row
+                .try_get::<Option<i32>, _>("qi")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            85
+        );
+        assert_eq!(
+            buff_row
+                .try_get::<Option<String>, _>("buff_key")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "sudu_flat"
+        );
+        assert_eq!(
+            buff_row
+                .try_get::<Option<String>, _>("buff_value_text")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "8.000"
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_use_rename_card_updates_character_nickname() {
+    async fn inventory_use_rename_card_updates_character_nickname() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_RENAME_CARD_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "INVENTORY_USE_RENAME_CARD_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("inventory-rename-card-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "inventory-rename-card-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let item_instance_id = sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-rename-001', 1, 'none', 'bag', 0, NOW(), NOW(), 'test') RETURNING id",
@@ -9131,7 +11016,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/inventory/use"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemId\":{},\"qty\":1,\"nickname\":\"{}\"}}", item_instance_id, expected_nickname))
+            .body(format!(
+                "{{\"itemId\":{},\"qty\":1,\"nickname\":\"{}\"}}",
+                item_instance_id, expected_nickname
+            ))
             .send()
             .await
             .expect("inventory use should succeed");
@@ -9155,16 +11043,27 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert_eq!(character_row.try_get::<Option<String>, _>("nickname").unwrap_or(None).unwrap_or_default(), expected_nickname);
+        assert_eq!(
+            character_row
+                .try_get::<Option<String>, _>("nickname")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            expected_nickname
+        );
         assert!(item_exists.is_none());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn inventory_use_reroll_scroll_reuses_affix_reroll_flow() {
+    async fn inventory_use_reroll_scroll_reuses_affix_reroll_flow() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "INVENTORY_USE_REROLL_SCROLL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "INVENTORY_USE_REROLL_SCROLL_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -9204,7 +11103,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/inventory/use"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemId\":{},\"qty\":1,\"targetItemInstanceId\":{}}}", scroll_id, equipment_id))
+            .body(format!(
+                "{{\"itemId\":{},\"qty\":1,\"targetItemInstanceId\":{}}}",
+                scroll_id, equipment_id
+            ))
             .send()
             .await
             .expect("inventory use reroll request should succeed");
@@ -9212,9 +11114,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let mutation_hash = redis
-            .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:item-instance-mutation:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
         let scroll_row = sqlx::query("SELECT qty FROM item_instance WHERE id = $1")
@@ -9224,23 +11131,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("reroll scroll query should succeed");
 
         println!("INVENTORY_USE_REROLL_SCROLL_RESPONSE={body}");
-        println!("INVENTORY_USE_REROLL_SCROLL_MUTATION_HASH={}", serde_json::json!(mutation_hash));
+        println!(
+            "INVENTORY_USE_REROLL_SCROLL_MUTATION_HASH={}",
+            serde_json::json!(mutation_hash)
+        );
 
         server.abort();
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "洗炼成功");
         assert!(body["data"]["character"].is_object());
-        assert_eq!(scroll_row.and_then(|row| row.try_get::<Option<i32>, _>("qty").ok().flatten()).map(i64::from), Some(4));
+        assert_eq!(
+            scroll_row
+                .and_then(|row| row.try_get::<Option<i32>, _>("qty").ok().flatten())
+                .map(i64::from),
+            Some(4)
+        );
         assert!(mutation_hash.is_empty());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn market_cancel_route_buffers_item_instance_mail_relocation_when_redis_available() {
+    async fn market_cancel_route_buffers_item_instance_mail_relocation_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_CANCEL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_CANCEL_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -9285,39 +11202,61 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-instance-mutation:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("mutation hash should load");
             println!("MARKET_CANCEL_MUTATION_HASH={}", serde_json::json!(hash));
             assert!(!hash.is_empty());
         } else {
-            let row = sqlx::query("SELECT location, obtained_from, obtained_ref_id FROM item_instance WHERE id = $1")
-                .bind(item_id)
-                .fetch_one(&pool)
-                .await
-                .expect("item row should load");
-            println!("MARKET_CANCEL_FALLBACK_ROW={}", serde_json::json!({
-                "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
-                "obtainedFrom": row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None),
-                "obtainedRefId": row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None),
-            }));
-            assert_eq!(row.try_get::<Option<String>, _>("location").unwrap_or(None).unwrap_or_default(), "mail");
+            let row = sqlx::query(
+                "SELECT location, obtained_from, obtained_ref_id FROM item_instance WHERE id = $1",
+            )
+            .bind(item_id)
+            .fetch_one(&pool)
+            .await
+            .expect("item row should load");
+            println!(
+                "MARKET_CANCEL_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
+                    "obtainedFrom": row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None),
+                    "obtainedRefId": row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None),
+                })
+            );
+            assert_eq!(
+                row.try_get::<Option<String>, _>("location")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                "mail"
+            );
         }
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(body["message"].as_str().unwrap_or_default().contains("下架成功"));
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("下架成功")
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn market_list_route_buffers_item_instance_auction_relocation_when_redis_available() {
+    async fn market_list_route_buffers_item_instance_auction_relocation_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_LIST_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_LIST_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -9347,7 +11286,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/market/list"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemInstanceId\":{},\"qty\":1,\"unitPriceSpiritStones\":10}}", item_id))
+            .body(format!(
+                "{{\"itemInstanceId\":{},\"qty\":1,\"unitPriceSpiritStones\":10}}",
+                item_id
+            ))
             .send()
             .await
             .expect("market list request should succeed");
@@ -9356,9 +11298,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-instance-mutation:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("mutation hash should load");
             println!("MARKET_LIST_MUTATION_HASH={}", serde_json::json!(hash));
@@ -9369,24 +11316,39 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("item row should load");
-            println!("MARKET_LIST_FALLBACK_ROW={}", serde_json::json!({
-                "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
-            }));
-            assert_eq!(row.try_get::<Option<String>, _>("location").unwrap_or(None).unwrap_or_default(), "auction");
+            println!(
+                "MARKET_LIST_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
+                })
+            );
+            assert_eq!(
+                row.try_get::<Option<String>, _>("location")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                "auction"
+            );
         }
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(body["message"].as_str().unwrap_or_default().contains("上架成功"));
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("上架成功")
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn market_list_partial_route_buffers_source_qty_mutation_when_redis_available() {
+    async fn market_list_partial_route_buffers_source_qty_mutation_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_LIST_PARTIAL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_LIST_PARTIAL_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -9416,7 +11378,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/market/list"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemInstanceId\":{},\"qty\":1,\"unitPriceSpiritStones\":10}}", item_id))
+            .body(format!(
+                "{{\"itemInstanceId\":{},\"qty\":1,\"unitPriceSpiritStones\":10}}",
+                item_id
+            ))
             .send()
             .await
             .expect("market list request should succeed");
@@ -9425,12 +11390,20 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:item-instance-mutation:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-instance-mutation:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("mutation hash should load");
-            println!("MARKET_LIST_PARTIAL_MUTATION_HASH={}", serde_json::json!(hash));
+            println!(
+                "MARKET_LIST_PARTIAL_MUTATION_HASH={}",
+                serde_json::json!(hash)
+            );
             assert!(!hash.is_empty());
         } else {
             let row = sqlx::query("SELECT qty FROM item_instance WHERE id = $1")
@@ -9438,30 +11411,47 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("item row should load");
-            println!("MARKET_LIST_PARTIAL_FALLBACK_ROW={}", serde_json::json!({
-                "qty": row.try_get::<Option<i64>, _>("qty").unwrap_or(None),
-            }));
-            assert_eq!(row.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(), 2);
+            println!(
+                "MARKET_LIST_PARTIAL_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "qty": row.try_get::<Option<i64>, _>("qty").unwrap_or(None),
+                })
+            );
+            assert_eq!(
+                row.try_get::<Option<i64>, _>("qty")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                2
+            );
         }
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(body["message"].as_str().unwrap_or_default().contains("上架成功"));
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("上架成功")
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn market_buy_route_buffers_item_instance_mail_transfer_when_redis_available() {
+    async fn market_buy_route_buffers_item_instance_mail_transfer_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_BUY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_BUY_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
         let suffix = format!("market-buy-{}", super::chrono_like_timestamp_ms());
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
-        let buyer = insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
+        let seller =
+            insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
+        let buyer =
+            insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
         sqlx::query("UPDATE characters SET spirit_stones = 1000 WHERE id = $1")
             .bind(buyer.character_id)
             .execute(&pool)
@@ -9506,9 +11496,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:item-instance-mutation:{}", buyer.character_id))
+                .hgetall(&format!(
+                    "character:item-instance-mutation:{}",
+                    buyer.character_id
+                ))
                 .await
                 .expect("mutation hash should load");
             println!("MARKET_BUY_MUTATION_HASH={}", serde_json::json!(hash));
@@ -9519,35 +11514,57 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("item row should load");
-            println!("MARKET_BUY_FALLBACK_ROW={}", serde_json::json!({
-                "ownerCharacterId": row.try_get::<Option<i64>, _>("owner_character_id").unwrap_or(None),
-                "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
-                "obtainedFrom": row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None),
-                "obtainedRefId": row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None),
-            }));
-            assert_eq!(row.try_get::<Option<i64>, _>("owner_character_id").unwrap_or(None).unwrap_or_default(), buyer.character_id);
-            assert_eq!(row.try_get::<Option<String>, _>("location").unwrap_or(None).unwrap_or_default(), "mail");
+            println!(
+                "MARKET_BUY_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "ownerCharacterId": row.try_get::<Option<i64>, _>("owner_character_id").unwrap_or(None),
+                    "location": row.try_get::<Option<String>, _>("location").unwrap_or(None),
+                    "obtainedFrom": row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None),
+                    "obtainedRefId": row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None),
+                })
+            );
+            assert_eq!(
+                row.try_get::<Option<i64>, _>("owner_character_id")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                buyer.character_id
+            );
+            assert_eq!(
+                row.try_get::<Option<String>, _>("location")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                "mail"
+            );
         }
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(body["message"].as_str().unwrap_or_default().contains("购买成功"));
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("购买成功")
+        );
 
         cleanup_auth_fixture(&pool, seller.character_id, seller.user_id).await;
         cleanup_auth_fixture(&pool, buyer.character_id, buyer.user_id).await;
     }
 
     #[tokio::test]
-        async fn market_buy_partial_route_buffers_source_qty_mutation_when_redis_available() {
+    async fn market_buy_partial_route_buffers_source_qty_mutation_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_BUY_PARTIAL_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_BUY_PARTIAL_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
         let suffix = format!("market-buy-partial-{}", super::chrono_like_timestamp_ms());
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
-        let buyer = insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
+        let seller =
+            insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
+        let buyer =
+            insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
         sqlx::query("UPDATE characters SET spirit_stones = 1000 WHERE id = $1")
             .bind(buyer.character_id)
             .execute(&pool)
@@ -9592,12 +11609,20 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let hash = redis
-                .hgetall(&format!("character:item-instance-mutation:{}", seller.character_id))
+                .hgetall(&format!(
+                    "character:item-instance-mutation:{}",
+                    seller.character_id
+                ))
                 .await
                 .expect("mutation hash should load");
-            println!("MARKET_BUY_PARTIAL_MUTATION_HASH={}", serde_json::json!(hash));
+            println!(
+                "MARKET_BUY_PARTIAL_MUTATION_HASH={}",
+                serde_json::json!(hash)
+            );
             assert!(!hash.is_empty());
         } else {
             let row = sqlx::query("SELECT qty FROM item_instance WHERE id = $1")
@@ -9605,25 +11630,40 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("item row should load");
-            println!("MARKET_BUY_PARTIAL_FALLBACK_ROW={}", serde_json::json!({
-                "qty": row.try_get::<Option<i64>, _>("qty").unwrap_or(None),
-            }));
-            assert_eq!(row.try_get::<Option<i64>, _>("qty").unwrap_or(None).unwrap_or_default(), 2);
+            println!(
+                "MARKET_BUY_PARTIAL_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "qty": row.try_get::<Option<i64>, _>("qty").unwrap_or(None),
+                })
+            );
+            assert_eq!(
+                row.try_get::<Option<i64>, _>("qty")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                2
+            );
         }
 
         server.abort();
 
         assert_eq!(body["success"], true);
-        assert!(body["message"].as_str().unwrap_or_default().contains("购买成功"));
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("购买成功")
+        );
 
         cleanup_auth_fixture(&pool, seller.character_id, seller.user_id).await;
         cleanup_auth_fixture(&pool, buyer.character_id, buyer.user_id).await;
     }
 
     #[tokio::test]
-        async fn market_list_route_emits_market_update_to_authenticated_socket() {
+    async fn market_list_route_emits_market_update_to_authenticated_socket() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MARKET_SOCKET_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MARKET_SOCKET_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -9650,19 +11690,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-market".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-market".to_string()),
+                connected_at_ms: 1,
+            });
 
         let response = client
             .post(format!("http://{address}/api/market/list"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"itemInstanceId\":{},\"qty\":1,\"unitPriceSpiritStones\":10}}", item_id))
+            .body(format!(
+                "{{\"itemInstanceId\":{},\"qty\":1,\"unitPriceSpiritStones\":10}}",
+                item_id
+            ))
             .send()
             .await
             .expect("market list request should succeed");
@@ -9680,21 +11725,32 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_market_buy_route_emits_rank_update_to_buyer_socket() {
+    async fn partner_market_buy_route_emits_rank_update_to_buyer_socket() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_MARKET_RANK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_MARKET_RANK_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
         let suffix = format!("partner-market-rank-{}", super::chrono_like_timestamp_ms());
-        let seller = insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
-        let buyer = insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
+        let seller =
+            insert_auth_fixture(&state, &pool, "socket", &format!("seller-{suffix}"), 0).await;
+        let buyer =
+            insert_auth_fixture(&state, &pool, "socket", &format!("buyer-{suffix}"), 0).await;
         sqlx::query("UPDATE characters SET spirit_stones = 100000 WHERE id = $1")
             .bind(buyer.character_id)
             .execute(&pool)
             .await
             .expect("buyer spirit stones should update");
-        let partner_id = insert_partner_fixture(&pool, seller.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            seller.character_id,
+            "partner-qingmu-xiaoou",
+            "青木灵伴",
+            false,
+        )
+        .await;
         let listing_id = sqlx::query(
             "INSERT INTO market_partner_listing (seller_user_id, seller_character_id, partner_id, partner_snapshot, partner_def_id, partner_name, partner_nickname, partner_quality, partner_element, partner_level, unit_price_spirit_stones, listing_fee_silver, status, listed_at, updated_at) VALUES ($1, $2, $3, $4::jsonb, 'partner-qingmu-xiaoou', '青木灵伴', '青木灵伴', '玄', 'wood', 12, 10, 5, 'active', NOW(), NOW()) RETURNING id",
         )
@@ -9720,13 +11776,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
         let (sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &sid).await;
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: sid.clone(),
-            user_id: buyer.user_id,
-            character_id: Some(buyer.character_id),
-            session_token: Some("sess-rank".to_string()),
-            connected_at_ms: 1,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: sid.clone(),
+                user_id: buyer.user_id,
+                character_id: Some(buyer.character_id),
+                session_token: Some("sess-rank".to_string()),
+                connected_at_ms: 1,
+            });
 
         let response = client
             .post(format!("http://{address}/api/market/partner/buy"))
@@ -9751,9 +11809,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_auth_success_emits_full_character_before_auth_ready() {
+    async fn game_socket_auth_success_emits_full_character_before_auth_ready() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_AUTH_SUCCESS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_AUTH_SUCCESS_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -9836,9 +11897,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_duplicate_login_kicks_previous_socket() {
+    async fn game_socket_duplicate_login_kicks_previous_socket() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_DUPLICATE_LOGIN_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_DUPLICATE_LOGIN_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -9859,17 +11925,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (second_sid, _) = handshake_sid(&client, address).await;
         socket_auth(&client, address, &second_sid, &token).await;
 
-        let first_after_replace = poll_until_contains(&client, address, &first_sid, "game:kicked").await;
-        let second_after_replace = poll_until_contains(&client, address, &second_sid, "game:auth-ready").await;
+        let first_after_replace =
+            poll_until_contains(&client, address, &first_sid, "game:kicked").await;
+        let second_after_replace =
+            poll_until_contains(&client, address, &second_sid, "game:auth-ready").await;
 
         println!("GAME_SOCKET_DUPLICATE_LOGIN_FIRST={first_after_replace}");
         println!("GAME_SOCKET_DUPLICATE_LOGIN_SECOND={second_after_replace}");
 
-        assert!(first_after_replace.contains("game:kicked") || first_after_replace.contains("Session ID unknown"));
+        assert!(
+            first_after_replace.contains("game:kicked")
+                || first_after_replace.contains("Session ID unknown")
+        );
         if first_after_replace.contains("game:kicked") {
             assert!(first_after_replace.contains("账号已在其他设备登录"));
         }
-        assert!(second_after_replace.contains("game:auth-ready") || second_after_replace.contains("Session ID unknown"));
+        assert!(
+            second_after_replace.contains("game:auth-ready")
+                || second_after_replace.contains("Session ID unknown")
+        );
 
         server.abort();
 
@@ -9877,9 +11951,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_online_players_request_emits_full_payload_after_auth() {
+    async fn game_socket_online_players_request_emits_full_payload_after_auth() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ONLINE_PLAYERS_AUTH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_ONLINE_PLAYERS_AUTH_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -9917,15 +11996,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_online_players_multi_user_auth_then_refresh_emits_full_then_delta() {
+    async fn game_socket_online_players_multi_user_auth_then_refresh_emits_full_then_delta() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ONLINE_PLAYERS_MULTI_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_ONLINE_PLAYERS_MULTI_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("online-multi-{}", super::chrono_like_timestamp_ms());
-        let fixture_one = insert_auth_fixture(&state, &pool, "socket", &format!("one-{suffix}"), 0).await;
-        let fixture_two = insert_auth_fixture(&state, &pool, "socket", &format!("two-{suffix}"), 0).await;
+        let fixture_one =
+            insert_auth_fixture(&state, &pool, "socket", &format!("one-{suffix}"), 0).await;
+        let fixture_two =
+            insert_auth_fixture(&state, &pool, "socket", &format!("two-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -9933,13 +12019,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         let (sid_one, _) = handshake_sid(&client, address).await;
         socket_auth(&client, address, &sid_one, &fixture_one.token).await;
-        let first_poll_one = poll_until_contains(&client, address, &sid_one, "game:auth-ready").await;
+        let first_poll_one =
+            poll_until_contains(&client, address, &sid_one, "game:auth-ready").await;
 
         let (sid_two, _) = handshake_sid(&client, address).await;
         socket_auth(&client, address, &sid_two, &fixture_two.token).await;
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let second_poll_one = poll_text(&client, address, &sid_one).await;
-        let first_poll_two = poll_until_contains(&client, address, &sid_two, "game:auth-ready").await;
+        let first_poll_two =
+            poll_until_contains(&client, address, &sid_two, "game:auth-ready").await;
 
         sqlx::query("UPDATE characters SET realm = '筑基期' WHERE id = $1")
             .bind(fixture_one.character_id)
@@ -9975,9 +12063,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_online_players_broadcast_skips_unauthenticated_socket() {
+    async fn game_socket_online_players_broadcast_skips_unauthenticated_socket() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ONLINE_PLAYERS_AUTH_ROOM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_ONLINE_PLAYERS_AUTH_ROOM_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -10019,9 +12112,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_refresh_emits_full_character_after_auth() {
+    async fn game_socket_refresh_emits_full_character_after_auth() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_REFRESH_AUTH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_REFRESH_AUTH_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -10059,9 +12155,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_add_point_emits_full_character_after_auth() {
+    async fn game_socket_add_point_emits_full_character_after_auth() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ADD_POINT_AUTH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_ADD_POINT_AUTH_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -10079,7 +12178,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         socket_auth(&client, address, &sid, &token).await;
         let auth_poll_text = poll_until_contains(&client, address, &sid, "game:auth-ready").await;
 
-        socket_emit_raw(&client, address, &sid, "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":1}]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            "42[\"game:addPoint\",{\"attribute\":\"jing\",\"amount\":1}]",
+        )
+        .await;
 
         let add_point_poll_text = poll_text(&client, address, &sid).await;
 
@@ -10100,9 +12205,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_battle_sync_emits_battle_update_after_auth() {
+    async fn game_socket_battle_sync_emits_battle_update_after_auth() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_BATTLE_SYNC_AUTH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_BATTLE_SYNC_AUTH_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -10127,11 +12237,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 monster_ids: vec!["monster-gray-wolf".to_string()],
             },
         });
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            &battle_id,
-            character_id,
-            &["monster-gray-wolf".to_string()],
-        ));
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                &battle_id,
+                character_id,
+                &["monster-gray-wolf".to_string()],
+            ));
 
         let token = fixture.token.clone();
 
@@ -10143,7 +12255,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         socket_auth(&client, address, &sid, &token).await;
         let auth_poll_text = poll_until_contains(&client, address, &sid, "game:auth-ready").await;
 
-        socket_emit_raw(&client, address, &sid, &format!("42[\"battle:sync\",{{\"battleId\":\"{battle_id}\"}}]")).await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            &format!("42[\"battle:sync\",{{\"battleId\":\"{battle_id}\"}}]"),
+        )
+        .await;
 
         let battle_poll_text = poll_text(&client, address, &sid).await;
 
@@ -10154,7 +12272,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(auth_poll_text.contains("game:auth-ready"));
         assert!(battle_poll_text.contains("battle:update"));
         assert!(battle_poll_text.contains(&format!("\"battleId\":\"{battle_id}\"")));
-        assert!(battle_poll_text.contains("battle_started") || battle_poll_text.contains("battle_state"));
+        assert!(
+            battle_poll_text.contains("battle_started")
+                || battle_poll_text.contains("battle_state")
+        );
 
         server.abort();
 
@@ -10162,14 +12283,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn game_socket_battle_sync_recovers_persisted_battle_after_runtime_clear() {
+    async fn game_socket_battle_sync_recovers_persisted_battle_after_runtime_clear() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
         if !state.redis_available {
             println!("GAME_SOCKET_BATTLE_SYNC_RECOVERY_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_BATTLE_SYNC_RECOVERY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_BATTLE_SYNC_RECOVERY_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -10197,13 +12323,20 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let start_text = start_response.text().await.expect("start body should read");
         println!("GAME_SOCKET_BATTLE_SYNC_RECOVERY_START_RESPONSE={start_text}");
         assert_eq!(start_status, StatusCode::OK);
-        let start_body: Value = serde_json::from_str(&start_text)
-            .expect("start body should be json");
-        let battle_id = start_body["data"]["battleId"].as_str().expect("battle id should exist").to_string();
+        let start_body: Value =
+            serde_json::from_str(&start_text).expect("start body should be json");
+        let battle_id = start_body["data"]["battleId"]
+            .as_str()
+            .expect("battle id should exist")
+            .to_string();
 
         state.battle_runtime.clear(&battle_id);
         state.online_battle_projections.clear(&battle_id);
-        if let Some(session_id) = state.battle_sessions.get_by_battle_id(&battle_id).map(|session| session.session_id) {
+        if let Some(session_id) = state
+            .battle_sessions
+            .get_by_battle_id(&battle_id)
+            .map(|session| session.session_id)
+        {
             let _ = state.battle_sessions.update(&session_id, |record| {
                 record.current_battle_id = None;
             });
@@ -10213,8 +12346,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         socket_auth(&client, address, &sid, &fixture.token).await;
         let _ = poll_until_contains(&client, address, &sid, "game:auth-ready").await;
 
-        socket_emit_raw(&client, address, &sid, &format!("42[\"battle:sync\",{{\"battleId\":\"{battle_id}\"}}]"))
-            .await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            &format!("42[\"battle:sync\",{{\"battleId\":\"{battle_id}\"}}]"),
+        )
+        .await;
 
         let poll_text = poll_until_contains(&client, address, &sid, "battle:update").await;
 
@@ -10231,18 +12369,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn persisted_battle_recovery_restores_generic_pve_bundle_via_startup_path() {
+    async fn persisted_battle_recovery_restores_generic_pve_bundle_via_startup_path() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
         if !state.redis_available {
             println!("PERSISTED_BATTLE_RECOVERY_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PERSISTED_BATTLE_RECOVERY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PERSISTED_BATTLE_RECOVERY_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("persisted-battle-recovery-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "persisted-battle-recovery-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET current_map_id = 'map-qingyun-outskirts', current_room_id = 'room-south-forest' WHERE id = $1")
             .bind(fixture.character_id)
@@ -10267,8 +12411,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         if start_status != StatusCode::OK {
             panic!("PARTNER_REBONE_START_ROUTE_RESPONSE={start_text}");
         }
-        let start_body: Value = serde_json::from_str(&start_text).expect("start body should be json");
-        let battle_id = start_body["data"]["battleId"].as_str().expect("battle id should exist").to_string();
+        let start_body: Value =
+            serde_json::from_str(&start_text).expect("start body should be json");
+        let battle_id = start_body["data"]["battleId"]
+            .as_str()
+            .expect("battle id should exist")
+            .to_string();
         let session_id = start_body["data"]["debugRealtime"]["session"]["sessionId"]
             .as_str()
             .expect("session id should exist")
@@ -10299,9 +12447,17 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(summary.recovered_battle_count >= 1);
         assert!(summary.pve_count >= 1);
         assert!(state.battle_runtime.get(&battle_id).is_some());
-        assert!(state.online_battle_projections.get_by_battle_id(&battle_id).is_some());
+        assert!(
+            state
+                .online_battle_projections
+                .get_by_battle_id(&battle_id)
+                .is_some()
+        );
         assert_eq!(
-            state.battle_sessions.get_by_battle_id(&battle_id).and_then(|session| session.current_battle_id),
+            state
+                .battle_sessions
+                .get_by_battle_id(&battle_id)
+                .and_then(|session| session.current_battle_id),
             Some(battle_id.clone())
         );
 
@@ -10309,13 +12465,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn orphan_battle_session_recovery_restores_session_without_projection() {
+    async fn orphan_battle_session_recovery_restores_session_without_projection() {
         let state = test_state();
         if !state.redis_available {
             println!("ORPHAN_BATTLE_SESSION_RECOVERY_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ORPHAN_BATTLE_SESSION_RECOVERY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "ORPHAN_BATTLE_SESSION_RECOVERY_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -10341,9 +12502,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("session should persist");
 
-        let recovered = crate::integrations::battle_persistence::recover_all_orphan_battle_sessions(&state)
-            .await
-            .expect("orphan session recovery should succeed");
+        let recovered =
+            crate::integrations::battle_persistence::recover_all_orphan_battle_sessions(&state)
+                .await
+                .expect("orphan session recovery should succeed");
 
         println!("ORPHAN_BATTLE_SESSION_RECOVERY_COUNT={recovered}");
 
@@ -10360,14 +12522,17 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_expired_cleanup_clears_runtime_projection_session_and_redis_bundle() {
+    async fn battle_expired_cleanup_clears_runtime_projection_session_and_redis_bundle() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
         if !state.redis_available {
             println!("BATTLE_EXPIRED_CLEANUP_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_EXPIRED_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "BATTLE_EXPIRED_CLEANUP_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -10389,7 +12554,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 monster_ids: vec!["monster-wild-boar".to_string()],
             },
         };
-        let battle_state = build_minimal_pve_battle_state(&battle_id, fixture.character_id, &["monster-wild-boar".to_string()]);
+        let battle_state = build_minimal_pve_battle_state(
+            &battle_id,
+            fixture.character_id,
+            &["monster-wild-boar".to_string()],
+        );
         let projection = OnlineBattleProjectionRecord {
             battle_id: battle_id.clone(),
             owner_user_id: fixture.user_id,
@@ -10414,16 +12583,35 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("battle expired cleanup should succeed");
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
-        let snapshot = redis.get_string(&format!("battle:snapshot:{battle_id}")).await.expect("snapshot should read");
-        let projection_raw = redis.get_string(&format!("battle:projection:{battle_id}")).await.expect("projection should read");
-        let session_raw = redis.get_string(&format!("battle:session:{session_id}")).await.expect("session should read");
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
+        let snapshot = redis
+            .get_string(&format!("battle:snapshot:{battle_id}"))
+            .await
+            .expect("snapshot should read");
+        let projection_raw = redis
+            .get_string(&format!("battle:projection:{battle_id}"))
+            .await
+            .expect("projection should read");
+        let session_raw = redis
+            .get_string(&format!("battle:session:{session_id}"))
+            .await
+            .expect("session should read");
 
-        println!("BATTLE_EXPIRED_CLEANUP_COUNT={}", summary.expired_battle_count);
+        println!(
+            "BATTLE_EXPIRED_CLEANUP_COUNT={}",
+            summary.expired_battle_count
+        );
 
         assert_eq!(summary.expired_battle_count, 1);
         assert!(state.battle_runtime.get(&battle_id).is_none());
-        assert!(state.online_battle_projections.get_by_battle_id(&battle_id).is_none());
+        assert!(
+            state
+                .online_battle_projections
+                .get_by_battle_id(&battle_id)
+                .is_none()
+        );
         assert_eq!(
             state
                 .battle_sessions
@@ -10439,15 +12627,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn online_battle_projection_warmup_materializes_team_dungeon_entry_and_tower_runtime() {
+    async fn online_battle_projection_warmup_materializes_team_dungeon_entry_and_tower_runtime() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ONLINE_BATTLE_PROJECTION_WARMUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "ONLINE_BATTLE_PROJECTION_WARMUP_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("projection-warmup-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '预热队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
             .bind(&team_id)
@@ -10500,24 +12695,40 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(summary.team_projection_count >= 2);
         assert!(summary.dungeon_entry_projection_count >= 1);
         assert!(summary.tower_count >= 1);
-        assert_eq!(state.team_projections.snapshot().len(), summary.team_projection_count);
-        assert_eq!(state.dungeon_entry_projections.snapshot().len(), summary.dungeon_entry_projection_count);
-        assert_eq!(state.tower_projections.snapshot().len(), summary.tower_count);
+        assert_eq!(
+            state.team_projections.snapshot().len(),
+            summary.team_projection_count
+        );
+        assert_eq!(
+            state.dungeon_entry_projections.snapshot().len(),
+            summary.dungeon_entry_projection_count
+        );
+        assert_eq!(
+            state.tower_projections.snapshot().len(),
+            summary.tower_count
+        );
 
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, member.character_id, member.user_id).await;
     }
 
     #[tokio::test]
-        async fn startup_online_battle_projection_materialize_warmup_populates_runtime() {
+    async fn startup_online_battle_projection_materialize_warmup_populates_runtime() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "STARTUP_ONLINE_BATTLE_WARMUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "STARTUP_ONLINE_BATTLE_WARMUP_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("startup-projection-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '预热队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
@@ -10563,12 +12774,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             summary.tower_count
         );
 
-        assert_eq!(state.character_snapshots.snapshot().len(), summary.character_snapshot_count);
-        assert_eq!(state.arena_projections.snapshot().len(), summary.arena_projection_count);
-        assert_eq!(state.team_projections.snapshot().len(), summary.team_projection_count);
-        assert_eq!(state.dungeon_projections.snapshot().len(), summary.dungeon_projection_count);
-        assert_eq!(state.dungeon_entry_projections.snapshot().len(), summary.dungeon_entry_projection_count);
-        assert_eq!(state.tower_projections.snapshot().len(), summary.tower_count);
+        assert_eq!(
+            state.character_snapshots.snapshot().len(),
+            summary.character_snapshot_count
+        );
+        assert_eq!(
+            state.arena_projections.snapshot().len(),
+            summary.arena_projection_count
+        );
+        assert_eq!(
+            state.team_projections.snapshot().len(),
+            summary.team_projection_count
+        );
+        assert_eq!(
+            state.dungeon_projections.snapshot().len(),
+            summary.dungeon_projection_count
+        );
+        assert_eq!(
+            state.dungeon_entry_projections.snapshot().len(),
+            summary.dungeon_entry_projection_count
+        );
+        assert_eq!(
+            state.tower_projections.snapshot().len(),
+            summary.tower_count
+        );
         assert!(summary.character_snapshot_count >= 2);
         assert!(summary.arena_projection_count >= 1);
         assert!(summary.team_projection_count >= 2);
@@ -10581,9 +12810,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn mail_history_cleanup_removes_soft_deleted_and_expired_rows() {
+    async fn mail_history_cleanup_removes_soft_deleted_and_expired_rows() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIL_HISTORY_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIL_HISTORY_CLEANUP_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -10621,8 +12852,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "MAIL_HISTORY_CLEANUP_SUMMARY={{\"softDeleted\":{},\"expired\":{}}}",
-            summary.deleted_soft_deleted_count,
-            summary.deleted_expired_count
+            summary.deleted_soft_deleted_count, summary.deleted_expired_count
         );
 
         assert!(summary.deleted_soft_deleted_count >= 1);
@@ -10633,9 +12863,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn mail_unread_route_ignores_expired_mail_even_before_cleanup() {
+    async fn mail_unread_route_ignores_expired_mail_even_before_cleanup() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "MAIL_EXPIRED_COUNTER_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "MAIL_EXPIRED_COUNTER_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -10675,9 +12907,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn idle_history_cleanup_keeps_recent_finished_sessions_only() {
+    async fn idle_history_cleanup_keeps_recent_finished_sessions_only() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "IDLE_HISTORY_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "IDLE_HISTORY_CLEANUP_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -10685,7 +12919,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
 
         for idx in 0..5_i64 {
-            let digest = format!("{:x}", md5::compute(format!("{}-{}", suffix, idx).as_bytes()));
+            let digest = format!(
+                "{:x}",
+                md5::compute(format!("{}-{}", suffix, idx).as_bytes())
+            );
             let session_id = format!(
                 "{}-{}-{}-{}-{}",
                 &digest[0..8],
@@ -10718,7 +12955,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .try_get::<i64, _>("cnt")
         .expect("count should decode");
 
-        println!("IDLE_HISTORY_CLEANUP_DELETED={}", summary.deleted_session_count);
+        println!(
+            "IDLE_HISTORY_CLEANUP_DELETED={}",
+            summary.deleted_session_count
+        );
 
         assert_eq!(summary.deleted_session_count, 2);
         assert_eq!(remaining, 3);
@@ -10727,9 +12967,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn generated_content_refresh_counts_generated_rows_on_startup() {
+    async fn generated_content_refresh_counts_generated_rows_on_startup() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GENERATED_CONTENT_REFRESH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GENERATED_CONTENT_REFRESH_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -10771,7 +13014,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("generated partner should insert");
 
-        let summary = crate::bootstrap::generated_content_refresh::refresh_generated_content_on_startup(&state)
+        let summary =
+            crate::bootstrap::generated_content_refresh::refresh_generated_content_on_startup(
+                &state,
+            )
             .await
             .expect("generated content refresh should succeed");
 
@@ -10792,9 +13038,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn wander_title_grant_upsert_refreshes_timestamp_without_overwriting_is_equipped() {
+    async fn wander_title_grant_upsert_refreshes_timestamp_without_overwriting_is_equipped() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "WANDER_TITLE_UPSERT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "WANDER_TITLE_UPSERT_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -10843,18 +13091,35 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("character title row should load after");
 
-        let before_obtained_at = before_row.try_get::<Option<String>, _>("obtained_at_text").unwrap_or(None).unwrap_or_default();
-        let after_obtained_at = after_row.try_get::<Option<String>, _>("obtained_at_text").unwrap_or(None).unwrap_or_default();
-        let before_updated_at = before_row.try_get::<Option<String>, _>("updated_at_text").unwrap_or(None).unwrap_or_default();
-        let after_updated_at = after_row.try_get::<Option<String>, _>("updated_at_text").unwrap_or(None).unwrap_or_default();
+        let before_obtained_at = before_row
+            .try_get::<Option<String>, _>("obtained_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let after_obtained_at = after_row
+            .try_get::<Option<String>, _>("obtained_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let before_updated_at = before_row
+            .try_get::<Option<String>, _>("updated_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let after_updated_at = after_row
+            .try_get::<Option<String>, _>("updated_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default();
 
         println!(
             "WANDER_TITLE_UPSERT_TIMESTAMPS={{\"beforeObtainedAt\":\"{}\",\"afterObtainedAt\":\"{}\"}}",
-            before_obtained_at,
-            after_obtained_at
+            before_obtained_at, after_obtained_at
         );
 
-        assert_eq!(after_row.try_get::<Option<bool>, _>("is_equipped").unwrap_or(None).unwrap_or(false), true);
+        assert_eq!(
+            after_row
+                .try_get::<Option<bool>, _>("is_equipped")
+                .unwrap_or(None)
+                .unwrap_or(false),
+            true
+        );
         assert_ne!(before_obtained_at, after_obtained_at);
         assert_ne!(before_updated_at, after_updated_at);
 
@@ -10862,13 +13127,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn wander_title_def_upsert_refreshes_existing_story_definition() {
+    async fn wander_title_def_upsert_refreshes_existing_story_definition() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "WANDER_TITLE_DEF_UPSERT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "WANDER_TITLE_DEF_UPSERT_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("wander-title-def-upsert-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "wander-title-def-upsert-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let story_id = format!("wander-story-{suffix}");
         let title_id = format!("title-wander-{suffix}");
 
@@ -10911,18 +13182,57 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             })
         );
 
-        assert_eq!(returned_row.try_get::<Option<String>, _>("id").unwrap_or(None).unwrap_or_default(), title_id);
-        assert_eq!(stored_row.try_get::<Option<String>, _>("id").unwrap_or(None).unwrap_or_default(), title_id);
-        assert_eq!(stored_row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(), "新云航客");
-        assert_eq!(stored_row.try_get::<Option<String>, _>("description").unwrap_or(None).unwrap_or_default(), "更新后的终幕定义。");
-        assert_eq!(stored_row.try_get::<Option<String>, _>("color").unwrap_or(None).unwrap_or_default(), "#faad14");
-        assert_eq!(stored_row.try_get::<Option<serde_json::Value>, _>("effects").unwrap_or(None).unwrap_or(serde_json::json!({})), serde_json::json!({"wugong": 12, "baoji": 0.03}));
+        assert_eq!(
+            returned_row
+                .try_get::<Option<String>, _>("id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            title_id
+        );
+        assert_eq!(
+            stored_row
+                .try_get::<Option<String>, _>("id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            title_id
+        );
+        assert_eq!(
+            stored_row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "新云航客"
+        );
+        assert_eq!(
+            stored_row
+                .try_get::<Option<String>, _>("description")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "更新后的终幕定义。"
+        );
+        assert_eq!(
+            stored_row
+                .try_get::<Option<String>, _>("color")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "#faad14"
+        );
+        assert_eq!(
+            stored_row
+                .try_get::<Option<serde_json::Value>, _>("effects")
+                .unwrap_or(None)
+                .unwrap_or(serde_json::json!({})),
+            serde_json::json!({"wugong": 12, "baoji": 0.03})
+        );
     }
 
     #[tokio::test]
-        async fn performance_index_sync_creates_expected_hot_indexes() {
+    async fn performance_index_sync_creates_expected_hot_indexes() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PERFORMANCE_INDEX_SYNC_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PERFORMANCE_INDEX_SYNC_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -10948,14 +13258,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         );
 
         assert!(summary.ensured_index_count >= 2);
-        assert!(index_names.iter().any(|name| name == "idx_mail_character_active_scope"));
-        assert!(index_names.iter().any(|name| name == "idx_item_instance_stackable_lookup"));
+        assert!(
+            index_names
+                .iter()
+                .any(|name| name == "idx_mail_character_active_scope")
+        );
+        assert!(
+            index_names
+                .iter()
+                .any(|name| name == "idx_item_instance_stackable_lookup")
+        );
     }
 
     #[tokio::test]
-        async fn item_data_cleanup_removes_undefined_item_rows() {
+    async fn item_data_cleanup_removes_undefined_item_rows() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ITEM_DATA_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "ITEM_DATA_CLEANUP_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -10984,9 +13304,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("bogus item_use_count should insert");
 
-        let summary = crate::bootstrap::item_data_cleanup::cleanup_undefined_item_data_on_startup(&state)
-            .await
-            .expect("item data cleanup should succeed");
+        let summary =
+            crate::bootstrap::item_data_cleanup::cleanup_undefined_item_data_on_startup(&state)
+                .await
+                .expect("item data cleanup should succeed");
 
         let item_instance_count = sqlx::query("SELECT COUNT(1)::bigint AS cnt FROM item_instance WHERE item_def_id = 'bogus-item-def'")
             .fetch_one(&pool)
@@ -11025,9 +13346,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn technique_draft_cleanup_refunds_expired_draft_by_mail() {
+    async fn technique_draft_cleanup_refunds_expired_draft_by_mail() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_DRAFT_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TECHNIQUE_DRAFT_CLEANUP_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -11055,14 +13379,17 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("technique generation job should insert");
 
-        let summary = crate::jobs::technique_draft_cleanup::run_technique_draft_cleanup_once(&state)
-            .await
-            .expect("technique draft cleanup should succeed");
-        let job_row = sqlx::query("SELECT status, error_code, error_message FROM technique_generation_job WHERE id = $1")
-            .bind(&generation_id)
-            .fetch_one(&pool)
-            .await
-            .expect("job row should exist");
+        let summary =
+            crate::jobs::technique_draft_cleanup::run_technique_draft_cleanup_once(&state)
+                .await
+                .expect("technique draft cleanup should succeed");
+        let job_row = sqlx::query(
+            "SELECT status, error_code, error_message FROM technique_generation_job WHERE id = $1",
+        )
+        .bind(&generation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("job row should exist");
         let mail_row = sqlx::query("SELECT title, content, attach_items FROM mail WHERE recipient_character_id = $1 AND source = 'technique_generation' AND source_ref_id = $2 ORDER BY id DESC LIMIT 1")
             .bind(fixture.character_id)
             .bind(&generation_id)
@@ -11080,31 +13407,97 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         println!(
             "TECHNIQUE_DRAFT_CLEANUP_SUMMARY={{\"refunded\":{},\"status\":\"{}\"}}",
             summary.refunded_draft_count,
-            job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default()
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default()
         );
 
         assert!(summary.refunded_draft_count >= 1);
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "refunded");
-        assert_eq!(job_row.try_get::<Option<String>, _>("error_code").unwrap_or(None).unwrap_or_default(), "GENERATION_EXPIRED");
-        assert!(job_row.try_get::<Option<String>, _>("error_message").unwrap_or(None).unwrap_or_default().contains("草稿已过期"));
-        assert_eq!(mail_row.try_get::<Option<String>, _>("title").unwrap_or(None).unwrap_or_default(), "功法残页返还");
-        assert!(mail_row.try_get::<Option<String>, _>("content").unwrap_or(None).unwrap_or_default().contains("返还一半功法残页"));
-        assert!(mail_row.try_get::<Option<serde_json::Value>, _>("attach_items").unwrap_or(None).unwrap_or_else(|| serde_json::json!([])).to_string().contains("mat-gongfa-canye"));
-        assert!(counter_row.try_get::<Option<i64>, _>("total_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unread_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unclaimed_count").unwrap_or(None).unwrap_or_default() >= 1);
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "refunded"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("error_code")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "GENERATION_EXPIRED"
+        );
+        assert!(
+            job_row
+                .try_get::<Option<String>, _>("error_message")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .contains("草稿已过期")
+        );
+        assert_eq!(
+            mail_row
+                .try_get::<Option<String>, _>("title")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "功法残页返还"
+        );
+        assert!(
+            mail_row
+                .try_get::<Option<String>, _>("content")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .contains("返还一半功法残页")
+        );
+        assert!(
+            mail_row
+                .try_get::<Option<serde_json::Value>, _>("attach_items")
+                .unwrap_or(None)
+                .unwrap_or_else(|| serde_json::json!([]))
+                .to_string()
+                .contains("mat-gongfa-canye")
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("total_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unread_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unclaimed_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_recruit_draft_cleanup_discards_expired_preview() {
+    async fn partner_recruit_draft_cleanup_discards_expired_preview() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_RECRUIT_DRAFT_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "PARTNER_RECRUIT_DRAFT_CLEANUP_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("partner-recruit-cleanup-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-recruit-cleanup-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let generation_id = format!("partner-gen-{suffix}");
         let preview_partner_def_id = format!("generated-partner-{suffix}");
@@ -11128,7 +13521,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("partner recruit job should insert");
 
-        let summary = crate::jobs::partner_recruit_draft_cleanup::run_partner_recruit_draft_cleanup_once(&state)
+        let summary =
+            crate::jobs::partner_recruit_draft_cleanup::run_partner_recruit_draft_cleanup_once(
+                &state,
+            )
             .await
             .expect("partner recruit draft cleanup should succeed");
         let row = sqlx::query("SELECT status, viewed_at FROM partner_recruit_job WHERE id = $1")
@@ -11137,19 +13533,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("partner recruit row should exist");
 
-        println!("PARTNER_RECRUIT_DRAFT_CLEANUP_COUNT={}", summary.discarded_draft_count);
+        println!(
+            "PARTNER_RECRUIT_DRAFT_CLEANUP_COUNT={}",
+            summary.discarded_draft_count
+        );
 
         assert!(summary.discarded_draft_count >= 1);
-        assert_eq!(row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "discarded");
+        assert_eq!(
+            row.try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "discarded"
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn afdian_message_retry_recovery_dispatches_due_delivery() {
+    async fn afdian_message_retry_recovery_dispatches_due_delivery() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_RETRY_RECOVERY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_RETRY_RECOVERY_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
         let suffix = super::chrono_like_timestamp_ms();
@@ -11174,13 +13581,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let mut final_status = String::new();
         let mut attempt_count = 0_i64;
         for _ in 0..60 {
-            let delivery_row = sqlx::query("SELECT status, attempt_count FROM afdian_message_delivery WHERE order_id = $1")
-                .bind(order_id)
-                .fetch_one(&pool)
-                .await
-                .expect("afdian delivery should exist");
-            final_status = delivery_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-            attempt_count = delivery_row.try_get::<Option<i32>, _>("attempt_count").unwrap_or(None).map(i64::from).unwrap_or_default();
+            let delivery_row = sqlx::query(
+                "SELECT status, attempt_count FROM afdian_message_delivery WHERE order_id = $1",
+            )
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .expect("afdian delivery should exist");
+            final_status = delivery_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            attempt_count = delivery_row
+                .try_get::<Option<i32>, _>("attempt_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default();
             if final_status != "pending" && final_status != "sending" || attempt_count > 0 {
                 break;
             }
@@ -11189,20 +13605,23 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "AFDIAN_RETRY_RECOVERY_RESULT={{\"recovered\":{},\"status\":\"{}\",\"attemptCount\":{}}}",
-            recovered,
-            final_status,
-            attempt_count
+            recovered, final_status, attempt_count
         );
 
         assert!(recovered >= 1);
-        assert!(matches!(final_status.as_str(), "sending" | "sent" | "failed"));
+        assert!(matches!(
+            final_status.as_str(),
+            "sending" | "sent" | "failed"
+        ));
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_end_to_end_creates_redeem_code_and_sends_message() {
+    async fn afdian_webhook_route_end_to_end_creates_redeem_code_and_sends_message() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_WEBHOOK_E2E_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_WEBHOOK_E2E_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
         let suffix = super::chrono_like_timestamp_ms();
@@ -11239,12 +13658,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 axum::routing::post(move |axum::Json(raw_body): axum::Json<serde_json::Value>| {
                     let sent_message_body = sent_message_body_for_api.clone();
                     async move {
-                        *sent_message_body.lock().expect("sent message lock should acquire") = raw_body.to_string();
-                    axum::Json(serde_json::json!({
-                        "ec": 200,
-                        "em": "",
-                        "data": {"ok": true}
-                    }))
+                        *sent_message_body
+                            .lock()
+                            .expect("sent message lock should acquire") = raw_body.to_string();
+                        axum::Json(serde_json::json!({
+                            "ec": 200,
+                            "em": "",
+                            "data": {"ok": true}
+                        }))
                     }
                 }),
             );
@@ -11273,12 +13694,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let order_row = sqlx::query("SELECT redeem_code_id FROM afdian_order WHERE out_trade_no = $1")
-            .bind(&out_trade_no)
-            .fetch_one(&pool)
-            .await
-            .expect("afdian order should exist");
-        let redeem_code_id = order_row.try_get::<Option<i64>, _>("redeem_code_id").unwrap_or(None).unwrap_or_default();
+        let order_row =
+            sqlx::query("SELECT redeem_code_id FROM afdian_order WHERE out_trade_no = $1")
+                .bind(&out_trade_no)
+                .fetch_one(&pool)
+                .await
+                .expect("afdian order should exist");
+        let redeem_code_id = order_row
+            .try_get::<Option<i64>, _>("redeem_code_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
         let redeem_row = sqlx::query("SELECT reward_payload FROM redeem_code WHERE id = $1")
             .bind(redeem_code_id)
             .fetch_one(&pool)
@@ -11293,9 +13718,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("delivery should exist");
-            final_status = delivery_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-            attempt_count = delivery_row.try_get::<Option<i32>, _>("attempt_count").unwrap_or(None).map(i64::from).unwrap_or_default();
-            sent_at = delivery_row.try_get::<Option<String>, _>("sent_at_text").unwrap_or(None);
+            final_status = delivery_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            attempt_count = delivery_row
+                .try_get::<Option<i32>, _>("attempt_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default();
+            sent_at = delivery_row
+                .try_get::<Option<String>, _>("sent_at_text")
+                .unwrap_or(None);
             if final_status != "sending" {
                 break;
             }
@@ -11315,7 +13749,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ec"], 200);
         assert!(redeem_code_id > 0);
-        assert!(redeem_row.try_get::<Option<serde_json::Value>, _>("reward_payload").unwrap_or(None).unwrap_or_else(|| serde_json::json!({})).to_string().contains("token-004"));
+        assert!(
+            redeem_row
+                .try_get::<Option<serde_json::Value>, _>("reward_payload")
+                .unwrap_or(None)
+                .unwrap_or_else(|| serde_json::json!({}))
+                .to_string()
+                .contains("token-004")
+        );
         assert_eq!(final_status, "sent");
         assert!(attempt_count >= 1);
         assert!(sent_at.is_some());
@@ -11323,17 +13764,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(sent_message_payload.contains("AFD"));
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_marks_delivery_failed_when_send_msg_errors() {
+    async fn afdian_webhook_route_marks_delivery_failed_when_send_msg_errors() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_WEBHOOK_FAILURE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_WEBHOOK_FAILURE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
         let suffix = super::chrono_like_timestamp_ms();
@@ -11406,10 +13859,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("delivery should exist");
-            final_status = delivery_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-            attempt_count = delivery_row.try_get::<Option<i32>, _>("attempt_count").unwrap_or(None).map(i64::from).unwrap_or_default();
-            next_retry_at = delivery_row.try_get::<Option<String>, _>("next_retry_at_text").unwrap_or(None);
-            last_error = delivery_row.try_get::<Option<String>, _>("last_error").unwrap_or(None).unwrap_or_default();
+            final_status = delivery_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            attempt_count = delivery_row
+                .try_get::<Option<i32>, _>("attempt_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default();
+            next_retry_at = delivery_row
+                .try_get::<Option<String>, _>("next_retry_at_text")
+                .unwrap_or(None);
+            last_error = delivery_row
+                .try_get::<Option<String>, _>("last_error")
+                .unwrap_or(None)
+                .unwrap_or_default();
             if final_status != "sending" {
                 break;
             }
@@ -11429,17 +13894,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(last_error.contains("HTTP 502"));
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_marks_delivery_failed_when_send_msg_returns_ok_false_business_error() {
+    async fn afdian_webhook_route_marks_delivery_failed_when_send_msg_returns_ok_false_business_error()
+     {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_SEND_EC_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_SEND_EC_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
         let suffix = super::chrono_like_timestamp_ms();
@@ -11513,10 +13990,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("delivery should exist");
-            final_status = delivery_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-            attempt_count = delivery_row.try_get::<Option<i64>, _>("attempt_count").unwrap_or(None).unwrap_or_default();
-            next_retry_at = delivery_row.try_get::<Option<String>, _>("next_retry_at_text").unwrap_or(None);
-            last_error = delivery_row.try_get::<Option<String>, _>("last_error").unwrap_or(None).unwrap_or_default();
+            final_status = delivery_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            attempt_count = delivery_row
+                .try_get::<Option<i64>, _>("attempt_count")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            next_retry_at = delivery_row
+                .try_get::<Option<String>, _>("next_retry_at_text")
+                .unwrap_or(None);
+            last_error = delivery_row
+                .try_get::<Option<String>, _>("last_error")
+                .unwrap_or(None)
+                .unwrap_or_default();
             if final_status != "sending" {
                 break;
             }
@@ -11534,17 +14022,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(next_retry_at.is_some());
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_is_idempotent_on_replay() {
+    async fn afdian_webhook_route_is_idempotent_on_replay() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_WEBHOOK_IDEMPOTENT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_WEBHOOK_IDEMPOTENT_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -11635,9 +14135,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "AFDIAN_WEBHOOK_IDEMPOTENT_COUNTS={{\"orders\":{},\"redeemCodes\":{},\"deliveries\":{}}}",
-            order_count,
-            redeem_count,
-            delivery_count
+            order_count, redeem_count, delivery_count
         );
 
         server.abort();
@@ -11648,17 +14146,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(delivery_count, 1);
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_ignores_unconfigured_plan_without_delivery() {
+    async fn afdian_webhook_route_ignores_unconfigured_plan_without_delivery() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_UNSUPPORTED_PLAN_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_UNSUPPORTED_PLAN_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -11727,9 +14237,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "AFDIAN_UNSUPPORTED_PLAN_COUNTS={{\"orders\":{},\"redeemCodes\":{},\"deliveries\":{}}}",
-            order_count,
-            redeem_count,
-            delivery_count
+            order_count, redeem_count, delivery_count
         );
 
         server.abort();
@@ -11741,17 +14249,28 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(delivery_count, 0);
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_rejects_mismatched_query_order_without_side_effects() {
+    async fn afdian_webhook_route_rejects_mismatched_query_order_without_side_effects() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_MISMATCH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_MISMATCH_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -11826,23 +14345,39 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         api_server.abort();
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(body["em"].as_str().unwrap_or_default().contains("total_amount"));
+        assert!(
+            body["em"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("total_amount")
+        );
         assert_eq!(order_count, 0);
         assert_eq!(redeem_count, 0);
         assert_eq!(delivery_count, 0);
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_rejects_when_query_order_finds_nothing() {
+    async fn afdian_webhook_route_rejects_when_query_order_finds_nothing() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_QUERY_MISS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_QUERY_MISS_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -11881,12 +14416,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let order_count = sqlx::query("SELECT COUNT(1)::bigint AS cnt FROM afdian_order WHERE out_trade_no = 'trade-miss-1'")
-            .fetch_one(&pool)
-            .await
-            .expect("order count should query")
-            .try_get::<i64, _>("cnt")
-            .expect("count should decode");
+        let order_count = sqlx::query(
+            "SELECT COUNT(1)::bigint AS cnt FROM afdian_order WHERE out_trade_no = 'trade-miss-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("order count should query")
+        .try_get::<i64, _>("cnt")
+        .expect("count should decode");
 
         println!("AFDIAN_QUERY_MISS_RESPONSE={body}");
 
@@ -11895,21 +14432,37 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["ec"], 400);
-        assert!(body["em"].as_str().unwrap_or_default().contains("未找到对应订单"));
+        assert!(
+            body["em"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("未找到对应订单")
+        );
         assert_eq!(order_count, 0);
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_rejects_when_query_order_returns_business_error() {
+    async fn afdian_webhook_route_rejects_when_query_order_returns_business_error() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_QUERY_EC_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_QUERY_EC_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -11948,12 +14501,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let order_count = sqlx::query("SELECT COUNT(1)::bigint AS cnt FROM afdian_order WHERE out_trade_no = 'trade-ec-1'")
-            .fetch_one(&pool)
-            .await
-            .expect("order count should query")
-            .try_get::<i64, _>("cnt")
-            .expect("count should decode");
+        let order_count = sqlx::query(
+            "SELECT COUNT(1)::bigint AS cnt FROM afdian_order WHERE out_trade_no = 'trade-ec-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("order count should query")
+        .try_get::<i64, _>("cnt")
+        .expect("count should decode");
 
         println!("AFDIAN_QUERY_EC_RESPONSE={body}");
 
@@ -11962,21 +14517,35 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["ec"], 400);
-        assert_eq!(body["em"], "configuration error: query-order upstream rejected request");
+        assert_eq!(
+            body["em"],
+            "configuration error: query-order upstream rejected request"
+        );
         assert_eq!(order_count, 0);
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_webhook_route_rejects_when_query_order_http_fails() {
+    async fn afdian_webhook_route_rejects_when_query_order_http_fails() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_QUERY_HTTP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_QUERY_HTTP_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -12014,12 +14583,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let order_count = sqlx::query("SELECT COUNT(1)::bigint AS cnt FROM afdian_order WHERE out_trade_no = 'trade-http-1'")
-            .fetch_one(&pool)
-            .await
-            .expect("order count should query")
-            .try_get::<i64, _>("cnt")
-            .expect("count should decode");
+        let order_count = sqlx::query(
+            "SELECT COUNT(1)::bigint AS cnt FROM afdian_order WHERE out_trade_no = 'trade-http-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("order count should query")
+        .try_get::<i64, _>("cnt")
+        .expect("count should decode");
 
         println!("AFDIAN_QUERY_HTTP_RESPONSE={body}");
 
@@ -12032,17 +14603,28 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(order_count, 0);
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
     }
 
     #[tokio::test]
-        async fn afdian_retry_recovery_reclaims_stale_sending_delivery() {
+    async fn afdian_retry_recovery_reclaims_stale_sending_delivery() {
         let _guard = afdian_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AFDIAN_STALE_SENDING_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AFDIAN_STALE_SENDING_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
         let suffix = super::chrono_like_timestamp_ms();
@@ -12096,9 +14678,17 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_one(&pool)
                 .await
                 .expect("delivery should exist");
-            final_status = delivery_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default();
-            attempt_count = delivery_row.try_get::<Option<i64>, _>("attempt_count").unwrap_or(None).unwrap_or_default();
-            sent_at = delivery_row.try_get::<Option<String>, _>("sent_at_text").unwrap_or(None);
+            final_status = delivery_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            attempt_count = delivery_row
+                .try_get::<Option<i64>, _>("attempt_count")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            sent_at = delivery_row
+                .try_get::<Option<String>, _>("sent_at_text")
+                .unwrap_or(None);
             if final_status != "sending" {
                 break;
             }
@@ -12107,9 +14697,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "AFDIAN_STALE_SENDING_RESULT={{\"recovered\":{},\"status\":\"{}\",\"attemptCount\":{}}}",
-            recovered,
-            final_status,
-            attempt_count
+            recovered, final_status, attempt_count
         );
 
         assert!(recovered >= 1);
@@ -12119,17 +14707,28 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         }
 
         unsafe {
-            match old_base { Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v), None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL") };
-            match old_user { Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v), None => std::env::remove_var("AFDIAN_OPEN_USER_ID") };
-            match old_token { Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v), None => std::env::remove_var("AFDIAN_OPEN_TOKEN") };
+            match old_base {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_API_BASE_URL", v),
+                None => std::env::remove_var("AFDIAN_OPEN_API_BASE_URL"),
+            };
+            match old_user {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_USER_ID", v),
+                None => std::env::remove_var("AFDIAN_OPEN_USER_ID"),
+            };
+            match old_token {
+                Some(v) => std::env::set_var("AFDIAN_OPEN_TOKEN", v),
+                None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
+            };
         }
         api_server.abort();
     }
 
     #[tokio::test]
-        async fn avatar_cleanup_clears_character_avatar_and_local_file_when_enabled() {
+    async fn avatar_cleanup_clears_character_avatar_and_local_file_when_enabled() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "AVATAR_CLEANUP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "AVATAR_CLEANUP_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -12165,24 +14764,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "AVATAR_CLEANUP_SUMMARY={{\"cleared\":{},\"deletedFiles\":{}}}",
-            summary.cleared_avatar_row_count,
-            summary.deleted_local_file_count
+            summary.cleared_avatar_row_count, summary.deleted_local_file_count
         );
 
         assert!(summary.enabled);
         assert!(summary.cleared_avatar_row_count >= 1);
         assert!(summary.deleted_local_file_count >= 1);
-        assert_eq!(avatar_row.try_get::<Option<String>, _>("avatar").unwrap_or(None), None);
+        assert_eq!(
+            avatar_row
+                .try_get::<Option<String>, _>("avatar")
+                .unwrap_or(None),
+            None
+        );
         assert!(!avatar_path.exists());
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn game_socket_battle_sync_missing_battle_emits_abandoned_payload() {
+    async fn game_socket_battle_sync_missing_battle_emits_abandoned_payload() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_BATTLE_SYNC_MISSING_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_BATTLE_SYNC_MISSING_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -12200,7 +14808,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         socket_auth(&client, address, &sid, &token).await;
         let _ = poll_until_contains(&client, address, &sid, "game:auth-ready").await;
 
-        socket_emit_raw(&client, address, &sid, "42[\"battle:sync\",{\"battleId\":\"missing-battle\"}]").await;
+        socket_emit_raw(
+            &client,
+            address,
+            &sid,
+            "42[\"battle:sync\",{\"battleId\":\"missing-battle\"}]",
+        )
+        .await;
 
         let poll_text = poll_until_contains(&client, address, &sid, "battle:update").await;
 
@@ -12217,9 +14831,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_route_generic_pve_actions_progress_then_finish_with_non_zero_rewards() {
+    async fn battle_route_generic_pve_actions_progress_then_finish_with_non_zero_rewards() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_ROUTE_GENERIC_PVE_ACTIONS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "BATTLE_ROUTE_GENERIC_PVE_ACTIONS_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -12248,8 +14867,8 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         if start_status != StatusCode::OK {
             panic!("PARTNER_REBONE_START_ROUTE_RESPONSE={start_text}");
         }
-        let start_body: Value = serde_json::from_str(&start_text)
-            .expect("start body should be json");
+        let start_body: Value =
+            serde_json::from_str(&start_text).expect("start body should be json");
         let battle_id = start_body["data"]["battleId"]
             .as_str()
             .expect("battle id should exist")
@@ -12264,8 +14883,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("first battle action should succeed");
         assert_eq!(first_action_response.status(), StatusCode::OK);
-        let first_action_body: Value = serde_json::from_str(&first_action_response.text().await.expect("first body should read"))
-            .expect("first body should be json");
+        let first_action_body: Value = serde_json::from_str(
+            &first_action_response
+                .text()
+                .await
+                .expect("first body should read"),
+        )
+        .expect("first body should be json");
 
         let second_action_response = client
             .post(format!("http://{address}/api/battle/action"))
@@ -12276,8 +14900,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("second battle action should succeed");
         assert_eq!(second_action_response.status(), StatusCode::OK);
-        let second_action_body: Value = serde_json::from_str(&second_action_response.text().await.expect("second body should read"))
-            .expect("second body should be json");
+        let second_action_body: Value = serde_json::from_str(
+            &second_action_response
+                .text()
+                .await
+                .expect("second body should read"),
+        )
+        .expect("second body should be json");
 
         println!("BATTLE_ROUTE_GENERIC_PVE_START_RESPONSE={start_body}");
         println!("BATTLE_ROUTE_GENERIC_PVE_FIRST_ACTION_RESPONSE={first_action_body}");
@@ -12285,11 +14914,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         server.abort();
 
-        let task_row = sqlx::query("SELECT kind, status FROM online_battle_settlement_task WHERE id = $1")
-            .bind(format!("generic-pve:{battle_id}"))
-            .fetch_one(&pool)
-            .await
-            .expect("generic pve settlement task should exist");
+        let task_row =
+            sqlx::query("SELECT kind, status FROM online_battle_settlement_task WHERE id = $1")
+                .bind(format!("generic-pve:{battle_id}"))
+                .fetch_one(&pool)
+                .await
+                .expect("generic pve settlement task should exist");
 
         crate::jobs::online_battle_settlement::run_online_battle_settlement_tick(&state)
             .await
@@ -12305,45 +14935,104 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .fetch_optional(&pool)
             .await
             .expect("battle reward item query should succeed");
-        let current_exp = character_row.try_get::<Option<i64>, _>("exp").expect("exp should decode").unwrap_or_default();
-        let current_silver = character_row.try_get::<Option<i64>, _>("silver").expect("silver should decode").unwrap_or_default();
+        let current_exp = character_row
+            .try_get::<Option<i64>, _>("exp")
+            .expect("exp should decode")
+            .unwrap_or_default();
+        let current_silver = character_row
+            .try_get::<Option<i64>, _>("silver")
+            .expect("silver should decode")
+            .unwrap_or_default();
 
-        assert_eq!(first_action_body["data"]["debugRealtime"]["kind"], "battle_state");
-        assert_eq!(second_action_body["data"]["debugRealtime"]["kind"], "battle_finished");
-        assert!(second_action_body["data"]["debugRealtime"]["rewards"]["exp"].as_i64().unwrap_or_default() > 0);
-        assert!(second_action_body["data"]["debugRealtime"]["rewards"]["silver"].as_i64().unwrap_or_default() > 0);
-        assert!(second_action_body["data"]["debugRealtime"]["rewards"]["perPlayerRewards"].as_array().is_some_and(|items| !items.is_empty()));
-        assert_eq!(task_row.try_get::<Option<String>, _>("kind").unwrap_or(None).unwrap_or_default(), "generic_pve_v1");
-        let settlement_task_row = sqlx::query("SELECT status FROM online_battle_settlement_task WHERE id = $1")
-            .bind(format!("generic-pve:{battle_id}"))
-            .fetch_one(&pool)
-            .await
-            .expect("generic pve settlement task should reload");
-        assert_eq!(settlement_task_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "completed");
+        assert_eq!(
+            first_action_body["data"]["debugRealtime"]["kind"],
+            "battle_state"
+        );
+        assert_eq!(
+            second_action_body["data"]["debugRealtime"]["kind"],
+            "battle_finished"
+        );
+        assert!(
+            second_action_body["data"]["debugRealtime"]["rewards"]["exp"]
+                .as_i64()
+                .unwrap_or_default()
+                > 0
+        );
+        assert!(
+            second_action_body["data"]["debugRealtime"]["rewards"]["silver"]
+                .as_i64()
+                .unwrap_or_default()
+                > 0
+        );
+        assert!(
+            second_action_body["data"]["debugRealtime"]["rewards"]["perPlayerRewards"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        );
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("kind")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generic_pve_v1"
+        );
+        let settlement_task_row =
+            sqlx::query("SELECT status FROM online_battle_settlement_task WHERE id = $1")
+                .bind(format!("generic-pve:{battle_id}"))
+                .fetch_one(&pool)
+                .await
+                .expect("generic pve settlement task should reload");
+        assert_eq!(
+            settlement_task_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "completed"
+        );
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let resource_hash = redis
-                .hgetall(&format!("character:resource-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:resource-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .unwrap_or_default();
-            println!("BATTLE_ROUTE_GENERIC_PVE_RESOURCE_HASH={}", serde_json::json!(resource_hash));
+            println!(
+                "BATTLE_ROUTE_GENERIC_PVE_RESOURCE_HASH={}",
+                serde_json::json!(resource_hash)
+            );
             assert!(!resource_hash.is_empty());
         } else {
             assert!(current_exp > 0);
             assert!(current_silver > 0);
         }
         if let Some(reward_item_row) = reward_item_row {
-            assert!(reward_item_row.try_get::<Option<i32>, _>("qty").unwrap_or(None).map(i64::from).unwrap_or_default() > 0);
+            assert!(
+                reward_item_row
+                    .try_get::<Option<i32>, _>("qty")
+                    .unwrap_or(None)
+                    .map(i64::from)
+                    .unwrap_or_default()
+                    > 0
+            );
         }
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn dungeon_next_completed_route_enqueues_durable_settlement_task() {
+    async fn dungeon_next_completed_route_enqueues_durable_settlement_task() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "DUNGEON_NEXT_SETTLEMENT_TASK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "DUNGEON_NEXT_SETTLEMENT_TASK_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
         sqlx::query("DELETE FROM online_battle_settlement_task")
@@ -12374,11 +15063,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("dungeon instance should insert");
 
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            &battle_id,
-            fixture.character_id,
-            &["monster-dungeon-wolf-king".to_string()],
-        ));
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                &battle_id,
+                fixture.character_id,
+                &["monster-dungeon-wolf-king".to_string()],
+            ));
         let _ = state.battle_runtime.update(&battle_id, |battle| {
             battle.phase = "finished".to_string();
             battle.result = Some("attacker_win".to_string());
@@ -12400,29 +15091,54 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let task_row = sqlx::query("SELECT kind, status, battle_id FROM online_battle_settlement_task WHERE id = $1")
-            .bind(format!("dungeon-clear:{instance_id}"))
-            .fetch_one(&pool)
-            .await
-            .expect("settlement task should exist");
+        let task_row = sqlx::query(
+            "SELECT kind, status, battle_id FROM online_battle_settlement_task WHERE id = $1",
+        )
+        .bind(format!("dungeon-clear:{instance_id}"))
+        .fetch_one(&pool)
+        .await
+        .expect("settlement task should exist");
 
         println!("DUNGEON_NEXT_SETTLEMENT_TASK_RESPONSE={body}");
 
         server.abort();
 
         assert_eq!(body["data"]["status"], "completed");
-        assert_eq!(task_row.try_get::<Option<String>, _>("kind").unwrap_or(None).unwrap_or_default(), "dungeon_clear_v1");
-        assert_eq!(task_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "pending");
-        assert_eq!(task_row.try_get::<Option<String>, _>("battle_id").unwrap_or(None).unwrap_or_default(), battle_id);
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("kind")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "dungeon_clear_v1"
+        );
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "pending"
+        );
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("battle_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            battle_id
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn dungeon_next_completed_route_task_is_consumed_into_dungeon_record() {
+    async fn dungeon_next_completed_route_task_is_consumed_into_dungeon_record() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "DUNGEON_NEXT_SETTLEMENT_CONSUME_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "DUNGEON_NEXT_SETTLEMENT_CONSUME_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
         sqlx::query("DELETE FROM online_battle_settlement_task")
@@ -12430,7 +15146,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("settlement tasks should clear");
 
-        let suffix = format!("dungeon-settlement-consume-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "dungeon-settlement-consume-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let instance_id = format!("dungeon-inst-{suffix}");
         let battle_id = format!("dungeon-battle-{instance_id}-3-1");
@@ -12453,11 +15172,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("dungeon instance should insert");
 
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            &battle_id,
-            fixture.character_id,
-            &["monster-dungeon-wolf-king".to_string()],
-        ));
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                &battle_id,
+                fixture.character_id,
+                &["monster-dungeon-wolf-king".to_string()],
+            ));
         let _ = state.battle_runtime.update(&battle_id, |battle| {
             battle.phase = "finished".to_string();
             battle.result = Some("attacker_win".to_string());
@@ -12481,11 +15202,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("settlement tick should succeed");
 
-        let task_row = sqlx::query("SELECT status FROM online_battle_settlement_task WHERE id = $1")
-            .bind(format!("dungeon-clear:{instance_id}"))
-            .fetch_one(&pool)
-            .await
-            .expect("settlement task should exist");
+        let task_row =
+            sqlx::query("SELECT status FROM online_battle_settlement_task WHERE id = $1")
+                .bind(format!("dungeon-clear:{instance_id}"))
+                .fetch_one(&pool)
+                .await
+                .expect("settlement task should exist");
         let record_row = sqlx::query("SELECT result, dungeon_id, difficulty_id, instance_id, rewards, is_first_clear FROM dungeon_record WHERE character_id = $1 AND instance_id = $2")
             .bind(fixture.character_id)
             .bind(&instance_id)
@@ -12501,30 +15223,90 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         println!(
             "DUNGEON_NEXT_SETTLEMENT_CONSUME_TASK_STATUS={}",
-            task_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default()
+            task_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default()
         );
-        println!("DUNGEON_NEXT_SETTLEMENT_CONSUME_RECORD_EXISTS={}", record_row.is_some());
+        println!(
+            "DUNGEON_NEXT_SETTLEMENT_CONSUME_RECORD_EXISTS={}",
+            record_row.is_some()
+        );
 
         server.abort();
 
-        assert_eq!(task_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "completed");
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "completed"
+        );
         let record_row = record_row.expect("dungeon record should exist");
-        assert_eq!(record_row.try_get::<Option<String>, _>("result").unwrap_or(None).unwrap_or_default(), "cleared");
-        assert_eq!(record_row.try_get::<Option<String>, _>("dungeon_id").unwrap_or(None).unwrap_or_default(), "dungeon-qiqi-wolf-den");
-        assert_eq!(record_row.try_get::<Option<String>, _>("difficulty_id").unwrap_or(None).unwrap_or_default(), "dd-qiqi-wolf-den-n");
-        assert_eq!(record_row.try_get::<Option<String>, _>("instance_id").unwrap_or(None).unwrap_or_default(), instance_id);
-        assert_eq!(record_row.try_get::<Option<bool>, _>("is_first_clear").unwrap_or(None), Some(true));
-        assert!(record_row.try_get::<Option<serde_json::Value>, _>("rewards").unwrap_or(None).unwrap_or_default().get("items").and_then(|v| v.as_array()).is_some_and(|items| !items.is_empty()));
-        assert!(item_count_row.try_get::<Option<i64>, _>("item_count").unwrap_or(None).unwrap_or_default() > 0);
+        assert_eq!(
+            record_row
+                .try_get::<Option<String>, _>("result")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "cleared"
+        );
+        assert_eq!(
+            record_row
+                .try_get::<Option<String>, _>("dungeon_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "dungeon-qiqi-wolf-den"
+        );
+        assert_eq!(
+            record_row
+                .try_get::<Option<String>, _>("difficulty_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "dd-qiqi-wolf-den-n"
+        );
+        assert_eq!(
+            record_row
+                .try_get::<Option<String>, _>("instance_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            instance_id
+        );
+        assert_eq!(
+            record_row
+                .try_get::<Option<bool>, _>("is_first_clear")
+                .unwrap_or(None),
+            Some(true)
+        );
+        assert!(
+            record_row
+                .try_get::<Option<serde_json::Value>, _>("rewards")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .get("items")
+                .and_then(|v| v.as_array())
+                .is_some_and(|items| !items.is_empty())
+        );
+        assert!(
+            item_count_row
+                .try_get::<Option<i64>, _>("item_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                > 0
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn dungeon_next_completed_route_task_updates_achievement_progress_and_points() {
+    async fn dungeon_next_completed_route_task_updates_achievement_progress_and_points() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "DUNGEON_NEXT_ACHIEVEMENT_SETTLEMENT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "DUNGEON_NEXT_ACHIEVEMENT_SETTLEMENT_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
         sqlx::query("DELETE FROM online_battle_settlement_task")
@@ -12555,11 +15337,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("dungeon instance should insert");
 
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            &battle_id,
-            fixture.character_id,
-            &["monster-dungeon-wolf-king".to_string()],
-        ));
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                &battle_id,
+                fixture.character_id,
+                &["monster-dungeon-wolf-king".to_string()],
+            ));
         let _ = state.battle_runtime.update(&battle_id, |battle| {
             battle.phase = "finished".to_string();
             battle.result = Some("attacker_win".to_string());
@@ -12583,13 +15367,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("settlement tick should succeed");
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
         let progress_hash = redis
-            .hgetall(&format!("character:progress-delta:{}", fixture.character_id))
+            .hgetall(&format!(
+                "character:progress-delta:{}",
+                fixture.character_id
+            ))
             .await
             .unwrap_or_default();
 
-        println!("DUNGEON_NEXT_ACHIEVEMENT_PROGRESS_HASH={}", serde_json::json!(progress_hash));
+        println!(
+            "DUNGEON_NEXT_ACHIEVEMENT_PROGRESS_HASH={}",
+            serde_json::json!(progress_hash)
+        );
 
         server.abort();
 
@@ -12599,16 +15391,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn arena_battle_settlement_task_is_consumed_into_authoritative_tables_and_readers() {
+    async fn arena_battle_settlement_task_is_consumed_into_authoritative_tables_and_readers() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ARENA_SETTLEMENT_CONSUME_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "ARENA_SETTLEMENT_CONSUME_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("arena-settlement-{}", super::chrono_like_timestamp_ms());
-        let challenger = insert_auth_fixture(&state, &pool, "socket", &format!("challenger-{suffix}"), 0).await;
-        let opponent = insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
+        let challenger =
+            insert_auth_fixture(&state, &pool, "socket", &format!("challenger-{suffix}"), 0).await;
+        let opponent =
+            insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
 
         sqlx::query("INSERT INTO arena_rating (character_id, rating, win_count, lose_count, created_at, updated_at) VALUES ($1, 1000, 0, 0, NOW(), NOW()), ($2, 1000, 0, 0, NOW(), NOW()) ON CONFLICT (character_id) DO NOTHING")
             .bind(challenger.character_id)
@@ -12625,14 +15422,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/arena/challenge"))
             .header("authorization", format!("Bearer {}", challenger.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"opponentCharacterId\":{}}}", opponent.character_id))
+            .body(format!(
+                "{{\"opponentCharacterId\":{}}}",
+                opponent.character_id
+            ))
             .send()
             .await
             .expect("arena challenge request should succeed");
         assert_eq!(challenge_response.status(), StatusCode::OK);
-        let challenge_body: Value = serde_json::from_str(&challenge_response.text().await.expect("challenge body should read"))
-            .expect("challenge body should be json");
-        let battle_id = challenge_body["data"]["battleId"].as_str().expect("battle id should exist").to_string();
+        let challenge_body: Value = serde_json::from_str(
+            &challenge_response
+                .text()
+                .await
+                .expect("challenge body should read"),
+        )
+        .expect("challenge body should be json");
+        let battle_id = challenge_body["data"]["battleId"]
+            .as_str()
+            .expect("battle id should exist")
+            .to_string();
 
         let action_response = client
             .post(format!("http://{address}/api/battle/action"))
@@ -12648,26 +15456,31 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("arena settlement tick should succeed");
 
-        let task_row = sqlx::query("SELECT status FROM online_battle_settlement_task WHERE id = $1")
-            .bind(format!("arena-battle:{battle_id}"))
-            .fetch_one(&pool)
-            .await
-            .expect("arena settlement task should exist");
+        let task_row =
+            sqlx::query("SELECT status FROM online_battle_settlement_task WHERE id = $1")
+                .bind(format!("arena-battle:{battle_id}"))
+                .fetch_one(&pool)
+                .await
+                .expect("arena settlement task should exist");
         let battle_row = sqlx::query("SELECT result, delta_score, score_before, score_after FROM arena_battle WHERE battle_id = $1")
             .bind(&battle_id)
             .fetch_one(&pool)
             .await
             .expect("arena battle should exist");
-        let challenger_rating = sqlx::query("SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1")
-            .bind(challenger.character_id)
-            .fetch_one(&pool)
-            .await
-            .expect("challenger rating should exist");
-        let opponent_rating = sqlx::query("SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1")
-            .bind(opponent.character_id)
-            .fetch_one(&pool)
-            .await
-            .expect("opponent rating should exist");
+        let challenger_rating = sqlx::query(
+            "SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1",
+        )
+        .bind(challenger.character_id)
+        .fetch_one(&pool)
+        .await
+        .expect("challenger rating should exist");
+        let opponent_rating = sqlx::query(
+            "SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1",
+        )
+        .bind(opponent.character_id)
+        .fetch_one(&pool)
+        .await
+        .expect("opponent rating should exist");
 
         let status_response = client
             .get(format!("http://{address}/api/arena/status"))
@@ -12676,8 +15489,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("arena status request should succeed");
         assert_eq!(status_response.status(), StatusCode::OK);
-        let status_body: Value = serde_json::from_str(&status_response.text().await.expect("status body should read"))
-            .expect("status body should be json");
+        let status_body: Value = serde_json::from_str(
+            &status_response
+                .text()
+                .await
+                .expect("status body should read"),
+        )
+        .expect("status body should be json");
 
         let records_response = client
             .get(format!("http://{address}/api/arena/records?limit=5"))
@@ -12686,25 +15504,105 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("arena records request should succeed");
         assert_eq!(records_response.status(), StatusCode::OK);
-        let records_body: Value = serde_json::from_str(&records_response.text().await.expect("records body should read"))
-            .expect("records body should be json");
+        let records_body: Value = serde_json::from_str(
+            &records_response
+                .text()
+                .await
+                .expect("records body should read"),
+        )
+        .expect("records body should be json");
 
         println!("ARENA_SETTLEMENT_STATUS={status_body}");
         println!("ARENA_SETTLEMENT_RECORDS={records_body}");
 
         server.abort();
 
-        assert_eq!(task_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "completed");
-        assert_eq!(battle_row.try_get::<Option<String>, _>("result").unwrap_or(None).unwrap_or_default(), "win");
-        assert_eq!(battle_row.try_get::<Option<i32>, _>("delta_score").unwrap_or(None).map(i64::from).unwrap_or_default(), 10);
-        assert_eq!(battle_row.try_get::<Option<i32>, _>("score_before").unwrap_or(None).map(i64::from).unwrap_or_default(), 1000);
-        assert_eq!(battle_row.try_get::<Option<i32>, _>("score_after").unwrap_or(None).map(i64::from).unwrap_or_default(), 1010);
-        assert_eq!(challenger_rating.try_get::<Option<i32>, _>("rating").unwrap_or(None).map(i64::from).unwrap_or_default(), 1010);
-        assert_eq!(challenger_rating.try_get::<Option<i32>, _>("win_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
-        assert_eq!(challenger_rating.try_get::<Option<i32>, _>("lose_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 0);
-        assert_eq!(opponent_rating.try_get::<Option<i32>, _>("rating").unwrap_or(None).map(i64::from).unwrap_or_default(), 995);
-        assert_eq!(opponent_rating.try_get::<Option<i32>, _>("win_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 0);
-        assert_eq!(opponent_rating.try_get::<Option<i32>, _>("lose_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "completed"
+        );
+        assert_eq!(
+            battle_row
+                .try_get::<Option<String>, _>("result")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "win"
+        );
+        assert_eq!(
+            battle_row
+                .try_get::<Option<i32>, _>("delta_score")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            10
+        );
+        assert_eq!(
+            battle_row
+                .try_get::<Option<i32>, _>("score_before")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1000
+        );
+        assert_eq!(
+            battle_row
+                .try_get::<Option<i32>, _>("score_after")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1010
+        );
+        assert_eq!(
+            challenger_rating
+                .try_get::<Option<i32>, _>("rating")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1010
+        );
+        assert_eq!(
+            challenger_rating
+                .try_get::<Option<i32>, _>("win_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            challenger_rating
+                .try_get::<Option<i32>, _>("lose_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            opponent_rating
+                .try_get::<Option<i32>, _>("rating")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            995
+        );
+        assert_eq!(
+            opponent_rating
+                .try_get::<Option<i32>, _>("win_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            opponent_rating
+                .try_get::<Option<i32>, _>("lose_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
         assert_eq!(status_body["data"]["score"], 1010);
         assert_eq!(status_body["data"]["winCount"], 1);
         assert_eq!(status_body["data"]["loseCount"], 0);
@@ -12719,16 +15617,23 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn arena_battle_settlement_is_idempotent_by_task_and_battle_id() {
+    async fn arena_battle_settlement_is_idempotent_by_task_and_battle_id() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ARENA_SETTLEMENT_IDEMPOTENT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "ARENA_SETTLEMENT_IDEMPOTENT_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("arena-idempotent-{}", super::chrono_like_timestamp_ms());
-        let challenger = insert_auth_fixture(&state, &pool, "socket", &format!("challenger-{suffix}"), 0).await;
-        let opponent = insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
+        let challenger =
+            insert_auth_fixture(&state, &pool, "socket", &format!("challenger-{suffix}"), 0).await;
+        let opponent =
+            insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
 
         sqlx::query("INSERT INTO arena_rating (character_id, rating, win_count, lose_count, created_at, updated_at) VALUES ($1, 1000, 0, 0, NOW(), NOW()), ($2, 1000, 0, 0, NOW(), NOW()) ON CONFLICT (character_id) DO NOTHING")
             .bind(challenger.character_id)
@@ -12745,14 +15650,25 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/arena/challenge"))
             .header("authorization", format!("Bearer {}", challenger.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"opponentCharacterId\":{}}}", opponent.character_id))
+            .body(format!(
+                "{{\"opponentCharacterId\":{}}}",
+                opponent.character_id
+            ))
             .send()
             .await
             .expect("arena challenge request should succeed");
         assert_eq!(challenge_response.status(), StatusCode::OK);
-        let challenge_body: Value = serde_json::from_str(&challenge_response.text().await.expect("challenge body should read"))
-            .expect("challenge body should be json");
-        let battle_id = challenge_body["data"]["battleId"].as_str().expect("battle id should exist").to_string();
+        let challenge_body: Value = serde_json::from_str(
+            &challenge_response
+                .text()
+                .await
+                .expect("challenge body should read"),
+        )
+        .expect("challenge body should be json");
+        let battle_id = challenge_body["data"]["battleId"]
+            .as_str()
+            .expect("battle id should exist")
+            .to_string();
 
         let action_response = client
             .post(format!("http://{address}/api/battle/action"))
@@ -12771,54 +15687,120 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("second arena settlement tick should succeed");
 
-        let battle_count_row = sqlx::query("SELECT COUNT(1)::bigint AS battle_count FROM arena_battle WHERE battle_id = $1")
-            .bind(&battle_id)
-            .fetch_one(&pool)
-            .await
-            .expect("arena battle count should load");
-        let challenger_rating = sqlx::query("SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1")
-            .bind(challenger.character_id)
-            .fetch_one(&pool)
-            .await
-            .expect("challenger rating should exist");
-        let opponent_rating = sqlx::query("SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1")
-            .bind(opponent.character_id)
-            .fetch_one(&pool)
-            .await
-            .expect("opponent rating should exist");
+        let battle_count_row = sqlx::query(
+            "SELECT COUNT(1)::bigint AS battle_count FROM arena_battle WHERE battle_id = $1",
+        )
+        .bind(&battle_id)
+        .fetch_one(&pool)
+        .await
+        .expect("arena battle count should load");
+        let challenger_rating = sqlx::query(
+            "SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1",
+        )
+        .bind(challenger.character_id)
+        .fetch_one(&pool)
+        .await
+        .expect("challenger rating should exist");
+        let opponent_rating = sqlx::query(
+            "SELECT rating, win_count, lose_count FROM arena_rating WHERE character_id = $1",
+        )
+        .bind(opponent.character_id)
+        .fetch_one(&pool)
+        .await
+        .expect("opponent rating should exist");
 
         println!(
             "ARENA_SETTLEMENT_IDEMPOTENT_BATTLE_COUNT={}",
-            battle_count_row.try_get::<Option<i64>, _>("battle_count").unwrap_or(None).unwrap_or_default()
+            battle_count_row
+                .try_get::<Option<i64>, _>("battle_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
         );
         println!(
             "ARENA_SETTLEMENT_IDEMPOTENT_CHALLENGER_RATING={}",
-            challenger_rating.try_get::<Option<i64>, _>("rating").unwrap_or(None).unwrap_or_default()
+            challenger_rating
+                .try_get::<Option<i64>, _>("rating")
+                .unwrap_or(None)
+                .unwrap_or_default()
         );
         println!(
             "ARENA_SETTLEMENT_IDEMPOTENT_OPPONENT_RATING={}",
-            opponent_rating.try_get::<Option<i64>, _>("rating").unwrap_or(None).unwrap_or_default()
+            opponent_rating
+                .try_get::<Option<i64>, _>("rating")
+                .unwrap_or(None)
+                .unwrap_or_default()
         );
 
         server.abort();
 
-        assert_eq!(battle_count_row.try_get::<Option<i64>, _>("battle_count").unwrap_or(None).unwrap_or_default(), 1);
-        assert_eq!(challenger_rating.try_get::<Option<i32>, _>("rating").unwrap_or(None).map(i64::from).unwrap_or_default(), 1010);
-        assert_eq!(challenger_rating.try_get::<Option<i32>, _>("win_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
-        assert_eq!(challenger_rating.try_get::<Option<i32>, _>("lose_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 0);
-        assert_eq!(opponent_rating.try_get::<Option<i32>, _>("rating").unwrap_or(None).map(i64::from).unwrap_or_default(), 995);
-        assert_eq!(opponent_rating.try_get::<Option<i32>, _>("win_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 0);
-        assert_eq!(opponent_rating.try_get::<Option<i32>, _>("lose_count").unwrap_or(None).map(i64::from).unwrap_or_default(), 1);
+        assert_eq!(
+            battle_count_row
+                .try_get::<Option<i64>, _>("battle_count")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            challenger_rating
+                .try_get::<Option<i32>, _>("rating")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1010
+        );
+        assert_eq!(
+            challenger_rating
+                .try_get::<Option<i32>, _>("win_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
+        assert_eq!(
+            challenger_rating
+                .try_get::<Option<i32>, _>("lose_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            opponent_rating
+                .try_get::<Option<i32>, _>("rating")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            995
+        );
+        assert_eq!(
+            opponent_rating
+                .try_get::<Option<i32>, _>("win_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            0
+        );
+        assert_eq!(
+            opponent_rating
+                .try_get::<Option<i32>, _>("lose_count")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            1
+        );
 
         cleanup_auth_fixture(&pool, challenger.character_id, challenger.user_id).await;
         cleanup_auth_fixture(&pool, opponent.character_id, opponent.user_id).await;
     }
 
     #[tokio::test]
-        async fn arena_weekly_settlement_persists_previous_week_top_three_idempotently() {
+    async fn arena_weekly_settlement_persists_previous_week_top_three_idempotently() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ARENA_WEEKLY_SETTLEMENT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "ARENA_WEEKLY_SETTLEMENT_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -12843,7 +15825,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .fetch_one(&pool)
         .await
         .expect("week boundary should load");
-        let previous_week_start = boundary.try_get::<Option<String>, _>("previous_week_start").unwrap_or(None).unwrap_or_default();
+        let previous_week_start = boundary
+            .try_get::<Option<String>, _>("previous_week_start")
+            .unwrap_or(None)
+            .unwrap_or_default();
 
         sqlx::query(
             "DELETE FROM arena_battle WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Shanghai') AND created_at < (($1::date::timestamp AT TIME ZONE 'Asia/Shanghai') + INTERVAL '7 day')",
@@ -12873,12 +15858,14 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         .await
         .expect("arena battles should insert");
 
-        let first_summary = crate::jobs::arena_weekly_settlement::run_arena_weekly_settlement_once(&state)
-            .await
-            .expect("first weekly settlement should succeed");
-        let second_summary = crate::jobs::arena_weekly_settlement::run_arena_weekly_settlement_once(&state)
-            .await
-            .expect("second weekly settlement should succeed");
+        let first_summary =
+            crate::jobs::arena_weekly_settlement::run_arena_weekly_settlement_once(&state)
+                .await
+                .expect("first weekly settlement should succeed");
+        let second_summary =
+            crate::jobs::arena_weekly_settlement::run_arena_weekly_settlement_once(&state)
+                .await
+                .expect("second weekly settlement should succeed");
 
         let rows = sqlx::query(
             "SELECT week_start_local_date::text AS week_start_local_date, champion_character_id, runnerup_character_id, third_character_id FROM arena_weekly_settlement WHERE week_start_local_date = $1::date",
@@ -12899,10 +15886,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(second_summary.settled_week_count, 0);
         assert_eq!(rows.len(), 1);
         let row = &rows[0];
-        assert_eq!(row.try_get::<Option<String>, _>("week_start_local_date").unwrap_or(None).unwrap_or_default(), previous_week_start);
-        assert_eq!(row.try_get::<Option<i32>, _>("champion_character_id").unwrap_or(None).map(i64::from).unwrap_or_default(), c1.character_id);
-        assert_eq!(row.try_get::<Option<i32>, _>("runnerup_character_id").unwrap_or(None).map(i64::from).unwrap_or_default(), c2.character_id);
-        assert_eq!(row.try_get::<Option<i32>, _>("third_character_id").unwrap_or(None).map(i64::from).unwrap_or_default(), c3.character_id);
+        assert_eq!(
+            row.try_get::<Option<String>, _>("week_start_local_date")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            previous_week_start
+        );
+        assert_eq!(
+            row.try_get::<Option<i32>, _>("champion_character_id")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            c1.character_id
+        );
+        assert_eq!(
+            row.try_get::<Option<i32>, _>("runnerup_character_id")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            c2.character_id
+        );
+        assert_eq!(
+            row.try_get::<Option<i32>, _>("third_character_id")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            c3.character_id
+        );
 
         sqlx::query("DELETE FROM arena_weekly_settlement WHERE week_start_local_date = $1::date")
             .bind(&previous_week_start)
@@ -12923,10 +15933,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_route_tower_win_sets_waiting_transition_and_persists_progress() {
+    async fn battle_route_tower_win_sets_waiting_transition_and_persists_progress() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_ROUTE_TOWER_WIN_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "BATTLE_ROUTE_TOWER_WIN_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -12959,18 +15972,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 floor: 13,
             },
         });
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            &battle_id,
-            fixture.character_id,
-            &["monster-gray-wolf".to_string()],
-        ));
-        state.online_battle_projections.register(crate::state::OnlineBattleProjectionRecord {
-            battle_id: battle_id.clone(),
-            owner_user_id: fixture.user_id,
-            participant_user_ids: vec![fixture.user_id],
-            r#type: "pve".to_string(),
-            session_id: Some(session_id.clone()),
-        });
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                &battle_id,
+                fixture.character_id,
+                &["monster-gray-wolf".to_string()],
+            ));
+        state
+            .online_battle_projections
+            .register(crate::state::OnlineBattleProjectionRecord {
+                battle_id: battle_id.clone(),
+                owner_user_id: fixture.user_id,
+                participant_user_ids: vec![fixture.user_id],
+                r#type: "pve".to_string(),
+                session_id: Some(session_id.clone()),
+            });
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -12988,11 +16005,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let task_row = sqlx::query("SELECT kind, status FROM online_battle_settlement_task WHERE id = $1")
-            .bind(format!("tower-win:{battle_id}"))
-            .fetch_one(&pool)
-            .await
-            .expect("tower settlement task should exist");
+        let task_row =
+            sqlx::query("SELECT kind, status FROM online_battle_settlement_task WHERE id = $1")
+                .bind(format!("tower-win:{battle_id}"))
+                .fetch_one(&pool)
+                .await
+                .expect("tower settlement task should exist");
 
         crate::jobs::online_battle_settlement::run_online_battle_settlement_tick(&state)
             .await
@@ -13011,24 +16029,85 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(body["data"]["session"]["status"], "waiting_transition");
         assert_eq!(body["data"]["session"]["nextAction"], "advance");
         assert_eq!(body["data"]["session"]["canAdvance"], true);
-        assert_eq!(task_row.try_get::<Option<String>, _>("kind").unwrap_or(None).unwrap_or_default(), "tower_win_v1");
-        assert_eq!(task_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "pending");
-        assert_eq!(progress_row.try_get::<Option<i32>, _>("best_floor").unwrap_or(None).map(i64::from).unwrap_or_default(), 13);
-        assert_eq!(progress_row.try_get::<Option<i32>, _>("next_floor").unwrap_or(None).map(i64::from).unwrap_or_default(), 14);
-        assert_eq!(progress_row.try_get::<Option<i32>, _>("last_settled_floor").unwrap_or(None).map(i64::from).unwrap_or_default(), 13);
-        assert_eq!(progress_row.try_get::<Option<i32>, _>("current_floor").unwrap_or(None).map(i64::from).unwrap_or_default(), 13);
-        assert_eq!(progress_row.try_get::<Option<String>, _>("current_run_id").unwrap_or(None).unwrap_or_default(), run_id);
-        assert!(progress_row.try_get::<Option<String>, _>("current_battle_id").unwrap_or(None).is_none());
-        assert!(progress_row.try_get::<Option<String>, _>("reached_at_text").unwrap_or(None).is_some());
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("kind")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "tower_win_v1"
+        );
+        assert_eq!(
+            task_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "pending"
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<i32>, _>("best_floor")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            13
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<i32>, _>("next_floor")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            14
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<i32>, _>("last_settled_floor")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            13
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<i32>, _>("current_floor")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            13
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<String>, _>("current_run_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            run_id
+        );
+        assert!(
+            progress_row
+                .try_get::<Option<String>, _>("current_battle_id")
+                .unwrap_or(None)
+                .is_none()
+        );
+        assert!(
+            progress_row
+                .try_get::<Option<String>, _>("reached_at_text")
+                .unwrap_or(None)
+                .is_some()
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn battle_session_advance_tower_waiting_transition_starts_next_floor() {
+    async fn battle_session_advance_tower_waiting_transition_starts_next_floor() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_SESSION_ADVANCE_TOWER_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "BATTLE_SESSION_ADVANCE_TOWER_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -13065,7 +16144,9 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -13086,26 +16167,54 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(body["data"]["session"]["status"], "running");
         assert_eq!(body["data"]["session"]["context"]["floor"], 14);
-        assert_eq!(body["data"]["session"]["currentBattleId"], format!("tower-battle-{run_id}-14"));
-        assert_eq!(progress_row.try_get::<Option<i32>, _>("current_floor").unwrap_or(None).map(i64::from).unwrap_or_default(), 14);
-        assert_eq!(progress_row.try_get::<Option<String>, _>("current_run_id").unwrap_or(None).unwrap_or_default(), run_id);
-        assert_eq!(progress_row.try_get::<Option<String>, _>("current_battle_id").unwrap_or(None).unwrap_or_default(), format!("tower-battle-{run_id}-14"));
+        assert_eq!(
+            body["data"]["session"]["currentBattleId"],
+            format!("tower-battle-{run_id}-14")
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<i32>, _>("current_floor")
+                .unwrap_or(None)
+                .map(i64::from)
+                .unwrap_or_default(),
+            14
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<String>, _>("current_run_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            run_id
+        );
+        assert_eq!(
+            progress_row
+                .try_get::<Option<String>, _>("current_battle_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            format!("tower-battle-{run_id}-14")
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn battle_session_advance_tower_persists_next_bundle_and_clears_previous() {
+    async fn battle_session_advance_tower_persists_next_bundle_and_clears_previous() {
         let state = test_state();
         if !state.redis_available {
             println!("TOWER_ADVANCE_PERSISTENCE_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TOWER_ADVANCE_PERSISTENCE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TOWER_ADVANCE_PERSISTENCE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
-        let suffix = format!("tower-advance-persist-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "tower-advance-persist-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let session_id = format!("tower-session-run-{suffix}");
         let run_id = format!("run-{suffix}");
@@ -13148,23 +16257,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         };
         state.battle_sessions.register(previous_session.clone());
         state.battle_runtime.register(previous_battle_state.clone());
-        state.online_battle_projections.register(previous_projection.clone());
+        state
+            .online_battle_projections
+            .register(previous_projection.clone());
         crate::integrations::battle_persistence::persist_battle_session(&state, &previous_session)
             .await
             .expect("session should persist");
-        crate::integrations::battle_persistence::persist_battle_snapshot(&state, &previous_battle_state)
-            .await
-            .expect("snapshot should persist");
-        crate::integrations::battle_persistence::persist_battle_projection(&state, &previous_projection)
-            .await
-            .expect("projection should persist");
+        crate::integrations::battle_persistence::persist_battle_snapshot(
+            &state,
+            &previous_battle_state,
+        )
+        .await
+        .expect("snapshot should persist");
+        crate::integrations::battle_persistence::persist_battle_projection(
+            &state,
+            &previous_projection,
+        )
+        .await
+        .expect("projection should persist");
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -13173,12 +16292,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
-        let previous_snapshot = redis.get_string(&format!("battle:snapshot:{previous_battle_id}")).await.expect("previous snapshot should read");
-        let previous_projection_raw = redis.get_string(&format!("battle:projection:{previous_battle_id}")).await.expect("previous projection should read");
-        let next_snapshot = redis.get_string(&format!("battle:snapshot:{next_battle_id}")).await.expect("next snapshot should read");
-        let next_projection_raw = redis.get_string(&format!("battle:projection:{next_battle_id}")).await.expect("next projection should read");
-        let session_raw = redis.get_string(&format!("battle:session:{session_id}")).await.expect("session should read");
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
+        let previous_snapshot = redis
+            .get_string(&format!("battle:snapshot:{previous_battle_id}"))
+            .await
+            .expect("previous snapshot should read");
+        let previous_projection_raw = redis
+            .get_string(&format!("battle:projection:{previous_battle_id}"))
+            .await
+            .expect("previous projection should read");
+        let next_snapshot = redis
+            .get_string(&format!("battle:snapshot:{next_battle_id}"))
+            .await
+            .expect("next snapshot should read");
+        let next_projection_raw = redis
+            .get_string(&format!("battle:projection:{next_battle_id}"))
+            .await
+            .expect("next projection should read");
+        let session_raw = redis
+            .get_string(&format!("battle:session:{session_id}"))
+            .await
+            .expect("session should read");
 
         println!("TOWER_ADVANCE_PERSISTENCE_RESPONSE={body}");
 
@@ -13195,9 +16331,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn tower_challenge_start_uses_next_floor_after_settled_win() {
+    async fn tower_challenge_start_uses_next_floor_after_settled_win() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TOWER_START_NEXT_FLOOR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TOWER_START_NEXT_FLOOR_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -13231,15 +16370,23 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
 
         assert_eq!(body["data"]["session"]["context"]["floor"], 14);
-        assert_eq!(body["data"]["session"]["currentBattleId"], format!("tower-battle-{run_id}-14"));
+        assert_eq!(
+            body["data"]["session"]["currentBattleId"],
+            format!("tower-battle-{run_id}-14")
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn battle_session_advance_tower_return_to_map_clears_run_cursor() {
+    async fn battle_session_advance_tower_return_to_map_clears_run_cursor() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_SESSION_TOWER_RETURN_TO_MAP_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "BATTLE_SESSION_TOWER_RETURN_TO_MAP_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -13272,25 +16419,31 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 floor: 14,
             },
         });
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            &battle_id,
-            fixture.character_id,
-            &["monster-gray-wolf".to_string()],
-        ));
-        state.online_battle_projections.register(crate::state::OnlineBattleProjectionRecord {
-            battle_id: battle_id.clone(),
-            owner_user_id: fixture.user_id,
-            participant_user_ids: vec![fixture.user_id],
-            r#type: "pve".to_string(),
-            session_id: Some(session_id.clone()),
-        });
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                &battle_id,
+                fixture.character_id,
+                &["monster-gray-wolf".to_string()],
+            ));
+        state
+            .online_battle_projections
+            .register(crate::state::OnlineBattleProjectionRecord {
+                battle_id: battle_id.clone(),
+                owner_user_id: fixture.user_id,
+                participant_user_ids: vec![fixture.user_id],
+                r#type: "pve".to_string(),
+                session_id: Some(session_id.clone()),
+            });
 
         let app = build_router(state).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -13311,21 +16464,44 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(body["data"]["session"]["status"], "completed");
         assert!(body["data"]["session"]["currentBattleId"].is_null());
-        assert!(progress_row.try_get::<Option<String>, _>("current_run_id").unwrap_or(None).is_none());
-        assert!(progress_row.try_get::<Option<i32>, _>("current_floor").unwrap_or(None).is_none());
-        assert!(progress_row.try_get::<Option<String>, _>("current_battle_id").unwrap_or(None).is_none());
+        assert!(
+            progress_row
+                .try_get::<Option<String>, _>("current_run_id")
+                .unwrap_or(None)
+                .is_none()
+        );
+        assert!(
+            progress_row
+                .try_get::<Option<i32>, _>("current_floor")
+                .unwrap_or(None)
+                .is_none()
+        );
+        assert!(
+            progress_row
+                .try_get::<Option<String>, _>("current_battle_id")
+                .unwrap_or(None)
+                .is_none()
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn battle_session_start_pve_rejects_when_current_room_has_no_monsters() {
+    async fn battle_session_start_pve_rejects_when_current_room_has_no_monsters() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_SESSION_START_PVE_EMPTY_ROOM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "BATTLE_SESSION_START_PVE_EMPTY_ROOM_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("battle-session-empty-room-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "battle-session-empty-room-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
 
         let app = build_router(state).expect("router should build");
@@ -13352,13 +16528,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_session_start_pve_rejects_monsters_outside_current_room() {
+    async fn battle_session_start_pve_rejects_monsters_outside_current_room() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_SESSION_START_PVE_OUTSIDE_ROOM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "BATTLE_SESSION_START_PVE_OUTSIDE_ROOM_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("battle-session-outside-room-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "battle-session-outside-room-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         sqlx::query("UPDATE characters SET current_map_id = 'map-qingyun-outskirts', current_room_id = 'room-south-forest' WHERE id = $1")
             .bind(fixture.character_id)
@@ -13390,18 +16574,26 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_session_start_dungeon_persists_battle_bundle() {
+    async fn battle_session_start_dungeon_persists_battle_bundle() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
         if !state.redis_available {
             println!("BATTLE_SESSION_DUNGEON_PERSISTENCE_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "BATTLE_SESSION_DUNGEON_PERSISTENCE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "BATTLE_SESSION_DUNGEON_PERSISTENCE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("battle-session-dungeon-persist-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "battle-session-dungeon-persist-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let instance_id = format!("inst-{suffix}");
         sqlx::query(
@@ -13425,7 +16617,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/battle-session/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"type\":\"dungeon\",\"instanceId\":\"{}\"}}", instance_id))
+            .body(format!(
+                "{{\"type\":\"dungeon\",\"instanceId\":\"{}\"}}",
+                instance_id
+            ))
             .send()
             .await
             .expect("battle session start should succeed");
@@ -13441,10 +16636,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .as_str()
             .expect("session id should exist")
             .to_string();
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
-        let snapshot = redis.get_string(&format!("battle:snapshot:{battle_id}")).await.expect("snapshot should read");
-        let projection = redis.get_string(&format!("battle:projection:{battle_id}")).await.expect("projection should read");
-        let session_raw = redis.get_string(&format!("battle:session:{session_id}")).await.expect("session should read");
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
+        let snapshot = redis
+            .get_string(&format!("battle:snapshot:{battle_id}"))
+            .await
+            .expect("snapshot should read");
+        let projection = redis
+            .get_string(&format!("battle:projection:{battle_id}"))
+            .await
+            .expect("projection should read");
+        let session_raw = redis
+            .get_string(&format!("battle:session:{session_id}"))
+            .await
+            .expect("session should read");
 
         println!("BATTLE_SESSION_DUNGEON_PERSISTENCE_RESPONSE={body}");
 
@@ -13458,14 +16664,17 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_session_return_to_map_clears_dungeon_persistence_bundle() {
+    async fn battle_session_return_to_map_clears_dungeon_persistence_bundle() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
         if !state.redis_available {
             println!("DUNGEON_PERSISTENCE_CLEAR_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "DUNGEON_PERSISTENCE_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "DUNGEON_PERSISTENCE_CLEAR_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -13502,7 +16711,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 instance_id: instance_id.clone(),
             },
         };
-        let battle_state = build_minimal_pve_battle_state(&battle_id, fixture.character_id, &["monster-gray-wolf".to_string()]);
+        let battle_state = build_minimal_pve_battle_state(
+            &battle_id,
+            fixture.character_id,
+            &["monster-gray-wolf".to_string()],
+        );
         let projection = OnlineBattleProjectionRecord {
             battle_id: battle_id.clone(),
             owner_user_id: fixture.user_id,
@@ -13528,17 +16741,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("battle session advance should succeed");
         assert_eq!(response.status(), StatusCode::OK);
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis client should exist"));
-        let snapshot = redis.get_string(&format!("battle:snapshot:{battle_id}")).await.expect("snapshot should read");
-        let projection_raw = redis.get_string(&format!("battle:projection:{battle_id}")).await.expect("projection should read");
-        let session_raw = redis.get_string(&format!("battle:session:{session_id}")).await.expect("session should read");
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis client should exist"),
+        );
+        let snapshot = redis
+            .get_string(&format!("battle:snapshot:{battle_id}"))
+            .await
+            .expect("snapshot should read");
+        let projection_raw = redis
+            .get_string(&format!("battle:projection:{battle_id}"))
+            .await
+            .expect("projection should read");
+        let session_raw = redis
+            .get_string(&format!("battle:session:{session_id}"))
+            .await
+            .expect("session should read");
 
         server.abort();
 
@@ -13550,13 +16776,16 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_session_return_to_map_clears_pve_persistence_bundle() {
+    async fn battle_session_return_to_map_clears_pve_persistence_bundle() {
         let state = test_state();
         if !state.redis_available {
             println!("PVE_PERSISTENCE_CLEAR_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PVE_PERSISTENCE_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PVE_PERSISTENCE_CLEAR_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -13579,7 +16808,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 monster_ids: vec!["monster-wild-boar".to_string()],
             },
         };
-        let battle_state = build_minimal_pve_battle_state(&battle_id, fixture.character_id, &["monster-wild-boar".to_string()]);
+        let battle_state = build_minimal_pve_battle_state(
+            &battle_id,
+            fixture.character_id,
+            &["monster-wild-boar".to_string()],
+        );
         let projection = OnlineBattleProjectionRecord {
             battle_id: battle_id.clone(),
             owner_user_id: fixture.user_id,
@@ -13605,17 +16838,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("battle session advance should succeed");
         assert_eq!(response.status(), StatusCode::OK);
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
-        let snapshot = redis.get_string(&format!("battle:snapshot:{battle_id}")).await.expect("snapshot should read");
-        let projection_raw = redis.get_string(&format!("battle:projection:{battle_id}")).await.expect("projection should read");
-        let session_raw = redis.get_string(&format!("battle:session:{session_id}")).await.expect("session should read");
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis should exist"),
+        );
+        let snapshot = redis
+            .get_string(&format!("battle:snapshot:{battle_id}"))
+            .await
+            .expect("snapshot should read");
+        let projection_raw = redis
+            .get_string(&format!("battle:projection:{battle_id}"))
+            .await
+            .expect("projection should read");
+        let session_raw = redis
+            .get_string(&format!("battle:session:{session_id}"))
+            .await
+            .expect("session should read");
 
         server.abort();
 
@@ -13627,15 +16873,20 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_session_advance_arena_return_to_map_emits_battle_abandoned_then_arena_refresh() {
+    async fn battle_session_advance_arena_return_to_map_emits_battle_abandoned_then_arena_refresh()
+    {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ARENA_ADVANCE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_ARENA_ADVANCE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("arena-advance-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let session_id = format!("arena-session-{suffix}");
         let battle_id = format!("arena-battle-{suffix}");
@@ -13654,13 +16905,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 mode: "arena".to_string(),
             },
         });
-        state.online_battle_projections.register(crate::state::OnlineBattleProjectionRecord {
-            battle_id: battle_id.clone(),
-            owner_user_id: fixture.user_id,
-            participant_user_ids: vec![fixture.user_id],
-            r#type: "pvp".to_string(),
-            session_id: Some(session_id.clone()),
-        });
+        state
+            .online_battle_projections
+            .register(crate::state::OnlineBattleProjectionRecord {
+                battle_id: battle_id.clone(),
+                owner_user_id: fixture.user_id,
+                participant_user_ids: vec![fixture.user_id],
+                r#type: "pvp".to_string(),
+                session_id: Some(session_id.clone()),
+            });
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -13671,23 +16924,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -13714,15 +16973,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn task_track_route_emits_task_update_to_target_user() {
+    async fn task_track_route_emits_task_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TASK_TRACK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TASK_TRACK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("task-track-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -13733,20 +16996,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/task/track"))
@@ -13782,15 +17049,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn task_claim_route_emits_task_update_to_target_user() {
+    async fn task_claim_route_emits_task_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TASK_CLAIM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TASK_CLAIM_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("task-claim-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at) VALUES ($1, 'task-main-003', 'claimable', '{}'::jsonb, true, NOW(), NOW(), NULL, NOW())",
@@ -13809,20 +17080,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/task/claim"))
@@ -13858,9 +17133,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn task_claim_route_buffers_reward_deltas_when_redis_available() {
+    async fn task_claim_route_buffers_reward_deltas_when_redis_available() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TASK_CLAIM_DELTA_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TASK_CLAIM_DELTA_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -13891,16 +17168,27 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("body should be json");
 
         if state.redis_available {
-            let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis should exist"));
+            let redis = crate::integrations::redis::RedisRuntime::new(
+                state.redis.clone().expect("redis should exist"),
+            );
             let resource_hash = redis
-                .hgetall(&format!("character:resource-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:resource-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("resource delta hash should load");
             let item_hash = redis
-                .hgetall(&format!("character:item-grant-delta:{}", fixture.character_id))
+                .hgetall(&format!(
+                    "character:item-grant-delta:{}",
+                    fixture.character_id
+                ))
                 .await
                 .expect("item grant delta hash should load");
-            println!("TASK_CLAIM_RESOURCE_DELTA={}", serde_json::json!(resource_hash));
+            println!(
+                "TASK_CLAIM_RESOURCE_DELTA={}",
+                serde_json::json!(resource_hash)
+            );
             println!("TASK_CLAIM_ITEM_DELTA={}", serde_json::json!(item_hash));
             assert!(!resource_hash.is_empty() || !item_hash.is_empty());
         } else {
@@ -13909,9 +17197,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .fetch_optional(&pool)
                 .await
                 .expect("reward item query should work");
-            println!("TASK_CLAIM_FALLBACK_ROW={}", serde_json::json!({
-                "hasRewardItem": reward_item.is_some(),
-            }));
+            println!(
+                "TASK_CLAIM_FALLBACK_ROW={}",
+                serde_json::json!({
+                    "hasRewardItem": reward_item.is_some(),
+                })
+            );
         }
 
         server.abort();
@@ -13923,15 +17214,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn task_npc_accept_route_emits_task_update_to_target_user() {
+    async fn task_npc_accept_route_emits_task_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TASK_NPC_ACCEPT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_TASK_NPC_ACCEPT_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("task-npc-accept-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -13942,20 +17239,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/task/npc/accept"))
@@ -13991,15 +17292,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn task_npc_submit_route_emits_task_update_to_target_user() {
+    async fn task_npc_submit_route_emits_task_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TASK_NPC_SUBMIT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_TASK_NPC_SUBMIT_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("task-npc-submit-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at) VALUES ($1, 'task-main-003', 'ongoing', '{\"obj-001\":3}'::jsonb, true, NOW(), NULL, NULL, NOW())",
@@ -14018,20 +17325,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/task/npc/submit"))
@@ -14042,7 +17353,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("task npc submit request should succeed");
         let response_status = response.status();
-        let response_text = response.text().await.expect("task npc submit body should read");
+        let response_text = response
+            .text()
+            .await
+            .expect("task npc submit body should read");
         println!("TASK_NPC_SUBMIT_ROUTE_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
 
@@ -14070,15 +17384,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn achievement_points_claim_route_emits_achievement_update_to_target_user() {
+    async fn achievement_points_claim_route_emits_achievement_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ACHIEVEMENT_POINTS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_ACHIEVEMENT_POINTS_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("achievement-points-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO character_achievement_points (character_id, total_points, claimed_thresholds, updated_at) VALUES ($1, 10, '[]'::jsonb, NOW())",
@@ -14097,20 +17417,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/achievement/points/claim"))
@@ -14121,11 +17445,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("achievement points claim request should succeed");
         let response_status = response.status();
-        let response_text = response.text().await.expect("achievement points claim body should read");
+        let response_text = response
+            .text()
+            .await
+            .expect("achievement points claim body should read");
         println!("ACHIEVEMENT_POINTS_CLAIM_ROUTE_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::BAD_REQUEST);
         server.abort();
-        let body: Value = serde_json::from_str(&response_text).expect("achievement points claim body should be json");
+        let body: Value = serde_json::from_str(&response_text)
+            .expect("achievement points claim body should be json");
         assert_eq!(body["success"], false);
         assert_eq!(body["message"], "点数奖励不存在");
 
@@ -14139,15 +17467,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn achievement_claim_route_emits_achievement_update_to_target_user() {
+    async fn achievement_claim_route_emits_achievement_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ACHIEVEMENT_CLAIM_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_ACHIEVEMENT_CLAIM_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("achievement-claim-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
             "INSERT INTO character_achievement (character_id, achievement_id, status, progress, progress_data, updated_at) VALUES ($1, 'ach-kill-rabbit-10', 'completed', 10, '{}'::jsonb, NOW())",
@@ -14166,20 +17500,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/achievement/claim"))
@@ -14190,7 +17528,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("achievement claim request should succeed");
         let response_status = response.status();
-        let response_text = response.text().await.expect("achievement claim body should read");
+        let response_text = response
+            .text()
+            .await
+            .expect("achievement claim body should read");
         println!("ACHIEVEMENT_CLAIM_ROUTE_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
 
@@ -14207,27 +17548,35 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(target_poll.contains("\"claimableCount\":0"));
         assert!(!other_poll.contains("achievement:update"));
 
-        sqlx::query("DELETE FROM character_achievement WHERE character_id = $1 AND achievement_id = $2")
-            .bind(fixture.character_id)
-            .bind("ach-kill-rabbit-10")
-            .execute(&pool)
-            .await
-            .ok();
+        sqlx::query(
+            "DELETE FROM character_achievement WHERE character_id = $1 AND achievement_id = $2",
+        )
+        .bind(fixture.character_id)
+        .bind("ach-kill-rabbit-10")
+        .execute(&pool)
+        .await
+        .ok();
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn technique_research_mark_viewed_route_emits_status_to_target_user() {
+    async fn technique_research_mark_viewed_route_emits_status_to_target_user() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TECHNIQUE_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_TECHNIQUE_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("tech-viewed-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -14238,20 +17587,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
         sqlx::query("INSERT INTO technique_generation_job (id, character_id, week_key, status, type_rolled, quality_rolled, cost_points, used_cooldown_bypass_token, burning_word_prompt, prompt_snapshot, model_name, attempt_count, draft_technique_id, generated_technique_id, publish_attempts, draft_expire_at, viewed_at, failed_viewed_at, finished_at, error_code, error_message, created_at, updated_at) VALUES ($1, $2, '2025-W01', 'failed', '武技', '玄', 3500, false, NULL, '{}'::jsonb, 'rust-deterministic', 1, NULL, NULL, 0, NULL, NULL, NULL, NOW(), 'AI_PROVIDER_ERROR', '测试失败结果', NOW(), NOW())")
             .bind(format!("tech-viewed-job-{suffix}"))
             .bind(fixture.character_id)
@@ -14260,7 +17613,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("failed technique job should insert");
 
         let response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/mark-result-viewed", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/mark-result-viewed",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -14284,10 +17640,15 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn technique_research_generate_route_eventually_reaches_generated_draft() {
+    async fn technique_research_generate_route_eventually_reaches_generated_draft() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_RESEARCH_GENERATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "TECHNIQUE_RESEARCH_GENERATE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
@@ -14310,7 +17671,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"cooldownBypassEnabled\":false}")
@@ -14322,7 +17686,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         println!("TECHNIQUE_RESEARCH_GENERATE_HTTP_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
         let body: Value = serde_json::from_str(&response_text).expect("body should be json");
-        let generation_id = body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generation_id = body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
@@ -14331,7 +17698,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .fetch_one(&pool)
             .await
             .expect("technique generation job should exist");
-        let draft_id = job_row.try_get::<Option<String>, _>("draft_technique_id").unwrap_or(None).unwrap_or_default();
+        let draft_id = job_row
+            .try_get::<Option<String>, _>("draft_technique_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
         let draft_row = sqlx::query("SELECT generation_id, name, quality, type, is_published FROM generated_technique_def WHERE id = $1")
             .bind(&draft_id)
             .fetch_one(&pool)
@@ -14339,26 +17709,69 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("generated technique draft should exist");
 
         println!("TECHNIQUE_RESEARCH_GENERATE_ROUTE_RESPONSE={body}");
-        println!("TECHNIQUE_RESEARCH_GENERATE_JOB_STATUS={}", job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default());
+        println!(
+            "TECHNIQUE_RESEARCH_GENERATE_JOB_STATUS={}",
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default()
+        );
         println!("TECHNIQUE_RESEARCH_GENERATE_DRAFT_ID={draft_id}");
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated_draft");
-        assert_eq!(job_row.try_get::<Option<String>, _>("model_name").unwrap_or(None).unwrap_or_default(), "rust-deterministic");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("generation_id").unwrap_or(None).unwrap_or_default(), generation_id);
-        assert_eq!(draft_row.try_get::<Option<String>, _>("quality").unwrap_or(None).unwrap_or_default(), "玄");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("type").unwrap_or(None).unwrap_or_default(), "武技");
-        assert_eq!(draft_row.try_get::<Option<bool>, _>("is_published").unwrap_or(None), Some(false));
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated_draft"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("model_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "rust-deterministic"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("generation_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            generation_id
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("quality")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "玄"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("type")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "武技"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<bool>, _>("is_published")
+                .unwrap_or(None),
+            Some(false)
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn technique_research_generate_route_uses_mock_ai_when_configured() {
+    async fn technique_research_generate_route_uses_mock_ai_when_configured() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_AI_SUCCESS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TECHNIQUE_AI_SUCCESS_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -14406,7 +17819,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"burningWordPrompt\":\"青木\",\"cooldownBypassEnabled\":false}")
@@ -14416,7 +17832,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(response.status(), StatusCode::OK);
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
-        let generation_id = body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generation_id = body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
@@ -14425,7 +17844,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .fetch_one(&pool)
             .await
             .expect("technique generation job should exist");
-        let draft_id = job_row.try_get::<Option<String>, _>("draft_technique_id").unwrap_or(None).unwrap_or_default();
+        let draft_id = job_row
+            .try_get::<Option<String>, _>("draft_technique_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
         let draft_row = sqlx::query("SELECT name, description, long_desc, model_name FROM generated_technique_def WHERE id = $1")
             .bind(&draft_id)
             .fetch_one(&pool)
@@ -14437,26 +17859,70 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
         ai_server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated_draft");
-        assert_eq!(job_row.try_get::<Option<String>, _>("model_name").unwrap_or(None).unwrap_or_default(), "mock-technique-model");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(), "青木真诀");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("description").unwrap_or(None).unwrap_or_default(), "玄品武技草稿");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("model_name").unwrap_or(None).unwrap_or_default(), "mock-technique-model");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated_draft"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("model_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "mock-technique-model"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "青木真诀"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("description")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "玄品武技草稿"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("model_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "mock-technique-model"
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn technique_research_generate_route_refunds_when_ai_provider_errors() {
+    async fn technique_research_generate_route_refunds_when_ai_provider_errors() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_AI_FAILURE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TECHNIQUE_AI_FAILURE_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -14500,7 +17966,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"burningWordPrompt\":\"青木\",\"cooldownBypassEnabled\":true}")
@@ -14511,9 +17980,11 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let response_text = response.text().await.expect("body should read");
         println!("TECHNIQUE_AI_FAILURE_HTTP_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
-        let generation_id = body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
+        let generation_id = body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
         let mut final_status = String::new();
         for _ in 0..20 {
             final_status = sqlx::query("SELECT status FROM technique_generation_job WHERE id = $1")
@@ -14524,7 +17995,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
                 .flatten()
                 .and_then(|row| row.try_get::<Option<String>, _>("status").ok().flatten())
                 .unwrap_or_default();
-            if matches!(final_status.as_str(), "failed" | "refunded" | "generated_draft") {
+            if matches!(
+                final_status.as_str(),
+                "failed" | "refunded" | "generated_draft"
+            ) {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -14537,10 +18011,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .expect("technique generation job should exist");
         println!(
             "TECHNIQUE_AI_FAILURE_JOB_STATUS={} CODE={} ERROR={} DRAFT_ID={}",
-            job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(),
-            job_row.try_get::<Option<String>, _>("error_code").unwrap_or(None).unwrap_or_default(),
-            job_row.try_get::<Option<String>, _>("error_message").unwrap_or(None).unwrap_or_default(),
-            job_row.try_get::<Option<String>, _>("draft_technique_id").unwrap_or(None).unwrap_or_default(),
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            job_row
+                .try_get::<Option<String>, _>("error_code")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            job_row
+                .try_get::<Option<String>, _>("error_message")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            job_row
+                .try_get::<Option<String>, _>("draft_technique_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
         );
         let mail_row = sqlx::query("SELECT attach_rewards FROM mail WHERE recipient_character_id = $1 AND source = 'technique_research_refund' AND source_ref_id = $2 ORDER BY id DESC LIMIT 1")
             .bind(fixture.character_id)
@@ -14562,8 +18048,20 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
         ai_server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "failed");
-        assert!(job_row.try_get::<Option<String>, _>("error_message").unwrap_or(None).unwrap_or_default().contains("已通过邮件返还"));
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "failed"
+        );
+        assert!(
+            job_row
+                .try_get::<Option<String>, _>("error_message")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .contains("已通过邮件返还")
+        );
         let mail_row = mail_row.expect("refund mail should exist");
         let attach_rewards = mail_row
             .try_get::<Option<serde_json::Value>, _>("attach_rewards")
@@ -14573,24 +18071,57 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(attach_rewards.contains("mat-gongfa-canye"));
         assert!(attach_rewards.contains("token-005"));
         let counter_row = counter_row.expect("mail counter row should exist");
-        assert!(counter_row.try_get::<Option<i64>, _>("total_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unread_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unclaimed_count").unwrap_or(None).unwrap_or_default() >= 1);
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("total_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unread_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unclaimed_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn technique_research_discard_route_refunds_by_mail_and_updates_counter() {
+    async fn technique_research_discard_route_refunds_by_mail_and_updates_counter() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_DISCARD_REFUND_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TECHNIQUE_DISCARD_REFUND_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -14613,7 +18144,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let generate_response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"cooldownBypassEnabled\":false}")
@@ -14625,27 +18159,36 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         println!("TECHNIQUE_RESEARCH_DISCARD_GENERATE_HTTP_RESPONSE={generate_text}");
         println!("TECHNIQUE_RESEARCH_PUBLISH_GENERATE_HTTP_RESPONSE={generate_text}");
         assert_eq!(generate_status, StatusCode::OK);
-        let generate_body: Value = serde_json::from_str(&generate_text)
-            .expect("body should be json");
-        let generation_id = generate_body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generate_body: Value =
+            serde_json::from_str(&generate_text).expect("body should be json");
+        let generation_id = generate_body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
         let discard_response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate/{}/discard", fixture.character_id, generation_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate/{}/discard",
+                fixture.character_id, generation_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("discard should succeed");
         assert_eq!(discard_response.status(), StatusCode::OK);
-        let discard_body: Value = serde_json::from_str(&discard_response.text().await.expect("body should read"))
-            .expect("body should be json");
+        let discard_body: Value =
+            serde_json::from_str(&discard_response.text().await.expect("body should read"))
+                .expect("body should be json");
 
-        let job_row = sqlx::query("SELECT status, error_code, error_message FROM technique_generation_job WHERE id = $1")
-            .bind(&generation_id)
-            .fetch_one(&pool)
-            .await
-            .expect("technique generation job should exist");
+        let job_row = sqlx::query(
+            "SELECT status, error_code, error_message FROM technique_generation_job WHERE id = $1",
+        )
+        .bind(&generation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("technique generation job should exist");
         let mail_row = sqlx::query("SELECT attach_rewards FROM mail WHERE recipient_character_id = $1 AND source = 'technique_research_refund' AND source_ref_id = $2 ORDER BY id DESC LIMIT 1")
             .bind(fixture.character_id)
             .bind(&generation_id)
@@ -14664,9 +18207,27 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "refunded");
-        assert_eq!(job_row.try_get::<Option<String>, _>("error_code").unwrap_or(None).unwrap_or_default(), "GENERATION_EXPIRED");
-        assert!(job_row.try_get::<Option<String>, _>("error_message").unwrap_or(None).unwrap_or_default().contains("已通过邮件返还"));
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "refunded"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("error_code")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "GENERATION_EXPIRED"
+        );
+        assert!(
+            job_row
+                .try_get::<Option<String>, _>("error_message")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .contains("已通过邮件返还")
+        );
         let attach_rewards = mail_row
             .try_get::<Option<serde_json::Value>, _>("attach_rewards")
             .unwrap_or(None)
@@ -14674,18 +18235,38 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .to_string();
         assert!(attach_rewards.contains("mat-gongfa-canye"));
         assert!(!attach_rewards.contains("token-005"));
-        assert!(counter_row.try_get::<Option<i64>, _>("total_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unread_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unclaimed_count").unwrap_or(None).unwrap_or_default() >= 1);
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("total_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unread_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unclaimed_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn technique_research_generate_with_burning_word_requires_ai_config() {
+    async fn technique_research_generate_with_burning_word_requires_ai_config() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_AI_CONFIG_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TECHNIQUE_AI_CONFIG_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -14718,7 +18299,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
         let response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"burningWordPrompt\":\"青木\",\"cooldownBypassEnabled\":false}")
@@ -14735,22 +18319,40 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
-        assert_eq!(body["message"], "configuration error: 缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置");
+        assert_eq!(
+            body["message"],
+            "configuration error: 缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置"
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v), None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn technique_research_generate_then_publish_emits_book_and_published_state() {
+    async fn technique_research_generate_then_publish_emits_book_and_published_state() {
         let _guard = technique_research_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "TECHNIQUE_RESEARCH_PUBLISH_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "TECHNIQUE_RESEARCH_PUBLISH_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -14773,7 +18375,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let generate_response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate", fixture.character_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate",
+                fixture.character_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"cooldownBypassEnabled\":false}")
@@ -14781,17 +18386,26 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("technique research generate should succeed");
         let generate_status = generate_response.status();
-        let generate_text = generate_response.text().await.expect("generate body should read");
+        let generate_text = generate_response
+            .text()
+            .await
+            .expect("generate body should read");
         println!("TECHNIQUE_RESEARCH_PUBLISH_GENERATE_HTTP_RESPONSE={generate_text}");
         assert_eq!(generate_status, StatusCode::OK);
-        let generate_body: Value = serde_json::from_str(&generate_text)
-            .expect("generate body should be json");
-        let generation_id = generate_body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generate_body: Value =
+            serde_json::from_str(&generate_text).expect("generate body should be json");
+        let generation_id = generate_body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
         let publish_response = client
-            .post(format!("http://{address}/api/character/{}/technique/research/generate/{}/publish", fixture.character_id, generation_id))
+            .post(format!(
+                "http://{address}/api/character/{}/technique/research/generate/{}/publish",
+                fixture.character_id, generation_id
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body("{\"customName\":\"青木诀\"}")
@@ -14799,22 +18413,34 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("technique research publish should succeed");
         assert_eq!(publish_response.status(), StatusCode::OK);
-        let publish_body: Value = serde_json::from_str(&publish_response.text().await.expect("publish body should read"))
-            .expect("publish body should be json");
+        let publish_body: Value = serde_json::from_str(
+            &publish_response
+                .text()
+                .await
+                .expect("publish body should read"),
+        )
+        .expect("publish body should be json");
 
         let job_row = sqlx::query("SELECT status, generated_technique_id, draft_technique_id FROM technique_generation_job WHERE id = $1")
             .bind(&generation_id)
             .fetch_one(&pool)
             .await
             .expect("technique generation job should exist");
-        let technique_id = publish_body["data"]["techniqueId"].as_str().expect("technique id should exist").to_string();
+        let technique_id = publish_body["data"]["techniqueId"]
+            .as_str()
+            .expect("technique id should exist")
+            .to_string();
         let draft_row = sqlx::query("SELECT is_published, display_name, custom_name, normalized_custom_name, name_locked FROM generated_technique_def WHERE id = $1")
             .bind(&technique_id)
             .fetch_one(&pool)
             .await
             .expect("generated technique should exist");
         let book_row = sqlx::query("SELECT item_def_id, metadata FROM item_instance WHERE id = $1")
-            .bind(publish_body["data"]["bookItemInstanceId"].as_i64().unwrap_or_default())
+            .bind(
+                publish_body["data"]["bookItemInstanceId"]
+                    .as_i64()
+                    .unwrap_or_default(),
+            )
             .fetch_one(&pool)
             .await
             .expect("generated technique book should exist");
@@ -14824,32 +18450,105 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "published");
-        assert_eq!(job_row.try_get::<Option<String>, _>("generated_technique_id").unwrap_or(None).unwrap_or_default(), technique_id);
-        assert_eq!(job_row.try_get::<Option<String>, _>("draft_technique_id").unwrap_or(None).unwrap_or_default(), technique_id);
-        assert_eq!(draft_row.try_get::<Option<bool>, _>("is_published").unwrap_or(None), Some(true));
-        assert_eq!(draft_row.try_get::<Option<bool>, _>("name_locked").unwrap_or(None), Some(true));
-        assert_eq!(draft_row.try_get::<Option<String>, _>("display_name").unwrap_or(None).unwrap_or_default(), "『研』青木诀");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("custom_name").unwrap_or(None).unwrap_or_default(), "青木诀");
-        assert_eq!(draft_row.try_get::<Option<String>, _>("normalized_custom_name").unwrap_or(None).unwrap_or_default(), "『研』青木诀".to_lowercase());
-        assert_eq!(book_row.try_get::<Option<String>, _>("item_def_id").unwrap_or(None).unwrap_or_default(), "book-generated-technique");
-        assert_eq!(book_row.try_get::<Option<serde_json::Value>, _>("metadata").unwrap_or(None).unwrap_or_default()["generatedTechniqueId"], technique_id);
-        assert_eq!(book_row.try_get::<Option<serde_json::Value>, _>("metadata").unwrap_or(None).unwrap_or_default()["generatedTechniqueName"], "『研』青木诀");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "published"
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("generated_technique_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            technique_id
+        );
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("draft_technique_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            technique_id
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<bool>, _>("is_published")
+                .unwrap_or(None),
+            Some(true)
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<bool>, _>("name_locked")
+                .unwrap_or(None),
+            Some(true)
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("display_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "『研』青木诀"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("custom_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "青木诀"
+        );
+        assert_eq!(
+            draft_row
+                .try_get::<Option<String>, _>("normalized_custom_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "『研』青木诀".to_lowercase()
+        );
+        assert_eq!(
+            book_row
+                .try_get::<Option<String>, _>("item_def_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "book-generated-technique"
+        );
+        assert_eq!(
+            book_row
+                .try_get::<Option<serde_json::Value>, _>("metadata")
+                .unwrap_or(None)
+                .unwrap_or_default()["generatedTechniqueId"],
+            technique_id
+        );
+        assert_eq!(
+            book_row
+                .try_get::<Option<serde_json::Value>, _>("metadata")
+                .unwrap_or(None)
+                .unwrap_or_default()["generatedTechniqueName"],
+            "『研』青木诀"
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_recruit_mark_viewed_route_emits_status_to_target_user() {
+    async fn partner_recruit_mark_viewed_route_emits_status_to_target_user() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_PARTNER_RECRUIT_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_PARTNER_RECRUIT_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("partner-recruit-viewed-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-recruit-viewed-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -14860,23 +18559,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
-            .post(format!("http://{address}/api/partner/recruit/mark-result-viewed"))
+            .post(format!(
+                "http://{address}/api/partner/recruit/mark-result-viewed"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -14900,10 +18605,13 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_recruit_generate_then_confirm_reaches_generated_draft_and_creates_partner() {
+    async fn partner_recruit_generate_then_confirm_reaches_generated_draft_and_creates_partner() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_RECRUIT_GENERATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_RECRUIT_GENERATE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -14934,12 +18642,18 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .await
             .expect("partner recruit generate should succeed");
         let generate_status = generate_response.status();
-        let generate_text = generate_response.text().await.expect("generate body should read");
+        let generate_text = generate_response
+            .text()
+            .await
+            .expect("generate body should read");
         println!("PARTNER_RECRUIT_GENERATE_HTTP_RESPONSE={generate_text}");
         assert_eq!(generate_status, StatusCode::OK);
-        let generate_body: Value = serde_json::from_str(&generate_text)
-            .expect("generate body should be json");
-        let generation_id = generate_body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generate_body: Value =
+            serde_json::from_str(&generate_text).expect("generate body should be json");
+        let generation_id = generate_body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
@@ -14948,28 +18662,42 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .fetch_one(&pool)
             .await
             .expect("partner recruit job should exist");
-        let preview_partner_def_id = job_row.try_get::<Option<String>, _>("preview_partner_def_id").unwrap_or(None).unwrap_or_default();
-        let generated_row = sqlx::query("SELECT name, quality, role, avatar FROM generated_partner_def WHERE id = $1")
-            .bind(&preview_partner_def_id)
-            .fetch_one(&pool)
-            .await
-            .expect("generated partner def should exist");
+        let preview_partner_def_id = job_row
+            .try_get::<Option<String>, _>("preview_partner_def_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let generated_row = sqlx::query(
+            "SELECT name, quality, role, avatar FROM generated_partner_def WHERE id = $1",
+        )
+        .bind(&preview_partner_def_id)
+        .fetch_one(&pool)
+        .await
+        .expect("generated partner def should exist");
 
         let confirm_response = client
-            .post(format!("http://{address}/api/partner/recruit/{generation_id}/confirm"))
+            .post(format!(
+                "http://{address}/api/partner/recruit/{generation_id}/confirm"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("partner recruit confirm should succeed");
         assert_eq!(confirm_response.status(), StatusCode::OK);
-        let confirm_body: Value = serde_json::from_str(&confirm_response.text().await.expect("confirm body should read"))
-            .expect("confirm body should be json");
+        let confirm_body: Value = serde_json::from_str(
+            &confirm_response
+                .text()
+                .await
+                .expect("confirm body should read"),
+        )
+        .expect("confirm body should be json");
 
-        let accepted_job_row = sqlx::query("SELECT status, preview_partner_def_id FROM partner_recruit_job WHERE id = $1")
-            .bind(&generation_id)
-            .fetch_one(&pool)
-            .await
-            .expect("accepted partner recruit job should exist");
+        let accepted_job_row = sqlx::query(
+            "SELECT status, preview_partner_def_id FROM partner_recruit_job WHERE id = $1",
+        )
+        .bind(&generation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("accepted partner recruit job should exist");
         let partner_row = sqlx::query("SELECT partner_def_id, nickname, obtained_from, obtained_ref_id FROM character_partner WHERE id = $1")
             .bind(confirm_body["data"]["partnerId"].as_i64().unwrap_or_default())
             .fetch_one(&pool)
@@ -14981,24 +18709,73 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated_draft");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated_draft"
+        );
         assert!(!preview_partner_def_id.is_empty());
-        assert!(job_row.try_get::<Option<String>, _>("preview_avatar_url").unwrap_or(None).is_some());
-        assert_eq!(generated_row.try_get::<Option<String>, _>("quality").unwrap_or(None).unwrap_or_default(), "玄");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(), "玄·无相灵伴");
-        assert_eq!(accepted_job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "accepted");
-        assert_eq!(partner_row.try_get::<Option<String>, _>("partner_def_id").unwrap_or(None).unwrap_or_default(), preview_partner_def_id);
-        assert_eq!(partner_row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None).unwrap_or_default(), "partner_recruit");
-        assert_eq!(partner_row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None).unwrap_or_default(), generation_id);
+        assert!(
+            job_row
+                .try_get::<Option<String>, _>("preview_avatar_url")
+                .unwrap_or(None)
+                .is_some()
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("quality")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "玄"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "玄·无相灵伴"
+        );
+        assert_eq!(
+            accepted_job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "accepted"
+        );
+        assert_eq!(
+            partner_row
+                .try_get::<Option<String>, _>("partner_def_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            preview_partner_def_id
+        );
+        assert_eq!(
+            partner_row
+                .try_get::<Option<String>, _>("obtained_from")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "partner_recruit"
+        );
+        assert_eq!(
+            partner_row
+                .try_get::<Option<String>, _>("obtained_ref_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            generation_id
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_recruit_generate_route_uses_mock_ai_when_configured() {
+    async fn partner_recruit_generate_route_uses_mock_ai_when_configured() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_AI_SUCCESS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_AI_SUCCESS_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -15056,16 +18833,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(response.status(), StatusCode::OK);
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
-        let generation_id = body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generation_id = body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
-        let job_row = sqlx::query("SELECT status, preview_partner_def_id FROM partner_recruit_job WHERE id = $1")
-            .bind(&generation_id)
-            .fetch_one(&pool)
-            .await
-            .expect("partner recruit job should exist");
-        let preview_partner_def_id = job_row.try_get::<Option<String>, _>("preview_partner_def_id").unwrap_or(None).unwrap_or_default();
+        let job_row = sqlx::query(
+            "SELECT status, preview_partner_def_id FROM partner_recruit_job WHERE id = $1",
+        )
+        .bind(&generation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("partner recruit job should exist");
+        let preview_partner_def_id = job_row
+            .try_get::<Option<String>, _>("preview_partner_def_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
         let generated_row = sqlx::query("SELECT name, description, attribute_element, role FROM generated_partner_def WHERE id = $1")
             .bind(&preview_partner_def_id)
             .fetch_one(&pool)
@@ -15077,26 +18862,71 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
         ai_server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated_draft");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(), "青木灵伴");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("description").unwrap_or(None).unwrap_or_default(), "以青木为底模推演出的玄品质伙伴预览。");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("attribute_element").unwrap_or(None).unwrap_or_default(), "wood");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("role").unwrap_or(None).unwrap_or_default(), "support");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated_draft"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "青木灵伴"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("description")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "以青木为底模推演出的玄品质伙伴预览。"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("attribute_element")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "wood"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("role")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "support"
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v), None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v), None => std::env::remove_var("AI_PARTNER_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v), None => std::env::remove_var("AI_PARTNER_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v), None => std::env::remove_var("AI_PARTNER_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_recruit_generate_route_refunds_when_ai_provider_errors() {
+    async fn partner_recruit_generate_route_refunds_when_ai_provider_errors() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_RECRUIT_AI_FAILURE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_RECRUIT_AI_FAILURE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -15150,15 +18980,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert_eq!(response.status(), StatusCode::OK);
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
-        let generation_id = body["data"]["generationId"].as_str().expect("generation id should exist").to_string();
+        let generation_id = body["data"]["generationId"]
+            .as_str()
+            .expect("generation id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
-        let job_row = sqlx::query("SELECT status, error_message FROM partner_recruit_job WHERE id = $1")
-            .bind(&generation_id)
-            .fetch_one(&pool)
-            .await
-            .expect("partner recruit job should exist");
+        let job_row =
+            sqlx::query("SELECT status, error_message FROM partner_recruit_job WHERE id = $1")
+                .bind(&generation_id)
+                .fetch_one(&pool)
+                .await
+                .expect("partner recruit job should exist");
         let mail_row = sqlx::query("SELECT attach_spirit_stones, attach_items FROM mail WHERE recipient_character_id = $1 AND source = 'partner_recruit_refund' AND source_ref_id = $2 ORDER BY id DESC LIMIT 1")
             .bind(fixture.character_id)
             .bind(&generation_id)
@@ -15178,28 +19012,85 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
         ai_server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "refunded");
-        assert!(job_row.try_get::<Option<String>, _>("error_message").unwrap_or(None).unwrap_or_default().contains("已通过邮件返还"));
-        assert_eq!(mail_row.try_get::<Option<i64>, _>("attach_spirit_stones").unwrap_or(None).unwrap_or_default(), 0);
-        assert!(mail_row.try_get::<Option<serde_json::Value>, _>("attach_items").unwrap_or(None).unwrap_or_else(|| serde_json::json!([])).to_string().contains("token-004"));
-        assert!(counter_row.try_get::<Option<i64>, _>("total_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unread_count").unwrap_or(None).unwrap_or_default() >= 1);
-        assert!(counter_row.try_get::<Option<i64>, _>("unclaimed_count").unwrap_or(None).unwrap_or_default() >= 1);
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "refunded"
+        );
+        assert!(
+            job_row
+                .try_get::<Option<String>, _>("error_message")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .contains("已通过邮件返还")
+        );
+        assert_eq!(
+            mail_row
+                .try_get::<Option<i64>, _>("attach_spirit_stones")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            0
+        );
+        assert!(
+            mail_row
+                .try_get::<Option<serde_json::Value>, _>("attach_items")
+                .unwrap_or(None)
+                .unwrap_or_else(|| serde_json::json!([]))
+                .to_string()
+                .contains("token-004")
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("total_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unread_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
+        assert!(
+            counter_row
+                .try_get::<Option<i64>, _>("unclaimed_count")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                >= 1
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v), None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v), None => std::env::remove_var("AI_PARTNER_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v), None => std::env::remove_var("AI_PARTNER_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v), None => std::env::remove_var("AI_PARTNER_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_recruit_generate_with_custom_base_model_requires_ai_config() {
+    async fn partner_recruit_generate_with_custom_base_model_requires_ai_config() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_AI_CONFIG_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_AI_CONFIG_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
@@ -15242,8 +19133,7 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let status = response.status();
         let response_text = response.text().await.expect("body should read");
         println!("PARTNER_AI_CONFIG_HTTP_RESPONSE={response_text}");
-        let body: Value = serde_json::from_str(&response_text)
-            .expect("body should be json");
+        let body: Value = serde_json::from_str(&response_text).expect("body should be json");
 
         println!("PARTNER_AI_CONFIG_ROUTE_RESPONSE={body}");
 
@@ -15251,13 +19141,28 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
-        assert_eq!(body["message"], "configuration error: 缺少 AI_PARTNER_MODEL_URL 或 AI_PARTNER_MODEL_KEY 配置");
+        assert_eq!(
+            body["message"],
+            "configuration error: 缺少 AI_PARTNER_MODEL_URL 或 AI_PARTNER_MODEL_KEY 配置"
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v), None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v), None => std::env::remove_var("AI_PARTNER_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v), None => std::env::remove_var("AI_PARTNER_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v), None => std::env::remove_var("AI_PARTNER_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
@@ -15266,13 +19171,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     async fn partner_fusion_mark_viewed_route_emits_status_to_target_user() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_PARTNER_FUSION_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_PARTNER_FUSION_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("partner-fusion-viewed-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-fusion-viewed-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -15283,23 +19197,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
-            .post(format!("http://{address}/api/partner/fusion/mark-result-viewed"))
+            .post(format!(
+                "http://{address}/api/partner/fusion/mark-result-viewed"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -15326,7 +19246,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     async fn partner_fusion_generate_preview_then_confirm_creates_partner() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_FUSION_GENERATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_FUSION_GENERATE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -15334,9 +19257,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
 
         let partner_ids = [
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵伴",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵使",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵偶",
+                false,
+            )
+            .await,
         ];
 
         let app = build_router(state.clone()).expect("router should build");
@@ -15347,7 +19291,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/partner/fusion/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .body(format!(
+                "{{\"partnerIds\":[{},{},{}]}}",
+                partner_ids[0], partner_ids[1], partner_ids[2]
+            ))
             .send()
             .await
             .expect("partner fusion start should succeed");
@@ -15356,47 +19303,66 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         if start_status != StatusCode::OK {
             panic!("PARTNER_REBONE_START_ROUTE_RESPONSE={start_text}");
         }
-        let start_body: Value = serde_json::from_str(&start_text)
-            .expect("start body should be json");
-        let fusion_id = start_body["data"]["fusionId"].as_str().expect("fusion id should exist").to_string();
+        let start_body: Value =
+            serde_json::from_str(&start_text).expect("start body should be json");
+        let fusion_id = start_body["data"]["fusionId"]
+            .as_str()
+            .expect("fusion id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
-        let job_row = sqlx::query("SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1")
-            .bind(&fusion_id)
-            .fetch_one(&pool)
-            .await
-            .expect("partner fusion job should exist");
-        let preview_partner_def_id = job_row.try_get::<Option<String>, _>("preview_partner_def_id").unwrap_or(None).unwrap_or_default();
+        let job_row = sqlx::query(
+            "SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1",
+        )
+        .bind(&fusion_id)
+        .fetch_one(&pool)
+        .await
+        .expect("partner fusion job should exist");
+        let preview_partner_def_id = job_row
+            .try_get::<Option<String>, _>("preview_partner_def_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
         println!(
             "PARTNER_FUSION_JOB_STATUS={} PREVIEW_ID={}",
-            job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(),
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
             preview_partner_def_id,
         );
-        let generated_row = sqlx::query("SELECT name, quality, role FROM generated_partner_def WHERE id = $1")
-            .bind(&preview_partner_def_id)
-            .fetch_one(&pool)
-            .await
-            .expect("generated fusion preview should exist");
+        let generated_row =
+            sqlx::query("SELECT name, quality, role FROM generated_partner_def WHERE id = $1")
+                .bind(&preview_partner_def_id)
+                .fetch_one(&pool)
+                .await
+                .expect("generated fusion preview should exist");
 
         let confirm_response = client
-            .post(format!("http://{address}/api/partner/fusion/{fusion_id}/confirm"))
+            .post(format!(
+                "http://{address}/api/partner/fusion/{fusion_id}/confirm"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("partner fusion confirm should succeed");
         let confirm_status = confirm_response.status();
-        let confirm_text = confirm_response.text().await.expect("confirm body should read");
+        let confirm_text = confirm_response
+            .text()
+            .await
+            .expect("confirm body should read");
         println!("PARTNER_FUSION_CONFIRM_HTTP_RESPONSE={confirm_text}");
         assert_eq!(confirm_status, StatusCode::OK);
-        let confirm_body: Value = serde_json::from_str(&confirm_text)
-            .expect("confirm body should be json");
+        let confirm_body: Value =
+            serde_json::from_str(&confirm_text).expect("confirm body should be json");
 
-        let accepted_job_row = sqlx::query("SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1")
-            .bind(&fusion_id)
-            .fetch_one(&pool)
-            .await
-            .expect("partner fusion accepted job should exist");
+        let accepted_job_row = sqlx::query(
+            "SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1",
+        )
+        .bind(&fusion_id)
+        .fetch_one(&pool)
+        .await
+        .expect("partner fusion accepted job should exist");
         let partner_row = sqlx::query("SELECT partner_def_id, obtained_from, obtained_ref_id FROM character_partner WHERE id = $1")
             .bind(confirm_body["data"]["partnerId"].as_i64().unwrap_or_default())
             .fetch_one(&pool)
@@ -15408,13 +19374,51 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated_preview");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated_preview"
+        );
         assert!(!preview_partner_def_id.is_empty());
-        assert_eq!(generated_row.try_get::<Option<String>, _>("quality").unwrap_or(None).unwrap_or_default(), start_body["data"]["resultQuality"].as_str().unwrap_or_default());
-        assert_eq!(accepted_job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "accepted");
-        assert_eq!(partner_row.try_get::<Option<String>, _>("partner_def_id").unwrap_or(None).unwrap_or_default(), preview_partner_def_id);
-        assert_eq!(partner_row.try_get::<Option<String>, _>("obtained_from").unwrap_or(None).unwrap_or_default(), "partner_fusion");
-        assert_eq!(partner_row.try_get::<Option<String>, _>("obtained_ref_id").unwrap_or(None).unwrap_or_default(), fusion_id);
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("quality")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            start_body["data"]["resultQuality"]
+                .as_str()
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            accepted_job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "accepted"
+        );
+        assert_eq!(
+            partner_row
+                .try_get::<Option<String>, _>("partner_def_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            preview_partner_def_id
+        );
+        assert_eq!(
+            partner_row
+                .try_get::<Option<String>, _>("obtained_from")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "partner_fusion"
+        );
+        assert_eq!(
+            partner_row
+                .try_get::<Option<String>, _>("obtained_ref_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            fusion_id
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
@@ -15423,7 +19427,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     async fn partner_fusion_generate_route_uses_mock_ai_when_configured() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_FUSION_AI_SUCCESS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_FUSION_AI_SUCCESS_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -15452,12 +19459,36 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             std::env::set_var("AI_PARTNER_MODEL_NAME", "mock-partner-model");
         }
 
-        let suffix = format!("partner-fusion-ai-success-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-fusion-ai-success-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let partner_ids = [
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵伴",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵使",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵偶",
+                false,
+            )
+            .await,
         ];
 
         let app = build_router(state.clone()).expect("router should build");
@@ -15468,26 +19499,40 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/partner/fusion/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .body(format!(
+                "{{\"partnerIds\":[{},{},{}]}}",
+                partner_ids[0], partner_ids[1], partner_ids[2]
+            ))
             .send()
             .await
             .expect("partner fusion start should succeed");
         assert_eq!(response.status(), StatusCode::OK);
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
-        let fusion_id = body["data"]["fusionId"].as_str().expect("fusion id should exist").to_string();
+        let fusion_id = body["data"]["fusionId"]
+            .as_str()
+            .expect("fusion id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
-        let job_row = sqlx::query("SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1")
-            .bind(&fusion_id)
-            .fetch_one(&pool)
-            .await
-            .expect("partner fusion job should exist");
-        let preview_partner_def_id = job_row.try_get::<Option<String>, _>("preview_partner_def_id").unwrap_or(None).unwrap_or_default();
+        let job_row = sqlx::query(
+            "SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1",
+        )
+        .bind(&fusion_id)
+        .fetch_one(&pool)
+        .await
+        .expect("partner fusion job should exist");
+        let preview_partner_def_id = job_row
+            .try_get::<Option<String>, _>("preview_partner_def_id")
+            .unwrap_or(None)
+            .unwrap_or_default();
         println!(
             "PARTNER_FUSION_AI_SUCCESS_JOB_STATUS={} PREVIEW_ID={}",
-            job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(),
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
             preview_partner_def_id,
         );
         let generated_row = sqlx::query("SELECT name, description, attribute_element, role FROM generated_partner_def WHERE id = $1")
@@ -15501,17 +19546,59 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         server.abort();
         ai_server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "generated_preview");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(), "玄木归契灵伴");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("description").unwrap_or(None).unwrap_or_default(), "由归契之力凝成的玄品质伙伴预览。");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("attribute_element").unwrap_or(None).unwrap_or_default(), "wood");
-        assert_eq!(generated_row.try_get::<Option<String>, _>("role").unwrap_or(None).unwrap_or_default(), "support");
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "generated_preview"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "玄木归契灵伴"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("description")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "由归契之力凝成的玄品质伙伴预览。"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("attribute_element")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "wood"
+        );
+        assert_eq!(
+            generated_row
+                .try_get::<Option<String>, _>("role")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "support"
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v), None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v), None => std::env::remove_var("AI_PARTNER_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v), None => std::env::remove_var("AI_PARTNER_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v), None => std::env::remove_var("AI_PARTNER_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
@@ -15520,7 +19607,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     async fn partner_fusion_generate_route_fails_when_ai_provider_errors() {
         let _guard = partner_ai_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_FUSION_AI_FAILURE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_FUSION_AI_FAILURE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
@@ -15546,12 +19636,36 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             std::env::set_var("AI_PARTNER_MODEL_NAME", "mock-partner-model");
         }
 
-        let suffix = format!("partner-fusion-ai-failure-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-fusion-ai-failure-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let partner_ids = [
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵伴", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵使", false).await,
-            insert_partner_fixture(&pool, fixture.character_id, "partner-qingmu-xiaoou", "青木灵偶", false).await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵伴",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵使",
+                false,
+            )
+            .await,
+            insert_partner_fixture(
+                &pool,
+                fixture.character_id,
+                "partner-qingmu-xiaoou",
+                "青木灵偶",
+                false,
+            )
+            .await,
         ];
 
         let app = build_router(state.clone()).expect("router should build");
@@ -15562,54 +19676,90 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/partner/fusion/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerIds\":[{},{},{}]}}", partner_ids[0], partner_ids[1], partner_ids[2]))
+            .body(format!(
+                "{{\"partnerIds\":[{},{},{}]}}",
+                partner_ids[0], partner_ids[1], partner_ids[2]
+            ))
             .send()
             .await
             .expect("partner fusion start should succeed");
         assert_eq!(response.status(), StatusCode::OK);
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
-        let fusion_id = body["data"]["fusionId"].as_str().expect("fusion id should exist").to_string();
+        let fusion_id = body["data"]["fusionId"]
+            .as_str()
+            .expect("fusion id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
-        let job_row = sqlx::query("SELECT status, error_message FROM partner_fusion_job WHERE id = $1")
-            .bind(&fusion_id)
-            .fetch_one(&pool)
-            .await
-            .expect("partner fusion job should exist");
+        let job_row =
+            sqlx::query("SELECT status, error_message FROM partner_fusion_job WHERE id = $1")
+                .bind(&fusion_id)
+                .fetch_one(&pool)
+                .await
+                .expect("partner fusion job should exist");
 
         println!("PARTNER_FUSION_AI_FAILURE_ROUTE_RESPONSE={body}");
 
         server.abort();
         ai_server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "failed");
-        assert!(job_row
-            .try_get::<Option<String>, _>("error_message")
-            .unwrap_or(None)
-            .unwrap_or_default()
-            .contains("伙伴 AI 返回错误状态"));
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "failed"
+        );
+        assert!(
+            job_row
+                .try_get::<Option<String>, _>("error_message")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .contains("伙伴 AI 返回错误状态")
+        );
 
         unsafe {
-            match original_provider { Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v), None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER") };
-            match original_url { Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v), None => std::env::remove_var("AI_PARTNER_MODEL_URL") };
-            match original_key { Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v), None => std::env::remove_var("AI_PARTNER_MODEL_KEY") };
-            match original_name { Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v), None => std::env::remove_var("AI_PARTNER_MODEL_NAME") };
+            match original_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn partner_rebone_mark_viewed_route_emits_status_to_target_user() {
+    async fn partner_rebone_mark_viewed_route_emits_status_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_PARTNER_REBONE_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_PARTNER_REBONE_MARK_VIEWED_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("partner-rebone-viewed-{}", super::chrono_like_timestamp_ms());
+        let suffix = format!(
+            "partner-rebone-viewed-{}",
+            super::chrono_like_timestamp_ms()
+        );
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -15620,23 +19770,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
-            .post(format!("http://{address}/api/partner/rebone/mark-result-viewed"))
+            .post(format!(
+                "http://{address}/api/partner/rebone/mark-result-viewed"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
@@ -15660,23 +19816,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn partner_rebone_start_then_succeeds_and_rewrites_growth() {
+    async fn partner_rebone_start_then_succeeds_and_rewrites_growth() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "PARTNER_REBONE_GENERATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "PARTNER_REBONE_GENERATE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("partner-rebone-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
         let partner_def_id = format!("generated-rebone-partner-{suffix}");
-sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·青木灵伴', '测试动态伙伴', NULL, '玄', 'wood', 'support', 1, '{\"max_qixue\":120,\"wugong\":20,\"fagong\":12,\"wufang\":10,\"fafang\":10,\"sudu\":8}'::jsonb, '{\"max_qixue\":8,\"wugong\":2,\"fagong\":2,\"wufang\":1,\"fafang\":1,\"sudu\":1}'::jsonb, ARRAY[]::text[], TRUE, $2, $3, NOW(), NOW())")
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·青木灵伴', '测试动态伙伴', NULL, '玄', 'wood', 'support', 1, '{\"max_qixue\":120,\"wugong\":20,\"fagong\":12,\"wufang\":10,\"fafang\":10,\"sudu\":8}'::jsonb, '{\"max_qixue\":8,\"wugong\":2,\"fagong\":2,\"wufang\":1,\"fafang\":1,\"sudu\":1}'::jsonb, ARRAY[]::text[], TRUE, $2, $3, NOW(), NOW())")
             .bind(&partner_def_id)
             .bind(fixture.character_id)
             .bind(format!("partner-recruit-{suffix}"))
             .execute(&pool)
             .await
             .expect("generated partner def should insert");
-        let partner_id = insert_partner_fixture(&pool, fixture.character_id, &partner_def_id, "玄·青木灵伴", false).await;
+        let partner_id = insert_partner_fixture(
+            &pool,
+            fixture.character_id,
+            &partner_def_id,
+            "玄·青木灵伴",
+            false,
+        )
+        .await;
         sqlx::query("UPDATE character_partner SET growth_max_qixue = 120, growth_wugong = 20, growth_fagong = 12, growth_wufang = 10, growth_fafang = 10, growth_sudu = 8 WHERE id = $1")
             .bind(partner_id)
             .execute(&pool)
@@ -15697,7 +19863,10 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/partner/rebone/start"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"partnerId\":{},\"itemDefId\":\"cons-partner-rebone-001\",\"itemQty\":1}}", partner_id))
+            .body(format!(
+                "{{\"partnerId\":{},\"itemDefId\":\"cons-partner-rebone-001\",\"itemQty\":1}}",
+                partner_id
+            ))
             .send()
             .await
             .expect("partner rebone start should succeed");
@@ -15706,9 +19875,12 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         if start_status != StatusCode::OK {
             panic!("PARTNER_REBONE_START_ROUTE_RESPONSE={start_text}");
         }
-        let start_body: Value = serde_json::from_str(&start_text)
-            .expect("start body should be json");
-        let rebone_id = start_body["data"]["reboneId"].as_str().expect("rebone id should exist").to_string();
+        let start_body: Value =
+            serde_json::from_str(&start_text).expect("start body should be json");
+        let rebone_id = start_body["data"]["reboneId"]
+            .as_str()
+            .expect("rebone id should exist")
+            .to_string();
 
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
@@ -15722,35 +19894,70 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .fetch_one(&pool)
             .await
             .expect("partner row should exist");
-        let generated_row = sqlx::query("SELECT base_attrs FROM generated_partner_def WHERE id = $1")
-            .bind(&partner_def_id)
-            .fetch_one(&pool)
-            .await
-            .expect("generated partner def should exist");
+        let generated_row =
+            sqlx::query("SELECT base_attrs FROM generated_partner_def WHERE id = $1")
+                .bind(&partner_def_id)
+                .fetch_one(&pool)
+                .await
+                .expect("generated partner def should exist");
 
         println!("PARTNER_REBONE_START_ROUTE_RESPONSE={start_body}");
-        println!("PARTNER_REBONE_JOB_STATUS={}", job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default());
+        println!(
+            "PARTNER_REBONE_JOB_STATUS={}",
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default()
+        );
 
         server.abort();
 
-        assert_eq!(job_row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_default(), "succeeded");
-        assert_ne!(partner_row.try_get::<Option<i64>, _>("growth_max_qixue").unwrap_or(None).unwrap_or_default(), 120);
-        assert_ne!(partner_row.try_get::<Option<i64>, _>("growth_wugong").unwrap_or(None).unwrap_or_default(), 20);
-        assert!(generated_row.try_get::<Option<serde_json::Value>, _>("base_attrs").unwrap_or(None).unwrap_or_default().is_object());
+        assert_eq!(
+            job_row
+                .try_get::<Option<String>, _>("status")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            "succeeded"
+        );
+        assert_ne!(
+            partner_row
+                .try_get::<Option<i64>, _>("growth_max_qixue")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            120
+        );
+        assert_ne!(
+            partner_row
+                .try_get::<Option<i64>, _>("growth_wugong")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            20
+        );
+        assert!(
+            generated_row
+                .try_get::<Option<serde_json::Value>, _>("base_attrs")
+                .unwrap_or(None)
+                .unwrap_or_default()
+                .is_object()
+        );
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
 
     #[tokio::test]
-        async fn team_create_route_emits_team_update_to_target_user() {
+    async fn team_create_route_emits_team_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_CREATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_CREATE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("team-create-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -15761,26 +19968,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/create"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"characterId\":{},\"name\":\"测试队伍\",\"goal\":\"一起修仙\"}}", fixture.character_id))
+            .body(format!(
+                "{{\"characterId\":{},\"name\":\"测试队伍\",\"goal\":\"一起修仙\"}}",
+                fixture.character_id
+            ))
             .send()
             .await
             .expect("team create request should succeed");
@@ -15813,16 +20027,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_transfer_route_emits_team_update_to_affected_members() {
+    async fn team_transfer_route_emits_team_update_to_affected_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_TRANSFER_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_TRANSFER_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("team-transfer-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '测试队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
@@ -15850,33 +20070,42 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/transfer"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"currentLeaderId\":{},\"newLeaderId\":{}}}", leader.character_id, member.character_id))
+            .body(format!(
+                "{{\"currentLeaderId\":{},\"newLeaderId\":{}}}",
+                leader.character_id, member.character_id
+            ))
             .send()
             .await
             .expect("team transfer request should succeed");
@@ -15914,16 +20143,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_leave_route_emits_team_update_to_affected_members() {
+    async fn team_leave_route_emits_team_update_to_affected_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_LEAVE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_LEAVE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("team-leave-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '测试队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
@@ -15951,27 +20186,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/leave"))
@@ -16015,16 +20256,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_disband_route_emits_team_update_to_affected_members() {
+    async fn team_disband_route_emits_team_update_to_affected_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_DISBAND_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_DISBAND_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("team-disband-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '测试队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
@@ -16052,33 +20299,42 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/disband"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"characterId\":{},\"teamId\":\"{}\"}}", leader.character_id, team_id))
+            .body(format!(
+                "{{\"characterId\":{},\"teamId\":\"{}\"}}",
+                leader.character_id, team_id
+            ))
             .send()
             .await
             .expect("team disband request should succeed");
@@ -16116,16 +20372,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_kick_route_emits_team_update_to_affected_members() {
+    async fn team_kick_route_emits_team_update_to_affected_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_KICK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_KICK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("team-kick-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, '测试队伍', 'map-qingyun-village', true, 4, false, NOW(), NOW())")
@@ -16153,33 +20415,42 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/kick"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"leaderId\":{},\"targetCharacterId\":{}}}", leader.character_id, member.character_id))
+            .body(format!(
+                "{{\"leaderId\":{},\"targetCharacterId\":{}}}",
+                leader.character_id, member.character_id
+            ))
             .send()
             .await
             .expect("team kick request should succeed");
@@ -16217,16 +20488,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_update_settings_route_emits_team_update_to_affected_members() {
+    async fn team_update_settings_route_emits_team_update_to_affected_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_UPDATE_SETTINGS_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_TEAM_UPDATE_SETTINGS_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("team-settings-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
 
         sqlx::query("INSERT INTO teams (id, leader_id, name, goal, join_min_realm, auto_join_enabled, auto_join_min_realm, current_map_id, is_public, max_members, created_at, updated_at) VALUES ($1, $2, '测试队伍', '旧目标', '凡人', false, '凡人', 'map-qingyun-village', true, 4, NOW(), NOW())")
@@ -16254,27 +20533,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/settings"))
@@ -16318,17 +20603,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_handle_application_approve_route_emits_team_update_to_affected_members() {
+    async fn team_handle_application_approve_route_emits_team_update_to_affected_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_HANDLE_APPLICATION_APPROVE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_TEAM_HANDLE_APPLICATION_APPROVE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("team-application-approve-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let applicant = insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let suffix = format!(
+            "team-application-approve-{}",
+            super::chrono_like_timestamp_ms()
+        );
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let applicant =
+            insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
         let application_id = format!("ta-{}", applicant.character_id);
 
@@ -16366,45 +20663,59 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: applicant_sid.clone(),
-            user_id: applicant.user_id,
-            character_id: Some(applicant.character_id),
-            session_token: Some("sess-applicant".to_string()),
-            connected_at_ms: 3,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 4,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: applicant_sid.clone(),
+                user_id: applicant.user_id,
+                character_id: Some(applicant.character_id),
+                session_token: Some("sess-applicant".to_string()),
+                connected_at_ms: 3,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 4,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/application/handle"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"characterId\":{},\"applicationId\":\"{}\",\"approve\":true}}", leader.character_id, application_id))
+            .body(format!(
+                "{{\"characterId\":{},\"applicationId\":\"{}\",\"approve\":true}}",
+                leader.character_id, application_id
+            ))
             .send()
             .await
             .expect("team approve application request should succeed");
         let response_status = response.status();
-        let response_text = response.text().await.expect("team approve body should read");
+        let response_text = response
+            .text()
+            .await
+            .expect("team approve body should read");
         println!("TEAM_HANDLE_APPLICATION_APPROVE_ROUTE_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::OK);
 
@@ -16428,9 +20739,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(applicant_poll.contains("\"source\":\"approve_application\""));
         assert!(!other_poll.contains("team:update"));
 
-        sqlx::query("DELETE FROM team_applications WHERE id = $1").bind(&application_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM team_members WHERE team_id = $1").bind(&team_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM teams WHERE id = $1").bind(&team_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM team_applications WHERE id = $1")
+            .bind(&application_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM team_members WHERE team_id = $1")
+            .bind(&team_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM teams WHERE id = $1")
+            .bind(&team_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, member.character_id, member.user_id).await;
         cleanup_auth_fixture(&pool, applicant.character_id, applicant.user_id).await;
@@ -16438,17 +20761,29 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn team_handle_application_reject_route_emits_team_update_only_to_applicant() {
+    async fn team_handle_application_reject_route_emits_team_update_only_to_applicant() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_TEAM_HANDLE_APPLICATION_REJECT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_TEAM_HANDLE_APPLICATION_REJECT_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
-        let suffix = format!("team-application-reject-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let applicant = insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let suffix = format!(
+            "team-application-reject-{}",
+            super::chrono_like_timestamp_ms()
+        );
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let applicant =
+            insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let team_id = format!("team-{suffix}");
         let application_id = format!("ta-{}", applicant.character_id);
 
@@ -16486,40 +20821,51 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: applicant_sid.clone(),
-            user_id: applicant.user_id,
-            character_id: Some(applicant.character_id),
-            session_token: Some("sess-applicant".to_string()),
-            connected_at_ms: 3,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 4,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: applicant_sid.clone(),
+                user_id: applicant.user_id,
+                character_id: Some(applicant.character_id),
+                session_token: Some("sess-applicant".to_string()),
+                connected_at_ms: 3,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 4,
+            });
 
         let response = client
             .post(format!("http://{address}/api/team/application/handle"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"characterId\":{},\"applicationId\":\"{}\",\"approve\":false}}", leader.character_id, application_id))
+            .body(format!(
+                "{{\"characterId\":{},\"applicationId\":\"{}\",\"approve\":false}}",
+                leader.character_id, application_id
+            ))
             .send()
             .await
             .expect("team reject application request should succeed");
@@ -16546,9 +20892,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(applicant_poll.contains("\"source\":\"reject_application\""));
         assert!(!other_poll.contains("team:update"));
 
-        sqlx::query("DELETE FROM team_applications WHERE id = $1").bind(&application_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM team_members WHERE team_id = $1").bind(&team_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM teams WHERE id = $1").bind(&team_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM team_applications WHERE id = $1")
+            .bind(&application_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM team_members WHERE team_id = $1")
+            .bind(&team_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM teams WHERE id = $1")
+            .bind(&team_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, member.character_id, member.user_id).await;
         cleanup_auth_fixture(&pool, applicant.character_id, applicant.user_id).await;
@@ -16556,16 +20914,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn sect_apply_route_emits_sect_update_to_target_user() {
+    async fn sect_apply_route_emits_sect_update_to_target_user() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_APPLY_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_APPLY_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-apply-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 1, &suffix).await;
@@ -16585,26 +20948,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/apply"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"sectId\":\"{}\",\"message\":\"求加入\"}}", sect_id))
+            .body(format!(
+                "{{\"sectId\":\"{}\",\"message\":\"求加入\"}}",
+                sect_id
+            ))
             .send()
             .await
             .expect("sect apply request should succeed");
@@ -16643,15 +21013,19 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn sect_create_route_emits_sect_update_to_creator() {
+    async fn sect_create_route_emits_sect_update_to_creator() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_CREATE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_CREATE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-create-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 2000).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         sqlx::query("UPDATE characters SET spirit_stones = 2000 WHERE id = $1")
             .bind(fixture.character_id)
             .execute(&pool)
@@ -16667,26 +21041,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/create"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"name\":\"宗门{}\",\"description\":\"为了修仙\"}}", &suffix[..suffix.len().min(8)]))
+            .body(format!(
+                "{{\"name\":\"宗门{}\",\"description\":\"为了修仙\"}}",
+                &suffix[..suffix.len().min(8)]
+            ))
             .send()
             .await
             .expect("sect create request should succeed");
@@ -16723,16 +21104,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn sect_cancel_application_route_emits_update_to_applicant_and_manager() {
+    async fn sect_cancel_application_route_emits_update_to_applicant_and_manager() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_CANCEL_APPLICATION_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_SECT_CANCEL_APPLICATION_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("sect-cancel-{}", super::chrono_like_timestamp_ms());
-        let manager = insert_auth_fixture(&state, &pool, "socket", &format!("manager-{suffix}"), 0).await;
-        let applicant = insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let manager =
+            insert_auth_fixture(&state, &pool, "socket", &format!("manager-{suffix}"), 0).await;
+        let applicant =
+            insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, manager.character_id, 1, &suffix).await;
@@ -16762,27 +21151,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: manager_sid.clone(),
-            user_id: manager.user_id,
-            character_id: Some(manager.character_id),
-            session_token: Some("sess-manager".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: applicant_sid.clone(),
-            user_id: applicant.user_id,
-            character_id: Some(applicant.character_id),
-            session_token: Some("sess-applicant".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: manager_sid.clone(),
+                user_id: manager.user_id,
+                character_id: Some(manager.character_id),
+                session_token: Some("sess-manager".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: applicant_sid.clone(),
+                user_id: applicant.user_id,
+                character_id: Some(applicant.character_id),
+                session_token: Some("sess-applicant".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/applications/cancel"))
@@ -16810,26 +21205,47 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(applicant_poll.contains("\"myPendingApplicationCount\":0"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_application WHERE id = $1").bind(application_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_application WHERE id = $1")
+            .bind(application_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, manager.character_id, manager.user_id).await;
         cleanup_auth_fixture(&pool, applicant.character_id, applicant.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn sect_handle_application_approve_route_emits_update_to_applicant_and_managers() {
+    async fn sect_handle_application_approve_route_emits_update_to_applicant_and_managers() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_HANDLE_APPLICATION_APPROVE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_SECT_HANDLE_APPLICATION_APPROVE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("sect-handle-approve-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let elder = insert_auth_fixture(&state, &pool, "socket", &format!("elder-{suffix}"), 0).await;
-        let applicant = insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let elder =
+            insert_auth_fixture(&state, &pool, "socket", &format!("elder-{suffix}"), 0).await;
+        let applicant =
+            insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 2, &suffix).await;
@@ -16862,40 +21278,51 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: elder_sid.clone(),
-            user_id: elder.user_id,
-            character_id: Some(elder.character_id),
-            session_token: Some("sess-elder".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: applicant_sid.clone(),
-            user_id: applicant.user_id,
-            character_id: Some(applicant.character_id),
-            session_token: Some("sess-applicant".to_string()),
-            connected_at_ms: 3,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 4,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: elder_sid.clone(),
+                user_id: elder.user_id,
+                character_id: Some(elder.character_id),
+                session_token: Some("sess-elder".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: applicant_sid.clone(),
+                user_id: applicant.user_id,
+                character_id: Some(applicant.character_id),
+                session_token: Some("sess-applicant".to_string()),
+                connected_at_ms: 3,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 4,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/applications/handle"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"applicationId\":{},\"approve\":true}}", application_id))
+            .body(format!(
+                "{{\"applicationId\":{},\"approve\":true}}",
+                application_id
+            ))
             .send()
             .await
             .expect("sect approve application request should succeed");
@@ -16921,9 +21348,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(applicant_poll.contains("\"joined\":true"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_application WHERE id = $1").bind(application_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_application WHERE id = $1")
+            .bind(application_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, elder.character_id, elder.user_id).await;
         cleanup_auth_fixture(&pool, applicant.character_id, applicant.user_id).await;
@@ -16931,17 +21370,26 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn sect_handle_application_reject_route_emits_update_to_applicant_and_managers() {
+    async fn sect_handle_application_reject_route_emits_update_to_applicant_and_managers() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_HANDLE_APPLICATION_REJECT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_SECT_HANDLE_APPLICATION_REJECT_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("sect-handle-reject-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let elder = insert_auth_fixture(&state, &pool, "socket", &format!("elder-{suffix}"), 0).await;
-        let applicant = insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let elder =
+            insert_auth_fixture(&state, &pool, "socket", &format!("elder-{suffix}"), 0).await;
+        let applicant =
+            insert_auth_fixture(&state, &pool, "socket", &format!("applicant-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 2, &suffix).await;
@@ -16974,40 +21422,51 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: elder_sid.clone(),
-            user_id: elder.user_id,
-            character_id: Some(elder.character_id),
-            session_token: Some("sess-elder".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: applicant_sid.clone(),
-            user_id: applicant.user_id,
-            character_id: Some(applicant.character_id),
-            session_token: Some("sess-applicant".to_string()),
-            connected_at_ms: 3,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 4,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: elder_sid.clone(),
+                user_id: elder.user_id,
+                character_id: Some(elder.character_id),
+                session_token: Some("sess-elder".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: applicant_sid.clone(),
+                user_id: applicant.user_id,
+                character_id: Some(applicant.character_id),
+                session_token: Some("sess-applicant".to_string()),
+                connected_at_ms: 3,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 4,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/applications/handle"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"applicationId\":{},\"approve\":false}}", application_id))
+            .body(format!(
+                "{{\"applicationId\":{},\"approve\":false}}",
+                application_id
+            ))
             .send()
             .await
             .expect("sect reject application request should succeed");
@@ -17033,9 +21492,21 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(applicant_poll.contains("\"myPendingApplicationCount\":0"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_application WHERE id = $1").bind(application_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_application WHERE id = $1")
+            .bind(application_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, elder.character_id, elder.user_id).await;
         cleanup_auth_fixture(&pool, applicant.character_id, applicant.user_id).await;
@@ -17043,16 +21514,22 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn sect_leave_route_emits_update_to_leaving_member() {
+    async fn sect_leave_route_emits_update_to_leaving_member() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_LEAVE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_LEAVE_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-leave-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 2, &suffix).await;
@@ -17073,20 +21550,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/leave"))
@@ -17108,24 +21589,38 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(member_poll.contains("\"joined\":false"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, member.character_id, member.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn sect_disband_route_emits_update_to_former_members() {
+    async fn sect_disband_route_emits_update_to_former_members() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_DISBAND_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_DISBAND_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-disband-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let member = insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let member =
+            insert_auth_fixture(&state, &pool, "socket", &format!("member-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 2, &suffix).await;
@@ -17148,27 +21643,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: leader_sid.clone(),
-            user_id: leader.user_id,
-            character_id: Some(leader.character_id),
-            session_token: Some("sess-leader".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: member_sid.clone(),
-            user_id: member.user_id,
-            character_id: Some(member.character_id),
-            session_token: Some("sess-member".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: leader_sid.clone(),
+                user_id: leader.user_id,
+                character_id: Some(leader.character_id),
+                session_token: Some("sess-leader".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: member_sid.clone(),
+                user_id: member.user_id,
+                character_id: Some(member.character_id),
+                session_token: Some("sess-member".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/disband"))
@@ -17194,24 +21695,38 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(member_poll.contains("\"joined\":false"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, member.character_id, member.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn sect_kick_route_emits_update_to_target_member() {
+    async fn sect_kick_route_emits_update_to_target_member() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_KICK_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_KICK_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-kick-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let target = insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let target =
+            insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 2, &suffix).await;
@@ -17232,20 +21747,24 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: target.user_id,
-            character_id: Some(target.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: target.user_id,
+                character_id: Some(target.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/kick"))
@@ -17269,24 +21788,38 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(target_poll.contains("\"joined\":false"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, target.character_id, target.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn sect_transfer_route_emits_update_to_old_and_new_leader() {
+    async fn sect_transfer_route_emits_update_to_old_and_new_leader() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_TRANSFER_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_TRANSFER_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-transfer-{}", super::chrono_like_timestamp_ms());
-        let old_leader = insert_auth_fixture(&state, &pool, "socket", &format!("old-{suffix}"), 0).await;
-        let new_leader = insert_auth_fixture(&state, &pool, "socket", &format!("new-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let old_leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("old-{suffix}"), 0).await;
+        let new_leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("new-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, old_leader.character_id, 2, &suffix).await;
@@ -17309,27 +21842,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: old_sid.clone(),
-            user_id: old_leader.user_id,
-            character_id: Some(old_leader.character_id),
-            session_token: Some("sess-old".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: new_sid.clone(),
-            user_id: new_leader.user_id,
-            character_id: Some(new_leader.character_id),
-            session_token: Some("sess-new".to_string()),
-            connected_at_ms: 2,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 3,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: old_sid.clone(),
+                user_id: old_leader.user_id,
+                character_id: Some(old_leader.character_id),
+                session_token: Some("sess-old".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: new_sid.clone(),
+                user_id: new_leader.user_id,
+                character_id: Some(new_leader.character_id),
+                session_token: Some("sess-new".to_string()),
+                connected_at_ms: 2,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 3,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/transfer"))
@@ -17357,24 +21896,38 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(new_poll.contains("\"canManageApplications\":true"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, old_leader.character_id, old_leader.user_id).await;
         cleanup_auth_fixture(&pool, new_leader.character_id, new_leader.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn sect_appoint_route_emits_update_to_target_member() {
+    async fn sect_appoint_route_emits_update_to_target_member() {
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_APPOINT_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "GAME_SOCKET_SECT_APPOINT_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("sect-appoint-{}", super::chrono_like_timestamp_ms());
-        let leader = insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
-        let target = insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let leader =
+            insert_auth_fixture(&state, &pool, "socket", &format!("leader-{suffix}"), 0).await;
+        let target =
+            insert_auth_fixture(&state, &pool, "socket", &format!("target-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
         let sect_id = format!("sect-{suffix}");
 
         insert_test_sect(&pool, &sect_id, leader.character_id, 2, &suffix).await;
@@ -17395,26 +21948,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: target.user_id,
-            character_id: Some(target.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: target.user_id,
+                character_id: Some(target.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/sect/appoint"))
             .header("authorization", format!("Bearer {}", leader.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"targetId\":{},\"position\":\"elder\"}}", target.character_id))
+            .body(format!(
+                "{{\"targetId\":{},\"position\":\"elder\"}}",
+                target.character_id
+            ))
             .send()
             .await
             .expect("sect appoint request should succeed");
@@ -17432,25 +21992,40 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         assert!(target_poll.contains("\"canManageApplications\":true"));
         assert!(!other_poll.contains("sect:update"));
 
-        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1").bind(&sect_id).execute(&pool).await.ok();
-        sqlx::query("DELETE FROM sect_def WHERE id = $1").bind(&sect_id).execute(&pool).await.ok();
+        sqlx::query("DELETE FROM sect_member WHERE sect_id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM sect_def WHERE id = $1")
+            .bind(&sect_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, leader.character_id, leader.user_id).await;
         cleanup_auth_fixture(&pool, target.character_id, target.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
 
     #[tokio::test]
-        async fn arena_challenge_route_emits_battle_and_arena_updates_to_target_user() {
+    async fn arena_challenge_route_emits_battle_and_arena_updates_to_target_user() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
-        let Some(pool) = connect_fixture_db_or_skip(&state, "GAME_SOCKET_ARENA_CHALLENGE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) = connect_fixture_db_or_skip(
+            &state,
+            "GAME_SOCKET_ARENA_CHALLENGE_SKIPPED_DB_UNAVAILABLE",
+        )
+        .await
+        else {
             return;
         };
 
         let suffix = format!("arena-challenge-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let opponent = insert_auth_fixture(&state, &pool, "socket", &format!("opp-{suffix}"), 0).await;
-        let outsider = insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
+        let opponent =
+            insert_auth_fixture(&state, &pool, "socket", &format!("opp-{suffix}"), 0).await;
+        let outsider =
+            insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -17461,26 +22036,33 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let (other_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &other_sid).await;
 
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: target_sid.clone(),
-            user_id: fixture.user_id,
-            character_id: Some(fixture.character_id),
-            session_token: Some("sess-target".to_string()),
-            connected_at_ms: 1,
-        });
-        state.realtime_sessions.register(crate::state::RealtimeSessionRecord {
-            socket_id: other_sid.clone(),
-            user_id: outsider.user_id,
-            character_id: Some(outsider.character_id),
-            session_token: Some("sess-other".to_string()),
-            connected_at_ms: 2,
-        });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: target_sid.clone(),
+                user_id: fixture.user_id,
+                character_id: Some(fixture.character_id),
+                session_token: Some("sess-target".to_string()),
+                connected_at_ms: 1,
+            });
+        state
+            .realtime_sessions
+            .register(crate::state::RealtimeSessionRecord {
+                socket_id: other_sid.clone(),
+                user_id: outsider.user_id,
+                character_id: Some(outsider.character_id),
+                session_token: Some("sess-other".to_string()),
+                connected_at_ms: 2,
+            });
 
         let response = client
             .post(format!("http://{address}/api/arena/challenge"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"opponentCharacterId\":{}}}", opponent.character_id))
+            .body(format!(
+                "{{\"opponentCharacterId\":{}}}",
+                opponent.character_id
+            ))
             .send()
             .await
             .expect("arena challenge request should succeed");
@@ -17508,20 +22090,23 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn arena_challenge_persists_battle_bundle_for_startup_recovery() {
+    async fn arena_challenge_persists_battle_bundle_for_startup_recovery() {
         let _guard = battle_cluster_test_lock();
         let state = test_state();
         if !state.redis_available {
             println!("ARENA_PERSISTENCE_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ARENA_PERSISTENCE_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "ARENA_PERSISTENCE_SKIPPED_DB_UNAVAILABLE").await
+        else {
             return;
         };
 
         let suffix = format!("arena-persist-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let opponent = insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
+        let opponent =
+            insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -17531,23 +22116,43 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
             .post(format!("http://{address}/api/arena/challenge"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"opponentCharacterId\":{}}}", opponent.character_id))
+            .body(format!(
+                "{{\"opponentCharacterId\":{}}}",
+                opponent.character_id
+            ))
             .send()
             .await
             .expect("arena challenge request should succeed");
         assert_eq!(response.status(), StatusCode::OK);
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should be json");
-        let battle_id = body["data"]["battleId"].as_str().expect("battle id should exist").to_string();
-        let session_id = body["data"]["session"]["sessionId"].as_str().expect("session id should exist").to_string();
+        let battle_id = body["data"]["battleId"]
+            .as_str()
+            .expect("battle id should exist")
+            .to_string();
+        let session_id = body["data"]["session"]["sessionId"]
+            .as_str()
+            .expect("session id should exist")
+            .to_string();
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis client should exist"));
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis client should exist"),
+        );
         let snapshot_key = format!("battle:snapshot:{battle_id}");
         let projection_key = format!("battle:projection:{battle_id}");
         let session_key = format!("battle:session:{session_id}");
-        let snapshot = redis.get_string(&snapshot_key).await.expect("snapshot should read");
-        let projection = redis.get_string(&projection_key).await.expect("projection should read");
-        let session = redis.get_string(&session_key).await.expect("session should read");
+        let snapshot = redis
+            .get_string(&snapshot_key)
+            .await
+            .expect("snapshot should read");
+        let projection = redis
+            .get_string(&projection_key)
+            .await
+            .expect("projection should read");
+        let session = redis
+            .get_string(&session_key)
+            .await
+            .expect("session should read");
 
         println!("ARENA_PERSISTENCE_BATTLE_ID={battle_id}");
 
@@ -17562,19 +22167,26 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
     }
 
     #[tokio::test]
-        async fn battle_session_return_to_map_clears_arena_persistence_bundle() {
+    async fn battle_session_return_to_map_clears_arena_persistence_bundle() {
         let state = test_state();
         if !state.redis_available {
             println!("ARENA_PERSISTENCE_CLEAR_SKIPPED_REDIS_UNAVAILABLE");
             return;
         }
-        let Some(pool) = connect_fixture_db_or_skip(&state, "ARENA_PERSISTENCE_CLEAR_SKIPPED_DB_UNAVAILABLE").await else {
+        let Some(pool) =
+            connect_fixture_db_or_skip(&state, "ARENA_PERSISTENCE_CLEAR_SKIPPED_DB_UNAVAILABLE")
+                .await
+        else {
             return;
         };
 
         let suffix = format!("arena-clear-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
-        let battle_id = format!("arena-battle-{}-999-{}", fixture.character_id, super::chrono_like_timestamp_ms());
+        let battle_id = format!(
+            "arena-battle-{}-999-{}",
+            fixture.character_id,
+            super::chrono_like_timestamp_ms()
+        );
         let session_id = format!("arena-session-{battle_id}");
         let session = BattleSessionSnapshotDto {
             session_id: session_id.clone(),
@@ -17617,17 +22229,30 @@ sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, q
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://{address}/api/battle-session/{session_id}/advance"))
+            .post(format!(
+                "http://{address}/api/battle-session/{session_id}/advance"
+            ))
             .header("authorization", format!("Bearer {}", fixture.token))
             .send()
             .await
             .expect("battle session advance should succeed");
         assert_eq!(response.status(), StatusCode::OK);
 
-        let redis = crate::integrations::redis::RedisRuntime::new(state.redis.clone().expect("redis client should exist"));
-        let snapshot = redis.get_string(&format!("battle:snapshot:{battle_id}")).await.expect("snapshot should read");
-        let projection_raw = redis.get_string(&format!("battle:projection:{battle_id}")).await.expect("projection should read");
-        let session_raw = redis.get_string(&format!("battle:session:{session_id}")).await.expect("session should read");
+        let redis = crate::integrations::redis::RedisRuntime::new(
+            state.redis.clone().expect("redis client should exist"),
+        );
+        let snapshot = redis
+            .get_string(&format!("battle:snapshot:{battle_id}"))
+            .await
+            .expect("snapshot should read");
+        let projection_raw = redis
+            .get_string(&format!("battle:projection:{battle_id}"))
+            .await
+            .expect("projection should read");
+        let session_raw = redis
+            .get_string(&format!("battle:session:{session_id}"))
+            .await
+            .expect("session should read");
 
         server.abort();
 

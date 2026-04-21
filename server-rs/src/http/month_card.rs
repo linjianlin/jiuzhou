@@ -9,7 +9,9 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{ServiceResult, send_result};
 use crate::state::AppState;
@@ -113,8 +115,19 @@ pub async fn get_month_card_status(
             |query| query.bind(character.id).bind(&month_card_id),
         )
         .await?;
-    let expire_at = row.as_ref().and_then(|row| row.try_get::<Option<String>, _>("expire_at_text").ok().flatten());
-    let last_claim_date = row.as_ref().and_then(|row| row.try_get::<Option<String>, _>("last_claim_date_text").ok().flatten()).map(normalize_date_key);
+    let expire_at = row.as_ref().and_then(|row| {
+        row.try_get::<Option<String>, _>("expire_at_text")
+            .ok()
+            .flatten()
+    });
+    let last_claim_date = row
+        .as_ref()
+        .and_then(|row| {
+            row.try_get::<Option<String>, _>("last_claim_date_text")
+                .ok()
+                .flatten()
+        })
+        .map(normalize_date_key);
     let active = expire_at
         .as_deref()
         .and_then(parse_datetime_millis)
@@ -123,7 +136,9 @@ pub async fn get_month_card_status(
     let days_left = expire_at
         .as_deref()
         .and_then(parse_datetime_millis)
-        .map(|expire_ms| (((expire_ms - now.unix_timestamp() * 1000).max(0) + 86_399_999) / 86_400_000) as i64)
+        .map(|expire_ms| {
+            (((expire_ms - now.unix_timestamp() * 1000).max(0) + 86_399_999) / 86_400_000) as i64
+        })
         .unwrap_or(0);
     let can_claim = active && last_claim_date.as_deref() != Some(today.as_str());
 
@@ -174,7 +189,9 @@ pub(crate) async fn use_month_card_item_tx(
     let card = load_month_card_seed(&month_card_id)?;
     let duration_days = card.duration_days.unwrap_or(30).max(1);
 
-    let item_row = if let Some(item_instance_id) = payload.item_instance_id.filter(|value| *value > 0) {
+    let item_row = if let Some(item_instance_id) =
+        payload.item_instance_id.filter(|value| *value > 0)
+    {
         state
             .database
             .fetch_optional(
@@ -270,7 +287,9 @@ pub(crate) async fn use_month_card_item_tx(
         .await?;
 
     let days_left = parse_datetime_millis(&next_expire_at)
-        .map(|expire_ms| (((expire_ms - now.unix_timestamp() * 1000).max(0) + 86_399_999) / 86_400_000) as i64)
+        .map(|expire_ms| {
+            (((expire_ms - now.unix_timestamp() * 1000).max(0) + 86_399_999) / 86_400_000) as i64
+        })
         .unwrap_or(0);
     Ok(ServiceResult {
         success: true,
@@ -389,7 +408,10 @@ struct CharacterCurrencyRow {
     spirit_stones: i64,
 }
 
-async fn load_character_currency_row(state: &AppState, user_id: i64) -> Result<CharacterCurrencyRow, AppError> {
+async fn load_character_currency_row(
+    state: &AppState,
+    user_id: i64,
+) -> Result<CharacterCurrencyRow, AppError> {
     let row = state
         .database
         .fetch_optional(
@@ -400,7 +422,9 @@ async fn load_character_currency_row(state: &AppState, user_id: i64) -> Result<C
         .ok_or_else(|| AppError::config("角色不存在"))?;
     Ok(CharacterCurrencyRow {
         id: i64::from(row.try_get::<i32, _>("id")?),
-        spirit_stones: row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default(),
+        spirit_stones: row
+            .try_get::<Option<i64>, _>("spirit_stones")?
+            .unwrap_or_default(),
     })
 }
 
@@ -443,7 +467,12 @@ fn now_utc() -> time::OffsetDateTime {
 }
 
 fn date_key(value: time::OffsetDateTime) -> String {
-    format!("{:04}-{:02}-{:02}", value.year(), u8::from(value.month()), value.day())
+    format!(
+        "{:04}-{:02}-{:02}",
+        value.year(),
+        u8::from(value.month()),
+        value.day()
+    )
 }
 
 fn normalize_date_key(raw: String) -> String {
@@ -477,8 +506,11 @@ fn parse_datetime_millis(raw: &str) -> Option<i64> {
 fn format_iso(timestamp_ms: i64) -> Result<String, AppError> {
     let dt = time::OffsetDateTime::from_unix_timestamp_nanos((timestamp_ms as i128) * 1_000_000)
         .map_err(|error| AppError::config(format!("invalid month card timestamp: {error}")))?;
-    Ok(dt.format(&time::format_description::well_known::Rfc3339)
-        .map_err(|error| AppError::config(format!("failed to format month card timestamp: {error}")))?)
+    Ok(dt
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|error| {
+            AppError::config(format!("failed to format month card timestamp: {error}"))
+        })?)
 }
 
 #[cfg(test)]

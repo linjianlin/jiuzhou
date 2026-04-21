@@ -184,8 +184,16 @@ pub async fn update_position(
     Json(payload): Json<UpdatePositionPayload>,
 ) -> Result<axum::response::Response, AppError> {
     let user = auth::require_auth(&state, &headers).await?;
-    let map_id = payload.current_map_id.unwrap_or_default().trim().to_string();
-    let room_id = payload.current_room_id.unwrap_or_default().trim().to_string();
+    let map_id = payload
+        .current_map_id
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let room_id = payload
+        .current_room_id
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if map_id.is_empty() || room_id.is_empty() {
         return Ok(send_result(ServiceResult::<serde_json::Value> {
             success: false,
@@ -257,8 +265,11 @@ pub async fn update_auto_disassemble(
     let user = auth::require_auth(&state, &headers).await?;
     let enabled = payload.enabled.unwrap_or(false);
     let normalized_rules = normalize_auto_disassemble_rules(payload.rules);
-    let rules_json = serde_json::to_string(&normalized_rules)
-        .map_err(|error| AppError::config(format!("failed to serialize auto disassemble rules: {error}")))?;
+    let rules_json = serde_json::to_string(&normalized_rules).map_err(|error| {
+        AppError::config(format!(
+            "failed to serialize auto disassemble rules: {error}"
+        ))
+    })?;
     let updated = state
         .database
         .execute(
@@ -343,7 +354,13 @@ pub async fn rename_with_card(
                 });
             };
             let character_id = i64::from(row.try_get::<i32, _>("id")?);
-            rename_character_with_card_tx(&state, character_id, item_instance_id, &normalized_nickname).await
+            rename_character_with_card_tx(
+                &state,
+                character_id,
+                item_instance_id,
+                &normalized_nickname,
+            )
+            .await
         })
         .await?;
 
@@ -372,12 +389,8 @@ pub(crate) async fn rename_character_with_card_tx(
         });
     };
 
-    let validation_error = validate_character_nickname(
-        state,
-        &normalized_nickname,
-        Some(character_id),
-    )
-    .await?;
+    let validation_error =
+        validate_character_nickname(state, &normalized_nickname, Some(character_id)).await?;
     if let Some(message) = validation_error {
         return Ok(ServiceResult::<serde_json::Value> {
             success: false,
@@ -400,7 +413,9 @@ pub(crate) async fn rename_character_with_card_tx(
             data: None,
         });
     };
-    let item_def_id: String = item_row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+    let item_def_id: String = item_row
+        .try_get::<Option<String>, _>("item_def_id")?
+        .unwrap_or_default();
     if !is_rename_card_item_definition(&item_def_id)? {
         return Ok(ServiceResult::<serde_json::Value> {
             success: false,
@@ -408,7 +423,10 @@ pub(crate) async fn rename_character_with_card_tx(
             data: None,
         });
     }
-    let qty: i64 = item_row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+    let qty: i64 = item_row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if qty <= 0 {
         return Ok(ServiceResult::<serde_json::Value> {
             success: false,
@@ -420,10 +438,9 @@ pub(crate) async fn rename_character_with_card_tx(
     if qty == 1 {
         state
             .database
-            .execute(
-                "DELETE FROM item_instance WHERE id = $1",
-                |query| query.bind(item_instance_id),
-            )
+            .execute("DELETE FROM item_instance WHERE id = $1", |query| {
+                query.bind(item_instance_id)
+            })
             .await?;
     } else {
         state
@@ -450,7 +467,9 @@ pub(crate) async fn rename_character_with_card_tx(
     })
 }
 
-fn normalize_auto_disassemble_rules(raw: Option<Vec<AutoDisassembleRuleDto>>) -> Vec<serde_json::Value> {
+fn normalize_auto_disassemble_rules(
+    raw: Option<Vec<AutoDisassembleRuleDto>>,
+) -> Vec<serde_json::Value> {
     let rows = raw.unwrap_or_default();
     if rows.is_empty() {
         return vec![default_auto_disassemble_rule()];
@@ -558,17 +577,22 @@ pub(crate) fn local_sensitive_words_contain(content: &str) -> Result<bool, AppEr
 
 fn load_local_sensitive_words() -> Result<BTreeSet<String>, AppError> {
     let candidates = [
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_name_sensitive_words.json"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/data/seeds/technique_name_sensitive_words.json"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/data/seeds/technique_name_sensitive_words.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_name_sensitive_words.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/data/seeds/technique_name_sensitive_words.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("dist/data/seeds/technique_name_sensitive_words.json"),
     ];
     let Some(path) = candidates.into_iter().find(|path| path.exists()) else {
         return Ok(BTreeSet::new());
     };
-    let content = fs::read_to_string(path)
-        .map_err(|error| AppError::config(format!("failed to read local sensitive words: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse local sensitive words: {error}")))?;
+    let content = fs::read_to_string(path).map_err(|error| {
+        AppError::config(format!("failed to read local sensitive words: {error}"))
+    })?;
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse local sensitive words: {error}"))
+    })?;
     let words = payload
         .get("words")
         .and_then(|value| value.as_array())
@@ -582,8 +606,10 @@ fn load_local_sensitive_words() -> Result<BTreeSet<String>, AppError> {
 }
 
 fn is_rename_card_item_definition(item_def_id: &str) -> Result<bool, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read item_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read item_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse item_def.json: {error}")))?;
     let items = payload
@@ -592,7 +618,12 @@ fn is_rename_card_item_definition(item_def_id: &str) -> Result<bool, AppError> {
         .cloned()
         .unwrap_or_default();
     for item in items {
-        if item.get("id").and_then(|value| value.as_str()).map(str::trim) != Some(item_def_id) {
+        if item
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            != Some(item_def_id)
+        {
             continue;
         }
         let effects = item

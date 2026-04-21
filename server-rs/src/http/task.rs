@@ -10,9 +10,15 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas};
-use crate::integrations::redis_progress_delta::{CharacterProgressDeltaField, buffer_character_progress_delta_fields};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
+};
+use crate::integrations::redis_progress_delta::{
+    CharacterProgressDeltaField, buffer_character_progress_delta_fields,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::realtime::public_socket::emit_task_update_to_user;
 use crate::realtime::task::{build_task_overview_update_payload, build_task_update_payload};
 use crate::shared::error::AppError;
@@ -213,7 +219,8 @@ pub async fn get_task_overview(
     Query(query): Query<TaskOverviewQuery>,
 ) -> Result<Json<SuccessResponse<TaskOverviewResponse>>, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let tasks = load_task_overview_rows(&state, actor.character_id, query.category.as_deref()).await?;
+    let tasks =
+        load_task_overview_rows(&state, actor.character_id, query.category.as_deref()).await?;
     Ok(send_success(TaskOverviewResponse { tasks }))
 }
 
@@ -246,20 +253,27 @@ pub async fn set_task_tracked(
     let actor = auth::require_character(&state, &headers).await?;
     let task_id = payload.task_id.unwrap_or_default();
     if task_id.trim().is_empty() {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<serde_json::Value> {
-            success: false,
-            message: Some("任务ID不能为空".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some("任务ID不能为空".to_string()),
+                data: None,
+            },
+        ));
     }
 
     let task_defs = load_task_seeds()?;
-    if !task_defs.iter().any(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim()) {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<serde_json::Value> {
-            success: false,
-            message: Some("任务不存在".to_string()),
-            data: None,
-        }));
+    if !task_defs
+        .iter()
+        .any(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim())
+    {
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some("任务不存在".to_string()),
+                data: None,
+            },
+        ));
     }
 
     let tracked = payload.tracked == Some(true);
@@ -271,19 +285,22 @@ pub async fn set_task_tracked(
         )
         .await?;
 
-    let debug_realtime = build_task_update_payload("track_task", task_id.trim(), None, Some(tracked));
+    let debug_realtime =
+        build_task_update_payload("track_task", task_id.trim(), None, Some(tracked));
     let socket_realtime = build_task_overview_update_payload(actor.character_id);
     emit_task_update_to_user(&state, actor.user_id, &socket_realtime);
 
-    Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-        success: true,
-        message: Some("ok".to_string()),
-        data: Some(serde_json::json!({
-            "taskId": task_id.trim(),
-            "tracked": tracked,
-            "debugRealtime": debug_realtime,
-        })),
-    }))
+    Ok(crate::shared::response::send_result(
+        crate::shared::response::ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({
+                "taskId": task_id.trim(),
+                "tracked": tracked,
+                "debugRealtime": debug_realtime,
+            })),
+        },
+    ))
 }
 
 pub async fn npc_talk(
@@ -294,20 +311,24 @@ pub async fn npc_talk(
     let actor = auth::require_character(&state, &headers).await?;
     let npc_id = payload.npc_id.unwrap_or_default();
     if npc_id.trim().is_empty() {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<serde_json::Value> {
-            success: false,
-            message: Some("NPC不存在".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some("NPC不存在".to_string()),
+                data: None,
+            },
+        ));
     }
 
     let npc_map = load_npc_seed_map()?;
     let Some(npc) = npc_map.get(npc_id.trim()) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<serde_json::Value> {
-            success: false,
-            message: Some("NPC不存在".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some("NPC不存在".to_string()),
+                data: None,
+            },
+        ));
     };
 
     let task_defs = load_task_seeds()?;
@@ -329,15 +350,18 @@ pub async fn npc_talk(
         let status = if let Some(progress) = progress_by_task.get(task_id.as_str()) {
             let objectives = task.objectives.clone().unwrap_or_default();
             let progress_status = progress.status.as_deref();
-            let all_done = objectives.iter().filter_map(|objective| objective.id.as_deref()).all(|objective_id| {
-                let target = objectives
-                    .iter()
-                    .find(|objective| objective.id.as_deref() == Some(objective_id))
-                    .and_then(|objective| objective.target)
-                    .unwrap_or(1)
-                    .max(1);
-                progress.progress.get(objective_id).copied().unwrap_or(0) >= target
-            });
+            let all_done = objectives
+                .iter()
+                .filter_map(|objective| objective.id.as_deref())
+                .all(|objective_id| {
+                    let target = objectives
+                        .iter()
+                        .find(|objective| objective.id.as_deref() == Some(objective_id))
+                        .and_then(|objective| objective.target)
+                        .unwrap_or(1)
+                        .max(1);
+                    progress.progress.get(objective_id).copied().unwrap_or(0) >= target
+                });
             match progress_status.unwrap_or("ongoing") {
                 "claimed" => "claimed".to_string(),
                 "claimable" => "claimable".to_string(),
@@ -356,16 +380,18 @@ pub async fn npc_talk(
         });
     }
 
-    Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-        success: true,
-        message: Some("ok".to_string()),
-        data: Some(NpcTalkData {
-            npc_id: npc.id.clone(),
-            npc_name: npc.name.clone(),
-            lines: build_npc_talk_lines(npc),
-            tasks,
-        }),
-    }))
+    Ok(crate::shared::response::send_result(
+        crate::shared::response::ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(NpcTalkData {
+                npc_id: npc.id.clone(),
+                npc_name: npc.name.clone(),
+                lines: build_npc_talk_lines(npc),
+                tasks,
+            }),
+        },
+    ))
 }
 
 pub async fn npc_accept(
@@ -388,7 +414,10 @@ pub async fn npc_accept(
         return Ok(task_failure("NPC不存在"));
     }
     let task_defs = load_task_seeds()?;
-    let Some(task) = task_defs.into_iter().find(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim()) else {
+    let Some(task) = task_defs
+        .into_iter()
+        .find(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim())
+    else {
         return Ok(task_failure("任务不存在"));
     };
     if task.giver_npc_id.as_deref().map(str::trim) != Some(npc_id.trim()) {
@@ -403,7 +432,9 @@ pub async fn npc_accept(
         )
         .await?;
     if let Some(row) = existing {
-        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string());
+        let status = row
+            .try_get::<Option<String>, _>("status")?
+            .unwrap_or_else(|| "ongoing".to_string());
         if status != "claimed" {
             return Ok(task_failure("任务已接取"));
         }
@@ -448,7 +479,10 @@ pub async fn npc_submit(
     }
 
     let task_defs = load_task_seeds()?;
-    let Some(task) = task_defs.into_iter().find(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim()) else {
+    let Some(task) = task_defs
+        .into_iter()
+        .find(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim())
+    else {
         return Ok(task_failure("任务不存在"));
     };
     if task.giver_npc_id.as_deref().map(str::trim) != Some(npc_id.trim()) {
@@ -465,7 +499,9 @@ pub async fn npc_submit(
     let Some(progress_row) = progress_row else {
         return Ok(task_failure("任务未接取"));
     };
-    let status = progress_row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string());
+    let status = progress_row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_else(|| "ongoing".to_string());
     if status == "claimed" {
         return Ok(task_failure("任务已完成"));
     }
@@ -473,7 +509,8 @@ pub async fn npc_submit(
         return Ok(task_success(task_id.trim()));
     }
 
-    let progress = parse_progress_record(progress_row.try_get::<Option<serde_json::Value>, _>("progress")?);
+    let progress =
+        parse_progress_record(progress_row.try_get::<Option<serde_json::Value>, _>("progress")?);
     let objectives = task.objectives.unwrap_or_default();
     let all_done = objectives
         .iter()
@@ -517,7 +554,10 @@ pub async fn claim_task_reward(
     }
 
     let task_defs = load_task_seeds()?;
-    let Some(task) = task_defs.into_iter().find(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim()) else {
+    let Some(task) = task_defs
+        .into_iter()
+        .find(|task| task.enabled != Some(false) && task.id.trim() == task_id.trim())
+    else {
         return Ok(task_failure("任务不存在"));
     };
 
@@ -531,7 +571,9 @@ pub async fn claim_task_reward(
     let Some(progress_row) = progress_row else {
         return Ok(task_failure("任务未接取"));
     };
-    let status = progress_row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string());
+    let status = progress_row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_else(|| "ongoing".to_string());
     if status != "claimable" {
         return Ok(task_failure("任务不可领取"));
     }
@@ -645,19 +687,22 @@ pub async fn claim_task_reward(
         })
         .await?;
 
-    let debug_realtime = build_task_update_payload("claim_task", task_id.trim(), Some("claimed"), Some(false));
+    let debug_realtime =
+        build_task_update_payload("claim_task", task_id.trim(), Some("claimed"), Some(false));
     let socket_realtime = build_task_overview_update_payload(actor.character_id);
     emit_task_update_to_user(&state, actor.user_id, &socket_realtime);
 
-    Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-        success: true,
-        message: Some("ok".to_string()),
-        data: Some(serde_json::json!({
-            "taskId": task_id.trim(),
-            "rewards": reward_rows,
-            "debugRealtime": debug_realtime,
-        })),
-    }))
+    Ok(crate::shared::response::send_result(
+        crate::shared::response::ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({
+                "taskId": task_id.trim(),
+                "rewards": reward_rows,
+                "debugRealtime": debug_realtime,
+            })),
+        },
+    ))
 }
 
 pub async fn record_dungeon_clear_task_event(
@@ -689,11 +734,18 @@ pub async fn record_dungeon_clear_task_event(
                         return None;
                     }
                     let params = objective.params.as_ref()?;
-                    let objective_dungeon_id = params.get("dungeon_id").and_then(|value| value.as_str()).unwrap_or_default().trim();
+                    let objective_dungeon_id = params
+                        .get("dungeon_id")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default()
+                        .trim();
                     if objective_dungeon_id != dungeon_id {
                         return None;
                     }
-                    Some((objective_id.to_string(), objective.target.unwrap_or(1).max(1)))
+                    Some((
+                        objective_id.to_string(),
+                        objective.target.unwrap_or(1).max(1),
+                    ))
                 })
                 .collect::<Vec<_>>();
             if matched_objectives.is_empty() {
@@ -739,7 +791,9 @@ pub async fn record_dungeon_clear_task_event(
                 .await?
                 .ok_or_else(|| AppError::config("任务进度行创建失败"))?
         };
-        let status = progress_row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string());
+        let status = progress_row
+            .try_get::<Option<String>, _>("status")?
+            .unwrap_or_else(|| "ongoing".to_string());
         if status == "claimed" {
             continue;
         }
@@ -752,11 +806,20 @@ pub async fn record_dungeon_clear_task_event(
                 });
             }
         } else {
-            let tracked = progress_row.try_get::<Option<bool>, _>("tracked")?.unwrap_or(true);
-            let mut progress_value = progress_row.try_get::<Option<serde_json::Value>, _>("progress")?.unwrap_or_else(|| serde_json::json!({}));
-            let progress_object = progress_value.as_object_mut().ok_or_else(|| AppError::config("任务进度格式异常"))?;
+            let tracked = progress_row
+                .try_get::<Option<bool>, _>("tracked")?
+                .unwrap_or(true);
+            let mut progress_value = progress_row
+                .try_get::<Option<serde_json::Value>, _>("progress")?
+                .unwrap_or_else(|| serde_json::json!({}));
+            let progress_object = progress_value
+                .as_object_mut()
+                .ok_or_else(|| AppError::config("任务进度格式异常"))?;
             for (objective_id, target) in &matched_objectives {
-                let current = progress_object.get(objective_id).and_then(|value| value.as_i64()).unwrap_or_default();
+                let current = progress_object
+                    .get(objective_id)
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default();
                 let next = (current + increment).min(*target);
                 progress_object.insert(objective_id.clone(), serde_json::json!(next));
             }
@@ -778,7 +841,11 @@ pub async fn record_dungeon_clear_task_event(
                         >= target
                 });
             let next_status = if all_done {
-                if category.trim() == "event" { "claimable" } else { "turnin" }
+                if category.trim() == "event" {
+                    "claimable"
+                } else {
+                    "turnin"
+                }
             } else {
                 status.as_str()
             };
@@ -847,7 +914,9 @@ pub async fn record_craft_item_task_event(
                         .map(|expected| recipe_id == Some(expected))
                         .unwrap_or(true);
                     let matches_kind = params
-                        .and_then(|params| params.get("craft_kind").and_then(|value| value.as_str()))
+                        .and_then(|params| {
+                            params.get("craft_kind").and_then(|value| value.as_str())
+                        })
                         .map(str::trim)
                         .filter(|value| !value.is_empty())
                         .map(|expected| craft_kind == Some(expected))
@@ -859,7 +928,9 @@ pub async fn record_craft_item_task_event(
                         .map(|expected| item_def_id == Some(expected))
                         .unwrap_or(true);
                     let matches_recipe_type = params
-                        .and_then(|params| params.get("recipe_type").and_then(|value| value.as_str()))
+                        .and_then(|params| {
+                            params.get("recipe_type").and_then(|value| value.as_str())
+                        })
                         .map(str::trim)
                         .filter(|value| !value.is_empty())
                         .map(|expected| recipe_type == Some(expected))
@@ -867,7 +938,10 @@ pub async fn record_craft_item_task_event(
                     if !(matches_recipe && matches_kind && matches_item && matches_recipe_type) {
                         return None;
                     }
-                    Some((objective_id.to_string(), objective.target.unwrap_or(1).max(1)))
+                    Some((
+                        objective_id.to_string(),
+                        objective.target.unwrap_or(1).max(1),
+                    ))
                 })
                 .collect::<Vec<_>>();
             if matched_objectives.is_empty() {
@@ -905,7 +979,9 @@ pub async fn record_craft_item_task_event(
                 |query| query.bind(character_id).bind(task_id.trim()),
             ).await?.ok_or_else(|| AppError::config("任务进度行创建失败"))?
         };
-        let status = progress_row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string());
+        let status = progress_row
+            .try_get::<Option<String>, _>("status")?
+            .unwrap_or_else(|| "ongoing".to_string());
         if status == "claimed" {
             continue;
         }
@@ -918,25 +994,45 @@ pub async fn record_craft_item_task_event(
                 });
             }
         } else {
-            let tracked = progress_row.try_get::<Option<bool>, _>("tracked")?.unwrap_or(true);
-            let mut progress_value = progress_row.try_get::<Option<serde_json::Value>, _>("progress")?.unwrap_or_else(|| serde_json::json!({}));
-            let progress_object = progress_value.as_object_mut().ok_or_else(|| AppError::config("任务进度格式异常"))?;
+            let tracked = progress_row
+                .try_get::<Option<bool>, _>("tracked")?
+                .unwrap_or(true);
+            let mut progress_value = progress_row
+                .try_get::<Option<serde_json::Value>, _>("progress")?
+                .unwrap_or_else(|| serde_json::json!({}));
+            let progress_object = progress_value
+                .as_object_mut()
+                .ok_or_else(|| AppError::config("任务进度格式异常"))?;
             for (objective_id, target) in &matched_objectives {
-                let current = progress_object.get(objective_id).and_then(|value| value.as_i64()).unwrap_or_default();
+                let current = progress_object
+                    .get(objective_id)
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default();
                 let next = (current + increment).min(*target);
                 progress_object.insert(objective_id.clone(), serde_json::json!(next));
             }
-            let all_done = objectives.iter().filter_map(|objective| objective.id.as_deref()).all(|objective_id| {
-                let target = objectives
-                    .iter()
-                    .find(|objective| objective.id.as_deref() == Some(objective_id))
-                    .and_then(|objective| objective.target)
-                    .unwrap_or(1)
-                    .max(1);
-                progress_object.get(objective_id).and_then(|value| value.as_i64()).unwrap_or_default() >= target
-            });
+            let all_done = objectives
+                .iter()
+                .filter_map(|objective| objective.id.as_deref())
+                .all(|objective_id| {
+                    let target = objectives
+                        .iter()
+                        .find(|objective| objective.id.as_deref() == Some(objective_id))
+                        .and_then(|objective| objective.target)
+                        .unwrap_or(1)
+                        .max(1);
+                    progress_object
+                        .get(objective_id)
+                        .and_then(|value| value.as_i64())
+                        .unwrap_or_default()
+                        >= target
+                });
             let next_status = if all_done {
-                if category.trim() == "event" { "claimable" } else { "turnin" }
+                if category.trim() == "event" {
+                    "claimable"
+                } else {
+                    "turnin"
+                }
             } else {
                 status.as_str()
             };
@@ -973,9 +1069,11 @@ pub(crate) async fn apply_task_progress_delta_fields(
             let mut parts = raw.splitn(2, ':');
             let task_id = parts.next()?.trim();
             let objective_id = parts.next()?.trim();
-            (task_id.is_empty() || objective_id.is_empty() || *increment <= 0).then_some(None).unwrap_or_else(|| {
-                Some((task_id.to_string(), objective_id.to_string(), *increment))
-            })
+            (task_id.is_empty() || objective_id.is_empty() || *increment <= 0)
+                .then_some(None)
+                .unwrap_or_else(|| {
+                    Some((task_id.to_string(), objective_id.to_string(), *increment))
+                })
         })
         .collect::<Vec<_>>();
     if progress_fields.is_empty() {
@@ -984,13 +1082,19 @@ pub(crate) async fn apply_task_progress_delta_fields(
     progress_fields.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     let user_id = state
         .database
-        .fetch_optional("SELECT user_id FROM characters WHERE id = $1 LIMIT 1", |q| q.bind(character_id))
+        .fetch_optional(
+            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
         .await?
         .map(|row| opt_i64_from_i32(&row, "user_id"))
         .unwrap_or_default();
 
     for (task_id, _, _) in progress_fields.clone().into_iter() {
-        let Some(task) = task_defs.iter().find(|task| task.enabled != Some(false) && task.id.trim() == task_id) else {
+        let Some(task) = task_defs
+            .iter()
+            .find(|task| task.enabled != Some(false) && task.id.trim() == task_id)
+        else {
             continue;
         };
         let objectives = task.objectives.clone().unwrap_or_default();
@@ -1009,21 +1113,34 @@ pub(crate) async fn apply_task_progress_delta_fields(
         let Some(progress_row) = progress_row else {
             continue;
         };
-        let status = progress_row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string());
+        let status = progress_row
+            .try_get::<Option<String>, _>("status")?
+            .unwrap_or_else(|| "ongoing".to_string());
         if status == "claimed" {
             continue;
         }
-        let tracked = progress_row.try_get::<Option<bool>, _>("tracked")?.unwrap_or(true);
-        let mut progress_value = progress_row.try_get::<Option<serde_json::Value>, _>("progress")?.unwrap_or_else(|| serde_json::json!({}));
-        let progress_object = progress_value.as_object_mut().ok_or_else(|| AppError::config("任务进度格式异常"))?;
+        let tracked = progress_row
+            .try_get::<Option<bool>, _>("tracked")?
+            .unwrap_or(true);
+        let mut progress_value = progress_row
+            .try_get::<Option<serde_json::Value>, _>("progress")?
+            .unwrap_or_else(|| serde_json::json!({}));
+        let progress_object = progress_value
+            .as_object_mut()
+            .ok_or_else(|| AppError::config("任务进度格式异常"))?;
         for (_, objective_id, increment) in matched {
             let target = objectives
                 .iter()
-                .find(|objective| objective.id.as_deref().map(str::trim) == Some(objective_id.as_str()))
+                .find(|objective| {
+                    objective.id.as_deref().map(str::trim) == Some(objective_id.as_str())
+                })
                 .and_then(|objective| objective.target)
                 .unwrap_or(1)
                 .max(1);
-            let current = progress_object.get(objective_id.as_str()).and_then(|value| value.as_i64()).unwrap_or_default();
+            let current = progress_object
+                .get(objective_id.as_str())
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
             let next = (current + increment).min(target);
             progress_object.insert(objective_id, serde_json::json!(next));
         }
@@ -1044,7 +1161,11 @@ pub(crate) async fn apply_task_progress_delta_fields(
                     >= target
             });
         let next_status = if all_done {
-            if task.category.trim() == "event" { "claimable" } else { "turnin" }
+            if task.category.trim() == "event" {
+                "claimable"
+            } else {
+                "turnin"
+            }
         } else {
             status.as_str()
         };
@@ -1080,7 +1201,12 @@ async fn load_task_overview_rows(
     let filtered_defs: Vec<_> = task_defs
         .into_iter()
         .filter(|task| task.enabled != Some(false))
-        .filter(|task| category.as_deref().map(|value| value == task.category.trim()).unwrap_or(true))
+        .filter(|task| {
+            category
+                .as_deref()
+                .map(|value| value == task.category.trim())
+                .unwrap_or(true)
+        })
         .collect();
     let task_ids: Vec<String> = filtered_defs.iter().map(|task| task.id.clone()).collect();
     let progress_by_task = load_task_progress_map(state, character_id, &task_ids).await?;
@@ -1100,20 +1226,32 @@ async fn load_task_overview_rows(
                 category: task.category.clone(),
                 title: task.title.clone(),
                 realm: task.realm.clone().unwrap_or_else(|| "凡人".to_string()),
-                giver_npc_id: task.giver_npc_id.clone().filter(|value| !value.trim().is_empty()),
+                giver_npc_id: task
+                    .giver_npc_id
+                    .clone()
+                    .filter(|value| !value.trim().is_empty()),
                 map_id: task.map_id.clone().filter(|value| !value.trim().is_empty()),
                 map_name: task
                     .map_id
                     .as_deref()
                     .and_then(|value| map_name_map.get(value.trim()).cloned()),
-                room_id: task.room_id.clone().filter(|value| !value.trim().is_empty()),
+                room_id: task
+                    .room_id
+                    .clone()
+                    .filter(|value| !value.trim().is_empty()),
                 status: progress
                     .as_ref()
                     .map(|progress| map_progress_status_to_ui_status(progress.status.as_deref()))
                     .unwrap_or_else(|| "ongoing".to_string()),
-                tracked: progress.as_ref().map(|progress| progress.tracked).unwrap_or(false),
+                tracked: progress
+                    .as_ref()
+                    .map(|progress| progress.tracked)
+                    .unwrap_or(false),
                 description: task.description.clone().unwrap_or_default(),
-                objectives: build_task_objectives(task.objectives.unwrap_or_default(), progress.as_ref()),
+                objectives: build_task_objectives(
+                    task.objectives.unwrap_or_default(),
+                    progress.as_ref(),
+                ),
                 rewards: build_task_rewards(task.rewards.unwrap_or_default(), &item_meta_map),
             }
         })
@@ -1156,7 +1294,9 @@ async fn load_task_progress_map(
         .await?;
     let mut map = HashMap::new();
     for row in rows {
-        let task_id = row.try_get::<Option<String>, _>("task_id")?.unwrap_or_default();
+        let task_id = row
+            .try_get::<Option<String>, _>("task_id")?
+            .unwrap_or_default();
         if task_id.trim().is_empty() {
             continue;
         }
@@ -1165,7 +1305,9 @@ async fn load_task_progress_map(
             TaskProgressRow {
                 status: row.try_get::<Option<String>, _>("progress_status")?,
                 tracked: row.try_get::<Option<bool>, _>("tracked")?.unwrap_or(false),
-                progress: parse_progress_record(row.try_get::<Option<serde_json::Value>, _>("progress")?),
+                progress: parse_progress_record(
+                    row.try_get::<Option<serde_json::Value>, _>("progress")?,
+                ),
             },
         );
     }
@@ -1191,7 +1333,9 @@ fn build_task_objectives(
                 .min(target);
             Some(TaskObjectiveDto {
                 id,
-                objective_type: objective.objective_type.unwrap_or_else(|| "unknown".to_string()),
+                objective_type: objective
+                    .objective_type
+                    .unwrap_or_else(|| "unknown".to_string()),
                 text,
                 done,
                 target,
@@ -1223,7 +1367,10 @@ fn build_task_rewards(
                 if item_def_id.trim().is_empty() {
                     return None;
                 }
-                let amount = reward.qty.unwrap_or_else(|| reward.qty_min.unwrap_or(0)).max(0);
+                let amount = reward
+                    .qty
+                    .unwrap_or_else(|| reward.qty_min.unwrap_or(0))
+                    .max(0);
                 let amount_max = reward.qty_max.filter(|value| *value > amount);
                 let (name, icon) = item_meta_map
                     .get(item_def_id.trim())
@@ -1240,7 +1387,9 @@ fn build_task_rewards(
             _ => None,
         })
         .filter(|reward| match reward {
-            TaskRewardDto::Silver { amount, .. } | TaskRewardDto::SpiritStones { amount, .. } => *amount > 0,
+            TaskRewardDto::Silver { amount, .. } | TaskRewardDto::SpiritStones { amount, .. } => {
+                *amount > 0
+            }
             TaskRewardDto::Item { amount, .. } => *amount > 0,
         })
         .collect()
@@ -1306,14 +1455,20 @@ fn load_npc_seed_map() -> Result<HashMap<String, NpcSeed>, AppError> {
 
 fn build_npc_talk_lines(npc: &NpcSeed) -> Vec<String> {
     let _ = &npc.talk_tree_id;
-    let description = npc.description.as_deref().map(str::trim).filter(|value| !value.is_empty());
+    let description = npc
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     description
         .map(|value| vec![value.to_string()])
         .unwrap_or_else(|| vec![format!("{}看着你，没有多说什么。", npc.name)])
 }
 
 fn task_failure(message: &str) -> axum::response::Response {
-    crate::shared::response::send_result(crate::shared::response::ServiceResult::<serde_json::Value> {
+    crate::shared::response::send_result(crate::shared::response::ServiceResult::<
+        serde_json::Value,
+    > {
         success: false,
         message: Some(message.to_string()),
         data: None,
@@ -1335,7 +1490,11 @@ fn load_map_name_map() -> Result<HashMap<String, String>, AppError> {
     .map_err(|error| AppError::config(format!("failed to read map_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse map_def.json: {error}")))?;
-    let maps = payload.get("maps").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let maps = payload
+        .get("maps")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(maps
         .into_iter()
         .filter_map(|row| {
@@ -1350,19 +1509,37 @@ fn load_item_meta_map() -> Result<HashMap<String, (String, Option<String>)>, App
     let mut out = HashMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
         let content = fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
         )
         .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
             if id.is_empty() || name.is_empty() {
                 continue;
             }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
@@ -1378,15 +1555,22 @@ mod tests {
             .into_iter()
             .filter(|task| task.enabled != Some(false))
             .filter_map(|task| {
-                let objective_id = task.objectives.unwrap_or_default().into_iter().find(|objective| {
-                    objective.objective_type.as_deref().map(str::trim) == Some("craft_item")
-                        && objective
-                            .params
-                            .as_ref()
-                            .and_then(|params| params.get("recipe_id").and_then(|value| value.as_str()))
-                            .map(str::trim)
-                            == Some("recipe-hui-qi-dan")
-                })?.id?;
+                let objective_id = task
+                    .objectives
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|objective| {
+                        objective.objective_type.as_deref().map(str::trim) == Some("craft_item")
+                            && objective
+                                .params
+                                .as_ref()
+                                .and_then(|params| {
+                                    params.get("recipe_id").and_then(|value| value.as_str())
+                                })
+                                .map(str::trim)
+                                == Some("recipe-hui-qi-dan")
+                    })?
+                    .id?;
                 Some((task.id, objective_id))
             })
             .collect::<Vec<_>>();
@@ -1554,6 +1738,8 @@ mod tests {
         let event_next_status = if true { "claimable" } else { "ongoing" };
         assert_eq!(daily_next_status, "turnin");
         assert_eq!(event_next_status, "claimable");
-        println!("TASK_DUNGEON_CLEAR_STATUS_POLICY={{\"daily\":\"{daily_next_status}\",\"event\":\"{event_next_status}\"}}");
+        println!(
+            "TASK_DUNGEON_CLEAR_STATUS_POLICY={{\"daily\":\"{daily_next_status}\",\"event\":\"{event_next_status}\"}}"
+        );
     }
 }

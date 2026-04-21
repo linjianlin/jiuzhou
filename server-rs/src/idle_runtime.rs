@@ -6,7 +6,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::battle_runtime::{
-    apply_minimal_pve_action, build_minimal_partner_battle_unit, build_minimal_pve_battle_state, BattleStateDto,
+    BattleStateDto, apply_minimal_pve_action, build_minimal_partner_battle_unit,
+    build_minimal_pve_battle_state,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -351,17 +352,26 @@ fn select_idle_skill_id_for_action(
             if skill_id.is_empty() {
                 return None;
             }
-            let priority = slot.get("priority").and_then(|value| value.as_i64()).unwrap_or(i64::MAX);
+            let priority = slot
+                .get("priority")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(i64::MAX);
             Some((priority, skill_id))
         })
         .collect::<Vec<_>>();
-    ordered_policy_skills.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    ordered_policy_skills
+        .sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
 
     for (_, skill_id) in ordered_policy_skills {
         let Some(config) = idle_skill_runtime_config(skill_id.as_str()) else {
             continue;
         };
-        if cooldowns.get(skill_id.as_str()).copied().unwrap_or_default() > 0 {
+        if cooldowns
+            .get(skill_id.as_str())
+            .copied()
+            .unwrap_or_default()
+            > 0
+        {
             continue;
         }
         if player.lingqi < config.cost_lingqi.max(0) {
@@ -407,9 +417,21 @@ fn consume_idle_skill_cost(
 
 fn idle_skill_runtime_config(skill_id: &str) -> Option<IdleSkillRuntimeConfig> {
     match skill_id.trim() {
-        "sk-basic-slash" => Some(IdleSkillRuntimeConfig { cost_lingqi: 0, cost_qixue: 0, cooldown_turns: 0 }),
-        "sk-heavy-slash" => Some(IdleSkillRuntimeConfig { cost_lingqi: 20, cost_qixue: 0, cooldown_turns: 1 }),
-        "sk-bite" => Some(IdleSkillRuntimeConfig { cost_lingqi: 5, cost_qixue: 0, cooldown_turns: 1 }),
+        "sk-basic-slash" => Some(IdleSkillRuntimeConfig {
+            cost_lingqi: 0,
+            cost_qixue: 0,
+            cooldown_turns: 0,
+        }),
+        "sk-heavy-slash" => Some(IdleSkillRuntimeConfig {
+            cost_lingqi: 20,
+            cost_qixue: 0,
+            cooldown_turns: 1,
+        }),
+        "sk-bite" => Some(IdleSkillRuntimeConfig {
+            cost_lingqi: 5,
+            cost_qixue: 0,
+            cooldown_turns: 1,
+        }),
         _ => None,
     }
 }
@@ -534,9 +556,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
+        IdleExecutionRegistry, IdlePartnerExecutionSnapshot, IdleSessionActivitySnapshot,
         build_idle_execution_snapshot, build_idle_reconcile_plan, execute_idle_batch_from_snapshot,
-        resolve_idle_skill_id, IdleExecutionRegistry, IdlePartnerExecutionSnapshot,
-        IdleSessionActivitySnapshot,
+        resolve_idle_skill_id,
     };
 
     #[test]
@@ -750,10 +772,14 @@ mod tests {
             snapshot.initial_battle_state.teams.defender.units[0].clone(),
             snapshot.initial_battle_state.teams.defender.units[0].clone(),
         ];
-        snapshot.initial_battle_state.teams.defender.units[0].id = "monster-1-monster-wild-rabbit".to_string();
-        snapshot.initial_battle_state.teams.defender.units[1].id = "monster-2-monster-wild-rabbit".to_string();
+        snapshot.initial_battle_state.teams.defender.units[0].id =
+            "monster-1-monster-wild-rabbit".to_string();
+        snapshot.initial_battle_state.teams.defender.units[1].id =
+            "monster-2-monster-wild-rabbit".to_string();
         snapshot.initial_battle_state.teams.defender.units[1].qixue = 60;
-        snapshot.initial_battle_state.teams.defender.units[1].current_attrs.max_qixue = 60;
+        snapshot.initial_battle_state.teams.defender.units[1]
+            .current_attrs
+            .max_qixue = 60;
         let result = execute_idle_batch_from_snapshot("idle-1", 1, 1, &snapshot)
             .expect("batch should execute");
         assert_eq!(result.result, "attacker_win");
@@ -793,13 +819,15 @@ mod tests {
         )
         .expect("snapshot should build");
         assert!(snapshot.partner_member.is_some());
-        assert!(snapshot
-            .initial_battle_state
-            .teams
-            .attacker
-            .units
-            .iter()
-            .any(|unit| unit.id == "partner-9"));
+        assert!(
+            snapshot
+                .initial_battle_state
+                .teams
+                .attacker
+                .units
+                .iter()
+                .any(|unit| unit.id == "partner-9")
+        );
     }
 
     #[test]

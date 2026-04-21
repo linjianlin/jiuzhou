@@ -296,10 +296,10 @@ fn parse_captcha_provider(raw: &str) -> CaptchaProvider {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
     use std::collections::BTreeMap;
+    use std::fs;
     use std::sync::{Mutex, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::AppConfig;
 
@@ -391,7 +391,8 @@ mod tests {
             }
         }
 
-        std::env::set_current_dir(&temp_dir).expect("current dir should switch to repo root temp dir");
+        std::env::set_current_dir(&temp_dir)
+            .expect("current dir should switch to repo root temp dir");
 
         let config = AppConfig::load().expect("config should load from server-rs/.env fallback");
         assert_eq!(

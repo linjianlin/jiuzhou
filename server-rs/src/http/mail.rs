@@ -6,9 +6,15 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas};
-use crate::integrations::redis_item_instance_mutation::{BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, buffer_item_instance_mutations};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
+};
+use crate::integrations::redis_item_instance_mutation::{
+    BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, buffer_item_instance_mutations,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::realtime::mail::{MailUpdatePayload, build_mail_update_payload};
 use crate::realtime::public_socket::emit_mail_update_to_user;
 use crate::shared::error::AppError;
@@ -205,13 +211,21 @@ async fn claim_mail_instance_attachment_rows(
     let now_ms = mail_timestamp_ms();
     for row in rows {
         let item_id = row.try_get::<i64, _>("id")?;
-        let owner_user_id = row.try_get::<Option<i64>, _>("owner_user_id")?.unwrap_or_default();
-        let owner_character_id = row.try_get::<Option<i64>, _>("owner_character_id")?.unwrap_or_default();
-        let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+        let owner_user_id = row
+            .try_get::<Option<i64>, _>("owner_user_id")?
+            .unwrap_or_default();
+        let owner_character_id = row
+            .try_get::<Option<i64>, _>("owner_character_id")?
+            .unwrap_or_default();
+        let location = row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default();
         if owner_user_id != user_id || owner_character_id != character_id || location != "mail" {
             return Err(AppError::config("邮件附件状态异常"));
         }
-        let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+        let item_def_id = row
+            .try_get::<Option<String>, _>("item_def_id")?
+            .unwrap_or_default();
         let qty = row
             .try_get::<Option<i32>, _>("qty")?
             .map(i64::from)
@@ -231,21 +245,43 @@ async fn claim_mail_instance_attachment_rows(
                 item_def_id,
                 qty,
                 quality: row.try_get::<Option<String>, _>("quality")?,
-                quality_rank: row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-                bind_type: row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
+                quality_rank: row
+                    .try_get::<Option<i32>, _>("quality_rank")?
+                    .map(i64::from),
+                bind_type: row
+                    .try_get::<Option<String>, _>("bind_type")?
+                    .unwrap_or_else(|| "none".to_string()),
                 bind_owner_user_id: row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
-                bind_owner_character_id: row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
+                bind_owner_character_id: row
+                    .try_get::<Option<i64>, _>("bind_owner_character_id")?,
                 location: "bag".to_string(),
                 location_slot: None,
                 equipped_slot: None,
-                strengthen_level: row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-                refine_level: row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-                socketed_gems: row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+                strengthen_level: row
+                    .try_get::<Option<i32>, _>("strengthen_level")?
+                    .map(i64::from)
+                    .unwrap_or_default(),
+                refine_level: row
+                    .try_get::<Option<i32>, _>("refine_level")?
+                    .map(i64::from)
+                    .unwrap_or_default(),
+                socketed_gems: row
+                    .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+                    .unwrap_or_else(|| serde_json::json!([])),
                 random_seed: row.try_get::<Option<i64>, _>("random_seed")?,
-                affixes: row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-                identified: row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-                affix_gen_version: row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-                affix_roll_meta: row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+                affixes: row
+                    .try_get::<Option<serde_json::Value>, _>("affixes")?
+                    .unwrap_or_else(|| serde_json::json!([])),
+                identified: row
+                    .try_get::<Option<bool>, _>("identified")?
+                    .unwrap_or(false),
+                affix_gen_version: row
+                    .try_get::<Option<i32>, _>("affix_gen_version")?
+                    .map(i64::from)
+                    .unwrap_or_default(),
+                affix_roll_meta: row
+                    .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+                    .unwrap_or_else(|| serde_json::json!({})),
                 custom_name: row.try_get::<Option<String>, _>("custom_name")?,
                 locked: row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
                 expire_at: row.try_get::<Option<String>, _>("expire_at_text")?,
@@ -305,8 +341,16 @@ async fn buffer_mail_attachment_reward_deltas(
     let item_grants = attach_items
         .iter()
         .filter_map(|item| {
-            let item_def_id = item.get("item_def_id").and_then(|value| value.as_str())?.trim().to_string();
-            let qty = item.get("qty").and_then(|value| value.as_i64()).unwrap_or_default().max(0);
+            let item_def_id = item
+                .get("item_def_id")
+                .and_then(|value| value.as_str())?
+                .trim()
+                .to_string();
+            let qty = item
+                .get("qty")
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default()
+                .max(0);
             if item_def_id.is_empty() || qty <= 0 {
                 return None;
             }
@@ -377,42 +421,80 @@ pub async fn list_mails(
 
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
 
-    let mails = rows.into_iter().map(|row| {
-        let attach_silver = opt_i64_from_i32(&row, "attach_silver");
-        let attach_spirit_stones = opt_i64_from_i32(&row, "attach_spirit_stones");
-        let attach_items_value = row.try_get::<Option<serde_json::Value>, _>("attach_items").unwrap_or(None);
-        let attach_rewards_value = row.try_get::<Option<serde_json::Value>, _>("attach_rewards").unwrap_or(None);
-        let attach_instance_ids_value = row.try_get::<Option<serde_json::Value>, _>("attach_instance_ids").unwrap_or(None);
-        let mut attach_items = attach_items_value.and_then(|value| value.as_array().cloned()).unwrap_or_default();
-        let (reward_silver, reward_spirit_stones, reward_items) = normalize_mail_attach_rewards(attach_rewards_value);
-        attach_items.extend(reward_items);
-        let attach_instance_ids = attach_instance_ids_value.and_then(|value| value.as_array().cloned()).unwrap_or_default();
-        let has_attachments = attach_silver > 0
-            || attach_spirit_stones > 0
-            || reward_silver > 0
-            || reward_spirit_stones > 0
-            || !attach_items.is_empty()
-            || !attach_instance_ids.is_empty();
-        let claimed_at = row.try_get::<Option<String>, _>("claimed_at_text").unwrap_or(None);
-        MailDto {
-            id: row.try_get::<i64, _>("id").unwrap_or_default(),
-            sender_type: row.try_get::<Option<String>, _>("sender_type").unwrap_or(None).unwrap_or_else(|| "system".to_string()),
-            sender_name: row.try_get::<Option<String>, _>("sender_name").unwrap_or(None).unwrap_or_else(|| "系统".to_string()),
-            mail_type: row.try_get::<Option<String>, _>("mail_type").unwrap_or(None).unwrap_or_else(|| "normal".to_string()),
-            title: row.try_get::<Option<String>, _>("title").unwrap_or(None).unwrap_or_default(),
-            content: row.try_get::<Option<String>, _>("content").unwrap_or(None).unwrap_or_default(),
-            attach_silver: attach_silver + reward_silver,
-            attach_spirit_stones: attach_spirit_stones + reward_spirit_stones,
-            attach_items,
-            attach_rewards: vec![],
-            has_attachments,
-            has_claimable_attachments: claimed_at.is_none() && has_attachments,
-            read_at: row.try_get::<Option<String>, _>("read_at_text").unwrap_or(None),
-            claimed_at,
-            expire_at: row.try_get::<Option<String>, _>("expire_at_text").unwrap_or(None),
-            created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
-        }
-    }).collect();
+    let mails = rows
+        .into_iter()
+        .map(|row| {
+            let attach_silver = opt_i64_from_i32(&row, "attach_silver");
+            let attach_spirit_stones = opt_i64_from_i32(&row, "attach_spirit_stones");
+            let attach_items_value = row
+                .try_get::<Option<serde_json::Value>, _>("attach_items")
+                .unwrap_or(None);
+            let attach_rewards_value = row
+                .try_get::<Option<serde_json::Value>, _>("attach_rewards")
+                .unwrap_or(None);
+            let attach_instance_ids_value = row
+                .try_get::<Option<serde_json::Value>, _>("attach_instance_ids")
+                .unwrap_or(None);
+            let mut attach_items = attach_items_value
+                .and_then(|value| value.as_array().cloned())
+                .unwrap_or_default();
+            let (reward_silver, reward_spirit_stones, reward_items) =
+                normalize_mail_attach_rewards(attach_rewards_value);
+            attach_items.extend(reward_items);
+            let attach_instance_ids = attach_instance_ids_value
+                .and_then(|value| value.as_array().cloned())
+                .unwrap_or_default();
+            let has_attachments = attach_silver > 0
+                || attach_spirit_stones > 0
+                || reward_silver > 0
+                || reward_spirit_stones > 0
+                || !attach_items.is_empty()
+                || !attach_instance_ids.is_empty();
+            let claimed_at = row
+                .try_get::<Option<String>, _>("claimed_at_text")
+                .unwrap_or(None);
+            MailDto {
+                id: row.try_get::<i64, _>("id").unwrap_or_default(),
+                sender_type: row
+                    .try_get::<Option<String>, _>("sender_type")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "system".to_string()),
+                sender_name: row
+                    .try_get::<Option<String>, _>("sender_name")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "系统".to_string()),
+                mail_type: row
+                    .try_get::<Option<String>, _>("mail_type")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "normal".to_string()),
+                title: row
+                    .try_get::<Option<String>, _>("title")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                content: row
+                    .try_get::<Option<String>, _>("content")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                attach_silver: attach_silver + reward_silver,
+                attach_spirit_stones: attach_spirit_stones + reward_spirit_stones,
+                attach_items,
+                attach_rewards: vec![],
+                has_attachments,
+                has_claimable_attachments: claimed_at.is_none() && has_attachments,
+                read_at: row
+                    .try_get::<Option<String>, _>("read_at_text")
+                    .unwrap_or(None),
+                claimed_at,
+                expire_at: row
+                    .try_get::<Option<String>, _>("expire_at_text")
+                    .unwrap_or(None),
+                created_at: row
+                    .try_get::<Option<String>, _>("created_at_text")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+            }
+        })
+        .collect();
 
     Ok(send_success(MailListData {
         mails,
@@ -458,17 +540,24 @@ pub async fn read_mail(
         }));
     };
     let state_before = build_mail_counter_state(
-        row.try_get::<Option<i64>, _>("recipient_user_id")?.unwrap_or_default(),
+        row.try_get::<Option<i64>, _>("recipient_user_id")?
+            .unwrap_or_default(),
         row.try_get::<Option<i64>, _>("recipient_character_id")?,
-        row.try_get::<Option<String>, _>("read_at_text_before")?.as_deref(),
-        row.try_get::<Option<String>, _>("claimed_at_text_before")?.as_deref(),
+        row.try_get::<Option<String>, _>("read_at_text_before")?
+            .as_deref(),
+        row.try_get::<Option<String>, _>("claimed_at_text_before")?
+            .as_deref(),
         has_mail_attachments_from_row(&row)?,
     );
-    if let Some(delta) = state_before.as_ref().and_then(build_mail_counter_read_delta) {
+    if let Some(delta) = state_before
+        .as_ref()
+        .and_then(build_mail_counter_read_delta)
+    {
         apply_mail_counter_deltas(&state, &[delta]).await?;
     }
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
-    let debug_realtime = build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "read_mail");
+    let debug_realtime =
+        build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "read_mail");
     emit_mail_update_to_user(&state, actor.user_id, &debug_realtime);
     Ok(Json(MailSimpleResult {
         success: true,
@@ -491,10 +580,13 @@ pub async fn read_all_mails(
         .into_iter()
         .map(|row| {
             let state = build_mail_counter_state(
-                row.try_get::<Option<i64>, _>("recipient_user_id")?.unwrap_or_default(),
+                row.try_get::<Option<i64>, _>("recipient_user_id")?
+                    .unwrap_or_default(),
                 row.try_get::<Option<i64>, _>("recipient_character_id")?,
-                row.try_get::<Option<String>, _>("read_at_text_before")?.as_deref(),
-                row.try_get::<Option<String>, _>("claimed_at_text_before")?.as_deref(),
+                row.try_get::<Option<String>, _>("read_at_text_before")?
+                    .as_deref(),
+                row.try_get::<Option<String>, _>("claimed_at_text_before")?
+                    .as_deref(),
                 has_mail_attachments_from_row(&row)?,
             );
             Ok::<_, AppError>(state.and_then(|state| build_mail_counter_read_delta(&state)))
@@ -502,7 +594,11 @@ pub async fn read_all_mails(
         .collect::<Result<Vec<_>, _>>()?;
     apply_mail_counter_deltas(&state, &deltas.into_iter().flatten().collect::<Vec<_>>()).await?;
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
-    let debug_realtime = build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "read_all_mails");
+    let debug_realtime = build_mail_update_payload(
+        counter.unread_count,
+        counter.unclaimed_count,
+        "read_all_mails",
+    );
     emit_mail_update_to_user(&state, actor.user_id, &debug_realtime);
     Ok(Json(MailReadAllResult {
         success: true,
@@ -565,17 +661,20 @@ pub async fn delete_mail(
     };
 
     let state_before = build_mail_counter_state(
-        row.try_get::<Option<i64>, _>("recipient_user_id")?.unwrap_or_default(),
+        row.try_get::<Option<i64>, _>("recipient_user_id")?
+            .unwrap_or_default(),
         row.try_get::<Option<i64>, _>("recipient_character_id")?,
         row.try_get::<Option<String>, _>("read_at_text")?.as_deref(),
-        row.try_get::<Option<String>, _>("claimed_at_text")?.as_deref(),
+        row.try_get::<Option<String>, _>("claimed_at_text")?
+            .as_deref(),
         has_attachments,
     );
     if let Some(state_before) = state_before.as_ref() {
         apply_mail_counter_deltas(&state, &[build_mail_counter_delete_delta(state_before)]).await?;
     }
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
-    let debug_realtime = build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "delete_mail");
+    let debug_realtime =
+        build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "delete_mail");
     emit_mail_update_to_user(&state, actor.user_id, &debug_realtime);
     Ok(Json(MailSimpleResult {
         success: true,
@@ -596,17 +695,24 @@ pub async fn delete_all_mails(
     } else {
         "UPDATE mail SET deleted_at = NOW(), updated_at = NOW() WHERE (recipient_character_id = $1 OR (recipient_user_id = $2 AND recipient_character_id IS NULL)) AND deleted_at IS NULL RETURNING recipient_user_id, recipient_character_id, read_at::text AS read_at_text, claimed_at::text AS claimed_at_text, attach_silver, attach_spirit_stones, attach_items, attach_rewards, attach_instance_ids"
     };
-    let rows = state.database.fetch_all(sql, |query| query.bind(actor.character_id).bind(actor.user_id)).await?;
+    let rows = state
+        .database
+        .fetch_all(sql, |query| {
+            query.bind(actor.character_id).bind(actor.user_id)
+        })
+        .await?;
     let deleted = rows.len() as i64;
     let deltas = rows
         .into_iter()
         .map(|row| {
             let has_attachments = has_mail_attachments_from_row(&row)?;
             let state = build_mail_counter_state(
-                row.try_get::<Option<i64>, _>("recipient_user_id")?.unwrap_or_default(),
+                row.try_get::<Option<i64>, _>("recipient_user_id")?
+                    .unwrap_or_default(),
                 row.try_get::<Option<i64>, _>("recipient_character_id")?,
                 row.try_get::<Option<String>, _>("read_at_text")?.as_deref(),
-                row.try_get::<Option<String>, _>("claimed_at_text")?.as_deref(),
+                row.try_get::<Option<String>, _>("claimed_at_text")?
+                    .as_deref(),
                 has_attachments,
             );
             Ok::<_, AppError>(state.map(|state| build_mail_counter_delete_delta(&state)))
@@ -614,7 +720,11 @@ pub async fn delete_all_mails(
         .collect::<Result<Vec<_>, _>>()?;
     apply_mail_counter_deltas(&state, &deltas.into_iter().flatten().collect::<Vec<_>>()).await?;
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
-    let debug_realtime = build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "delete_all_mail");
+    let debug_realtime = build_mail_update_payload(
+        counter.unread_count,
+        counter.unclaimed_count,
+        "delete_all_mail",
+    );
     emit_mail_update_to_user(&state, actor.user_id, &debug_realtime);
 
     Ok(Json(MailDeleteAllResult {
@@ -645,19 +755,42 @@ pub async fn claim_mail_attachments(
         )
         .await?;
     let Some(mail) = mail else {
-        return Ok(Json(MailClaimResult { success: false, message: "邮件不存在".to_string(), rewards: vec![], debug_realtime: None }));
+        return Ok(Json(MailClaimResult {
+            success: false,
+            message: "邮件不存在".to_string(),
+            rewards: vec![],
+            debug_realtime: None,
+        }));
     };
-    if mail.try_get::<Option<String>, _>("claimed_at_text")?.is_some() {
-        return Ok(Json(MailClaimResult { success: false, message: "附件已领取".to_string(), rewards: vec![], debug_realtime: None }));
+    if mail
+        .try_get::<Option<String>, _>("claimed_at_text")?
+        .is_some()
+    {
+        return Ok(Json(MailClaimResult {
+            success: false,
+            message: "附件已领取".to_string(),
+            rewards: vec![],
+            debug_realtime: None,
+        }));
     }
     if let Some(expire_at) = mail.try_get::<Option<String>, _>("expire_at_text")? {
         if !expire_at.trim().is_empty() {
-            let expired = state.database.fetch_one(
-                "SELECT ($1::timestamptz <= NOW()) AS expired",
-                |query| query.bind(expire_at.as_str()),
-            ).await?;
-            if expired.try_get::<Option<bool>, _>("expired")?.unwrap_or(false) {
-                return Ok(Json(MailClaimResult { success: false, message: "邮件已过期".to_string(), rewards: vec![], debug_realtime: None }));
+            let expired = state
+                .database
+                .fetch_one("SELECT ($1::timestamptz <= NOW()) AS expired", |query| {
+                    query.bind(expire_at.as_str())
+                })
+                .await?;
+            if expired
+                .try_get::<Option<bool>, _>("expired")?
+                .unwrap_or(false)
+            {
+                return Ok(Json(MailClaimResult {
+                    success: false,
+                    message: "邮件已过期".to_string(),
+                    rewards: vec![],
+                    debug_realtime: None,
+                }));
             }
         }
     }
@@ -668,14 +801,13 @@ pub async fn claim_mail_attachments(
         .try_get::<Option<serde_json::Value>, _>("attach_items")?
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default();
-    let attach_rewards = mail
-        .try_get::<Option<serde_json::Value>, _>("attach_rewards")?
-        ;
+    let attach_rewards = mail.try_get::<Option<serde_json::Value>, _>("attach_rewards")?;
     let attach_instance_ids = mail
         .try_get::<Option<serde_json::Value>, _>("attach_instance_ids")?
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default();
-    let (reward_silver, reward_spirit_stones, reward_items) = normalize_mail_attach_rewards(attach_rewards);
+    let (reward_silver, reward_spirit_stones, reward_items) =
+        normalize_mail_attach_rewards(attach_rewards);
     let mut attach_items = attach_items;
     attach_items.extend(reward_items);
     if attach_silver <= 0
@@ -685,7 +817,12 @@ pub async fn claim_mail_attachments(
         && attach_items.is_empty()
         && attach_instance_ids.is_empty()
     {
-        return Ok(Json(MailClaimResult { success: false, message: "该邮件没有附件".to_string(), rewards: vec![], debug_realtime: None }));
+        return Ok(Json(MailClaimResult {
+            success: false,
+            message: "该邮件没有附件".to_string(),
+            rewards: vec![],
+            debug_realtime: None,
+        }));
     }
 
     let item_meta_map = load_item_meta_map()?;
@@ -752,21 +889,36 @@ pub async fn claim_mail_attachments(
         })
         .await?;
     if use_delta {
-        buffer_mail_attachment_reward_deltas(&state, actor.user_id, actor.character_id, mail_id, attach_silver + reward_silver, attach_spirit_stones + reward_spirit_stones, &attach_items).await?;
+        buffer_mail_attachment_reward_deltas(
+            &state,
+            actor.user_id,
+            actor.character_id,
+            mail_id,
+            attach_silver + reward_silver,
+            attach_spirit_stones + reward_spirit_stones,
+            &attach_items,
+        )
+        .await?;
     }
 
     let state_before = build_mail_counter_state(
         actor.user_id,
         Some(actor.character_id),
-        mail.try_get::<Option<String>, _>("read_at_text")?.as_deref(),
-        mail.try_get::<Option<String>, _>("claimed_at_text")?.as_deref(),
+        mail.try_get::<Option<String>, _>("read_at_text")?
+            .as_deref(),
+        mail.try_get::<Option<String>, _>("claimed_at_text")?
+            .as_deref(),
         true,
     );
-    if let Some(delta) = state_before.as_ref().and_then(build_mail_counter_claim_delta) {
+    if let Some(delta) = state_before
+        .as_ref()
+        .and_then(build_mail_counter_claim_delta)
+    {
         apply_mail_counter_deltas(&state, &[delta]).await?;
     }
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
-    let debug_realtime = build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "claim_mail");
+    let debug_realtime =
+        build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "claim_mail");
     emit_mail_update_to_user(&state, actor.user_id, &debug_realtime);
     Ok(Json(MailClaimResult {
         success: true,
@@ -823,7 +975,8 @@ pub async fn claim_all_mail_attachments(
             .try_get::<Option<serde_json::Value>, _>("attach_instance_ids")?
             .and_then(|value| value.as_array().cloned())
             .unwrap_or_default();
-        let (reward_silver, reward_spirit_stones, reward_items) = normalize_mail_attach_rewards(attach_rewards);
+        let (reward_silver, reward_spirit_stones, reward_items) =
+            normalize_mail_attach_rewards(attach_rewards);
         let mut attach_items = attach_items;
         attach_items.extend(reward_items);
         let has_attachments = attach_silver > 0
@@ -833,13 +986,18 @@ pub async fn claim_all_mail_attachments(
             || !attach_items.is_empty()
             || !attach_instance_ids.is_empty();
         let state_before = build_mail_counter_state(
-            row.try_get::<Option<i64>, _>("recipient_user_id")?.unwrap_or_default(),
+            row.try_get::<Option<i64>, _>("recipient_user_id")?
+                .unwrap_or_default(),
             row.try_get::<Option<i64>, _>("recipient_character_id")?,
             row.try_get::<Option<String>, _>("read_at_text")?.as_deref(),
-            row.try_get::<Option<String>, _>("claimed_at_text")?.as_deref(),
+            row.try_get::<Option<String>, _>("claimed_at_text")?
+                .as_deref(),
             has_attachments,
         );
-        if let Some(delta) = state_before.as_ref().and_then(build_mail_counter_claim_delta) {
+        if let Some(delta) = state_before
+            .as_ref()
+            .and_then(build_mail_counter_claim_delta)
+        {
             counter_deltas.push(delta);
         }
 
@@ -886,7 +1044,16 @@ pub async fn claim_all_mail_attachments(
             .await?;
 
         if use_delta {
-            buffer_mail_attachment_reward_deltas(&state, actor.user_id, actor.character_id, mail_id, attach_silver + reward_silver, attach_spirit_stones + reward_spirit_stones, &attach_items).await?;
+            buffer_mail_attachment_reward_deltas(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                mail_id,
+                attach_silver + reward_silver,
+                attach_spirit_stones + reward_spirit_stones,
+                &attach_items,
+            )
+            .await?;
         }
 
         claimed_count += 1;
@@ -894,13 +1061,22 @@ pub async fn claim_all_mail_attachments(
         total_spirit_stones += (attach_spirit_stones + reward_spirit_stones).max(0);
         total_item_count += attach_items
             .iter()
-            .map(|item| item.get("qty").and_then(|value| value.as_i64()).unwrap_or_default().max(0))
+            .map(|item| {
+                item.get("qty")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default()
+                    .max(0)
+            })
             .sum::<i64>();
     }
 
     apply_mail_counter_deltas(&state, &counter_deltas).await?;
     let counter = load_mail_counter_snapshot(&state, actor.character_id, actor.user_id).await?;
-    let debug_realtime = build_mail_update_payload(counter.unread_count, counter.unclaimed_count, "claim_all_mail");
+    let debug_realtime = build_mail_update_payload(
+        counter.unread_count,
+        counter.unclaimed_count,
+        "claim_all_mail",
+    );
     emit_mail_update_to_user(&state, actor.user_id, &debug_realtime);
     Ok(Json(MailClaimAllResult {
         success: true,
@@ -916,19 +1092,42 @@ pub async fn claim_all_mail_attachments(
     }))
 }
 
-fn load_item_meta_map() -> Result<std::collections::BTreeMap<String, (String, Option<String>)>, AppError> {
+fn load_item_meta_map()
+-> Result<std::collections::BTreeMap<String, (String, Option<String>)>, AppError> {
     let mut out = std::collections::BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
-        let content = std::fs::read_to_string(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")))
-            .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
+        let content = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
+        )
+        .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
@@ -947,16 +1146,15 @@ fn has_mail_attachments_from_row(row: &sqlx::postgres::PgRow) -> Result<bool, Ap
         .try_get::<Option<serde_json::Value>, _>("attach_instance_ids")?
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default();
-    let (reward_silver, reward_spirit_stones, reward_items) = normalize_mail_attach_rewards(attach_rewards);
-    Ok(
-        attach_silver > 0
-            || attach_spirit_stones > 0
-            || reward_silver > 0
-            || reward_spirit_stones > 0
-            || !attach_items.is_empty()
-            || !reward_items.is_empty()
-            || !attach_instance_ids.is_empty(),
-    )
+    let (reward_silver, reward_spirit_stones, reward_items) =
+        normalize_mail_attach_rewards(attach_rewards);
+    Ok(attach_silver > 0
+        || attach_spirit_stones > 0
+        || reward_silver > 0
+        || reward_spirit_stones > 0
+        || !attach_items.is_empty()
+        || !reward_items.is_empty()
+        || !attach_instance_ids.is_empty())
 }
 
 #[cfg(test)]
@@ -1061,7 +1259,10 @@ mod tests {
             }
         });
         assert_eq!(payload["data"]["deletedCount"], 3);
-        assert_eq!(payload["data"]["debugRealtime"]["source"], "delete_all_mail");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["source"],
+            "delete_all_mail"
+        );
         println!("MAIL_DELETE_ALL_RESPONSE={}", payload);
     }
 

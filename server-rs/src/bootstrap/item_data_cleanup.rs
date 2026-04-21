@@ -38,24 +38,14 @@ pub async fn cleanup_undefined_item_data_on_startup(
     state
         .database
         .with_transaction(|| async {
-            let removed_item_instance_count = delete_undefined_item_def_rows(
-                state,
-                "item_instance",
-                &valid_item_def_ids,
-            )
-            .await?;
-            let removed_item_use_cooldown_count = delete_undefined_item_def_rows(
-                state,
-                "item_use_cooldown",
-                &valid_item_def_ids,
-            )
-            .await?;
-            let removed_item_use_count_count = delete_undefined_item_def_rows(
-                state,
-                "item_use_count",
-                &valid_item_def_ids,
-            )
-            .await?;
+            let removed_item_instance_count =
+                delete_undefined_item_def_rows(state, "item_instance", &valid_item_def_ids).await?;
+            let removed_item_use_cooldown_count =
+                delete_undefined_item_def_rows(state, "item_use_cooldown", &valid_item_def_ids)
+                    .await?;
+            let removed_item_use_count_count =
+                delete_undefined_item_def_rows(state, "item_use_count", &valid_item_def_ids)
+                    .await?;
             Ok(ItemDataCleanupSummary {
                 valid_item_def_count: valid_item_def_ids.len(),
                 removed_item_instance_count,
@@ -78,7 +68,12 @@ fn load_valid_item_def_ids() -> Result<Vec<String>, AppError> {
             AppError::config(format!("failed to parse {}: {error}", path.display()))
         })?;
         for item in payload.items {
-            let Some(id) = item.id.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
+            let Some(id) = item
+                .id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
                 continue;
             };
             ids.insert(id.to_string());

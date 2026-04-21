@@ -10,8 +10,12 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
 use crate::state::AppState;
@@ -200,7 +204,11 @@ pub async fn get_battle_pass_status(
         .unwrap_or_default();
     let premium_unlocked = progress_row
         .as_ref()
-        .and_then(|row| row.try_get::<Option<bool>, _>("premium_unlocked").ok().flatten())
+        .and_then(|row| {
+            row.try_get::<Option<bool>, _>("premium_unlocked")
+                .ok()
+                .flatten()
+        })
         .unwrap_or(false);
     let claim_rows = state
         .database
@@ -213,7 +221,9 @@ pub async fn get_battle_pass_status(
     let mut claimed_premium_levels = Vec::new();
     for row in claim_rows {
         let level = row.try_get::<Option<i64>, _>("level")?.unwrap_or_default();
-        let track = row.try_get::<Option<String>, _>("track")?.unwrap_or_default();
+        let track = row
+            .try_get::<Option<String>, _>("track")?
+            .unwrap_or_default();
         if level <= 0 {
             continue;
         }
@@ -271,7 +281,9 @@ pub async fn get_battle_pass_tasks(
         .await?;
     let mut progress_by_task_id = BTreeMap::new();
     for row in rows {
-        let task_id = row.try_get::<Option<String>, _>("task_id")?.unwrap_or_default();
+        let task_id = row
+            .try_get::<Option<String>, _>("task_id")?
+            .unwrap_or_default();
         if task_id.trim().is_empty() {
             continue;
         }
@@ -292,7 +304,13 @@ pub async fn get_battle_pass_tasks(
             .unwrap_or(false)
             && is_in_current_cycle(
                 &task.task_type,
-                progress.and_then(|row| row.try_get::<Option<String>, _>("completed_at_text").ok().flatten()).as_deref(),
+                progress
+                    .and_then(|row| {
+                        row.try_get::<Option<String>, _>("completed_at_text")
+                            .ok()
+                            .flatten()
+                    })
+                    .as_deref(),
                 now,
             );
         let claimed = progress
@@ -300,16 +318,32 @@ pub async fn get_battle_pass_tasks(
             .unwrap_or(false)
             && is_in_current_cycle(
                 &task.task_type,
-                progress.and_then(|row| row.try_get::<Option<String>, _>("claimed_at_text").ok().flatten()).as_deref(),
+                progress
+                    .and_then(|row| {
+                        row.try_get::<Option<String>, _>("claimed_at_text")
+                            .ok()
+                            .flatten()
+                    })
+                    .as_deref(),
                 now,
             );
         let progress_value = if is_in_current_cycle(
             &task.task_type,
-            progress.and_then(|row| row.try_get::<Option<String>, _>("updated_at_text").ok().flatten()).as_deref(),
+            progress
+                .and_then(|row| {
+                    row.try_get::<Option<String>, _>("updated_at_text")
+                        .ok()
+                        .flatten()
+                })
+                .as_deref(),
             now,
         ) {
             progress
-                .and_then(|row| row.try_get::<Option<i64>, _>("progress_value").ok().flatten())
+                .and_then(|row| {
+                    row.try_get::<Option<i64>, _>("progress_value")
+                        .ok()
+                        .flatten()
+                })
                 .unwrap_or_default()
                 .max(0)
         } else {
@@ -332,12 +366,29 @@ pub async fn get_battle_pass_tasks(
             claimed,
         });
     }
-    all_rows.sort_by(|left, right| task_type_order(&left.task_type).cmp(&task_type_order(&right.task_type)).then_with(|| right.sort_weight.cmp(&left.sort_weight)).then_with(|| left.id.cmp(&right.id)));
+    all_rows.sort_by(|left, right| {
+        task_type_order(&left.task_type)
+            .cmp(&task_type_order(&right.task_type))
+            .then_with(|| right.sort_weight.cmp(&left.sort_weight))
+            .then_with(|| left.id.cmp(&right.id))
+    });
     Ok(send_success(BattlePassTasksOverviewDto {
         season_id: season.id,
-        daily: all_rows.iter().filter(|task| task.task_type == "daily").cloned().collect(),
-        weekly: all_rows.iter().filter(|task| task.task_type == "weekly").cloned().collect(),
-        season: all_rows.iter().filter(|task| task.task_type == "season").cloned().collect(),
+        daily: all_rows
+            .iter()
+            .filter(|task| task.task_type == "daily")
+            .cloned()
+            .collect(),
+        weekly: all_rows
+            .iter()
+            .filter(|task| task.task_type == "weekly")
+            .cloned()
+            .collect(),
+        season: all_rows
+            .iter()
+            .filter(|task| task.task_type == "season")
+            .cloned()
+            .collect(),
     }))
 }
 
@@ -349,28 +400,38 @@ pub async fn complete_battle_pass_task(
     let actor = auth::require_auth(&state, &headers).await?;
     let task_id = task_id.trim().to_string();
     if task_id.is_empty() {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<BattlePassCompleteTaskData> {
-            success: false,
-            message: Some("任务ID无效".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<BattlePassCompleteTaskData> {
+                success: false,
+                message: Some("任务ID无效".to_string()),
+                data: None,
+            },
+        ));
     }
 
     let season = load_active_battle_pass_season()?;
     let Some(character_id) = auth::get_character_id_by_user_id(&state, actor.user_id).await? else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<BattlePassCompleteTaskData> {
-            success: false,
-            message: Some("角色不存在".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<BattlePassCompleteTaskData> {
+                success: false,
+                message: Some("角色不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     let task_seed_file = load_battle_pass_task_seed_file()?;
-    let Some(task) = task_seed_file.tasks.into_iter().find(|entry| entry.enabled != Some(false) && entry.id == task_id) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<BattlePassCompleteTaskData> {
-            success: false,
-            message: Some("任务不存在或未启用".to_string()),
-            data: None,
-        }));
+    let Some(task) = task_seed_file
+        .tasks
+        .into_iter()
+        .find(|entry| entry.enabled != Some(false) && entry.id == task_id)
+    else {
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<BattlePassCompleteTaskData> {
+                success: false,
+                message: Some("任务不存在或未启用".to_string()),
+                data: None,
+            },
+        ));
     };
 
     let result = state
@@ -492,22 +553,34 @@ pub async fn claim_battle_pass_reward(
     }
     let season = load_active_battle_pass_season_with_fallback(payload.season_id.as_deref())?;
     let Some(character_id) = auth::get_character_id_by_user_id(&state, actor.user_id).await? else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<BattlePassClaimData> {
-            success: false,
-            message: Some("角色不存在".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<BattlePassClaimData> {
+                success: false,
+                message: Some("角色不存在".to_string()),
+                data: None,
+            },
+        ));
     };
 
     let reward_defs = load_battle_pass_rewards_file()?;
-    let Some(reward_row) = reward_defs.rewards.into_iter().find(|row| row.level == level) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<BattlePassClaimData> {
-            success: false,
-            message: Some("奖励等级不存在".to_string()),
-            data: None,
-        }));
+    let Some(reward_row) = reward_defs
+        .rewards
+        .into_iter()
+        .find(|row| row.level == level)
+    else {
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<BattlePassClaimData> {
+                success: false,
+                message: Some("奖励等级不存在".to_string()),
+                data: None,
+            },
+        ));
     };
-    let reward_entries = if track == "premium" { reward_row.premium } else { reward_row.free };
+    let reward_entries = if track == "premium" {
+        reward_row.premium
+    } else {
+        reward_row.free
+    };
     let item_meta_map = load_item_meta_map()?;
 
     let result = state
@@ -695,7 +768,9 @@ pub(crate) fn load_active_battle_pass_season() -> Result<BattlePassSeasonSeed, A
     Ok(payload.season)
 }
 
-pub(crate) fn load_active_battle_pass_season_with_fallback(season_id: Option<&str>) -> Result<BattlePassSeasonSeed, AppError> {
+pub(crate) fn load_active_battle_pass_season_with_fallback(
+    season_id: Option<&str>,
+) -> Result<BattlePassSeasonSeed, AppError> {
     let payload = load_battle_pass_rewards_file()?;
     if payload.season.enabled == Some(false) {
         return Err(AppError::config("战令赛季不存在"));
@@ -727,8 +802,16 @@ fn load_battle_pass_rewards(season_id: Option<&str>) -> Result<Vec<BattlePassRew
         .into_iter()
         .map(|row| BattlePassRewardDto {
             level: row.level,
-            free_rewards: row.free.into_iter().filter_map(|reward| to_reward_item_dto(reward, &item_meta_map)).collect(),
-            premium_rewards: row.premium.into_iter().filter_map(|reward| to_reward_item_dto(reward, &item_meta_map)).collect(),
+            free_rewards: row
+                .free
+                .into_iter()
+                .filter_map(|reward| to_reward_item_dto(reward, &item_meta_map))
+                .collect(),
+            premium_rewards: row
+                .premium
+                .into_iter()
+                .filter_map(|reward| to_reward_item_dto(reward, &item_meta_map))
+                .collect(),
         })
         .collect())
 }
@@ -745,7 +828,11 @@ fn to_reward_item_dto(
                 return None;
             }
             Some(BattlePassRewardItemDto::Currency {
-                name: if currency == "silver" { "银两".to_string() } else { "灵石".to_string() },
+                name: if currency == "silver" {
+                    "银两".to_string()
+                } else {
+                    "灵石".to_string()
+                },
                 currency,
                 amount,
                 icon: None,
@@ -774,39 +861,63 @@ fn to_reward_item_dto(
 
 fn load_battle_pass_rewards_file() -> Result<BattlePassRewardsFile, AppError> {
     let content = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/battle_pass_rewards.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/battle_pass_rewards.json"),
     )
-    .map_err(|error| AppError::config(format!("failed to read battle_pass_rewards.json: {error}")))?;
-    serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse battle_pass_rewards.json: {error}")))
+    .map_err(|error| {
+        AppError::config(format!("failed to read battle_pass_rewards.json: {error}"))
+    })?;
+    serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse battle_pass_rewards.json: {error}"))
+    })
 }
 
 fn load_battle_pass_task_seed_file() -> Result<BattlePassTasksFile, AppError> {
     let content = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/battle_pass_tasks.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/battle_pass_tasks.json"),
     )
     .map_err(|error| AppError::config(format!("failed to read battle_pass_tasks.json: {error}")))?;
-    serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse battle_pass_tasks.json: {error}")))
+    serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse battle_pass_tasks.json: {error}"))
+    })
 }
 
 fn load_item_meta_map() -> Result<BTreeMap<String, (String, Option<String>)>, AppError> {
     let mut out = BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
         let content = fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
         )
         .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
             if id.is_empty() || name.is_empty() {
                 continue;
             }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
@@ -821,9 +932,17 @@ fn task_type_order(task_type: &str) -> i32 {
     }
 }
 
-fn is_in_current_cycle(task_type: &str, timestamp: Option<&str>, now: time::OffsetDateTime) -> bool {
-    let Some(timestamp) = timestamp else { return false; };
-    let Ok(timestamp) = time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339) else {
+fn is_in_current_cycle(
+    task_type: &str,
+    timestamp: Option<&str>,
+    now: time::OffsetDateTime,
+) -> bool {
+    let Some(timestamp) = timestamp else {
+        return false;
+    };
+    let Ok(timestamp) =
+        time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339)
+    else {
         return false;
     };
     match task_type {

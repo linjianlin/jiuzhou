@@ -1,8 +1,8 @@
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
 
-use crate::realtime::RealtimeRuntime;
 use crate::jobs::{JobRuntime, flush_pending_runtime_deltas};
+use crate::realtime::RealtimeRuntime;
 use crate::shared::game_time::shutdown_game_time_runtime;
 use crate::state::AppState;
 
@@ -62,7 +62,8 @@ pub async fn shutdown_application(
             tracing::info!(
                 progress_character_count = summary.progress_character_count,
                 item_grant_character_count = summary.item_grant_character_count,
-                item_instance_mutation_character_count = summary.item_instance_mutation_character_count,
+                item_instance_mutation_character_count =
+                    summary.item_instance_mutation_character_count,
                 resource_character_count = summary.resource_character_count,
                 "✓ pending runtime deltas flushed"
             );

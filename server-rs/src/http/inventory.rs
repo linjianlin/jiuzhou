@@ -13,11 +13,25 @@ use sqlx::Row;
 use tracing::warn;
 
 use crate::auth;
-use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas, claim_character_item_grant_delta, finalize_claimed_character_item_grant_delta, load_claimed_character_item_grant_delta_hash, parse_item_grant_delta_hash, restore_claimed_character_item_grant_delta};
-use crate::integrations::redis_item_instance_mutation::{BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, buffer_item_instance_mutations, claim_character_item_instance_mutations, load_claimed_item_instance_mutation_hash, parse_item_instance_mutation_hash, finalize_claimed_item_instance_mutations, restore_claimed_item_instance_mutations};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields, claim_character_resource_delta, finalize_claimed_character_resource_delta, load_claimed_character_resource_delta_hash, parse_resource_delta_hash, restore_claimed_character_resource_delta};
 use crate::http::partner::load_partner_books;
+use crate::integrations::redis::RedisRuntime;
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas, claim_character_item_grant_delta,
+    finalize_claimed_character_item_grant_delta, load_claimed_character_item_grant_delta_hash,
+    parse_item_grant_delta_hash, restore_claimed_character_item_grant_delta,
+};
+use crate::integrations::redis_item_instance_mutation::{
+    BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, buffer_item_instance_mutations,
+    claim_character_item_instance_mutations, finalize_claimed_item_instance_mutations,
+    load_claimed_item_instance_mutation_hash, parse_item_instance_mutation_hash,
+    restore_claimed_item_instance_mutations,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+    claim_character_resource_delta, finalize_claimed_character_resource_delta,
+    load_claimed_character_resource_delta_hash, parse_resource_delta_hash,
+    restore_claimed_character_resource_delta,
+};
 use crate::realtime::public_socket::emit_game_character_full_to_user;
 use crate::shared::error::AppError;
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
@@ -1218,8 +1232,13 @@ pub async fn get_bag_inventory_snapshot(
 ) -> Result<Json<SuccessResponse<InventoryBagSnapshotDataDto>>, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     let info = load_inventory_info(&state, actor.character_id).await?;
-    let bag_items = load_inventory_items_with_defs(&state, actor.character_id, "bag", 1, 200).await?.items;
-    let equipped_items = load_inventory_items_with_defs(&state, actor.character_id, "equipped", 1, 200).await?.items;
+    let bag_items = load_inventory_items_with_defs(&state, actor.character_id, "bag", 1, 200)
+        .await?
+        .items;
+    let equipped_items =
+        load_inventory_items_with_defs(&state, actor.character_id, "equipped", 1, 200)
+            .await?
+            .items;
     Ok(send_success(InventoryBagSnapshotDataDto {
         info,
         bag_items,
@@ -1239,7 +1258,10 @@ pub async fn get_inventory_items(
     }
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(100).clamp(1, 200);
-    Ok(send_success(load_inventory_items_with_defs(&state, actor.character_id, location, page, page_size).await?))
+    Ok(send_success(
+        load_inventory_items_with_defs(&state, actor.character_id, location, page, page_size)
+            .await?,
+    ))
 }
 
 pub async fn list_inventory_craft_recipes(
@@ -1251,12 +1273,17 @@ pub async fn list_inventory_craft_recipes(
     let defs = load_inventory_def_map()?;
     let character = load_inventory_craft_character(&state, actor.user_id).await?;
     let owned_qty = load_owned_item_qty_map(&state, actor.character_id).await?;
-    let recipes = build_inventory_craft_recipes(&defs, &owned_qty, &character, query.recipe_type.as_deref())?;
-    Ok((StatusCode::OK, Json(InventoryCraftRecipesResponse {
-        success: true,
-        message: "ok".to_string(),
-        data: InventoryCraftRecipesData { character, recipes },
-    })).into_response())
+    let recipes =
+        build_inventory_craft_recipes(&defs, &owned_qty, &character, query.recipe_type.as_deref())?;
+    Ok((
+        StatusCode::OK,
+        Json(InventoryCraftRecipesResponse {
+            success: true,
+            message: "ok".to_string(),
+            data: InventoryCraftRecipesData { character, recipes },
+        }),
+    )
+        .into_response())
 }
 
 pub async fn execute_inventory_craft_recipe(
@@ -1265,12 +1292,27 @@ pub async fn execute_inventory_craft_recipe(
     Json(payload): Json<InventoryCraftExecutePayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_auth(&state, &headers).await?;
-    let recipe_id = payload.recipe_id.as_deref().map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| AppError::config("recipeId参数错误"))?;
+    let recipe_id = payload
+        .recipe_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::config("recipeId参数错误"))?;
     let times = parse_optional_positive_i64_json(payload.times.as_ref(), "times")?.unwrap_or(1);
-    let response = state.database.with_transaction(|| async {
-        execute_inventory_craft_recipe_tx(&state, actor.user_id, times.clamp(1, 99), recipe_id).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "craft").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            execute_inventory_craft_recipe_tx(&state, actor.user_id, times.clamp(1, 99), recipe_id)
+                .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "craft",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1280,7 +1322,11 @@ pub async fn preview_inventory_disassemble(
     Json(payload): Json<InventoryDisassemblePayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     let qty = payload.qty.unwrap_or(1);
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
@@ -1289,11 +1335,15 @@ pub async fn preview_inventory_disassemble(
         return Err(AppError::config("qty参数错误"));
     }
     let plan = preview_inventory_disassemble_plan(&state, actor.character_id, item_id, qty).await?;
-    Ok((StatusCode::OK, Json(InventoryDisassembleResponse {
-        success: true,
-        message: "获取预览成功".to_string(),
-        rewards: plan.rewards,
-    })).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(InventoryDisassembleResponse {
+            success: true,
+            message: "获取预览成功".to_string(),
+            rewards: plan.rewards,
+        }),
+    )
+        .into_response())
 }
 
 pub async fn disassemble_inventory_item(
@@ -1302,7 +1352,11 @@ pub async fn disassemble_inventory_item(
     Json(payload): Json<InventoryDisassemblePayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     let qty = payload.qty.unwrap_or(1);
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
@@ -1310,10 +1364,20 @@ pub async fn disassemble_inventory_item(
     if qty <= 0 {
         return Err(AppError::config("qty参数错误"));
     }
-    let response = state.database.with_transaction(|| async {
-        disassemble_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id, qty).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "disassemble").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            disassemble_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id, qty)
+                .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "disassemble",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1338,11 +1402,34 @@ pub async fn disassemble_inventory_items_batch(
             Ok((item_id, qty))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let response = state.database.with_transaction(|| async {
-        disassemble_inventory_items_batch_tx(&state, actor.user_id, actor.character_id, parsed_items).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "disassemble_batch").await;
-    Ok((if response.success { StatusCode::OK } else { StatusCode::BAD_REQUEST }, Json(response)).into_response())
+    let response = state
+        .database
+        .with_transaction(|| async {
+            disassemble_inventory_items_batch_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                parsed_items,
+            )
+            .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "disassemble_batch",
+    )
+    .await;
+    Ok((
+        if response.success {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_REQUEST
+        },
+        Json(response),
+    )
+        .into_response())
 }
 
 pub async fn preview_inventory_growth_cost(
@@ -1351,16 +1438,24 @@ pub async fn preview_inventory_growth_cost(
     Json(payload): Json<InventoryGrowthPreviewPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
     let data = build_inventory_growth_cost_preview(&state, actor.character_id, item_id).await?;
-    Ok((StatusCode::OK, Json(InventoryGrowthCostPreviewResponse {
-        success: true,
-        message: "获取成功".to_string(),
-        data: Some(data),
-    })).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(InventoryGrowthCostPreviewResponse {
+            success: true,
+            message: "获取成功".to_string(),
+            data: Some(data),
+        }),
+    )
+        .into_response())
 }
 
 pub async fn preview_inventory_reroll_cost(
@@ -1369,7 +1464,11 @@ pub async fn preview_inventory_reroll_cost(
     Json(payload): Json<InventoryGrowthPreviewPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
@@ -1383,7 +1482,11 @@ pub async fn preview_inventory_affix_pool(
     Json(payload): Json<InventoryGrowthPreviewPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
@@ -1397,7 +1500,11 @@ pub async fn reroll_inventory_affixes(
     Json(payload): Json<InventoryRerollPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
@@ -1405,10 +1512,26 @@ pub async fn reroll_inventory_affixes(
     if lock_indexes.iter().any(|idx| *idx < 0) {
         return Err(AppError::config("lockIndexes参数错误"));
     }
-    let response = state.database.with_transaction(|| async {
-        reroll_inventory_affixes_tx(&state, actor.user_id, actor.character_id, item_id, lock_indexes).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "reroll_affixes").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            reroll_inventory_affixes_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                item_id,
+                lock_indexes,
+            )
+            .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "reroll_affixes",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1421,14 +1544,18 @@ pub async fn list_inventory_gem_synthesis_recipes(
     let wallet = load_gem_wallet(&state, actor.character_id).await?;
     let owned_qty = load_owned_item_qty_map(&state, actor.character_id).await?;
     let recipes = build_gem_synthesis_recipes(&defs, &owned_qty, &wallet)?;
-    Ok((StatusCode::OK, Json(GemSynthesisRecipeListResponse {
-        success: true,
-        message: "ok".to_string(),
-        data: GemSynthesisRecipeListData {
-            character: wallet,
-            recipes,
-        },
-    })).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(GemSynthesisRecipeListResponse {
+            success: true,
+            message: "ok".to_string(),
+            data: GemSynthesisRecipeListData {
+                character: wallet,
+                recipes,
+            },
+        }),
+    )
+        .into_response())
 }
 
 pub async fn list_inventory_gem_convert_options(
@@ -1440,14 +1567,18 @@ pub async fn list_inventory_gem_convert_options(
     let wallet = load_gem_wallet(&state, actor.character_id).await?;
     let owned_qty = load_owned_item_qty_map(&state, actor.character_id).await?;
     let options = build_gem_convert_options(&defs, &wallet, &owned_qty);
-    Ok((StatusCode::OK, Json(GemConvertOptionListResponse {
-        success: true,
-        message: "ok".to_string(),
-        data: GemConvertOptionListData {
-            character: wallet,
-            options,
-        },
-    })).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(GemConvertOptionListResponse {
+            success: true,
+            message: "ok".to_string(),
+            data: GemConvertOptionListData {
+                character: wallet,
+                options,
+            },
+        }),
+    )
+        .into_response())
 }
 
 pub async fn synthesize_inventory_gem(
@@ -1456,12 +1587,33 @@ pub async fn synthesize_inventory_gem(
     Json(payload): Json<InventoryGemSynthesisExecutePayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let recipe_id = payload.recipe_id.as_deref().map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| AppError::config("recipeId参数错误"))?;
+    let recipe_id = payload
+        .recipe_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::config("recipeId参数错误"))?;
     let times = parse_optional_positive_i64_json(payload.times.as_ref(), "times")?.unwrap_or(1);
-    let response = state.database.with_transaction(|| async {
-        synthesize_inventory_gem_tx(&state, actor.user_id, actor.character_id, recipe_id, normalize_gem_execute_times(times)).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "gem_synthesize").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            synthesize_inventory_gem_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                recipe_id,
+                normalize_gem_execute_times(times),
+            )
+            .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "gem_synthesize",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1471,28 +1623,46 @@ pub async fn synthesize_inventory_gem_batch(
     Json(payload): Json<InventoryGemSynthesisBatchPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let gem_type = payload.gem_type.as_deref().map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| AppError::config("gemType参数错误"))?;
-    let target_level = parse_optional_positive_i64_json(payload.target_level.as_ref(), "targetLevel")?.unwrap_or_default();
+    let gem_type = payload
+        .gem_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::config("gemType参数错误"))?;
+    let target_level =
+        parse_optional_positive_i64_json(payload.target_level.as_ref(), "targetLevel")?
+            .unwrap_or_default();
     if target_level < 2 || target_level > 10 {
         return Err(AppError::config("targetLevel参数错误"));
     }
-    let source_level = normalize_gem_synthesis_batch_source_level(parse_optional_positive_i64_json(payload.source_level.as_ref(), "sourceLevel")?)?;
+    let source_level = normalize_gem_synthesis_batch_source_level(
+        parse_optional_positive_i64_json(payload.source_level.as_ref(), "sourceLevel")?,
+    )?;
     if source_level >= target_level {
         return Err(AppError::config("targetLevel必须大于sourceLevel"));
     }
-    let response = state.database.with_transaction(|| async {
-        synthesize_inventory_gem_batch_tx(
-            &state,
-            actor.user_id,
-            actor.character_id,
-            gem_type,
-            source_level,
-            target_level,
-            payload.series_key.as_deref(),
-        )
-        .await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "gem_synthesize_batch").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            synthesize_inventory_gem_batch_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                gem_type,
+                source_level,
+                target_level,
+                payload.series_key.as_deref(),
+            )
+            .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "gem_synthesize_batch",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1502,15 +1672,34 @@ pub async fn convert_inventory_gem(
     Json(payload): Json<InventoryGemConvertExecutePayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let selected_gem_item_ids = parse_positive_i64_array_json(&payload.selected_gem_item_ids, "selectedGemItemIds")?;
+    let selected_gem_item_ids =
+        parse_positive_i64_array_json(&payload.selected_gem_item_ids, "selectedGemItemIds")?;
     if selected_gem_item_ids.len() != 2 {
-        return Err(AppError::config("selectedGemItemIds参数错误，需要手动选择2个宝石"));
+        return Err(AppError::config(
+            "selectedGemItemIds参数错误，需要手动选择2个宝石",
+        ));
     }
     let times = parse_optional_positive_i64_json(payload.times.as_ref(), "times")?.unwrap_or(1);
-    let response = state.database.with_transaction(|| async {
-        convert_inventory_gem_tx(&state, actor.user_id, actor.character_id, selected_gem_item_ids, normalize_gem_execute_times(times)).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "gem_convert").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            convert_inventory_gem_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                selected_gem_item_ids,
+                normalize_gem_execute_times(times),
+            )
+            .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "gem_convert",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1520,14 +1709,27 @@ pub async fn enhance_inventory_item(
     Json(payload): Json<InventoryGrowthPreviewPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
-    let response = state.database.with_transaction(|| async {
-        enhance_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "enhance").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            enhance_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id).await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "enhance",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1537,14 +1739,27 @@ pub async fn refine_inventory_item(
     Json(payload): Json<InventoryGrowthPreviewPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
+    let item_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
     if item_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
-    let response = state.database.with_transaction(|| async {
-        refine_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id).await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "refine").await;
+    let response = state
+        .database
+        .with_transaction(|| async {
+            refine_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id).await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "refine",
+    )
+    .await;
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1554,8 +1769,16 @@ pub async fn socket_inventory_gem(
     Json(payload): Json<InventorySocketPayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let item_instance_id = payload.item_id.or(payload.item_instance_id).or(payload.instance_id).unwrap_or_default();
-    let gem_item_instance_id = payload.gem_item_id.or(payload.gem_item_instance_id).or(payload.gem_instance_id).unwrap_or_default();
+    let item_instance_id = payload
+        .item_id
+        .or(payload.item_instance_id)
+        .or(payload.instance_id)
+        .unwrap_or_default();
+    let gem_item_instance_id = payload
+        .gem_item_id
+        .or(payload.gem_item_instance_id)
+        .or(payload.gem_instance_id)
+        .unwrap_or_default();
     if item_instance_id <= 0 {
         return Err(AppError::config("itemId参数错误"));
     }
@@ -1566,19 +1789,36 @@ pub async fn socket_inventory_gem(
         return Err(AppError::config("slot参数错误"));
     }
 
-    let response = state.database.with_transaction(|| async {
-        socket_inventory_gem_tx(
-            &state,
-            actor.user_id,
-            actor.character_id,
-            item_instance_id,
-            gem_item_instance_id,
-            payload.slot,
-        )
-        .await
-    }).await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, response.success, "socket_gem").await;
-    Ok((if response.success { StatusCode::OK } else { StatusCode::BAD_REQUEST }, Json(response)).into_response())
+    let response = state
+        .database
+        .with_transaction(|| async {
+            socket_inventory_gem_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                item_instance_id,
+                gem_item_instance_id,
+                payload.slot,
+            )
+            .await
+        })
+        .await?;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        response.success,
+        "socket_gem",
+    )
+    .await;
+    Ok((
+        if response.success {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_REQUEST
+        },
+        Json(response),
+    )
+        .into_response())
 }
 
 pub async fn use_inventory_item(
@@ -1616,7 +1856,13 @@ pub async fn use_inventory_item(
             .await
         })
         .await?;
-    emit_inventory_character_refresh_after_success(&state, actor.user_id, result.success, "use_item").await;
+    emit_inventory_character_refresh_after_success(
+        &state,
+        actor.user_id,
+        result.success,
+        "use_item",
+    )
+    .await;
     Ok(Json(result))
 }
 
@@ -1644,7 +1890,9 @@ pub async fn sort_inventory(
     }
     let result = state
         .database
-        .with_transaction(|| async { sort_inventory_tx(&state, actor.character_id, location).await })
+        .with_transaction(|| async {
+            sort_inventory_tx(&state, actor.character_id, location).await
+        })
         .await?;
     Ok(send_result(result))
 }
@@ -1664,7 +1912,9 @@ pub async fn set_inventory_item_locked(
     }
     let result = state
         .database
-        .with_transaction(|| async { set_inventory_item_locked_tx(&state, actor.character_id, item_id, locked).await })
+        .with_transaction(|| async {
+            set_inventory_item_locked_tx(&state, actor.character_id, item_id, locked).await
+        })
         .await?;
     Ok(send_result(result))
 }
@@ -1732,7 +1982,14 @@ pub async fn unequip_inventory_item(
     let character = state
         .database
         .with_transaction(|| async {
-            unequip_inventory_item_tx(&state, actor.user_id, actor.character_id, item_id, target_location).await
+            unequip_inventory_item_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                item_id,
+                target_location,
+            )
+            .await
         })
         .await?;
     if let Err(error) = emit_game_character_full_to_user(&state, actor.user_id).await {
@@ -1747,7 +2004,12 @@ pub async fn move_inventory_item(
     Json(payload): Json<InventoryMovePayload>,
 ) -> Result<Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let Some(target_location) = payload.target_location.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(target_location) = payload
+        .target_location
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Err(AppError::config("参数不完整"));
     };
     let Some(item_id) = payload.item_id else {
@@ -1834,13 +2096,22 @@ pub async fn remove_inventory_items_batch(
     Ok(send_inventory_remove_batch_result(result))
 }
 
-async fn load_inventory_info(state: &AppState, character_id: i64) -> Result<InventoryInfoDataDto, AppError> {
+async fn load_inventory_info(
+    state: &AppState,
+    character_id: i64,
+) -> Result<InventoryInfoDataDto, AppError> {
     let row = state.database.fetch_optional(
         "SELECT bag_capacity, warehouse_capacity FROM inventory WHERE character_id = $1 LIMIT 1",
         |q| q.bind(character_id),
     ).await?;
-    let bag_capacity = row.as_ref().and_then(|row| opt_i64_from_i32(row, "bag_capacity").ok().flatten()).unwrap_or(100);
-    let warehouse_capacity = row.as_ref().and_then(|row| opt_i64_from_i32(row, "warehouse_capacity").ok().flatten()).unwrap_or(1000);
+    let bag_capacity = row
+        .as_ref()
+        .and_then(|row| opt_i64_from_i32(row, "bag_capacity").ok().flatten())
+        .unwrap_or(100);
+    let warehouse_capacity = row
+        .as_ref()
+        .and_then(|row| opt_i64_from_i32(row, "warehouse_capacity").ok().flatten())
+        .unwrap_or(1000);
     let bag_used = count_inventory_slots(state, character_id, "bag").await?;
     let warehouse_used = count_inventory_slots(state, character_id, "warehouse").await?;
     Ok(InventoryInfoDataDto {
@@ -1851,12 +2122,18 @@ async fn load_inventory_info(state: &AppState, character_id: i64) -> Result<Inve
     })
 }
 
-async fn count_inventory_slots(state: &AppState, character_id: i64, location: &str) -> Result<i64, AppError> {
+async fn count_inventory_slots(
+    state: &AppState,
+    character_id: i64,
+    location: &str,
+) -> Result<i64, AppError> {
     let row = state.database.fetch_optional(
         "SELECT COUNT(*)::bigint AS cnt FROM item_instance WHERE owner_character_id = $1 AND location = $2",
         |q| q.bind(character_id).bind(location),
     ).await?;
-    Ok(row.and_then(|row| row.try_get::<Option<i64>, _>("cnt").ok().flatten()).unwrap_or_default())
+    Ok(row
+        .and_then(|row| row.try_get::<Option<i64>, _>("cnt").ok().flatten())
+        .unwrap_or_default())
 }
 
 pub async fn load_inventory_items_with_defs(
@@ -1880,7 +2157,12 @@ pub async fn load_inventory_items_with_defs(
     for row in rows {
         items.push(map_inventory_item(state, row, &defs).await?);
     }
-    Ok(InventoryItemsDataDto { items, total, page, page_size })
+    Ok(InventoryItemsDataDto {
+        items,
+        total,
+        page,
+        page_size,
+    })
 }
 
 async fn sort_inventory_tx(
@@ -1890,18 +2172,29 @@ async fn sort_inventory_tx(
 ) -> Result<ServiceResult<serde_json::Value>, AppError> {
     acquire_inventory_mutex(state, character_id).await?;
     let Some(capacity) = load_inventory_capacity(state, character_id, location).await? else {
-        return Ok(ServiceResult { success: false, message: Some("背包不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("背包不存在".to_string()),
+            data: None,
+        });
     };
     let rows = state.database.fetch_all(
         "SELECT id, item_def_id, qty, quality, quality_rank, bind_type, metadata, location_slot FROM item_instance WHERE owner_character_id = $1 AND location = $2 FOR UPDATE",
         |q| q.bind(character_id).bind(location),
     ).await?;
     let defs = load_inventory_def_map()?;
-    let source_rows = rows.into_iter().map(map_sort_inventory_row).collect::<Result<Vec<_>, _>>()?;
+    let source_rows = rows
+        .into_iter()
+        .map(map_sort_inventory_row)
+        .collect::<Result<Vec<_>, _>>()?;
     let compacted_rows = compact_inventory_rows_for_sort(source_rows, &defs);
     let ranked_rows = build_ranked_sort_rows(compacted_rows, &defs);
     apply_sorted_inventory_rows(state, character_id, location, capacity, ranked_rows).await?;
-    Ok(ServiceResult { success: true, message: Some("整理完成".to_string()), data: None })
+    Ok(ServiceResult {
+        success: true,
+        message: Some("整理完成".to_string()),
+        data: None,
+    })
 }
 
 async fn set_inventory_item_locked_tx(
@@ -1916,11 +2209,21 @@ async fn set_inventory_item_locked_tx(
         |q| q.bind(item_id).bind(character_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if !matches!(location.as_str(), "bag" | "warehouse" | "equipped") {
-        return Ok(ServiceResult { success: false, message: Some("该物品当前位置不可锁定".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("该物品当前位置不可锁定".to_string()),
+            data: None,
+        });
     }
     state.database.execute(
         "UPDATE item_instance SET locked = $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
@@ -2060,10 +2363,13 @@ async fn remove_inventory_items_batch_tx(
             buffer_item_instance_mutations(&redis, &mutations).await?;
         }
     } else {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2)",
-            |q| q.bind(character_id).bind(&removable_ids),
-        ).await?;
+        state
+            .database
+            .execute(
+                "DELETE FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2)",
+                |q| q.bind(character_id).bind(&removable_ids),
+            )
+            .await?;
     }
 
     Ok(InventoryRemoveBatchResponse {
@@ -2091,12 +2397,16 @@ fn inventory_remove_batch_failure(message: &str) -> InventoryRemoveBatchResponse
     }
 }
 
-fn map_inventory_batch_removal_row(row: sqlx::postgres::PgRow) -> Result<InventoryBatchRemovalRow, AppError> {
+fn map_inventory_batch_removal_row(
+    row: sqlx::postgres::PgRow,
+) -> Result<InventoryBatchRemovalRow, AppError> {
     Ok(InventoryBatchRemovalRow {
         id: row.try_get::<i64, _>("id")?,
         item_def_id: row.try_get::<String, _>("item_def_id")?,
         qty: opt_i64_from_i32(&row, "qty")?.unwrap_or_default().max(0),
-        location: row.try_get::<Option<String>, _>("location")?.unwrap_or_default(),
+        location: row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default(),
         locked: row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
     })
 }
@@ -2130,8 +2440,13 @@ async fn use_inventory_item_tx(
     };
     let source_snapshot = map_item_instance_snapshot_from_row(&row)?;
     let item_def_id = row.try_get::<String, _>("item_def_id")?;
-    let item_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let item_qty = row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     let locked = row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false);
     let item_metadata = row.try_get::<Option<serde_json::Value>, _>("metadata")?;
 
@@ -2165,7 +2480,9 @@ async fn use_inventory_item_tx(
         if !month_card_result.success {
             return Ok(InventoryUseResponse {
                 success: false,
-                message: month_card_result.message.unwrap_or_else(|| "月卡激活失败".to_string()),
+                message: month_card_result
+                    .message
+                    .unwrap_or_else(|| "月卡激活失败".to_string()),
                 effects: vec![],
                 data: InventoryUseResponseData {
                     character: load_inventory_use_character_snapshot(state, character_id).await?,
@@ -2178,7 +2495,9 @@ async fn use_inventory_item_tx(
         let character_snapshot = load_inventory_use_character_snapshot(state, character_id).await?;
         return Ok(InventoryUseResponse {
             success: true,
-            message: month_card_result.message.unwrap_or_else(|| "使用成功".to_string()),
+            message: month_card_result
+                .message
+                .unwrap_or_else(|| "使用成功".to_string()),
             effects: vec![],
             data: InventoryUseResponseData {
                 character: character_snapshot,
@@ -2191,7 +2510,12 @@ async fn use_inventory_item_tx(
     if !is_supported_inventory_use_item_def_id(item_def_id.as_str()) {
         return Err(AppError::config("该物品暂不支持使用效果"));
     }
-    if item_def.row.get("category").and_then(|value| value.as_str()) != Some("consumable") {
+    if item_def
+        .row
+        .get("category")
+        .and_then(|value| value.as_str())
+        != Some("consumable")
+    {
         return Err(AppError::config("该物品不可使用"));
     }
     let use_type = item_def
@@ -2204,7 +2528,10 @@ async fn use_inventory_item_tx(
     ensure_use_realm_requirement(
         state,
         character_id,
-        item_def.row.get("use_req_realm").and_then(|value| value.as_str()),
+        item_def
+            .row
+            .get("use_req_realm")
+            .and_then(|value| value.as_str()),
     )
     .await?;
 
@@ -2231,13 +2558,25 @@ async fn use_inventory_item_tx(
         .await;
     }
     let effect = effect_defs[0].clone();
-    let effect_type = effect.get("effect_type").and_then(|value| value.as_str()).unwrap_or_default();
-    let trigger = effect.get("trigger").and_then(|value| value.as_str()).unwrap_or_default();
-    let target = effect.get("target").and_then(|value| value.as_str()).unwrap_or("self");
+    let effect_type = effect
+        .get("effect_type")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let trigger = effect
+        .get("trigger")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let target = effect
+        .get("target")
+        .and_then(|value| value.as_str())
+        .unwrap_or("self");
     if trigger != "use" {
         return Err(AppError::config("该物品暂不支持使用效果"));
     }
-    let target_use_allowed = matches!(effect_type, "unbind" | "reroll_partner_base_attrs" | "reroll");
+    let target_use_allowed = matches!(
+        effect_type,
+        "unbind" | "reroll_partner_base_attrs" | "reroll"
+    );
     if use_type != "instant" && !(use_type == "target" && target_use_allowed) {
         return Err(AppError::config("该物品不可使用"));
     }
@@ -2249,7 +2588,10 @@ async fn use_inventory_item_tx(
         if qty != 1 {
             return Err(AppError::config("易名符每次只能使用一张"));
         }
-        let nickname = nickname.map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| AppError::config("道号不能为空"))?;
+        let nickname = nickname
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| AppError::config("道号不能为空"))?;
         let rename_result = crate::http::character::rename_character_with_card_tx(
             state,
             character_id,
@@ -2260,7 +2602,9 @@ async fn use_inventory_item_tx(
         if !rename_result.success {
             return Ok(InventoryUseResponse {
                 success: false,
-                message: rename_result.message.unwrap_or_else(|| "改名失败".to_string()),
+                message: rename_result
+                    .message
+                    .unwrap_or_else(|| "改名失败".to_string()),
                 effects: vec![effect],
                 data: InventoryUseResponseData {
                     character: load_inventory_use_character_snapshot(state, character_id).await?,
@@ -2273,7 +2617,9 @@ async fn use_inventory_item_tx(
         let character_snapshot = load_inventory_use_character_snapshot(state, character_id).await?;
         return Ok(InventoryUseResponse {
             success: true,
-            message: rename_result.message.unwrap_or_else(|| "改名成功".to_string()),
+            message: rename_result
+                .message
+                .unwrap_or_else(|| "改名成功".to_string()),
             effects: vec![effect],
             data: InventoryUseResponseData {
                 character: character_snapshot,
@@ -2292,8 +2638,16 @@ async fn use_inventory_item_tx(
             return Err(AppError::config("洗炼符每次只能使用一张"));
         }
         let params = effect.get("params").and_then(|value| value.as_object());
-        let target_type = params.and_then(|params| params.get("target_type")).and_then(|value| value.as_str()).unwrap_or_default().trim();
-        let reroll_type = params.and_then(|params| params.get("reroll_type")).and_then(|value| value.as_str()).unwrap_or_default().trim();
+        let target_type = params
+            .and_then(|params| params.get("target_type"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim();
+        let reroll_type = params
+            .and_then(|params| params.get("reroll_type"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim();
         if target_type != "equipment" || reroll_type != "affixes" {
             return Err(AppError::config("该物品暂不支持使用效果"));
         }
@@ -2338,8 +2692,14 @@ async fn use_inventory_item_tx(
 
     if effect_type == "unbind" {
         let params = effect.get("params").and_then(|value| value.as_object());
-        let target_type = params.and_then(|params| params.get("target_type")).and_then(|value| value.as_str()).unwrap_or_default();
-        let bind_state = params.and_then(|params| params.get("bind_state")).and_then(|value| value.as_str()).unwrap_or_default();
+        let target_type = params
+            .and_then(|params| params.get("target_type"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let bind_state = params
+            .and_then(|params| params.get("bind_state"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         if target_type != "equipment" || bind_state != "bound" {
             return Err(AppError::config("解绑道具配置错误"));
         }
@@ -2359,12 +2719,20 @@ async fn use_inventory_item_tx(
             return Err(AppError::config("目标装备不存在"));
         };
         let target_item_def_id = target_row.try_get::<String, _>("item_def_id")?;
-        let target_locked = target_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false);
-        let target_bind_type = normalize_bind_type(target_row.try_get::<Option<String>, _>("bind_type")?);
+        let target_locked = target_row
+            .try_get::<Option<bool>, _>("locked")?
+            .unwrap_or(false);
+        let target_bind_type =
+            normalize_bind_type(target_row.try_get::<Option<String>, _>("bind_type")?);
         let Some(target_def) = defs.get(target_item_def_id.as_str()) else {
             return Err(AppError::config("目标装备数据异常"));
         };
-        if target_def.row.get("category").and_then(|value| value.as_str()) != Some("equipment") {
+        if target_def
+            .row
+            .get("category")
+            .and_then(|value| value.as_str())
+            != Some("equipment")
+        {
             return Err(AppError::config("目标物品不是装备"));
         }
         if target_locked {
@@ -2410,7 +2778,8 @@ async fn use_inventory_item_tx(
         let Some(technique_def) = defs.get(technique_id.as_str()) else {
             return Err(AppError::config("目标功法不存在或未开放"));
         };
-        ensure_use_realm_requirement(state, character_id, technique_def.required_realm.as_deref()).await?;
+        ensure_use_realm_requirement(state, character_id, technique_def.required_realm.as_deref())
+            .await?;
 
         let exists = state.database.fetch_optional(
             "SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1",
@@ -2465,11 +2834,15 @@ async fn use_inventory_item_tx(
         let Some(generated_def) = generated_def else {
             return Err(AppError::config("目标生成功法不存在或未发布"));
         };
-        let usage_scope = generated_def.try_get::<Option<String>, _>("usage_scope")?.unwrap_or_else(|| "character_only".to_string());
+        let usage_scope = generated_def
+            .try_get::<Option<String>, _>("usage_scope")?
+            .unwrap_or_else(|| "character_only".to_string());
         if usage_scope == "partner_only" {
             return Err(AppError::config("该功法仅伙伴可学习"));
         }
-        let generated_name = generated_def.try_get::<Option<String>, _>("name")?.unwrap_or_else(|| generated_technique_id.clone());
+        let generated_name = generated_def
+            .try_get::<Option<String>, _>("name")?
+            .unwrap_or_else(|| generated_technique_id.clone());
 
         let exists = state.database.fetch_optional(
             "SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1",
@@ -2520,14 +2893,19 @@ async fn use_inventory_item_tx(
         }
         let expand_value = params
             .and_then(|params| params.get("value"))
-            .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|value| value as f64)))
+            .and_then(|value| {
+                value
+                    .as_f64()
+                    .or_else(|| value.as_i64().map(|value| value as f64))
+            })
             .map(|value| value.floor() as i64)
             .unwrap_or_default();
         if expand_value <= 0 {
             return Err(AppError::config("扩容道具配置错误"));
         }
         let total_expand_size = expand_value.saturating_mul(qty);
-        let _new_capacity = expand_inventory_capacity_tx(state, character_id, "bag", total_expand_size).await?;
+        let _new_capacity =
+            expand_inventory_capacity_tx(state, character_id, "bag", total_expand_size).await?;
 
         consume_inventory_used_item_instance_tx(state, &source_snapshot, qty).await?;
         flush_inventory_item_grant_deltas_now(state, character_id).await?;
@@ -2566,7 +2944,9 @@ async fn use_inventory_item_tx(
         if !rebone_result.success {
             return Ok(InventoryUseResponse {
                 success: false,
-                message: rebone_result.message.unwrap_or_else(|| "归元洗髓开启失败".to_string()),
+                message: rebone_result
+                    .message
+                    .unwrap_or_else(|| "归元洗髓开启失败".to_string()),
                 effects: vec![effect],
                 data: InventoryUseResponseData {
                     character: load_inventory_use_character_snapshot(state, character_id).await?,
@@ -2579,15 +2959,17 @@ async fn use_inventory_item_tx(
         let character_snapshot = load_inventory_use_character_snapshot(state, character_id).await?;
         return Ok(InventoryUseResponse {
             success: true,
-            message: rebone_result.message.unwrap_or_else(|| "使用成功".to_string()),
+            message: rebone_result
+                .message
+                .unwrap_or_else(|| "使用成功".to_string()),
             effects: vec![effect],
             data: InventoryUseResponseData {
                 character: character_snapshot,
                 loot_results: None,
                 partner_technique_result: None,
-                partner_rebone_job: rebone_result
-                    .data
-                    .map(|data| serde_json::to_value(data).unwrap_or_else(|_| serde_json::json!({}))),
+                partner_rebone_job: rebone_result.data.map(|data| {
+                    serde_json::to_value(data).unwrap_or_else(|_| serde_json::json!({}))
+                }),
             },
         });
     }
@@ -2607,7 +2989,9 @@ async fn use_inventory_item_tx(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::config("战令赛季不存在"))?;
-        let season = crate::http::battle_pass::load_active_battle_pass_season_with_fallback(Some("bp-season-001"))?;
+        let season = crate::http::battle_pass::load_active_battle_pass_season_with_fallback(Some(
+            "bp-season-001",
+        ))?;
         if season.id != season_id {
             return Err(AppError::config("战令赛季不存在"));
         }
@@ -2620,7 +3004,11 @@ async fn use_inventory_item_tx(
             .await?;
         if existing
             .as_ref()
-            .and_then(|row| row.try_get::<Option<bool>, _>("premium_unlocked").ok().flatten())
+            .and_then(|row| {
+                row.try_get::<Option<bool>, _>("premium_unlocked")
+                    .ok()
+                    .flatten()
+            })
             .unwrap_or(false)
         {
             return Err(AppError::config("已解锁高级战令"));
@@ -2671,7 +3059,9 @@ async fn use_inventory_item_tx(
         if !month_card_result.success {
             return Ok(InventoryUseResponse {
                 success: false,
-                message: month_card_result.message.unwrap_or_else(|| "月卡激活失败".to_string()),
+                message: month_card_result
+                    .message
+                    .unwrap_or_else(|| "月卡激活失败".to_string()),
                 effects: vec![effect],
                 data: InventoryUseResponseData {
                     character: load_inventory_use_character_snapshot(state, character_id).await?,
@@ -2684,7 +3074,9 @@ async fn use_inventory_item_tx(
         let character_snapshot = load_inventory_use_character_snapshot(state, character_id).await?;
         return Ok(InventoryUseResponse {
             success: true,
-            message: month_card_result.message.unwrap_or_else(|| "使用成功".to_string()),
+            message: month_card_result
+                .message
+                .unwrap_or_else(|| "使用成功".to_string()),
             effects: vec![effect],
             data: InventoryUseResponseData {
                 character: character_snapshot,
@@ -2743,17 +3135,30 @@ async fn use_inventory_item_tx(
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .trim();
-        let duration_round = effect.get("duration_round").and_then(|value| value.as_i64()).unwrap_or_default();
+        let duration_round = effect
+            .get("duration_round")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default();
         let buff_value = params
             .and_then(|params| params.get("value"))
-            .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|number| number as f64)))
+            .and_then(|value| {
+                value
+                    .as_f64()
+                    .or_else(|| value.as_i64().map(|number| number as f64))
+            })
             .unwrap_or_default();
-        if apply_type != "flat" || duration_round <= 0 || buff_value <= 0.0 || !matches!(attr_key, "wugong" | "fagong" | "sudu") {
+        if apply_type != "flat"
+            || duration_round <= 0
+            || buff_value <= 0.0
+            || !matches!(attr_key, "wugong" | "fagong" | "sudu")
+        {
             return Err(AppError::config("该物品暂不支持使用效果"));
         }
         let buff_key = format!("{}_flat", attr_key);
         let source_id = format!("{}:{}", item_def_id, item_id);
-        let expire_at = inventory_format_iso(inventory_now_utc().unix_timestamp() * 1000 + duration_round * 30_000)?;
+        let expire_at = inventory_format_iso(
+            inventory_now_utc().unix_timestamp() * 1000 + duration_round * 30_000,
+        )?;
         state.database.execute(
             "INSERT INTO character_global_buff (character_id, buff_key, source_type, source_id, buff_value, started_at, expire_at, created_at, updated_at) VALUES ($1, $2, 'item_use', $3, $4, NOW(), $5::timestamptz, NOW(), NOW()) ON CONFLICT (character_id, buff_key, source_type, source_id) DO UPDATE SET buff_value = EXCLUDED.buff_value, started_at = NOW(), expire_at = EXCLUDED.expire_at, updated_at = NOW()",
             |q| q.bind(character_id).bind(&buff_key).bind(&source_id).bind(buff_value).bind(&expire_at),
@@ -2796,7 +3201,9 @@ async fn use_inventory_item_tx(
                         return Err(AppError::config("该物品暂不支持使用效果"));
                     }
                     match currency {
-                        "spirit_stones" => total_spirit_stones = total_spirit_stones.saturating_add(rolled),
+                        "spirit_stones" => {
+                            total_spirit_stones = total_spirit_stones.saturating_add(rolled)
+                        }
                         "silver" => total_silver = total_silver.saturating_add(rolled),
                         _ => unreachable!("currency loot type already validated"),
                     }
@@ -2812,23 +3219,68 @@ async fn use_inventory_item_tx(
                     .cloned()
                     .unwrap_or_default();
                 for item in items {
-                    let Some(item_def_id) = item.get("item_id").and_then(|value| value.as_str()).map(str::trim).filter(|value| !value.is_empty()) else {
+                    let Some(item_def_id) = item
+                        .get("item_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                    else {
                         continue;
                     };
-                    let item_qty = item.get("qty").and_then(|value| value.as_i64()).unwrap_or(1).max(1).saturating_mul(qty);
+                    let item_qty = item
+                        .get("qty")
+                        .and_then(|value| value.as_i64())
+                        .unwrap_or(1)
+                        .max(1)
+                        .saturating_mul(qty);
                     loot_item_rewards.push((item_def_id.to_string(), item_qty));
                 }
-                let currency = params.and_then(|params| params.get("currency")).and_then(|value| value.as_object());
-                total_silver = currency.and_then(|currency| currency.get("silver")).and_then(|value| value.as_i64()).unwrap_or_default().max(0).saturating_mul(qty);
-                total_spirit_stones = currency.and_then(|currency| currency.get("spirit_stones")).and_then(|value| value.as_i64()).unwrap_or_default().max(0).saturating_mul(qty);
+                let currency = params
+                    .and_then(|params| params.get("currency"))
+                    .and_then(|value| value.as_object());
+                total_silver = currency
+                    .and_then(|currency| currency.get("silver"))
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default()
+                    .max(0)
+                    .saturating_mul(qty);
+                total_spirit_stones = currency
+                    .and_then(|currency| currency.get("spirit_stones"))
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default()
+                    .max(0)
+                    .saturating_mul(qty);
             }
             "random_gem" => {
-                if !matches!(item_def_id.as_str(), "box-005" | "box-006" | "box-007" | "box-008" | "box-009" | "box-010" | "box-011" | "box-012" | "box-013") {
+                if !matches!(
+                    item_def_id.as_str(),
+                    "box-005"
+                        | "box-006"
+                        | "box-007"
+                        | "box-008"
+                        | "box-009"
+                        | "box-010"
+                        | "box-011"
+                        | "box-012"
+                        | "box-013"
+                ) {
                     return Err(AppError::config("该物品暂不支持使用效果"));
                 }
-                let min_level = params.and_then(|params| params.get("min_level")).and_then(|value| value.as_i64()).unwrap_or(1).max(1);
-                let max_level = params.and_then(|params| params.get("max_level")).and_then(|value| value.as_i64()).unwrap_or(min_level).max(min_level);
-                let gems_per_use = params.and_then(|params| params.get("gems_per_use")).and_then(|value| value.as_i64()).unwrap_or(1).max(1);
+                let min_level = params
+                    .and_then(|params| params.get("min_level"))
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(1)
+                    .max(1);
+                let max_level = params
+                    .and_then(|params| params.get("max_level"))
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(min_level)
+                    .max(min_level);
+                let gems_per_use = params
+                    .and_then(|params| params.get("gems_per_use"))
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(1)
+                    .max(1);
                 let sub_categories = params
                     .and_then(|params| params.get("sub_categories"))
                     .and_then(|value| value.as_array())
@@ -2839,16 +3291,25 @@ async fn use_inventory_item_tx(
                     .filter(|value| !value.is_empty())
                     .collect::<Vec<_>>();
                 let sub_categories = if sub_categories.is_empty() {
-                    DEFAULT_RANDOM_GEM_SUB_CATEGORIES.iter().map(|value| value.to_string()).collect::<Vec<_>>()
+                    DEFAULT_RANDOM_GEM_SUB_CATEGORIES
+                        .iter()
+                        .map(|value| value.to_string())
+                        .collect::<Vec<_>>()
                 } else {
                     sub_categories
                 };
                 let defs = load_inventory_def_map()?;
                 let candidate_gem_ids = defs
                     .iter()
-                    .filter(|(_, seed)| seed.row.get("category").and_then(|value| value.as_str()) == Some("gem"))
                     .filter(|(_, seed)| {
-                        let gem_level = seed.row.get("gem_level").and_then(|value| value.as_i64()).unwrap_or_default();
+                        seed.row.get("category").and_then(|value| value.as_str()) == Some("gem")
+                    })
+                    .filter(|(_, seed)| {
+                        let gem_level = seed
+                            .row
+                            .get("gem_level")
+                            .and_then(|value| value.as_i64())
+                            .unwrap_or_default();
                         gem_level >= min_level && gem_level <= max_level
                     })
                     .filter(|(_, seed)| {
@@ -2858,7 +3319,11 @@ async fn use_inventory_item_tx(
                         seed.row
                             .get("sub_category")
                             .and_then(|value| value.as_str())
-                            .map(|value| sub_categories.iter().any(|allowed| allowed == &value.trim().to_lowercase()))
+                            .map(|value| {
+                                sub_categories
+                                    .iter()
+                                    .any(|allowed| allowed == &value.trim().to_lowercase())
+                            })
                             .unwrap_or(false)
                     })
                     .map(|(id, _)| id.clone())
@@ -2879,14 +3344,19 @@ async fn use_inventory_item_tx(
             _ => return Err(AppError::config("该物品暂不支持使用效果")),
         }
 
-        let character_row = state.database.fetch_optional(
-            "SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE",
-            |q| q.bind(character_id),
-        ).await?;
+        let character_row = state
+            .database
+            .fetch_optional(
+                "SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE",
+                |q| q.bind(character_id),
+            )
+            .await?;
         let Some(character_row) = character_row else {
             return Err(AppError::config("角色不存在"));
         };
-        let current_spirit_stones = character_row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
+        let current_spirit_stones = character_row
+            .try_get::<Option<i64>, _>("spirit_stones")?
+            .unwrap_or_default();
         let next_spirit_stones = current_spirit_stones.saturating_add(total_spirit_stones);
 
         let defs = load_inventory_def_map()?;
@@ -2900,7 +3370,9 @@ async fn use_inventory_item_tx(
             Some(use_item_ref_id.as_str()),
             total_silver,
             &reward_item_pairs,
-        ).await? {
+        )
+        .await?
+        {
             for (reward_item_def_id, reward_qty) in &loot_item_rewards {
                 if *reward_qty <= 0 {
                     continue;
@@ -2930,11 +3402,15 @@ async fn use_inventory_item_tx(
                 ).await?;
             } else {
                 let redis = RedisRuntime::new(state.redis.clone().expect("redis should exist"));
-                buffer_character_resource_delta_fields(&redis, &[CharacterResourceDeltaField {
-                    character_id,
-                    field: "spirit_stones".to_string(),
-                    increment: total_spirit_stones,
-                }]).await?;
+                buffer_character_resource_delta_fields(
+                    &redis,
+                    &[CharacterResourceDeltaField {
+                        character_id,
+                        field: "spirit_stones".to_string(),
+                        increment: total_spirit_stones,
+                    }],
+                )
+                .await?;
             }
         }
 
@@ -2949,14 +3425,21 @@ async fn use_inventory_item_tx(
             effects: vec![effect],
             data: InventoryUseResponseData {
                 character: character_snapshot,
-                loot_results: Some(build_loot_results_for_use(&defs, total_silver, total_spirit_stones, &loot_item_rewards)),
+                loot_results: Some(build_loot_results_for_use(
+                    &defs,
+                    total_silver,
+                    total_spirit_stones,
+                    &loot_item_rewards,
+                )),
                 partner_technique_result: None,
                 partner_rebone_job: None,
             },
         });
     }
 
-    if partner_id.is_some() && matches!(effect_type, "learn_technique" | "learn_generated_technique") {
+    if partner_id.is_some()
+        && matches!(effect_type, "learn_technique" | "learn_generated_technique")
+    {
         if qty != 1 {
             return Err(AppError::config("伙伴打书每次只能使用一本功法书"));
         }
@@ -3002,7 +3485,9 @@ async fn use_inventory_item_tx(
             let Some(generated_def) = generated_def else {
                 return Err(AppError::config("目标生成功法不存在或未发布"));
             };
-            generated_def.try_get::<Option<String>, _>("name")?.unwrap_or_else(|| technique_id.clone())
+            generated_def
+                .try_get::<Option<String>, _>("name")?
+                .unwrap_or_else(|| technique_id.clone())
         } else {
             let defs = load_visible_inventory_technique_def_map()?;
             let Some(technique_def) = defs.get(technique_id.as_str()) else {
@@ -3015,15 +3500,34 @@ async fn use_inventory_item_tx(
             "SELECT technique_id, current_layer, is_innate, learned_from_item_def_id FROM character_partner_technique WHERE partner_id = $1 ORDER BY is_innate DESC, created_at ASC, id ASC FOR UPDATE",
             |q| q.bind(partner_id),
         ).await?;
-        if existing_rows.iter().any(|row| row.try_get::<Option<String>, _>("technique_id").ok().flatten().unwrap_or_default().trim() == technique_id) {
+        if existing_rows.iter().any(|row| {
+            row.try_get::<Option<String>, _>("technique_id")
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+                .trim()
+                == technique_id
+        }) {
             return Err(AppError::config("该伙伴已学习此功法"));
         }
-        let max_slots = opt_i64_from_i32(&partner_row, "max_technique_slots")?.unwrap_or_default().max(0);
+        let max_slots = opt_i64_from_i32(&partner_row, "max_technique_slots")?
+            .unwrap_or_default()
+            .max(0);
         let current_effective_count = existing_rows.len() as i64;
         let replaceable = existing_rows
             .iter()
-            .filter(|row| !row.try_get::<Option<bool>, _>("is_innate").ok().flatten().unwrap_or(false))
-            .map(|row| row.try_get::<Option<String>, _>("technique_id").ok().flatten().unwrap_or_default())
+            .filter(|row| {
+                !row.try_get::<Option<bool>, _>("is_innate")
+                    .ok()
+                    .flatten()
+                    .unwrap_or(false)
+            })
+            .map(|row| {
+                row.try_get::<Option<String>, _>("technique_id")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default()
+            })
             .filter(|value| !value.trim().is_empty())
             .collect::<Vec<_>>();
 
@@ -3060,18 +3564,21 @@ async fn use_inventory_item_tx(
         consume_inventory_used_item_instance_tx(state, &source_snapshot, qty).await?;
 
         let character_snapshot = load_inventory_use_character_snapshot(state, character_id).await?;
-        let remaining_books = load_partner_books(state, character_id).await?
+        let remaining_books = load_partner_books(state, character_id)
+            .await?
             .into_iter()
-            .map(|book| serde_json::json!({
-                "itemInstanceId": book.item_instance_id,
-                "itemDefId": book.item_def_id,
-                "techniqueId": book.technique_id,
-                "techniqueName": book.technique_name,
-                "name": book.name,
-                "icon": book.icon,
-                "quality": book.quality,
-                "qty": book.qty,
-            }))
+            .map(|book| {
+                serde_json::json!({
+                    "itemInstanceId": book.item_instance_id,
+                    "itemDefId": book.item_def_id,
+                    "techniqueId": book.technique_id,
+                    "techniqueName": book.technique_name,
+                    "name": book.name,
+                    "icon": book.icon,
+                    "quality": book.quality,
+                    "qty": book.qty,
+                })
+            })
             .collect::<Vec<_>>();
 
         return Ok(InventoryUseResponse {
@@ -3129,7 +3636,8 @@ async fn use_inventory_item_tx(
     let mut delta_stamina = 0_i64;
     match effect_type {
         "heal" => {
-            let value = roll_item_use_amount_for_qty(parse_effect_i64(effect.get("value")), &effect, qty);
+            let value =
+                roll_item_use_amount_for_qty(parse_effect_i64(effect.get("value")), &effect, qty);
             if value <= 0 {
                 return Err(AppError::config("该物品暂不支持使用效果"));
             }
@@ -3142,7 +3650,8 @@ async fn use_inventory_item_tx(
                 .and_then(|params| params.get("resource"))
                 .and_then(|value| value.as_str())
                 .unwrap_or_default();
-            let value = roll_item_use_amount_for_qty(parse_effect_i64(effect.get("value")), &effect, qty);
+            let value =
+                roll_item_use_amount_for_qty(parse_effect_i64(effect.get("value")), &effect, qty);
             if value <= 0 {
                 return Err(AppError::config("该物品暂不支持使用效果"));
             }
@@ -3173,18 +3682,42 @@ async fn use_inventory_item_tx(
     let Some(character_row) = character_row else {
         return Err(AppError::config("角色不存在"));
     };
-    let current_qixue = character_row.try_get::<Option<i64>, _>("qixue")?.unwrap_or_default();
-    let max_qixue = character_row.try_get::<Option<i64>, _>("max_qixue")?.unwrap_or_default().max(0);
-    let current_lingqi = character_row.try_get::<Option<i64>, _>("lingqi")?.unwrap_or_default();
-    let max_lingqi = character_row.try_get::<Option<i64>, _>("max_lingqi")?.unwrap_or_default().max(0);
-    let current_exp = character_row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default();
-    let current_stamina = character_row.try_get::<Option<i32>, _>("stamina")?.map(i64::from).unwrap_or_default();
-    let insight_level = character_row.try_get::<Option<i64>, _>("insight_level")?.unwrap_or_default();
-    let stamina_recover_at_text = character_row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
-    let month_card_start_at_text = character_row.try_get::<Option<String>, _>("month_card_start_at_text")?;
-    let month_card_expire_at_text = character_row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
-    let effective_max_qixue = max_qixue.max(current_qixue.saturating_add(delta_qixue)).max(0);
-    let effective_max_lingqi = max_lingqi.max(current_lingqi.saturating_add(delta_lingqi)).max(0);
+    let current_qixue = character_row
+        .try_get::<Option<i64>, _>("qixue")?
+        .unwrap_or_default();
+    let max_qixue = character_row
+        .try_get::<Option<i64>, _>("max_qixue")?
+        .unwrap_or_default()
+        .max(0);
+    let current_lingqi = character_row
+        .try_get::<Option<i64>, _>("lingqi")?
+        .unwrap_or_default();
+    let max_lingqi = character_row
+        .try_get::<Option<i64>, _>("max_lingqi")?
+        .unwrap_or_default()
+        .max(0);
+    let current_exp = character_row
+        .try_get::<Option<i64>, _>("exp")?
+        .unwrap_or_default();
+    let current_stamina = character_row
+        .try_get::<Option<i32>, _>("stamina")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let insight_level = character_row
+        .try_get::<Option<i64>, _>("insight_level")?
+        .unwrap_or_default();
+    let stamina_recover_at_text =
+        character_row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
+    let month_card_start_at_text =
+        character_row.try_get::<Option<String>, _>("month_card_start_at_text")?;
+    let month_card_expire_at_text =
+        character_row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
+    let effective_max_qixue = max_qixue
+        .max(current_qixue.saturating_add(delta_qixue))
+        .max(0);
+    let effective_max_lingqi = max_lingqi
+        .max(current_lingqi.saturating_add(delta_lingqi))
+        .max(0);
     let next_qixue = (current_qixue + delta_qixue).clamp(0, effective_max_qixue);
     let next_lingqi = (current_lingqi + delta_lingqi).clamp(0, effective_max_lingqi);
     let next_exp = current_exp.saturating_add(delta_exp);
@@ -3208,7 +3741,7 @@ async fn use_inventory_item_tx(
         |q| q.bind(next_qixue).bind(next_lingqi).bind(next_exp).bind(next_stamina).bind(next_stamina_recover_at_text.as_str()).bind(character_id),
     ).await?;
 
-        consume_inventory_used_item_instance_tx(state, &source_snapshot, qty).await?;
+    consume_inventory_used_item_instance_tx(state, &source_snapshot, qty).await?;
 
     record_inventory_use_limits(
         state,
@@ -3362,7 +3895,10 @@ async fn enforce_inventory_use_limits(
                     .flatten()
                     .unwrap_or_default();
                 if last_reset == today {
-                    row.try_get::<Option<i32>, _>("daily_count").ok().flatten().map(i64::from)
+                    row.try_get::<Option<i32>, _>("daily_count")
+                        .ok()
+                        .flatten()
+                        .map(i64::from)
                 } else {
                     Some(0)
                 }
@@ -3370,7 +3906,12 @@ async fn enforce_inventory_use_limits(
             .unwrap_or_default();
         let current_total = count_row
             .as_ref()
-            .and_then(|row| row.try_get::<Option<i32>, _>("total_count").ok().flatten().map(i64::from))
+            .and_then(|row| {
+                row.try_get::<Option<i32>, _>("total_count")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+            })
             .unwrap_or_default();
         if config.daily_limit > 0 && current_daily + qty > config.daily_limit {
             return Err(AppError::config("今日使用次数已达上限"));
@@ -3429,15 +3970,28 @@ async fn use_inventory_multi_effect_item_tx(
     let mut pending_buffs: Vec<(String, f64, i64)> = Vec::new();
 
     for effect in effect_defs {
-        let trigger = effect.get("trigger").and_then(|value| value.as_str()).unwrap_or_default();
-        let target = effect.get("target").and_then(|value| value.as_str()).unwrap_or("self");
-        let effect_type = effect.get("effect_type").and_then(|value| value.as_str()).unwrap_or_default();
+        let trigger = effect
+            .get("trigger")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let target = effect
+            .get("target")
+            .and_then(|value| value.as_str())
+            .unwrap_or("self");
+        let effect_type = effect
+            .get("effect_type")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
         if trigger != "use" || target != "self" {
             return Err(AppError::config("该物品暂不支持使用效果"));
         }
         match effect_type {
             "heal" => {
-                let value = roll_item_use_amount_for_qty(effect.get("value").and_then(|value| value.as_i64()), effect, qty);
+                let value = roll_item_use_amount_for_qty(
+                    effect.get("value").and_then(|value| value.as_i64()),
+                    effect,
+                    qty,
+                );
                 if value <= 0 {
                     return Err(AppError::config("该物品暂不支持使用效果"));
                 }
@@ -3450,7 +4004,11 @@ async fn use_inventory_multi_effect_item_tx(
                     .and_then(|params| params.get("resource"))
                     .and_then(|value| value.as_str())
                     .unwrap_or_default();
-                let value = roll_item_use_amount_for_qty(effect.get("value").and_then(|value| value.as_i64()), effect, qty);
+                let value = roll_item_use_amount_for_qty(
+                    effect.get("value").and_then(|value| value.as_i64()),
+                    effect,
+                    qty,
+                );
                 if value <= 0 {
                     return Err(AppError::config("该物品暂不支持使用效果"));
                 }
@@ -3486,12 +4044,23 @@ async fn use_inventory_multi_effect_item_tx(
                     .and_then(|value| value.as_str())
                     .unwrap_or_default()
                     .trim();
-                let duration_round = effect.get("duration_round").and_then(|value| value.as_i64()).unwrap_or_default();
+                let duration_round = effect
+                    .get("duration_round")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default();
                 let buff_value = params
                     .and_then(|params| params.get("value"))
-                    .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|number| number as f64)))
+                    .and_then(|value| {
+                        value
+                            .as_f64()
+                            .or_else(|| value.as_i64().map(|number| number as f64))
+                    })
                     .unwrap_or_default();
-                if apply_type != "flat" || duration_round <= 0 || buff_value <= 0.0 || !matches!(attr_key, "wugong" | "fagong" | "sudu") {
+                if apply_type != "flat"
+                    || duration_round <= 0
+                    || buff_value <= 0.0
+                    || !matches!(attr_key, "wugong" | "fagong" | "sudu")
+                {
                     return Err(AppError::config("该物品暂不支持使用效果"));
                 }
                 pending_buffs.push((format!("{}_flat", attr_key), buff_value, duration_round));
@@ -3510,18 +4079,42 @@ async fn use_inventory_multi_effect_item_tx(
     let Some(character_row) = character_row else {
         return Err(AppError::config("角色不存在"));
     };
-    let current_qixue = character_row.try_get::<Option<i64>, _>("qixue")?.unwrap_or_default();
-    let max_qixue = character_row.try_get::<Option<i64>, _>("max_qixue")?.unwrap_or_default().max(0);
-    let current_lingqi = character_row.try_get::<Option<i64>, _>("lingqi")?.unwrap_or_default();
-    let max_lingqi = character_row.try_get::<Option<i64>, _>("max_lingqi")?.unwrap_or_default().max(0);
-    let current_exp = character_row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default();
-    let current_stamina = character_row.try_get::<Option<i32>, _>("stamina")?.map(i64::from).unwrap_or_default();
-    let insight_level = character_row.try_get::<Option<i64>, _>("insight_level")?.unwrap_or_default();
-    let stamina_recover_at_text = character_row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
-    let month_card_start_at_text = character_row.try_get::<Option<String>, _>("month_card_start_at_text")?;
-    let month_card_expire_at_text = character_row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
-    let effective_max_qixue = max_qixue.max(current_qixue.saturating_add(delta_qixue)).max(0);
-    let effective_max_lingqi = max_lingqi.max(current_lingqi.saturating_add(delta_lingqi)).max(0);
+    let current_qixue = character_row
+        .try_get::<Option<i64>, _>("qixue")?
+        .unwrap_or_default();
+    let max_qixue = character_row
+        .try_get::<Option<i64>, _>("max_qixue")?
+        .unwrap_or_default()
+        .max(0);
+    let current_lingqi = character_row
+        .try_get::<Option<i64>, _>("lingqi")?
+        .unwrap_or_default();
+    let max_lingqi = character_row
+        .try_get::<Option<i64>, _>("max_lingqi")?
+        .unwrap_or_default()
+        .max(0);
+    let current_exp = character_row
+        .try_get::<Option<i64>, _>("exp")?
+        .unwrap_or_default();
+    let current_stamina = character_row
+        .try_get::<Option<i32>, _>("stamina")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let insight_level = character_row
+        .try_get::<Option<i64>, _>("insight_level")?
+        .unwrap_or_default();
+    let stamina_recover_at_text =
+        character_row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
+    let month_card_start_at_text =
+        character_row.try_get::<Option<String>, _>("month_card_start_at_text")?;
+    let month_card_expire_at_text =
+        character_row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
+    let effective_max_qixue = max_qixue
+        .max(current_qixue.saturating_add(delta_qixue))
+        .max(0);
+    let effective_max_lingqi = max_lingqi
+        .max(current_lingqi.saturating_add(delta_lingqi))
+        .max(0);
     let next_qixue = (current_qixue + delta_qixue).clamp(0, effective_max_qixue);
     let next_lingqi = (current_lingqi + delta_lingqi).clamp(0, effective_max_lingqi);
     let next_exp = current_exp.saturating_add(delta_exp);
@@ -3554,7 +4147,9 @@ async fn use_inventory_multi_effect_item_tx(
     if !pending_buffs.is_empty() {
         let source_id = format!("{}:{}", item_def_id, item_id);
         for (buff_key, buff_value, duration_round) in pending_buffs {
-            let expire_at = inventory_format_iso(inventory_now_utc().unix_timestamp() * 1000 + duration_round * 30_000)?;
+            let expire_at = inventory_format_iso(
+                inventory_now_utc().unix_timestamp() * 1000 + duration_round * 30_000,
+            )?;
             state.database.execute(
                 "INSERT INTO character_global_buff (character_id, buff_key, source_type, source_id, buff_value, started_at, expire_at, created_at, updated_at) VALUES ($1, $2, 'item_use', $3, $4, NOW(), $5::timestamptz, NOW(), NOW()) ON CONFLICT (character_id, buff_key, source_type, source_id) DO UPDATE SET buff_value = EXCLUDED.buff_value, started_at = NOW(), expire_at = EXCLUDED.expire_at, updated_at = NOW()",
                 |q| q.bind(character_id).bind(&buff_key).bind(&source_id).bind(buff_value).bind(&expire_at),
@@ -3601,15 +4196,22 @@ async fn preview_inventory_disassemble_plan(
         return Err(AppError::config("物品不存在"));
     };
     let item_def_id = row.try_get::<String, _>("item_def_id")?;
-    let item_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let item_qty = row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     let locked = row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false);
     if locked {
         return Err(AppError::config("物品已锁定"));
     }
     if location == "equipped" {
         let defs = load_inventory_def_map()?;
-        let def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("物品不存在"))?;
+        let def = defs
+            .get(item_def_id.as_str())
+            .ok_or_else(|| AppError::config("物品不存在"))?;
         if def.row.get("category").and_then(|value| value.as_str()) == Some("equipment") {
             return Err(AppError::config("穿戴中的装备不可分解"));
         }
@@ -3622,17 +4224,29 @@ async fn preview_inventory_disassemble_plan(
         return Err(AppError::config("道具数量不足"));
     }
     let defs = load_inventory_def_map()?;
-    let def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("物品不存在"))?;
-    if def.row.get("disassemblable").and_then(|value| value.as_bool()) == Some(false) {
+    let def = defs
+        .get(item_def_id.as_str())
+        .ok_or_else(|| AppError::config("物品不存在"))?;
+    if def
+        .row
+        .get("disassemblable")
+        .and_then(|value| value.as_bool())
+        == Some(false)
+    {
         return Err(AppError::config("该物品不可分解"));
     }
     let plan = build_inventory_disassemble_plan(
         &defs,
         item_def_id.as_str(),
         row.try_get::<Option<String>, _>("quality")?,
-        row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-        row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-        row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
+        row.try_get::<Option<i32>, _>("quality_rank")?
+            .map(i64::from),
+        row.try_get::<Option<i32>, _>("strengthen_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        row.try_get::<Option<i32>, _>("refine_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
         row.try_get::<Option<serde_json::Value>, _>("affixes")?,
         qty,
     )?;
@@ -3647,7 +4261,8 @@ async fn disassemble_inventory_item_tx(
     qty: i64,
 ) -> Result<InventoryDisassembleResponse, AppError> {
     acquire_inventory_mutex(state, character_id).await?;
-    let plan = preview_inventory_disassemble_plan(state, character_id, item_instance_id, qty).await?;
+    let plan =
+        preview_inventory_disassemble_plan(state, character_id, item_instance_id, qty).await?;
     let row = state.database.fetch_optional(
         "SELECT id, owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, bind_owner_user_id, bind_owner_character_id, location, location_slot, equipped_slot, strengthen_level, refine_level, socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta, custom_name, locked, expire_at::text AS expire_at_text, obtained_from, obtained_ref_id, metadata FROM item_instance WHERE id = $1 AND owner_character_id = $2 LIMIT 1 FOR UPDATE",
         |q| q.bind(item_instance_id).bind(character_id),
@@ -3656,17 +4271,30 @@ async fn disassemble_inventory_item_tx(
         return Err(AppError::config("物品不存在"));
     };
     let source_snapshot = map_item_instance_snapshot_from_row(&row)?;
-    let current_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+    let current_qty = row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if current_qty < qty {
         return Err(AppError::config("道具数量不足"));
     }
     consume_inventory_used_item_instance_tx(state, &source_snapshot, qty).await?;
 
-    let reward_item_pairs = plan.rewards.items.iter().filter_map(|reward| {
-        (reward.r#type == "item" && reward.amount > 0)
-            .then(|| reward.item_def_id.as_deref().map(|item_def_id| (item_def_id.to_string(), reward.amount)))
-            .flatten()
-    }).collect::<Vec<_>>();
+    let reward_item_pairs = plan
+        .rewards
+        .items
+        .iter()
+        .filter_map(|reward| {
+            (reward.r#type == "item" && reward.amount > 0)
+                .then(|| {
+                    reward
+                        .item_def_id
+                        .as_deref()
+                        .map(|item_def_id| (item_def_id.to_string(), reward.amount))
+                })
+                .flatten()
+        })
+        .collect::<Vec<_>>();
     let disassemble_ref_id = item_instance_id.to_string();
     if !buffer_inventory_item_reward_deltas(
         state,
@@ -3676,12 +4304,17 @@ async fn disassemble_inventory_item_tx(
         Some(disassemble_ref_id.as_str()),
         plan.rewards.silver,
         &reward_item_pairs,
-    ).await? {
+    )
+    .await?
+    {
         for reward in &plan.rewards.items {
             if reward.r#type != "item" || reward.amount <= 0 {
                 continue;
             }
-            let item_def_id = reward.item_def_id.as_deref().ok_or_else(|| AppError::config("分解奖励配置错误"))?;
+            let item_def_id = reward
+                .item_def_id
+                .as_deref()
+                .ok_or_else(|| AppError::config("分解奖励配置错误"))?;
             let defs = load_inventory_def_map()?;
             let bind_type = defs
                 .get(item_def_id)
@@ -3740,22 +4373,34 @@ async fn disassemble_inventory_items_batch_tx(
         if request_qty <= 0 {
             return Ok(inventory_disassemble_batch_failure("items参数错误"));
         }
-        let row_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+        let row_qty = row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default();
         if row_qty < request_qty {
             return Ok(inventory_disassemble_batch_failure("包含数量不足的物品"));
         }
-        let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+        let location = row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default();
         if location == "equipped" {
             continue;
         }
         if location != "bag" && location != "warehouse" {
-            return Ok(inventory_disassemble_batch_failure("包含不可分解位置的物品"));
+            return Ok(inventory_disassemble_batch_failure(
+                "包含不可分解位置的物品",
+            ));
         }
         let item_def_id = row.try_get::<String, _>("item_def_id")?;
         let Some(item_def) = defs.get(item_def_id.as_str()) else {
             return Ok(inventory_disassemble_batch_failure("包含不存在的物品"));
         };
-        if item_def.row.get("disassemblable").and_then(|value| value.as_bool()) == Some(false) {
+        if item_def
+            .row
+            .get("disassemblable")
+            .and_then(|value| value.as_bool())
+            == Some(false)
+        {
             return Ok(inventory_disassemble_batch_failure("包含不可分解的物品"));
         }
         let locked = row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false);
@@ -3768,9 +4413,14 @@ async fn disassemble_inventory_items_batch_tx(
             &defs,
             item_def_id.as_str(),
             row.try_get::<Option<String>, _>("quality")?,
-            row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-            row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-            row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
+            row.try_get::<Option<i32>, _>("quality_rank")?
+                .map(i64::from),
+            row.try_get::<Option<i32>, _>("strengthen_level")?
+                .map(i64::from)
+                .unwrap_or_default(),
+            row.try_get::<Option<i32>, _>("refine_level")?
+                .map(i64::from)
+                .unwrap_or_default(),
             row.try_get::<Option<serde_json::Value>, _>("affixes")?,
             request_qty,
         )?;
@@ -3794,7 +4444,12 @@ async fn disassemble_inventory_items_batch_tx(
     let reward_items = reward_items_by_def.into_values().collect::<Vec<_>>();
     let reward_item_pairs = reward_items
         .iter()
-        .filter_map(|reward| reward.item_def_id.as_ref().map(|item_def_id| (item_def_id.clone(), reward.amount)))
+        .filter_map(|reward| {
+            reward
+                .item_def_id
+                .as_ref()
+                .map(|item_def_id| (item_def_id.clone(), reward.amount))
+        })
         .collect::<Vec<_>>();
     if !buffer_inventory_item_reward_deltas(
         state,
@@ -3804,12 +4459,17 @@ async fn disassemble_inventory_items_batch_tx(
         Some("batch"),
         total_silver,
         &reward_item_pairs,
-    ).await? {
+    )
+    .await?
+    {
         for reward in &reward_items {
             if reward.r#type != "item" || reward.amount <= 0 {
                 continue;
             }
-            let item_def_id = reward.item_def_id.as_deref().ok_or_else(|| AppError::config("分解奖励配置错误"))?;
+            let item_def_id = reward
+                .item_def_id
+                .as_deref()
+                .ok_or_else(|| AppError::config("分解奖励配置错误"))?;
             let bind_type = defs
                 .get(item_def_id)
                 .and_then(|seed| seed.row.get("bind_type"))
@@ -3872,7 +4532,9 @@ async fn build_inventory_growth_cost_preview(
     };
     let item_def_id = row.try_get::<String, _>("item_def_id")?;
     let defs = load_inventory_def_map()?;
-    let def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("该物品不可强化"))?;
+    let def = defs
+        .get(item_def_id.as_str())
+        .ok_or_else(|| AppError::config("该物品不可强化"))?;
     if def.row.get("category").and_then(|value| value.as_str()) != Some("equipment") {
         return Err(AppError::config("该物品不可强化"));
     }
@@ -3880,38 +4542,97 @@ async fn build_inventory_growth_cost_preview(
     if locked {
         return Err(AppError::config("物品已锁定"));
     }
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if location == "auction" {
         return Err(AppError::config("交易中的装备不可强化"));
     }
     if !matches!(location.as_str(), "bag" | "warehouse" | "equipped") {
         return Err(AppError::config("该物品当前位置不可强化"));
     }
-    if row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default() != 1 {
+    if row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default()
+        != 1
+    {
         return Err(AppError::config("装备数量异常"));
     }
 
     let equip_req_realm_rank = get_realm_rank_one_based_for_equipment(
-        def.row.get("equip_req_realm").and_then(|value| value.as_str()).unwrap_or("凡人"),
+        def.row
+            .get("equip_req_realm")
+            .and_then(|value| value.as_str())
+            .unwrap_or("凡人"),
     );
     let discount_rate = load_forge_house_discount_rate(state, character_id).await?;
 
-    let enhance_current_level = normalize_enhance_level(row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default());
+    let enhance_current_level = normalize_enhance_level(
+        row.try_get::<Option<i32>, _>("strengthen_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+    );
     let enhance_target_level = enhance_current_level + 1;
-    let enhance_cost = build_discounted_growth_cost_plan("enhance", enhance_target_level, equip_req_realm_rank, discount_rate, &defs)?;
+    let enhance_cost = build_discounted_growth_cost_plan(
+        "enhance",
+        enhance_target_level,
+        equip_req_realm_rank,
+        discount_rate,
+        &defs,
+    )?;
 
-    let refine_current_level = row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default().clamp(0, 10);
-    let refine_target_level = if refine_current_level >= 10 { 10 } else { refine_current_level + 1 };
+    let refine_current_level = row
+        .try_get::<Option<i32>, _>("refine_level")?
+        .map(i64::from)
+        .unwrap_or_default()
+        .clamp(0, 10);
+    let refine_target_level = if refine_current_level >= 10 {
+        10
+    } else {
+        refine_current_level + 1
+    };
     let refine_cost = if refine_current_level >= 10 {
         None
     } else {
-        Some(build_discounted_growth_cost_plan("refine", refine_target_level, equip_req_realm_rank, discount_rate, &defs)?)
+        Some(build_discounted_growth_cost_plan(
+            "refine",
+            refine_target_level,
+            equip_req_realm_rank,
+            discount_rate,
+            &defs,
+        )?)
     };
 
-    let def_quality_rank = map_quality_rank(def.row.get("quality").and_then(|value| value.as_str()).unwrap_or("黄"));
-    let resolved_quality_rank = row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from).unwrap_or_else(|| map_quality_rank(row.try_get::<Option<String>, _>("quality").ok().flatten().as_deref().unwrap_or(def.row.get("quality").and_then(|value| value.as_str()).unwrap_or("黄"))));
+    let def_quality_rank = map_quality_rank(
+        def.row
+            .get("quality")
+            .and_then(|value| value.as_str())
+            .unwrap_or("黄"),
+    );
+    let resolved_quality_rank = row
+        .try_get::<Option<i32>, _>("quality_rank")?
+        .map(i64::from)
+        .unwrap_or_else(|| {
+            map_quality_rank(
+                row.try_get::<Option<String>, _>("quality")
+                    .ok()
+                    .flatten()
+                    .as_deref()
+                    .unwrap_or(
+                        def.row
+                            .get("quality")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("黄"),
+                    ),
+            )
+        });
     let socketed_gems = row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?;
-    let base_attrs_raw = def.row.get("base_attrs").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let base_attrs_raw = def
+        .row
+        .get("base_attrs")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
 
     Ok(InventoryGrowthCostPreviewData {
         enhance: InventoryGrowthPreviewEntry {
@@ -3921,16 +4642,36 @@ async fn build_inventory_growth_cost_preview(
             success_rate: enhance_success_rate(enhance_target_level),
             fail_mode: enhance_fail_mode(enhance_target_level).to_string(),
             costs: Some(enhance_cost),
-            preview_base_attrs: build_equipment_preview_base_attrs(&base_attrs_raw, def_quality_rank, resolved_quality_rank, enhance_target_level, refine_current_level, socketed_gems.as_ref(), &defs),
+            preview_base_attrs: build_equipment_preview_base_attrs(
+                &base_attrs_raw,
+                def_quality_rank,
+                resolved_quality_rank,
+                enhance_target_level,
+                refine_current_level,
+                socketed_gems.as_ref(),
+                &defs,
+            ),
         },
         refine: InventoryGrowthPreviewEntry {
             current_level: refine_current_level,
             target_level: refine_target_level,
             max_level: Some(10),
             success_rate: refine_success_rate(refine_target_level),
-            fail_mode: if refine_current_level >= 10 { "none".to_string() } else { "downgrade".to_string() },
+            fail_mode: if refine_current_level >= 10 {
+                "none".to_string()
+            } else {
+                "downgrade".to_string()
+            },
             costs: refine_cost,
-            preview_base_attrs: build_equipment_preview_base_attrs(&base_attrs_raw, def_quality_rank, resolved_quality_rank, enhance_current_level, refine_target_level, socketed_gems.as_ref(), &defs),
+            preview_base_attrs: build_equipment_preview_base_attrs(
+                &base_attrs_raw,
+                def_quality_rank,
+                resolved_quality_rank,
+                enhance_current_level,
+                refine_target_level,
+                socketed_gems.as_ref(),
+                &defs,
+            ),
         },
     })
 }
@@ -3951,25 +4692,38 @@ async fn refine_inventory_item_tx(
     };
     let defs = load_inventory_def_map()?;
     let item_def_id = row.try_get::<String, _>("item_def_id")?;
-    let def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("该物品不可精炼"))?;
+    let def = defs
+        .get(item_def_id.as_str())
+        .ok_or_else(|| AppError::config("该物品不可精炼"))?;
     if def.row.get("category").and_then(|value| value.as_str()) != Some("equipment") {
         return Ok(inventory_refine_failure("该物品不可精炼", 0, None));
     }
     if row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false) {
         return Ok(inventory_refine_failure("物品已锁定", 0, None));
     }
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if location == "auction" {
         return Ok(inventory_refine_failure("交易中的装备不可精炼", 0, None));
     }
     if !matches!(location.as_str(), "bag" | "warehouse" | "equipped") {
         return Ok(inventory_refine_failure("该物品当前位置不可精炼", 0, None));
     }
-        if row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default() != 1 {
+    if row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default()
+        != 1
+    {
         return Ok(inventory_refine_failure("装备数量异常", 0, None));
     }
 
-    let current_level = row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default().clamp(0, 10);
+    let current_level = row
+        .try_get::<Option<i32>, _>("refine_level")?
+        .map(i64::from)
+        .unwrap_or_default()
+        .clamp(0, 10);
     let mut item_snapshot = map_item_instance_snapshot_from_row(&row)?;
     if current_level >= 10 {
         return Ok(InventoryRefineResponse {
@@ -3987,17 +4741,46 @@ async fn refine_inventory_item_tx(
         });
     }
     let target_level = current_level + 1;
-    let equip_req_realm_rank = get_realm_rank_one_based_for_equipment(def.row.get("equip_req_realm").and_then(|value| value.as_str()).unwrap_or("凡人"));
+    let equip_req_realm_rank = get_realm_rank_one_based_for_equipment(
+        def.row
+            .get("equip_req_realm")
+            .and_then(|value| value.as_str())
+            .unwrap_or("凡人"),
+    );
     let discount_rate = load_forge_house_discount_rate(state, character_id).await?;
-    let cost_plan = build_discounted_growth_cost_plan("refine", target_level, equip_req_realm_rank, discount_rate, &defs)?;
+    let cost_plan = build_discounted_growth_cost_plan(
+        "refine",
+        target_level,
+        equip_req_realm_rank,
+        discount_rate,
+        &defs,
+    )?;
 
-    consume_inventory_material_by_def_id(state, user_id, character_id, &cost_plan.material_item_def_id, cost_plan.material_qty).await?;
-    consume_inventory_character_currencies(state, character_id, cost_plan.silver_cost, cost_plan.spirit_stone_cost, 0).await?;
+    consume_inventory_material_by_def_id(
+        state,
+        user_id,
+        character_id,
+        &cost_plan.material_item_def_id,
+        cost_plan.material_qty,
+    )
+    .await?;
+    consume_inventory_character_currencies(
+        state,
+        character_id,
+        cost_plan.silver_cost,
+        cost_plan.spirit_stone_cost,
+        0,
+    )
+    .await?;
 
     let success_rate = refine_success_rate(target_level);
     let roll = (pick_random_index(10_000, item_instance_id as usize) as f64) / 10_000.0;
     let success = roll < success_rate;
-    let result_level = if success { target_level } else { get_refine_fail_result_level(current_level, target_level) };
+    let result_level = if success {
+        target_level
+    } else {
+        get_refine_fail_result_level(current_level, target_level)
+    };
     item_snapshot.refine_level = result_level;
     if location == "equipped" {
         state.database.execute(
@@ -4015,7 +4798,11 @@ async fn refine_inventory_item_tx(
     };
     Ok(InventoryRefineResponse {
         success,
-        message: if success { "精炼成功".to_string() } else { "精炼失败".to_string() },
+        message: if success {
+            "精炼成功".to_string()
+        } else {
+            "精炼失败".to_string()
+        },
         data: Some(InventoryRefineResponseData {
             refine_level: result_level,
             target_level: Some(target_level),
@@ -4070,33 +4857,95 @@ async fn enhance_inventory_item_tx(
     };
     let defs = load_inventory_def_map()?;
     let item_def_id = row.try_get::<String, _>("item_def_id")?;
-    let def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("该物品不可强化"))?;
+    let def = defs
+        .get(item_def_id.as_str())
+        .ok_or_else(|| AppError::config("该物品不可强化"))?;
     if def.row.get("category").and_then(|value| value.as_str()) != Some("equipment") {
-        return Ok(inventory_enhance_failure("该物品不可强化", 0, None, None, None));
+        return Ok(inventory_enhance_failure(
+            "该物品不可强化",
+            0,
+            None,
+            None,
+            None,
+        ));
     }
     if row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false) {
         return Ok(inventory_enhance_failure("物品已锁定", 0, None, None, None));
     }
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if location == "auction" {
-        return Ok(inventory_enhance_failure("交易中的装备不可强化", 0, None, None, None));
+        return Ok(inventory_enhance_failure(
+            "交易中的装备不可强化",
+            0,
+            None,
+            None,
+            None,
+        ));
     }
     if !matches!(location.as_str(), "bag" | "warehouse" | "equipped") {
-        return Ok(inventory_enhance_failure("该物品当前位置不可强化", 0, None, None, None));
+        return Ok(inventory_enhance_failure(
+            "该物品当前位置不可强化",
+            0,
+            None,
+            None,
+            None,
+        ));
     }
-        if row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default() != 1 {
-        return Ok(inventory_enhance_failure("装备数量异常", 0, None, None, None));
+    if row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default()
+        != 1
+    {
+        return Ok(inventory_enhance_failure(
+            "装备数量异常",
+            0,
+            None,
+            None,
+            None,
+        ));
     }
 
-    let current_level = normalize_enhance_level(row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default());
+    let current_level = normalize_enhance_level(
+        row.try_get::<Option<i32>, _>("strengthen_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+    );
     let mut item_snapshot = map_item_instance_snapshot_from_row(&row)?;
     let target_level = current_level + 1;
-    let equip_req_realm_rank = get_realm_rank_one_based_for_equipment(def.row.get("equip_req_realm").and_then(|value| value.as_str()).unwrap_or("凡人"));
+    let equip_req_realm_rank = get_realm_rank_one_based_for_equipment(
+        def.row
+            .get("equip_req_realm")
+            .and_then(|value| value.as_str())
+            .unwrap_or("凡人"),
+    );
     let discount_rate = load_forge_house_discount_rate(state, character_id).await?;
-    let cost_plan = build_discounted_growth_cost_plan("enhance", target_level, equip_req_realm_rank, discount_rate, &defs)?;
+    let cost_plan = build_discounted_growth_cost_plan(
+        "enhance",
+        target_level,
+        equip_req_realm_rank,
+        discount_rate,
+        &defs,
+    )?;
 
-    consume_inventory_material_by_def_id(state, user_id, character_id, &cost_plan.material_item_def_id, cost_plan.material_qty).await?;
-    consume_inventory_character_currencies(state, character_id, cost_plan.silver_cost, cost_plan.spirit_stone_cost, 0).await?;
+    consume_inventory_material_by_def_id(
+        state,
+        user_id,
+        character_id,
+        &cost_plan.material_item_def_id,
+        cost_plan.material_qty,
+    )
+    .await?;
+    consume_inventory_character_currencies(
+        state,
+        character_id,
+        cost_plan.silver_cost,
+        cost_plan.spirit_stone_cost,
+        0,
+    )
+    .await?;
 
     let success_rate = enhance_success_rate(target_level);
     let roll = (pick_random_index(10_000, item_instance_id as usize) as f64) / 10_000.0;
@@ -4113,12 +4962,20 @@ async fn enhance_inventory_item_tx(
 
     if destroyed {
         if location == "equipped" {
-            state.database.execute(
-                "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
-                |q| q.bind(item_instance_id).bind(character_id),
-            ).await?;
+            state
+                .database
+                .execute(
+                    "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
+                    |q| q.bind(item_instance_id).bind(character_id),
+                )
+                .await?;
         } else {
-            consume_inventory_used_item_instance_tx(state, &item_snapshot, item_snapshot.qty.max(1)).await?;
+            consume_inventory_used_item_instance_tx(
+                state,
+                &item_snapshot,
+                item_snapshot.qty.max(1),
+            )
+            .await?;
         }
     } else {
         item_snapshot.strengthen_level = result_level;
@@ -4212,7 +5069,10 @@ async fn consume_inventory_material_by_def_id(
             continue;
         }
         let id = row.try_get::<i64, _>("id")?;
-        let current_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+        let current_qty = row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default();
         if current_qty <= 0 {
             continue;
         }
@@ -4251,11 +5111,16 @@ async fn consume_inventory_specific_item_instance(
     if row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false) {
         return Err(AppError::config("所选宝石已锁定"));
     }
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if !matches!(location.as_str(), "bag" | "warehouse") {
         return Err(AppError::config("所选宝石不可消耗"));
     }
-    let current_qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+    let current_qty = row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default();
     if current_qty < qty {
         return Err(AppError::config("所选宝石数量不足"));
     }
@@ -4271,21 +5136,29 @@ async fn consume_inventory_character_currencies(
     spirit_stone_cost: i64,
     exp_cost: i64,
 ) -> Result<(), AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT silver, spirit_stones, exp FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(character_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT silver, spirit_stones, exp FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(row) = row else {
         return Err(AppError::config("角色不存在"));
     };
     let silver = row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default();
-    let spirit_stones = row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
+    let spirit_stones = row
+        .try_get::<Option<i64>, _>("spirit_stones")?
+        .unwrap_or_default();
     let exp = row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default();
     if silver < silver_cost {
         return Err(AppError::config(&format!("银两不足，需要{}", silver_cost)));
     }
     if spirit_stones < spirit_stone_cost {
-        return Err(AppError::config(&format!("灵石不足，需要{}", spirit_stone_cost)));
+        return Err(AppError::config(&format!(
+            "灵石不足，需要{}",
+            spirit_stone_cost
+        )));
     }
     if exp < exp_cost {
         return Err(AppError::config(&format!("经验不足，需要{}", exp_cost)));
@@ -4324,33 +5197,60 @@ async fn socket_inventory_gem_tx(
         return Ok(inventory_socket_failure("物品不存在"));
     };
     let equip_item_def_id = equip_row.try_get::<String, _>("item_def_id")?;
-    let equip_def = defs.get(equip_item_def_id.as_str()).ok_or_else(|| AppError::config("物品不存在"))?;
-    if equip_def.row.get("category").and_then(|value| value.as_str()) != Some("equipment") {
+    let equip_def = defs
+        .get(equip_item_def_id.as_str())
+        .ok_or_else(|| AppError::config("物品不存在"))?;
+    if equip_def
+        .row
+        .get("category")
+        .and_then(|value| value.as_str())
+        != Some("equipment")
+    {
         return Ok(inventory_socket_failure("该物品不可镶嵌"));
     }
-    if equip_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false) {
+    if equip_row
+        .try_get::<Option<bool>, _>("locked")?
+        .unwrap_or(false)
+    {
         return Ok(inventory_socket_failure("物品已锁定"));
     }
-    let equip_location = equip_row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let equip_location = equip_row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if equip_location == "auction" {
         return Ok(inventory_socket_failure("交易中的装备不可镶嵌"));
     }
     if !matches!(equip_location.as_str(), "bag" | "warehouse" | "equipped") {
         return Ok(inventory_socket_failure("该物品当前位置不可镶嵌"));
     }
-    if equip_row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default() != 1 {
+    if equip_row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default()
+        != 1
+    {
         return Ok(inventory_socket_failure("装备数量异常"));
     }
-    let resolved_quality_rank = equip_row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from).unwrap_or(1).max(1);
+    let resolved_quality_rank = equip_row
+        .try_get::<Option<i32>, _>("quality_rank")?
+        .map(i64::from)
+        .unwrap_or(1)
+        .max(1);
     let socket_max = resolve_socket_max(
-        equip_def.row.get("socket_max").and_then(|value| value.as_i64()),
+        equip_def
+            .row
+            .get("socket_max")
+            .and_then(|value| value.as_i64()),
         resolved_quality_rank,
     );
     if socket_max <= 0 {
         return Ok(inventory_socket_failure("该装备无可用镶嵌孔"));
     }
     let gem_slot_types = equip_def.row.get("gem_slot_types").cloned();
-    let current_entries = parse_socketed_gems(equip_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")? , &defs);
+    let current_entries = parse_socketed_gems(
+        equip_row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?,
+        &defs,
+    );
 
     let slot = if let Some(slot) = requested_slot {
         if slot >= socket_max {
@@ -4371,19 +5271,31 @@ async fn socket_inventory_gem_tx(
     let Some(gem_row) = gem_row else {
         return Ok(inventory_socket_failure("宝石不存在"));
     };
-    if gem_row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false) {
+    if gem_row
+        .try_get::<Option<bool>, _>("locked")?
+        .unwrap_or(false)
+    {
         return Ok(inventory_socket_failure("宝石已锁定"));
     }
-    let gem_location = gem_row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let gem_location = gem_row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if !matches!(gem_location.as_str(), "bag" | "warehouse") {
         return Ok(inventory_socket_failure("宝石当前位置不可消耗"));
     }
-    if gem_row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default() < 1 {
+    if gem_row
+        .try_get::<Option<i32>, _>("qty")?
+        .map(i64::from)
+        .unwrap_or_default()
+        < 1
+    {
         return Ok(inventory_socket_failure("宝石数量不足"));
     }
     let gem_snapshot = map_item_instance_snapshot_from_row(&gem_row)?;
     let gem_item_def_id = gem_row.try_get::<String, _>("item_def_id")?;
-    let gem_def = defs.get(gem_item_def_id.as_str()).ok_or_else(|| AppError::config("宝石不存在"))?;
+    let gem_def = defs
+        .get(gem_item_def_id.as_str())
+        .ok_or_else(|| AppError::config("宝石不存在"))?;
     if gem_def.row.get("category").and_then(|value| value.as_str()) != Some("gem") {
         return Ok(inventory_socket_failure("该物品不是宝石"));
     }
@@ -4391,31 +5303,54 @@ async fn socket_inventory_gem_tx(
     if gem_effects.is_empty() {
         return Ok(inventory_socket_failure("该宝石不可镶嵌"));
     }
-    let gem_type = resolve_gem_type_from_item_definition(gem_def.row.get("sub_category").and_then(|value| value.as_str()), &gem_effects);
+    let gem_type = resolve_gem_type_from_item_definition(
+        gem_def
+            .row
+            .get("sub_category")
+            .and_then(|value| value.as_str()),
+        &gem_effects,
+    );
     if !is_gem_type_allowed_in_slot(gem_slot_types.as_ref(), slot, gem_type.as_str()) {
         return Ok(inventory_socket_failure("该宝石类型与孔位不匹配"));
     }
-    if current_entries.iter().any(|entry| entry.item_def_id == gem_item_def_id && entry.slot != slot) {
+    if current_entries
+        .iter()
+        .any(|entry| entry.item_def_id == gem_item_def_id && entry.slot != slot)
+    {
         return Ok(inventory_socket_failure("同一件装备不可镶嵌相同宝石"));
     }
-    let replaced_gem = current_entries.iter().find(|entry| entry.slot == slot).cloned();
+    let replaced_gem = current_entries
+        .iter()
+        .find(|entry| entry.slot == slot)
+        .cloned();
     let silver_cost = if replaced_gem.is_some() { 100 } else { 50 };
 
-    let character_row = state.database.fetch_optional(
-        "SELECT silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(character_id),
-    ).await?;
+    let character_row = state
+        .database
+        .fetch_optional(
+            "SELECT silver FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(character_row) = character_row else {
         return Err(AppError::config("角色不存在"));
     };
-    let current_silver = character_row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default();
+    let current_silver = character_row
+        .try_get::<Option<i64>, _>("silver")?
+        .unwrap_or_default();
     if current_silver < silver_cost {
-        return Ok(inventory_socket_failure(&format!("银两不足，需要{}", silver_cost)));
+        return Ok(inventory_socket_failure(&format!(
+            "银两不足，需要{}",
+            silver_cost
+        )));
     }
-    state.database.execute(
-        "UPDATE characters SET silver = silver - $1, updated_at = NOW() WHERE id = $2",
-        |q| q.bind(silver_cost).bind(character_id),
-    ).await?;
+    state
+        .database
+        .execute(
+            "UPDATE characters SET silver = silver - $1, updated_at = NOW() WHERE id = $2",
+            |q| q.bind(silver_cost).bind(character_id),
+        )
+        .await?;
 
     let next_entries = upsert_socket_entry(
         &current_entries,
@@ -4424,11 +5359,20 @@ async fn socket_inventory_gem_tx(
             item_def_id: gem_item_def_id.clone(),
             gem_type: gem_type.clone(),
             effects: gem_effects.clone(),
-            name: gem_def.row.get("name").and_then(|value| value.as_str()).map(|value| value.to_string()),
-            icon: gem_def.row.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
+            name: gem_def
+                .row
+                .get("name")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string()),
+            icon: gem_def
+                .row
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string()),
         },
     );
-    let socketed_gems_json = serde_json::to_value(&next_entries).map_err(|error| AppError::config(format!("socketed_gems 序列化失败: {error}")))?;
+    let socketed_gems_json = serde_json::to_value(&next_entries)
+        .map_err(|error| AppError::config(format!("socketed_gems 序列化失败: {error}")))?;
     state.database.execute(
         "UPDATE item_instance SET socketed_gems = $1::jsonb, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
         |q| q.bind(socketed_gems_json).bind(item_instance_id).bind(character_id),
@@ -4444,19 +5388,34 @@ async fn socket_inventory_gem_tx(
 
     Ok(InventorySocketResponse {
         success: true,
-        message: if replaced_gem.is_some() { "替换镶嵌成功".to_string() } else { "镶嵌成功".to_string() },
+        message: if replaced_gem.is_some() {
+            "替换镶嵌成功".to_string()
+        } else {
+            "镶嵌成功".to_string()
+        },
         data: Some(InventorySocketResponseData {
             socketed_gems: next_entries,
             socket_max,
             slot,
             gem: InventorySocketGemDto {
                 item_def_id: gem_item_def_id,
-                name: gem_def.row.get("name").and_then(|value| value.as_str()).unwrap_or("宝石").to_string(),
-                icon: gem_def.row.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
+                name: gem_def
+                    .row
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("宝石")
+                    .to_string(),
+                icon: gem_def
+                    .row
+                    .get("icon")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
                 gem_type,
             },
             replaced_gem,
-            costs: Some(InventorySocketCostDto { silver: silver_cost }),
+            costs: Some(InventorySocketCostDto {
+                silver: silver_cost,
+            }),
             character,
         }),
     })
@@ -4483,7 +5442,9 @@ fn inventory_socket_failure(message: &str) -> InventorySocketResponse {
     }
 }
 
-fn parse_socket_effects_from_item_effect_defs(effect_defs_raw: Option<&serde_json::Value>) -> Vec<InventorySocketEffectDto> {
+fn parse_socket_effects_from_item_effect_defs(
+    effect_defs_raw: Option<&serde_json::Value>,
+) -> Vec<InventorySocketEffectDto> {
     effect_defs_raw
         .and_then(|value| value.as_array())
         .cloned()
@@ -4494,21 +5455,36 @@ fn parse_socket_effects_from_item_effect_defs(effect_defs_raw: Option<&serde_jso
         .filter_map(|effect| {
             let params = effect.get("params")?.as_object()?;
             let attr_key = params.get("attr_key")?.as_str()?.trim().to_string();
-            let value = params.get("value")?.as_f64().or_else(|| params.get("value")?.as_i64().map(|v| v as f64))?;
-            let apply_type = params.get("apply_type").and_then(|value| value.as_str()).unwrap_or("flat").trim().to_lowercase();
+            let value = params
+                .get("value")?
+                .as_f64()
+                .or_else(|| params.get("value")?.as_i64().map(|v| v as f64))?;
+            let apply_type = params
+                .get("apply_type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("flat")
+                .trim()
+                .to_lowercase();
             if attr_key.is_empty() || value == 0.0 {
                 return None;
             }
             Some(InventorySocketEffectDto {
                 attr_key,
                 value,
-                apply_type: if apply_type == "percent" || apply_type == "special" { apply_type } else { "flat".to_string() },
+                apply_type: if apply_type == "percent" || apply_type == "special" {
+                    apply_type
+                } else {
+                    "flat".to_string()
+                },
             })
         })
         .collect()
 }
 
-fn resolve_gem_type_from_item_definition(sub_category: Option<&str>, effects: &[InventorySocketEffectDto]) -> String {
+fn resolve_gem_type_from_item_definition(
+    sub_category: Option<&str>,
+    effects: &[InventorySocketEffectDto],
+) -> String {
     let sub_category = sub_category.unwrap_or_default().trim().to_lowercase();
     match sub_category.as_str() {
         "gem_attack" | "atk_jewel" => "attack".to_string(),
@@ -4520,43 +5496,112 @@ fn resolve_gem_type_from_item_definition(sub_category: Option<&str>, effects: &[
 }
 
 fn infer_gem_type_from_effects(effects: &[InventorySocketEffectDto]) -> String {
-    let attack_keys = ["wugong", "fagong", "mingzhong", "baoji", "baoshang", "zengshang"];
-    let defense_keys = ["wufang", "fafang", "shanbi", "kangbao", "jianbaoshang", "jianfantan"];
-    let survival_keys = ["qixue", "max_qixue", "lingqi", "max_lingqi", "zhiliao", "jianliao", "xixue", "sudu"];
+    let attack_keys = [
+        "wugong",
+        "fagong",
+        "mingzhong",
+        "baoji",
+        "baoshang",
+        "zengshang",
+    ];
+    let defense_keys = [
+        "wufang",
+        "fafang",
+        "shanbi",
+        "kangbao",
+        "jianbaoshang",
+        "jianfantan",
+    ];
+    let survival_keys = [
+        "qixue",
+        "max_qixue",
+        "lingqi",
+        "max_lingqi",
+        "zhiliao",
+        "jianliao",
+        "xixue",
+        "sudu",
+    ];
     let mut has_attack = false;
     let mut has_defense = false;
     let mut has_survival = false;
     for effect in effects {
         let key = effect.attr_key.as_str();
-        if attack_keys.contains(&key) { has_attack = true; }
-        else if defense_keys.contains(&key) { has_defense = true; }
-        else if survival_keys.contains(&key) { has_survival = true; }
+        if attack_keys.contains(&key) {
+            has_attack = true;
+        } else if defense_keys.contains(&key) {
+            has_defense = true;
+        } else if survival_keys.contains(&key) {
+            has_survival = true;
+        }
     }
     let count = has_attack as i32 + has_defense as i32 + has_survival as i32;
-    if count >= 2 { "all".to_string() }
-    else if has_attack { "attack".to_string() }
-    else if has_defense { "defense".to_string() }
-    else if has_survival { "survival".to_string() }
-    else { "utility".to_string() }
+    if count >= 2 {
+        "all".to_string()
+    } else if has_attack {
+        "attack".to_string()
+    } else if has_defense {
+        "defense".to_string()
+    } else if has_survival {
+        "survival".to_string()
+    } else {
+        "utility".to_string()
+    }
 }
 
-fn parse_socketed_gems(raw: Option<serde_json::Value>, defs: &BTreeMap<String, InventoryDefSeed>) -> Vec<InventorySocketedGemEntryDto> {
+fn parse_socketed_gems(
+    raw: Option<serde_json::Value>,
+    defs: &BTreeMap<String, InventoryDefSeed>,
+) -> Vec<InventorySocketedGemEntryDto> {
     let mut by_slot = BTreeMap::new();
-    for gem in raw.and_then(|value| value.as_array().cloned()).unwrap_or_default() {
-        let slot = gem.get("slot").and_then(|value| value.as_i64()).unwrap_or_default().max(0);
-        let item_def_id = gem.get("itemDefId").or_else(|| gem.get("item_def_id")).and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-        if item_def_id.is_empty() { continue; }
-        let Some(def) = defs.get(item_def_id.as_str()) else { continue; };
+    for gem in raw
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+    {
+        let slot = gem
+            .get("slot")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default()
+            .max(0);
+        let item_def_id = gem
+            .get("itemDefId")
+            .or_else(|| gem.get("item_def_id"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if item_def_id.is_empty() {
+            continue;
+        }
+        let Some(def) = defs.get(item_def_id.as_str()) else {
+            continue;
+        };
         let effects = parse_socket_effects_from_item_effect_defs(def.row.get("effect_defs"));
-        if effects.is_empty() { continue; }
-        by_slot.insert(slot, InventorySocketedGemEntryDto {
+        if effects.is_empty() {
+            continue;
+        }
+        by_slot.insert(
             slot,
-            item_def_id: item_def_id.clone(),
-            gem_type: resolve_gem_type_from_item_definition(def.row.get("sub_category").and_then(|value| value.as_str()), &effects),
-            effects,
-            name: def.row.get("name").and_then(|value| value.as_str()).map(|value| value.to_string()),
-            icon: def.row.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        });
+            InventorySocketedGemEntryDto {
+                slot,
+                item_def_id: item_def_id.clone(),
+                gem_type: resolve_gem_type_from_item_definition(
+                    def.row.get("sub_category").and_then(|value| value.as_str()),
+                    &effects,
+                ),
+                effects,
+                name: def
+                    .row
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
+                icon: def
+                    .row
+                    .get("icon")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string()),
+            },
+        );
     }
     by_slot.into_values().collect()
 }
@@ -4573,10 +5618,18 @@ fn resolve_socket_max(socket_max_raw: Option<i64>, resolved_quality_rank: i64) -
     }
 }
 
-fn is_gem_type_allowed_in_slot(gem_slot_types_raw: Option<&serde_json::Value>, slot: i64, gem_type_raw: &str) -> bool {
-    let Some(raw) = gem_slot_types_raw else { return true; };
+fn is_gem_type_allowed_in_slot(
+    gem_slot_types_raw: Option<&serde_json::Value>,
+    slot: i64,
+    gem_type_raw: &str,
+) -> bool {
+    let Some(raw) = gem_slot_types_raw else {
+        return true;
+    };
     let allowed = parse_allowed_gem_types(raw, slot);
-    if allowed.is_empty() { return true; }
+    if allowed.is_empty() {
+        return true;
+    }
     let gem_type = normalize_gem_type(gem_type_raw);
     allowed.contains(&"all".to_string()) || gem_type == "all" || allowed.contains(&gem_type)
 }
@@ -4584,18 +5637,33 @@ fn is_gem_type_allowed_in_slot(gem_slot_types_raw: Option<&serde_json::Value>, s
 fn parse_allowed_gem_types(raw: &serde_json::Value, slot: i64) -> Vec<String> {
     if let Some(array) = raw.as_array() {
         if let Some(slot_based) = array.get(slot as usize).and_then(|value| value.as_array()) {
-            return slot_based.iter().filter_map(|value| value.as_str().map(normalize_gem_type)).collect();
+            return slot_based
+                .iter()
+                .filter_map(|value| value.as_str().map(normalize_gem_type))
+                .collect();
         }
         if array.iter().all(|value| value.is_string()) {
-            return array.iter().filter_map(|value| value.as_str().map(normalize_gem_type)).collect();
+            return array
+                .iter()
+                .filter_map(|value| value.as_str().map(normalize_gem_type))
+                .collect();
         }
     }
     if let Some(object) = raw.as_object() {
-        if let Some(slot_array) = object.get(&slot.to_string()).and_then(|value| value.as_array()) {
-            return slot_array.iter().filter_map(|value| value.as_str().map(normalize_gem_type)).collect();
+        if let Some(slot_array) = object
+            .get(&slot.to_string())
+            .and_then(|value| value.as_array())
+        {
+            return slot_array
+                .iter()
+                .filter_map(|value| value.as_str().map(normalize_gem_type))
+                .collect();
         }
         if let Some(default_array) = object.get("default").and_then(|value| value.as_array()) {
-            return default_array.iter().filter_map(|value| value.as_str().map(normalize_gem_type)).collect();
+            return default_array
+                .iter()
+                .filter_map(|value| value.as_str().map(normalize_gem_type))
+                .collect();
         }
     }
     vec![]
@@ -4611,22 +5679,41 @@ fn normalize_gem_type(value: &str) -> String {
     }
 }
 
-fn get_next_available_socket_slot(entries: &[InventorySocketedGemEntryDto], socket_max: i64) -> Option<i64> {
+fn get_next_available_socket_slot(
+    entries: &[InventorySocketedGemEntryDto],
+    socket_max: i64,
+) -> Option<i64> {
     (0..socket_max).find(|slot| !entries.iter().any(|entry| entry.slot == *slot))
 }
 
-fn upsert_socket_entry(entries: &[InventorySocketedGemEntryDto], next_entry: InventorySocketedGemEntryDto) -> Vec<InventorySocketedGemEntryDto> {
-    let mut by_slot = entries.iter().map(|entry| (entry.slot, entry.clone())).collect::<BTreeMap<_, _>>();
+fn upsert_socket_entry(
+    entries: &[InventorySocketedGemEntryDto],
+    next_entry: InventorySocketedGemEntryDto,
+) -> Vec<InventorySocketedGemEntryDto> {
+    let mut by_slot = entries
+        .iter()
+        .map(|entry| (entry.slot, entry.clone()))
+        .collect::<BTreeMap<_, _>>();
     by_slot.insert(next_entry.slot, next_entry);
     by_slot.into_values().collect()
 }
 
-async fn load_forge_house_discount_rate(state: &AppState, character_id: i64) -> Result<f64, AppError> {
+async fn load_forge_house_discount_rate(
+    state: &AppState,
+    character_id: i64,
+) -> Result<f64, AppError> {
     let row = state.database.fetch_optional(
         "SELECT sb.level FROM sect_member sm LEFT JOIN sect_building sb ON sb.sect_id = sm.sect_id AND sb.building_type = 'forge_house' WHERE sm.character_id = $1 LIMIT 1",
         |q| q.bind(character_id),
     ).await?;
-    let level = row.and_then(|row| row.try_get::<Option<i32>, _>("level").ok().flatten().map(i64::from)).unwrap_or_default();
+    let level = row
+        .and_then(|row| {
+            row.try_get::<Option<i32>, _>("level")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
+        .unwrap_or_default();
     Ok(((level as f64) * 0.005).clamp(0.0, 0.25))
 }
 
@@ -4681,9 +5768,14 @@ fn build_discounted_growth_cost_plan(
     discount_rate: f64,
     defs: &BTreeMap<String, InventoryDefSeed>,
 ) -> Result<InventoryGrowthCostPlanDto, AppError> {
-    let material_item_def_id = if mode == "enhance" && target_level <= 10 { "enhance-001" } else { "enhance-002" };
+    let material_item_def_id = if mode == "enhance" && target_level <= 10 {
+        "enhance-001"
+    } else {
+        "enhance-002"
+    };
     let material_qty = (target_level.max(1) * equip_req_realm_rank.max(1)) as f64;
-    let silver_cost = (125.0 * target_level.max(1) as f64 * equip_req_realm_rank.max(1) as f64).floor();
+    let silver_cost =
+        (125.0 * target_level.max(1) as f64 * equip_req_realm_rank.max(1) as f64).floor();
     let spirit_stone_cost = 20.0 * target_level.max(1) as f64 * equip_req_realm_rank.max(1) as f64;
     let multiplier = 1.0 - discount_rate.clamp(0.0, 1.0);
     let material_name = defs
@@ -4695,23 +5787,35 @@ fn build_discounted_growth_cost_plan(
     Ok(InventoryGrowthCostPlanDto {
         material_item_def_id: material_item_def_id.to_string(),
         material_name,
-        material_qty: if material_qty <= 0.0 { 0 } else { (material_qty * multiplier).floor().max(1.0) as i64 },
+        material_qty: if material_qty <= 0.0 {
+            0
+        } else {
+            (material_qty * multiplier).floor().max(1.0) as i64
+        },
         silver_cost: (silver_cost * multiplier).floor().max(0.0) as i64,
         spirit_stone_cost: (spirit_stone_cost * multiplier).floor().max(0.0) as i64,
     })
 }
 
-async fn load_gem_wallet(state: &AppState, character_id: i64) -> Result<GemCharacterWalletDto, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT silver, spirit_stones FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
+async fn load_gem_wallet(
+    state: &AppState,
+    character_id: i64,
+) -> Result<GemCharacterWalletDto, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT silver, spirit_stones FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(row) = row else {
         return Err(AppError::config("角色不存在"));
     };
     Ok(GemCharacterWalletDto {
         silver: row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default(),
-        spirit_stones: row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default(),
+        spirit_stones: row
+            .try_get::<Option<i64>, _>("spirit_stones")?
+            .unwrap_or_default(),
     })
 }
 
@@ -4726,23 +5830,38 @@ async fn load_owned_item_qty_map(
     Ok(rows
         .into_iter()
         .filter_map(|row| {
-            let id = row.try_get::<Option<String>, _>("item_def_id").ok().flatten()?;
-            let qty = row.try_get::<Option<i64>, _>("qty").ok().flatten().unwrap_or_default();
+            let id = row
+                .try_get::<Option<String>, _>("item_def_id")
+                .ok()
+                .flatten()?;
+            let qty = row
+                .try_get::<Option<i64>, _>("qty")
+                .ok()
+                .flatten()
+                .unwrap_or_default();
             Some((id, qty))
         })
         .collect())
 }
 
 fn load_gem_synthesis_recipe_rows() -> Result<Vec<GemRecipeSeedRow>, AppError> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/gem_synthesis_recipe.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../server/src/data/seeds/gem_synthesis_recipe.json");
     let content = fs::read_to_string(&path)
         .map_err(|error| AppError::config(format!("failed to read {}: {error}", path.display())))?;
-    let payload: InventoryRecipeFile = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse {}: {error}", path.display())))?;
+    let payload: InventoryRecipeFile = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse {}: {error}", path.display()))
+    })?;
     let defs = load_inventory_def_map()?;
     let mut rows = Vec::new();
     for row in payload.recipes {
-        if row.get("recipe_type").and_then(|value| value.as_str()).unwrap_or_default().trim() != "gem_synthesis" {
+        if row
+            .get("recipe_type")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim()
+            != "gem_synthesis"
+        {
             continue;
         }
         let input = row
@@ -4765,20 +5884,43 @@ fn load_gem_synthesis_recipe_rows() -> Result<Vec<GemRecipeSeedRow>, AppError> {
         if input_item_def_id.is_empty() || output_item_def_id.is_empty() {
             continue;
         }
-        let input_def = defs.get(input_item_def_id.as_str()).ok_or_else(|| AppError::config("宝石配方输入定义不存在"))?;
-        let output_def = defs.get(output_item_def_id.as_str()).ok_or_else(|| AppError::config("宝石配方产物定义不存在"))?;
-        let (input_gem_type, input_series_key, input_level) = parse_gem_item_series_identity(&input_item_def_id)
-            .ok_or_else(|| AppError::config("宝石配方输入定义ID无效"))?;
-        let (output_gem_type, output_series_key, output_level) = parse_gem_item_series_identity(&output_item_def_id)
-            .ok_or_else(|| AppError::config("宝石配方产物定义ID无效"))?;
+        let input_def = defs
+            .get(input_item_def_id.as_str())
+            .ok_or_else(|| AppError::config("宝石配方输入定义不存在"))?;
+        let output_def = defs
+            .get(output_item_def_id.as_str())
+            .ok_or_else(|| AppError::config("宝石配方产物定义不存在"))?;
+        let (input_gem_type, input_series_key, input_level) =
+            parse_gem_item_series_identity(&input_item_def_id)
+                .ok_or_else(|| AppError::config("宝石配方输入定义ID无效"))?;
+        let (output_gem_type, output_series_key, output_level) =
+            parse_gem_item_series_identity(&output_item_def_id)
+                .ok_or_else(|| AppError::config("宝石配方产物定义ID无效"))?;
         if input_gem_type != output_gem_type || input_series_key != output_series_key {
             return Err(AppError::config("宝石配方输入输出子类型不一致"));
         }
         rows.push(GemRecipeSeedRow {
-            id: row.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string(),
-            name: row.get("name").and_then(|value| value.as_str()).unwrap_or_default().to_string(),
-            from_level: input_def.row.get("gem_level").and_then(|value| value.as_i64()).unwrap_or(input_level),
-            to_level: output_def.row.get("gem_level").and_then(|value| value.as_i64()).unwrap_or(output_level),
+            id: row
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            name: row
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            from_level: input_def
+                .row
+                .get("gem_level")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(input_level),
+            to_level: output_def
+                .row
+                .get("gem_level")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(output_level),
             gem_type: input_gem_type,
             series_key: input_series_key,
             input_item_def_id,
@@ -4787,7 +5929,10 @@ fn load_gem_synthesis_recipe_rows() -> Result<Vec<GemRecipeSeedRow>, AppError> {
             output_qty: parse_recipe_i64(row.get("product_qty")).max(1),
             cost_silver: parse_recipe_i64(row.get("cost_silver")),
             cost_spirit_stones: parse_recipe_i64(row.get("cost_spirit_stones")),
-            success_rate: row.get("success_rate").and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64))).unwrap_or(1.0),
+            success_rate: row
+                .get("success_rate")
+                .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))
+                .unwrap_or(1.0),
         });
     }
     Ok(rows)
@@ -4801,9 +5946,16 @@ fn build_gem_synthesis_recipes(
     let mut recipes = Vec::new();
     let gem_recipe_rows = load_gem_synthesis_recipe_rows()?;
     for row in gem_recipe_rows {
-        let from_seed = defs.get(row.input_item_def_id.as_str()).ok_or_else(|| AppError::config("宝石配方输入定义不存在"))?;
-        let to_seed = defs.get(row.output_item_def_id.as_str()).ok_or_else(|| AppError::config("宝石配方产物定义不存在"))?;
-        let owned = owned_qty.get(row.input_item_def_id.as_str()).copied().unwrap_or_default();
+        let from_seed = defs
+            .get(row.input_item_def_id.as_str())
+            .ok_or_else(|| AppError::config("宝石配方输入定义不存在"))?;
+        let to_seed = defs
+            .get(row.output_item_def_id.as_str())
+            .ok_or_else(|| AppError::config("宝石配方产物定义不存在"))?;
+        let owned = owned_qty
+            .get(row.input_item_def_id.as_str())
+            .copied()
+            .unwrap_or_default();
         let max_times = calc_max_synthesize_times(
             owned,
             row.input_qty,
@@ -4821,15 +5973,33 @@ fn build_gem_synthesis_recipes(
             to_level: row.to_level,
             input: GemItemRefDto {
                 item_def_id: row.input_item_def_id.clone(),
-                name: from_seed.row.get("name").and_then(|v| v.as_str()).unwrap_or(row.input_item_def_id.as_str()).to_string(),
-                icon: from_seed.row.get("icon").and_then(|v| v.as_str()).map(|v| v.to_string()),
+                name: from_seed
+                    .row
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(row.input_item_def_id.as_str())
+                    .to_string(),
+                icon: from_seed
+                    .row
+                    .get("icon")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string()),
                 qty: row.input_qty,
                 owned,
             },
             output: GemItemTargetDto {
                 item_def_id: row.output_item_def_id.clone(),
-                name: to_seed.row.get("name").and_then(|v| v.as_str()).unwrap_or(row.output_item_def_id.as_str()).to_string(),
-                icon: to_seed.row.get("icon").and_then(|v| v.as_str()).map(|v| v.to_string()),
+                name: to_seed
+                    .row
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(row.output_item_def_id.as_str())
+                    .to_string(),
+                icon: to_seed
+                    .row
+                    .get("icon")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.to_string()),
                 qty: row.output_qty,
             },
             costs: GemCostDto {
@@ -4841,7 +6011,12 @@ fn build_gem_synthesis_recipes(
             can_synthesize: max_times > 0,
         });
     }
-    recipes.sort_by(|a, b| a.gem_type.cmp(&b.gem_type).then(a.series_key.cmp(&b.series_key)).then(a.from_level.cmp(&b.from_level)));
+    recipes.sort_by(|a, b| {
+        a.gem_type
+            .cmp(&b.gem_type)
+            .then(a.series_key.cmp(&b.series_key))
+            .then(a.from_level.cmp(&b.from_level))
+    });
     Ok(recipes)
 }
 
@@ -4853,7 +6028,10 @@ fn build_gem_convert_spirit_cost_map() -> Result<BTreeMap<i64, i64>, AppError> {
         }
         match costs.get(&row.to_level) {
             Some(existing) if *existing != row.cost_spirit_stones => {
-                return Err(AppError::config(format!("宝石转换配置冲突：{}级灵石消耗不一致", row.to_level)));
+                return Err(AppError::config(format!(
+                    "宝石转换配置冲突：{}级灵石消耗不一致",
+                    row.to_level
+                )));
             }
             _ => {
                 costs.insert(row.to_level, row.cost_spirit_stones);
@@ -4863,7 +6041,11 @@ fn build_gem_convert_spirit_cost_map() -> Result<BTreeMap<i64, i64>, AppError> {
     Ok(costs)
 }
 
-fn roll_gem_convert_outputs_with_random_fn<F>(candidate_item_def_ids: &[String], times: i64, mut next_index: F) -> BTreeMap<String, i64>
+fn roll_gem_convert_outputs_with_random_fn<F>(
+    candidate_item_def_ids: &[String],
+    times: i64,
+    mut next_index: F,
+) -> BTreeMap<String, i64>
 where
     F: FnMut(usize) -> usize,
 {
@@ -4872,7 +6054,8 @@ where
         return produced_counts;
     }
     for _ in 0..times {
-        let idx = pick_random_index_with_random_fn(candidate_item_def_ids.len(), |len| next_index(len));
+        let idx =
+            pick_random_index_with_random_fn(candidate_item_def_ids.len(), |len| next_index(len));
         if let Some(item_def_id) = candidate_item_def_ids.get(idx) {
             *produced_counts.entry(item_def_id.clone()).or_insert(0) += 1;
         }
@@ -4892,13 +6075,34 @@ async fn synthesize_inventory_gem_tx(
     let wallet = load_gem_wallet(state, character_id).await?;
     let owned_qty = load_owned_item_qty_map(state, character_id).await?;
     let recipes = build_gem_synthesis_recipes(&defs, &owned_qty, &wallet)?;
-    let recipe = recipes.into_iter().find(|recipe| recipe.recipe_id == recipe_id).ok_or_else(|| AppError::config("配方不存在"))?;
+    let recipe = recipes
+        .into_iter()
+        .find(|recipe| recipe.recipe_id == recipe_id)
+        .ok_or_else(|| AppError::config("配方不存在"))?;
     if recipe.max_synthesize_times < times {
-        return Ok(GemSynthesisExecuteResponse { success: false, message: build_gem_synthesize_max_times_message(recipe.max_synthesize_times), data: None });
+        return Ok(GemSynthesisExecuteResponse {
+            success: false,
+            message: build_gem_synthesize_max_times_message(recipe.max_synthesize_times),
+            data: None,
+        });
     }
 
-    consume_inventory_material_by_def_id(state, user_id, character_id, &recipe.input.item_def_id, recipe.input.qty * times).await?;
-    consume_inventory_character_currencies(state, character_id, recipe.costs.silver * times, recipe.costs.spirit_stones * times, 0).await?;
+    consume_inventory_material_by_def_id(
+        state,
+        user_id,
+        character_id,
+        &recipe.input.item_def_id,
+        recipe.input.qty * times,
+    )
+    .await?;
+    consume_inventory_character_currencies(
+        state,
+        character_id,
+        recipe.costs.silver * times,
+        recipe.costs.spirit_stones * times,
+        0,
+    )
+    .await?;
 
     let mut success_count = 0_i64;
     let mut fail_count = 0_i64;
@@ -4921,15 +6125,24 @@ async fn synthesize_inventory_gem_tx(
             Some(recipe.recipe_id.as_str()),
             0,
             &reward_item_pairs,
-        ).await?;
+        )
+        .await?;
         Some(InventoryCraftExecuteProducedDto {
             item_def_id: recipe.output.item_def_id.clone(),
             item_name: recipe.output.name.clone(),
             item_icon: recipe.output.icon.clone(),
             qty: total_qty,
-            item_ids: if buffered { vec![] } else {
-                let product_def = defs.get(recipe.output.item_def_id.as_str()).ok_or_else(|| AppError::config("产物定义不存在"))?;
-                let bind_type = product_def.row.get("bind_type").and_then(|v| v.as_str()).unwrap_or("none");
+            item_ids: if buffered {
+                vec![]
+            } else {
+                let product_def = defs
+                    .get(recipe.output.item_def_id.as_str())
+                    .ok_or_else(|| AppError::config("产物定义不存在"))?;
+                let bind_type = product_def
+                    .row
+                    .get("bind_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("none");
                 let produced_row = state.database.fetch_one(
                     "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'gem_synthesize', $6) RETURNING id",
                     |q| q.bind(user_id).bind(character_id).bind(recipe.output.item_def_id.as_str()).bind(total_qty).bind(bind_type).bind(recipe.recipe_id.as_str()),
@@ -4943,7 +6156,11 @@ async fn synthesize_inventory_gem_tx(
     let character = load_gem_wallet(state, character_id).await?;
     Ok(GemSynthesisExecuteResponse {
         success: true,
-        message: if success_count > 0 { "宝石合成完成".to_string() } else { "宝石合成失败".to_string() },
+        message: if success_count > 0 {
+            "宝石合成完成".to_string()
+        } else {
+            "宝石合成失败".to_string()
+        },
         data: Some(GemSynthesisExecuteData {
             recipe_id: recipe.recipe_id,
             gem_type: recipe.gem_type,
@@ -4977,23 +6194,45 @@ async fn synthesize_inventory_gem_batch_tx(
     acquire_inventory_mutex(state, character_id).await?;
     let defs = load_inventory_def_map()?;
     let mut wallet = load_gem_wallet(state, character_id).await?;
-    let mut recipes = build_gem_synthesis_recipes(&defs, &load_owned_item_qty_map(state, character_id).await?, &wallet)?;
+    let mut recipes = build_gem_synthesis_recipes(
+        &defs,
+        &load_owned_item_qty_map(state, character_id).await?,
+        &wallet,
+    )?;
     recipes.retain(|recipe| recipe.gem_type == normalize_gem_type(gem_type));
     if recipes.is_empty() {
-        return Ok(GemSynthesisBatchResponse { success: false, message: "宝石配方不存在".to_string(), data: None });
+        return Ok(GemSynthesisBatchResponse {
+            success: false,
+            message: "宝石配方不存在".to_string(),
+            data: None,
+        });
     }
 
-    let mut series_keys = recipes.iter().map(|recipe| recipe.series_key.clone()).collect::<Vec<_>>();
+    let mut series_keys = recipes
+        .iter()
+        .map(|recipe| recipe.series_key.clone())
+        .collect::<Vec<_>>();
     series_keys.sort();
     series_keys.dedup();
-    let selected_series_key = if let Some(series_key) = requested_series_key.map(str::trim).filter(|value| !value.is_empty()) {
+    let selected_series_key = if let Some(series_key) = requested_series_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         let key = series_key.to_lowercase();
         if !series_keys.iter().any(|value| value == &key) {
-            return Ok(GemSynthesisBatchResponse { success: false, message: "宝石子类型参数错误".to_string(), data: None });
+            return Ok(GemSynthesisBatchResponse {
+                success: false,
+                message: "宝石子类型参数错误".to_string(),
+                data: None,
+            });
         }
         key
     } else if series_keys.len() > 1 {
-        return Ok(GemSynthesisBatchResponse { success: false, message: "该类型包含多个子类型，请先选择具体宝石后再批量合成".to_string(), data: None });
+        return Ok(GemSynthesisBatchResponse {
+            success: false,
+            message: "该类型包含多个子类型，请先选择具体宝石后再批量合成".to_string(),
+            data: None,
+        });
     } else {
         series_keys.first().cloned().unwrap_or_default()
     };
@@ -5014,13 +6253,37 @@ async fn synthesize_inventory_gem_batch_tx(
             continue;
         };
         let owned_qty = load_owned_item_qty_map(state, character_id).await?;
-        let owned_input_qty = owned_qty.get(recipe.input.item_def_id.as_str()).copied().unwrap_or_default();
-        let max_times = calc_max_synthesize_times(owned_input_qty, recipe.input.qty, wallet.silver, wallet.spirit_stones, recipe.costs.silver, recipe.costs.spirit_stones);
+        let owned_input_qty = owned_qty
+            .get(recipe.input.item_def_id.as_str())
+            .copied()
+            .unwrap_or_default();
+        let max_times = calc_max_synthesize_times(
+            owned_input_qty,
+            recipe.input.qty,
+            wallet.silver,
+            wallet.spirit_stones,
+            recipe.costs.silver,
+            recipe.costs.spirit_stones,
+        );
         if max_times <= 0 {
             continue;
         }
-        consume_inventory_material_by_def_id(state, user_id, character_id, &recipe.input.item_def_id, recipe.input.qty * max_times).await?;
-        consume_inventory_character_currencies(state, character_id, recipe.costs.silver * max_times, recipe.costs.spirit_stones * max_times, 0).await?;
+        consume_inventory_material_by_def_id(
+            state,
+            user_id,
+            character_id,
+            &recipe.input.item_def_id,
+            recipe.input.qty * max_times,
+        )
+        .await?;
+        consume_inventory_character_currencies(
+            state,
+            character_id,
+            recipe.costs.silver * max_times,
+            recipe.costs.spirit_stones * max_times,
+            0,
+        )
+        .await?;
         wallet.silver -= recipe.costs.silver * max_times;
         wallet.spirit_stones -= recipe.costs.spirit_stones * max_times;
         total_spent_silver += recipe.costs.silver * max_times;
@@ -5037,7 +6300,9 @@ async fn synthesize_inventory_gem_batch_tx(
         }
         let produce_qty = recipe.output.qty * success_count;
         if produce_qty > 0 {
-            *pending_grants.entry(recipe.output.item_def_id.clone()).or_insert(0) += produce_qty;
+            *pending_grants
+                .entry(recipe.output.item_def_id.clone())
+                .or_insert(0) += produce_qty;
         }
         steps.push(GemSynthesisBatchStepDto {
             recipe_id: recipe.recipe_id.clone(),
@@ -5067,10 +6332,17 @@ async fn synthesize_inventory_gem_batch_tx(
     }
 
     if steps.is_empty() {
-        return Ok(GemSynthesisBatchResponse { success: false, message: "材料或货币不足，无法批量合成".to_string(), data: None });
+        return Ok(GemSynthesisBatchResponse {
+            success: false,
+            message: "材料或货币不足，无法批量合成".to_string(),
+            data: None,
+        });
     }
 
-    let pending_reward_pairs = pending_grants.iter().map(|(item_def_id, qty)| (item_def_id.clone(), *qty)).collect::<Vec<_>>();
+    let pending_reward_pairs = pending_grants
+        .iter()
+        .map(|(item_def_id, qty)| (item_def_id.clone(), *qty))
+        .collect::<Vec<_>>();
     let buffered_batch_grants = buffer_inventory_item_reward_deltas(
         state,
         user_id,
@@ -5079,14 +6351,21 @@ async fn synthesize_inventory_gem_batch_tx(
         Some(selected_series_key.as_str()),
         0,
         &pending_reward_pairs,
-    ).await?;
+    )
+    .await?;
     for (item_def_id, qty) in pending_grants {
         if qty <= 0 {
             continue;
         }
         if !buffered_batch_grants {
-            let product_def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("产物定义不存在"))?;
-            let bind_type = product_def.row.get("bind_type").and_then(|v| v.as_str()).unwrap_or("none");
+            let product_def = defs
+                .get(item_def_id.as_str())
+                .ok_or_else(|| AppError::config("产物定义不存在"))?;
+            let bind_type = product_def
+                .row
+                .get("bind_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("none");
             state.database.fetch_one(
                 "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'gem_synthesize_batch', $6) RETURNING id",
                 |q| q.bind(user_id).bind(character_id).bind(item_def_id.as_str()).bind(qty).bind(bind_type).bind(selected_series_key.as_str()),
@@ -5101,7 +6380,10 @@ async fn synthesize_inventory_gem_batch_tx(
     } else if total_fail <= 0 {
         "批量合成成功".to_string()
     } else {
-        format!("批量合成完成（成功{}次，失败{}次）", total_success, total_fail)
+        format!(
+            "批量合成完成（成功{}次，失败{}次）",
+            total_success, total_fail
+        )
     };
     Ok(GemSynthesisBatchResponse {
         success: true,
@@ -5129,10 +6411,25 @@ fn calc_max_synthesize_times(
     silver_cost: i64,
     spirit_stone_cost: i64,
 ) -> i64 {
-    let by_items = if need_input_qty > 0 { owned_input_qty / need_input_qty } else { 0 };
-    let by_silver = if silver_cost > 0 { silver / silver_cost } else { i64::MAX / 4 };
-    let by_spirit = if spirit_stone_cost > 0 { spirit_stones / spirit_stone_cost } else { i64::MAX / 4 };
-    by_items.min(by_silver).min(by_spirit).clamp(0, GEM_EXECUTE_MAX_TIMES)
+    let by_items = if need_input_qty > 0 {
+        owned_input_qty / need_input_qty
+    } else {
+        0
+    };
+    let by_silver = if silver_cost > 0 {
+        silver / silver_cost
+    } else {
+        i64::MAX / 4
+    };
+    let by_spirit = if spirit_stone_cost > 0 {
+        spirit_stones / spirit_stone_cost
+    } else {
+        i64::MAX / 4
+    };
+    by_items
+        .min(by_silver)
+        .min(by_spirit)
+        .clamp(0, GEM_EXECUTE_MAX_TIMES)
 }
 
 async fn convert_inventory_gem_tx(
@@ -5150,9 +6447,17 @@ async fn convert_inventory_gem_tx(
         "SELECT id, item_def_id, qty, locked, location FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2) FOR UPDATE",
         |q| q.bind(character_id).bind(&selected_gem_item_ids),
     ).await?;
-    let distinct_selected_count = selected_gem_item_ids.iter().copied().collect::<BTreeSet<_>>().len();
+    let distinct_selected_count = selected_gem_item_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .len();
     if rows.len() != distinct_selected_count {
-        return Ok(GemConvertExecuteResponse { success: false, message: "所选宝石不存在".to_string(), data: None });
+        return Ok(GemConvertExecuteResponse {
+            success: false,
+            message: "所选宝石不存在".to_string(),
+            data: None,
+        });
     }
     let mut input_level: Option<i64> = None;
     let mut consume_by_id = BTreeMap::new();
@@ -5160,26 +6465,57 @@ async fn convert_inventory_gem_tx(
     for row in rows {
         let item_id = row.try_get::<i64, _>("id")?;
         let item_def_id = row.try_get::<String, _>("item_def_id")?;
-    let qty = row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default();
+        let qty = row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default();
         let locked = row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false);
-        let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+        let location = row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default();
         if let Err(message) = validate_gem_convert_item_state(locked, location.as_str()) {
-            return Ok(GemConvertExecuteResponse { success: false, message: message.to_string(), data: None });
+            return Ok(GemConvertExecuteResponse {
+                success: false,
+                message: message.to_string(),
+                data: None,
+            });
         }
         if qty <= 0 {
-            return Ok(GemConvertExecuteResponse { success: false, message: "所选宝石数量不足".to_string(), data: None });
+            return Ok(GemConvertExecuteResponse {
+                success: false,
+                message: "所选宝石数量不足".to_string(),
+                data: None,
+            });
         }
-        let def = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("所选宝石不存在"))?;
+        let def = defs
+            .get(item_def_id.as_str())
+            .ok_or_else(|| AppError::config("所选宝石不存在"))?;
         if def.row.get("category").and_then(|v| v.as_str()) != Some("gem") {
-            return Ok(GemConvertExecuteResponse { success: false, message: "所选物品不是宝石".to_string(), data: None });
+            return Ok(GemConvertExecuteResponse {
+                success: false,
+                message: "所选物品不是宝石".to_string(),
+                data: None,
+            });
         }
-        let level = def.row.get("gem_level").and_then(|v| v.as_i64()).unwrap_or_default();
+        let level = def
+            .row
+            .get("gem_level")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_default();
         if !(2..=10).contains(&level) {
-            return Ok(GemConvertExecuteResponse { success: false, message: "所选宝石等级不可转换".to_string(), data: None });
+            return Ok(GemConvertExecuteResponse {
+                success: false,
+                message: "所选宝石等级不可转换".to_string(),
+                data: None,
+            });
         }
         if let Some(current) = input_level {
             if current != level {
-                return Ok(GemConvertExecuteResponse { success: false, message: "请选择2个同等级宝石".to_string(), data: None });
+                return Ok(GemConvertExecuteResponse {
+                    success: false,
+                    message: "请选择2个同等级宝石".to_string(),
+                    data: None,
+                });
             }
         } else {
             input_level = Some(level);
@@ -5189,16 +6525,24 @@ async fn convert_inventory_gem_tx(
     }
     let input_level = input_level.unwrap_or(0);
     if !has_sufficient_selected_gem_qty(&qty_by_id, &consume_by_id) {
-        return Ok(GemConvertExecuteResponse { success: false, message: "所选宝石数量不足".to_string(), data: None });
+        return Ok(GemConvertExecuteResponse {
+            success: false,
+            message: "所选宝石数量不足".to_string(),
+            data: None,
+        });
     }
     let output_level = input_level - 1;
     let cost_spirit_stones = spirit_cost_by_input_level
         .get(&input_level)
         .copied()
-        .ok_or_else(|| AppError::config(format!("宝石转换配置缺失：{}级灵石消耗未定义", input_level)))?;
+        .ok_or_else(|| {
+            AppError::config(format!("宝石转换配置缺失：{}级灵石消耗未定义", input_level))
+        })?;
     let max_by_selected_items = consume_by_id
         .iter()
-        .map(|(item_id, per_time_qty)| qty_by_id.get(item_id).copied().unwrap_or_default() / (*per_time_qty).max(1))
+        .map(|(item_id, per_time_qty)| {
+            qty_by_id.get(item_id).copied().unwrap_or_default() / (*per_time_qty).max(1)
+        })
         .min()
         .unwrap_or_default();
     let max_by_spirit = if cost_spirit_stones > 0 {
@@ -5208,32 +6552,65 @@ async fn convert_inventory_gem_tx(
     };
     let max_convert_times = max_by_selected_items.min(max_by_spirit).max(0);
     if max_convert_times <= 0 {
-        return Ok(GemConvertExecuteResponse { success: false, message: "所选宝石或灵石不足".to_string(), data: None });
+        return Ok(GemConvertExecuteResponse {
+            success: false,
+            message: "所选宝石或灵石不足".to_string(),
+            data: None,
+        });
     }
     if times > max_convert_times {
-        return Ok(GemConvertExecuteResponse { success: false, message: build_gem_convert_max_times_message(max_convert_times), data: None });
+        return Ok(GemConvertExecuteResponse {
+            success: false,
+            message: build_gem_convert_max_times_message(max_convert_times),
+            data: None,
+        });
     }
     let total_spirit_stones = cost_spirit_stones * times;
     let candidate_defs = defs
         .iter()
         .filter(|(_, seed)| seed.row.get("category").and_then(|v| v.as_str()) == Some("gem"))
-        .filter(|(_, seed)| seed.row.get("gem_level").and_then(|v| v.as_i64()).unwrap_or_default() == output_level)
+        .filter(|(_, seed)| {
+            seed.row
+                .get("gem_level")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_default()
+                == output_level
+        })
         .map(|(id, seed)| (id.clone(), seed))
         .collect::<Vec<_>>();
     if candidate_defs.is_empty() {
-        return Ok(GemConvertExecuteResponse { success: false, message: "当前无可转换目标宝石".to_string(), data: None });
+        return Ok(GemConvertExecuteResponse {
+            success: false,
+            message: "当前无可转换目标宝石".to_string(),
+            data: None,
+        });
     }
 
     for (item_id, per_time_qty) in &consume_by_id {
-        consume_inventory_specific_item_instance(state, character_id, *item_id, per_time_qty * times).await?;
+        consume_inventory_specific_item_instance(
+            state,
+            character_id,
+            *item_id,
+            per_time_qty * times,
+        )
+        .await?;
     }
     consume_inventory_character_currencies(state, character_id, 0, total_spirit_stones, 0).await?;
 
     let total_qty = times;
-    let candidate_item_def_ids = candidate_defs.iter().map(|(item_def_id, _)| item_def_id.clone()).collect::<Vec<_>>();
-    let produced_counts = roll_gem_convert_outputs_with_random_fn(&candidate_item_def_ids, times, |len| rand::thread_rng().gen_range(0..len));
+    let candidate_item_def_ids = candidate_defs
+        .iter()
+        .map(|(item_def_id, _)| item_def_id.clone())
+        .collect::<Vec<_>>();
+    let produced_counts =
+        roll_gem_convert_outputs_with_random_fn(&candidate_item_def_ids, times, |len| {
+            rand::thread_rng().gen_range(0..len)
+        });
     let mut produced_items = Vec::new();
-    let produced_pairs = produced_counts.iter().map(|(item_def_id, qty)| (item_def_id.clone(), *qty)).collect::<Vec<_>>();
+    let produced_pairs = produced_counts
+        .iter()
+        .map(|(item_def_id, qty)| (item_def_id.clone(), *qty))
+        .collect::<Vec<_>>();
     let buffered_convert_grants = buffer_inventory_item_reward_deltas(
         state,
         user_id,
@@ -5242,9 +6619,12 @@ async fn convert_inventory_gem_tx(
         Some("manual"),
         0,
         &produced_pairs,
-    ).await?;
+    )
+    .await?;
     for (item_def_id, qty) in produced_counts {
-        let seed = defs.get(item_def_id.as_str()).ok_or_else(|| AppError::config("目标宝石定义不存在"))?;
+        let seed = defs
+            .get(item_def_id.as_str())
+            .ok_or_else(|| AppError::config("目标宝石定义不存在"))?;
         produced_items.push(InventoryCraftExecuteProducedDto {
             item_def_id: item_def_id.clone(),
             item_name: seed.row.get("name").and_then(|v| v.as_str()).unwrap_or(item_def_id.as_str()).to_string(),
@@ -5298,7 +6678,13 @@ fn build_gem_convert_options(
         let candidate_count = defs
             .iter()
             .filter(|(_, seed)| seed.row.get("category").and_then(|v| v.as_str()) == Some("gem"))
-            .filter(|(_, seed)| seed.row.get("gem_level").and_then(|v| v.as_i64()).unwrap_or_default() == output_level)
+            .filter(|(_, seed)| {
+                seed.row
+                    .get("gem_level")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_default()
+                    == output_level
+            })
             .count() as i64;
         if candidate_count <= 0 {
             continue;
@@ -5309,7 +6695,8 @@ fn build_gem_convert_options(
                 defs.get(id.as_str())
                     .and_then(|seed| seed.row.get("category").and_then(|v| v.as_str()))
                     == Some("gem")
-                    && defs.get(id.as_str())
+                    && defs
+                        .get(id.as_str())
                         .and_then(|seed| seed.row.get("gem_level").and_then(|v| v.as_i64()))
                         .unwrap_or_default()
                         == level
@@ -5320,7 +6707,8 @@ fn build_gem_convert_options(
         let Some(cost_spirit_stones) = spirit_cost_by_input_level.get(&level).copied() else {
             continue;
         };
-        let max_convert_times = (owned_input_gem_qty / input_qty).min(wallet.spirit_stones / cost_spirit_stones.max(1));
+        let max_convert_times =
+            (owned_input_gem_qty / input_qty).min(wallet.spirit_stones / cost_spirit_stones.max(1));
         options.push(GemConvertOptionDto {
             input_level: level,
             output_level,
@@ -5366,18 +6754,25 @@ async fn load_inventory_craft_character(
     state: &AppState,
     user_id: i64,
 ) -> Result<InventoryCraftCharacterDto, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT realm, exp, silver, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
-        |q| q.bind(user_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT realm, exp, silver, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
+            |q| q.bind(user_id),
+        )
+        .await?;
     let Some(row) = row else {
         return Err(AppError::config("角色不存在"));
     };
     Ok(InventoryCraftCharacterDto {
-        realm: row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string()),
+        realm: row
+            .try_get::<Option<String>, _>("realm")?
+            .unwrap_or_else(|| "凡人".to_string()),
         exp: row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default(),
         silver: row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default(),
-        spirit_stones: row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default(),
+        spirit_stones: row
+            .try_get::<Option<i64>, _>("spirit_stones")?
+            .unwrap_or_default(),
     })
 }
 
@@ -5387,16 +6782,25 @@ fn build_inventory_craft_recipes(
     character: &InventoryCraftCharacterDto,
     recipe_type_filter: Option<&str>,
 ) -> Result<Vec<InventoryCraftRecipeDto>, AppError> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_recipe.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/item_recipe.json");
     let content = fs::read_to_string(&path)
         .map_err(|error| AppError::config(format!("failed to read {}: {error}", path.display())))?;
-    let payload: InventoryRecipeFile = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse {}: {error}", path.display())))?;
-    let recipe_type_filter = recipe_type_filter.map(str::trim).filter(|value| !value.is_empty()).map(|value| value.to_string());
+    let payload: InventoryRecipeFile = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse {}: {error}", path.display()))
+    })?;
+    let recipe_type_filter = recipe_type_filter
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
     let mut recipes = Vec::new();
     for row in payload.recipes {
         if let Some(expected) = recipe_type_filter.as_ref() {
-            let recipe_type = row.get("recipe_type").and_then(|value| value.as_str()).unwrap_or_default().trim();
+            let recipe_type = row
+                .get("recipe_type")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim();
             if recipe_type != expected {
                 continue;
             }
@@ -5414,27 +6818,70 @@ fn build_inventory_craft_recipe_dto(
     owned_qty: &BTreeMap<String, i64>,
     character: &InventoryCraftCharacterDto,
 ) -> Result<Option<InventoryCraftRecipeDto>, AppError> {
-    let id = row.get("id").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+    let id = row
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if id.is_empty() {
         return Ok(None);
     }
-    let recipe_type = row.get("recipe_type").and_then(|v| v.as_str()).unwrap_or("craft").trim().to_string();
-    let product_item_def_id = row.get("product_item_def_id").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+    let recipe_type = row
+        .get("recipe_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("craft")
+        .trim()
+        .to_string();
+    let product_item_def_id = row
+        .get("product_item_def_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if product_item_def_id.is_empty() {
         return Ok(None);
     }
     let product_def = defs.get(product_item_def_id.as_str());
-    let req_realm = row.get("req_realm").and_then(|v| v.as_str()).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-    let realm_met = req_realm.as_ref().map(|required| get_realm_rank_one_based_for_equipment(&character.realm) >= get_realm_rank_one_based_for_equipment(required)).unwrap_or(true);
-    let cost_items = row.get("cost_items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let req_realm = row
+        .get("req_realm")
+        .and_then(|v| v.as_str())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    let realm_met = req_realm
+        .as_ref()
+        .map(|required| {
+            get_realm_rank_one_based_for_equipment(&character.realm)
+                >= get_realm_rank_one_based_for_equipment(required)
+        })
+        .unwrap_or(true);
+    let cost_items = row
+        .get("cost_items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     let cost_item_views = cost_items
         .iter()
         .filter_map(|item| {
-            let item_def_id = item.get("item_def_id").and_then(|v| v.as_str())?.trim().to_string();
-            if item_def_id.is_empty() { return None; }
+            let item_def_id = item
+                .get("item_def_id")
+                .and_then(|v| v.as_str())?
+                .trim()
+                .to_string();
+            if item_def_id.is_empty() {
+                return None;
+            }
             let required = parse_recipe_i64(item.get("qty"));
-            let owned = owned_qty.get(item_def_id.as_str()).copied().unwrap_or_default();
-            let item_name = defs.get(item_def_id.as_str()).and_then(|seed| seed.row.get("name")).and_then(|v| v.as_str()).unwrap_or(item_def_id.as_str()).to_string();
+            let owned = owned_qty
+                .get(item_def_id.as_str())
+                .copied()
+                .unwrap_or_default();
+            let item_name = defs
+                .get(item_def_id.as_str())
+                .and_then(|seed| seed.row.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(item_def_id.as_str())
+                .to_string();
             Some(InventoryCraftCostItemDto {
                 item_def_id,
                 item_name,
@@ -5447,31 +6894,86 @@ fn build_inventory_craft_recipe_dto(
     let silver = parse_recipe_i64(row.get("cost_silver"));
     let spirit_stones = parse_recipe_i64(row.get("cost_spirit_stones"));
     let exp = parse_recipe_i64(row.get("cost_exp"));
-    let max_from_silver = if silver > 0 { character.silver / silver } else { i64::MAX / 4 };
-    let max_from_spirit = if spirit_stones > 0 { character.spirit_stones / spirit_stones } else { i64::MAX / 4 };
-    let max_from_exp = if exp > 0 { character.exp / exp } else { i64::MAX / 4 };
+    let max_from_silver = if silver > 0 {
+        character.silver / silver
+    } else {
+        i64::MAX / 4
+    };
+    let max_from_spirit = if spirit_stones > 0 {
+        character.spirit_stones / spirit_stones
+    } else {
+        i64::MAX / 4
+    };
+    let max_from_exp = if exp > 0 {
+        character.exp / exp
+    } else {
+        i64::MAX / 4
+    };
     let max_from_items = cost_item_views.iter().fold(i64::MAX / 4, |acc, item| {
-        if item.required <= 0 { acc } else { acc.min(item.owned / item.required) }
+        if item.required <= 0 {
+            acc
+        } else {
+            acc.min(item.owned / item.required)
+        }
     });
-    let max_craft_times = max_from_silver.min(max_from_spirit).min(max_from_exp).min(max_from_items).min(999).max(0);
+    let max_craft_times = max_from_silver
+        .min(max_from_spirit)
+        .min(max_from_exp)
+        .min(max_from_items)
+        .min(999)
+        .max(0);
     let craft_kind = match recipe_type.as_str() {
         "refine" => "smithing".to_string(),
-        _ => match product_def.and_then(|seed| seed.row.get("category")).and_then(|v| v.as_str()).unwrap_or_default() {
+        _ => match product_def
+            .and_then(|seed| seed.row.get("category"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+        {
             "equipment" => "smithing".to_string(),
-            "consumable" if product_def.and_then(|seed| seed.row.get("sub_category")).and_then(|v| v.as_str()) == Some("pill") => "alchemy".to_string(),
+            "consumable"
+                if product_def
+                    .and_then(|seed| seed.row.get("sub_category"))
+                    .and_then(|v| v.as_str())
+                    == Some("pill") =>
+            {
+                "alchemy".to_string()
+            }
             _ => "craft".to_string(),
         },
     };
-    let success_rate = row.get("success_rate").and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64))).unwrap_or_else(|| if recipe_type == "gem_synthesis" { 1.0 } else { 100.0 });
-    let fail_return_rate = row.get("fail_return_rate").and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64))).unwrap_or(0.0);
+    let success_rate = row
+        .get("success_rate")
+        .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64)))
+        .unwrap_or_else(|| {
+            if recipe_type == "gem_synthesis" {
+                1.0
+            } else {
+                100.0
+            }
+        });
+    let fail_return_rate = row
+        .get("fail_return_rate")
+        .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64)))
+        .unwrap_or(0.0);
     Ok(Some(InventoryCraftRecipeDto {
         id,
-        name: row.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        name: row
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
         recipe_type,
         product: InventoryCraftProductDto {
             item_def_id: product_item_def_id.clone(),
-            name: product_def.and_then(|seed| seed.row.get("name")).and_then(|v| v.as_str()).unwrap_or(product_item_def_id.as_str()).to_string(),
-            icon: product_def.and_then(|seed| seed.row.get("icon")).and_then(|v| v.as_str()).map(|v| v.to_string()),
+            name: product_def
+                .and_then(|seed| seed.row.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(product_item_def_id.as_str())
+                .to_string(),
+            icon: product_def
+                .and_then(|seed| seed.row.get("icon"))
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string()),
             qty: parse_recipe_i64(row.get("product_qty")).max(1),
         },
         costs: InventoryCraftCostsDto {
@@ -5483,7 +6985,11 @@ fn build_inventory_craft_recipe_dto(
         requirements: InventoryCraftRequirementsDto {
             realm: req_realm,
             level: parse_recipe_i64(row.get("req_level")),
-            building: row.get("req_building").and_then(|v| v.as_str()).map(|v| v.to_string()).filter(|v| !v.is_empty()),
+            building: row
+                .get("req_building")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string())
+                .filter(|v| !v.is_empty()),
             realm_met,
         },
         success_rate,
@@ -5495,7 +7001,11 @@ fn build_inventory_craft_recipe_dto(
 }
 
 fn normalize_inventory_recipe_rate_to_ratio(raw: f64, default_percent: f64) -> f64 {
-    let value = if raw.is_finite() { raw } else { default_percent };
+    let value = if raw.is_finite() {
+        raw
+    } else {
+        default_percent
+    };
     if value <= 0.0 {
         return 0.0;
     }
@@ -5529,29 +7039,65 @@ fn inventory_item_mutation_timestamp_ms() -> i64 {
         .unwrap_or_default()
 }
 
-fn map_item_instance_snapshot_from_row(row: &sqlx::postgres::PgRow) -> Result<ItemInstanceMutationSnapshot, AppError> {
+fn map_item_instance_snapshot_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<ItemInstanceMutationSnapshot, AppError> {
     Ok(ItemInstanceMutationSnapshot {
         id: row.try_get::<i64, _>("id")?,
-        owner_user_id: row.try_get::<Option<i64>, _>("owner_user_id")?.unwrap_or_default(),
-        owner_character_id: row.try_get::<Option<i64>, _>("owner_character_id")?.unwrap_or_default(),
-        item_def_id: row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default(),
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default(),
+        owner_user_id: row
+            .try_get::<Option<i64>, _>("owner_user_id")?
+            .unwrap_or_default(),
+        owner_character_id: row
+            .try_get::<Option<i64>, _>("owner_character_id")?
+            .unwrap_or_default(),
+        item_def_id: row
+            .try_get::<Option<String>, _>("item_def_id")?
+            .unwrap_or_default(),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default(),
         quality: row.try_get::<Option<String>, _>("quality")?,
-        quality_rank: row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-        bind_type: row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
+        quality_rank: row
+            .try_get::<Option<i32>, _>("quality_rank")?
+            .map(i64::from),
+        bind_type: row
+            .try_get::<Option<String>, _>("bind_type")?
+            .unwrap_or_else(|| "none".to_string()),
         bind_owner_user_id: row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
         bind_owner_character_id: row.try_get::<Option<i64>, _>("bind_owner_character_id")?,
-        location: row.try_get::<Option<String>, _>("location")?.unwrap_or_default(),
-        location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+        location: row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default(),
+        location_slot: row
+            .try_get::<Option<i32>, _>("location_slot")?
+            .map(i64::from),
         equipped_slot: row.try_get::<Option<String>, _>("equipped_slot")?,
-        strengthen_level: row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-        refine_level: row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-        socketed_gems: row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?.unwrap_or_else(|| serde_json::json!([])),
+        strengthen_level: row
+            .try_get::<Option<i32>, _>("strengthen_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        refine_level: row
+            .try_get::<Option<i32>, _>("refine_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        socketed_gems: row
+            .try_get::<Option<serde_json::Value>, _>("socketed_gems")?
+            .unwrap_or_else(|| serde_json::json!([])),
         random_seed: row.try_get::<Option<i64>, _>("random_seed")?,
-        affixes: row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-        identified: row.try_get::<Option<bool>, _>("identified")?.unwrap_or(false),
-        affix_gen_version: row.try_get::<Option<i32>, _>("affix_gen_version")?.map(i64::from).unwrap_or_default(),
-        affix_roll_meta: row.try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?.unwrap_or_else(|| serde_json::json!({})),
+        affixes: row
+            .try_get::<Option<serde_json::Value>, _>("affixes")?
+            .unwrap_or_else(|| serde_json::json!([])),
+        identified: row
+            .try_get::<Option<bool>, _>("identified")?
+            .unwrap_or(false),
+        affix_gen_version: row
+            .try_get::<Option<i32>, _>("affix_gen_version")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        affix_roll_meta: row
+            .try_get::<Option<serde_json::Value>, _>("affix_roll_meta")?
+            .unwrap_or_else(|| serde_json::json!({})),
         custom_name: row.try_get::<Option<String>, _>("custom_name")?,
         locked: row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
         expire_at: row.try_get::<Option<String>, _>("expire_at_text")?,
@@ -5601,10 +7147,13 @@ async fn consume_inventory_used_item_instance_tx(
         }
     }
     if remaining_qty == 0 {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
-            |q| q.bind(snapshot.id).bind(snapshot.owner_character_id),
-        ).await?;
+        state
+            .database
+            .execute(
+                "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
+                |q| q.bind(snapshot.id).bind(snapshot.owner_character_id),
+            )
+            .await?;
     } else {
         state.database.execute(
             "UPDATE item_instance SET qty = $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
@@ -5680,21 +7229,42 @@ async fn apply_inventory_item_instance_mutations_to_db(
     if character_id <= 0 || mutations.is_empty() {
         return Ok(());
     }
-    let slot_release_ids = mutations.iter().map(|mutation| mutation.item_id).collect::<Vec<_>>();
-    ensure_no_duplicate_item_instance_slot_targets(character_id, mutations.iter().filter_map(|mutation| mutation.snapshot.as_ref()))?;
-    ensure_no_existing_item_instance_slot_conflicts(state, character_id, &slot_release_ids, mutations.iter().filter_map(|mutation| mutation.snapshot.as_ref())).await?;
+    let slot_release_ids = mutations
+        .iter()
+        .map(|mutation| mutation.item_id)
+        .collect::<Vec<_>>();
+    ensure_no_duplicate_item_instance_slot_targets(
+        character_id,
+        mutations
+            .iter()
+            .filter_map(|mutation| mutation.snapshot.as_ref()),
+    )?;
+    ensure_no_existing_item_instance_slot_conflicts(
+        state,
+        character_id,
+        &slot_release_ids,
+        mutations
+            .iter()
+            .filter_map(|mutation| mutation.snapshot.as_ref()),
+    )
+    .await?;
     release_item_instance_slots_for_update(state, character_id, &slot_release_ids).await?;
 
     for mutation in mutations {
         match mutation.kind.as_str() {
             "delete" => {
-                state.database.execute(
-                    "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
-                    |query| query.bind(mutation.item_id).bind(character_id),
-                ).await?;
+                state
+                    .database
+                    .execute(
+                        "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
+                        |query| query.bind(mutation.item_id).bind(character_id),
+                    )
+                    .await?;
             }
             _ => {
-                let Some(snapshot) = mutation.snapshot else { continue; };
+                let Some(snapshot) = mutation.snapshot else {
+                    continue;
+                };
                 state.database.execute(
                     "UPDATE item_instance SET owner_user_id = $2, owner_character_id = $3, item_def_id = $4, qty = $5, quality = $6, quality_rank = $7, bind_type = $8, bind_owner_user_id = $9, bind_owner_character_id = $10, location = $11, location_slot = $12, equipped_slot = $13, strengthen_level = $14, refine_level = $15, socketed_gems = $16::jsonb, random_seed = $17, affixes = $18::jsonb, identified = $19, affix_gen_version = $20, affix_roll_meta = $21::jsonb, custom_name = $22, locked = $23, expire_at = $24::timestamptz, obtained_from = $25, obtained_ref_id = $26, metadata = $27::jsonb, updated_at = NOW() WHERE id = $1 AND owner_character_id = $28",
                     |query| query
@@ -5778,9 +7348,14 @@ fn ensure_no_duplicate_item_instance_slot_targets<'a>(
         let Some(location_slot) = snapshot.location_slot else {
             continue;
         };
-        let key = format!("{}:{}:{}", snapshot.owner_character_id, snapshot.location, location_slot);
+        let key = format!(
+            "{}:{}:{}",
+            snapshot.owner_character_id, snapshot.location, location_slot
+        );
         if !seen.insert(key.clone()) {
-            return Err(AppError::config(format!("实例 mutation 目标槽位冲突: {key}")));
+            return Err(AppError::config(format!(
+                "实例 mutation 目标槽位冲突: {key}"
+            )));
         }
     }
     Ok(())
@@ -5806,9 +7381,18 @@ async fn ensure_no_existing_item_instance_slot_conflicts(
             if batch_item_ids.contains(&id) {
                 return None;
             }
-            let location = row.try_get::<Option<String>, _>("location").ok().flatten()?;
-            let location_slot = row.try_get::<Option<i32>, _>("location_slot").ok().flatten()?;
-            Some((format!("{}:{}:{}", character_id, location, location_slot), id))
+            let location = row
+                .try_get::<Option<String>, _>("location")
+                .ok()
+                .flatten()?;
+            let location_slot = row
+                .try_get::<Option<i32>, _>("location_slot")
+                .ok()
+                .flatten()?;
+            Some((
+                format!("{}:{}:{}", character_id, location, location_slot),
+                id,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -5822,9 +7406,14 @@ async fn ensure_no_existing_item_instance_slot_conflicts(
         let Some(location_slot) = snapshot.location_slot else {
             continue;
         };
-        let key = format!("{}:{}:{}", snapshot.owner_character_id, snapshot.location, location_slot);
+        let key = format!(
+            "{}:{}:{}",
+            snapshot.owner_character_id, snapshot.location, location_slot
+        );
         if let Some(occupant_id) = occupied_keys.get(&key) {
-            return Err(AppError::config(format!("实例 mutation 目标槽位冲突: {key} 已被物品 {occupant_id} 占用")));
+            return Err(AppError::config(format!(
+                "实例 mutation 目标槽位冲突: {key} 已被物品 {occupant_id} 占用"
+            )));
         }
     }
     Ok(())
@@ -5989,7 +7578,10 @@ async fn buffer_inventory_item_reward_deltas(
                 qty: *qty,
                 bind_type: "none".to_string(),
                 obtained_from: obtained_from.trim().to_string(),
-                obtained_ref_id: obtained_ref_id.map(str::trim).filter(|value| !value.is_empty()).map(|value| value.to_string()),
+                obtained_ref_id: obtained_ref_id
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| value.to_string()),
             })
         })
         .collect::<Vec<_>>();
@@ -6006,35 +7598,76 @@ async fn execute_inventory_craft_recipe_tx(
     recipe_id: &str,
 ) -> Result<InventoryCraftExecuteResponse, AppError> {
     let character = load_inventory_craft_character(state, user_id).await?;
-    let character_id = state.database.fetch_optional(
-        "SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(user_id),
-    ).await?
-        .and_then(|row| row.try_get::<Option<i32>, _>("id").ok().flatten().map(i64::from))
+    let character_id = state
+        .database
+        .fetch_optional(
+            "SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(user_id),
+        )
+        .await?
+        .and_then(|row| {
+            row.try_get::<Option<i32>, _>("id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .ok_or_else(|| AppError::config("角色不存在"))?;
     acquire_inventory_mutex(state, character_id).await?;
 
     let defs = load_inventory_def_map()?;
     let owned_qty = load_owned_item_qty_map(state, character_id).await?;
     let recipes = build_inventory_craft_recipes(&defs, &owned_qty, &character, None)?;
-    let recipe = recipes.into_iter().find(|recipe| recipe.id == recipe_id).ok_or_else(|| AppError::config("配方不存在"))?;
+    let recipe = recipes
+        .into_iter()
+        .find(|recipe| recipe.id == recipe_id)
+        .ok_or_else(|| AppError::config("配方不存在"))?;
     if !recipe.requirements.realm_met {
-        return Ok(InventoryCraftExecuteResponse { success: false, message: format!("境界不足，需要{}", recipe.requirements.realm.clone().unwrap_or_default()), data: None });
+        return Ok(InventoryCraftExecuteResponse {
+            success: false,
+            message: format!(
+                "境界不足，需要{}",
+                recipe.requirements.realm.clone().unwrap_or_default()
+            ),
+            data: None,
+        });
     }
     if recipe.max_craft_times < times {
-        return Ok(InventoryCraftExecuteResponse { success: false, message: "材料或资源不足".to_string(), data: None });
+        return Ok(InventoryCraftExecuteResponse {
+            success: false,
+            message: "材料或资源不足".to_string(),
+            data: None,
+        });
     }
 
     for cost_item in &recipe.costs.items {
-        consume_inventory_material_by_def_id(state, user_id, character_id, &cost_item.item_def_id, cost_item.required * times).await?;
+        consume_inventory_material_by_def_id(
+            state,
+            user_id,
+            character_id,
+            &cost_item.item_def_id,
+            cost_item.required * times,
+        )
+        .await?;
     }
-    consume_inventory_character_currencies(state, character_id, recipe.costs.silver * times, recipe.costs.spirit_stones * times, recipe.costs.exp * times).await?;
+    consume_inventory_character_currencies(
+        state,
+        character_id,
+        recipe.costs.silver * times,
+        recipe.costs.spirit_stones * times,
+        recipe.costs.exp * times,
+    )
+    .await?;
 
     let success_rate_ratio = normalize_inventory_recipe_rate_to_ratio(
         recipe.success_rate,
-        if recipe.recipe_type == "gem_synthesis" { 1.0 } else { 100.0 },
+        if recipe.recipe_type == "gem_synthesis" {
+            1.0
+        } else {
+            100.0
+        },
     );
-    let fail_return_rate_ratio = normalize_inventory_recipe_rate_to_ratio(recipe.fail_return_rate, 0.0);
+    let fail_return_rate_ratio =
+        normalize_inventory_recipe_rate_to_ratio(recipe.fail_return_rate, 0.0);
     let mut success_count = 0_i64;
     let mut fail_count = 0_i64;
     for _ in 0..times {
@@ -6045,8 +7678,14 @@ async fn execute_inventory_craft_recipe_tx(
         }
     }
 
-    let product_def = defs.get(recipe.product.item_def_id.as_str()).ok_or_else(|| AppError::config("产物定义不存在"))?;
-    let product_bind_type = product_def.row.get("bind_type").and_then(|v| v.as_str()).unwrap_or("none");
+    let product_def = defs
+        .get(recipe.product.item_def_id.as_str())
+        .ok_or_else(|| AppError::config("产物定义不存在"))?;
+    let product_bind_type = product_def
+        .row
+        .get("bind_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
     let produced = if success_count > 0 {
         let product_qty = recipe.product.qty * success_count;
         let produced_id = grant_inventory_item_instance(
@@ -6058,7 +7697,8 @@ async fn execute_inventory_craft_recipe_tx(
             product_bind_type,
             "craft",
             recipe.id.as_str(),
-        ).await?;
+        )
+        .await?;
         Some(InventoryCraftExecuteProducedDto {
             item_def_id: recipe.product.item_def_id.clone(),
             item_name: recipe.product.name.clone(),
@@ -6073,7 +7713,8 @@ async fn execute_inventory_craft_recipe_tx(
     let mut returned_items = Vec::new();
     if fail_count > 0 && fail_return_rate_ratio > 0.0 {
         for cost_item in &recipe.costs.items {
-            let rollback_qty = ((cost_item.required * fail_count) as f64 * fail_return_rate_ratio).floor() as i64;
+            let rollback_qty =
+                ((cost_item.required * fail_count) as f64 * fail_return_rate_ratio).floor() as i64;
             if rollback_qty <= 0 {
                 continue;
             }
@@ -6091,7 +7732,8 @@ async fn execute_inventory_craft_recipe_tx(
                 bind_type,
                 "craft_refund",
                 recipe.id.as_str(),
-            ).await?;
+            )
+            .await?;
             returned_items.push(InventoryCraftExecuteReturnedItemDto {
                 item_def_id: cost_item.item_def_id.clone(),
                 qty: rollback_qty,
@@ -6115,7 +7757,8 @@ async fn execute_inventory_craft_recipe_tx(
             Some(recipe.product.item_def_id.as_str()),
             success_count,
             Some(recipe.recipe_type.as_str()),
-        ).await?;
+        )
+        .await?;
         crate::http::achievement::record_craft_item_achievement_event(
             state,
             character_id,
@@ -6124,13 +7767,15 @@ async fn execute_inventory_craft_recipe_tx(
             Some(recipe.craft_kind.as_str()),
             Some(recipe.product.item_def_id.as_str()),
             success_count,
-        ).await?;
+        )
+        .await?;
         crate::http::main_quest::record_main_quest_craft_item_event(
             state,
             character_id,
             recipe.id.as_str(),
             success_count,
-        ).await?;
+        )
+        .await?;
     }
     Ok(InventoryCraftExecuteResponse {
         success: true,
@@ -6146,10 +7791,15 @@ async fn execute_inventory_craft_recipe_tx(
                 silver: recipe.costs.silver * times,
                 spirit_stones: recipe.costs.spirit_stones * times,
                 exp: recipe.costs.exp * times,
-                items: recipe.costs.items.iter().map(|item| InventoryCraftExecuteReturnedItemDto {
-                    item_def_id: item.item_def_id.clone(),
-                    qty: item.required * times,
-                }).collect(),
+                items: recipe
+                    .costs
+                    .items
+                    .iter()
+                    .map(|item| InventoryCraftExecuteReturnedItemDto {
+                        item_def_id: item.item_def_id.clone(),
+                        qty: item.required * times,
+                    })
+                    .collect(),
             },
             returned_items,
             produced,
@@ -6170,17 +7820,34 @@ fn build_equipment_preview_base_attrs(
     let mut attrs = BTreeMap::new();
     if let Some(map) = base_attrs_raw.as_object() {
         for (key, value) in map {
-            let base = value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)).unwrap_or_default();
-            let quality_factor = quality_multiplier(resolved_quality_rank) / quality_multiplier(def_quality_rank.max(1));
-            let growth_factor = (1.0 + strengthen_level.max(0) as f64 * 0.03) * (1.0 + refine_level.max(0) as f64 * 0.02);
-            attrs.insert(key.clone(), (base * quality_factor * growth_factor).round() as i64);
+            let base = value
+                .as_f64()
+                .or_else(|| value.as_i64().map(|v| v as f64))
+                .unwrap_or_default();
+            let quality_factor = quality_multiplier(resolved_quality_rank)
+                / quality_multiplier(def_quality_rank.max(1));
+            let growth_factor = (1.0 + strengthen_level.max(0) as f64 * 0.03)
+                * (1.0 + refine_level.max(0) as f64 * 0.02);
+            attrs.insert(
+                key.clone(),
+                (base * quality_factor * growth_factor).round() as i64,
+            );
         }
     }
     if let Some(gems) = socketed_gems_raw.and_then(|value| value.as_array()) {
         for gem in gems {
-            let Some(item_def_id) = gem.get("itemDefId").and_then(|value| value.as_str()) else { continue; };
-            let Some(def) = defs.get(item_def_id) else { continue; };
-            let effect_defs = def.row.get("effect_defs").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+            let Some(item_def_id) = gem.get("itemDefId").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let Some(def) = defs.get(item_def_id) else {
+                continue;
+            };
+            let effect_defs = def
+                .row
+                .get("effect_defs")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
             for effect in effect_defs {
                 if effect.get("trigger").and_then(|value| value.as_str()) != Some("socket") {
                     continue;
@@ -6189,12 +7856,23 @@ fn build_equipment_preview_base_attrs(
                     continue;
                 }
                 let params = effect.get("params").and_then(|value| value.as_object());
-                let Some(attr_key) = params.and_then(|params| params.get("attr_key")).and_then(|value| value.as_str()) else { continue; };
-                let apply_type = params.and_then(|params| params.get("apply_type")).and_then(|value| value.as_str()).unwrap_or("flat");
+                let Some(attr_key) = params
+                    .and_then(|params| params.get("attr_key"))
+                    .and_then(|value| value.as_str())
+                else {
+                    continue;
+                };
+                let apply_type = params
+                    .and_then(|params| params.get("apply_type"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("flat");
                 if apply_type != "flat" {
                     continue;
                 }
-                let value = params.and_then(|params| params.get("value")).and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64))).unwrap_or_default();
+                let value = params
+                    .and_then(|params| params.get("value"))
+                    .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))
+                    .unwrap_or_default();
                 *attrs.entry(attr_key.to_string()).or_insert(0) += value.round() as i64;
             }
         }
@@ -6222,12 +7900,33 @@ fn build_inventory_disassemble_plan(
     affixes: Option<serde_json::Value>,
     qty: i64,
 ) -> Result<InventoryDisassemblePlan, AppError> {
-    let def = defs.get(item_def_id).ok_or_else(|| AppError::config("物品不存在"))?;
-    let quality_rank = quality_rank.unwrap_or_else(|| map_quality_rank(quality.as_deref().unwrap_or_else(|| def.row.get("quality").and_then(|value| value.as_str()).unwrap_or("黄"))));
-    let category = def.row.get("category").and_then(|value| value.as_str()).unwrap_or_default();
-    let sub_category = def.row.get("sub_category").and_then(|value| value.as_str()).unwrap_or_default();
+    let def = defs
+        .get(item_def_id)
+        .ok_or_else(|| AppError::config("物品不存在"))?;
+    let quality_rank = quality_rank.unwrap_or_else(|| {
+        map_quality_rank(quality.as_deref().unwrap_or_else(|| {
+            def.row
+                .get("quality")
+                .and_then(|value| value.as_str())
+                .unwrap_or("黄")
+        }))
+    });
+    let category = def
+        .row
+        .get("category")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let sub_category = def
+        .row
+        .get("sub_category")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
     if category == "equipment" {
-        let reward_item_def_id = if quality_rank <= 2 { "enhance-001" } else { "enhance-002" };
+        let reward_item_def_id = if quality_rank <= 2 {
+            "enhance-001"
+        } else {
+            "enhance-002"
+        };
         let name = defs
             .get(reward_item_def_id)
             .and_then(|seed| seed.row.get("name"))
@@ -6251,7 +7950,12 @@ fn build_inventory_disassemble_plan(
             .row
             .get("effect_defs")
             .and_then(|value| value.as_array())
-            .map(|effects| effects.iter().any(|effect| effect.get("effect_type").and_then(|value| value.as_str()) == Some("learn_technique")))
+            .map(|effects| {
+                effects.iter().any(|effect| {
+                    effect.get("effect_type").and_then(|value| value.as_str())
+                        == Some("learn_technique")
+                })
+            })
             .unwrap_or(false);
     if is_technique_book {
         let reward_qty: i64 = match quality_rank {
@@ -6289,7 +7993,10 @@ fn build_inventory_disassemble_plan(
     let affix_count = affixes
         .and_then(|value| value.as_array().map(|items| items.len() as i64))
         .unwrap_or_default();
-    let growth_factor = 1.0 + strengthen_level.max(0) as f64 * 0.06 + refine_level.max(0) as f64 * 0.08 + affix_count.max(0) as f64 * 0.03;
+    let growth_factor = 1.0
+        + strengthen_level.max(0) as f64 * 0.06
+        + refine_level.max(0) as f64 * 0.08
+        + affix_count.max(0) as f64 * 0.03;
     let unit_silver = ((100.0 * quality_factor * growth_factor) / 10.0).floor() as i64;
     Ok(InventoryDisassemblePlan {
         rewards: InventoryDisassembleRewardsDto {
@@ -6320,16 +8027,36 @@ async fn load_inventory_use_character_snapshot(
     let Some(character_row) = character_row else {
         return Err(AppError::config("角色不存在"));
     };
-    let current_qixue = character_row.try_get::<Option<i64>, _>("qixue")?.unwrap_or_default();
-    let max_qixue = character_row.try_get::<Option<i64>, _>("max_qixue")?.unwrap_or_default().max(0);
-    let current_lingqi = character_row.try_get::<Option<i64>, _>("lingqi")?.unwrap_or_default();
-    let max_lingqi = character_row.try_get::<Option<i64>, _>("max_lingqi")?.unwrap_or_default().max(0);
-    let current_exp = character_row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default();
-    let current_stamina = character_row.try_get::<Option<i32>, _>("stamina")?.map(i64::from).unwrap_or_default();
-    let insight_level = character_row.try_get::<Option<i64>, _>("insight_level")?.unwrap_or_default();
-    let stamina_recover_at_text = character_row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
-    let month_card_start_at_text = character_row.try_get::<Option<String>, _>("month_card_start_at_text")?;
-    let month_card_expire_at_text = character_row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
+    let current_qixue = character_row
+        .try_get::<Option<i64>, _>("qixue")?
+        .unwrap_or_default();
+    let max_qixue = character_row
+        .try_get::<Option<i64>, _>("max_qixue")?
+        .unwrap_or_default()
+        .max(0);
+    let current_lingqi = character_row
+        .try_get::<Option<i64>, _>("lingqi")?
+        .unwrap_or_default();
+    let max_lingqi = character_row
+        .try_get::<Option<i64>, _>("max_lingqi")?
+        .unwrap_or_default()
+        .max(0);
+    let current_exp = character_row
+        .try_get::<Option<i64>, _>("exp")?
+        .unwrap_or_default();
+    let current_stamina = character_row
+        .try_get::<Option<i32>, _>("stamina")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let insight_level = character_row
+        .try_get::<Option<i64>, _>("insight_level")?
+        .unwrap_or_default();
+    let stamina_recover_at_text =
+        character_row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
+    let month_card_start_at_text =
+        character_row.try_get::<Option<String>, _>("month_card_start_at_text")?;
+    let month_card_expire_at_text =
+        character_row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
     let stamina_state = resolve_stamina_recovery_state(
         current_stamina,
         calc_character_stamina_max_by_insight_level(insight_level),
@@ -6360,7 +8087,10 @@ async fn equip_inventory_item_tx(
         "SELECT id, item_def_id, qty, location, location_slot, equipped_slot, bind_type, bind_owner_user_id, bind_owner_character_id, locked FROM item_instance WHERE owner_character_id = $1 FOR UPDATE",
         |q| q.bind(character_id),
     ).await?;
-    let mut items = rows.into_iter().map(map_inventory_equip_row).collect::<Result<Vec<_>, _>>()?;
+    let mut items = rows
+        .into_iter()
+        .map(map_inventory_equip_row)
+        .collect::<Result<Vec<_>, _>>()?;
 
     let Some(item_index) = items.iter().position(|row| row.id == item_id) else {
         return Err(AppError::config("物品不存在"));
@@ -6393,11 +8123,25 @@ async fn equip_inventory_item_tx(
     if !matches!(item.location.as_str(), "bag" | "warehouse") {
         return Err(AppError::config("该物品当前位置不可装备"));
     }
-    ensure_equip_realm_requirement(state, character_id, def.row.get("equip_req_realm").and_then(|value| value.as_str())).await?;
+    ensure_equip_realm_requirement(
+        state,
+        character_id,
+        def.row
+            .get("equip_req_realm")
+            .and_then(|value| value.as_str()),
+    )
+    .await?;
 
-    if let Some(equipped_index) = items.iter().position(|row| row.id != item.id && row.equipped_slot.as_deref() == Some(equip_slot.as_str()) && row.location == "equipped") {
-        let bag_capacity = load_inventory_capacity(state, character_id, "bag").await?.unwrap_or(100);
-        let Some(empty_slot) = find_first_empty_equip_target_slot(&items, "bag", bag_capacity) else {
+    if let Some(equipped_index) = items.iter().position(|row| {
+        row.id != item.id
+            && row.equipped_slot.as_deref() == Some(equip_slot.as_str())
+            && row.location == "equipped"
+    }) {
+        let bag_capacity = load_inventory_capacity(state, character_id, "bag")
+            .await?
+            .unwrap_or(100);
+        let Some(empty_slot) = find_first_empty_equip_target_slot(&items, "bag", bag_capacity)
+        else {
             return Err(AppError::config("背包已满，无法替换装备"));
         };
         items[equipped_index].location = "bag".to_string();
@@ -6409,17 +8153,23 @@ async fn equip_inventory_item_tx(
     target.location = "equipped".to_string();
     target.location_slot = None;
     target.equipped_slot = Some(equip_slot);
-    if target.bind_type == "none" && def.row.get("bind_type").and_then(|value| value.as_str()) == Some("equip") {
+    if target.bind_type == "none"
+        && def.row.get("bind_type").and_then(|value| value.as_str()) == Some("equip")
+    {
         target.bind_type = "equip".to_string();
         target.bind_owner_user_id = Some(user_id);
         target.bind_owner_character_id = Some(character_id);
     }
 
     apply_inventory_equip_rows(state, character_id, &items).await?;
-    if let Some(projection) = state.online_battle_projections.get_current_for_user(user_id) {
+    if let Some(projection) = state
+        .online_battle_projections
+        .get_current_for_user(user_id)
+    {
         state.online_battle_projections.clear(&projection.battle_id);
     }
-    load_inventory_character_snapshot(state, user_id).await?
+    load_inventory_character_snapshot(state, user_id)
+        .await?
         .ok_or_else(|| AppError::config("角色不存在"))
 }
 
@@ -6435,7 +8185,10 @@ async fn unequip_inventory_item_tx(
         "SELECT id, item_def_id, qty, location, location_slot, equipped_slot, bind_type, bind_owner_user_id, bind_owner_character_id, locked FROM item_instance WHERE owner_character_id = $1 FOR UPDATE",
         |q| q.bind(character_id),
     ).await?;
-    let mut items = rows.into_iter().map(map_inventory_equip_row).collect::<Result<Vec<_>, _>>()?;
+    let mut items = rows
+        .into_iter()
+        .map(map_inventory_equip_row)
+        .collect::<Result<Vec<_>, _>>()?;
 
     let Some(item_index) = items.iter().position(|row| row.id == item_id) else {
         return Err(AppError::config("物品不存在"));
@@ -6447,9 +8200,20 @@ async fn unequip_inventory_item_tx(
     if item.location != "equipped" {
         return Err(AppError::config("该物品未穿戴"));
     }
-    let capacity = load_inventory_capacity(state, character_id, target_location).await?.unwrap_or(if target_location == "warehouse" { 1000 } else { 100 });
-    let Some(empty_slot) = find_first_empty_equip_target_slot(&items, target_location, capacity) else {
-        return Err(AppError::config(if target_location == "bag" { "背包已满" } else { "仓库已满" }));
+    let capacity = load_inventory_capacity(state, character_id, target_location)
+        .await?
+        .unwrap_or(if target_location == "warehouse" {
+            1000
+        } else {
+            100
+        });
+    let Some(empty_slot) = find_first_empty_equip_target_slot(&items, target_location, capacity)
+    else {
+        return Err(AppError::config(if target_location == "bag" {
+            "背包已满"
+        } else {
+            "仓库已满"
+        }));
     };
 
     let target = &mut items[item_index];
@@ -6458,10 +8222,14 @@ async fn unequip_inventory_item_tx(
     target.equipped_slot = None;
 
     apply_inventory_equip_rows(state, character_id, &items).await?;
-    if let Some(projection) = state.online_battle_projections.get_current_for_user(user_id) {
+    if let Some(projection) = state
+        .online_battle_projections
+        .get_current_for_user(user_id)
+    {
         state.online_battle_projections.clear(&projection.battle_id);
     }
-    load_inventory_character_snapshot(state, user_id).await?
+    load_inventory_character_snapshot(state, user_id)
+        .await?
         .ok_or_else(|| AppError::config("角色不存在"))
 }
 
@@ -6469,9 +8237,16 @@ fn map_inventory_equip_row(row: sqlx::postgres::PgRow) -> Result<InventoryEquipR
     Ok(InventoryEquipRow {
         id: row.try_get::<i64, _>("id")?,
         item_def_id: row.try_get::<String, _>("item_def_id")?,
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default(),
-        location: row.try_get::<Option<String>, _>("location")?.unwrap_or_default(),
-        location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        location: row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default(),
+        location_slot: row
+            .try_get::<Option<i32>, _>("location_slot")?
+            .map(i64::from),
         equipped_slot: row.try_get::<Option<String>, _>("equipped_slot")?,
         bind_type: normalize_bind_type(row.try_get::<Option<String>, _>("bind_type")?),
         bind_owner_user_id: row.try_get::<Option<i64>, _>("bind_owner_user_id")?,
@@ -6480,8 +8255,16 @@ fn map_inventory_equip_row(row: sqlx::postgres::PgRow) -> Result<InventoryEquipR
     })
 }
 
-fn find_first_empty_equip_target_slot(rows: &[InventoryEquipRow], location: &str, capacity: i64) -> Option<i64> {
-    (0..capacity).find(|slot| !rows.iter().any(|row| row.location == location && row.location_slot == Some(*slot)))
+fn find_first_empty_equip_target_slot(
+    rows: &[InventoryEquipRow],
+    location: &str,
+    capacity: i64,
+) -> Option<i64> {
+    (0..capacity).find(|slot| {
+        !rows
+            .iter()
+            .any(|row| row.location == location && row.location_slot == Some(*slot))
+    })
 }
 
 async fn apply_inventory_equip_rows(
@@ -6513,18 +8296,25 @@ async fn ensure_equip_realm_requirement(
     character_id: i64,
     equip_required_realm: Option<&str>,
 ) -> Result<(), AppError> {
-    let required = equip_required_realm.map(str::trim).filter(|value| !value.is_empty());
+    let required = equip_required_realm
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let Some(required) = required else {
         return Ok(());
     };
-    let row = state.database.fetch_optional(
-        "SELECT realm, sub_realm FROM characters WHERE id = $1 FOR UPDATE LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT realm, sub_realm FROM characters WHERE id = $1 FOR UPDATE LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(row) = row else {
         return Err(AppError::config("角色不存在"));
     };
-    let realm = row.try_get::<Option<String>, _>("realm")?.unwrap_or_default();
+    let realm = row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_default();
     let sub_realm = row.try_get::<Option<String>, _>("sub_realm")?;
     let current_rank = get_realm_rank_one_based_strict(&realm, sub_realm.as_deref());
     let required_rank = get_realm_rank_one_based_for_equipment(required);
@@ -6539,18 +8329,25 @@ async fn ensure_use_realm_requirement(
     character_id: i64,
     required_realm: Option<&str>,
 ) -> Result<(), AppError> {
-    let required = required_realm.map(str::trim).filter(|value| !value.is_empty());
+    let required = required_realm
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let Some(required) = required else {
         return Ok(());
     };
-    let row = state.database.fetch_optional(
-        "SELECT realm, sub_realm FROM characters WHERE id = $1 FOR UPDATE LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT realm, sub_realm FROM characters WHERE id = $1 FOR UPDATE LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(row) = row else {
         return Err(AppError::config("角色不存在"));
     };
-    let realm = row.try_get::<Option<String>, _>("realm")?.unwrap_or_default();
+    let realm = row
+        .try_get::<Option<String>, _>("realm")?
+        .unwrap_or_default();
     let sub_realm = row.try_get::<Option<String>, _>("sub_realm")?;
     let current_rank = get_realm_rank_one_based_strict(&realm, sub_realm.as_deref());
     let required_rank = get_realm_rank_one_based_for_equipment(required);
@@ -6562,12 +8359,20 @@ async fn ensure_use_realm_requirement(
 
 fn get_realm_rank_one_based_strict(realm: &str, sub_realm: Option<&str>) -> i64 {
     let normalized = normalize_realm_strict(realm, sub_realm);
-    realm_order().iter().position(|value| *value == normalized).map(|index| index as i64 + 1).unwrap_or(1)
+    realm_order()
+        .iter()
+        .position(|value| *value == normalized)
+        .map(|index| index as i64 + 1)
+        .unwrap_or(1)
 }
 
 fn get_realm_rank_one_based_for_equipment(realm_raw: &str) -> i64 {
     let normalized = normalize_realm_for_equipment(realm_raw);
-    realm_order().iter().position(|value| *value == normalized).map(|index| index as i64 + 1).unwrap_or(1)
+    realm_order()
+        .iter()
+        .position(|value| *value == normalized)
+        .map(|index| index as i64 + 1)
+        .unwrap_or(1)
 }
 
 fn normalize_realm_strict(realm: &str, sub_realm: Option<&str>) -> &'static str {
@@ -6676,7 +8481,8 @@ async fn load_inventory_character_snapshot(
             wugong: row.try_get("wugong").unwrap_or_default(),
             wufang: row.try_get("wufang").unwrap_or_default(),
         })
-    }).transpose()
+    })
+    .transpose()
 }
 
 async fn move_inventory_item_tx(
@@ -6700,23 +8506,51 @@ async fn move_inventory_item_tx(
     let original_rows = rows.clone();
 
     let Some(item_index) = rows.iter().position(|row| row.id == item_id) else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
     let item = rows[item_index].clone();
-    let Some(def) = load_inventory_def_map()?.get(item.item_def_id.as_str()).cloned() else {
-        return Ok(ServiceResult { success: false, message: Some("物品不存在".to_string()), data: None });
+    let Some(def) = load_inventory_def_map()?
+        .get(item.item_def_id.as_str())
+        .cloned()
+    else {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        });
     };
     if !matches!(item.location.as_str(), "bag" | "warehouse") {
-        return Ok(ServiceResult { success: false, message: Some("当前位置不支持移动".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("当前位置不支持移动".to_string()),
+            data: None,
+        });
     }
     let Some(current_slot) = item.location_slot.filter(|slot| *slot >= 0) else {
-        return Ok(ServiceResult { success: false, message: Some("物品格子状态异常".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品格子状态异常".to_string()),
+            data: None,
+        });
     };
     if item.qty <= 0 {
-        return Ok(ServiceResult { success: false, message: Some("物品数量异常".to_string()), data: None });
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("物品数量异常".to_string()),
+            data: None,
+        });
     }
 
-    let stack_max = def.row.get("stack_max").and_then(|value| value.as_i64()).unwrap_or(1).max(1);
+    let stack_max = def
+        .row
+        .get("stack_max")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(1)
+        .max(1);
     let source_can_auto_stack = stack_max > 1 && is_plain_stacking_move_row(&item);
     let normalized_bind_type = normalize_bind_type(Some(item.bind_type.clone()));
     let mut remaining_qty = item.qty;
@@ -6736,16 +8570,28 @@ async fn move_inventory_item_tx(
             .collect::<Vec<_>>();
         let mut sorted_candidate_ids = candidate_ids;
         sorted_candidate_ids.sort_by(|left, right| {
-            let left_row = rows.iter().find(|row| row.id == *left).expect("candidate row should exist");
-            let right_row = rows.iter().find(|row| row.id == *right).expect("candidate row should exist");
-            right_row.qty.cmp(&left_row.qty).then_with(|| left_row.id.cmp(&right_row.id))
+            let left_row = rows
+                .iter()
+                .find(|row| row.id == *left)
+                .expect("candidate row should exist");
+            let right_row = rows
+                .iter()
+                .find(|row| row.id == *right)
+                .expect("candidate row should exist");
+            right_row
+                .qty
+                .cmp(&left_row.qty)
+                .then_with(|| left_row.id.cmp(&right_row.id))
         });
 
         for candidate_id in sorted_candidate_ids {
             if remaining_qty <= 0 {
                 break;
             }
-            let candidate = rows.iter_mut().find(|row| row.id == candidate_id).expect("candidate row should exist");
+            let candidate = rows
+                .iter_mut()
+                .find(|row| row.id == candidate_id)
+                .expect("candidate row should exist");
             let can_add = (stack_max - candidate.qty).min(remaining_qty).max(0);
             if can_add <= 0 {
                 continue;
@@ -6759,31 +8605,52 @@ async fn move_inventory_item_tx(
         }
 
         if remaining_qty <= 0 {
-            apply_inventory_move_rows(state, character_id, &original_rows, &rows, Some(item.id)).await?;
-            return Ok(ServiceResult { success: true, message: Some("移动成功".to_string()), data: None });
+            apply_inventory_move_rows(state, character_id, &original_rows, &rows, Some(item.id))
+                .await?;
+            return Ok(ServiceResult {
+                success: true,
+                message: Some("移动成功".to_string()),
+                data: None,
+            });
         }
     }
 
-    let Some(capacity) = load_inventory_capacity(state, character_id, target_location).await? else {
-        return Ok(ServiceResult { success: false, message: Some("背包不存在".to_string()), data: None });
+    let Some(capacity) = load_inventory_capacity(state, character_id, target_location).await?
+    else {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("背包不存在".to_string()),
+            data: None,
+        });
     };
     if let Some(target_slot) = target_slot {
         if target_slot >= capacity {
-            return Ok(ServiceResult { success: false, message: Some("目标格子超出容量".to_string()), data: None });
+            return Ok(ServiceResult {
+                success: false,
+                message: Some("目标格子超出容量".to_string()),
+                data: None,
+            });
         }
     }
 
     let final_slot = if let Some(target_slot) = target_slot {
         target_slot
     } else {
-        let Some(empty_slot) = find_first_empty_inventory_slot(&rows, target_location, capacity) else {
-            return Ok(ServiceResult { success: false, message: Some("目标位置已满".to_string()), data: None });
+        let Some(empty_slot) = find_first_empty_inventory_slot(&rows, target_location, capacity)
+        else {
+            return Ok(ServiceResult {
+                success: false,
+                message: Some("目标位置已满".to_string()),
+                data: None,
+            });
         };
         empty_slot
     };
 
     if let Some(occupant_index) = rows.iter().position(|row| {
-        row.id != item.id && row.location == target_location && row.location_slot == Some(final_slot)
+        row.id != item.id
+            && row.location == target_location
+            && row.location_slot == Some(final_slot)
     }) {
         rows[occupant_index].location = item.location.clone();
         rows[occupant_index].location_slot = Some(current_slot);
@@ -6800,32 +8667,58 @@ async fn move_inventory_item_tx(
     }
 
     apply_inventory_move_rows(state, character_id, &original_rows, &rows, None).await?;
-    Ok(ServiceResult { success: true, message: Some("移动成功".to_string()), data: None })
+    Ok(ServiceResult {
+        success: true,
+        message: Some("移动成功".to_string()),
+        data: None,
+    })
 }
 
 fn map_inventory_move_row(row: sqlx::postgres::PgRow) -> Result<InventoryMoveRow, AppError> {
     Ok(InventoryMoveRow {
         id: row.try_get::<i64, _>("id")?,
         item_def_id: row.try_get::<String, _>("item_def_id")?,
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default(),
-        location: row.try_get::<Option<String>, _>("location")?.unwrap_or_default(),
-        location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        location: row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_default(),
+        location_slot: row
+            .try_get::<Option<i32>, _>("location_slot")?
+            .map(i64::from),
         bind_type: normalize_bind_type(row.try_get::<Option<String>, _>("bind_type")?),
         metadata: row.try_get::<Option<serde_json::Value>, _>("metadata")?,
         quality: row.try_get::<Option<String>, _>("quality")?,
-        quality_rank: row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
+        quality_rank: row
+            .try_get::<Option<i32>, _>("quality_rank")?
+            .map(i64::from),
     })
 }
 
 fn is_plain_stacking_move_row(row: &InventoryMoveRow) -> bool {
-    row.quality.as_deref().map(|value| value.trim().is_empty()).unwrap_or(true)
+    row.quality
+        .as_deref()
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true)
         && row.quality_rank.map(|value| value <= 0).unwrap_or(true)
-        && row.metadata.as_ref().map(value_is_blank_metadata).unwrap_or(true)
+        && row
+            .metadata
+            .as_ref()
+            .map(value_is_blank_metadata)
+            .unwrap_or(true)
 }
 
-fn find_first_empty_inventory_slot(rows: &[InventoryMoveRow], location: &str, capacity: i64) -> Option<i64> {
+fn find_first_empty_inventory_slot(
+    rows: &[InventoryMoveRow],
+    location: &str,
+    capacity: i64,
+) -> Option<i64> {
     (0..capacity).find(|slot| {
-        !rows.iter().any(|row| row.location == location && row.location_slot == Some(*slot))
+        !rows
+            .iter()
+            .any(|row| row.location == location && row.location_slot == Some(*slot))
     })
 }
 
@@ -6840,7 +8733,10 @@ async fn apply_inventory_move_rows(
         if let Some(redis_client) = state.redis.clone() {
             let redis = RedisRuntime::new(redis_client);
             let now_ms = inventory_item_mutation_timestamp_ms();
-            let rows_by_id = rows.iter().map(|row| (row.id, row)).collect::<BTreeMap<_, _>>();
+            let rows_by_id = rows
+                .iter()
+                .map(|row| (row.id, row))
+                .collect::<BTreeMap<_, _>>();
             let snapshot_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
             let mut mutations = Vec::new();
             if let Some(delete_item_id) = delete_item_id {
@@ -6865,7 +8761,8 @@ async fn apply_inventory_move_rows(
                 let Some(updated_row) = rows_by_id.get(&snapshot_id) else {
                     continue;
                 };
-                let Some(original) = original_rows.iter().find(|entry| entry.id == snapshot_id) else {
+                let Some(original) = original_rows.iter().find(|entry| entry.id == snapshot_id)
+                else {
                     continue;
                 };
                 if original == *updated_row {
@@ -6897,10 +8794,13 @@ async fn apply_inventory_move_rows(
     }
 
     if let Some(delete_item_id) = delete_item_id {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
-            |q| q.bind(delete_item_id).bind(character_id),
-        ).await?;
+        state
+            .database
+            .execute(
+                "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
+                |q| q.bind(delete_item_id).bind(character_id),
+            )
+            .await?;
     }
 
     let slot_release_ids = rows
@@ -6939,10 +8839,13 @@ async fn apply_inventory_move_rows(
 }
 
 async fn acquire_inventory_mutex(state: &AppState, character_id: i64) -> Result<(), AppError> {
-    state.database.fetch_one(
-        "SELECT pg_advisory_xact_lock($1::integer, $2::integer)",
-        |q| q.bind(INVENTORY_MUTEX_NAMESPACE).bind(character_id as i32),
-    ).await?;
+    state
+        .database
+        .fetch_one(
+            "SELECT pg_advisory_xact_lock($1::integer, $2::integer)",
+            |q| q.bind(INVENTORY_MUTEX_NAMESPACE).bind(character_id as i32),
+        )
+        .await?;
     Ok(())
 }
 
@@ -6986,7 +8889,9 @@ async fn expand_inventory_capacity_tx(
     if location != "bag" {
         return Err(AppError::config("该道具暂不支持当前扩容类型"));
     }
-    let current_capacity = opt_i64_from_i32(&row, "bag_capacity")?.unwrap_or(100).max(0);
+    let current_capacity = opt_i64_from_i32(&row, "bag_capacity")?
+        .unwrap_or(100)
+        .max(0);
     if current_capacity >= 200 {
         return Err(AppError::config("背包容量已达上限（200格）"));
     }
@@ -7005,12 +8910,20 @@ fn map_sort_inventory_row(row: sqlx::postgres::PgRow) -> Result<SortInventoryRow
     Ok(SortInventoryRow {
         id: row.try_get::<i64, _>("id")?,
         item_def_id: row.try_get::<String, _>("item_def_id")?,
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or(1).max(0),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or(1)
+            .max(0),
         quality: row.try_get::<Option<String>, _>("quality")?,
-        quality_rank: row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
+        quality_rank: row
+            .try_get::<Option<i32>, _>("quality_rank")?
+            .map(i64::from),
         bind_type: normalize_bind_type(row.try_get::<Option<String>, _>("bind_type")?),
         metadata: row.try_get::<Option<serde_json::Value>, _>("metadata")?,
-        location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+        location_slot: row
+            .try_get::<Option<i32>, _>("location_slot")?
+            .map(i64::from),
     })
 }
 
@@ -7086,9 +8999,16 @@ fn compact_inventory_rows_for_sort(
 }
 
 fn is_plain_stacking_row(row: &SortInventoryRow) -> bool {
-    row.quality.as_deref().map(|value| value.trim().is_empty()).unwrap_or(true)
+    row.quality
+        .as_deref()
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true)
         && row.quality_rank.map(|value| value <= 0).unwrap_or(true)
-        && row.metadata.as_ref().map(value_is_blank_metadata).unwrap_or(true)
+        && row
+            .metadata
+            .as_ref()
+            .map(value_is_blank_metadata)
+            .unwrap_or(true)
 }
 
 fn value_is_blank_metadata(value: &serde_json::Value) -> bool {
@@ -7121,7 +9041,9 @@ fn build_ranked_sort_rows(
         .into_iter()
         .map(|row| {
             let def = defs.get(row.item_def_id.as_str()).map(|seed| &seed.row);
-            let quality_name = row.quality.as_deref().or_else(|| def.and_then(|def| def.get("quality").and_then(|value| value.as_str())));
+            let quality_name = row.quality.as_deref().or_else(|| {
+                def.and_then(|def| def.get("quality").and_then(|value| value.as_str()))
+            });
             SortInventoryRankedRow {
                 resolved_quality_rank: row
                     .quality_rank
@@ -7142,10 +9064,15 @@ fn build_ranked_sort_rows(
     ranked
 }
 
-fn compare_ranked_rows(left: &SortInventoryRankedRow, right: &SortInventoryRankedRow) -> std::cmp::Ordering {
+fn compare_ranked_rows(
+    left: &SortInventoryRankedRow,
+    right: &SortInventoryRankedRow,
+) -> std::cmp::Ordering {
     compare_optional_text(left.category.as_deref(), right.category.as_deref())
         .then_with(|| right.resolved_quality_rank.cmp(&left.resolved_quality_rank))
-        .then_with(|| compare_optional_text(left.sub_category.as_deref(), right.sub_category.as_deref()))
+        .then_with(|| {
+            compare_optional_text(left.sub_category.as_deref(), right.sub_category.as_deref())
+        })
         .then_with(|| left.row.item_def_id.cmp(&right.row.item_def_id))
         .then_with(|| right.row.qty.cmp(&left.row.qty))
         .then_with(|| left.row.id.cmp(&right.row.id))
@@ -7181,8 +9108,12 @@ fn normalize_affix_lock_indexes(lock_indexes: &[i64]) -> Vec<i64> {
     out
 }
 
-fn build_affix_reroll_cost_plan(equip_req_realm: Option<&str>, lock_count: i64) -> InventoryRerollCostPlan {
-    let realm_rank = get_realm_rank_one_based_for_equipment(equip_req_realm.unwrap_or("凡人")).max(1);
+fn build_affix_reroll_cost_plan(
+    equip_req_realm: Option<&str>,
+    lock_count: i64,
+) -> InventoryRerollCostPlan {
+    let realm_rank =
+        get_realm_rank_one_based_for_equipment(equip_req_realm.unwrap_or("凡人")).max(1);
     let safe_lock_count = lock_count.max(0).min(30);
     let reroll_scroll_qty = 2_i64.saturating_pow(safe_lock_count as u32);
     let silver_cost = (realm_rank * realm_rank * 500) as f64 * 1.6_f64.powi(safe_lock_count as i32);
@@ -7199,7 +9130,8 @@ fn build_affix_reroll_cost_plan(equip_req_realm: Option<&str>, lock_count: i64) 
 }
 
 fn load_affix_pool_seed_map() -> Result<BTreeMap<String, InventoryAffixPoolSeed>, AppError> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/affix_pool.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/affix_pool.json");
     let content = fs::read_to_string(&path)
         .map_err(|error| AppError::config(format!("failed to read affix_pool.json: {error}")))?;
     let payload: InventoryAffixPoolFile = serde_json::from_str(&content)
@@ -7222,13 +9154,18 @@ fn resolve_affix_pool_for_item(
         .affixes
         .into_iter()
         .filter(|affix| {
-            affix.allowed_slots
+            affix
+                .allowed_slots
                 .as_ref()
                 .map(|slots| slots.iter().any(|slot| slot.trim() == equip_slot))
                 .unwrap_or(true)
         })
         .collect();
-    if filtered.affixes.is_empty() { None } else { Some(filtered) }
+    if filtered.affixes.is_empty() {
+        None
+    } else {
+        Some(filtered)
+    }
 }
 
 fn parse_inventory_rerolled_affixes(raw: serde_json::Value) -> Vec<InventoryRerolledAffixDto> {
@@ -7248,10 +9185,22 @@ fn render_affix_preview_tiers_for_realm(
     };
     let base = main.get("base").cloned().unwrap_or_default();
     let growth = main.get("growth").cloned().unwrap_or_default();
-    let base_min = base.get("min").and_then(|value| value.as_f64()).unwrap_or_default();
-    let base_max = base.get("max").and_then(|value| value.as_f64()).unwrap_or_default();
-    let growth_min = growth.get("min_delta").and_then(|value| value.as_f64()).unwrap_or_default();
-    let growth_max = growth.get("max_delta").and_then(|value| value.as_f64()).unwrap_or_default();
+    let base_min = base
+        .get("min")
+        .and_then(|value| value.as_f64())
+        .unwrap_or_default();
+    let base_max = base
+        .get("max")
+        .and_then(|value| value.as_f64())
+        .unwrap_or_default();
+    let growth_min = growth
+        .get("min_delta")
+        .and_then(|value| value.as_f64())
+        .unwrap_or_default();
+    let growth_max = growth
+        .get("max_delta")
+        .and_then(|value| value.as_f64())
+        .unwrap_or_default();
     let start_tier = affix.start_tier.unwrap_or(1).max(1);
     let tier_count = (realm_rank.max(start_tier) - start_tier + 1).max(1);
     (0..tier_count)
@@ -7261,15 +9210,35 @@ fn render_affix_preview_tiers_for_realm(
             let max = base_max + growth_max * offset as f64;
             InventoryAffixPoolPreviewTierDto {
                 tier,
-                min: if attr_factor.is_finite() && attr_factor > 0.0 { min * attr_factor } else { min },
-                max: if attr_factor.is_finite() && attr_factor > 0.0 { max * attr_factor } else { max },
+                min: if attr_factor.is_finite() && attr_factor > 0.0 {
+                    min * attr_factor
+                } else {
+                    min
+                },
+                max: if attr_factor.is_finite() && attr_factor > 0.0 {
+                    max * attr_factor
+                } else {
+                    max
+                },
             }
         })
         .collect()
 }
 
-fn build_affix_rng_seed(item_instance_id: i64, character_id: i64, lock_count: usize, cursor: usize) -> [u8; 16] {
-    md5::compute(format!("reroll-affix:{item_instance_id}:{character_id}:{lock_count}:{cursor}:{}", current_timestamp_ms()).as_bytes()).0
+fn build_affix_rng_seed(
+    item_instance_id: i64,
+    character_id: i64,
+    lock_count: usize,
+    cursor: usize,
+) -> [u8; 16] {
+    md5::compute(
+        format!(
+            "reroll-affix:{item_instance_id}:{character_id}:{lock_count}:{cursor}:{}",
+            current_timestamp_ms()
+        )
+        .as_bytes(),
+    )
+    .0
 }
 
 fn draw_weighted_affix_index(affixes: &[InventoryAffixSeed], seed: [u8; 16]) -> usize {
@@ -7280,7 +9249,9 @@ fn draw_weighted_affix_index(affixes: &[InventoryAffixSeed], seed: [u8; 16]) -> 
     if total_weight <= 0.0 {
         return 0;
     }
-    let mut remaining = (u32::from_be_bytes([seed[0], seed[1], seed[2], seed[3]]) as f64 / u32::MAX as f64) * total_weight;
+    let mut remaining = (u32::from_be_bytes([seed[0], seed[1], seed[2], seed[3]]) as f64
+        / u32::MAX as f64)
+        * total_weight;
     for (index, affix) in affixes.iter().enumerate() {
         remaining -= affix.weight.unwrap_or(0.0).max(0.0);
         if remaining <= 0.0 {
@@ -7304,7 +9275,9 @@ fn build_rerolled_affix(
         .map(|(index, _)| 0.6_f64.powi(index as i32))
         .collect::<Vec<_>>();
     let total_weight = weights.iter().sum::<f64>().max(f64::EPSILON);
-    let mut remaining_weight = (u32::from_be_bytes([seed[4], seed[5], seed[6], seed[7]]) as f64 / u32::MAX as f64) * total_weight;
+    let mut remaining_weight = (u32::from_be_bytes([seed[4], seed[5], seed[6], seed[7]]) as f64
+        / u32::MAX as f64)
+        * total_weight;
     let mut selected_index = 0_usize;
     for (index, weight) in weights.iter().enumerate() {
         remaining_weight -= *weight;
@@ -7313,10 +9286,23 @@ fn build_rerolled_affix(
             break;
         }
     }
-    let tier = tiers.get(selected_index).cloned().unwrap_or(InventoryAffixPoolPreviewTierDto { tier: 1, min: 0.0, max: 0.0 });
-    let roll_ratio = (u32::from_be_bytes([seed[8], seed[9], seed[10], seed[11]]) as f64 / u32::MAX as f64).clamp(0.0, 1.0);
+    let tier = tiers
+        .get(selected_index)
+        .cloned()
+        .unwrap_or(InventoryAffixPoolPreviewTierDto {
+            tier: 1,
+            min: 0.0,
+            max: 0.0,
+        });
+    let roll_ratio = (u32::from_be_bytes([seed[8], seed[9], seed[10], seed[11]]) as f64
+        / u32::MAX as f64)
+        .clamp(0.0, 1.0);
     let value = tier.min + (tier.max - tier.min) * roll_ratio;
-    let rounded_value = if value.fract().abs() < 0.000_001 { value.round() } else { (value * 100.0).round() / 100.0 };
+    let rounded_value = if value.fract().abs() < 0.000_001 {
+        value.round()
+    } else {
+        (value * 100.0).round() / 100.0
+    };
     let modifiers = affix.modifiers.as_ref().map(|mods| {
         mods.iter()
             .map(|modifier| InventorySocketEffectDto {
@@ -7369,22 +9355,39 @@ async fn load_reroll_item_state(
     if locked {
         return Err(AppError::config("物品已锁定"));
     }
-    let location = row.try_get::<Option<String>, _>("location")?.unwrap_or_default();
+    let location = row
+        .try_get::<Option<String>, _>("location")?
+        .unwrap_or_default();
     if location == "auction" {
         return Err(AppError::config("交易中的装备不可洗炼"));
     }
     if !matches!(location.as_str(), "bag" | "warehouse" | "equipped") {
         return Err(AppError::config("该物品当前位置不可洗炼"));
     }
-    let affixes = parse_inventory_rerolled_affixes(row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])));
+    let affixes = parse_inventory_rerolled_affixes(
+        row.try_get::<Option<serde_json::Value>, _>("affixes")?
+            .unwrap_or_else(|| serde_json::json!([])),
+    );
     if affixes.is_empty() {
         return Err(AppError::config("该装备没有可洗炼词条"));
     }
-    let affix_pool_id = def.row.get("affix_pool_id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
+    let affix_pool_id = def
+        .row
+        .get("affix_pool_id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if affix_pool_id.is_empty() {
         return Err(AppError::config("该装备没有可用词条池"));
     }
-    let equip_slot = def.row.get("equip_slot").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
+    let equip_slot = def
+        .row
+        .get("equip_slot")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if equip_slot.is_empty() {
         return Err(AppError::config("该装备没有可用词条池"));
     }
@@ -7394,11 +9397,17 @@ async fn load_reroll_item_state(
         location,
         _locked: locked,
         quality: row.try_get::<Option<String>, _>("quality")?,
-        quality_rank: row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
+        quality_rank: row
+            .try_get::<Option<i32>, _>("quality_rank")?
+            .map(i64::from),
         affixes,
         affix_pool_id,
         equip_slot,
-        equip_req_realm: def.row.get("equip_req_realm").and_then(|value| value.as_str()).map(|s| s.to_string()),
+        equip_req_realm: def
+            .row
+            .get("equip_req_realm")
+            .and_then(|value| value.as_str())
+            .map(|s| s.to_string()),
     })
 }
 
@@ -7438,35 +9447,67 @@ async fn preview_inventory_affix_pool_tx(
 ) -> Result<InventoryAffixPoolPreviewResponse, AppError> {
     let item = load_reroll_item_state(state, character_id, item_instance_id).await?;
     let defs = load_inventory_def_map()?;
-    let item_def = defs.get(item.item_def_id.as_str()).ok_or_else(|| AppError::config("物品不存在"))?;
+    let item_def = defs
+        .get(item.item_def_id.as_str())
+        .ok_or_else(|| AppError::config("物品不存在"))?;
     let pool_map = load_affix_pool_seed_map()?;
-    let Some(pool) = resolve_affix_pool_for_item(&pool_map, &item.affix_pool_id, &item.equip_slot) else {
+    let Some(pool) = resolve_affix_pool_for_item(&pool_map, &item.affix_pool_id, &item.equip_slot)
+    else {
         return Err(AppError::config("词条池不存在"));
     };
-    let def_quality_rank = item_def.row.get("quality").and_then(|value| value.as_str()).map(resolve_quality_rank).unwrap_or(1).max(1);
-    let resolved_quality_rank = item.quality_rank.unwrap_or_else(|| item.quality.as_deref().map(resolve_quality_rank).unwrap_or(def_quality_rank)).max(1);
-    let attr_factor = quality_multiplier(resolved_quality_rank) / quality_multiplier(def_quality_rank);
-    let owned_keys = item.affixes.iter().map(|affix| affix.key.as_str()).collect::<std::collections::BTreeSet<_>>();
+    let def_quality_rank = item_def
+        .row
+        .get("quality")
+        .and_then(|value| value.as_str())
+        .map(resolve_quality_rank)
+        .unwrap_or(1)
+        .max(1);
+    let resolved_quality_rank = item
+        .quality_rank
+        .unwrap_or_else(|| {
+            item.quality
+                .as_deref()
+                .map(resolve_quality_rank)
+                .unwrap_or(def_quality_rank)
+        })
+        .max(1);
+    let attr_factor =
+        quality_multiplier(resolved_quality_rank) / quality_multiplier(def_quality_rank);
+    let owned_keys = item
+        .affixes
+        .iter()
+        .map(|affix| affix.key.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
     Ok(InventoryAffixPoolPreviewResponse {
         success: true,
         message: "ok".to_string(),
         data: Some(InventoryAffixPoolPreviewDataDto {
             pool_name: pool.name,
-            affixes: pool.affixes.into_iter().map(|affix| InventoryAffixPoolPreviewAffixDto {
-                key: affix.key.clone(),
-                name: affix.name.clone(),
-                group: affix.group.clone().unwrap_or_default(),
-                is_legendary: affix.is_legendary.unwrap_or(false),
-                apply_type: affix.apply_type.clone(),
-                tiers: render_affix_preview_tiers_for_realm(&affix, attr_factor, get_realm_rank_one_based_for_equipment(item.equip_req_realm.as_deref().unwrap_or("凡人"))),
-                owned: owned_keys.contains(affix.key.as_str()),
-                trigger: affix.trigger.clone(),
-                target: affix.target.clone(),
-                effect_type: affix.effect_type.clone(),
-                duration_round: affix.duration_round,
-                params: affix.params.clone(),
-                description_template: affix.description_template.clone(),
-            }).collect(),
+            affixes: pool
+                .affixes
+                .into_iter()
+                .map(|affix| InventoryAffixPoolPreviewAffixDto {
+                    key: affix.key.clone(),
+                    name: affix.name.clone(),
+                    group: affix.group.clone().unwrap_or_default(),
+                    is_legendary: affix.is_legendary.unwrap_or(false),
+                    apply_type: affix.apply_type.clone(),
+                    tiers: render_affix_preview_tiers_for_realm(
+                        &affix,
+                        attr_factor,
+                        get_realm_rank_one_based_for_equipment(
+                            item.equip_req_realm.as_deref().unwrap_or("凡人"),
+                        ),
+                    ),
+                    owned: owned_keys.contains(affix.key.as_str()),
+                    trigger: affix.trigger.clone(),
+                    target: affix.target.clone(),
+                    effect_type: affix.effect_type.clone(),
+                    duration_round: affix.duration_round,
+                    params: affix.params.clone(),
+                    description_template: affix.description_template.clone(),
+                })
+                .collect(),
         }),
     })
 }
@@ -7483,21 +9524,68 @@ async fn reroll_inventory_affixes_tx(
     let normalized_lock_indexes = normalize_affix_lock_indexes(&lock_indexes);
     let affix_count = item.affixes.len() as i64;
     let max_lock_count = (affix_count - 1).max(0);
-    if normalized_lock_indexes.iter().any(|idx| *idx >= affix_count) || normalized_lock_indexes.len() as i64 > max_lock_count {
-        return Ok(InventoryRerollResponse { success: false, message: "锁定词条数量不合法".to_string(), data: None });
+    if normalized_lock_indexes
+        .iter()
+        .any(|idx| *idx >= affix_count)
+        || normalized_lock_indexes.len() as i64 > max_lock_count
+    {
+        return Ok(InventoryRerollResponse {
+            success: false,
+            message: "锁定词条数量不合法".to_string(),
+            data: None,
+        });
     }
     let defs = load_inventory_def_map()?;
-    let item_def = defs.get(item.item_def_id.as_str()).ok_or_else(|| AppError::config("物品不存在"))?;
+    let item_def = defs
+        .get(item.item_def_id.as_str())
+        .ok_or_else(|| AppError::config("物品不存在"))?;
     let pool_map = load_affix_pool_seed_map()?;
-    let Some(pool) = resolve_affix_pool_for_item(&pool_map, &item.affix_pool_id, &item.equip_slot) else {
-        return Ok(InventoryRerollResponse { success: false, message: "该装备没有可用词条池".to_string(), data: None });
+    let Some(pool) = resolve_affix_pool_for_item(&pool_map, &item.affix_pool_id, &item.equip_slot)
+    else {
+        return Ok(InventoryRerollResponse {
+            success: false,
+            message: "该装备没有可用词条池".to_string(),
+            data: None,
+        });
     };
-    let def_quality_rank = item_def.row.get("quality").and_then(|value| value.as_str()).map(resolve_quality_rank).unwrap_or(1).max(1);
-    let resolved_quality_rank = item.quality_rank.unwrap_or_else(|| item.quality.as_deref().map(resolve_quality_rank).unwrap_or(def_quality_rank)).max(1);
-    let attr_factor = quality_multiplier(resolved_quality_rank) / quality_multiplier(def_quality_rank);
-    let cost_plan = build_affix_reroll_cost_plan(item.equip_req_realm.as_deref(), normalized_lock_indexes.len() as i64);
-    consume_inventory_material_by_def_id(state, user_id, character_id, REROLL_SCROLL_ITEM_DEF_ID, cost_plan.reroll_scroll_qty).await?;
-    consume_inventory_character_currencies(state, character_id, cost_plan.silver_cost, cost_plan.spirit_stone_cost, 0).await?;
+    let def_quality_rank = item_def
+        .row
+        .get("quality")
+        .and_then(|value| value.as_str())
+        .map(resolve_quality_rank)
+        .unwrap_or(1)
+        .max(1);
+    let resolved_quality_rank = item
+        .quality_rank
+        .unwrap_or_else(|| {
+            item.quality
+                .as_deref()
+                .map(resolve_quality_rank)
+                .unwrap_or(def_quality_rank)
+        })
+        .max(1);
+    let attr_factor =
+        quality_multiplier(resolved_quality_rank) / quality_multiplier(def_quality_rank);
+    let cost_plan = build_affix_reroll_cost_plan(
+        item.equip_req_realm.as_deref(),
+        normalized_lock_indexes.len() as i64,
+    );
+    consume_inventory_material_by_def_id(
+        state,
+        user_id,
+        character_id,
+        REROLL_SCROLL_ITEM_DEF_ID,
+        cost_plan.reroll_scroll_qty,
+    )
+    .await?;
+    consume_inventory_character_currencies(
+        state,
+        character_id,
+        cost_plan.silver_cost,
+        cost_plan.spirit_stone_cost,
+        0,
+    )
+    .await?;
 
     let mut selected_keys = normalized_lock_indexes
         .iter()
@@ -7505,42 +9593,87 @@ async fn reroll_inventory_affixes_tx(
         .map(|affix| affix.key.clone())
         .collect::<std::collections::BTreeSet<_>>();
     let mutex_groups = pool.rules.mutex_groups.unwrap_or_default();
-    let locked_count = item.affixes.iter().enumerate().filter(|(idx, _)| normalized_lock_indexes.contains(&(*idx as i64))).filter(|(_, affix)| affix.is_legendary.unwrap_or(false)).count();
+    let locked_count = item
+        .affixes
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| normalized_lock_indexes.contains(&(*idx as i64)))
+        .filter(|(_, affix)| affix.is_legendary.unwrap_or(false))
+        .count();
     let additional_legendary = {
-        let seed = build_affix_rng_seed(item_instance_id, character_id, normalized_lock_indexes.len(), 9999);
-        let roll = u32::from_be_bytes([seed[8], seed[9], seed[10], seed[11]]) as f64 / u32::MAX as f64;
-        if roll < pool.rules.legendary_chance.unwrap_or(0.0).clamp(0.0, 1.0) { 1 } else { 0 }
+        let seed = build_affix_rng_seed(
+            item_instance_id,
+            character_id,
+            normalized_lock_indexes.len(),
+            9999,
+        );
+        let roll =
+            u32::from_be_bytes([seed[8], seed[9], seed[10], seed[11]]) as f64 / u32::MAX as f64;
+        if roll < pool.rules.legendary_chance.unwrap_or(0.0).clamp(0.0, 1.0) {
+            1
+        } else {
+            0
+        }
     };
     let max_legendary = locked_count + additional_legendary;
-    let reroll_count = item.affixes.len().saturating_sub(normalized_lock_indexes.len());
+    let reroll_count = item
+        .affixes
+        .len()
+        .saturating_sub(normalized_lock_indexes.len());
     if reroll_count == 0 {
-        return Ok(InventoryRerollResponse { success: false, message: "锁定词条数量不合法".to_string(), data: None });
+        return Ok(InventoryRerollResponse {
+            success: false,
+            message: "锁定词条数量不合法".to_string(),
+            data: None,
+        });
     }
     let mut generated = Vec::new();
     let mut legendary_count = locked_count;
     for cursor in 0..reroll_count {
-        let valid = pool.affixes.iter().filter(|affix| {
-            if selected_keys.contains(affix.key.as_str()) && !pool.rules.allow_duplicate {
-                return false;
-            }
-            if affix.is_legendary.unwrap_or(false) && legendary_count >= max_legendary {
-                return false;
-            }
-            if mutex_groups.iter().any(|group| group.iter().any(|key| key == &affix.key) && group.iter().any(|key| selected_keys.contains(key.as_str()))) {
-                return false;
-            }
-            true
-        }).cloned().collect::<Vec<_>>();
+        let valid = pool
+            .affixes
+            .iter()
+            .filter(|affix| {
+                if selected_keys.contains(affix.key.as_str()) && !pool.rules.allow_duplicate {
+                    return false;
+                }
+                if affix.is_legendary.unwrap_or(false) && legendary_count >= max_legendary {
+                    return false;
+                }
+                if mutex_groups.iter().any(|group| {
+                    group.iter().any(|key| key == &affix.key)
+                        && group.iter().any(|key| selected_keys.contains(key.as_str()))
+                }) {
+                    return false;
+                }
+                true
+            })
+            .cloned()
+            .collect::<Vec<_>>();
         if valid.is_empty() {
-            return Ok(InventoryRerollResponse { success: false, message: "当前锁定组合无法完成洗炼，请减少锁定词条".to_string(), data: None });
+            return Ok(InventoryRerollResponse {
+                success: false,
+                message: "当前锁定组合无法完成洗炼，请减少锁定词条".to_string(),
+                data: None,
+            });
         }
-        let seed = build_affix_rng_seed(item_instance_id, character_id, normalized_lock_indexes.len(), cursor);
+        let seed = build_affix_rng_seed(
+            item_instance_id,
+            character_id,
+            normalized_lock_indexes.len(),
+            cursor,
+        );
         let index = draw_weighted_affix_index(&valid, seed);
-        let selected = valid.get(index).cloned().unwrap_or_else(|| valid[0].clone());
+        let selected = valid
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| valid[0].clone());
         let rerolled = build_rerolled_affix(
             &selected,
             attr_factor,
-            get_realm_rank_one_based_for_equipment(item.equip_req_realm.as_deref().unwrap_or("凡人")),
+            get_realm_rank_one_based_for_equipment(
+                item.equip_req_realm.as_deref().unwrap_or("凡人"),
+            ),
             seed,
         );
         if rerolled.is_legendary.unwrap_or(false) {
@@ -7555,7 +9688,12 @@ async fn reroll_inventory_affixes_tx(
         if normalized_lock_indexes.contains(&(index as i64)) {
             final_affixes.push(affix.clone());
         } else {
-            final_affixes.push(generated.get(generated_cursor).cloned().ok_or_else(|| AppError::config("当前锁定组合无法完成洗炼，请减少锁定词条"))?);
+            final_affixes.push(
+                generated
+                    .get(generated_cursor)
+                    .cloned()
+                    .ok_or_else(|| AppError::config("当前锁定组合无法完成洗炼，请减少锁定词条"))?,
+            );
             generated_cursor += 1;
         }
     }
@@ -7564,7 +9702,10 @@ async fn reroll_inventory_affixes_tx(
         |q| q.bind(serde_json::to_value(&final_affixes).unwrap_or_else(|_| serde_json::json!([]))).bind(item_instance_id).bind(character_id),
     ).await?;
     if item.location == "equipped" {
-        if let Some(projection) = state.online_battle_projections.get_current_for_user(user_id) {
+        if let Some(projection) = state
+            .online_battle_projections
+            .get_current_for_user(user_id)
+        {
             state.online_battle_projections.clear(&projection.battle_id);
         }
     }
@@ -7599,10 +9740,17 @@ async fn apply_sorted_inventory_rows(
     capacity: i64,
     ranked_rows: Vec<SortInventoryRankedRow>,
 ) -> Result<(), AppError> {
-    let kept_ids = ranked_rows.iter().map(|ranked| ranked.row.id).collect::<Vec<_>>();
+    let kept_ids = ranked_rows
+        .iter()
+        .map(|ranked| ranked.row.id)
+        .collect::<Vec<_>>();
     release_item_instance_slots_for_location(state, character_id, location).await?;
     for (index, ranked) in ranked_rows.iter().enumerate() {
-        let location_slot = if (index as i64) < capacity { Some(index as i64) } else { None };
+        let location_slot = if (index as i64) < capacity {
+            Some(index as i64)
+        } else {
+            None
+        };
         state.database.execute(
             "UPDATE item_instance SET qty = $1, bind_type = $2, quality = $3, quality_rank = $4, metadata = $5, location_slot = $6, updated_at = NOW() WHERE id = $7 AND owner_character_id = $8 AND location = $9",
             |q| q
@@ -7619,10 +9767,13 @@ async fn apply_sorted_inventory_rows(
     }
 
     if kept_ids.is_empty() {
-        state.database.execute(
-            "DELETE FROM item_instance WHERE owner_character_id = $1 AND location = $2",
-            |q| q.bind(character_id).bind(location),
-        ).await?;
+        state
+            .database
+            .execute(
+                "DELETE FROM item_instance WHERE owner_character_id = $1 AND location = $2",
+                |q| q.bind(character_id).bind(location),
+            )
+            .await?;
     } else {
         state.database.execute(
             "DELETE FROM item_instance WHERE owner_character_id = $1 AND location = $2 AND NOT (id = ANY($3))",
@@ -7647,20 +9798,43 @@ async fn map_inventory_item(
     Ok(InventoryItemDto {
         id: row.try_get::<i64, _>("id")?,
         item_def_id,
-        qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or(1),
+        qty: row
+            .try_get::<Option<i32>, _>("qty")?
+            .map(i64::from)
+            .unwrap_or(1),
         quality: row.try_get::<Option<String>, _>("quality")?,
-        quality_rank: row.try_get::<Option<i32>, _>("quality_rank")?.map(i64::from),
-        location: row.try_get::<Option<String>, _>("location")?.unwrap_or_else(|| "bag".to_string()),
-        location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+        quality_rank: row
+            .try_get::<Option<i32>, _>("quality_rank")?
+            .map(i64::from),
+        location: row
+            .try_get::<Option<String>, _>("location")?
+            .unwrap_or_else(|| "bag".to_string()),
+        location_slot: row
+            .try_get::<Option<i32>, _>("location_slot")?
+            .map(i64::from),
         equipped_slot: row.try_get::<Option<String>, _>("equipped_slot")?,
-        strengthen_level: row.try_get::<Option<i32>, _>("strengthen_level")?.map(i64::from).unwrap_or_default(),
-        refine_level: row.try_get::<Option<i32>, _>("refine_level")?.map(i64::from).unwrap_or_default(),
-        affixes: row.try_get::<Option<serde_json::Value>, _>("affixes")?.unwrap_or_else(|| serde_json::json!([])),
-        identified: row.try_get::<Option<bool>, _>("identified")?.unwrap_or(true),
+        strengthen_level: row
+            .try_get::<Option<i32>, _>("strengthen_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        refine_level: row
+            .try_get::<Option<i32>, _>("refine_level")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        affixes: row
+            .try_get::<Option<serde_json::Value>, _>("affixes")?
+            .unwrap_or_else(|| serde_json::json!([])),
+        identified: row
+            .try_get::<Option<bool>, _>("identified")?
+            .unwrap_or(true),
         locked: row.try_get::<Option<bool>, _>("locked")?.unwrap_or(false),
-        bind_type: row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
+        bind_type: row
+            .try_get::<Option<String>, _>("bind_type")?
+            .unwrap_or_else(|| "none".to_string()),
         socketed_gems: row.try_get::<Option<serde_json::Value>, _>("socketed_gems")?,
-        created_at: row.try_get::<Option<String>, _>("created_at_text")?.unwrap_or_default(),
+        created_at: row
+            .try_get::<Option<String>, _>("created_at_text")?
+            .unwrap_or_default(),
         def,
     })
 }
@@ -7668,10 +9842,20 @@ async fn map_inventory_item(
 pub(crate) fn load_inventory_def_map() -> Result<BTreeMap<String, InventoryDefSeed>, AppError> {
     let mut map = BTreeMap::new();
     for filename in ["item_def.json", "equipment_def.json", "gem_def.json"] {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}"));
-        let content = fs::read_to_string(&path).map_err(|error| AppError::config(format!("failed to read {}: {error}", path.display())))?;
-        let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| AppError::config(format!("failed to parse {}: {error}", path.display())))?;
-        for row in payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../server/src/data/seeds/{filename}"));
+        let content = fs::read_to_string(&path).map_err(|error| {
+            AppError::config(format!("failed to read {}: {error}", path.display()))
+        })?;
+        let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+            AppError::config(format!("failed to parse {}: {error}", path.display()))
+        })?;
+        for row in payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default()
+        {
             if let Some(id) = row.get("id").and_then(|value| value.as_str()) {
                 map.insert(id.to_string(), InventoryDefSeed { row });
             }
@@ -7680,12 +9864,15 @@ pub(crate) fn load_inventory_def_map() -> Result<BTreeMap<String, InventoryDefSe
     Ok(map)
 }
 
-fn load_visible_inventory_technique_def_map() -> Result<BTreeMap<String, InventoryTechniqueDefSeed>, AppError> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json");
+fn load_visible_inventory_technique_def_map()
+-> Result<BTreeMap<String, InventoryTechniqueDefSeed>, AppError> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../server/src/data/seeds/technique_def.json");
     let content = fs::read_to_string(&path)
         .map_err(|error| AppError::config(format!("failed to read {}: {error}", path.display())))?;
-    let payload: InventoryTechniqueDefFile = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse {}: {error}", path.display())))?;
+    let payload: InventoryTechniqueDefFile = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse {}: {error}", path.display()))
+    })?;
     Ok(payload
         .techniques
         .into_iter()
@@ -7721,44 +9908,97 @@ pub(crate) async fn resolve_generated_technique_book_display(
     ).await?;
     let static_defs = load_visible_inventory_technique_def_map()?;
     let static_def = static_defs.get(&generated_technique_id);
-    let generated_technique_name = generated_row.as_ref()
+    let generated_technique_name = generated_row
+        .as_ref()
         .and_then(|row| row.try_get::<Option<String>, _>("name").ok().flatten())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .or_else(|| static_def.map(|entry| entry.name.trim().to_string()).filter(|value| !value.is_empty()))
-        .or_else(|| metadata.and_then(|value| value.as_object()).and_then(|meta| meta.get("generatedTechniqueName")).and_then(|value| value.as_str()).map(|value| value.trim().to_string()).filter(|value| !value.is_empty()));
+        .or_else(|| {
+            static_def
+                .map(|entry| entry.name.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| {
+            metadata
+                .and_then(|value| value.as_object())
+                .and_then(|meta| meta.get("generatedTechniqueName"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        });
     let Some(generated_technique_name) = generated_technique_name else {
         return Ok(None);
     };
-    let quality = generated_row.as_ref()
+    let quality = generated_row
+        .as_ref()
         .and_then(|row| row.try_get::<Option<String>, _>("quality").ok().flatten())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .or_else(|| static_def.and_then(|entry| entry.quality.clone()).map(|value| value.trim().to_string()).filter(|value| !value.is_empty()));
-    let description = generated_row.as_ref()
-        .and_then(|row| row.try_get::<Option<String>, _>("description").ok().flatten())
+        .or_else(|| {
+            static_def
+                .and_then(|entry| entry.quality.clone())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        });
+    let description = generated_row
+        .as_ref()
+        .and_then(|row| {
+            row.try_get::<Option<String>, _>("description")
+                .ok()
+                .flatten()
+        })
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .or_else(|| static_def.and_then(|entry| entry.description.clone()).map(|value| value.trim().to_string()).filter(|value| !value.is_empty()))
-        .unwrap_or_else(|| format!("记载功法「{}」的生成功法书，使用后学习该功法。", generated_technique_name));
-    let long_desc = generated_row.as_ref()
+        .or_else(|| {
+            static_def
+                .and_then(|entry| entry.description.clone())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "记载功法「{}」的生成功法书，使用后学习该功法。",
+                generated_technique_name
+            )
+        });
+    let long_desc = generated_row
+        .as_ref()
         .and_then(|row| row.try_get::<Option<String>, _>("long_desc").ok().flatten())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .or_else(|| static_def.and_then(|entry| entry.long_desc.clone()).map(|value| value.trim().to_string()).filter(|value| !value.is_empty()))
-        .unwrap_or_else(|| format!("该秘卷为洞府研修推演所得，关联功法：{}。", generated_technique_name));
+        .or_else(|| {
+            static_def
+                .and_then(|entry| entry.long_desc.clone())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "该秘卷为洞府研修推演所得，关联功法：{}。",
+                generated_technique_name
+            )
+        });
     let mut tags = vec![serde_json::Value::String("研修生成".to_string())];
-    let extra_tags = generated_row.as_ref()
-        .and_then(|row| row.try_get::<Option<serde_json::Value>, _>("tags").ok().flatten())
+    let extra_tags = generated_row
+        .as_ref()
+        .and_then(|row| {
+            row.try_get::<Option<serde_json::Value>, _>("tags")
+                .ok()
+                .flatten()
+        })
         .or_else(|| static_def.and_then(|entry| entry.tags.clone()))
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default();
     tags.extend(extra_tags);
     let mut dedup = BTreeSet::new();
-    let tags = serde_json::Value::Array(tags.into_iter().filter(|value| {
-        let key = value.as_str().unwrap_or_default().to_string();
-        !key.is_empty() && dedup.insert(key)
-    }).collect());
+    let tags = serde_json::Value::Array(
+        tags.into_iter()
+            .filter(|value| {
+                let key = value.as_str().unwrap_or_default().to_string();
+                !key.is_empty() && dedup.insert(key)
+            })
+            .collect(),
+    );
     Ok(Some(GeneratedTechniqueBookDisplayOverride {
         generated_technique_id,
         generated_technique_name: generated_technique_name.clone(),
@@ -7770,7 +10010,12 @@ pub(crate) async fn resolve_generated_technique_book_display(
     }))
 }
 
-async fn map_item_def_lite(state: &AppState, item_def_id: &str, row: &serde_json::Value, metadata: Option<&serde_json::Value>) -> Result<ItemDefLiteDto, AppError> {
+async fn map_item_def_lite(
+    state: &AppState,
+    item_def_id: &str,
+    row: &serde_json::Value,
+    metadata: Option<&serde_json::Value>,
+) -> Result<ItemDefLiteDto, AppError> {
     let raw_generated_technique_id = metadata
         .and_then(|value| value.as_object())
         .and_then(|metadata| metadata.get("generatedTechniqueId"))
@@ -7781,45 +10026,124 @@ async fn map_item_def_lite(state: &AppState, item_def_id: &str, row: &serde_json
         .and_then(|metadata| metadata.get("generatedTechniqueName"))
         .and_then(|value| value.as_str())
         .map(|value| value.to_string());
-    let generated_display = resolve_generated_technique_book_display(state, item_def_id, row, metadata).await?;
-    let display_name = generated_display.as_ref().map(|display| display.name.clone())
-        .unwrap_or_else(|| row.get("name").and_then(|value| value.as_str()).unwrap_or(item_def_id).to_string());
-    let description = generated_display.as_ref().map(|display| display.description.clone())
-        .or_else(|| row.get("description").and_then(|value| value.as_str()).map(|value| value.to_string()));
-    let long_desc = generated_display.as_ref().map(|display| display.long_desc.clone())
-        .or_else(|| row.get("long_desc").and_then(|value| value.as_str()).map(|value| value.to_string()));
+    let generated_display =
+        resolve_generated_technique_book_display(state, item_def_id, row, metadata).await?;
+    let display_name = generated_display
+        .as_ref()
+        .map(|display| display.name.clone())
+        .unwrap_or_else(|| {
+            row.get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or(item_def_id)
+                .to_string()
+        });
+    let description = generated_display
+        .as_ref()
+        .map(|display| display.description.clone())
+        .or_else(|| {
+            row.get("description")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        });
+    let long_desc = generated_display
+        .as_ref()
+        .map(|display| display.long_desc.clone())
+        .or_else(|| {
+            row.get("long_desc")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        });
     Ok(ItemDefLiteDto {
         id: item_def_id.to_string(),
         name: display_name,
-        icon: row.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        quality: generated_display.as_ref().and_then(|display| display.quality.clone())
-            .or_else(|| row.get("quality").and_then(|value| value.as_str()).map(|value| value.to_string()))
+        icon: row
+            .get("icon")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        quality: generated_display
+            .as_ref()
+            .and_then(|display| display.quality.clone())
+            .or_else(|| {
+                row.get("quality")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string())
+            })
             .unwrap_or_else(|| "黄".to_string()),
-        category: row.get("category").and_then(|value| value.as_str()).unwrap_or("other").to_string(),
-        sub_category: row.get("sub_category").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        can_disassemble: row.get("can_disassemble").and_then(|value| value.as_bool()).unwrap_or(false),
-        stack_max: row.get("stack_max").and_then(|value| value.as_i64()).unwrap_or(1),
+        category: row
+            .get("category")
+            .and_then(|value| value.as_str())
+            .unwrap_or("other")
+            .to_string(),
+        sub_category: row
+            .get("sub_category")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        can_disassemble: row
+            .get("can_disassemble")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        stack_max: row
+            .get("stack_max")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(1),
         description,
         long_desc,
-        tags: generated_display.as_ref().map(|display| display.tags.clone()).unwrap_or_else(|| row.get("tags").cloned().unwrap_or_else(|| serde_json::json!([]))),
-        effect_defs: row.get("effect_defs").cloned().unwrap_or_else(|| serde_json::json!([])),
-        base_attrs: row.get("base_attrs").cloned().unwrap_or_else(|| serde_json::json!({})),
-        equip_slot: row.get("equip_slot").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        use_type: row.get("use_type").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        use_req_realm: row.get("use_req_realm").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        equip_req_realm: row.get("equip_req_realm").and_then(|value| value.as_str()).map(|value| value.to_string()),
+        tags: generated_display
+            .as_ref()
+            .map(|display| display.tags.clone())
+            .unwrap_or_else(|| {
+                row.get("tags")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([]))
+            }),
+        effect_defs: row
+            .get("effect_defs")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([])),
+        base_attrs: row
+            .get("base_attrs")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        equip_slot: row
+            .get("equip_slot")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        use_type: row
+            .get("use_type")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        use_req_realm: row
+            .get("use_req_realm")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        equip_req_realm: row
+            .get("equip_req_realm")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
         use_req_level: row.get("use_req_level").and_then(|value| value.as_i64()),
         use_limit_daily: row.get("use_limit_daily").and_then(|value| value.as_i64()),
         use_limit_total: row.get("use_limit_total").and_then(|value| value.as_i64()),
         socket_max: row.get("socket_max").and_then(|value| value.as_i64()),
         gem_slot_types: row.get("gem_slot_types").cloned(),
         gem_level: row.get("gem_level").and_then(|value| value.as_i64()),
-        set_id: row.get("set_id").and_then(|value| value.as_str()).map(|value| value.to_string()),
-        set_name: row.get("set_name").and_then(|value| value.as_str()).map(|value| value.to_string()),
+        set_id: row
+            .get("set_id")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        set_name: row
+            .get("set_name")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
         set_bonuses: row.get("set_bonuses").cloned(),
         set_equipped_count: None,
-        generated_technique_id: generated_display.as_ref().map(|display| display.generated_technique_id.clone()).or(raw_generated_technique_id.filter(|_| false)),
-        generated_technique_name: generated_display.as_ref().map(|display| display.generated_technique_name.clone()).or(raw_generated_technique_name.filter(|_| false)),
+        generated_technique_id: generated_display
+            .as_ref()
+            .map(|display| display.generated_technique_id.clone())
+            .or(raw_generated_technique_id.filter(|_| false)),
+        generated_technique_name: generated_display
+            .as_ref()
+            .map(|display| display.generated_technique_name.clone())
+            .or(raw_generated_technique_name.filter(|_| false)),
     })
 }
 
@@ -7883,13 +10207,18 @@ fn calc_character_stamina_max_by_insight_level(insight_level: i64) -> i64 {
 fn load_default_month_card_stamina_recovery_rate() -> f64 {
     static RATE: OnceLock<f64> = OnceLock::new();
     *RATE.get_or_init(|| {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/month_card.json");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/month_card.json");
         let content = fs::read_to_string(path).unwrap_or_default();
         let payload: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
         payload
             .get("month_cards")
             .and_then(|value| value.as_array())
-            .and_then(|cards| cards.iter().find(|card| card.get("id").and_then(|v| v.as_str()) == Some(DEFAULT_MONTH_CARD_ID)))
+            .and_then(|cards| {
+                cards.iter().find(|card| {
+                    card.get("id").and_then(|v| v.as_str()) == Some(DEFAULT_MONTH_CARD_ID)
+                })
+            })
             .and_then(|card| card.get("stamina_recovery_rate"))
             .and_then(|value| value.as_f64())
             .unwrap_or(0.0)
@@ -7909,7 +10238,9 @@ fn resolve_stamina_recovery_state(
     let safe_max_stamina = max_stamina.max(1);
     let safe_stamina = stamina.clamp(0, safe_max_stamina);
     let recover_at_ms = parse_datetime_millis(recover_at_text).unwrap_or(now_ms);
-    let fallback_recover_at = recover_at_text.map(str::to_string).unwrap_or_else(current_timestamp_rfc3339);
+    let fallback_recover_at = recover_at_text
+        .map(str::to_string)
+        .unwrap_or_else(current_timestamp_rfc3339);
     if safe_stamina >= safe_max_stamina || now_ms <= recover_at_ms {
         return ResolvedStaminaState {
             stamina: safe_stamina,
@@ -8013,7 +10344,8 @@ fn rewind_recover_at_ms(
         let active_real_duration_ms = (cursor_ms - active_start_ms) as f64;
         let active_effective_cap_ms = active_real_duration_ms * active_multiplier;
         if remaining_effective_elapsed_ms <= active_effective_cap_ms {
-            return (cursor_ms as f64 - remaining_effective_elapsed_ms / active_multiplier).round() as i64;
+            return (cursor_ms as f64 - remaining_effective_elapsed_ms / active_multiplier).round()
+                as i64;
         }
         remaining_effective_elapsed_ms -= active_effective_cap_ms;
         cursor_ms = active_start_ms;
@@ -8026,14 +10358,18 @@ fn parse_datetime_millis(raw: Option<&str>) -> Option<i64> {
     if text.is_empty() {
         return None;
     }
-    let parsed = time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
+    let parsed =
+        time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
     Some(parsed.unix_timestamp_nanos() as i64 / 1_000_000)
 }
 
 fn millis_to_rfc3339(ms: i64) -> String {
     time::OffsetDateTime::from_unix_timestamp_nanos((ms as i128) * 1_000_000)
         .ok()
-        .and_then(|dt| dt.format(&time::format_description::well_known::Rfc3339).ok())
+        .and_then(|dt| {
+            dt.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
         .unwrap_or_else(current_timestamp_rfc3339)
 }
 
@@ -8121,17 +10457,23 @@ fn validate_gem_convert_item_state(locked: bool, location: &str) -> Result<(), &
     Ok(())
 }
 
-fn has_sufficient_selected_gem_qty(qty_by_id: &BTreeMap<i64, i64>, consume_by_id: &BTreeMap<i64, i64>) -> bool {
-    consume_by_id
-        .iter()
-        .all(|(item_id, per_time_qty)| qty_by_id.get(item_id).copied().unwrap_or_default() >= *per_time_qty)
+fn has_sufficient_selected_gem_qty(
+    qty_by_id: &BTreeMap<i64, i64>,
+    consume_by_id: &BTreeMap<i64, i64>,
+) -> bool {
+    consume_by_id.iter().all(|(item_id, per_time_qty)| {
+        qty_by_id.get(item_id).copied().unwrap_or_default() >= *per_time_qty
+    })
 }
 
 fn normalize_gem_execute_times(times: i64) -> i64 {
     times.clamp(1, GEM_EXECUTE_MAX_TIMES)
 }
 
-fn parse_optional_positive_i64_json(value: Option<&serde_json::Value>, field_name: &str) -> Result<Option<i64>, AppError> {
+fn parse_optional_positive_i64_json(
+    value: Option<&serde_json::Value>,
+    field_name: &str,
+) -> Result<Option<i64>, AppError> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -8157,7 +10499,10 @@ fn parse_optional_positive_i64_json(value: Option<&serde_json::Value>, field_nam
     Ok(Some(parsed))
 }
 
-fn parse_positive_i64_array_json(values: &[serde_json::Value], field_name: &str) -> Result<Vec<i64>, AppError> {
+fn parse_positive_i64_array_json(
+    values: &[serde_json::Value],
+    field_name: &str,
+) -> Result<Vec<i64>, AppError> {
     let mut parsed_values = Vec::with_capacity(values.len());
     for value in values {
         let Some(parsed) = parse_optional_positive_i64_json(Some(value), field_name)? else {
@@ -8215,7 +10560,11 @@ fn resolve_currency_loot_type(effect: &serde_json::Value) -> Option<&str> {
         .filter(|value| matches!(*value, "spirit_stones" | "silver"))
 }
 
-fn roll_item_use_amount_with_random_fn<F>(value: Option<i64>, effect: &serde_json::Value, mut roll_random_int: F) -> i64
+fn roll_item_use_amount_with_random_fn<F>(
+    value: Option<i64>,
+    effect: &serde_json::Value,
+    mut roll_random_int: F,
+) -> i64
 where
     F: FnMut(i64, i64) -> i64,
 {
@@ -8239,7 +10588,9 @@ where
 }
 
 fn roll_item_use_amount(value: Option<i64>, effect: &serde_json::Value) -> i64 {
-    roll_item_use_amount_with_random_fn(value, effect, |lower, upper| rand::thread_rng().gen_range(lower..=upper))
+    roll_item_use_amount_with_random_fn(value, effect, |lower, upper| {
+        rand::thread_rng().gen_range(lower..=upper)
+    })
 }
 
 fn roll_item_use_amount_for_qty(value: Option<i64>, effect: &serde_json::Value, qty: i64) -> i64 {
@@ -8410,7 +10761,8 @@ mod tests {
     }
 
     #[test]
-    fn inventory_reroll_effect_accepts_equipment_target_from_params_when_top_level_target_missing() {
+    fn inventory_reroll_effect_accepts_equipment_target_from_params_when_top_level_target_missing()
+    {
         let effect = serde_json::json!({
             "trigger": "use",
             "effect_type": "reroll",
@@ -8432,7 +10784,10 @@ mod tests {
             "value": 10,
             "params": { "resource": "stamina" }
         });
-        assert_eq!(super::roll_item_use_amount_for_qty(Some(10), &effect, 3), 30);
+        assert_eq!(
+            super::roll_item_use_amount_for_qty(Some(10), &effect, 3),
+            30
+        );
     }
 
     #[test]
@@ -8463,7 +10818,9 @@ mod tests {
         let mut values = vec![1_i64, 2_i64, 3_i64].into_iter();
         let mut total = 0_i64;
         for _ in 0..3 {
-            total += super::roll_item_use_amount_with_random_fn(None, &effect, |_, _| values.next().expect("next value"));
+            total += super::roll_item_use_amount_with_random_fn(None, &effect, |_, _| {
+                values.next().expect("next value")
+            });
         }
         assert_eq!(total, 6);
     }
@@ -8472,7 +10829,9 @@ mod tests {
     fn inventory_pick_random_index_with_random_fn_uses_each_generated_value() {
         let mut values = vec![2_usize, 0, 1].into_iter();
         let picked = (0..3)
-            .map(|_| super::pick_random_index_with_random_fn(3, |_| values.next().expect("next index")))
+            .map(|_| {
+                super::pick_random_index_with_random_fn(3, |_| values.next().expect("next index"))
+            })
             .collect::<Vec<_>>();
         assert_eq!(picked, vec![2, 0, 1]);
     }
@@ -8511,7 +10870,10 @@ mod tests {
         let spirit = serde_json::json!({"params": {"currency": "spirit_stones"}});
         let silver = serde_json::json!({"params": {"currency": "silver"}});
         let invalid = serde_json::json!({"params": {"currency": "gold"}});
-        assert_eq!(super::resolve_currency_loot_type(&spirit), Some("spirit_stones"));
+        assert_eq!(
+            super::resolve_currency_loot_type(&spirit),
+            Some("spirit_stones")
+        );
         assert_eq!(super::resolve_currency_loot_type(&silver), Some("silver"));
         assert_eq!(super::resolve_currency_loot_type(&invalid), None);
     }
@@ -8525,8 +10887,14 @@ mod tests {
 
     #[test]
     fn inventory_gem_convert_item_state_reports_locked_and_non_bag_separately() {
-        assert_eq!(super::validate_gem_convert_item_state(true, "bag"), Err("所选宝石已锁定"));
-        assert_eq!(super::validate_gem_convert_item_state(false, "warehouse"), Err("仅可选择背包内宝石进行转换"));
+        assert_eq!(
+            super::validate_gem_convert_item_state(true, "bag"),
+            Err("所选宝石已锁定")
+        );
+        assert_eq!(
+            super::validate_gem_convert_item_state(false, "warehouse"),
+            Err("仅可选择背包内宝石进行转换")
+        );
         assert_eq!(super::validate_gem_convert_item_state(false, "bag"), Ok(()));
     }
 
@@ -8545,32 +10913,50 @@ mod tests {
 
     #[test]
     fn inventory_gem_synthesize_max_times_message_matches_node() {
-        assert_eq!(super::build_gem_synthesize_max_times_message(3), "当前最多可合成3次");
+        assert_eq!(
+            super::build_gem_synthesize_max_times_message(3),
+            "当前最多可合成3次"
+        );
     }
 
     #[test]
     fn inventory_gem_convert_max_times_message_matches_node() {
-        assert_eq!(super::build_gem_convert_max_times_message(4), "当前最多可转换4次");
+        assert_eq!(
+            super::build_gem_convert_max_times_message(4),
+            "当前最多可转换4次"
+        );
     }
 
     #[test]
     fn inventory_parse_optional_positive_i64_json_accepts_numeric_strings() {
         let target = serde_json::json!("10");
         let source = serde_json::json!("2");
-        assert_eq!(super::parse_optional_positive_i64_json(Some(&target), "targetLevel").unwrap(), Some(10));
-        assert_eq!(super::parse_optional_positive_i64_json(Some(&source), "sourceLevel").unwrap(), Some(2));
+        assert_eq!(
+            super::parse_optional_positive_i64_json(Some(&target), "targetLevel").unwrap(),
+            Some(10)
+        );
+        assert_eq!(
+            super::parse_optional_positive_i64_json(Some(&source), "sourceLevel").unwrap(),
+            Some(2)
+        );
     }
 
     #[test]
     fn inventory_parse_optional_positive_i64_json_accepts_times_string() {
         let times = serde_json::json!("7");
-        assert_eq!(super::parse_optional_positive_i64_json(Some(&times), "times").unwrap(), Some(7));
+        assert_eq!(
+            super::parse_optional_positive_i64_json(Some(&times), "times").unwrap(),
+            Some(7)
+        );
     }
 
     #[test]
     fn inventory_parse_positive_i64_array_json_accepts_numeric_strings() {
         let values = vec![serde_json::json!("11"), serde_json::json!("12")];
-        assert_eq!(super::parse_positive_i64_array_json(&values, "selectedGemItemIds").unwrap(), vec![11, 12]);
+        assert_eq!(
+            super::parse_positive_i64_array_json(&values, "selectedGemItemIds").unwrap(),
+            vec![11, 12]
+        );
     }
 
     #[test]
@@ -8581,17 +10967,26 @@ mod tests {
 
     #[test]
     fn inventory_gem_synthesis_batch_source_level_matches_node_contract() {
-        assert_eq!(super::normalize_gem_synthesis_batch_source_level(None).unwrap(), 1);
-        assert_eq!(super::normalize_gem_synthesis_batch_source_level(Some(12)).unwrap(), 9);
         assert_eq!(
-            super::normalize_gem_synthesis_batch_source_level(Some(0)).unwrap_err().to_string(),
+            super::normalize_gem_synthesis_batch_source_level(None).unwrap(),
+            1
+        );
+        assert_eq!(
+            super::normalize_gem_synthesis_batch_source_level(Some(12)).unwrap(),
+            9
+        );
+        assert_eq!(
+            super::normalize_gem_synthesis_batch_source_level(Some(0))
+                .unwrap_err()
+                .to_string(),
             "configuration error: sourceLevel参数错误"
         );
     }
 
     #[test]
     fn inventory_build_gem_convert_spirit_cost_map_reads_recipe_defined_costs() {
-        let costs = super::build_gem_convert_spirit_cost_map().expect("gem convert costs should load");
+        let costs =
+            super::build_gem_convert_spirit_cost_map().expect("gem convert costs should load");
         assert_eq!(costs.get(&2), Some(&0));
         assert_eq!(costs.get(&6), Some(&4));
     }
@@ -8602,16 +10997,26 @@ mod tests {
             silver: 0,
             spirit_stones: 0,
         };
-        let error = super::build_gem_synthesis_recipes(&std::collections::BTreeMap::new(), &std::collections::BTreeMap::new(), &wallet)
-            .expect_err("missing defs should surface as config error");
+        let error = super::build_gem_synthesis_recipes(
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeMap::new(),
+            &wallet,
+        )
+        .expect_err("missing defs should surface as config error");
         assert!(error.to_string().contains("宝石配方输入定义不存在"));
     }
 
     #[test]
     fn inventory_load_gem_synthesis_recipe_rows_use_node_series_keys() {
         let rows = super::load_gem_synthesis_recipe_rows().expect("gem synthesis rows should load");
-        let wg = rows.iter().find(|row| row.input_item_def_id == "gem-atk-wg-1").expect("wg recipe should exist");
-        let fg = rows.iter().find(|row| row.input_item_def_id == "gem-atk-fg-1").expect("fg recipe should exist");
+        let wg = rows
+            .iter()
+            .find(|row| row.input_item_def_id == "gem-atk-wg-1")
+            .expect("wg recipe should exist");
+        let fg = rows
+            .iter()
+            .find(|row| row.input_item_def_id == "gem-atk-fg-1")
+            .expect("fg recipe should exist");
         assert_eq!(wg.series_key, "atk-wg");
         assert_eq!(fg.series_key, "atk-fg");
         assert_ne!(wg.series_key, fg.series_key);
@@ -8631,7 +11036,10 @@ mod tests {
             ("gem-sur-hp-1".to_string(), 10_i64),
         ]);
         let options = super::build_gem_convert_options(&defs, &wallet, &owned_qty);
-        let level_2 = options.iter().find(|option| option.input_level == 2).expect("level 2 option");
+        let level_2 = options
+            .iter()
+            .find(|option| option.input_level == 2)
+            .expect("level 2 option");
         assert_eq!(level_2.output_level, 1);
         assert_eq!(level_2.cost_spirit_stones_per_convert, 0);
         assert_eq!(level_2.candidate_gem_count, 12);
@@ -8645,17 +11053,27 @@ mod tests {
             silver: 100_000,
             spirit_stones: 7,
         };
-        let recipes = super::build_gem_synthesis_recipes(&defs, &owned_qty, &wallet).expect("recipes should load");
-        let recipe = recipes.iter().find(|recipe| recipe.input.item_def_id == "gem-atk-wg-5").expect("recipe exists");
+        let recipes = super::build_gem_synthesis_recipes(&defs, &owned_qty, &wallet)
+            .expect("recipes should load");
+        let recipe = recipes
+            .iter()
+            .find(|recipe| recipe.input.item_def_id == "gem-atk-wg-5")
+            .expect("recipe exists");
         assert_eq!(recipe.costs.spirit_stones, 4);
         assert_eq!(recipe.max_synthesize_times, 1);
     }
 
     #[test]
     fn inventory_gem_convert_output_rolls_use_fresh_indices() {
-        let candidates = vec!["gem-a".to_string(), "gem-b".to_string(), "gem-c".to_string()];
+        let candidates = vec![
+            "gem-a".to_string(),
+            "gem-b".to_string(),
+            "gem-c".to_string(),
+        ];
         let mut indices = vec![2_usize, 0, 2].into_iter();
-        let produced = super::roll_gem_convert_outputs_with_random_fn(&candidates, 3, |_| indices.next().expect("next index"));
+        let produced = super::roll_gem_convert_outputs_with_random_fn(&candidates, 3, |_| {
+            indices.next().expect("next index")
+        });
         assert_eq!(produced.get("gem-a"), Some(&1));
         assert_eq!(produced.get("gem-c"), Some(&2));
         assert_eq!(produced.get("gem-b"), None);
@@ -8664,7 +11082,11 @@ mod tests {
     #[test]
     fn inventory_gem_convert_duplicate_selection_uses_distinct_row_count() {
         let selected = vec![11_i64, 11_i64];
-        let distinct = selected.iter().copied().collect::<std::collections::BTreeSet<_>>().len();
+        let distinct = selected
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
         assert_eq!(distinct, 1);
     }
 
@@ -8672,7 +11094,10 @@ mod tests {
     fn inventory_gem_convert_duplicate_selection_requires_sufficient_stack_qty() {
         let qty_by_id = std::collections::BTreeMap::from([(11_i64, 1_i64)]);
         let consume_by_id = std::collections::BTreeMap::from([(11_i64, 2_i64)]);
-        assert!(!super::has_sufficient_selected_gem_qty(&qty_by_id, &consume_by_id));
+        assert!(!super::has_sufficient_selected_gem_qty(
+            &qty_by_id,
+            &consume_by_id
+        ));
     }
 
     #[test]
@@ -8798,8 +11223,14 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["lootResults"][0]["type"], "partner_technique");
-        assert_eq!(payload["data"]["partnerTechniqueResult"]["partner"]["id"], 1);
+        assert_eq!(
+            payload["data"]["lootResults"][0]["type"],
+            "partner_technique"
+        );
+        assert_eq!(
+            payload["data"]["partnerTechniqueResult"]["partner"]["id"],
+            1
+        );
     }
 
     #[test]
@@ -9028,7 +11459,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["enhance"]["costs"]["materialItemDefId"], "enhance-001");
+        assert_eq!(
+            payload["data"]["enhance"]["costs"]["materialItemDefId"],
+            "enhance-001"
+        );
         assert_eq!(payload["data"]["refine"]["maxLevel"], 10);
         println!("INVENTORY_GROWTH_COST_PREVIEW_RESPONSE={}", payload);
     }
@@ -9177,7 +11611,9 @@ mod tests {
     #[test]
     fn affix_pool_seed_loader_contains_equipment_pool() {
         let pools = load_affix_pool_seed_map().expect("affix pool should load");
-        let pool = pools.get("ap-equipment").expect("equipment pool should exist");
+        let pool = pools
+            .get("ap-equipment")
+            .expect("equipment pool should exist");
         assert_eq!(pool.name, "装备总词条池");
         assert!(pool.affixes.len() > 10);
     }
@@ -9185,11 +11621,19 @@ mod tests {
     #[test]
     fn affix_preview_tiers_expand_with_growth_and_realm_rank() {
         let pools = load_affix_pool_seed_map().expect("affix pool should load");
-        let pool = pools.get("ap-equipment").expect("equipment pool should exist");
+        let pool = pools
+            .get("ap-equipment")
+            .expect("equipment pool should exist");
         let affix = pool
             .affixes
             .iter()
-            .find(|affix| affix.key == "fagong_flat" && affix.allowed_slots.as_ref().is_some_and(|slots| slots.iter().any(|slot| slot == "artifact")))
+            .find(|affix| {
+                affix.key == "fagong_flat"
+                    && affix
+                        .allowed_slots
+                        .as_ref()
+                        .is_some_and(|slots| slots.iter().any(|slot| slot == "artifact"))
+            })
             .expect("artifact spell affix should exist");
         let tiers = render_affix_preview_tiers_for_realm(affix, 1.0, 3);
         assert!(tiers.len() >= 3);
@@ -9201,7 +11645,9 @@ mod tests {
     #[test]
     fn affix_seed_loader_exposes_special_trigger_fields() {
         let pools = load_affix_pool_seed_map().expect("affix pool should load");
-        let pool = pools.get("ap-equipment").expect("equipment pool should exist");
+        let pool = pools
+            .get("ap-equipment")
+            .expect("equipment pool should exist");
         let affix = pool
             .affixes
             .iter()
@@ -9210,7 +11656,12 @@ mod tests {
         assert_eq!(affix.target.as_deref(), Some("self"));
         assert_eq!(affix.effect_type.as_deref(), Some("buff"));
         assert_eq!(affix.duration_round, Some(2));
-        assert!(affix.params.as_ref().is_some_and(|params| !params.is_empty()));
+        assert!(
+            affix
+                .params
+                .as_ref()
+                .is_some_and(|params| !params.is_empty())
+        );
     }
 
     #[test]
@@ -9287,8 +11738,12 @@ mod tests {
     fn inventory_recipe_rate_normalization_supports_percent_and_ratio() {
         assert!((normalize_inventory_recipe_rate_to_ratio(80.0, 100.0) - 0.8).abs() < f64::EPSILON);
         assert!((normalize_inventory_recipe_rate_to_ratio(0.8, 100.0) - 0.8).abs() < f64::EPSILON);
-        assert!((normalize_inventory_recipe_rate_to_ratio(150.0, 100.0) - 1.0).abs() < f64::EPSILON);
-        assert!((normalize_inventory_recipe_rate_to_ratio(-10.0, 100.0) - 0.0).abs() < f64::EPSILON);
+        assert!(
+            (normalize_inventory_recipe_rate_to_ratio(150.0, 100.0) - 1.0).abs() < f64::EPSILON
+        );
+        assert!(
+            (normalize_inventory_recipe_rate_to_ratio(-10.0, 100.0) - 0.0).abs() < f64::EPSILON
+        );
     }
 
     #[test]
@@ -9436,11 +11891,15 @@ mod tests {
         assert!(is_supported_inventory_use_item_def_id("cons-003"));
         assert!(is_supported_inventory_use_item_def_id("cons-009"));
         assert!(is_supported_inventory_use_item_def_id("cons-010"));
-        assert!(is_supported_inventory_use_item_def_id("cons-battlepass-001"));
+        assert!(is_supported_inventory_use_item_def_id(
+            "cons-battlepass-001"
+        ));
         assert!(is_supported_inventory_use_item_def_id("box-002"));
         assert!(is_supported_inventory_use_item_def_id("box-013"));
         assert!(is_supported_inventory_use_item_def_id("book-jichu-quanfa"));
-        assert!(is_supported_inventory_use_item_def_id("book-generated-technique"));
+        assert!(is_supported_inventory_use_item_def_id(
+            "book-generated-technique"
+        ));
     }
 
     #[test]
@@ -9474,7 +11933,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["effects"].as_array().map(|items| items.len()), Some(2));
+        assert_eq!(
+            payload["effects"].as_array().map(|items| items.len()),
+            Some(2)
+        );
         assert_eq!(payload["effects"][0]["effect_type"], "dispel");
         assert_eq!(payload["effects"][1]["effect_type"], "heal");
     }
@@ -9498,7 +11960,10 @@ mod tests {
             &defs,
             100,
             50,
-            &[("equip-weapon-001".to_string(), 1), ("cons-001".to_string(), 10)],
+            &[
+                ("equip-weapon-001".to_string(), 1),
+                ("cons-001".to_string(), 10),
+            ],
         );
         assert_eq!(results.len(), 4);
         assert_eq!(results[0].r#type, "silver");
@@ -9766,9 +12231,18 @@ mod tests {
             },
         ];
         candidate_ids.sort_by(|left, right| {
-            let left_row = rows.iter().find(|row| row.id == *left).expect("candidate row should exist");
-            let right_row = rows.iter().find(|row| row.id == *right).expect("candidate row should exist");
-            right_row.qty.cmp(&left_row.qty).then_with(|| left_row.id.cmp(&right_row.id))
+            let left_row = rows
+                .iter()
+                .find(|row| row.id == *left)
+                .expect("candidate row should exist");
+            let right_row = rows
+                .iter()
+                .find(|row| row.id == *right)
+                .expect("candidate row should exist");
+            right_row
+                .qty
+                .cmp(&left_row.qty)
+                .then_with(|| left_row.id.cmp(&right_row.id))
         });
         assert_eq!(candidate_ids, vec![2, 3, 1]);
     }

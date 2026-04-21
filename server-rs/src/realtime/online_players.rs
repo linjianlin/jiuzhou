@@ -131,8 +131,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        build_online_players_broadcast_payload, build_online_players_delta_payload,
-        build_online_players_full_payload, build_online_players_payload, OnlinePlayerDto,
+        OnlinePlayerDto, build_online_players_broadcast_payload,
+        build_online_players_delta_payload, build_online_players_full_payload,
+        build_online_players_payload,
     };
 
     #[test]

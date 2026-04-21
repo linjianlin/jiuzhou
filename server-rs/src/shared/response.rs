@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -51,7 +51,7 @@ pub fn send_result<T: Serialize>(result: ServiceResult<T>) -> Response {
 mod tests {
     use axum::response::IntoResponse;
 
-    use super::{send_ok, send_result, send_success, ServiceResult};
+    use super::{ServiceResult, send_ok, send_result, send_success};
 
     #[test]
     fn send_success_wraps_data() {

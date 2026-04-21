@@ -8,7 +8,9 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::realtime::public_socket::emit_sect_update_to_user;
-use crate::realtime::sect::{SectIndicatorPayload, build_sect_indicator_payload, build_sect_update_payload};
+use crate::realtime::sect::{
+    SectIndicatorPayload, build_sect_indicator_payload, build_sect_update_payload,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
 use crate::state::AppState;
@@ -338,11 +340,15 @@ pub async fn get_my_sect(
             data: None,
         }));
     };
-    let sect_id = sect_row.try_get::<Option<String>, _>("id")?.unwrap_or_default();
+    let sect_id = sect_row
+        .try_get::<Option<String>, _>("id")?
+        .unwrap_or_default();
     let sect = build_sect_def_dto(&sect_row)?;
     let members = load_sect_members(&state, &sect_id).await?;
     let buildings = load_sect_buildings(&state, &sect_id).await?;
-    let position = sect_row.try_get::<Option<String>, _>("position")?.unwrap_or_else(|| "disciple".to_string());
+    let position = sect_row
+        .try_get::<Option<String>, _>("position")?
+        .unwrap_or_else(|| "disciple".to_string());
     let blessing_status = build_blessing_status(&buildings, &position);
 
     Ok(send_result(ServiceResult {
@@ -371,24 +377,47 @@ pub async fn create_sect_handler(
     if name.chars().count() > 16 {
         return Err(AppError::config("宗门名称过长"));
     }
-    if load_character_sect_id(&state, actor.character_id).await?.is_some() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("已加入宗门，无法创建".to_string()), data: None }));
+    if load_character_sect_id(&state, actor.character_id)
+        .await?
+        .is_some()
+    {
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("已加入宗门，无法创建".to_string()),
+            data: None,
+        }));
     }
-    let duplicate = state.database.fetch_optional(
-        "SELECT id FROM sect_def WHERE name = $1 LIMIT 1",
-        |query| query.bind(name),
-    ).await?;
+    let duplicate = state
+        .database
+        .fetch_optional("SELECT id FROM sect_def WHERE name = $1 LIMIT 1", |query| {
+            query.bind(name)
+        })
+        .await?;
     if duplicate.is_some() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门名称已存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门名称已存在".to_string()),
+            data: None,
+        }));
     }
-    let character_row = state.database.fetch_optional(
-        "SELECT spirit_stones FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(actor.character_id),
-    ).await?.ok_or_else(|| AppError::config("角色不存在"))?;
-    let spirit_stones = character_row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
+    let character_row = state
+        .database
+        .fetch_optional(
+            "SELECT spirit_stones FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(actor.character_id),
+        )
+        .await?
+        .ok_or_else(|| AppError::config("角色不存在"))?;
+    let spirit_stones = character_row
+        .try_get::<Option<i64>, _>("spirit_stones")?
+        .unwrap_or_default();
     let create_cost = 1000_i64;
     if spirit_stones < create_cost {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some(format!("灵石不足，创建需要{}", create_cost)), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some(format!("灵石不足，创建需要{}", create_cost)),
+            data: None,
+        }));
     }
     let sect_id = generate_sect_id();
     state.database.with_transaction(|| async {
@@ -418,7 +447,11 @@ pub async fn create_sect_handler(
     }).await?;
     let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
     emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-    Ok(send_result(ServiceResult { success: true, message: Some("创建成功".to_string()), data: Some(serde_json::json!({ "sectId": sect_id })) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("创建成功".to_string()),
+        data: Some(serde_json::json!({ "sectId": sect_id })),
+    }))
 }
 
 pub async fn search_sects(
@@ -469,17 +502,36 @@ pub async fn search_sects(
     let list = rows
         .into_iter()
         .map(|row| SectListItemDto {
-            id: row.try_get::<Option<String>, _>("id").unwrap_or(None).unwrap_or_default(),
-            name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
+            id: row
+                .try_get::<Option<String>, _>("id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            name: row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
             level: opt_i64_from_i32(&row, "level"),
             member_count: opt_i64_from_i32(&row, "member_count"),
             max_members: opt_i64_from_i32(&row, "max_members"),
-            join_type: row.try_get::<Option<String>, _>("join_type").unwrap_or(None).unwrap_or_default(),
-            join_min_realm: row.try_get::<Option<String>, _>("join_min_realm").unwrap_or(None).unwrap_or_else(|| "凡人".to_string()),
-            announcement: row.try_get::<Option<String>, _>("announcement").unwrap_or(None),
+            join_type: row
+                .try_get::<Option<String>, _>("join_type")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            join_min_realm: row
+                .try_get::<Option<String>, _>("join_min_realm")
+                .unwrap_or(None)
+                .unwrap_or_else(|| "凡人".to_string()),
+            announcement: row
+                .try_get::<Option<String>, _>("announcement")
+                .unwrap_or(None),
         })
         .collect();
-    Ok(send_success(SectSearchData { list, page, limit, total }))
+    Ok(send_success(SectSearchData {
+        list,
+        page,
+        limit,
+        total,
+    }))
 }
 
 pub async fn get_sect_info_handler(
@@ -516,7 +568,11 @@ pub async fn get_sect_info_handler(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(SectInfoDto { sect, members, buildings }),
+        data: Some(SectInfoDto {
+            sect,
+            members,
+            buildings,
+        }),
     }))
 }
 
@@ -565,7 +621,8 @@ pub async fn get_sect_bonuses_handler(
     let bonuses = calculate_sect_bonuses(
         opt_i64_from_i32_default(&row, "level", 1),
         &buildings,
-        row.try_get::<Option<String>, _>("position")?.unwrap_or_else(|| "disciple".to_string()),
+        row.try_get::<Option<String>, _>("position")?
+            .unwrap_or_else(|| "disciple".to_string()),
     );
     Ok(send_result(ServiceResult {
         success: true,
@@ -629,25 +686,50 @@ pub async fn buy_from_sect_shop_handler(
     }
     let shop = load_sect_shop_items()?;
     let Some(item) = shop.iter().find(|entry| entry.id == item_id) else {
-        return Ok(send_result(ServiceResult::<SectShopBuyData> { success: false, message: Some("商品不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectShopBuyData> {
+            success: false,
+            message: Some("商品不存在".to_string()),
+            data: None,
+        }));
     };
     let member = state.database.fetch_optional(
         "SELECT sect_id, contribution FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
         |query| query.bind(actor.character_id),
     ).await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<SectShopBuyData> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectShopBuyData> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
-    let contribution = member.try_get::<Option<i64>, _>("contribution")?.unwrap_or_default();
+    let contribution = member
+        .try_get::<Option<i64>, _>("contribution")?
+        .unwrap_or_default();
     let cost = item.cost_contribution * quantity;
     if contribution < cost {
-        return Ok(send_result(ServiceResult::<SectShopBuyData> { success: false, message: Some("贡献不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectShopBuyData> {
+            success: false,
+            message: Some("贡献不足".to_string()),
+            data: None,
+        }));
     }
     if let Some(limit_cfg) = item.purchase_limit.as_ref() {
-        let kind = limit_cfg.get("type").and_then(|value| value.as_str()).unwrap_or_default();
-        let max_count = limit_cfg.get("maxCount").and_then(|value| value.as_i64()).unwrap_or_default().max(1);
+        let kind = limit_cfg
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let max_count = limit_cfg
+            .get("maxCount")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default()
+            .max(1);
         let used_rows = if kind == "rolling_days" {
-            let window_days = limit_cfg.get("windowDays").and_then(|value| value.as_i64()).unwrap_or(1).max(1);
+            let window_days = limit_cfg
+                .get("windowDays")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(1)
+                .max(1);
             state.database.fetch_all(
                 "SELECT content FROM sect_log WHERE log_type = 'shop_buy' AND operator_id = $1 AND created_at >= NOW() - make_interval(days => $2)",
                 |query| query.bind(actor.character_id).bind(window_days),
@@ -658,24 +740,57 @@ pub async fn buy_from_sect_shop_handler(
                 |query| query.bind(actor.character_id),
             ).await?
         };
-        let used_count: i64 = used_rows.into_iter().map(|row| {
-            let content = row.try_get::<Option<String>, _>("content").unwrap_or(None).unwrap_or_default();
-            extract_shop_buy_item_qty_from_log_content(&content, &item.name)
-        }).sum();
+        let used_count: i64 = used_rows
+            .into_iter()
+            .map(|row| {
+                let content = row
+                    .try_get::<Option<String>, _>("content")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+                extract_shop_buy_item_qty_from_log_content(&content, &item.name)
+            })
+            .sum();
         if used_count + quantity > max_count {
             let message = if kind == "daily" {
-                if max_count <= 1 { "该商品今日已兑换".to_string() } else { format!("该商品今日最多兑换{}个（剩余{}个）", max_count, (max_count - used_count).max(0)) }
+                if max_count <= 1 {
+                    "该商品今日已兑换".to_string()
+                } else {
+                    format!(
+                        "该商品今日最多兑换{}个（剩余{}个）",
+                        max_count,
+                        (max_count - used_count).max(0)
+                    )
+                }
             } else {
-                let window_days = limit_cfg.get("windowDays").and_then(|value| value.as_i64()).unwrap_or(1).max(1);
-                if max_count <= 1 { format!("该商品{}天内仅可兑换1个", window_days) } else { format!("该商品{}天内最多兑换{}个（剩余{}个）", window_days, max_count, (max_count - used_count).max(0)) }
+                let window_days = limit_cfg
+                    .get("windowDays")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(1)
+                    .max(1);
+                if max_count <= 1 {
+                    format!("该商品{}天内仅可兑换1个", window_days)
+                } else {
+                    format!(
+                        "该商品{}天内最多兑换{}个（剩余{}个）",
+                        window_days,
+                        max_count,
+                        (max_count - used_count).max(0)
+                    )
+                }
             };
-            return Ok(send_result(ServiceResult::<SectShopBuyData> { success: false, message: Some(message), data: None }));
+            return Ok(send_result(ServiceResult::<SectShopBuyData> {
+                success: false,
+                message: Some(message),
+                data: None,
+            }));
         }
     }
 
     let give_qty = item.qty * quantity;
     let mut item_ids = Vec::new();
-    let sect_id = member.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let sect_id = member
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     state.database.with_transaction(|| async {
         state.database.execute(
             "UPDATE sect_member SET contribution = contribution - $2 WHERE character_id = $1",
@@ -698,7 +813,11 @@ pub async fn buy_from_sect_shop_handler(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("购买成功".to_string()),
-        data: Some(SectShopBuyData { item_def_id: item.item_def_id.clone(), qty: give_qty, item_ids }),
+        data: Some(SectShopBuyData {
+            item_def_id: item.item_def_id.clone(),
+            qty: give_qty,
+            item_ids,
+        }),
     }))
 }
 
@@ -710,22 +829,44 @@ pub async fn donate_to_sect_handler(
     let actor = auth::require_character(&state, &headers).await?;
     let amount = payload.spirit_stones.unwrap_or_default().max(0);
     if amount <= 0 {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("参数错误".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("参数错误".to_string()),
+            data: None,
+        }));
     }
     let member = load_member_role(&state, actor.character_id, true).await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
     if !has_sect_permission(&member.position, "donate") {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限捐献".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限捐献".to_string()),
+            data: None,
+        }));
     }
-    let row = state.database.fetch_optional(
-        "SELECT spirit_stones FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(actor.character_id),
-    ).await?.ok_or_else(|| AppError::config("角色不存在"))?;
-    let spirit_stones = row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default();
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT spirit_stones FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(actor.character_id),
+        )
+        .await?
+        .ok_or_else(|| AppError::config("角色不存在"))?;
+    let spirit_stones = row
+        .try_get::<Option<i64>, _>("spirit_stones")?
+        .unwrap_or_default();
     if spirit_stones < amount {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("灵石不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("灵石不足".to_string()),
+            data: None,
+        }));
     }
     state.database.with_transaction(|| async {
         state.database.execute(
@@ -748,9 +889,13 @@ pub async fn donate_to_sect_handler(
     }).await?;
     let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
     emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-    Ok(send_result(ServiceResult { success: true, message: Some("捐献成功".to_string()), data: Some(serde_json::json!({
-        "debugRealtime": build_sect_update_payload("donate_to_sect", Some(member.sect_id.as_str()), Some("捐献成功"))
-    })) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("捐献成功".to_string()),
+        data: Some(serde_json::json!({
+            "debugRealtime": build_sect_update_payload("donate_to_sect", Some(member.sect_id.as_str()), Some("捐献成功"))
+        })),
+    }))
 }
 
 pub async fn appoint_sect_position_handler(
@@ -763,31 +908,62 @@ pub async fn appoint_sect_position_handler(
     let position = payload.position.unwrap_or_default();
     let position = position.trim();
     if target_id <= 0 || position.is_empty() || position == "leader" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("参数错误".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("参数错误".to_string()),
+            data: None,
+        }));
     }
     let me = load_member_role(&state, actor.character_id, true).await?;
     let Some(me) = me else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
     if !has_sect_permission(&me.position, "approve") {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限任命职位".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限任命职位".to_string()),
+            data: None,
+        }));
     }
     let target = load_member_role(&state, target_id, true).await?;
     let Some(target) = target else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("目标不在本宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("目标不在本宗门".to_string()),
+            data: None,
+        }));
     };
     if target.sect_id != me.sect_id {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("目标不在本宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("目标不在本宗门".to_string()),
+            data: None,
+        }));
     }
     if position_rank(&me.position) <= position_rank(&target.position) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("权限不足，无法操作同级或更高职位".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("权限不足，无法操作同级或更高职位".to_string()),
+            data: None,
+        }));
     }
-    state.database.execute(
-        "UPDATE sect_member SET position = $2 WHERE sect_id = $1 AND character_id = $3",
-        |query| query.bind(&me.sect_id).bind(position).bind(target_id),
-    ).await?;
+    state
+        .database
+        .execute(
+            "UPDATE sect_member SET position = $2 WHERE sect_id = $1 AND character_id = $3",
+            |query| query.bind(&me.sect_id).bind(position).bind(target_id),
+        )
+        .await?;
     emit_sect_update_to_characters(&state, &[target_id]).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("任命成功".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("任命成功".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn kick_sect_member_handler(
@@ -798,27 +974,55 @@ pub async fn kick_sect_member_handler(
     let actor = auth::require_character(&state, &headers).await?;
     let target_id = payload.target_id.unwrap_or_default();
     if target_id <= 0 {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("参数错误".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("参数错误".to_string()),
+            data: None,
+        }));
     }
     let me = load_member_role(&state, actor.character_id, true).await?;
     let Some(me) = me else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
     if !has_sect_permission(&me.position, "kick") {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限踢人".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限踢人".to_string()),
+            data: None,
+        }));
     }
     let target = load_member_role(&state, target_id, true).await?;
     let Some(target) = target else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("目标不在本宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("目标不在本宗门".to_string()),
+            data: None,
+        }));
     };
     if target.sect_id != me.sect_id {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("目标不在本宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("目标不在本宗门".to_string()),
+            data: None,
+        }));
     }
     if target.position == "leader" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("不可踢出宗主".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("不可踢出宗主".to_string()),
+            data: None,
+        }));
     }
     if position_rank(&me.position) <= position_rank(&target.position) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("权限不足，无法操作同级或更高职位".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("权限不足，无法操作同级或更高职位".to_string()),
+            data: None,
+        }));
     }
     state.database.with_transaction(|| async {
         state.database.execute("DELETE FROM sect_member WHERE character_id = $1", |query| query.bind(target_id)).await?;
@@ -826,7 +1030,11 @@ pub async fn kick_sect_member_handler(
         Ok::<(), AppError>(())
     }).await?;
     emit_sect_update_to_characters(&state, &[target_id]).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("已踢出成员".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("已踢出成员".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn transfer_sect_leader_handler(
@@ -837,21 +1045,41 @@ pub async fn transfer_sect_leader_handler(
     let actor = auth::require_character(&state, &headers).await?;
     let new_leader_id = payload.new_leader_id.unwrap_or_default();
     if new_leader_id <= 0 {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("参数错误".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("参数错误".to_string()),
+            data: None,
+        }));
     }
     let me = load_member_role(&state, actor.character_id, true).await?;
     let Some(me) = me else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
     if me.position != "leader" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("只有宗主可转让".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("只有宗主可转让".to_string()),
+            data: None,
+        }));
     }
     let target = load_member_role(&state, new_leader_id, true).await?;
     let Some(target) = target else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("目标不在本宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("目标不在本宗门".to_string()),
+            data: None,
+        }));
     };
     if target.sect_id != me.sect_id {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("目标不在本宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("目标不在本宗门".to_string()),
+            data: None,
+        }));
     }
     state.database.with_transaction(|| async {
         state.database.execute("UPDATE sect_def SET leader_id = $1, updated_at = NOW() WHERE id = $2", |query| query.bind(new_leader_id).bind(&me.sect_id)).await?;
@@ -860,7 +1088,11 @@ pub async fn transfer_sect_leader_handler(
         Ok::<(), AppError>(())
     }).await?;
     emit_sect_update_to_characters(&state, &[actor.character_id, new_leader_id]).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("转让成功".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("转让成功".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn disband_sect_handler(
@@ -870,26 +1102,54 @@ pub async fn disband_sect_handler(
     let actor = auth::require_character(&state, &headers).await?;
     let me = load_member_role(&state, actor.character_id, true).await?;
     let Some(me) = me else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
     if me.position != "leader" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限解散宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限解散宗门".to_string()),
+            data: None,
+        }));
     }
-    let sect = state.database.fetch_optional(
-        "SELECT leader_id FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(&me.sect_id),
-    ).await?;
+    let sect = state
+        .database
+        .fetch_optional(
+            "SELECT leader_id FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(&me.sect_id),
+        )
+        .await?;
     let Some(sect) = sect else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门不存在".to_string()),
+            data: None,
+        }));
     };
     let leader_id = opt_i64_from_i32(&sect, "leader_id");
     if leader_id != actor.character_id {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("只有宗主可解散宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("只有宗主可解散宗门".to_string()),
+            data: None,
+        }));
     }
     let member_ids = load_sect_member_character_ids(&state, &me.sect_id).await?;
-    state.database.execute("DELETE FROM sect_def WHERE id = $1", |query| query.bind(&me.sect_id)).await?;
+    state
+        .database
+        .execute("DELETE FROM sect_def WHERE id = $1", |query| {
+            query.bind(&me.sect_id)
+        })
+        .await?;
     emit_sect_update_to_characters(&state, &member_ids).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("解散成功".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("解散成功".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn apply_to_sect_handler(
@@ -903,31 +1163,64 @@ pub async fn apply_to_sect_handler(
     if sect_id.is_empty() {
         return Err(AppError::config("宗门ID不能为空"));
     }
-    if load_character_sect_id(&state, actor.character_id).await?.is_some() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("已加入宗门，无法申请".to_string()), data: None }));
+    if load_character_sect_id(&state, actor.character_id)
+        .await?
+        .is_some()
+    {
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("已加入宗门，无法申请".to_string()),
+            data: None,
+        }));
     }
     let sect = state.database.fetch_optional(
         "SELECT id, join_type, join_min_realm, member_count, max_members FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
         |query| query.bind(sect_id),
     ).await?;
     let Some(sect) = sect else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门不存在".to_string()),
+            data: None,
+        }));
     };
     let member_count = opt_i64_from_i32(&sect, "member_count");
     let max_members = opt_i64_from_i32_default(&sect, "max_members", 20);
     if member_count >= max_members {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门人数已满".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门人数已满".to_string()),
+            data: None,
+        }));
     }
-    let realm = state.database.fetch_optional("SELECT realm FROM characters WHERE id = $1 LIMIT 1", |query| query.bind(actor.character_id)).await?
+    let realm = state
+        .database
+        .fetch_optional(
+            "SELECT realm FROM characters WHERE id = $1 LIMIT 1",
+            |query| query.bind(actor.character_id),
+        )
+        .await?
         .and_then(|row| row.try_get::<Option<String>, _>("realm").ok().flatten())
         .unwrap_or_else(|| "凡人".to_string());
-    let join_min_realm = sect.try_get::<Option<String>, _>("join_min_realm")?.unwrap_or_else(|| "凡人".to_string());
+    let join_min_realm = sect
+        .try_get::<Option<String>, _>("join_min_realm")?
+        .unwrap_or_else(|| "凡人".to_string());
     if compare_realm_rank(&realm, &join_min_realm) < 0 {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some(format!("境界不足，需达到：{}", join_min_realm)), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some(format!("境界不足，需达到：{}", join_min_realm)),
+            data: None,
+        }));
     }
-    let join_type = sect.try_get::<Option<String>, _>("join_type")?.unwrap_or_else(|| "apply".to_string());
+    let join_type = sect
+        .try_get::<Option<String>, _>("join_type")?
+        .unwrap_or_else(|| "apply".to_string());
     if join_type == "invite" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("该宗门仅支持邀请加入".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("该宗门仅支持邀请加入".to_string()),
+            data: None,
+        }));
     }
     if join_type == "open" {
         state.database.with_transaction(|| async {
@@ -937,16 +1230,24 @@ pub async fn apply_to_sect_handler(
         }).await?;
         let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
         emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-        return Ok(send_result(ServiceResult { success: true, message: Some("加入成功".to_string()), data: Some(serde_json::json!({
-            "debugRealtime": build_sect_update_payload("join_open_sect", Some(sect_id), Some("加入成功"))
-        })) }));
+        return Ok(send_result(ServiceResult {
+            success: true,
+            message: Some("加入成功".to_string()),
+            data: Some(serde_json::json!({
+                "debugRealtime": build_sect_update_payload("join_open_sect", Some(sect_id), Some("加入成功"))
+            })),
+        }));
     }
     let pending = state.database.fetch_optional(
         "SELECT id FROM sect_application WHERE sect_id = $1 AND character_id = $2 AND status = 'pending' LIMIT 1",
         |query| query.bind(sect_id).bind(actor.character_id),
     ).await?;
     if pending.is_some() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("已提交申请，请等待审核".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("已提交申请，请等待审核".to_string()),
+            data: None,
+        }));
     }
     state.database.execute(
         "INSERT INTO sect_application (sect_id, character_id, message, status, created_at) VALUES ($1, $2, $3, 'pending', NOW())",
@@ -954,9 +1255,13 @@ pub async fn apply_to_sect_handler(
     ).await?;
     let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
     emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-    Ok(send_result(ServiceResult { success: true, message: Some("申请已提交".to_string()), data: Some(serde_json::json!({
-        "debugRealtime": build_sect_update_payload("apply_to_sect", Some(sect_id), Some("申请已提交"))
-    })) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("申请已提交".to_string()),
+        data: Some(serde_json::json!({
+            "debugRealtime": build_sect_update_payload("apply_to_sect", Some(sect_id), Some("申请已提交"))
+        })),
+    }))
 }
 
 pub async fn cancel_my_application_handler(
@@ -974,27 +1279,47 @@ pub async fn cancel_my_application_handler(
         |query| query.bind(application_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("申请不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("申请不存在".to_string()),
+            data: None,
+        }));
     };
     let owner_id = opt_i64_from_i32(&row, "character_id");
     if owner_id != actor.character_id {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限取消该申请".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限取消该申请".to_string()),
+            data: None,
+        }));
     }
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "pending" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("申请已处理，无法取消".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("申请已处理，无法取消".to_string()),
+            data: None,
+        }));
     }
     state.database.execute(
         "UPDATE sect_application SET status = 'cancelled', handled_at = NOW(), handled_by = NULL WHERE id = $1",
         |query| query.bind(application_id),
     ).await?;
-    let sect_id = row.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let sect_id = row
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     let mut targets = vec![actor.character_id];
     if !sect_id.trim().is_empty() {
         targets.extend(load_sect_manager_character_ids(&state, &sect_id).await?);
     }
     emit_sect_update_to_characters(&state, &targets).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("已取消".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("已取消".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn leave_sect_handler(
@@ -1002,18 +1327,33 @@ pub async fn leave_sect_handler(
     headers: HeaderMap,
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let member = state.database.fetch_optional(
-        "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(actor.character_id),
-    ).await?;
+    let member = state
+        .database
+        .fetch_optional(
+            "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(actor.character_id),
+        )
+        .await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
-    let position = member.try_get::<Option<String>, _>("position")?.unwrap_or_else(|| "disciple".to_string());
+    let position = member
+        .try_get::<Option<String>, _>("position")?
+        .unwrap_or_else(|| "disciple".to_string());
     if position == "leader" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗主不可退出，请先转让或解散".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗主不可退出，请先转让或解散".to_string()),
+            data: None,
+        }));
     }
-    let sect_id = member.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let sect_id = member
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     state.database.with_transaction(|| async {
         state.database.execute("DELETE FROM sect_member WHERE character_id = $1", |query| query.bind(actor.character_id)).await?;
         state.database.execute("UPDATE sect_def SET member_count = GREATEST(member_count - 1, 0), updated_at = NOW() WHERE id = $1", |query| query.bind(&sect_id)).await?;
@@ -1021,7 +1361,11 @@ pub async fn leave_sect_handler(
     }).await?;
     let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
     emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-    Ok(send_result(ServiceResult { success: true, message: Some("已退出宗门".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("已退出宗门".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn handle_sect_application_handler(
@@ -1034,32 +1378,63 @@ pub async fn handle_sect_application_handler(
     if application_id <= 0 {
         return Err(AppError::config("参数错误"));
     }
-    let me = state.database.fetch_optional(
-        "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(actor.character_id),
-    ).await?;
+    let me = state
+        .database
+        .fetch_optional(
+            "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(actor.character_id),
+        )
+        .await?;
     let Some(me) = me else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
-    let position = me.try_get::<Option<String>, _>("position")?.unwrap_or_else(|| "disciple".to_string());
+    let position = me
+        .try_get::<Option<String>, _>("position")?
+        .unwrap_or_else(|| "disciple".to_string());
     if !matches!(position.as_str(), "leader" | "vice_leader" | "elder") {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限处理申请".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限处理申请".to_string()),
+            data: None,
+        }));
     }
-    let sect_id = me.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let sect_id = me
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     let app = state.database.fetch_optional(
         "SELECT id, sect_id, character_id, status FROM sect_application WHERE id = $1 LIMIT 1 FOR UPDATE",
         |query| query.bind(application_id),
     ).await?;
     let Some(app) = app else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("申请不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("申请不存在".to_string()),
+            data: None,
+        }));
     };
-    let app_sect_id = app.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let app_sect_id = app
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     if app_sect_id != sect_id {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("不可处理其他宗门的申请".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("不可处理其他宗门的申请".to_string()),
+            data: None,
+        }));
     }
-    let status = app.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = app
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status != "pending" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("申请已处理".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("申请已处理".to_string()),
+            data: None,
+        }));
     }
     let approve = payload.approve == Some(true);
     let applicant_id = opt_i64_from_i32(&app, "character_id");
@@ -1071,31 +1446,53 @@ pub async fn handle_sect_application_handler(
             |query| query.bind(application_id).bind(actor.character_id),
         ).await?;
         emit_sect_update_to_characters(&state, &emit_targets).await?;
-        return Ok(send_result(ServiceResult { success: true, message: Some("已拒绝".to_string()), data: Some(serde_json::json!({})) }));
+        return Ok(send_result(ServiceResult {
+            success: true,
+            message: Some("已拒绝".to_string()),
+            data: Some(serde_json::json!({})),
+        }));
     }
 
-    let sect = state.database.fetch_optional(
-        "SELECT member_count, max_members FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(&sect_id),
-    ).await?;
+    let sect = state
+        .database
+        .fetch_optional(
+            "SELECT member_count, max_members FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(&sect_id),
+        )
+        .await?;
     let Some(sect) = sect else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门不存在".to_string()),
+            data: None,
+        }));
     };
     let member_count = opt_i64_from_i32(&sect, "member_count");
     let max_members = opt_i64_from_i32_default(&sect, "max_members", 20);
     if member_count >= max_members {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门人数已满".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门人数已满".to_string()),
+            data: None,
+        }));
     }
-    let existing = state.database.fetch_optional(
-        "SELECT sect_id FROM sect_member WHERE character_id = $1 LIMIT 1",
-        |query| query.bind(applicant_id),
-    ).await?;
+    let existing = state
+        .database
+        .fetch_optional(
+            "SELECT sect_id FROM sect_member WHERE character_id = $1 LIMIT 1",
+            |query| query.bind(applicant_id),
+        )
+        .await?;
     if existing.is_some() {
         state.database.execute(
             "UPDATE sect_application SET status = 'cancelled', handled_at = NOW(), handled_by = $2 WHERE id = $1",
             |query| query.bind(application_id).bind(actor.character_id),
         ).await?;
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("对方已加入其他宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("对方已加入其他宗门".to_string()),
+            data: None,
+        }));
     }
 
     state.database.with_transaction(|| async {
@@ -1114,7 +1511,11 @@ pub async fn handle_sect_application_handler(
         Ok::<(), AppError>(())
     }).await?;
     emit_sect_update_to_characters(&state, &emit_targets).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("已通过".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("已通过".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn update_sect_announcement_handler(
@@ -1123,28 +1524,61 @@ pub async fn update_sect_announcement_handler(
     Json(payload): Json<SectAnnouncementPayload>,
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let member = state.database.fetch_optional(
-        "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(actor.character_id),
-    ).await?;
+    let member = state
+        .database
+        .fetch_optional(
+            "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(actor.character_id),
+        )
+        .await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
-    let position = member.try_get::<Option<String>, _>("position")?.unwrap_or_else(|| "disciple".to_string());
+    let position = member
+        .try_get::<Option<String>, _>("position")?
+        .unwrap_or_else(|| "disciple".to_string());
     if !matches!(position.as_str(), "leader" | "vice_leader" | "elder") {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限编辑宗门公告".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限编辑宗门公告".to_string()),
+            data: None,
+        }));
     }
     let announcement = payload.announcement.unwrap_or_default();
     let announcement = announcement.trim();
-    state.database.execute(
-        "UPDATE sect_def SET announcement = $2, updated_at = NOW() WHERE id = $1",
-        |query| query.bind(member.try_get::<Option<String>, _>("sect_id").unwrap_or(None).unwrap_or_default()).bind(if announcement.is_empty() { None::<String> } else { Some(announcement.to_string()) }),
-    ).await?;
+    state
+        .database
+        .execute(
+            "UPDATE sect_def SET announcement = $2, updated_at = NOW() WHERE id = $1",
+            |query| {
+                query
+                    .bind(
+                        member
+                            .try_get::<Option<String>, _>("sect_id")
+                            .unwrap_or(None)
+                            .unwrap_or_default(),
+                    )
+                    .bind(if announcement.is_empty() {
+                        None::<String>
+                    } else {
+                        Some(announcement.to_string())
+                    })
+            },
+        )
+        .await?;
     let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
     emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-    Ok(send_result(ServiceResult { success: true, message: Some("公告更新成功".to_string()), data: Some(serde_json::json!({
-        "debugRealtime": build_sect_update_payload("update_announcement", Some(member.try_get::<Option<String>, _>("sect_id").unwrap_or(None).unwrap_or_default().as_str()), Some("公告更新成功"))
-    })) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("公告更新成功".to_string()),
+        data: Some(serde_json::json!({
+            "debugRealtime": build_sect_update_payload("update_announcement", Some(member.try_get::<Option<String>, _>("sect_id").unwrap_or(None).unwrap_or_default().as_str()), Some("公告更新成功"))
+        })),
+    }))
 }
 
 pub async fn offer_sect_blessing_handler(
@@ -1157,13 +1591,22 @@ pub async fn offer_sect_blessing_handler(
         |query| query.bind(actor.character_id),
     ).await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<SectBlessingStatusDto> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectBlessingStatusDto> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
     let blessing_hall_level = opt_i64_from_i32(&member, "level");
     if blessing_hall_level <= 0 {
-        return Ok(send_result(ServiceResult::<SectBlessingStatusDto> { success: false, message: Some("祈福殿尚未建成".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectBlessingStatusDto> {
+            success: false,
+            message: Some("祈福殿尚未建成".to_string()),
+            data: None,
+        }));
     }
-    let now = time::OffsetDateTime::now_utc().to_offset(time::UtcOffset::from_hms(8, 0, 0).unwrap_or(time::UtcOffset::UTC));
+    let now = time::OffsetDateTime::now_utc()
+        .to_offset(time::UtcOffset::from_hms(8, 0, 0).unwrap_or(time::UtcOffset::UTC));
     let today = date_key(now);
     let existing = state.database.fetch_optional(
         "SELECT grant_day_key::text AS grant_day_key_text FROM character_global_buff WHERE character_id = $1 AND buff_key = 'fuyuan_flat' AND source_type = 'sect_blessing' AND source_id = 'blessing_hall' LIMIT 1 FOR UPDATE",
@@ -1171,11 +1614,19 @@ pub async fn offer_sect_blessing_handler(
     ).await?;
     if existing
         .as_ref()
-        .and_then(|row| row.try_get::<Option<String>, _>("grant_day_key_text").ok().flatten())
+        .and_then(|row| {
+            row.try_get::<Option<String>, _>("grant_day_key_text")
+                .ok()
+                .flatten()
+        })
         .map(|value| normalize_date_key(value) == today)
         .unwrap_or(false)
     {
-        return Ok(send_result(ServiceResult::<SectBlessingStatusDto> { success: false, message: Some("今日已祈福，请明日再来".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectBlessingStatusDto> {
+            success: false,
+            message: Some("今日已祈福，请明日再来".to_string()),
+            data: None,
+        }));
     }
     let fuyuan_bonus = blessing_hall_level as f64 * 0.5;
     let expire_at = now + time::Duration::hours(3);
@@ -1191,7 +1642,9 @@ pub async fn offer_sect_blessing_handler(
             blessed_today: true,
             can_bless: false,
             active: true,
-            expire_at: expire_at.format(&time::format_description::well_known::Rfc3339).ok(),
+            expire_at: expire_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .ok(),
             fuyuan_bonus,
             duration_hours: 3,
         }),
@@ -1204,49 +1657,87 @@ pub async fn upgrade_sect_building_handler(
     Json(payload): Json<UpgradeSectBuildingPayload>,
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
-    let building_type = payload.building_type.or(payload.building_type_alias).unwrap_or_default();
+    let building_type = payload
+        .building_type
+        .or(payload.building_type_alias)
+        .unwrap_or_default();
     let building_type = building_type.trim();
     if building_type.is_empty() {
         return Err(AppError::config("参数错误"));
     }
-    let member = state.database.fetch_optional(
-        "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(actor.character_id),
-    ).await?;
+    let member = state
+        .database
+        .fetch_optional(
+            "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(actor.character_id),
+        )
+        .await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     };
-    let position = member.try_get::<Option<String>, _>("position")?.unwrap_or_else(|| "disciple".to_string());
+    let position = member
+        .try_get::<Option<String>, _>("position")?
+        .unwrap_or_else(|| "disciple".to_string());
     if !matches!(position.as_str(), "leader" | "vice_leader" | "elder") {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("无权限升级建筑".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("无权限升级建筑".to_string()),
+            data: None,
+        }));
     }
-    let sect_id = member.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let sect_id = member
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     let building = state.database.fetch_optional(
         "SELECT id, level FROM sect_building WHERE sect_id = $1 AND building_type = $2 LIMIT 1 FOR UPDATE",
         |query| query.bind(&sect_id).bind(building_type),
     ).await?;
     let Some(building) = building else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("建筑不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("建筑不存在".to_string()),
+            data: None,
+        }));
     };
     let building_id: i64 = building.try_get("id")?;
     let level = opt_i64_from_i32_default(&building, "level", 1).max(1);
     let requirement = build_building_requirement(building_type, level);
     if !requirement.upgradable {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some(requirement.reason.unwrap_or_else(|| "暂未开放".to_string())), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some(requirement.reason.unwrap_or_else(|| "暂未开放".to_string())),
+            data: None,
+        }));
     }
-    let sect = state.database.fetch_optional(
-        "SELECT funds, build_points FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
-        |query| query.bind(&sect_id),
-    ).await?.ok_or_else(|| AppError::config("宗门不存在"))?;
+    let sect = state
+        .database
+        .fetch_optional(
+            "SELECT funds, build_points FROM sect_def WHERE id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(&sect_id),
+        )
+        .await?
+        .ok_or_else(|| AppError::config("宗门不存在"))?;
     let funds = sect.try_get::<Option<i64>, _>("funds")?.unwrap_or_default();
     let build_points = opt_i64_from_i32(&sect, "build_points");
     let need_funds = requirement.funds.unwrap_or_default();
     let need_build_points = requirement.build_points.unwrap_or_default();
     if funds < need_funds {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("宗门资金不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("宗门资金不足".to_string()),
+            data: None,
+        }));
     }
     if build_points < need_build_points {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("建设点不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("建设点不足".to_string()),
+            data: None,
+        }));
     }
     state.database.with_transaction(|| async {
         state.database.execute(
@@ -1272,12 +1763,19 @@ pub async fn upgrade_sect_building_handler(
     }).await?;
     let socket_realtime = load_sect_indicator_payload(&state, actor.character_id).await?;
     emit_sect_update_to_user(&state, actor.user_id, &socket_realtime);
-    Ok(send_result(ServiceResult { success: true, message: Some("升级成功".to_string()), data: Some(serde_json::json!({
-        "debugRealtime": build_sect_update_payload("upgrade_building", Some(sect_id.as_str()), Some("升级成功"))
-    })) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("升级成功".to_string()),
+        data: Some(serde_json::json!({
+            "debugRealtime": build_sect_update_payload("upgrade_building", Some(sect_id.as_str()), Some("升级成功"))
+        })),
+    }))
 }
 
-pub(crate) async fn load_sect_indicator_payload(state: &AppState, character_id: i64) -> Result<SectIndicatorPayload, AppError> {
+pub(crate) async fn load_sect_indicator_payload(
+    state: &AppState,
+    character_id: i64,
+) -> Result<SectIndicatorPayload, AppError> {
     let member = load_member_role(state, character_id, false).await?;
     let joined = member.is_some();
     let can_manage_applications = member
@@ -1310,7 +1808,10 @@ pub(crate) async fn load_sect_indicator_payload(state: &AppState, character_id: 
     ))
 }
 
-async fn emit_sect_update_to_characters(state: &AppState, character_ids: &[i64]) -> Result<(), AppError> {
+async fn emit_sect_update_to_characters(
+    state: &AppState,
+    character_ids: &[i64],
+) -> Result<(), AppError> {
     let mut deduped = character_ids
         .iter()
         .copied()
@@ -1319,10 +1820,13 @@ async fn emit_sect_update_to_characters(state: &AppState, character_ids: &[i64])
     deduped.sort_unstable();
     deduped.dedup();
     for character_id in deduped {
-        let user_row = state.database.fetch_optional(
-            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-            |query| query.bind(character_id),
-        ).await?;
+        let user_row = state
+            .database
+            .fetch_optional(
+                "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+                |query| query.bind(character_id),
+            )
+            .await?;
         let Some(user_row) = user_row else {
             continue;
         };
@@ -1339,26 +1843,45 @@ async fn emit_sect_update_to_characters(state: &AppState, character_ids: &[i64])
     Ok(())
 }
 
-async fn load_sect_manager_character_ids(state: &AppState, sect_id: &str) -> Result<Vec<i64>, AppError> {
+async fn load_sect_manager_character_ids(
+    state: &AppState,
+    sect_id: &str,
+) -> Result<Vec<i64>, AppError> {
     let rows = state.database.fetch_all(
         "SELECT character_id FROM sect_member WHERE sect_id = $1 AND position IN ('leader', 'vice_leader', 'elder') ORDER BY joined_at ASC",
         |query| query.bind(sect_id),
     ).await?;
     Ok(rows
         .into_iter()
-        .filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from))
+        .filter_map(|row| {
+            row.try_get::<Option<i32>, _>("character_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .filter(|id| *id > 0)
         .collect())
 }
 
-async fn load_sect_member_character_ids(state: &AppState, sect_id: &str) -> Result<Vec<i64>, AppError> {
-    let rows = state.database.fetch_all(
-        "SELECT character_id FROM sect_member WHERE sect_id = $1 ORDER BY joined_at ASC",
-        |query| query.bind(sect_id),
-    ).await?;
+async fn load_sect_member_character_ids(
+    state: &AppState,
+    sect_id: &str,
+) -> Result<Vec<i64>, AppError> {
+    let rows = state
+        .database
+        .fetch_all(
+            "SELECT character_id FROM sect_member WHERE sect_id = $1 ORDER BY joined_at ASC",
+            |query| query.bind(sect_id),
+        )
+        .await?;
     Ok(rows
         .into_iter()
-        .filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from))
+        .filter_map(|row| {
+            row.try_get::<Option<i32>, _>("character_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .filter(|id| *id > 0)
         .collect())
 }
@@ -1374,12 +1897,23 @@ pub async fn accept_sect_quest_handler(
     if quest_id.is_empty() {
         return Err(AppError::config("参数错误"));
     }
-    if load_character_sect_id(&state, actor.character_id).await?.is_none() {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("未加入宗门".to_string()), data: None }));
+    if load_character_sect_id(&state, actor.character_id)
+        .await?
+        .is_none()
+    {
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("未加入宗门".to_string()),
+            data: None,
+        }));
     }
     let templates = load_sect_quest_templates()?;
     let Some(template) = templates.into_iter().find(|quest| quest.id == quest_id) else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("任务不存在".to_string()),
+            data: None,
+        }));
     };
     let row = state.database.fetch_optional(
         "SELECT status, accepted_at::text AS accepted_at_text FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 LIMIT 1 FOR UPDATE",
@@ -1388,14 +1922,22 @@ pub async fn accept_sect_quest_handler(
     if let Some(row) = row {
         let accepted_at = row.try_get::<Option<String>, _>("accepted_at_text")?;
         if is_sect_quest_in_current_period(&template.quest_type, accepted_at.as_deref()) {
-            return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务已接取".to_string()), data: None }));
+            return Ok(send_result(ServiceResult::<serde_json::Value> {
+                success: false,
+                message: Some("任务已接取".to_string()),
+                data: None,
+            }));
         }
     }
     state.database.execute(
         "INSERT INTO sect_quest_progress (character_id, quest_id, progress, status, accepted_at) VALUES ($1, $2, 0, 'in_progress', NOW()) ON CONFLICT (character_id, quest_id) DO UPDATE SET progress = 0, status = 'in_progress', accepted_at = NOW(), completed_at = NULL",
         |query| query.bind(actor.character_id).bind(quest_id),
     ).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({})) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("ok".to_string()),
+        data: Some(serde_json::json!({})),
+    }))
 }
 
 pub async fn submit_sect_quest_handler(
@@ -1412,42 +1954,91 @@ pub async fn submit_sect_quest_handler(
     let quantity = payload.quantity.unwrap_or_default().max(0);
     let templates = load_sect_quest_templates()?;
     let Some(template) = templates.into_iter().find(|quest| quest.id == quest_id) else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("任务不存在".to_string()),
+            data: None,
+        }));
     };
     if template.action_type != "submit_item" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("该任务不支持提交物品".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("该任务不支持提交物品".to_string()),
+            data: None,
+        }));
     }
     let row = state.database.fetch_optional(
         "SELECT progress, status, accepted_at::text AS accepted_at_text FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 LIMIT 1 FOR UPDATE",
         |query| query.bind(actor.character_id).bind(quest_id),
     ).await?;
     let Some(row) = row else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务未接取".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("任务未接取".to_string()),
+            data: None,
+        }));
     };
     let accepted_at = row.try_get::<Option<String>, _>("accepted_at_text")?;
     if !is_sect_quest_in_current_period(&template.quest_type, accepted_at.as_deref()) {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务已过期，请重新接取".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("任务已过期，请重新接取".to_string()),
+            data: None,
+        }));
     }
-    let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "in_progress".to_string());
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_else(|| "in_progress".to_string());
     if status != "in_progress" {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务当前不可提交".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("任务当前不可提交".to_string()),
+            data: None,
+        }));
     }
     let Some(submit_requirement) = template.submit_requirement.clone() else {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("任务配置异常".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("任务配置异常".to_string()),
+            data: None,
+        }));
     };
     let current_progress = opt_i64_from_i32(&row, "progress");
     let remaining = (template.required - current_progress).max(0);
     let actual_submit = quantity.max(1).min(remaining);
     if actual_submit <= 0 {
-        return Ok(send_result(ServiceResult { success: true, message: Some("任务已完成".to_string()), data: Some(serde_json::json!({"consumed": 0, "progress": current_progress, "status": "completed"})) }));
+        return Ok(send_result(ServiceResult {
+            success: true,
+            message: Some("任务已完成".to_string()),
+            data: Some(
+                serde_json::json!({"consumed": 0, "progress": current_progress, "status": "completed"}),
+            ),
+        }));
     }
-    let have = count_character_item_qty(&state, actor.character_id, &submit_requirement.item_def_id).await?;
+    let have =
+        count_character_item_qty(&state, actor.character_id, &submit_requirement.item_def_id)
+            .await?;
     if have < actual_submit {
-        return Ok(send_result(ServiceResult::<serde_json::Value> { success: false, message: Some("物品数量不足".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<serde_json::Value> {
+            success: false,
+            message: Some("物品数量不足".to_string()),
+            data: None,
+        }));
     }
-    consume_character_item_qty(&state, actor.user_id, actor.character_id, &submit_requirement.item_def_id, actual_submit).await?;
+    consume_character_item_qty(
+        &state,
+        actor.user_id,
+        actor.character_id,
+        &submit_requirement.item_def_id,
+        actual_submit,
+    )
+    .await?;
     let next_progress = current_progress + actual_submit;
-    let next_status = if next_progress >= template.required { "completed" } else { "in_progress" };
+    let next_status = if next_progress >= template.required {
+        "completed"
+    } else {
+        "in_progress"
+    };
     state.database.execute(
         "UPDATE sect_quest_progress SET progress = $3, status = $4, completed_at = CASE WHEN $4 = 'completed' THEN NOW() ELSE completed_at END WHERE character_id = $1 AND quest_id = $2",
         |query| query.bind(actor.character_id).bind(quest_id).bind(next_progress).bind(next_status),
@@ -1455,7 +2046,9 @@ pub async fn submit_sect_quest_handler(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(serde_json::json!({"consumed": actual_submit, "progress": next_progress, "status": next_status})),
+        data: Some(
+            serde_json::json!({"consumed": actual_submit, "progress": next_progress, "status": next_status}),
+        ),
     }))
 }
 
@@ -1472,27 +2065,51 @@ pub async fn claim_sect_quest_handler(
     }
     let templates = load_sect_quest_templates()?;
     let Some(template) = templates.into_iter().find(|quest| quest.id == quest_id) else {
-        return Ok(send_result(ServiceResult::<SectQuestRewardDto> { success: false, message: Some("任务不存在".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectQuestRewardDto> {
+            success: false,
+            message: Some("任务不存在".to_string()),
+            data: None,
+        }));
     };
     let member = state.database.fetch_optional(
         "SELECT sm.sect_id, sqp.status, sqp.accepted_at::text AS accepted_at_text FROM sect_member sm JOIN sect_quest_progress sqp ON sqp.character_id = sm.character_id WHERE sm.character_id = $1 AND sqp.quest_id = $2 LIMIT 1 FOR UPDATE",
         |query| query.bind(actor.character_id).bind(quest_id),
     ).await?;
     let Some(member) = member else {
-        return Ok(send_result(ServiceResult::<SectQuestRewardDto> { success: false, message: Some("任务未接取".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectQuestRewardDto> {
+            success: false,
+            message: Some("任务未接取".to_string()),
+            data: None,
+        }));
     };
     let accepted_at = member.try_get::<Option<String>, _>("accepted_at_text")?;
     if !is_sect_quest_in_current_period(&template.quest_type, accepted_at.as_deref()) {
-        return Ok(send_result(ServiceResult::<SectQuestRewardDto> { success: false, message: Some("任务已过期，请重新接取".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectQuestRewardDto> {
+            success: false,
+            message: Some("任务已过期，请重新接取".to_string()),
+            data: None,
+        }));
     }
-    let status = member.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+    let status = member
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
     if status == "claimed" {
-        return Ok(send_result(ServiceResult::<SectQuestRewardDto> { success: false, message: Some("奖励已领取".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectQuestRewardDto> {
+            success: false,
+            message: Some("奖励已领取".to_string()),
+            data: None,
+        }));
     }
     if status != "completed" {
-        return Ok(send_result(ServiceResult::<SectQuestRewardDto> { success: false, message: Some("任务未完成".to_string()), data: None }));
+        return Ok(send_result(ServiceResult::<SectQuestRewardDto> {
+            success: false,
+            message: Some("任务未完成".to_string()),
+            data: None,
+        }));
     }
-    let sect_id = member.try_get::<Option<String>, _>("sect_id")?.unwrap_or_default();
+    let sect_id = member
+        .try_get::<Option<String>, _>("sect_id")?
+        .unwrap_or_default();
     let reward = template.reward.clone();
     state.database.with_transaction(|| async {
         state.database.execute(
@@ -1509,7 +2126,11 @@ pub async fn claim_sect_quest_handler(
         ).await?;
         Ok::<(), AppError>(())
     }).await?;
-    Ok(send_result(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(reward) }))
+    Ok(send_result(ServiceResult {
+        success: true,
+        message: Some("ok".to_string()),
+        data: Some(reward),
+    }))
 }
 
 pub async fn list_sect_applications(
@@ -1529,22 +2150,49 @@ pub async fn list_sect_applications(
         "SELECT sa.id, sa.character_id, c.nickname, c.realm, sa.message, sa.created_at::text AS created_at_text FROM sect_application sa JOIN characters c ON c.id = sa.character_id WHERE sa.sect_id = $1 AND sa.status = 'pending' ORDER BY sa.created_at DESC, sa.id DESC",
         |query| query.bind(&sect_id),
     ).await?;
-    let month_map = load_month_card_map_by_character_ids(&state, rows.iter().filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from)).collect()).await?;
+    let month_map = load_month_card_map_by_character_ids(
+        &state,
+        rows.iter()
+            .filter_map(|row| {
+                row.try_get::<Option<i32>, _>("character_id")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+            })
+            .collect(),
+    )
+    .await?;
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(rows.into_iter().map(|row| {
-            let character_id = opt_i64_from_i32(&row, "character_id");
-            SectApplicationDto {
-                id: row.try_get::<Option<i64>, _>("id").unwrap_or(None).unwrap_or_default(),
-                character_id,
-                nickname: row.try_get::<Option<String>, _>("nickname").unwrap_or(None).unwrap_or_default(),
-                month_card_active: month_map.get(&character_id).copied().unwrap_or(false),
-                realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                message: row.try_get::<Option<String>, _>("message").unwrap_or(None),
-                created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
-            }
-        }).collect::<Vec<_>>()),
+        data: Some(
+            rows.into_iter()
+                .map(|row| {
+                    let character_id = opt_i64_from_i32(&row, "character_id");
+                    SectApplicationDto {
+                        id: row
+                            .try_get::<Option<i64>, _>("id")
+                            .unwrap_or(None)
+                            .unwrap_or_default(),
+                        character_id,
+                        nickname: row
+                            .try_get::<Option<String>, _>("nickname")
+                            .unwrap_or(None)
+                            .unwrap_or_default(),
+                        month_card_active: month_map.get(&character_id).copied().unwrap_or(false),
+                        realm: row
+                            .try_get::<Option<String>, _>("realm")
+                            .unwrap_or(None)
+                            .unwrap_or_default(),
+                        message: row.try_get::<Option<String>, _>("message").unwrap_or(None),
+                        created_at: row
+                            .try_get::<Option<String>, _>("created_at_text")
+                            .unwrap_or(None)
+                            .unwrap_or_default(),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ),
     }))
 }
 
@@ -1560,17 +2208,36 @@ pub async fn list_my_sect_applications(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(rows.into_iter().map(|row| SectMyApplicationDto {
-            id: row.try_get::<Option<i64>, _>("id").unwrap_or(None).unwrap_or_default(),
-            sect_id: row.try_get::<Option<String>, _>("sect_id").unwrap_or(None).unwrap_or_default(),
-            sect_name: row.try_get::<Option<String>, _>("sect_name").unwrap_or(None).unwrap_or_default(),
-            sect_level: opt_i64_from_i32(&row, "sect_level"),
-            member_count: opt_i64_from_i32(&row, "member_count"),
-            max_members: opt_i64_from_i32(&row, "max_members"),
-            join_type: row.try_get::<Option<String>, _>("join_type").unwrap_or(None).unwrap_or_default(),
-            created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
-            message: row.try_get::<Option<String>, _>("message").unwrap_or(None),
-        }).collect::<Vec<_>>()),
+        data: Some(
+            rows.into_iter()
+                .map(|row| SectMyApplicationDto {
+                    id: row
+                        .try_get::<Option<i64>, _>("id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    sect_id: row
+                        .try_get::<Option<String>, _>("sect_id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    sect_name: row
+                        .try_get::<Option<String>, _>("sect_name")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    sect_level: opt_i64_from_i32(&row, "sect_level"),
+                    member_count: opt_i64_from_i32(&row, "member_count"),
+                    max_members: opt_i64_from_i32(&row, "max_members"),
+                    join_type: row
+                        .try_get::<Option<String>, _>("join_type")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    created_at: row
+                        .try_get::<Option<String>, _>("created_at_text")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    message: row.try_get::<Option<String>, _>("message").unwrap_or(None),
+                })
+                .collect::<Vec<_>>(),
+        ),
     }))
 }
 
@@ -1594,76 +2261,190 @@ pub async fn get_sect_logs_handler(
     Ok(send_result(ServiceResult {
         success: true,
         message: Some("ok".to_string()),
-        data: Some(rows.into_iter().map(|row| SectLogDto {
-            id: row.try_get::<Option<i64>, _>("id").unwrap_or(None).unwrap_or_default(),
-            log_type: row.try_get::<Option<String>, _>("log_type").unwrap_or(None).unwrap_or_default(),
-            content: row.try_get::<Option<String>, _>("content").unwrap_or(None).unwrap_or_default(),
-            created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
-            operator_id: row.try_get::<Option<i32>, _>("operator_id").unwrap_or(None).map(i64::from),
-            operator_name: row.try_get::<Option<String>, _>("operator_name").unwrap_or(None),
-            target_id: row.try_get::<Option<i32>, _>("target_id").unwrap_or(None).map(i64::from),
-            target_name: row.try_get::<Option<String>, _>("target_name").unwrap_or(None),
-        }).collect::<Vec<_>>()),
+        data: Some(
+            rows.into_iter()
+                .map(|row| SectLogDto {
+                    id: row
+                        .try_get::<Option<i64>, _>("id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    log_type: row
+                        .try_get::<Option<String>, _>("log_type")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    content: row
+                        .try_get::<Option<String>, _>("content")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    created_at: row
+                        .try_get::<Option<String>, _>("created_at_text")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                    operator_id: row
+                        .try_get::<Option<i32>, _>("operator_id")
+                        .unwrap_or(None)
+                        .map(i64::from),
+                    operator_name: row
+                        .try_get::<Option<String>, _>("operator_name")
+                        .unwrap_or(None),
+                    target_id: row
+                        .try_get::<Option<i32>, _>("target_id")
+                        .unwrap_or(None)
+                        .map(i64::from),
+                    target_name: row
+                        .try_get::<Option<String>, _>("target_name")
+                        .unwrap_or(None),
+                })
+                .collect::<Vec<_>>(),
+        ),
     }))
 }
 
-async fn load_character_sect_id(state: &AppState, character_id: i64) -> Result<Option<String>, AppError> {
-    let row = state.database.fetch_optional("SELECT sect_id FROM sect_member WHERE character_id = $1 LIMIT 1", |query| query.bind(character_id)).await?;
+async fn load_character_sect_id(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Option<String>, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT sect_id FROM sect_member WHERE character_id = $1 LIMIT 1",
+            |query| query.bind(character_id),
+        )
+        .await?;
     Ok(row.and_then(|row| row.try_get::<Option<String>, _>("sect_id").ok().flatten()))
 }
 
-async fn load_sect_members(state: &AppState, sect_id: &str) -> Result<Vec<SectMemberDto>, AppError> {
+async fn load_sect_members(
+    state: &AppState,
+    sect_id: &str,
+) -> Result<Vec<SectMemberDto>, AppError> {
     let rows = state.database.fetch_all(
         "SELECT sm.character_id, c.nickname, c.realm, c.last_offline_at::text AS last_offline_at_text, sm.position, sm.contribution, sm.weekly_contribution, sm.joined_at::text AS joined_at_text FROM sect_member sm JOIN characters c ON c.id = sm.character_id WHERE sm.sect_id = $1 ORDER BY CASE sm.position WHEN 'leader' THEN 1 WHEN 'vice_leader' THEN 2 WHEN 'elder' THEN 3 WHEN 'elite' THEN 4 ELSE 5 END, sm.joined_at ASC",
         |query| query.bind(sect_id),
     ).await?;
-    let month_map = load_month_card_map_by_character_ids(state, rows.iter().filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from)).collect()).await?;
-    Ok(rows.into_iter().map(|row| {
-        let character_id = opt_i64_from_i32(&row, "character_id");
-        SectMemberDto {
-            character_id,
-            nickname: row.try_get::<Option<String>, _>("nickname").unwrap_or(None).unwrap_or_default(),
-            month_card_active: month_map.get(&character_id).copied().unwrap_or(false),
-            realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-            position: row.try_get::<Option<String>, _>("position").unwrap_or(None).unwrap_or_else(|| "disciple".to_string()),
-            contribution: row.try_get::<Option<i64>, _>("contribution").unwrap_or(None).unwrap_or_default(),
-            weekly_contribution: opt_i64_from_i32(&row, "weekly_contribution"),
-            joined_at: row.try_get::<Option<String>, _>("joined_at_text").unwrap_or(None).unwrap_or_default(),
-            last_offline_at: row.try_get::<Option<String>, _>("last_offline_at_text").unwrap_or(None),
-        }
-    }).collect())
+    let month_map = load_month_card_map_by_character_ids(
+        state,
+        rows.iter()
+            .filter_map(|row| {
+                row.try_get::<Option<i32>, _>("character_id")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+            })
+            .collect(),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let character_id = opt_i64_from_i32(&row, "character_id");
+            SectMemberDto {
+                character_id,
+                nickname: row
+                    .try_get::<Option<String>, _>("nickname")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                month_card_active: month_map.get(&character_id).copied().unwrap_or(false),
+                realm: row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                position: row
+                    .try_get::<Option<String>, _>("position")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "disciple".to_string()),
+                contribution: row
+                    .try_get::<Option<i64>, _>("contribution")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                weekly_contribution: opt_i64_from_i32(&row, "weekly_contribution"),
+                joined_at: row
+                    .try_get::<Option<String>, _>("joined_at_text")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                last_offline_at: row
+                    .try_get::<Option<String>, _>("last_offline_at_text")
+                    .unwrap_or(None),
+            }
+        })
+        .collect())
 }
 
-async fn load_sect_buildings(state: &AppState, sect_id: &str) -> Result<Vec<SectBuildingDto>, AppError> {
+async fn load_sect_buildings(
+    state: &AppState,
+    sect_id: &str,
+) -> Result<Vec<SectBuildingDto>, AppError> {
     let rows = state.database.fetch_all(
         "SELECT *, upgrade_start_at::text AS upgrade_start_at_text, upgrade_end_at::text AS upgrade_end_at_text, created_at::text AS created_at_text, updated_at::text AS updated_at_text FROM sect_building WHERE sect_id = $1 ORDER BY building_type",
         |query| query.bind(sect_id),
     ).await?;
-    Ok(rows.into_iter().map(|row| {
-        let level = opt_i64_from_i32_default(&row, "level", 1).max(1);
-        let building_type = row.try_get::<Option<String>, _>("building_type").unwrap_or(None).unwrap_or_default();
-        SectBuildingDto {
-            id: row.try_get::<Option<i64>, _>("id").unwrap_or(None).unwrap_or_default(),
-            sect_id: row.try_get::<Option<String>, _>("sect_id").unwrap_or(None).unwrap_or_default(),
-            building_type: building_type.clone(),
-            level,
-            status: row.try_get::<Option<String>, _>("status").unwrap_or(None).unwrap_or_else(|| "normal".to_string()),
-            upgrade_start_at: row.try_get::<Option<String>, _>("upgrade_start_at_text").unwrap_or(None),
-            upgrade_end_at: row.try_get::<Option<String>, _>("upgrade_end_at_text").unwrap_or(None),
-            created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
-            updated_at: row.try_get::<Option<String>, _>("updated_at_text").unwrap_or(None).unwrap_or_default(),
-            requirement: build_building_requirement(&building_type, level),
-        }
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let level = opt_i64_from_i32_default(&row, "level", 1).max(1);
+            let building_type = row
+                .try_get::<Option<String>, _>("building_type")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            SectBuildingDto {
+                id: row
+                    .try_get::<Option<i64>, _>("id")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                sect_id: row
+                    .try_get::<Option<String>, _>("sect_id")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                building_type: building_type.clone(),
+                level,
+                status: row
+                    .try_get::<Option<String>, _>("status")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "normal".to_string()),
+                upgrade_start_at: row
+                    .try_get::<Option<String>, _>("upgrade_start_at_text")
+                    .unwrap_or(None),
+                upgrade_end_at: row
+                    .try_get::<Option<String>, _>("upgrade_end_at_text")
+                    .unwrap_or(None),
+                created_at: row
+                    .try_get::<Option<String>, _>("created_at_text")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                updated_at: row
+                    .try_get::<Option<String>, _>("updated_at_text")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                requirement: build_building_requirement(&building_type, level),
+            }
+        })
+        .collect())
 }
 
-fn build_building_requirement(building_type: &str, current_level: i64) -> SectBuildingRequirementDto {
+fn build_building_requirement(
+    building_type: &str,
+    current_level: i64,
+) -> SectBuildingRequirementDto {
     let max_level = 50;
     if !matches!(building_type, "hall" | "forge_house" | "blessing_hall") {
-        return SectBuildingRequirementDto { upgradable: false, max_level, next_level: None, funds: None, build_points: None, reason: Some("暂未开放".to_string()) };
+        return SectBuildingRequirementDto {
+            upgradable: false,
+            max_level,
+            next_level: None,
+            funds: None,
+            build_points: None,
+            reason: Some("暂未开放".to_string()),
+        };
     }
     if current_level >= max_level {
-        return SectBuildingRequirementDto { upgradable: false, max_level, next_level: None, funds: None, build_points: None, reason: Some("建筑已满级".to_string()) };
+        return SectBuildingRequirementDto {
+            upgradable: false,
+            max_level,
+            next_level: None,
+            funds: None,
+            build_points: None,
+            reason: Some("建筑已满级".to_string()),
+        };
     }
     let next_level = current_level + 1;
     SectBuildingRequirementDto {
@@ -1677,13 +2458,27 @@ fn build_building_requirement(building_type: &str, current_level: i64) -> SectBu
 }
 
 fn build_blessing_status(buildings: &[SectBuildingDto], position: &str) -> SectBlessingStatusDto {
-    let today = time::OffsetDateTime::now_utc().to_offset(time::UtcOffset::from_hms(8, 0, 0).unwrap_or(time::UtcOffset::UTC));
-    let blessing_hall_level = buildings.iter().find(|building| building.building_type == "blessing_hall").map(|building| building.level).unwrap_or_default();
-    let fuyuan_bonus = if blessing_hall_level > 0 { blessing_hall_level as f64 * 0.5 } else { 0.0 };
+    let today = time::OffsetDateTime::now_utc()
+        .to_offset(time::UtcOffset::from_hms(8, 0, 0).unwrap_or(time::UtcOffset::UTC));
+    let blessing_hall_level = buildings
+        .iter()
+        .find(|building| building.building_type == "blessing_hall")
+        .map(|building| building.level)
+        .unwrap_or_default();
+    let fuyuan_bonus = if blessing_hall_level > 0 {
+        blessing_hall_level as f64 * 0.5
+    } else {
+        0.0
+    };
     let active = false;
     let _ = position;
     SectBlessingStatusDto {
-        today: format!("{:04}-{:02}-{:02}", today.year(), u8::from(today.month()), today.day()),
+        today: format!(
+            "{:04}-{:02}-{:02}",
+            today.year(),
+            u8::from(today.month()),
+            today.day()
+        ),
         blessed_today: false,
         can_bless: true,
         active,
@@ -1693,7 +2488,11 @@ fn build_blessing_status(buildings: &[SectBuildingDto], position: &str) -> SectB
     }
 }
 
-fn calculate_sect_bonuses(level: i64, buildings: &[SectBuildingDto], position: String) -> SectBonusesDto {
+fn calculate_sect_bonuses(
+    level: i64,
+    buildings: &[SectBuildingDto],
+    position: String,
+) -> SectBonusesDto {
     let mut attr_bonus = serde_json::Map::new();
     let mut exp_bonus = level.max(0) * 2;
     let mut drop_bonus = 0_i64;
@@ -1711,7 +2510,10 @@ fn calculate_sect_bonuses(level: i64, buildings: &[SectBuildingDto], position: S
                 equipment_growth_cost_discount = ((building.level as f64) * 0.005).clamp(0.0, 0.25);
             }
             "spirit_array" => {
-                attr_bonus.insert("lingqi_huifu".to_string(), serde_json::json!(building.level * 5));
+                attr_bonus.insert(
+                    "lingqi_huifu".to_string(),
+                    serde_json::json!(building.level * 5),
+                );
             }
             "defense_array" => drop_bonus += building.level,
             _ => {}
@@ -1734,7 +2536,10 @@ fn calculate_sect_bonuses(level: i64, buildings: &[SectBuildingDto], position: S
     }
 }
 
-async fn load_month_card_map_by_character_ids(state: &AppState, ids: Vec<i64>) -> Result<HashMap<i64, bool>, AppError> {
+async fn load_month_card_map_by_character_ids(
+    state: &AppState,
+    ids: Vec<i64>,
+) -> Result<HashMap<i64, bool>, AppError> {
     let ids: Vec<i64> = ids.into_iter().filter(|id| *id > 0).collect();
     if ids.is_empty() {
         return Ok(HashMap::new());
@@ -1744,15 +2549,22 @@ async fn load_month_card_map_by_character_ids(state: &AppState, ids: Vec<i64>) -
         |query| query.bind(ids.clone()),
     ).await?;
     let mut map = HashMap::new();
-    for id in ids { map.insert(id, false); }
+    for id in ids {
+        map.insert(id, false);
+    }
     for row in rows {
         let character_id = opt_i64_from_i32(&row, "character_id");
-        if character_id > 0 { map.insert(character_id, true); }
+        if character_id > 0 {
+            map.insert(character_id, true);
+        }
     }
     Ok(map)
 }
 
-async fn build_sect_quest_views(state: &AppState, character_id: i64) -> Result<Vec<SectQuestDto>, AppError> {
+async fn build_sect_quest_views(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Vec<SectQuestDto>, AppError> {
     let templates = load_sect_quest_templates()?;
     let quest_ids: Vec<String> = templates.iter().map(|q| q.id.clone()).collect();
     let rows = state.database.fetch_all(
@@ -1761,12 +2573,17 @@ async fn build_sect_quest_views(state: &AppState, character_id: i64) -> Result<V
     ).await?;
     let mut progress_map = HashMap::new();
     for row in rows {
-        let quest_id = row.try_get::<Option<String>, _>("quest_id")?.unwrap_or_default();
-        if quest_id.is_empty() { continue; }
+        let quest_id = row
+            .try_get::<Option<String>, _>("quest_id")?
+            .unwrap_or_default();
+        if quest_id.is_empty() {
+            continue;
+        }
         progress_map.insert(
             quest_id,
             (
-                row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "in_progress".to_string()),
+                row.try_get::<Option<String>, _>("status")?
+                    .unwrap_or_else(|| "in_progress".to_string()),
                 opt_i64_from_i32(&row, "progress"),
                 row.try_get::<Option<String>, _>("accepted_at_text")?,
             ),
@@ -1775,43 +2592,60 @@ async fn build_sect_quest_views(state: &AppState, character_id: i64) -> Result<V
     let item_defs = load_item_defs_map()?;
     let today = date_key(time::OffsetDateTime::now_utc());
     let week_key = iso_week_key(time::OffsetDateTime::now_utc());
-    Ok(templates.into_iter().map(|quest| {
-        let progress_row = progress_map.get(quest.id.as_str());
-        let in_current_period = progress_row
-            .and_then(|(_, _, accepted_at)| accepted_at.as_deref())
-            .map(|accepted_at| {
-                if quest.quest_type == "weekly" {
-                    normalize_date_key(accepted_at.to_string()).starts_with(&week_key)
-                } else {
-                    normalize_date_key(accepted_at.to_string()) == today
-                }
-            })
-            .unwrap_or(false);
-        let status = if in_current_period {
-            progress_row.as_ref().map(|row| row.0.clone()).unwrap_or_else(|| "not_accepted".to_string())
-        } else {
-            "not_accepted".to_string()
-        };
-        let progress = if in_current_period {
-            progress_row.as_ref().map(|row| row.1).unwrap_or_default().min(quest.required)
-        } else { 0 };
-        SectQuestDto {
-            id: quest.id,
-            name: quest.name,
-            quest_type: quest.quest_type,
-            target: quest.target,
-            required: quest.required,
-            reward: quest.reward,
-            action_type: quest.action_type,
-            submit_requirement: quest.submit_requirement.map(|req| SectQuestSubmitRequirementDto {
-                item_def_id: req.item_def_id.clone(),
-                item_name: item_defs.get(req.item_def_id.as_str()).map(|item| item.0.clone()).unwrap_or(req.item_name),
-                item_category: req.item_category,
-            }),
-            status,
-            progress,
-        }
-    }).collect())
+    Ok(templates
+        .into_iter()
+        .map(|quest| {
+            let progress_row = progress_map.get(quest.id.as_str());
+            let in_current_period = progress_row
+                .and_then(|(_, _, accepted_at)| accepted_at.as_deref())
+                .map(|accepted_at| {
+                    if quest.quest_type == "weekly" {
+                        normalize_date_key(accepted_at.to_string()).starts_with(&week_key)
+                    } else {
+                        normalize_date_key(accepted_at.to_string()) == today
+                    }
+                })
+                .unwrap_or(false);
+            let status = if in_current_period {
+                progress_row
+                    .as_ref()
+                    .map(|row| row.0.clone())
+                    .unwrap_or_else(|| "not_accepted".to_string())
+            } else {
+                "not_accepted".to_string()
+            };
+            let progress = if in_current_period {
+                progress_row
+                    .as_ref()
+                    .map(|row| row.1)
+                    .unwrap_or_default()
+                    .min(quest.required)
+            } else {
+                0
+            };
+            SectQuestDto {
+                id: quest.id,
+                name: quest.name,
+                quest_type: quest.quest_type,
+                target: quest.target,
+                required: quest.required,
+                reward: quest.reward,
+                action_type: quest.action_type,
+                submit_requirement: quest.submit_requirement.map(|req| {
+                    SectQuestSubmitRequirementDto {
+                        item_def_id: req.item_def_id.clone(),
+                        item_name: item_defs
+                            .get(req.item_def_id.as_str())
+                            .map(|item| item.0.clone())
+                            .unwrap_or(req.item_name),
+                        item_category: req.item_category,
+                    }
+                }),
+                status,
+                progress,
+            }
+        })
+        .collect())
 }
 
 #[derive(Clone)]
@@ -1834,7 +2668,11 @@ fn load_sect_quest_templates() -> Result<Vec<SectQuestTemplate>, AppError> {
             quest_type: "daily".to_string(),
             target: "累计捐献灵石 100".to_string(),
             required: 100,
-            reward: SectQuestRewardDto { contribution: 25, build_points: 1, funds: 10 },
+            reward: SectQuestRewardDto {
+                contribution: 25,
+                build_points: 1,
+                funds: 10,
+            },
             action_type: "event".to_string(),
             submit_requirement: None,
         },
@@ -1844,7 +2682,11 @@ fn load_sect_quest_templates() -> Result<Vec<SectQuestTemplate>, AppError> {
             quest_type: "daily".to_string(),
             target: "提交一阶矿石 8个".to_string(),
             required: 8,
-            reward: SectQuestRewardDto { contribution: 45, build_points: 2, funds: 16 },
+            reward: SectQuestRewardDto {
+                contribution: 45,
+                build_points: 2,
+                funds: 16,
+            },
             action_type: "submit_item".to_string(),
             submit_requirement: Some(SectQuestSubmitRequirementDto {
                 item_def_id: "mat-001".to_string(),
@@ -1858,7 +2700,11 @@ fn load_sect_quest_templates() -> Result<Vec<SectQuestTemplate>, AppError> {
             quest_type: "weekly".to_string(),
             target: "累计捐献灵石 1000".to_string(),
             required: 1000,
-            reward: SectQuestRewardDto { contribution: 150, build_points: 2, funds: 19 },
+            reward: SectQuestRewardDto {
+                contribution: 150,
+                build_points: 2,
+                funds: 19,
+            },
             action_type: "event".to_string(),
             submit_requirement: None,
         },
@@ -1893,22 +2739,49 @@ fn extract_shop_buy_item_qty_from_log_content(content: &str, item_name: &str) ->
     if !content.starts_with(&prefix) {
         return 0;
     }
-    content[prefix.len()..].trim().parse::<i64>().ok().filter(|value| *value > 0).unwrap_or(0)
+    content[prefix.len()..]
+        .trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|value| *value > 0)
+        .unwrap_or(0)
 }
 
 fn load_item_defs_map() -> Result<HashMap<String, (String, Option<String>)>, AppError> {
     let mut map = HashMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
-        let content = std::fs::read_to_string(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")))
-            .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
+        let content = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
+        )
+        .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             map.insert(id, (name, icon));
         }
     }
@@ -1916,7 +2789,12 @@ fn load_item_defs_map() -> Result<HashMap<String, (String, Option<String>)>, App
 }
 
 fn date_key(now: time::OffsetDateTime) -> String {
-    format!("{:04}-{:02}-{:02}", now.year(), u8::from(now.month()), now.day())
+    format!(
+        "{:04}-{:02}-{:02}",
+        now.year(),
+        u8::from(now.month()),
+        now.day()
+    )
 }
 
 fn normalize_date_key(raw: String) -> String {
@@ -1929,9 +2807,17 @@ fn iso_week_key(now: time::OffsetDateTime) -> String {
 }
 
 fn compare_realm_rank(realm_a: &str, realm_b: &str) -> i64 {
-    const ORDER: &[&str] = &["凡人", "练气", "筑基", "金丹", "元婴", "化神", "炼虚", "合体", "大乘", "渡劫", "真仙"];
-    let a = ORDER.iter().position(|value| *value == realm_a.trim()).unwrap_or(0) as i64;
-    let b = ORDER.iter().position(|value| *value == realm_b.trim()).unwrap_or(0) as i64;
+    const ORDER: &[&str] = &[
+        "凡人", "练气", "筑基", "金丹", "元婴", "化神", "炼虚", "合体", "大乘", "渡劫", "真仙",
+    ];
+    let a = ORDER
+        .iter()
+        .position(|value| *value == realm_a.trim())
+        .unwrap_or(0) as i64;
+    let b = ORDER
+        .iter()
+        .position(|value| *value == realm_b.trim())
+        .unwrap_or(0) as i64;
     a - b
 }
 
@@ -1955,16 +2841,29 @@ fn position_rank(position: &str) -> i64 {
     }
 }
 
-async fn load_member_role(state: &AppState, character_id: i64, for_update: bool) -> Result<Option<SectMemberRole>, AppError> {
+async fn load_member_role(
+    state: &AppState,
+    character_id: i64,
+    for_update: bool,
+) -> Result<Option<SectMemberRole>, AppError> {
     let sql = if for_update {
         "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1 FOR UPDATE"
     } else {
         "SELECT sect_id, position FROM sect_member WHERE character_id = $1 LIMIT 1"
     };
-    let row = state.database.fetch_optional(sql, |query| query.bind(character_id)).await?;
+    let row = state
+        .database
+        .fetch_optional(sql, |query| query.bind(character_id))
+        .await?;
     Ok(row.map(|row| SectMemberRole {
-        sect_id: row.try_get::<Option<String>, _>("sect_id").unwrap_or(None).unwrap_or_default(),
-        position: row.try_get::<Option<String>, _>("position").unwrap_or(None).unwrap_or_else(|| "disciple".to_string()),
+        sect_id: row
+            .try_get::<Option<String>, _>("sect_id")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        position: row
+            .try_get::<Option<String>, _>("position")
+            .unwrap_or(None)
+            .unwrap_or_else(|| "disciple".to_string()),
     }))
 }
 
@@ -1974,11 +2873,16 @@ struct SectMemberRole {
 }
 
 fn generate_sect_id() -> String {
-    format!("sect-{}", time::OffsetDateTime::now_utc().unix_timestamp_nanos())
+    format!(
+        "sect-{}",
+        time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+    )
 }
 
 fn is_sect_quest_in_current_period(quest_type: &str, accepted_at: Option<&str>) -> bool {
-    let Some(accepted_at) = accepted_at else { return false; };
+    let Some(accepted_at) = accepted_at else {
+        return false;
+    };
     let accepted_key = normalize_date_key(accepted_at.to_string());
     let now = time::OffsetDateTime::now_utc();
     if quest_type == "weekly" {
@@ -1987,7 +2891,11 @@ fn is_sect_quest_in_current_period(quest_type: &str, accepted_at: Option<&str>) 
     accepted_key == date_key(now)
 }
 
-async fn count_character_item_qty(state: &AppState, character_id: i64, item_def_id: &str) -> Result<i64, AppError> {
+async fn count_character_item_qty(
+    state: &AppState,
+    character_id: i64,
+    item_def_id: &str,
+) -> Result<i64, AppError> {
     let row = state.database.fetch_one(
         "SELECT COALESCE(SUM(qty), 0)::bigint AS qty FROM item_instance WHERE owner_character_id = $1 AND item_def_id = $2 AND location = 'bag'",
         |query| query.bind(character_id).bind(item_def_id),
@@ -2008,19 +2916,34 @@ async fn consume_character_item_qty(
     ).await?;
     let mut remaining = qty.max(0);
     for row in rows {
-        if remaining <= 0 { break; }
+        if remaining <= 0 {
+            break;
+        }
         let item_id: i64 = row.try_get("id")?;
         let current_qty = row
             .try_get::<Option<i32>, _>("qty")?
             .map(i64::from)
             .unwrap_or_default()
             .max(0);
-        if current_qty <= 0 { continue; }
+        if current_qty <= 0 {
+            continue;
+        }
         let consume = remaining.min(current_qty);
         if consume == current_qty {
-            state.database.execute("DELETE FROM item_instance WHERE id = $1", |query| query.bind(item_id)).await?;
+            state
+                .database
+                .execute("DELETE FROM item_instance WHERE id = $1", |query| {
+                    query.bind(item_id)
+                })
+                .await?;
         } else {
-            state.database.execute("UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1", |query| query.bind(item_id).bind(consume)).await?;
+            state
+                .database
+                .execute(
+                    "UPDATE item_instance SET qty = qty - $2, updated_at = NOW() WHERE id = $1",
+                    |query| query.bind(item_id).bind(consume),
+                )
+                .await?;
         }
         remaining -= consume;
     }
@@ -2033,21 +2956,35 @@ async fn consume_character_item_qty(
 fn build_sect_def_dto(row: &sqlx::postgres::PgRow) -> Result<SectDefDto, AppError> {
     Ok(SectDefDto {
         id: row.try_get::<Option<String>, _>("id")?.unwrap_or_default(),
-        name: row.try_get::<Option<String>, _>("name")?.unwrap_or_default(),
+        name: row
+            .try_get::<Option<String>, _>("name")?
+            .unwrap_or_default(),
         leader_id: opt_i64_from_i32(row, "leader_id"),
         level: opt_i64_from_i32_default(row, "level", 1),
         exp: row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default(),
         funds: row.try_get::<Option<i64>, _>("funds")?.unwrap_or_default(),
-        reputation: row.try_get::<Option<i64>, _>("reputation")?.unwrap_or_default(),
+        reputation: row
+            .try_get::<Option<i64>, _>("reputation")?
+            .unwrap_or_default(),
         build_points: opt_i64_from_i32(row, "build_points"),
         announcement: row.try_get::<Option<String>, _>("announcement")?,
         description: row.try_get::<Option<String>, _>("description")?,
-        join_type: row.try_get::<Option<String>, _>("join_type")?.unwrap_or_else(|| "apply".to_string()),
-        join_min_realm: row.try_get::<Option<String>, _>("join_min_realm")?.unwrap_or_else(|| "凡人".to_string()),
+        join_type: row
+            .try_get::<Option<String>, _>("join_type")?
+            .unwrap_or_else(|| "apply".to_string()),
+        join_min_realm: row
+            .try_get::<Option<String>, _>("join_min_realm")?
+            .unwrap_or_else(|| "凡人".to_string()),
         member_count: opt_i64_from_i32(row, "member_count"),
         max_members: opt_i64_from_i32_default(row, "max_members", 20),
-        created_at: row.try_get::<Option<String>, _>("created_at_text").unwrap_or(None).unwrap_or_default(),
-        updated_at: row.try_get::<Option<String>, _>("updated_at_text").unwrap_or(None).unwrap_or_default(),
+        created_at: row
+            .try_get::<Option<String>, _>("created_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        updated_at: row
+            .try_get::<Option<String>, _>("updated_at_text")
+            .unwrap_or(None)
+            .unwrap_or_default(),
     })
 }
 
@@ -2192,7 +3129,10 @@ mod tests {
     fn sect_announcement_update_payload_matches_contract() {
         let payload = serde_json::json!({"success": true, "message": "公告更新成功", "data": {"debugRealtime": {"kind": "sect:update", "source": "update_announcement", "sectId": "sect-001"}}});
         assert_eq!(payload["message"], "公告更新成功");
-        assert_eq!(payload["data"]["debugRealtime"]["source"], "update_announcement");
+        assert_eq!(
+            payload["data"]["debugRealtime"]["source"],
+            "update_announcement"
+        );
         println!("SECT_ANNOUNCEMENT_UPDATE_RESPONSE={}", payload);
     }
 

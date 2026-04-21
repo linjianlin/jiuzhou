@@ -39,7 +39,11 @@ pub fn resolve_request_ip_with_socket_addr(
             if normalized.len() < 4 || !normalized[..4].eq_ignore_ascii_case("for=") {
                 continue;
             }
-            let candidate = normalized[4..].trim().trim_matches('"').trim_matches('[').trim_matches(']');
+            let candidate = normalized[4..]
+                .trim()
+                .trim_matches('"')
+                .trim_matches('[')
+                .trim_matches(']');
             let candidate = candidate
                 .rsplit_once(':')
                 .map(|(host, tail)| {

@@ -38,9 +38,15 @@ async fn query_live_mail_counter_snapshot(
     ).await?;
     let row = row.ok_or_else(|| AppError::config("邮件计数快照缺失"))?;
     Ok(MailCounterSnapshot {
-        total_count: row.try_get::<Option<i64>, _>("total_count")?.unwrap_or_default(),
-        unread_count: row.try_get::<Option<i64>, _>("unread_count")?.unwrap_or_default(),
-        unclaimed_count: row.try_get::<Option<i64>, _>("unclaimed_count")?.unwrap_or_default(),
+        total_count: row
+            .try_get::<Option<i64>, _>("total_count")?
+            .unwrap_or_default(),
+        unread_count: row
+            .try_get::<Option<i64>, _>("unread_count")?
+            .unwrap_or_default(),
+        unclaimed_count: row
+            .try_get::<Option<i64>, _>("unclaimed_count")?
+            .unwrap_or_default(),
     })
 }
 
@@ -78,7 +84,9 @@ pub async fn apply_mail_counter_deltas(
 
     for delta in deltas.iter().filter(|delta| {
         delta.scope_id > 0
-            && (delta.total_count_delta != 0 || delta.unread_count_delta != 0 || delta.unclaimed_count_delta != 0)
+            && (delta.total_count_delta != 0
+                || delta.unread_count_delta != 0
+                || delta.unclaimed_count_delta != 0)
     }) {
         state.database.execute(
             "INSERT INTO mail_counter (scope_type, scope_id, total_count, unread_count, unclaimed_count, updated_at) VALUES ($1, $2, $3, $4, $5, NOW()) ON CONFLICT (scope_type, scope_id) DO UPDATE SET total_count = GREATEST(0, mail_counter.total_count + EXCLUDED.total_count), unread_count = GREATEST(0, mail_counter.unread_count + EXCLUDED.unread_count), unclaimed_count = GREATEST(0, mail_counter.unclaimed_count + EXCLUDED.unclaimed_count), updated_at = NOW()",
@@ -137,30 +145,49 @@ pub fn build_mail_counter_state(
         recipient_user_id,
         recipient_character_id: recipient_character_id.filter(|id| *id > 0),
         is_unread: read_at.map(|value| value.trim().is_empty()).unwrap_or(true),
-        is_unclaimed: claimed_at.map(|value| value.trim().is_empty()).unwrap_or(true) && has_attachments,
+        is_unclaimed: claimed_at
+            .map(|value| value.trim().is_empty())
+            .unwrap_or(true)
+            && has_attachments,
     })
 }
 
-pub fn build_mail_counter_read_delta(state: &MailCounterStateSnapshot) -> Option<MailCounterDeltaInput> {
+pub fn build_mail_counter_read_delta(
+    state: &MailCounterStateSnapshot,
+) -> Option<MailCounterDeltaInput> {
     if !state.is_unread {
         return None;
     }
     Some(MailCounterDeltaInput {
-        scope_type: if state.recipient_character_id.is_some() { "character" } else { "user" },
-        scope_id: state.recipient_character_id.unwrap_or(state.recipient_user_id),
+        scope_type: if state.recipient_character_id.is_some() {
+            "character"
+        } else {
+            "user"
+        },
+        scope_id: state
+            .recipient_character_id
+            .unwrap_or(state.recipient_user_id),
         total_count_delta: 0,
         unread_count_delta: -1,
         unclaimed_count_delta: 0,
     })
 }
 
-pub fn build_mail_counter_claim_delta(state: &MailCounterStateSnapshot) -> Option<MailCounterDeltaInput> {
+pub fn build_mail_counter_claim_delta(
+    state: &MailCounterStateSnapshot,
+) -> Option<MailCounterDeltaInput> {
     if !state.is_unread && !state.is_unclaimed {
         return None;
     }
     Some(MailCounterDeltaInput {
-        scope_type: if state.recipient_character_id.is_some() { "character" } else { "user" },
-        scope_id: state.recipient_character_id.unwrap_or(state.recipient_user_id),
+        scope_type: if state.recipient_character_id.is_some() {
+            "character"
+        } else {
+            "user"
+        },
+        scope_id: state
+            .recipient_character_id
+            .unwrap_or(state.recipient_user_id),
         total_count_delta: 0,
         unread_count_delta: if state.is_unread { -1 } else { 0 },
         unclaimed_count_delta: if state.is_unclaimed { -1 } else { 0 },
@@ -169,8 +196,14 @@ pub fn build_mail_counter_claim_delta(state: &MailCounterStateSnapshot) -> Optio
 
 pub fn build_mail_counter_delete_delta(state: &MailCounterStateSnapshot) -> MailCounterDeltaInput {
     MailCounterDeltaInput {
-        scope_type: if state.recipient_character_id.is_some() { "character" } else { "user" },
-        scope_id: state.recipient_character_id.unwrap_or(state.recipient_user_id),
+        scope_type: if state.recipient_character_id.is_some() {
+            "character"
+        } else {
+            "user"
+        },
+        scope_id: state
+            .recipient_character_id
+            .unwrap_or(state.recipient_user_id),
         total_count_delta: -1,
         unread_count_delta: if state.is_unread { -1 } else { 0 },
         unclaimed_count_delta: if state.is_unclaimed { -1 } else { 0 },
@@ -178,10 +211,13 @@ pub fn build_mail_counter_delete_delta(state: &MailCounterStateSnapshot) -> Mail
 }
 
 pub async fn backfill_mail_counter_if_empty(state: &AppState) -> Result<(), AppError> {
-    let row = state.database.fetch_one(
-        "SELECT COUNT(*)::bigint AS cnt FROM mail_counter",
-        |query| query,
-    ).await?;
+    let row = state
+        .database
+        .fetch_one(
+            "SELECT COUNT(*)::bigint AS cnt FROM mail_counter",
+            |query| query,
+        )
+        .await?;
     let existing = row.try_get::<Option<i64>, _>("cnt")?.unwrap_or_default();
     if existing > 0 {
         return Ok(());

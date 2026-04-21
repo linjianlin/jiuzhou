@@ -150,25 +150,30 @@ pub async fn post_afdian_webhook(
         }
     };
 
-    let handle_result = state.database.with_transaction(|| async {
-        prepare_afdian_order_delivery(&state, &verified_order).await
-    }).await;
+    let handle_result = state
+        .database
+        .with_transaction(|| async { prepare_afdian_order_delivery(&state, &verified_order).await })
+        .await;
     let delivery_id = match handle_result {
         Ok(delivery_id) => delivery_id,
         Err(error) => {
-        tracing::error!(error = %error, "afdian webhook prepare delivery failed {}", webhook_log_context);
-        return (
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(AfdianWebhookResponseDto {
-                ec: 400,
-                em: error.to_string(),
-            }),
-        );
+            tracing::error!(error = %error, "afdian webhook prepare delivery failed {}", webhook_log_context);
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(AfdianWebhookResponseDto {
+                    ec: 400,
+                    em: error.to_string(),
+                }),
+            );
         }
     };
 
     if let Some(delivery_id) = delivery_id {
-        tracing::info!(delivery_id, "afdian webhook triggered immediate delivery {}", webhook_log_context);
+        tracing::info!(
+            delivery_id,
+            "afdian webhook triggered immediate delivery {}",
+            webhook_log_context
+        );
         if let Err(error) = process_afdian_message_delivery_by_id(&state, delivery_id).await {
             tracing::error!(error = %error, delivery_id, "afdian webhook immediate delivery failed unexpectedly {}", webhook_log_context);
             return (
@@ -204,7 +209,10 @@ fn validate_afdian_protocol_payload(
     if !has_afdian_webhook_order_payload(payload) {
         return Some((
             axum::http::StatusCode::OK,
-            Json(AfdianWebhookResponseDto { ec: 200, em: String::new() }),
+            Json(AfdianWebhookResponseDto {
+                ec: 200,
+                em: String::new(),
+            }),
         ));
     }
     let out_trade_no = payload
@@ -233,9 +241,14 @@ async fn prepare_afdian_order_delivery(
     let out_trade_no = required_text(order.out_trade_no.as_deref(), "out_trade_no")?;
     let user_id = required_text(order.user_id.as_deref(), "user_id")?;
     let plan_id = required_text(order.plan_id.as_deref(), "plan_id")?;
-    let month = order.month.filter(|value| *value > 0).ok_or_else(|| AppError::config("爱发电 webhook 缺少必要字段：month"))?;
+    let month = order
+        .month
+        .filter(|value| *value > 0)
+        .ok_or_else(|| AppError::config("爱发电 webhook 缺少必要字段：month"))?;
     let total_amount = required_text(order.total_amount.as_deref(), "total_amount")?;
-    let status = order.status.ok_or_else(|| AppError::config("爱发电 webhook 缺少必要字段：status"))?;
+    let status = order
+        .status
+        .ok_or_else(|| AppError::config("爱发电 webhook 缺少必要字段：status"))?;
     let normalized_custom_order_id = normalize_optional_text(order.custom_order_id.as_deref());
     let normalized_user_private_id = normalize_optional_text(order.user_private_id.as_deref());
     let order_log_context = build_afdian_log_context(&[
@@ -246,7 +259,15 @@ async fn prepare_afdian_order_delivery(
         ("userId", Some(user_id.clone())),
     ]);
 
-    let order_payload = build_afdian_order_payload(order, &out_trade_no, &user_id, &plan_id, month, &total_amount, status);
+    let order_payload = build_afdian_order_payload(
+        order,
+        &out_trade_no,
+        &user_id,
+        &plan_id,
+        month,
+        &total_amount,
+        status,
+    );
 
     let existing = state.database.fetch_optional(
         "SELECT id, redeem_code_id FROM afdian_order WHERE out_trade_no = $1 LIMIT 1 FOR UPDATE",
@@ -270,13 +291,24 @@ async fn prepare_afdian_order_delivery(
             inserted.try_get::<Option<i64>, _>("redeem_code_id")?,
         )
     };
-    tracing::info!(order_id, status, "afdian order prepared {}", order_log_context);
+    tracing::info!(
+        order_id,
+        status,
+        "afdian order prepared {}",
+        order_log_context
+    );
 
-    let Some(reward_payload) = build_afdian_reward_payload(&plan_id, month, order.sku_detail.as_ref())? else {
-        tracing::info!("afdian order ignored unsupported plan {}", order_log_context);
+    let Some(reward_payload) =
+        build_afdian_reward_payload(&plan_id, month, order.sku_detail.as_ref())?
+    else {
+        tracing::info!(
+            "afdian order ignored unsupported plan {}",
+            order_log_context
+        );
         return Ok(None);
     };
-    let (redeem_code_id, redeem_code) = get_or_create_redeem_code(state, &out_trade_no, reward_payload).await?;
+    let (redeem_code_id, redeem_code) =
+        get_or_create_redeem_code(state, &out_trade_no, reward_payload).await?;
     if should_refresh_afdian_order_processed_at(existing_redeem_code_id, redeem_code_id) {
         state.database.execute(
             "UPDATE afdian_order SET redeem_code_id = $2, processed_at = NOW(), updated_at = NOW() WHERE id = $1",
@@ -284,10 +316,13 @@ async fn prepare_afdian_order_delivery(
         ).await?;
     }
     let content = build_afdian_redeem_code_message(&redeem_code);
-    let existing_delivery = state.database.fetch_optional(
-        "SELECT id FROM afdian_message_delivery WHERE order_id = $1 LIMIT 1 FOR UPDATE",
-        |q| q.bind(order_id),
-    ).await?;
+    let existing_delivery = state
+        .database
+        .fetch_optional(
+            "SELECT id FROM afdian_message_delivery WHERE order_id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(order_id),
+        )
+        .await?;
     let delivery_id = if let Some(existing_delivery) = existing_delivery {
         existing_delivery.try_get::<i64, _>("id")?
     } else {
@@ -295,10 +330,13 @@ async fn prepare_afdian_order_delivery(
             "INSERT INTO afdian_message_delivery (order_id, recipient_user_id, content, status, attempt_count, next_retry_at, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, NOW(), NOW(), NOW())",
             |q| q.bind(order_id).bind(&user_id).bind(&content),
         ).await?;
-        let delivery = state.database.fetch_one(
-            "SELECT id FROM afdian_message_delivery WHERE order_id = $1 LIMIT 1",
-            |q| q.bind(order_id),
-        ).await?;
+        let delivery = state
+            .database
+            .fetch_one(
+                "SELECT id FROM afdian_message_delivery WHERE order_id = $1 LIMIT 1",
+                |q| q.bind(order_id),
+            )
+            .await?;
         delivery.try_get::<i64, _>("id")?
     };
     tracing::info!(
@@ -331,14 +369,12 @@ pub async fn run_due_afdian_message_retries_once(
     limit: i64,
 ) -> Result<usize, AppError> {
     let claimed = claim_due_afdian_message_deliveries(state, limit).await?;
-    Ok(
-        process_afdian_deliveries_best_effort(
-            claimed,
-            |row| row.try_get::<i64, _>("id").unwrap_or_default(),
-            |row| async move { process_claimed_afdian_message_delivery(state, Some(row)).await },
-        )
-        .await,
+    Ok(process_afdian_deliveries_best_effort(
+        claimed,
+        |row| row.try_get::<i64, _>("id").unwrap_or_default(),
+        |row| async move { process_claimed_afdian_message_delivery(state, Some(row)).await },
     )
+    .await)
 }
 
 async fn process_afdian_deliveries_best_effort<T, I, P, Fut>(
@@ -451,20 +487,28 @@ async fn get_or_create_redeem_code(
         |q| q.bind(AFDIAN_REDEEM_SOURCE_TYPE).bind(out_trade_no),
     ).await?;
     if let Some(existing) = existing {
-        return Ok((existing.try_get::<i64, _>("id")?, existing.try_get::<String, _>("code")?));
+        return Ok((
+            existing.try_get::<i64, _>("id")?,
+            existing.try_get::<String, _>("code")?,
+        ));
     }
     let code = build_redeem_code();
     let row = state.database.fetch_one(
         "INSERT INTO redeem_code (code, source_type, source_ref_id, reward_payload, status, created_at, updated_at) VALUES ($1, $2, $3, $4::jsonb, 'created', NOW(), NOW()) RETURNING id, code",
         |q| q.bind(&code).bind(AFDIAN_REDEEM_SOURCE_TYPE).bind(out_trade_no).bind(&reward_payload),
     ).await?;
-    Ok((row.try_get::<i64, _>("id")?, row.try_get::<String, _>("code")?))
+    Ok((
+        row.try_get::<i64, _>("id")?,
+        row.try_get::<String, _>("code")?,
+    ))
 }
 
 fn required_text(value: Option<&str>, field_name: &str) -> Result<String, AppError> {
     let normalized = value.unwrap_or_default().trim();
     if normalized.is_empty() {
-        return Err(AppError::config(format!("爱发电 webhook 缺少必要字段：{field_name}")));
+        return Err(AppError::config(format!(
+            "爱发电 webhook 缺少必要字段：{field_name}"
+        )));
     }
     Ok(normalized.to_string())
 }
@@ -487,7 +531,10 @@ fn normalize_afdian_error_message(message: &str) -> String {
     }
 }
 
-fn should_refresh_afdian_order_processed_at(existing_redeem_code_id: Option<i64>, redeem_code_id: i64) -> bool {
+fn should_refresh_afdian_order_processed_at(
+    existing_redeem_code_id: Option<i64>,
+    redeem_code_id: i64,
+) -> bool {
     existing_redeem_code_id.unwrap_or_default() != redeem_code_id
 }
 
@@ -526,7 +573,8 @@ fn build_afdian_log_context(fields: &[(&str, Option<String>)]) -> String {
     fields
         .iter()
         .filter_map(|(key, value)| {
-            value.as_deref()
+            value
+                .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(|value| format!("{}={}", key, value))
@@ -538,11 +586,20 @@ fn build_afdian_log_context(fields: &[(&str, Option<String>)]) -> String {
 fn build_afdian_webhook_log_context(payload: &AfdianWebhookPayloadInput) -> String {
     let order = payload.data.as_ref().and_then(|data| data.order.as_ref());
     build_afdian_log_context(&[
-        ("type", payload.data.as_ref().and_then(|data| data.r#type.clone())),
-        ("outTradeNo", order.and_then(|order| order.out_trade_no.clone())),
+        (
+            "type",
+            payload.data.as_ref().and_then(|data| data.r#type.clone()),
+        ),
+        (
+            "outTradeNo",
+            order.and_then(|order| order.out_trade_no.clone()),
+        ),
         ("planId", order.and_then(|order| order.plan_id.clone())),
         ("userId", order.and_then(|order| order.user_id.clone())),
-        ("month", order.and_then(|order| order.month.map(|value| value.to_string()))),
+        (
+            "month",
+            order.and_then(|order| order.month.map(|value| value.to_string())),
+        ),
     ])
 }
 
@@ -563,7 +620,9 @@ fn build_afdian_reward_payload(
         } => serde_json::json!({
             "items": [{"itemDefId": item_def_id, "quantity": quantity_per_unit * reward_units}]
         }),
-        AfdianPlanRewardConfig::SpiritStones { amount_per_unit, .. } => serde_json::json!({
+        AfdianPlanRewardConfig::SpiritStones {
+            amount_per_unit, ..
+        } => serde_json::json!({
             "spiritStones": amount_per_unit * reward_units
         }),
     };
@@ -609,17 +668,16 @@ fn compute_afdian_reward_units(
     sku_detail: Option<&Vec<AfdianWebhookSkuDetailInput>>,
 ) -> Result<i64, AppError> {
     match reward_config {
-        AfdianPlanRewardConfig::Item { unit, .. } | AfdianPlanRewardConfig::SpiritStones { unit, .. } => {
-            match unit {
-                AfdianRewardUnit::Month => {
-                    if month <= 0 {
-                        return Err(AppError::config("爱发电订单 month 必须为正整数"));
-                    }
-                    Ok(month)
+        AfdianPlanRewardConfig::Item { unit, .. }
+        | AfdianPlanRewardConfig::SpiritStones { unit, .. } => match unit {
+            AfdianRewardUnit::Month => {
+                if month <= 0 {
+                    return Err(AppError::config("爱发电订单 month 必须为正整数"));
                 }
-                AfdianRewardUnit::SkuCount => compute_afdian_sku_purchase_count(sku_detail),
+                Ok(month)
             }
-        }
+            AfdianRewardUnit::SkuCount => compute_afdian_sku_purchase_count(sku_detail),
+        },
     }
 }
 
@@ -633,24 +691,37 @@ fn build_afdian_redeem_code_message(code: &str) -> String {
     .join("\n")
 }
 
-fn compute_afdian_sku_purchase_count(sku_detail: Option<&Vec<AfdianWebhookSkuDetailInput>>) -> Result<i64, AppError> {
+fn compute_afdian_sku_purchase_count(
+    sku_detail: Option<&Vec<AfdianWebhookSkuDetailInput>>,
+) -> Result<i64, AppError> {
     let detail = sku_detail.ok_or_else(|| AppError::config("爱发电商品订单缺少有效 sku_detail"))?;
     let mut total = 0;
     for sku in detail {
         let count = sku.count.unwrap_or_default();
         if count <= 0 {
-            return Err(AppError::config("爱发电商品订单 sku_detail.count 必须为正整数"));
+            return Err(AppError::config(
+                "爱发电商品订单 sku_detail.count 必须为正整数",
+            ));
         }
         total += count;
     }
     if total <= 0 {
-        return Err(AppError::config("爱发电商品订单 sku_detail.count 汇总后必须大于 0"));
+        return Err(AppError::config(
+            "爱发电商品订单 sku_detail.count 汇总后必须大于 0",
+        ));
     }
     Ok(total)
 }
 
 fn build_redeem_code() -> String {
-    format!("AFD{:08X}", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default() & 0xFFFFFFFF) as u32)
+    format!(
+        "AFD{:08X}",
+        (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default()
+            & 0xFFFFFFFF) as u32
+    )
 }
 
 fn get_afdian_open_api_base_url() -> String {
@@ -665,10 +736,18 @@ fn get_afdian_open_api_base_url() -> String {
 }
 
 fn get_afdian_open_api_credentials() -> Result<(String, String), AppError> {
-    let user_id = std::env::var("AFDIAN_OPEN_USER_ID").unwrap_or_default().trim().to_string();
-    let token = std::env::var("AFDIAN_OPEN_TOKEN").unwrap_or_default().trim().to_string();
+    let user_id = std::env::var("AFDIAN_OPEN_USER_ID")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let token = std::env::var("AFDIAN_OPEN_TOKEN")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     if user_id.is_empty() || token.is_empty() {
-        return Err(AppError::config("爱发电 OpenAPI 配置缺失：请设置 AFDIAN_OPEN_USER_ID 与 AFDIAN_OPEN_TOKEN"));
+        return Err(AppError::config(
+            "爱发电 OpenAPI 配置缺失：请设置 AFDIAN_OPEN_USER_ID 与 AFDIAN_OPEN_TOKEN",
+        ));
     }
     Ok((user_id, token))
 }
@@ -698,7 +777,10 @@ async fn send_afdian_private_message(
         sign,
     };
     let response = client
-        .post(format!("{}/api/open/send-msg", get_afdian_open_api_base_url()))
+        .post(format!(
+            "{}/api/open/send-msg",
+            get_afdian_open_api_base_url()
+        ))
         .header(reqwest::header::ACCEPT, "application/json")
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&body)
@@ -707,7 +789,11 @@ async fn send_afdian_private_message(
     let status = response.status();
     let text = response.text().await?;
     if !status.is_success() {
-        return Err(AppError::config(format!("爱发电接口请求失败：HTTP {} {}", status.as_u16(), text.chars().take(200).collect::<String>())));
+        return Err(AppError::config(format!(
+            "爱发电接口请求失败：HTTP {} {}",
+            status.as_u16(),
+            text.chars().take(200).collect::<String>()
+        )));
     }
     let body: AfdianOpenApiEnvelope<AfdianSendMessageResponseData> = serde_json::from_str(&text)
         .map_err(|error| AppError::config(format!("爱发电接口响应解析失败: {error}")))?;
@@ -747,7 +833,10 @@ async fn query_afdian_orders_by_out_trade_no(
         sign,
     };
     let response = client
-        .post(format!("{}/api/open/query-order", get_afdian_open_api_base_url()))
+        .post(format!(
+            "{}/api/open/query-order",
+            get_afdian_open_api_base_url()
+        ))
         .header(reqwest::header::ACCEPT, "application/json")
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&body)
@@ -756,7 +845,11 @@ async fn query_afdian_orders_by_out_trade_no(
     let status = response.status();
     let text = response.text().await?;
     if !status.is_success() {
-        return Err(AppError::config(format!("爱发电接口请求失败：HTTP {} {}", status.as_u16(), text.chars().take(200).collect::<String>())));
+        return Err(AppError::config(format!(
+            "爱发电接口请求失败：HTTP {} {}",
+            status.as_u16(),
+            text.chars().take(200).collect::<String>()
+        )));
     }
     let body: AfdianOpenApiEnvelope<AfdianQueryOrderResponseData> = serde_json::from_str(&text)
         .map_err(|error| AppError::config(format!("爱发电接口响应解析失败: {error}")))?;
@@ -797,7 +890,12 @@ fn find_afdian_order_by_out_trade_no<'a>(
         return None;
     }
     orders.iter().find(|order| {
-        order.out_trade_no.as_deref().map(str::trim).unwrap_or_default() == normalized_out_trade_no
+        order
+            .out_trade_no
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            == normalized_out_trade_no
     })
 }
 
@@ -806,19 +904,27 @@ fn assert_afdian_order_matches_webhook(
     verified_order: &AfdianWebhookOrderInput,
 ) -> Result<(), AppError> {
     let mut mismatch_fields = Vec::new();
-    if webhook_order.out_trade_no.as_deref().unwrap_or_default() != verified_order.out_trade_no.as_deref().unwrap_or_default() {
+    if webhook_order.out_trade_no.as_deref().unwrap_or_default()
+        != verified_order.out_trade_no.as_deref().unwrap_or_default()
+    {
         mismatch_fields.push("out_trade_no");
     }
-    if webhook_order.user_id.as_deref().unwrap_or_default() != verified_order.user_id.as_deref().unwrap_or_default() {
+    if webhook_order.user_id.as_deref().unwrap_or_default()
+        != verified_order.user_id.as_deref().unwrap_or_default()
+    {
         mismatch_fields.push("user_id");
     }
-    if webhook_order.plan_id.as_deref().unwrap_or_default() != verified_order.plan_id.as_deref().unwrap_or_default() {
+    if webhook_order.plan_id.as_deref().unwrap_or_default()
+        != verified_order.plan_id.as_deref().unwrap_or_default()
+    {
         mismatch_fields.push("plan_id");
     }
     if webhook_order.month.unwrap_or_default() != verified_order.month.unwrap_or_default() {
         mismatch_fields.push("month");
     }
-    if webhook_order.total_amount.as_deref().unwrap_or_default() != verified_order.total_amount.as_deref().unwrap_or_default() {
+    if webhook_order.total_amount.as_deref().unwrap_or_default()
+        != verified_order.total_amount.as_deref().unwrap_or_default()
+    {
         mismatch_fields.push("total_amount");
     }
     if webhook_order.status.unwrap_or_default() != verified_order.status.unwrap_or_default() {
@@ -827,7 +933,10 @@ fn assert_afdian_order_matches_webhook(
     if mismatch_fields.is_empty() {
         Ok(())
     } else {
-        Err(AppError::config(format!("爱发电订单回查结果与 webhook 不一致：{}", mismatch_fields.join(", "))))
+        Err(AppError::config(format!(
+            "爱发电订单回查结果与 webhook 不一致：{}",
+            mismatch_fields.join(", ")
+        )))
     }
 }
 
@@ -839,9 +948,12 @@ fn compute_afdian_message_retry_at_from(
     next_attempt_count: i64,
     now: OffsetDateTime,
 ) -> Option<String> {
-    let delay_seconds = AFDIAN_MESSAGE_RETRY_DELAYS_SECONDS.get((next_attempt_count - 1).max(0) as usize).copied()?;
+    let delay_seconds = AFDIAN_MESSAGE_RETRY_DELAYS_SECONDS
+        .get((next_attempt_count - 1).max(0) as usize)
+        .copied()?;
     let next = now + time::Duration::seconds(delay_seconds);
-    next.format(&time::format_description::well_known::Rfc3339).ok()
+    next.format(&time::format_description::well_known::Rfc3339)
+        .ok()
 }
 
 #[cfg(test)]
@@ -849,19 +961,15 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::{
-        AfdianWebhookDataInput, AfdianWebhookPayloadInput, AfdianWebhookOrderInput, AfdianWebhookSkuDetailInput,
-        AfdianPlanConfig, AfdianPlanRewardConfig, AfdianRewardUnit, assert_afdian_order_matches_webhook,
-        build_afdian_log_context, build_afdian_open_api_sign,
-        build_afdian_webhook_log_context,
-        build_afdian_redeem_code_message, build_afdian_reward_payload, compute_afdian_message_retry_at,
-        compute_afdian_message_retry_at_from, compute_afdian_reward_units, find_afdian_order_by_out_trade_no, get_afdian_plan_config,
-        get_afdian_open_api_base_url,
-        has_afdian_webhook_order_payload,
-        build_afdian_order_payload,
-        normalize_afdian_error_message,
-        normalize_optional_text,
-        should_refresh_afdian_order_processed_at,
-        validate_afdian_protocol_payload,
+        AfdianPlanConfig, AfdianPlanRewardConfig, AfdianRewardUnit, AfdianWebhookDataInput,
+        AfdianWebhookOrderInput, AfdianWebhookPayloadInput, AfdianWebhookSkuDetailInput,
+        assert_afdian_order_matches_webhook, build_afdian_log_context, build_afdian_open_api_sign,
+        build_afdian_order_payload, build_afdian_redeem_code_message, build_afdian_reward_payload,
+        build_afdian_webhook_log_context, compute_afdian_message_retry_at,
+        compute_afdian_message_retry_at_from, compute_afdian_reward_units,
+        find_afdian_order_by_out_trade_no, get_afdian_open_api_base_url, get_afdian_plan_config,
+        has_afdian_webhook_order_payload, normalize_afdian_error_message, normalize_optional_text,
+        should_refresh_afdian_order_processed_at, validate_afdian_protocol_payload,
     };
 
     #[tokio::test]
@@ -874,7 +982,9 @@ mod tests {
 
     #[tokio::test]
     async fn afdian_webhook_post_non_order_returns_ok() {
-        let (status, body) = validate_afdian_protocol_payload(&AfdianWebhookPayloadInput { data: None }).expect("response should exist");
+        let (status, body) =
+            validate_afdian_protocol_payload(&AfdianWebhookPayloadInput { data: None })
+                .expect("response should exist");
         let payload = serde_json::to_value(body.0).expect("payload should serialize");
         assert_eq!(status, axum::http::StatusCode::OK);
         assert_eq!(payload, serde_json::json!({"ec": 200, "em": ""}));
@@ -956,17 +1066,23 @@ mod tests {
     #[tokio::test]
     async fn afdian_webhook_post_missing_out_trade_no_returns_400() {
         let payload = serde_json::json!({"data": {"type": "order", "order": {}}});
-        let parsed: AfdianWebhookPayloadInput = serde_json::from_value(payload).expect("payload should parse");
-        let (status, body) = validate_afdian_protocol_payload(&parsed).expect("response should exist");
+        let parsed: AfdianWebhookPayloadInput =
+            serde_json::from_value(payload).expect("payload should parse");
+        let (status, body) =
+            validate_afdian_protocol_payload(&parsed).expect("response should exist");
         let payload = serde_json::to_value(body.0).expect("payload should serialize");
         assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
-        assert_eq!(payload, serde_json::json!({"ec": 400, "em": "爱发电 webhook 缺少必要字段：out_trade_no"}));
+        assert_eq!(
+            payload,
+            serde_json::json!({"ec": 400, "em": "爱发电 webhook 缺少必要字段：out_trade_no"})
+        );
         println!("AFDIAN_WEBHOOK_POST_BAD_REQUEST_RESPONSE={}", payload);
     }
 
     #[test]
     fn afdian_open_api_sign_matches_node_contract_shape() {
-        let sign = build_afdian_open_api_sign("uid", "token", r#"{"recipient":"1","content":"hi"}"#, 123);
+        let sign =
+            build_afdian_open_api_sign("uid", "token", r#"{"recipient":"1","content":"hi"}"#, 123);
         assert_eq!(sign.len(), 32);
         assert!(sign.chars().all(|ch| ch.is_ascii_hexdigit()));
         assert_eq!(
@@ -983,17 +1099,28 @@ mod tests {
     fn afdian_open_api_base_url_falls_back_when_env_is_blank() {
         let key = "AFDIAN_OPEN_API_BASE_URL";
         let original = std::env::var(key).ok();
-        unsafe { std::env::set_var(key, "   "); }
+        unsafe {
+            std::env::set_var(key, "   ");
+        }
         let blank = get_afdian_open_api_base_url();
-        unsafe { std::env::set_var(key, "https://ifdian.net///"); }
+        unsafe {
+            std::env::set_var(key, "https://ifdian.net///");
+        }
         let trimmed = get_afdian_open_api_base_url();
         match original {
-            Some(value) => unsafe { std::env::set_var(key, value); },
-            None => unsafe { std::env::remove_var(key); },
+            Some(value) => unsafe {
+                std::env::set_var(key, value);
+            },
+            None => unsafe {
+                std::env::remove_var(key);
+            },
         }
         assert_eq!(blank, super::AFDIAN_OPEN_API_DEFAULT_BASE_URL);
         assert_eq!(trimmed, super::AFDIAN_OPEN_API_DEFAULT_BASE_URL);
-        println!("AFDIAN_BASE_URL={{\"blank\":{:?},\"trimmed\":{:?}}}", blank, trimmed);
+        println!(
+            "AFDIAN_BASE_URL={{\"blank\":{:?},\"trimmed\":{:?}}}",
+            blank, trimmed
+        );
     }
 
     #[tokio::test]
@@ -1008,7 +1135,9 @@ mod tests {
                 }))
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind listener");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
         let address = listener.local_addr().expect("listener addr");
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("server should run");
@@ -1116,7 +1245,15 @@ mod tests {
                 pic: Some("https://example.com/month-card.png".to_string()),
             }]),
         };
-        let payload = build_afdian_order_payload(&order, "trade-1", "user-a", super::AFDIAN_MONTH_CARD_PLAN_ID, 2, "30.00", 2);
+        let payload = build_afdian_order_payload(
+            &order,
+            "trade-1",
+            "user-a",
+            super::AFDIAN_MONTH_CARD_PLAN_ID,
+            2,
+            "30.00",
+            2,
+        );
         assert_eq!(payload["show_amount"], "28.00");
         assert_eq!(payload["remark"], "gift");
         assert_eq!(payload["redeem_id"], "redeem-7");
@@ -1131,7 +1268,10 @@ mod tests {
         assert_eq!(payload["sku_detail"][0]["sku_id"], "sku-month-card-001");
         assert_eq!(payload["sku_detail"][0]["name"], "修行月卡");
         assert_eq!(payload["sku_detail"][0]["album_id"], "album-1");
-        assert_eq!(payload["sku_detail"][0]["pic"], "https://example.com/month-card.png");
+        assert_eq!(
+            payload["sku_detail"][0]["pic"],
+            "https://example.com/month-card.png"
+        );
         println!("AFDIAN_ORDER_PAYLOAD={payload}");
     }
 
@@ -1174,7 +1314,10 @@ mod tests {
             }),
         };
         let context = build_afdian_webhook_log_context(&payload);
-        assert_eq!(context, "type=order outTradeNo=trade-1 planId=plan-a userId=user-a month=1");
+        assert_eq!(
+            context,
+            "type=order outTradeNo=trade-1 planId=plan-a userId=user-a month=1"
+        );
     }
 
     #[test]
@@ -1256,7 +1399,8 @@ mod tests {
             address_address: None,
             sku_detail: None,
         };
-        let error = assert_afdian_order_matches_webhook(&webhook, &verified).expect_err("should detect mismatch");
+        let error = assert_afdian_order_matches_webhook(&webhook, &verified)
+            .expect_err("should detect mismatch");
         assert!(error.to_string().contains("total_amount"));
     }
 
@@ -1286,7 +1430,10 @@ mod tests {
         let found = find_afdian_order_by_out_trade_no(&orders, " trade-1 ");
         let missing = find_afdian_order_by_out_trade_no(&orders, "missing-order");
         let empty = find_afdian_order_by_out_trade_no(&orders, "   ");
-        assert_eq!(found.and_then(|order| order.out_trade_no.as_deref()), Some("trade-1"));
+        assert_eq!(
+            found.and_then(|order| order.out_trade_no.as_deref()),
+            Some("trade-1")
+        );
         assert!(missing.is_none());
         assert!(empty.is_none());
         println!(
@@ -1397,7 +1544,11 @@ mod tests {
             super::AFDIAN_ADVANCED_RECRUIT_TOKEN_PRODUCT_PLAN_ID,
             super::AFDIAN_DUNWU_TOKEN_PRODUCT_PLAN_ID,
         ];
-        assert!(configured.iter().all(|plan_id| get_afdian_plan_config(plan_id).is_some()));
+        assert!(
+            configured
+                .iter()
+                .all(|plan_id| get_afdian_plan_config(plan_id).is_some())
+        );
         println!("AFDIAN_PLAN_CONFIG_KEYS={:?}", configured);
     }
 

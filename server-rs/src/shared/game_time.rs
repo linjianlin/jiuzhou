@@ -1,5 +1,5 @@
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use serde::Serialize;
 use sqlx::Row;
@@ -58,7 +58,9 @@ fn game_time_tick_handle() -> &'static Mutex<Option<JoinHandle<()>>> {
     GAME_TIME_TICK_HANDLE.get_or_init(|| Mutex::new(None))
 }
 
-pub async fn initialize_game_time_runtime(state: AppState) -> Result<GameTimeInitSummary, AppError> {
+pub async fn initialize_game_time_runtime(
+    state: AppState,
+) -> Result<GameTimeInitSummary, AppError> {
     if game_time_state().is_some() {
         return Ok(GameTimeInitSummary {
             initialized: true,
@@ -81,13 +83,25 @@ pub async fn initialize_game_time_runtime(state: AppState) -> Result<GameTimeIni
             true,
             false,
             GameTimeState {
-                era_name: row.try_get::<Option<String>, _>("era_name")?.unwrap_or_else(|| "末法纪元".to_string()),
+                era_name: row
+                    .try_get::<Option<String>, _>("era_name")?
+                    .unwrap_or_else(|| "末法纪元".to_string()),
                 base_year: row.try_get::<Option<i32>, _>("base_year")?.unwrap_or(1000) as i64,
-                weather: row.try_get::<Option<String>, _>("weather")?.unwrap_or_else(|| "晴".to_string()),
-                scale: row.try_get::<Option<i32>, _>("scale")?.unwrap_or(read_game_time_scale() as i32) as i64,
-                game_elapsed_ms: row.try_get::<Option<i64>, _>("game_elapsed_ms")?.unwrap_or(7 * 60 * 60 * 1000),
-                last_real_ms: row.try_get::<Option<i64>, _>("last_real_ms")?.unwrap_or(now),
-            last_sect_maintenance_day_serial: row.try_get::<Option<i32>, _>("last_sect_maintenance_day_serial")?.map(i64::from),
+                weather: row
+                    .try_get::<Option<String>, _>("weather")?
+                    .unwrap_or_else(|| "晴".to_string()),
+                scale: row
+                    .try_get::<Option<i32>, _>("scale")?
+                    .unwrap_or(read_game_time_scale() as i32) as i64,
+                game_elapsed_ms: row
+                    .try_get::<Option<i64>, _>("game_elapsed_ms")?
+                    .unwrap_or(7 * 60 * 60 * 1000),
+                last_real_ms: row
+                    .try_get::<Option<i64>, _>("last_real_ms")?
+                    .unwrap_or(now),
+                last_sect_maintenance_day_serial: row
+                    .try_get::<Option<i32>, _>("last_sect_maintenance_day_serial")?
+                    .map(i64::from),
             },
         )
     } else {
@@ -124,7 +138,9 @@ pub async fn initialize_game_time_runtime(state: AppState) -> Result<GameTimeIni
             }
         }
     });
-    *game_time_tick_handle().lock().expect("game time tick handle lock should acquire") = Some(handle);
+    *game_time_tick_handle()
+        .lock()
+        .expect("game time tick handle lock should acquire") = Some(handle);
 
     Ok(GameTimeInitSummary {
         initialized: true,
@@ -176,16 +192,24 @@ async fn tick_and_persist(state: &AppState) -> Result<(), AppError> {
             .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?;
         let server_now_ms = now_ms();
         let real_elapsed_ms = (server_now_ms - runtime_state.last_real_ms).clamp(0, 60_000);
-        let effective_real_elapsed_ms = if real_elapsed_ms == 0 { 1_000 } else { real_elapsed_ms };
+        let effective_real_elapsed_ms = if real_elapsed_ms == 0 {
+            1_000
+        } else {
+            real_elapsed_ms
+        };
         runtime_state.game_elapsed_ms += effective_real_elapsed_ms * runtime_state.scale;
         runtime_state.last_real_ms = server_now_ms;
-        runtime_state.last_sect_maintenance_day_serial = Some(build_shanghai_day_token(server_now_ms));
+        runtime_state.last_sect_maintenance_day_serial =
+            Some(build_shanghai_day_token(server_now_ms));
         runtime_state.clone()
     };
     persist_game_time_state(state, &persisted_state).await
 }
 
-async fn persist_game_time_state(state: &AppState, runtime_state: &GameTimeState) -> Result<(), AppError> {
+async fn persist_game_time_state(
+    state: &AppState,
+    runtime_state: &GameTimeState,
+) -> Result<(), AppError> {
     state.database.execute(
         "INSERT INTO game_time (id, era_name, base_year, game_elapsed_ms, weather, scale, last_real_ms, last_sect_maintenance_day_serial, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) ON CONFLICT (id) DO UPDATE SET era_name = EXCLUDED.era_name, base_year = EXCLUDED.base_year, game_elapsed_ms = EXCLUDED.game_elapsed_ms, weather = EXCLUDED.weather, scale = EXCLUDED.scale, last_real_ms = EXCLUDED.last_real_ms, last_sect_maintenance_day_serial = EXCLUDED.last_sect_maintenance_day_serial, updated_at = NOW()",
         |q| q

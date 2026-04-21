@@ -84,7 +84,12 @@ pub const PERFORMANCE_INDEX_DEFINITIONS: &[PerformanceIndexDefinition] = &[
     PerformanceIndexDefinition {
         name: "idx_mail_expired_history_cleanup",
         create_sql: "CREATE INDEX IF NOT EXISTS idx_mail_expired_history_cleanup ON mail (expire_at, id) WHERE deleted_at IS NULL AND expire_at IS NOT NULL",
-        match_fragments: &["expire_at", "id", "deleted_at IS NULL", "expire_at IS NOT NULL"],
+        match_fragments: &[
+            "expire_at",
+            "id",
+            "deleted_at IS NULL",
+            "expire_at IS NOT NULL",
+        ],
     },
     PerformanceIndexDefinition {
         name: "idx_item_instance_stackable_lookup",
@@ -121,17 +126,33 @@ pub const PERFORMANCE_INDEX_DEFINITIONS: &[PerformanceIndexDefinition] = &[
     PerformanceIndexDefinition {
         name: "idx_generated_technique_def_published_id",
         create_sql: "CREATE INDEX IF NOT EXISTS idx_generated_technique_def_published_id ON generated_technique_def (id) WHERE is_published = true AND enabled = true",
-        match_fragments: &["generated_technique_def", "id", "is_published = true", "enabled = true"],
+        match_fragments: &[
+            "generated_technique_def",
+            "id",
+            "is_published = true",
+            "enabled = true",
+        ],
     },
     PerformanceIndexDefinition {
         name: "idx_generated_skill_def_enabled_sort_source",
         create_sql: "CREATE INDEX IF NOT EXISTS idx_generated_skill_def_enabled_sort_source ON generated_skill_def (sort_weight DESC, id ASC) INCLUDE (source_id) WHERE enabled = true",
-        match_fragments: &["generated_skill_def", "sort_weight DESC", "id", "include (source_id)", "enabled = true"],
+        match_fragments: &[
+            "generated_skill_def",
+            "sort_weight DESC",
+            "id",
+            "include (source_id)",
+            "enabled = true",
+        ],
     },
     PerformanceIndexDefinition {
         name: "idx_generated_technique_layer_enabled_order",
         create_sql: "CREATE INDEX IF NOT EXISTS idx_generated_technique_layer_enabled_order ON generated_technique_layer (technique_id, layer ASC) WHERE enabled = true",
-        match_fragments: &["generated_technique_layer", "technique_id", "layer", "enabled = true"],
+        match_fragments: &[
+            "generated_technique_layer",
+            "technique_id",
+            "layer",
+            "enabled = true",
+        ],
     },
 ];
 
@@ -141,7 +162,9 @@ pub struct PerformanceIndexSummary {
     pub rebuilt_index_count: usize,
 }
 
-pub async fn ensure_performance_indexes(state: &AppState) -> Result<PerformanceIndexSummary, AppError> {
+pub async fn ensure_performance_indexes(
+    state: &AppState,
+) -> Result<PerformanceIndexSummary, AppError> {
     let mut summary = PerformanceIndexSummary::default();
     for definition in PERFORMANCE_INDEX_DEFINITIONS {
         let existing_definition = load_existing_index_definition(state, definition.name).await?;
@@ -159,7 +182,10 @@ pub async fn ensure_performance_indexes(state: &AppState) -> Result<PerformanceI
                 .await?;
             summary.rebuilt_index_count += 1;
         }
-        state.database.execute(definition.create_sql, |query| query).await?;
+        state
+            .database
+            .execute(definition.create_sql, |query| query)
+            .await?;
         summary.ensured_index_count += 1;
     }
     Ok(summary)
@@ -180,7 +206,11 @@ async fn load_existing_index_definition(
 }
 
 fn normalize_sql(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 fn matches_expected_fragments(index_definition_sql: &str, fragments: &[&str]) -> bool {
@@ -197,15 +227,29 @@ mod tests {
     #[test]
     fn performance_index_definitions_cover_expected_hotspots() {
         assert!(PERFORMANCE_INDEX_DEFINITIONS.len() >= 13);
-        assert!(PERFORMANCE_INDEX_DEFINITIONS.iter().any(|definition| definition.name == "idx_item_instance_stackable_lookup"));
-        assert!(PERFORMANCE_INDEX_DEFINITIONS.iter().any(|definition| definition.name == "idx_market_listing_item_instance_id"));
-        println!("PERFORMANCE_INDEX_DEFINITION_COUNT={}", PERFORMANCE_INDEX_DEFINITIONS.len());
+        assert!(
+            PERFORMANCE_INDEX_DEFINITIONS
+                .iter()
+                .any(|definition| definition.name == "idx_item_instance_stackable_lookup")
+        );
+        assert!(
+            PERFORMANCE_INDEX_DEFINITIONS
+                .iter()
+                .any(|definition| definition.name == "idx_market_listing_item_instance_id")
+        );
+        println!(
+            "PERFORMANCE_INDEX_DEFINITION_COUNT={}",
+            PERFORMANCE_INDEX_DEFINITIONS.len()
+        );
     }
 
     #[test]
     fn performance_index_fragment_matcher_is_whitespace_insensitive() {
         let sql = "CREATE INDEX IF NOT EXISTS idx_test ON mail (recipient_character_id, expire_at) WHERE deleted_at IS NULL";
-        assert!(matches_expected_fragments(sql, &["recipient_character_id", "deleted_at IS NULL"]));
+        assert!(matches_expected_fragments(
+            sql,
+            &["recipient_character_id", "deleted_at IS NULL"]
+        ));
         assert!(!matches_expected_fragments(sql, &["recipient_user_id"]));
     }
 }

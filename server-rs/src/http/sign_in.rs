@@ -60,7 +60,9 @@ pub async fn get_overview(
 ) -> Result<axum::response::Response, AppError> {
     let user = auth::require_auth(&state, &headers).await?;
     let now = chrono_like_now();
-    let month = query.month.unwrap_or_else(|| format!("{}-{:02}", now.year, now.month));
+    let month = query
+        .month
+        .unwrap_or_else(|| format!("{}-{:02}", now.year, now.month));
     let parsed = parse_month(&month).ok_or_else(|| AppError::config("月份参数错误"))?;
     let (month_start, next_month_start) = month_bounds(parsed.year, parsed.month);
 
@@ -78,14 +80,18 @@ pub async fn get_overview(
         if date_key.is_empty() {
             continue;
         }
-        let signed_at = row.try_get::<Option<String>, _>("created_at")?.unwrap_or_default();
+        let signed_at = row
+            .try_get::<Option<String>, _>("created_at")?
+            .unwrap_or_default();
         records.insert(
             date_key.clone(),
             SignInRecordDto {
                 date: date_key,
                 signed_at,
                 reward: opt_i64_from_i32(&row, "reward")?.unwrap_or_default(),
-                is_holiday: row.try_get::<Option<bool>, _>("is_holiday")?.unwrap_or(false),
+                is_holiday: row
+                    .try_get::<Option<bool>, _>("is_holiday")?
+                    .unwrap_or(false),
                 holiday_name: row.try_get::<Option<String>, _>("holiday_name")?,
             },
         );
@@ -234,7 +240,9 @@ fn parse_month(raw: &str) -> Option<ParsedMonth> {
     }
     let year = captures[0].parse::<i32>().ok()?;
     let month = captures[1].parse::<u32>().ok()?;
-    (1..=12).contains(&month).then_some(ParsedMonth { year, month })
+    (1..=12)
+        .contains(&month)
+        .then_some(ParsedMonth { year, month })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -245,7 +253,11 @@ struct ParsedMonth {
 
 fn month_bounds(year: i32, month: u32) -> (String, String) {
     let start = format!("{year}-{:02}-01", month);
-    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
     let next = format!("{next_year}-{:02}-01", next_month);
     (start, next)
 }
@@ -267,7 +279,11 @@ fn build_signed_date_set(values: Vec<String>) -> HashSet<String> {
         .collect()
 }
 
-fn count_consecutive_signed_days(signed_set: &HashSet<String>, start_date: &str, max_days: usize) -> i64 {
+fn count_consecutive_signed_days(
+    signed_set: &HashSet<String>,
+    start_date: &str,
+    max_days: usize,
+) -> i64 {
     let Some(mut cursor) = parse_date_key(start_date) else {
         return 0;
     };
@@ -304,7 +320,10 @@ fn parse_date_key(raw: &str) -> Option<SimpleDate> {
 
 fn prev_day(date: SimpleDate) -> SimpleDate {
     if date.day > 1 {
-        return SimpleDate { day: date.day - 1, ..date };
+        return SimpleDate {
+            day: date.day - 1,
+            ..date
+        };
     }
     if date.month > 1 {
         let month = date.month - 1;
@@ -331,7 +350,13 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if is_leap_year(year) { 29 } else { 28 },
+        2 => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
         _ => 30,
     }
 }

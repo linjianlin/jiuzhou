@@ -16,7 +16,10 @@ pub struct TimeResponseDto {
 pub async fn get_time() -> Result<Json<SuccessResponse<TimeResponseDto>>, AppError> {
     let snapshot = get_game_time_snapshot()?;
     let debug_realtime = build_game_time_sync_payload(snapshot.clone());
-    Ok(send_success(TimeResponseDto { snapshot, debug_realtime }))
+    Ok(send_success(TimeResponseDto {
+        snapshot,
+        debug_realtime,
+    }))
 }
 
 #[cfg(test)]

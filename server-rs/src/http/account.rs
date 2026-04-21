@@ -7,12 +7,18 @@ use sqlx::Row;
 use std::net::SocketAddr;
 
 use crate::auth;
-use crate::http::security::{AttemptAction, assert_action_attempt_allowed, clear_action_attempt_failures, enforce_qps_limit, record_action_attempt_failure};
+use crate::http::security::{
+    AttemptAction, assert_action_attempt_allowed, clear_action_attempt_failures, enforce_qps_limit,
+    record_action_attempt_failure,
+};
 use crate::integrations::aliyun_sms;
 use crate::integrations::redis::RedisRuntime;
 use crate::integrations::tencent_captcha;
 use crate::shared::error::AppError;
-use crate::shared::phone_binding_send_limit::{build_phone_binding_cooldown_key, build_phone_binding_exceeded_message, build_phone_binding_send_limit_windows};
+use crate::shared::phone_binding_send_limit::{
+    build_phone_binding_cooldown_key, build_phone_binding_exceeded_message,
+    build_phone_binding_send_limit_windows,
+};
 use crate::shared::phone_number::{mask_phone_number, normalize_mainland_phone_number};
 use crate::shared::request_ip::resolve_request_ip_with_socket_addr;
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
@@ -128,7 +134,9 @@ pub async fn change_password(
         }));
     }
 
-    let password_hash = row.try_get::<Option<String>, _>("password")?.unwrap_or_default();
+    let password_hash = row
+        .try_get::<Option<String>, _>("password")?
+        .unwrap_or_default();
     if password_hash.is_empty() {
         return Ok(send_result(ServiceResult::<serde_json::Value> {
             success: false,
@@ -198,7 +206,11 @@ pub async fn get_phone_binding_status(
 
     Ok(send_success(PhoneBindingStatusDto {
         enabled: state.config.market_phone_binding.enabled,
-        is_bound: phone_number.as_deref().map(str::trim).filter(|value| !value.is_empty()).is_some(),
+        is_bound: phone_number
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some(),
         masked_phone_number,
     }))
 }
@@ -211,7 +223,8 @@ pub async fn send_phone_binding_code(
 ) -> Result<axum::response::Response, AppError> {
     let user = auth::require_auth(&state, &headers).await?;
     assert_phone_binding_feature_enabled(&state)?;
-    let phone_number = normalize_mainland_phone_number(payload.phone_number.as_deref().unwrap_or_default())?;
+    let phone_number =
+        normalize_mainland_phone_number(payload.phone_number.as_deref().unwrap_or_default())?;
     let request_ip = resolve_request_ip_with_socket_addr(&headers, Some(remote_addr))?;
     verify_phone_binding_captcha(&state, &payload, &request_ip).await?;
     assert_phone_binding_writable(&state, user.user_id, &phone_number).await?;
@@ -230,10 +243,17 @@ pub async fn send_phone_binding_code(
     let cooldown_key = build_phone_binding_cooldown_key(user.user_id);
     let cooldown_ttl = redis.ttl(&cooldown_key).await?;
     if cooldown_ttl > 0 {
-        return Err(AppError::config(&format!("验证码发送过于频繁，请{}秒后重试", cooldown_ttl)));
+        return Err(AppError::config(&format!(
+            "验证码发送过于频繁，请{}秒后重试",
+            cooldown_ttl
+        )));
     }
 
-    for window in build_phone_binding_send_limit_windows(user.user_id, &state.config.market_phone_binding, now) {
+    for window in build_phone_binding_send_limit_windows(
+        user.user_id,
+        &state.config.market_phone_binding,
+        now,
+    ) {
         let current = redis
             .get_string(&window.key)
             .await?
@@ -247,13 +267,23 @@ pub async fn send_phone_binding_code(
         }
     }
 
-    aliyun_sms::send_sms_verify_code(&state.outbound_http, &state.config.market_phone_binding, &phone_number)
-        .await?;
+    aliyun_sms::send_sms_verify_code(
+        &state.outbound_http,
+        &state.config.market_phone_binding,
+        &phone_number,
+    )
+    .await?;
 
-    for window in build_phone_binding_send_limit_windows(user.user_id, &state.config.market_phone_binding, now) {
+    for window in build_phone_binding_send_limit_windows(
+        user.user_id,
+        &state.config.market_phone_binding,
+        now,
+    ) {
         let count = redis.incr(&window.key).await?;
         if count == 1 {
-            redis.pexpire(&window.key, (window.expire_seconds * 1000) as i64).await?;
+            redis
+                .pexpire(&window.key, (window.expire_seconds * 1000) as i64)
+                .await?;
         }
     }
     redis
@@ -280,7 +310,8 @@ pub async fn bind_phone_number(
 ) -> Result<axum::response::Response, AppError> {
     let user = auth::require_auth(&state, &headers).await?;
     assert_phone_binding_feature_enabled(&state)?;
-    let phone_number = normalize_mainland_phone_number(payload.phone_number.as_deref().unwrap_or_default())?;
+    let phone_number =
+        normalize_mainland_phone_number(payload.phone_number.as_deref().unwrap_or_default())?;
     let verification_code = payload.code.unwrap_or_default();
     if !verification_code.chars().all(|ch| ch.is_ascii_digit()) || verification_code.len() != 6 {
         return Err(AppError::config("验证码格式错误"));
@@ -338,7 +369,11 @@ async fn assert_phone_binding_writable(
         return Err(AppError::not_found("账号不存在"));
     };
     let current_phone = row.try_get::<Option<String>, _>("phone_number")?;
-    if let Some(current_phone) = current_phone.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(current_phone) = current_phone
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if current_phone != phone_number {
             return Err(AppError::config("当前账号已绑定其他手机号，暂不支持换绑"));
         }
@@ -365,7 +400,11 @@ async fn verify_phone_binding_captcha(
     match state.config.captcha.provider {
         crate::config::CaptchaProvider::Tencent => {
             let ticket = payload.ticket.as_deref().map(str::trim).unwrap_or_default();
-            let randstr = payload.randstr.as_deref().map(str::trim).unwrap_or_default();
+            let randstr = payload
+                .randstr
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
             if ticket.is_empty() || randstr.is_empty() {
                 return Err(AppError::config("验证码票据不能为空"));
             }
@@ -381,8 +420,16 @@ async fn verify_phone_binding_captcha(
         crate::config::CaptchaProvider::Local => {}
     }
 
-    let captcha_id = payload.captcha_id.as_deref().map(str::trim).unwrap_or_default();
-    let captcha_code = payload.captcha_code.as_deref().map(str::trim).unwrap_or_default();
+    let captcha_id = payload
+        .captcha_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
+    let captcha_code = payload
+        .captcha_code
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
     if captcha_id.is_empty() || captcha_code.is_empty() {
         return Err(AppError::config("图片验证码不能为空"));
     }
@@ -400,7 +447,10 @@ async fn verify_phone_binding_captcha(
     redis.del(&captcha_key).await?;
     let stored: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|error| AppError::config(format!("failed to decode captcha payload: {error}")))?;
-    let answer = stored["answer"].as_str().unwrap_or_default().to_ascii_uppercase();
+    let answer = stored["answer"]
+        .as_str()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
     let expires_at = stored["expiresAt"].as_u64().unwrap_or_default();
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -422,11 +472,16 @@ mod tests {
     #[test]
     fn current_ip_prefers_forwarded_for() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", HeaderValue::from_static("1.2.3.4, 10.0.0.1"));
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("1.2.3.4, 10.0.0.1"),
+        );
         headers.insert("x-real-ip", HeaderValue::from_static("5.6.7.8"));
-        let ip = crate::shared::request_ip::resolve_request_ip(&headers).expect("ip should resolve");
+        let ip =
+            crate::shared::request_ip::resolve_request_ip(&headers).expect("ip should resolve");
         assert_eq!(ip, "1.2.3.4");
-        let payload = serde_json::to_value(super::CurrentIpData { ip }).expect("payload should serialize");
+        let payload =
+            serde_json::to_value(super::CurrentIpData { ip }).expect("payload should serialize");
         println!("ACCOUNT_CURRENT_IP_RESPONSE={}", payload);
     }
 

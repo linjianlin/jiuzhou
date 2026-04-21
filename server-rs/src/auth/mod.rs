@@ -42,7 +42,10 @@ pub struct AuthenticatedCharacter {
 pub fn read_bearer_token(headers: &HeaderMap) -> Option<&str> {
     let auth_header = headers.get(axum::http::header::AUTHORIZATION)?;
     let auth_header = auth_header.to_str().ok()?.trim();
-    auth_header.strip_prefix("Bearer ").map(str::trim).filter(|value| !value.is_empty())
+    auth_header
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
 pub fn verify_token(token: &str, jwt_secret: &str) -> Result<AuthClaims, AppError> {
@@ -60,7 +63,11 @@ pub fn verify_token(token: &str, jwt_secret: &str) -> Result<AuthClaims, AppErro
     Ok(token_data.claims)
 }
 
-pub fn sign_token(payload: AuthTokenPayload<'_>, jwt_secret: &str, jwt_expires_in: &str) -> Result<String, AppError> {
+pub fn sign_token(
+    payload: AuthTokenPayload<'_>,
+    jwt_secret: &str,
+    jwt_expires_in: &str,
+) -> Result<String, AppError> {
     let expires_at = calculate_expiration(jwt_expires_in)?;
     let claims = AuthClaims {
         id: payload.user_id,
@@ -132,7 +139,10 @@ pub async fn verify_session(
             query.bind(user_id)
         })
         .await?;
-    println!("VERIFY_SESSION_TRACE: fetch_optional_done row_present={}", row.is_some());
+    println!(
+        "VERIFY_SESSION_TRACE: fetch_optional_done row_present={}",
+        row.is_some()
+    );
 
     let Some(row) = row else {
         println!("VERIFY_SESSION_TRACE: row_missing");
@@ -140,7 +150,10 @@ pub async fn verify_session(
     };
 
     let current_session_token: Option<String> = row.try_get("session_token")?;
-    println!("VERIFY_SESSION_TRACE: token_loaded matches={}", current_session_token.as_deref() == Some(session_token));
+    println!(
+        "VERIFY_SESSION_TRACE: token_loaded matches={}",
+        current_session_token.as_deref() == Some(session_token)
+    );
     if current_session_token.as_deref() != Some(session_token) {
         return Err(AppError::unauthorized("账号已在其他设备登录").with_extra("kicked", true));
     }
@@ -152,7 +165,8 @@ pub async fn verify_token_and_session(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<AuthenticatedUser, AppError> {
-    let token = read_bearer_token(headers).ok_or_else(|| AppError::unauthorized(AUTH_INVALID_MESSAGE))?;
+    let token =
+        read_bearer_token(headers).ok_or_else(|| AppError::unauthorized(AUTH_INVALID_MESSAGE))?;
     let claims = verify_token(token, &state.config.service.jwt_secret)?;
     verify_session(state, claims.id, claims.session_token.as_deref()).await?;
 
@@ -168,9 +182,10 @@ pub async fn get_character_id_by_user_id(
 ) -> Result<Option<i64>, AppError> {
     let row = state
         .database
-        .fetch_optional("SELECT id::bigint AS id FROM characters WHERE user_id = $1 LIMIT 1", |query| {
-            query.bind(user_id)
-        })
+        .fetch_optional(
+            "SELECT id::bigint AS id FROM characters WHERE user_id = $1 LIMIT 1",
+            |query| query.bind(user_id),
+        )
         .await?;
 
     let character_id = row
@@ -184,7 +199,8 @@ pub async fn require_auth(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<AuthenticatedUser, AppError> {
-    let token = read_bearer_token(headers).ok_or_else(|| AppError::unauthorized(AUTH_INVALID_MESSAGE))?;
+    let token =
+        read_bearer_token(headers).ok_or_else(|| AppError::unauthorized(AUTH_INVALID_MESSAGE))?;
     let claims = verify_token(token, &state.config.service.jwt_secret)?;
 
     Ok(AuthenticatedUser {

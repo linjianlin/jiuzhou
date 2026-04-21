@@ -10,8 +10,12 @@ use std::collections::BTreeMap;
 
 use crate::auth;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
 use crate::state::AppState;
@@ -96,13 +100,27 @@ pub enum MainQuestRewardDto {
     #[serde(rename = "spirit_stones")]
     SpiritStones { amount: i64 },
     #[serde(rename = "item")]
-    Item { item_def_id: String, quantity: i64, item_name: Option<String>, item_icon: Option<String> },
+    Item {
+        item_def_id: String,
+        quantity: i64,
+        item_name: Option<String>,
+        item_icon: Option<String>,
+    },
     #[serde(rename = "technique")]
-    Technique { technique_id: String, technique_name: Option<String>, technique_icon: Option<String> },
+    Technique {
+        technique_id: String,
+        technique_name: Option<String>,
+        technique_icon: Option<String>,
+    },
     #[serde(rename = "feature_unlock")]
     FeatureUnlock { feature_code: String },
     #[serde(rename = "partner")]
-    Partner { partner_id: i64, partner_def_id: String, partner_name: String, partner_avatar: Option<String> },
+    Partner {
+        partner_id: i64,
+        partner_def_id: String,
+        partner_name: String,
+        partner_avatar: Option<String>,
+    },
     #[serde(rename = "title")]
     Title { title: String },
     #[serde(rename = "chapter_exp")]
@@ -175,7 +193,9 @@ pub async fn get_main_quest_progress(
     let (chapters, sections) = load_main_quest_defs()?;
     ensure_main_quest_progress_initialized(&state, actor.character_id, &sections).await?;
     let row = load_main_quest_progress_row(&state, actor.character_id).await?;
-    Ok(send_success(build_main_quest_progress_dto(row, &chapters, &sections)))
+    Ok(send_success(build_main_quest_progress_dto(
+        row, &chapters, &sections,
+    )))
 }
 
 pub async fn record_main_quest_craft_item_event(
@@ -208,7 +228,11 @@ pub async fn record_main_quest_craft_item_event(
     if !changed {
         return Ok(());
     }
-    let next_status = if completed { "turnin" } else { row.section_status.as_str() };
+    let next_status = if completed {
+        "turnin"
+    } else {
+        row.section_status.as_str()
+    };
     state.database.execute(
         "UPDATE character_main_quest_progress SET objectives_progress = $2::jsonb, section_status = $3, updated_at = NOW() WHERE character_id = $1",
         |query| query.bind(character_id).bind(serde_json::to_string(&next_progress).unwrap_or_else(|_| "{}".to_string())).bind(next_status),
@@ -292,7 +316,10 @@ pub async fn start_main_quest_dialogue(
 
     if row.section_status == "dialogue" {
         if let Some(dialogue_state) = row.dialogue_state.clone() {
-            let is_complete = dialogue_state.get("isComplete").and_then(|v| v.as_bool()).unwrap_or(false);
+            let is_complete = dialogue_state
+                .get("isComplete")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if !is_complete {
                 return Ok(send_result(ServiceResult {
                     success: true,
@@ -316,7 +343,10 @@ pub async fn start_main_quest_dialogue(
         .map(|value| value.to_string())
         .or_else(|| {
             if matches!(row.section_status.as_str(), "turnin" | "completed") {
-                section.dialogue_complete_id.clone().or(section.dialogue_id.clone())
+                section
+                    .dialogue_complete_id
+                    .clone()
+                    .or(section.dialogue_id.clone())
             } else {
                 section.dialogue_id.clone()
             }
@@ -349,55 +379,110 @@ pub async fn advance_main_quest_dialogue(
     let actor = auth::require_character(&state, &headers).await?;
     let (_chapters, sections) = load_main_quest_defs()?;
     ensure_main_quest_progress_initialized(&state, actor.character_id, &sections).await?;
-    let result = state.database.with_transaction(|| async {
-        let row = load_main_quest_progress_row_for_update(&state, actor.character_id).await?;
-        let section = row
-            .current_section_id
-            .as_deref()
-            .and_then(|section_id| sections.iter().find(|section| section.id == section_id))
-            .ok_or_else(|| AppError::config("没有进行中的对话"))?;
-        let mut dialogue_state = row.dialogue_state.clone().unwrap_or_default();
-        let mut dialogue_id = dialogue_state.get("dialogueId").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-        if dialogue_id.is_empty() {
-            dialogue_id = if matches!(row.section_status.as_str(), "turnin" | "completed") {
-                section.dialogue_complete_id.clone().or(section.dialogue_id.clone()).unwrap_or_default()
-            } else {
-                section.dialogue_id.clone().unwrap_or_default()
-            };
+    let result = state
+        .database
+        .with_transaction(|| async {
+            let row = load_main_quest_progress_row_for_update(&state, actor.character_id).await?;
+            let section = row
+                .current_section_id
+                .as_deref()
+                .and_then(|section_id| sections.iter().find(|section| section.id == section_id))
+                .ok_or_else(|| AppError::config("没有进行中的对话"))?;
+            let mut dialogue_state = row.dialogue_state.clone().unwrap_or_default();
+            let mut dialogue_id = dialogue_state
+                .get("dialogueId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
             if dialogue_id.is_empty() {
-                return Ok(ServiceResult::<serde_json::Value> { success: false, message: Some("没有进行中的对话".to_string()), data: None });
+                dialogue_id = if matches!(row.section_status.as_str(), "turnin" | "completed") {
+                    section
+                        .dialogue_complete_id
+                        .clone()
+                        .or(section.dialogue_id.clone())
+                        .unwrap_or_default()
+                } else {
+                    section.dialogue_id.clone().unwrap_or_default()
+                };
+                if dialogue_id.is_empty() {
+                    return Ok(ServiceResult::<serde_json::Value> {
+                        success: false,
+                        message: Some("没有进行中的对话".to_string()),
+                        data: None,
+                    });
+                }
+                let dialogue =
+                    load_dialogue(&dialogue_id)?.ok_or_else(|| AppError::config("对话不存在"))?;
+                dialogue_state = create_dialogue_state(&dialogue_id, &dialogue.nodes);
             }
-            let dialogue = load_dialogue(&dialogue_id)?.ok_or_else(|| AppError::config("对话不存在"))?;
-            dialogue_state = create_dialogue_state(&dialogue_id, &dialogue.nodes);
-        }
 
-        let dialogue = load_dialogue(&dialogue_id)?.ok_or_else(|| AppError::config("对话不存在"))?;
-        let pending_effects = dialogue_state.get("pendingEffects").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let effect_results = apply_dialogue_effects_tx(&state, actor.user_id, actor.character_id, pending_effects).await?;
-        let current_node_id = dialogue_state.get("currentNodeId").and_then(|v| v.as_str()).unwrap_or_default();
-        let current_node = find_dialogue_node(&dialogue.nodes, current_node_id)
-            .or_else(|| dialogue.nodes.first().cloned())
-            .ok_or_else(|| AppError::config("对话节点不存在"))?;
-        if current_node.node_type == "choice" {
-            return Ok(ServiceResult::<serde_json::Value> { success: false, message: Some("请选择选项".to_string()), data: None });
-        }
-        let next_node_id = current_node.next.clone().unwrap_or_default();
-        let selected_choices = dialogue_state.get("selectedChoices").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let next_state = if next_node_id.trim().is_empty() {
-            finalize_dialogue_state(&dialogue_id, current_node.clone(), selected_choices, section, &state, actor.character_id).await?
-        } else {
-            let next_node = find_dialogue_node(&dialogue.nodes, &next_node_id).ok_or_else(|| AppError::config(format!("无效的对话节点: {}", next_node_id)))?;
-            persist_entered_dialogue_node(&dialogue_id, next_node, selected_choices, section, &state, actor.character_id).await?
-        };
-        Ok(ServiceResult {
-            success: true,
-            message: Some("ok".to_string()),
-            data: Some(serde_json::json!({
-                "dialogueState": next_state,
-                "effectResults": effect_results,
-            })),
+            let dialogue =
+                load_dialogue(&dialogue_id)?.ok_or_else(|| AppError::config("对话不存在"))?;
+            let pending_effects = dialogue_state
+                .get("pendingEffects")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let effect_results = apply_dialogue_effects_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                pending_effects,
+            )
+            .await?;
+            let current_node_id = dialogue_state
+                .get("currentNodeId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let current_node = find_dialogue_node(&dialogue.nodes, current_node_id)
+                .or_else(|| dialogue.nodes.first().cloned())
+                .ok_or_else(|| AppError::config("对话节点不存在"))?;
+            if current_node.node_type == "choice" {
+                return Ok(ServiceResult::<serde_json::Value> {
+                    success: false,
+                    message: Some("请选择选项".to_string()),
+                    data: None,
+                });
+            }
+            let next_node_id = current_node.next.clone().unwrap_or_default();
+            let selected_choices = dialogue_state
+                .get("selectedChoices")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let next_state = if next_node_id.trim().is_empty() {
+                finalize_dialogue_state(
+                    &dialogue_id,
+                    current_node.clone(),
+                    selected_choices,
+                    section,
+                    &state,
+                    actor.character_id,
+                )
+                .await?
+            } else {
+                let next_node = find_dialogue_node(&dialogue.nodes, &next_node_id)
+                    .ok_or_else(|| AppError::config(format!("无效的对话节点: {}", next_node_id)))?;
+                persist_entered_dialogue_node(
+                    &dialogue_id,
+                    next_node,
+                    selected_choices,
+                    section,
+                    &state,
+                    actor.character_id,
+                )
+                .await?
+            };
+            Ok(ServiceResult {
+                success: true,
+                message: Some("ok".to_string()),
+                data: Some(serde_json::json!({
+                    "dialogueState": next_state,
+                    "effectResults": effect_results,
+                })),
+            })
         })
-    }).await?;
+        .await?;
     Ok(send_result(result))
 }
 
@@ -412,51 +497,121 @@ pub async fn choose_main_quest_dialogue_option(
         return Err(AppError::config("选项ID不能为空"));
     }
     let (_chapters, sections) = load_main_quest_defs()?;
-    let result = state.database.with_transaction(|| async {
-        let row = load_main_quest_progress_row_for_update(&state, actor.character_id).await?;
-        let section = row
-            .current_section_id
-            .as_deref()
-            .and_then(|section_id| sections.iter().find(|section| section.id == section_id))
-            .ok_or_else(|| AppError::config("没有进行中的对话"))?;
-        let dialogue_state = row.dialogue_state.clone().unwrap_or_default();
-        let dialogue_id = dialogue_state.get("dialogueId").and_then(|v| v.as_str()).unwrap_or_default();
-        if dialogue_id.is_empty() {
-            return Ok(ServiceResult::<serde_json::Value> { success: false, message: Some("没有进行中的对话".to_string()), data: None });
-        }
-        let dialogue = load_dialogue(dialogue_id)?.ok_or_else(|| AppError::config("对话不存在"))?;
-        let pending_effects = dialogue_state.get("pendingEffects").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let mut effect_results = apply_dialogue_effects_tx(&state, actor.user_id, actor.character_id, pending_effects).await?;
-        let current_node_id = dialogue_state.get("currentNodeId").and_then(|v| v.as_str()).unwrap_or_default();
-        let current_node = find_dialogue_node(&dialogue.nodes, current_node_id).ok_or_else(|| AppError::config("对话节点不存在"))?;
-        if current_node.node_type != "choice" {
-            return Ok(ServiceResult::<serde_json::Value> { success: false, message: Some("当前对话没有可选项".to_string()), data: None });
-        }
-        let choices = current_node.choices.clone().unwrap_or_default();
-        let Some(choice) = choices.into_iter().find(|choice| choice.get("id").and_then(|v| v.as_str()) == Some(choice_id.trim())) else {
-            return Ok(ServiceResult::<serde_json::Value> { success: false, message: Some("选项不存在".to_string()), data: None });
-        };
-        let next_node_id = choice.get("next").and_then(|v| v.as_str()).unwrap_or_default();
-        let choice_effects = choice.get("effects").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let choice_results = apply_dialogue_effects_tx(&state, actor.user_id, actor.character_id, choice_effects).await?;
-        effect_results.extend(choice_results);
-        let mut selected_choices = dialogue_state.get("selectedChoices").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        selected_choices.push(serde_json::Value::String(choice_id.trim().to_string()));
-        let next_state = if next_node_id.trim().is_empty() {
-            finalize_dialogue_state(dialogue_id, current_node, selected_choices, section, &state, actor.character_id).await?
-        } else {
-            let next_node = find_dialogue_node(&dialogue.nodes, next_node_id).ok_or_else(|| AppError::config(format!("无效的对话节点: {}", next_node_id)))?;
-            persist_entered_dialogue_node(dialogue_id, next_node, selected_choices, section, &state, actor.character_id).await?
-        };
-        Ok(ServiceResult {
-            success: true,
-            message: Some("ok".to_string()),
-            data: Some(serde_json::json!({
-                "dialogueState": next_state,
-                "effectResults": effect_results,
-            })),
+    let result = state
+        .database
+        .with_transaction(|| async {
+            let row = load_main_quest_progress_row_for_update(&state, actor.character_id).await?;
+            let section = row
+                .current_section_id
+                .as_deref()
+                .and_then(|section_id| sections.iter().find(|section| section.id == section_id))
+                .ok_or_else(|| AppError::config("没有进行中的对话"))?;
+            let dialogue_state = row.dialogue_state.clone().unwrap_or_default();
+            let dialogue_id = dialogue_state
+                .get("dialogueId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if dialogue_id.is_empty() {
+                return Ok(ServiceResult::<serde_json::Value> {
+                    success: false,
+                    message: Some("没有进行中的对话".to_string()),
+                    data: None,
+                });
+            }
+            let dialogue =
+                load_dialogue(dialogue_id)?.ok_or_else(|| AppError::config("对话不存在"))?;
+            let pending_effects = dialogue_state
+                .get("pendingEffects")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let mut effect_results = apply_dialogue_effects_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                pending_effects,
+            )
+            .await?;
+            let current_node_id = dialogue_state
+                .get("currentNodeId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let current_node = find_dialogue_node(&dialogue.nodes, current_node_id)
+                .ok_or_else(|| AppError::config("对话节点不存在"))?;
+            if current_node.node_type != "choice" {
+                return Ok(ServiceResult::<serde_json::Value> {
+                    success: false,
+                    message: Some("当前对话没有可选项".to_string()),
+                    data: None,
+                });
+            }
+            let choices = current_node.choices.clone().unwrap_or_default();
+            let Some(choice) = choices
+                .into_iter()
+                .find(|choice| choice.get("id").and_then(|v| v.as_str()) == Some(choice_id.trim()))
+            else {
+                return Ok(ServiceResult::<serde_json::Value> {
+                    success: false,
+                    message: Some("选项不存在".to_string()),
+                    data: None,
+                });
+            };
+            let next_node_id = choice
+                .get("next")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let choice_effects = choice
+                .get("effects")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let choice_results = apply_dialogue_effects_tx(
+                &state,
+                actor.user_id,
+                actor.character_id,
+                choice_effects,
+            )
+            .await?;
+            effect_results.extend(choice_results);
+            let mut selected_choices = dialogue_state
+                .get("selectedChoices")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            selected_choices.push(serde_json::Value::String(choice_id.trim().to_string()));
+            let next_state = if next_node_id.trim().is_empty() {
+                finalize_dialogue_state(
+                    dialogue_id,
+                    current_node,
+                    selected_choices,
+                    section,
+                    &state,
+                    actor.character_id,
+                )
+                .await?
+            } else {
+                let next_node = find_dialogue_node(&dialogue.nodes, next_node_id)
+                    .ok_or_else(|| AppError::config(format!("无效的对话节点: {}", next_node_id)))?;
+                persist_entered_dialogue_node(
+                    dialogue_id,
+                    next_node,
+                    selected_choices,
+                    section,
+                    &state,
+                    actor.character_id,
+                )
+                .await?
+            };
+            Ok(ServiceResult {
+                success: true,
+                message: Some("ok".to_string()),
+                data: Some(serde_json::json!({
+                    "dialogueState": next_state,
+                    "effectResults": effect_results,
+                })),
+            })
         })
-    }).await?;
+        .await?;
     Ok(send_result(result))
 }
 
@@ -617,7 +772,9 @@ async fn ensure_main_quest_progress_initialized(
     if existing.is_some() {
         return Ok(());
     }
-    let first_section = sections.first().ok_or_else(|| AppError::config("主线配置为空"))?;
+    let first_section = sections
+        .first()
+        .ok_or_else(|| AppError::config("主线配置为空"))?;
     state
         .database
         .execute(
@@ -643,8 +800,12 @@ async fn load_main_quest_progress_row(
     Ok(MainQuestProgressRow {
         current_chapter_id: row.try_get("current_chapter_id")?,
         current_section_id: row.try_get("current_section_id")?,
-        section_status: row.try_get::<Option<String>, _>("section_status")?.unwrap_or_else(|| "not_started".to_string()),
-        objectives_progress: row.try_get::<Option<serde_json::Value>, _>("objectives_progress")?.unwrap_or_else(|| serde_json::json!({})),
+        section_status: row
+            .try_get::<Option<String>, _>("section_status")?
+            .unwrap_or_else(|| "not_started".to_string()),
+        objectives_progress: row
+            .try_get::<Option<serde_json::Value>, _>("objectives_progress")?
+            .unwrap_or_else(|| serde_json::json!({})),
         dialogue_state: row.try_get("dialogue_state")?,
         completed_chapters: row
             .try_get::<Option<serde_json::Value>, _>("completed_chapters")?
@@ -679,8 +840,12 @@ async fn load_main_quest_progress_row_for_update(
     Ok(MainQuestProgressRow {
         current_chapter_id: row.try_get("current_chapter_id")?,
         current_section_id: row.try_get("current_section_id")?,
-        section_status: row.try_get::<Option<String>, _>("section_status")?.unwrap_or_else(|| "not_started".to_string()),
-        objectives_progress: row.try_get::<Option<serde_json::Value>, _>("objectives_progress")?.unwrap_or_else(|| serde_json::json!({})),
+        section_status: row
+            .try_get::<Option<String>, _>("section_status")?
+            .unwrap_or_else(|| "not_started".to_string()),
+        objectives_progress: row
+            .try_get::<Option<serde_json::Value>, _>("objectives_progress")?
+            .unwrap_or_else(|| serde_json::json!({})),
         dialogue_state: row.try_get("dialogue_state")?,
         completed_chapters: row
             .try_get::<Option<serde_json::Value>, _>("completed_chapters")?
@@ -715,7 +880,10 @@ fn build_main_quest_progress_dto(
             name: chapter.name.clone(),
             description: chapter.description.clone(),
             background: chapter.background.clone(),
-            min_realm: chapter.min_realm.clone().unwrap_or_else(|| "凡人".to_string()),
+            min_realm: chapter
+                .min_realm
+                .clone()
+                .unwrap_or_else(|| "凡人".to_string()),
             is_completed: row.completed_chapters.contains(&chapter.id),
         });
     let current_section = row
@@ -778,16 +946,31 @@ fn apply_main_quest_craft_item_progress(
 }
 
 fn chapter_num_by_id(chapter_id: &str, sections: &[MainQuestSectionSeed]) -> i64 {
-    let chapter_index = sections.iter().map(|section| section.chapter_id.as_str()).collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>();
-    chapter_index.iter().position(|entry| *entry == chapter_id).map(|idx| idx as i64 + 1).unwrap_or_default()
+    let chapter_index = sections
+        .iter()
+        .map(|section| section.chapter_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    chapter_index
+        .iter()
+        .position(|entry| *entry == chapter_id)
+        .map(|idx| idx as i64 + 1)
+        .unwrap_or_default()
 }
 
 fn load_dialogue(dialogue_id: &str) -> Result<Option<DialogueSeed>, AppError> {
-    for path in std::fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds"))
-        .map_err(|error| AppError::config(format!("failed to read dialogue dir: {error}")))?
+    for path in std::fs::read_dir(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read dialogue dir: {error}")))?
     {
-        let path = path.map_err(|error| AppError::config(format!("failed to iterate dialogue dir: {error}")))?.path();
-        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else { continue; };
+        let path = path
+            .map_err(|error| AppError::config(format!("failed to iterate dialogue dir: {error}")))?
+            .path();
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
         if !file_name.starts_with("dialogue_main_") || !file_name.ends_with(".json") {
             continue;
         }
@@ -816,7 +999,10 @@ fn create_dialogue_state(dialogue_id: &str, nodes: &[DialogueNodeSeed]) -> serde
         .find(|node| node.id == "start")
         .cloned()
         .or_else(|| nodes.first().cloned());
-    let current_node_id = current_node.as_ref().map(|node| node.id.clone()).unwrap_or_default();
+    let current_node_id = current_node
+        .as_ref()
+        .map(|node| node.id.clone())
+        .unwrap_or_default();
     let pending_effects = current_node
         .as_ref()
         .and_then(|node| node.effects.clone())
@@ -840,18 +1026,56 @@ async fn grant_main_quest_rewards_tx(
     obtained_ref_id: &str,
 ) -> Result<Vec<MainQuestRewardDto>, AppError> {
     let mut out = Vec::new();
-    let exp_delta = rewards.get("exp").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
-    let silver_delta = rewards.get("silver").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
-    let spirit_stones_delta = rewards.get("spirit_stones").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
+    let exp_delta = rewards
+        .get("exp")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default()
+        .max(0);
+    let silver_delta = rewards
+        .get("silver")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default()
+        .max(0);
+    let spirit_stones_delta = rewards
+        .get("spirit_stones")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default()
+        .max(0);
     let mut item_grants = Vec::<CharacterItemGrantDelta>::new();
-    if exp_delta > 0 { out.push(MainQuestRewardDto::Exp { amount: exp_delta }); }
-    if silver_delta > 0 { out.push(MainQuestRewardDto::Silver { amount: silver_delta }); }
-    if spirit_stones_delta > 0 { out.push(MainQuestRewardDto::SpiritStones { amount: spirit_stones_delta }); }
+    if exp_delta > 0 {
+        out.push(MainQuestRewardDto::Exp { amount: exp_delta });
+    }
+    if silver_delta > 0 {
+        out.push(MainQuestRewardDto::Silver {
+            amount: silver_delta,
+        });
+    }
+    if spirit_stones_delta > 0 {
+        out.push(MainQuestRewardDto::SpiritStones {
+            amount: spirit_stones_delta,
+        });
+    }
     let item_meta = load_item_meta_map()?;
-    for item in rewards.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
-        let item_def_id = item.get("item_def_id").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
-        let quantity = item.get("quantity").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
-        if item_def_id.is_empty() || quantity <= 0 { continue; }
+    for item in rewards
+        .get("items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
+        let item_def_id = item
+            .get("item_def_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let quantity = item
+            .get("quantity")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_default()
+            .max(0);
+        if item_def_id.is_empty() || quantity <= 0 {
+            continue;
+        }
         item_grants.push(CharacterItemGrantDelta {
             character_id,
             user_id,
@@ -870,9 +1094,16 @@ async fn grant_main_quest_rewards_tx(
         });
     }
     let technique_meta = load_technique_meta_map()?;
-    for technique in rewards.get("techniques").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
+    for technique in rewards
+        .get("techniques")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         let technique_id = technique.as_str().unwrap_or_default().trim().to_string();
-        if technique_id.is_empty() { continue; }
+        if technique_id.is_empty() {
+            continue;
+        }
         let exists = state.database.fetch_optional(
             "SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1",
             |query| query.bind(character_id).bind(&technique_id),
@@ -883,28 +1114,57 @@ async fn grant_main_quest_rewards_tx(
                 |query| query.bind(character_id).bind(&technique_id),
             ).await?;
             let meta = technique_meta.get(technique_id.as_str()).cloned();
-            out.push(MainQuestRewardDto::Technique { technique_id, technique_name: meta.as_ref().map(|m| m.0.clone()), technique_icon: meta.and_then(|m| m.1) });
+            out.push(MainQuestRewardDto::Technique {
+                technique_id,
+                technique_name: meta.as_ref().map(|m| m.0.clone()),
+                technique_icon: meta.and_then(|m| m.1),
+            });
         }
     }
-    for title in rewards.get("titles").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
+    for title in rewards
+        .get("titles")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         let title = title.as_str().unwrap_or_default().trim().to_string();
         if !title.is_empty() {
-            state.database.execute("UPDATE characters SET title = $2, updated_at = NOW() WHERE id = $1", |query| query.bind(character_id).bind(&title)).await?;
+            state
+                .database
+                .execute(
+                    "UPDATE characters SET title = $2, updated_at = NOW() WHERE id = $1",
+                    |query| query.bind(character_id).bind(&title),
+                )
+                .await?;
             out.push(MainQuestRewardDto::Title { title });
         }
     }
-    for feature_code in rewards.get("unlock_features").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
+    for feature_code in rewards
+        .get("unlock_features")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default()
+    {
         let feature_code = feature_code.as_str().unwrap_or_default().trim().to_string();
-        if feature_code.is_empty() { continue; }
+        if feature_code.is_empty() {
+            continue;
+        }
         state.database.execute(
             "INSERT INTO character_feature_unlocks (character_id, feature_code, unlocked_at, created_at) VALUES ($1, $2, NOW(), NOW()) ON CONFLICT DO NOTHING",
             |query| query.bind(character_id).bind(&feature_code),
         ).await?;
-        out.push(MainQuestRewardDto::FeatureUnlock { feature_code: feature_code.clone() });
+        out.push(MainQuestRewardDto::FeatureUnlock {
+            feature_code: feature_code.clone(),
+        });
         if feature_code == "partner_system" {
             let partner = grant_starter_partner_tx(state, user_id, character_id).await?;
             if let Some((partner_id, partner_def_id, partner_name, partner_avatar)) = partner {
-                out.push(MainQuestRewardDto::Partner { partner_id, partner_def_id, partner_name, partner_avatar });
+                out.push(MainQuestRewardDto::Partner {
+                    partner_id,
+                    partner_def_id,
+                    partner_name,
+                    partner_avatar,
+                });
             }
         }
     }
@@ -960,34 +1220,67 @@ async fn grant_starter_partner_tx(
     _user_id: i64,
     character_id: i64,
 ) -> Result<Option<(i64, String, String, Option<String>)>, AppError> {
-    let def = load_partner_def_map()?.get("partner-qingmu-xiaoou").cloned();
-    let Some(def) = def else { return Ok(None); };
+    let def = load_partner_def_map()?
+        .get("partner-qingmu-xiaoou")
+        .cloned();
+    let Some(def) = def else {
+        return Ok(None);
+    };
     let existing = state.database.fetch_optional(
         "SELECT id FROM character_partner WHERE character_id = $1 AND partner_def_id = $2 LIMIT 1",
         |query| query.bind(character_id).bind(def.id.as_str()),
     ).await?;
-    if existing.is_some() { return Ok(None); }
+    if existing.is_some() {
+        return Ok(None);
+    }
     let inserted = state.database.fetch_one(
         "INSERT INTO character_partner (character_id, partner_def_id, nickname, description, avatar, level, progress_exp, growth_max_qixue, growth_wugong, growth_fagong, growth_wufang, growth_fafang, growth_sudu, is_active, obtained_from, obtained_ref_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, 0, 0, 0, 0, 0, 0, 0, false, 'main_quest', NULL, NOW(), NOW()) RETURNING id",
         |query| query.bind(character_id).bind(def.id.as_str()).bind(def.name.clone()).bind(def.description.clone()).bind(def.avatar.clone()),
     ).await?;
     let partner_id: i64 = inserted.try_get("id")?;
-    Ok(Some((partner_id, def.id.clone(), def.name.clone(), def.avatar.clone())))
+    Ok(Some((
+        partner_id,
+        def.id.clone(),
+        def.name.clone(),
+        def.avatar.clone(),
+    )))
 }
 
 fn load_item_meta_map() -> Result<BTreeMap<String, (String, Option<String>)>, AppError> {
     let mut out = BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
-        let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")))
-            .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
+        let content = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
+        )
+        .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
             out.insert(id, (name, icon));
         }
     }
@@ -995,40 +1288,87 @@ fn load_item_meta_map() -> Result<BTreeMap<String, (String, Option<String>)>, Ap
 }
 
 fn load_technique_meta_map() -> Result<BTreeMap<String, (String, Option<String>)>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    let items = payload.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(items.into_iter().filter_map(|item| {
-        let id = item.get("id")?.as_str()?.trim().to_string();
-        let name = item.get("name")?.as_str()?.trim().to_string();
-        let icon = item.get("icon").and_then(|value| value.as_str()).map(|value| value.to_string());
-        (!id.is_empty() && !name.is_empty()).then_some((id, (name, icon)))
-    }).collect())
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_def.json: {error}"))
+    })?;
+    let items = payload
+        .get("techniques")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(items
+        .into_iter()
+        .filter_map(|item| {
+            let id = item.get("id")?.as_str()?.trim().to_string();
+            let name = item.get("name")?.as_str()?.trim().to_string();
+            let icon = item
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            (!id.is_empty() && !name.is_empty()).then_some((id, (name, icon)))
+        })
+        .collect())
 }
 
 fn load_chapter_rewards(chapter_id: &str) -> Result<serde_json::Value, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{}{}.json", "main_quest_chapter", chapter_id.split('-').last().unwrap_or_default())))
-        .map_err(|error| AppError::config(format!("failed to read chapter reward seed: {error}")))?;
-    let payload: MainQuestSeedFile = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse chapter reward seed: {error}")))?;
-    Ok(payload.chapters.into_iter().find(|chapter| chapter.id == chapter_id).map(|_chapter| serde_json::json!({})).unwrap_or_else(|| serde_json::json!({})))
+    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../server/src/data/seeds/{}{}.json",
+        "main_quest_chapter",
+        chapter_id.split('-').last().unwrap_or_default()
+    )))
+    .map_err(|error| AppError::config(format!("failed to read chapter reward seed: {error}")))?;
+    let payload: MainQuestSeedFile = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse chapter reward seed: {error}"))
+    })?;
+    Ok(payload
+        .chapters
+        .into_iter()
+        .find(|chapter| chapter.id == chapter_id)
+        .map(|_chapter| serde_json::json!({}))
+        .unwrap_or_else(|| serde_json::json!({})))
 }
 
 fn load_partner_def_map() -> Result<BTreeMap<String, PartnerDefLite>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read partner_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/partner_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read partner_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse partner_def.json: {error}")))?;
-    let partners = payload.get("partners").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(partners.into_iter().filter_map(|partner| {
-        let id = partner.get("id")?.as_str()?.trim().to_string();
-        let name = partner.get("name")?.as_str()?.trim().to_string();
-        let description = partner.get("description").and_then(|v| v.as_str()).map(|v| v.to_string());
-        let avatar = partner.get("avatar").and_then(|v| v.as_str()).map(|v| v.to_string());
-        (!id.is_empty() && !name.is_empty()).then_some((id.clone(), PartnerDefLite { id, name, description, avatar }))
-    }).collect())
+    let partners = payload
+        .get("partners")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok(partners
+        .into_iter()
+        .filter_map(|partner| {
+            let id = partner.get("id")?.as_str()?.trim().to_string();
+            let name = partner.get("name")?.as_str()?.trim().to_string();
+            let description = partner
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
+            let avatar = partner
+                .get("avatar")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
+            (!id.is_empty() && !name.is_empty()).then_some((
+                id.clone(),
+                PartnerDefLite {
+                    id,
+                    name,
+                    description,
+                    avatar,
+                },
+            ))
+        })
+        .collect())
 }
 
 #[derive(Clone)]
@@ -1048,8 +1388,17 @@ async fn persist_entered_dialogue_node(
     character_id: i64,
 ) -> Result<serde_json::Value, AppError> {
     let auto_complete = next_node.node_type != "choice"
-        && next_node.effects.as_ref().map(|effects| effects.is_empty()).unwrap_or(true)
-        && next_node.next.as_deref().unwrap_or_default().trim().is_empty();
+        && next_node
+            .effects
+            .as_ref()
+            .map(|effects| effects.is_empty())
+            .unwrap_or(true)
+        && next_node
+            .next
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty();
     let next_state = serde_json::json!({
         "dialogueId": dialogue_id,
         "currentNodeId": next_node.id,
@@ -1059,7 +1408,11 @@ async fn persist_entered_dialogue_node(
         "pendingEffects": if auto_complete { vec![] } else { next_node.effects.clone().unwrap_or_default() },
     });
     if auto_complete {
-        let next_status = if section.objectives.is_empty() { "turnin" } else { "objectives" };
+        let next_status = if section.objectives.is_empty() {
+            "turnin"
+        } else {
+            "objectives"
+        };
         state.database.execute(
             "UPDATE character_main_quest_progress SET dialogue_state = $2::jsonb, section_status = $3, updated_at = NOW() WHERE character_id = $1",
             |query| query.bind(character_id).bind(serde_json::to_string(&next_state).unwrap_or_else(|_| "{}".to_string())).bind(next_status),
@@ -1081,7 +1434,11 @@ async fn finalize_dialogue_state(
     state: &AppState,
     character_id: i64,
 ) -> Result<serde_json::Value, AppError> {
-    let next_status = if section.objectives.is_empty() { "turnin" } else { "objectives" };
+    let next_status = if section.objectives.is_empty() {
+        "turnin"
+    } else {
+        "objectives"
+    };
     let state_value = serde_json::json!({
         "dialogueId": dialogue_id,
         "currentNodeId": current_node.id,
@@ -1109,32 +1466,57 @@ async fn apply_dialogue_effects_tx(
     let mut exp_delta = 0_i64;
     let mut item_grants = Vec::<CharacterItemGrantDelta>::new();
     for effect in effects {
-        let effect_type = effect.get("type").and_then(|v| v.as_str()).unwrap_or_default();
-        let params = effect.get("params").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+        let effect_type = effect
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let params = effect
+            .get("params")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
         match effect_type {
             "give_silver" => {
-                let amount = params.get("amount").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
+                let amount = params
+                    .get("amount")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_default()
+                    .max(0);
                 if amount > 0 {
                     silver_delta += amount;
                     effect_results.push(serde_json::json!({"type": "silver", "amount": amount}));
                 }
             }
             "give_spirit_stones" => {
-                let amount = params.get("amount").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
+                let amount = params
+                    .get("amount")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_default()
+                    .max(0);
                 if amount > 0 {
                     spirit_stones_delta += amount;
-                    effect_results.push(serde_json::json!({"type": "spirit_stones", "amount": amount}));
+                    effect_results
+                        .push(serde_json::json!({"type": "spirit_stones", "amount": amount}));
                 }
             }
             "give_exp" => {
-                let amount = params.get("amount").and_then(|v| v.as_i64()).unwrap_or_default().max(0);
+                let amount = params
+                    .get("amount")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_default()
+                    .max(0);
                 if amount > 0 {
                     exp_delta += amount;
                     effect_results.push(serde_json::json!({"type": "exp", "amount": amount}));
                 }
             }
             "give_technique" => {
-                let technique_id = params.get("technique_id").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+                let technique_id = params
+                    .get("technique_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
                 if !technique_id.is_empty() {
                     let exists = state.database.fetch_optional(
                         "SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1",
@@ -1145,13 +1527,24 @@ async fn apply_dialogue_effects_tx(
                             "INSERT INTO character_technique (character_id, technique_id, current_layer, acquired_at) VALUES ($1, $2, 1, NOW())",
                             |query| query.bind(character_id).bind(&technique_id),
                         ).await?;
-                        effect_results.push(serde_json::json!({"type": "technique", "techniqueId": technique_id}));
+                        effect_results.push(
+                            serde_json::json!({"type": "technique", "techniqueId": technique_id}),
+                        );
                     }
                 }
             }
             "give_item" => {
-                let item_def_id = params.get("item_def_id").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
-                let qty = params.get("quantity").and_then(|v| v.as_i64()).unwrap_or(1).max(1);
+                let item_def_id = params
+                    .get("item_def_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let qty = params
+                    .get("quantity")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(1)
+                    .max(1);
                 if !item_def_id.is_empty() {
                     item_grants.push(CharacterItemGrantDelta {
                         character_id,
@@ -1166,8 +1559,16 @@ async fn apply_dialogue_effects_tx(
                 }
             }
             "set_flag" => {
-                let flag = params.get("flag").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
-                let value = params.get("value").cloned().unwrap_or(serde_json::json!(true));
+                let flag = params
+                    .get("flag")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                let value = params
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(serde_json::json!(true));
                 if !flag.is_empty() {
                     state.database.execute(
                         "UPDATE characters SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object($2, $3::jsonb), updated_at = NOW() WHERE id = $1",
@@ -1226,7 +1627,10 @@ async fn apply_dialogue_effects_tx(
     Ok(effect_results)
 }
 
-fn build_section_dto(section: &MainQuestSectionSeed, row: &MainQuestProgressRow) -> MainQuestSectionDto {
+fn build_section_dto(
+    section: &MainQuestSectionSeed,
+    row: &MainQuestProgressRow,
+) -> MainQuestSectionDto {
     let is_current = row.current_section_id.as_deref() == Some(section.id.as_str());
     let is_completed = row.completed_sections.contains(&section.id);
     let status = if is_completed {
@@ -1236,7 +1640,11 @@ fn build_section_dto(section: &MainQuestSectionSeed, row: &MainQuestProgressRow)
     } else {
         "not_started".to_string()
     };
-    let progress_data = row.objectives_progress.as_object().cloned().unwrap_or_default();
+    let progress_data = row
+        .objectives_progress
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
     let objectives = section
         .objectives
         .iter()
@@ -1279,14 +1687,23 @@ fn build_section_dto(section: &MainQuestSectionSeed, row: &MainQuestProgressRow)
     }
 }
 
-fn load_main_quest_defs() -> Result<(Vec<MainQuestChapterSeed>, Vec<MainQuestSectionSeed>), AppError> {
+fn load_main_quest_defs() -> Result<(Vec<MainQuestChapterSeed>, Vec<MainQuestSectionSeed>), AppError>
+{
     let mut chapters = Vec::new();
     let mut sections = Vec::new();
-    for path in std::fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds"))
-        .map_err(|error| AppError::config(format!("failed to read main quest seed dir: {error}")))?
+    for path in std::fs::read_dir(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read main quest seed dir: {error}")))?
     {
-        let path = path.map_err(|error| AppError::config(format!("failed to iterate main quest seed dir: {error}")))?.path();
-        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else { continue; };
+        let path = path
+            .map_err(|error| {
+                AppError::config(format!("failed to iterate main quest seed dir: {error}"))
+            })?
+            .path();
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
         if !file_name.starts_with("main_quest_chapter") || !file_name.ends_with(".json") {
             continue;
         }
@@ -1294,11 +1711,29 @@ fn load_main_quest_defs() -> Result<(Vec<MainQuestChapterSeed>, Vec<MainQuestSec
             .map_err(|error| AppError::config(format!("failed to read {file_name}: {error}")))?;
         let payload: MainQuestSeedFile = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {file_name}: {error}")))?;
-        chapters.extend(payload.chapters.into_iter().filter(|chapter| chapter.enabled != Some(false)));
-        sections.extend(payload.sections.into_iter().filter(|section| section.enabled != Some(false)));
+        chapters.extend(
+            payload
+                .chapters
+                .into_iter()
+                .filter(|chapter| chapter.enabled != Some(false)),
+        );
+        sections.extend(
+            payload
+                .sections
+                .into_iter()
+                .filter(|section| section.enabled != Some(false)),
+        );
     }
-    chapters.sort_by(|left, right| left.chapter_num.cmp(&right.chapter_num).then_with(|| left.id.cmp(&right.id)));
-    sections.sort_by(|left, right| left.chapter_id.cmp(&right.chapter_id).then_with(|| left.section_num.cmp(&right.section_num)));
+    chapters.sort_by(|left, right| {
+        left.chapter_num
+            .cmp(&right.chapter_num)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    sections.sort_by(|left, right| {
+        left.chapter_id
+            .cmp(&right.chapter_id)
+            .then_with(|| left.section_num.cmp(&right.section_num))
+    });
     Ok((chapters, sections))
 }
 
@@ -1366,7 +1801,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["dialogueState"]["dialogueId"], "dlg-main-1-001");
+        assert_eq!(
+            payload["data"]["dialogueState"]["dialogueId"],
+            "dlg-main-1-001"
+        );
         println!("MAIN_QUEST_DIALOGUE_START_RESPONSE={}", payload);
     }
 
@@ -1388,7 +1826,10 @@ mod tests {
             "message": "ok",
             "data": {"dialogueState": {"dialogueId": "dlg-main-1-001", "currentNodeId": "choice-result"}, "effectResults": []}
         });
-        assert_eq!(payload["data"]["dialogueState"]["currentNodeId"], "choice-result");
+        assert_eq!(
+            payload["data"]["dialogueState"]["currentNodeId"],
+            "choice-result"
+        );
         println!("MAIN_QUEST_DIALOGUE_CHOICE_RESPONSE={}", payload);
     }
 

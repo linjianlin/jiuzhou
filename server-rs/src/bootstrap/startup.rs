@@ -10,8 +10,11 @@ use crate::bootstrap::generated_content_refresh::refresh_generated_content_on_st
 use crate::bootstrap::item_data_cleanup::cleanup_undefined_item_data_on_startup;
 use crate::bootstrap::performance_indexes::ensure_performance_indexes;
 use crate::config::AppConfig;
-use crate::integrations::battle_persistence::{recover_all_battle_bundles, recover_all_orphan_battle_sessions};
+use crate::integrations::battle_persistence::{
+    recover_all_battle_bundles, recover_all_orphan_battle_sessions,
+};
 use crate::integrations::{database, http_client, redis};
+use crate::jobs::JobRuntime;
 use crate::jobs::battle_expired_cleanup::run_battle_expired_cleanup_once;
 use crate::jobs::dungeon_cleanup::run_dungeon_expired_instance_cleanup_once;
 use crate::jobs::idle_history_cleanup::run_idle_history_cleanup_once;
@@ -19,11 +22,10 @@ use crate::jobs::mail_history_cleanup::run_mail_history_cleanup_once;
 use crate::jobs::partner_recruit_draft_cleanup::run_partner_recruit_draft_cleanup_once;
 use crate::jobs::technique_draft_cleanup::run_technique_draft_cleanup_once;
 use crate::jobs::tower_frozen_pool::warmup_frozen_tower_pool_cache;
-use crate::jobs::JobRuntime;
 use crate::realtime::RealtimeRuntime;
-use crate::shared::mail_counter::backfill_mail_counter_if_empty;
 use crate::shared::error::AppError;
 use crate::shared::game_time::initialize_game_time_runtime;
+use crate::shared::mail_counter::backfill_mail_counter_if_empty;
 use crate::shared::tracing::init_tracing;
 use crate::state::{
     AppState, ArenaProjectionRecord, BattleSessionContextDto, CharacterSnapshotRecord,
@@ -128,10 +130,14 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
     tracing::info!("→ generated content refresh");
     let generated_content_refresh_summary = refresh_generated_content_on_startup(&state).await?;
     tracing::info!(
-        published_generated_technique_count = generated_content_refresh_summary.published_generated_technique_count,
-        enabled_generated_skill_count = generated_content_refresh_summary.enabled_generated_skill_count,
-        enabled_generated_technique_layer_count = generated_content_refresh_summary.enabled_generated_technique_layer_count,
-        enabled_generated_partner_count = generated_content_refresh_summary.enabled_generated_partner_count,
+        published_generated_technique_count =
+            generated_content_refresh_summary.published_generated_technique_count,
+        enabled_generated_skill_count =
+            generated_content_refresh_summary.enabled_generated_skill_count,
+        enabled_generated_technique_layer_count =
+            generated_content_refresh_summary.enabled_generated_technique_layer_count,
+        enabled_generated_partner_count =
+            generated_content_refresh_summary.enabled_generated_partner_count,
         "✓ generated content refresh complete"
     );
 
@@ -176,7 +182,8 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
     );
 
     tracing::info!("→ partner recruit draft cleanup");
-    let partner_recruit_draft_cleanup_summary = run_partner_recruit_draft_cleanup_once(&state).await?;
+    let partner_recruit_draft_cleanup_summary =
+        run_partner_recruit_draft_cleanup_once(&state).await?;
     tracing::info!(
         discarded_draft_count = partner_recruit_draft_cleanup_summary.discarded_draft_count,
         "✓ partner recruit draft cleanup complete"
@@ -219,7 +226,10 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
 
     tracing::info!("→ orphan battle session recovery");
     let recovered_orphan_session_count = recover_all_orphan_battle_sessions(&state).await?;
-    tracing::info!(recovered_orphan_session_count, "✓ orphan battle session recovery complete");
+    tracing::info!(
+        recovered_orphan_session_count,
+        "✓ orphan battle session recovery complete"
+    );
 
     let job_runtime = JobRuntime::new();
     let job_summary = job_runtime.initialize(state.clone()).await?;
@@ -251,7 +261,8 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
         dungeon_projection_count = online_battle_warmup_summary.dungeon_projection_count,
         tower_count = online_battle_warmup_summary.tower_count,
         team_projection_count = online_battle_warmup_summary.team_projection_count,
-        dungeon_entry_projection_count = online_battle_warmup_summary.dungeon_entry_projection_count,
+        dungeon_entry_projection_count =
+            online_battle_warmup_summary.dungeon_entry_projection_count,
         orphan_projection_count = online_battle_warmup_summary.orphan_projection_count,
         "✓ online battle projection warmup summary"
     );
@@ -502,7 +513,9 @@ fn build_online_battle_projection_warmup_summary_from_snapshots(
         match &session.context {
             BattleSessionContextDto::Dungeon { .. } => summary.dungeon_count += 1,
             BattleSessionContextDto::Tower { .. } => summary.tower_count += 1,
-            BattleSessionContextDto::Pvp { mode, .. } if mode == "arena" => summary.arena_count += 1,
+            BattleSessionContextDto::Pvp { mode, .. } if mode == "arena" => {
+                summary.arena_count += 1
+            }
             _ => {}
         }
     }
@@ -523,68 +536,81 @@ fn build_online_battle_projection_warmup_summary_from_snapshots(
 #[cfg(test)]
 mod tests {
     use super::{
-        OnlineBattleProjectionWarmupSummary, build_online_battle_projection_warmup_summary_from_snapshots,
+        OnlineBattleProjectionWarmupSummary,
+        build_online_battle_projection_warmup_summary_from_snapshots,
     };
-    use crate::state::{BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord};
+    use crate::state::{
+        BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
+    };
 
     #[test]
     fn online_battle_projection_warmup_summary_counts_contexts_and_orphans() {
-        let sessions = vec![BattleSessionSnapshotDto {
-            session_id: "arena-session-1".to_string(),
-            session_type: "pvp".to_string(),
-            owner_user_id: 1,
-            participant_user_ids: vec![1],
-            current_battle_id: Some("battle-1".to_string()),
-            status: "running".to_string(),
-            next_action: "none".to_string(),
-            can_advance: false,
-            last_result: None,
-            context: BattleSessionContextDto::Pvp {
-                opponent_character_id: 2,
-                mode: "arena".to_string(),
+        let sessions = vec![
+            BattleSessionSnapshotDto {
+                session_id: "arena-session-1".to_string(),
+                session_type: "pvp".to_string(),
+                owner_user_id: 1,
+                participant_user_ids: vec![1],
+                current_battle_id: Some("battle-1".to_string()),
+                status: "running".to_string(),
+                next_action: "none".to_string(),
+                can_advance: false,
+                last_result: None,
+                context: BattleSessionContextDto::Pvp {
+                    opponent_character_id: 2,
+                    mode: "arena".to_string(),
+                },
             },
-        }, BattleSessionSnapshotDto {
-            session_id: "tower-session-1".to_string(),
-            session_type: "tower".to_string(),
-            owner_user_id: 3,
-            participant_user_ids: vec![3],
-            current_battle_id: Some("battle-2".to_string()),
-            status: "running".to_string(),
-            next_action: "none".to_string(),
-            can_advance: false,
-            last_result: None,
-            context: BattleSessionContextDto::Tower {
-                run_id: "run-1".to_string(),
-                floor: 5,
+            BattleSessionSnapshotDto {
+                session_id: "tower-session-1".to_string(),
+                session_type: "tower".to_string(),
+                owner_user_id: 3,
+                participant_user_ids: vec![3],
+                current_battle_id: Some("battle-2".to_string()),
+                status: "running".to_string(),
+                next_action: "none".to_string(),
+                can_advance: false,
+                last_result: None,
+                context: BattleSessionContextDto::Tower {
+                    run_id: "run-1".to_string(),
+                    floor: 5,
+                },
             },
-        }];
-        let projections = vec![OnlineBattleProjectionRecord {
-            battle_id: "battle-1".to_string(),
-            owner_user_id: 1,
-            participant_user_ids: vec![1],
-            r#type: "pvp".to_string(),
-            session_id: Some("arena-session-1".to_string()),
-        }, OnlineBattleProjectionRecord {
-            battle_id: "battle-orphan".to_string(),
-            owner_user_id: 9,
-            participant_user_ids: vec![9],
-            r#type: "pve".to_string(),
-            session_id: Some("missing-session".to_string()),
-        }];
+        ];
+        let projections = vec![
+            OnlineBattleProjectionRecord {
+                battle_id: "battle-1".to_string(),
+                owner_user_id: 1,
+                participant_user_ids: vec![1],
+                r#type: "pvp".to_string(),
+                session_id: Some("arena-session-1".to_string()),
+            },
+            OnlineBattleProjectionRecord {
+                battle_id: "battle-orphan".to_string(),
+                owner_user_id: 9,
+                participant_user_ids: vec![9],
+                r#type: "pve".to_string(),
+                session_id: Some("missing-session".to_string()),
+            },
+        ];
 
-        let summary = build_online_battle_projection_warmup_summary_from_snapshots(&sessions, &projections);
-        assert_eq!(summary, OnlineBattleProjectionWarmupSummary {
-            battle_projection_count: 2,
-            session_count: 2,
-            arena_count: 1,
-            arena_projection_count: 0,
-            character_snapshot_count: 0,
-            dungeon_count: 0,
-            dungeon_projection_count: 0,
-            tower_count: 1,
-            orphan_projection_count: 1,
-            team_projection_count: 0,
-            dungeon_entry_projection_count: 0,
-        });
+        let summary =
+            build_online_battle_projection_warmup_summary_from_snapshots(&sessions, &projections);
+        assert_eq!(
+            summary,
+            OnlineBattleProjectionWarmupSummary {
+                battle_projection_count: 2,
+                session_count: 2,
+                arena_count: 1,
+                arena_projection_count: 0,
+                character_snapshot_count: 0,
+                dungeon_count: 0,
+                dungeon_projection_count: 0,
+                tower_count: 1,
+                orphan_projection_count: 1,
+                team_projection_count: 0,
+                dungeon_entry_projection_count: 0,
+            }
+        );
     }
 }

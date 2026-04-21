@@ -15,8 +15,8 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::battle_runtime::{BattleStateDto, resolve_minimal_pve_item_rewards};
-use crate::http::character::local_sensitive_words_contain;
 use crate::http::achievement::load_claimable_achievement_count;
+use crate::http::character::local_sensitive_words_contain;
 use crate::http::character_technique::load_technique_research_status_data;
 use crate::http::market::assert_market_phone_bound;
 use crate::http::partner::{
@@ -25,41 +25,43 @@ use crate::http::partner::{
 };
 use crate::http::sect::load_sect_indicator_payload;
 use crate::integrations::battle_persistence::recover_battle_bundle;
+use crate::realtime::achievement::AchievementIndicatorPayload;
 use crate::realtime::achievement::build_achievement_indicator_payload;
-use crate::realtime::chat::{build_chat_error_payload, build_chat_message_payload};
-use crate::realtime::mail::build_mail_update_payload;
 use crate::realtime::battle::{
     BattleCooldownPayload, BattleFinishedMeta, BattleRealtimePayload, BattleRewardsPayload,
     build_battle_abandoned_payload, build_battle_cooldown_ready_payload,
     build_battle_cooldown_sync_payload, build_battle_finished_payload,
     build_battle_started_sync_payload, build_reward_item_values, build_single_player_reward_values,
 };
-use crate::realtime::achievement::AchievementIndicatorPayload;
+use crate::realtime::chat::{build_chat_error_payload, build_chat_message_payload};
+use crate::realtime::game_time::GameTimeSyncPayload;
 use crate::realtime::idle::IdleRealtimePayload;
 use crate::realtime::mail::MailUpdatePayload;
+use crate::realtime::mail::build_mail_update_payload;
 use crate::realtime::market::MarketUpdatePayload;
-use crate::realtime::partner_fusion::build_partner_fusion_status_payload;
-use crate::realtime::partner_fusion::{PartnerFusionResultPayload, PartnerFusionStatusPayload};
-use crate::realtime::partner_recruit::build_partner_recruit_status_payload;
-use crate::realtime::partner_recruit::{PartnerRecruitResultPayload, PartnerRecruitStatusPayload};
-use crate::realtime::partner_rebone::build_partner_rebone_status_payload;
-use crate::realtime::partner_rebone::{PartnerReboneResultPayload, PartnerReboneStatusPayload};
-use crate::realtime::sect::SectIndicatorPayload;
-use crate::realtime::rank::RankUpdatePayload;
-use crate::realtime::game_time::GameTimeSyncPayload;
-use crate::realtime::task::build_task_overview_update_payload;
-use crate::realtime::technique_research::build_technique_research_status_payload;
-use crate::realtime::technique_research::{TechniqueResearchResultPayload, TechniqueResearchStatusPayload};
-use crate::realtime::task::TaskOverviewUpdatePayload;
-use crate::realtime::team::TeamUpdatePayload;
-use crate::realtime::wander::WanderUpdatePayload;
 use crate::realtime::online_players::{
     build_online_players_broadcast_payload, build_online_players_full_payload,
 };
+use crate::realtime::partner_fusion::build_partner_fusion_status_payload;
+use crate::realtime::partner_fusion::{PartnerFusionResultPayload, PartnerFusionStatusPayload};
+use crate::realtime::partner_rebone::build_partner_rebone_status_payload;
+use crate::realtime::partner_rebone::{PartnerReboneResultPayload, PartnerReboneStatusPayload};
+use crate::realtime::partner_recruit::build_partner_recruit_status_payload;
+use crate::realtime::partner_recruit::{PartnerRecruitResultPayload, PartnerRecruitStatusPayload};
+use crate::realtime::rank::RankUpdatePayload;
+use crate::realtime::sect::SectIndicatorPayload;
 use crate::realtime::socket_protocol::{
     GameCharacterFullSnapshot, GameCharacterGlobalBuff, GameCharacterPayload,
     build_game_character_full_payload, build_game_kicked_payload,
 };
+use crate::realtime::task::TaskOverviewUpdatePayload;
+use crate::realtime::task::build_task_overview_update_payload;
+use crate::realtime::team::TeamUpdatePayload;
+use crate::realtime::technique_research::build_technique_research_status_payload;
+use crate::realtime::technique_research::{
+    TechniqueResearchResultPayload, TechniqueResearchStatusPayload,
+};
+use crate::realtime::wander::WanderUpdatePayload;
 use crate::shared::game_time::get_game_time_snapshot;
 use crate::shared::mail_counter::load_mail_counter_snapshot;
 use crate::state::{AppState, OnlinePlayerRecord, RealtimeSessionRecord};
@@ -183,25 +185,61 @@ pub fn mount_public_socket(io: &SocketIo, state: AppState) {
 async fn handle_join_room(socket: SocketRef, room_id: String, state: AppState) {
     let room_id = room_id.trim();
     if room_id.is_empty() {
-        socket.emit("game:error", &GameErrorEvent { message: "房间ID不能为空" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "房间ID不能为空",
+                },
+            )
+            .ok();
         return;
     }
-    let Some(session) = state.realtime_sessions.get_by_socket_id(&socket.id.to_string()) else {
-        socket.emit("game:error", &GameErrorEvent { message: "未认证" }).ok();
+    let Some(session) = state
+        .realtime_sessions
+        .get_by_socket_id(&socket.id.to_string())
+    else {
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未认证"
+                },
+            )
+            .ok();
         return;
     };
     socket.join(room_id.to_string());
-    state.online_players.update_room(session.user_id, Some(room_id));
+    state
+        .online_players
+        .update_room(session.user_id, Some(room_id));
 }
 
 async fn handle_leave_room(socket: SocketRef, room_id: String, state: AppState) {
     let room_id = room_id.trim();
     if room_id.is_empty() {
-        socket.emit("game:error", &GameErrorEvent { message: "房间ID不能为空" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "房间ID不能为空",
+                },
+            )
+            .ok();
         return;
     }
-    let Some(session) = state.realtime_sessions.get_by_socket_id(&socket.id.to_string()) else {
-        socket.emit("game:error", &GameErrorEvent { message: "未认证" }).ok();
+    let Some(session) = state
+        .realtime_sessions
+        .get_by_socket_id(&socket.id.to_string())
+    else {
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未认证"
+                },
+            )
+            .ok();
         return;
     };
     socket.leave(room_id.to_string());
@@ -212,23 +250,44 @@ async fn handle_game_auth(socket: SocketRef, token: String, state: AppState, io:
     println!("GAME_AUTH_TRACE: entered");
     let token = token.trim();
     if token.is_empty() {
-        socket.emit("game:error", &GameErrorEvent { message: "认证失败" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "认证失败",
+                },
+            )
+            .ok();
         return;
     }
 
     let claims = match auth::verify_token(token, &state.config.service.jwt_secret) {
         Ok(claims) => claims,
         Err(_) => {
-            socket.emit("game:error", &GameErrorEvent { message: "认证失败" }).ok();
+            socket
+                .emit(
+                    "game:error",
+                    &GameErrorEvent {
+                        message: "认证失败",
+                    },
+                )
+                .ok();
             return;
         }
     };
     println!("GAME_AUTH_TRACE: token_verified user_id={}", claims.id);
 
-    if let Err(error) = auth::verify_session(&state, claims.id, claims.session_token.as_deref()).await {
-        println!("GAME_AUTH_TRACE: verify_session_failed={}", error.client_message());
+    if let Err(error) =
+        auth::verify_session(&state, claims.id, claims.session_token.as_deref()).await
+    {
+        println!(
+            "GAME_AUTH_TRACE: verify_session_failed={}",
+            error.client_message()
+        );
         let message = error.client_message();
-        socket.emit("game:kicked", &serde_json::json!({ "message": message })).ok();
+        socket
+            .emit("game:kicked", &serde_json::json!({ "message": message }))
+            .ok();
         socket.disconnect().ok();
         return;
     }
@@ -238,7 +297,14 @@ async fn handle_game_auth(socket: SocketRef, token: String, state: AppState, io:
         Ok(character) => character,
         Err(error) => {
             println!("GAME_AUTH_TRACE: load_character_failed={error}");
-            socket.emit("game:error", &GameErrorEvent { message: "服务器错误" }).ok();
+            socket
+                .emit(
+                    "game:error",
+                    &GameErrorEvent {
+                        message: "服务器错误",
+                    },
+                )
+                .ok();
             return;
         }
     };
@@ -267,10 +333,15 @@ async fn handle_game_auth(socket: SocketRef, token: String, state: AppState, io:
         user_id: claims.id,
         character_id,
         nickname: character.as_ref().map(|value| value.nickname.clone()),
-        month_card_active: character.as_ref().map(|value| value.month_card_active).unwrap_or(false),
+        month_card_active: character
+            .as_ref()
+            .map(|value| value.month_card_active)
+            .unwrap_or(false),
         title: character.as_ref().map(|value| value.title.clone()),
         realm: character.as_ref().map(|value| value.realm.clone()),
-        room_id: character.as_ref().map(|value| value.current_room_id.clone()),
+        room_id: character
+            .as_ref()
+            .map(|value| value.current_room_id.clone()),
         connected_at_ms,
     });
     socket.join(AUTHED_ROOM_ID.to_string());
@@ -279,7 +350,12 @@ async fn handle_game_auth(socket: SocketRef, token: String, state: AppState, io:
     }
 
     println!("GAME_AUTH_TRACE: before_emit_character");
-    socket.emit("game:character", &build_game_character_full_payload(character.clone())).ok();
+    socket
+        .emit(
+            "game:character",
+            &build_game_character_full_payload(character.clone()),
+        )
+        .ok();
     if let Some(character_id) = character_id {
         println!("GAME_AUTH_TRACE: before_sync_overview");
         sync_auth_realtime_overview_payloads(&state, claims.id, character_id).await;
@@ -308,7 +384,11 @@ async fn sync_auth_realtime_overview_payloads(state: &AppState, user_id: i64, ch
         emit_sect_update_to_user(state, user_id, &payload);
     }
 
-    emit_task_update_to_user(state, user_id, &build_task_overview_update_payload(character_id));
+    emit_task_update_to_user(
+        state,
+        user_id,
+        &build_task_overview_update_payload(character_id),
+    );
 
     if let Ok(claimable_count) = load_claimable_achievement_count(state, character_id).await {
         emit_achievement_update_to_user(
@@ -364,7 +444,12 @@ async fn sync_battle_realtime_on_auth(socket: &SocketRef, state: &AppState, user
         .battle_sessions
         .get_current_for_user(user_id)
         .and_then(|session| session.current_battle_id)
-        .or_else(|| state.online_battle_projections.get_current_for_user(user_id).map(|projection| projection.battle_id));
+        .or_else(|| {
+            state
+                .online_battle_projections
+                .get_current_for_user(user_id)
+                .map(|projection| projection.battle_id)
+        });
 
     let Some(battle_id) = current_battle_id else {
         return;
@@ -389,7 +474,9 @@ fn disconnect_replaced_socket(io: &SocketIo, socket_id: &str, message: &str) {
     let Some(previous_socket) = io.get_socket(sid) else {
         return;
     };
-    previous_socket.emit("game:kicked", &build_game_kicked_payload(message)).ok();
+    previous_socket
+        .emit("game:kicked", &build_game_kicked_payload(message))
+        .ok();
     previous_socket.disconnect().ok();
 }
 
@@ -400,7 +487,9 @@ fn should_disconnect_replaced_socket(previous_socket_id: &str, current_socket_id
 }
 
 async fn handle_socket_disconnect(socket: SocketRef, state: AppState, io: SocketIo) {
-    let removed = state.realtime_sessions.remove_by_socket_id(&socket.id.to_string());
+    let removed = state
+        .realtime_sessions
+        .remove_by_socket_id(&socket.id.to_string());
     if let Some(record) = removed {
         state.online_players.remove(record.user_id);
         schedule_emit_online_players(&state, &io, false);
@@ -413,7 +502,14 @@ async fn handle_online_players_request(socket: SocketRef, state: AppState) {
         .get_by_socket_id(&socket.id.to_string())
         .is_none()
     {
-        socket.emit("game:error", &GameErrorEvent { message: "未认证" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未认证"
+                },
+            )
+            .ok();
         return;
     }
 
@@ -423,8 +519,18 @@ async fn handle_online_players_request(socket: SocketRef, state: AppState) {
 }
 
 async fn handle_game_refresh(socket: SocketRef, state: AppState, io: SocketIo) {
-    let Some(session) = state.realtime_sessions.get_by_socket_id(&socket.id.to_string()) else {
-        socket.emit("game:error", &GameErrorEvent { message: "未认证" }).ok();
+    let Some(session) = state
+        .realtime_sessions
+        .get_by_socket_id(&socket.id.to_string())
+    else {
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未认证"
+                },
+            )
+            .ok();
         return;
     };
 
@@ -445,10 +551,15 @@ async fn handle_game_refresh(socket: SocketRef, state: AppState, io: SocketIo) {
             user_id: session.user_id,
             character_id: Some(character_id),
             nickname: character.as_ref().map(|value| value.nickname.clone()),
-            month_card_active: character.as_ref().map(|value| value.month_card_active).unwrap_or(false),
+            month_card_active: character
+                .as_ref()
+                .map(|value| value.month_card_active)
+                .unwrap_or(false),
             title: character.as_ref().map(|value| value.title.clone()),
             realm: character.as_ref().map(|value| value.realm.clone()),
-            room_id: character.as_ref().map(|value| value.current_room_id.clone()),
+            room_id: character
+                .as_ref()
+                .map(|value| value.current_room_id.clone()),
             connected_at_ms: session.connected_at_ms,
         });
         socket.join(AUTHED_ROOM_ID.to_string());
@@ -457,35 +568,79 @@ async fn handle_game_refresh(socket: SocketRef, state: AppState, io: SocketIo) {
         state.online_players.remove(session.user_id);
     }
 
-    socket.emit("game:character", &build_game_character_full_payload(character)).ok();
+    socket
+        .emit(
+            "game:character",
+            &build_game_character_full_payload(character),
+        )
+        .ok();
     schedule_emit_online_players(&state, &io, false);
 }
 
 async fn handle_game_add_point(socket: SocketRef, payload: AddPointPayload, state: AppState) {
-    let Some(session) = state.realtime_sessions.get_by_socket_id(&socket.id.to_string()) else {
-        socket.emit("game:error", &GameErrorEvent { message: "未找到角色" }).ok();
+    let Some(session) = state
+        .realtime_sessions
+        .get_by_socket_id(&socket.id.to_string())
+    else {
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未找到角色",
+                },
+            )
+            .ok();
         return;
     };
 
     let Some(_) = session.character_id else {
-        socket.emit("game:error", &GameErrorEvent { message: "未找到角色" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未找到角色",
+                },
+            )
+            .ok();
         return;
     };
 
     let Some((attribute, amount)) = validate_add_point_payload(&payload) else {
-        socket.emit("game:error", &GameErrorEvent { message: "无效的属性" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "无效的属性",
+                },
+            )
+            .ok();
         return;
     };
 
-    let updated = match mutate_character_attribute_points(&state, session.user_id, attribute, amount).await {
-        Ok(updated) => updated,
-        Err(_) => {
-            socket.emit("game:error", &GameErrorEvent { message: "服务器错误" }).ok();
-            return;
-        }
-    };
+    let updated =
+        match mutate_character_attribute_points(&state, session.user_id, attribute, amount).await {
+            Ok(updated) => updated,
+            Err(_) => {
+                socket
+                    .emit(
+                        "game:error",
+                        &GameErrorEvent {
+                            message: "服务器错误",
+                        },
+                    )
+                    .ok();
+                return;
+            }
+        };
     if !updated {
-        socket.emit("game:error", &GameErrorEvent { message: "属性点不足" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "属性点不足",
+                },
+            )
+            .ok();
         return;
     }
 
@@ -505,25 +660,52 @@ async fn handle_game_add_point(socket: SocketRef, payload: AddPointPayload, stat
             user_id: session.user_id,
             character_id: Some(character_id),
             nickname: character.as_ref().map(|value| value.nickname.clone()),
-            month_card_active: character.as_ref().map(|value| value.month_card_active).unwrap_or(false),
+            month_card_active: character
+                .as_ref()
+                .map(|value| value.month_card_active)
+                .unwrap_or(false),
             title: character.as_ref().map(|value| value.title.clone()),
             realm: character.as_ref().map(|value| value.realm.clone()),
-            room_id: character.as_ref().map(|value| value.current_room_id.clone()),
+            room_id: character
+                .as_ref()
+                .map(|value| value.current_room_id.clone()),
             connected_at_ms: session.connected_at_ms,
         });
     }
 
-    socket.emit("game:character", &build_game_character_full_payload(character)).ok();
+    socket
+        .emit(
+            "game:character",
+            &build_game_character_full_payload(character),
+        )
+        .ok();
 }
 
 async fn handle_battle_sync(socket: SocketRef, payload: BattleSyncPayload, state: AppState) {
-    let Some(session) = state.realtime_sessions.get_by_socket_id(&socket.id.to_string()) else {
-        socket.emit("game:error", &GameErrorEvent { message: "未认证" }).ok();
+    let Some(session) = state
+        .realtime_sessions
+        .get_by_socket_id(&socket.id.to_string())
+    else {
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "未认证"
+                },
+            )
+            .ok();
         return;
     };
 
     let Some(battle_id) = validate_battle_sync_payload(&payload) else {
-        socket.emit("game:error", &GameErrorEvent { message: "缺少战斗ID" }).ok();
+        socket
+            .emit(
+                "game:error",
+                &GameErrorEvent {
+                    message: "缺少战斗ID",
+                },
+            )
+            .ok();
         return;
     };
 
@@ -540,7 +722,9 @@ async fn handle_battle_sync(socket: SocketRef, payload: BattleSyncPayload, state
                         &cooldown_payload,
                         session.character_id,
                     );
-                    target_socket.emit(&adjusted_payload.kind, &adjusted_payload).ok();
+                    target_socket
+                        .emit(&adjusted_payload.kind, &adjusted_payload)
+                        .ok();
                 }
             }
         }
@@ -555,7 +739,9 @@ fn build_battle_sync_cooldown_payload(
 ) -> Option<crate::realtime::battle::BattleCooldownPayload> {
     let battle_state = state.battle_runtime.get(battle_id)?;
     if battle_state.phase == "finished" || battle_state.current_unit_id.is_none() {
-        Some(build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref()))
+        Some(build_battle_cooldown_ready_payload(
+            battle_state.current_unit_id.as_deref(),
+        ))
     } else {
         Some(build_battle_cooldown_sync_payload(
             battle_state.current_unit_id.as_deref(),
@@ -565,48 +751,98 @@ fn build_battle_sync_cooldown_payload(
 }
 
 async fn handle_chat_send(socket: SocketRef, payload: ChatSendPayload, state: AppState) {
-    let Some(session) = state.realtime_sessions.get_by_socket_id(&socket.id.to_string()) else {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_UNAUTHORIZED", "未认证")).ok();
+    let Some(session) = state
+        .realtime_sessions
+        .get_by_socket_id(&socket.id.to_string())
+    else {
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_UNAUTHORIZED", "未认证"),
+            )
+            .ok();
         return;
     };
 
     let channel = payload.channel.trim();
     let content = payload.content.trim();
     if content.is_empty() {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_EMPTY", "消息内容不能为空")).ok();
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_EMPTY", "消息内容不能为空"),
+            )
+            .ok();
         return;
     }
     if content.chars().count() > 200 {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_TOO_LONG", "消息过长")).ok();
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_TOO_LONG", "消息过长"),
+            )
+            .ok();
         return;
     }
     if channel == "system" {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_SYSTEM_READONLY", "系统频道不允许发言")).ok();
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_SYSTEM_READONLY", "系统频道不允许发言"),
+            )
+            .ok();
         return;
     }
     if channel == "battle" {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_BATTLE_READONLY", "战况频道不允许发言")).ok();
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_BATTLE_READONLY", "战况频道不允许发言"),
+            )
+            .ok();
         return;
     }
-    if channel == "all" || (channel != "world" && channel != "private" && channel != "team" && channel != "sect") {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_UNSUPPORTED", "无效频道")).ok();
+    if channel == "all"
+        || (channel != "world" && channel != "private" && channel != "team" && channel != "sect")
+    {
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_UNSUPPORTED", "无效频道"),
+            )
+            .ok();
         return;
     }
     if let Err(error) = assert_market_phone_bound(&state, session.user_id).await {
-        socket.emit(
-            "chat:error",
-            &build_chat_error_payload("CHAT_PHONE_REQUIRED", error.to_string().as_str()),
-        ).ok();
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_PHONE_REQUIRED", error.to_string().as_str()),
+            )
+            .ok();
         return;
     }
     match local_sensitive_words_contain(content) {
         Ok(true) => {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_SENSITIVE", "消息包含敏感词，请重新发送")).ok();
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_SENSITIVE", "消息包含敏感词，请重新发送"),
+                )
+                .ok();
             return;
         }
         Ok(false) => {}
         Err(_) => {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_SENSITIVE_UNAVAILABLE", "敏感词检测服务暂不可用，请稍后重试")).ok();
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload(
+                        "CHAT_SENSITIVE_UNAVAILABLE",
+                        "敏感词检测服务暂不可用，请稍后重试",
+                    ),
+                )
+                .ok();
             return;
         }
     }
@@ -621,7 +857,10 @@ async fn handle_chat_send(socket: SocketRef, payload: ChatSendPayload, state: Ap
         .as_ref()
         .and_then(|record| record.title.clone())
         .unwrap_or_else(|| "散修".to_string());
-    let sender_month_card_active = sender_record.as_ref().map(|record| record.month_card_active).unwrap_or(false);
+    let sender_month_card_active = sender_record
+        .as_ref()
+        .map(|record| record.month_card_active)
+        .unwrap_or(false);
     let timestamp_ms = current_timestamp_ms();
     let message_id = format!("chat-{}-{}", session.user_id, timestamp_ms);
 
@@ -641,16 +880,34 @@ async fn handle_chat_send(socket: SocketRef, payload: ChatSendPayload, state: Ap
 
     if channel == "world" {
         if let Some(io) = state.socket_io() {
-            io.to(AUTHED_ROOM_ID).emit("chat:message", &message).await.ok();
+            io.to(AUTHED_ROOM_ID)
+                .emit("chat:message", &message)
+                .await
+                .ok();
         }
         return;
     } else if channel == "team" {
         if sender_character_id <= 0 {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_TEAM_REQUIRED", "当前不在队伍中")).ok();
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_TEAM_REQUIRED", "当前不在队伍中"),
+                )
+                .ok();
             return;
         }
-        let Some(team_socket_ids) = load_team_chat_recipient_socket_ids(&state, sender_character_id).await.ok().flatten() else {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_TEAM_REQUIRED", "当前不在队伍中")).ok();
+        let Some(team_socket_ids) =
+            load_team_chat_recipient_socket_ids(&state, sender_character_id)
+                .await
+                .ok()
+                .flatten()
+        else {
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_TEAM_REQUIRED", "当前不在队伍中"),
+                )
+                .ok();
             return;
         };
         if let Some(io) = state.socket_io() {
@@ -666,11 +923,26 @@ async fn handle_chat_send(socket: SocketRef, payload: ChatSendPayload, state: Ap
         return;
     } else if channel == "sect" {
         if sender_character_id <= 0 {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_SECT_REQUIRED", "当前不在宗门中")).ok();
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_SECT_REQUIRED", "当前不在宗门中"),
+                )
+                .ok();
             return;
         }
-        let Some(sect_socket_ids) = load_sect_chat_recipient_socket_ids(&state, sender_character_id).await.ok().flatten() else {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_SECT_REQUIRED", "当前不在宗门中")).ok();
+        let Some(sect_socket_ids) =
+            load_sect_chat_recipient_socket_ids(&state, sender_character_id)
+                .await
+                .ok()
+                .flatten()
+        else {
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_SECT_REQUIRED", "当前不在宗门中"),
+                )
+                .ok();
             return;
         };
         if let Some(io) = state.socket_io() {
@@ -686,20 +958,45 @@ async fn handle_chat_send(socket: SocketRef, payload: ChatSendPayload, state: Ap
         return;
     } else if let Some(target_character_id) = payload.pm_target_character_id {
         if target_character_id <= 0 {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_TARGET_INVALID", "私聊对象无效")).ok();
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_TARGET_INVALID", "私聊对象无效"),
+                )
+                .ok();
             return;
         }
-        if state.realtime_sessions.get_by_character_id(target_character_id).is_none() {
-            socket.emit("chat:error", &build_chat_error_payload("CHAT_TARGET_OFFLINE", "对方不在线")).ok();
+        if state
+            .realtime_sessions
+            .get_by_character_id(target_character_id)
+            .is_none()
+        {
+            socket
+                .emit(
+                    "chat:error",
+                    &build_chat_error_payload("CHAT_TARGET_OFFLINE", "对方不在线"),
+                )
+                .ok();
             return;
         }
         if let Some(io) = state.socket_io() {
-            io.to(character_chat_room_id(sender_character_id)).emit("chat:message", &message).await.ok();
-            io.to(character_chat_room_id(target_character_id)).emit("chat:message", &message).await.ok();
+            io.to(character_chat_room_id(sender_character_id))
+                .emit("chat:message", &message)
+                .await
+                .ok();
+            io.to(character_chat_room_id(target_character_id))
+                .emit("chat:message", &message)
+                .await
+                .ok();
         }
         return;
     } else {
-        socket.emit("chat:error", &build_chat_error_payload("CHAT_TARGET_MISSING", "缺少私聊对象")).ok();
+        socket
+            .emit(
+                "chat:error",
+                &build_chat_error_payload("CHAT_TARGET_MISSING", "缺少私聊对象"),
+            )
+            .ok();
         return;
     }
 }
@@ -715,7 +1012,9 @@ async fn load_team_chat_recipient_socket_ids(
             |query| query.bind(sender_character_id),
         )
         .await?;
-    let Some(team_id) = row.and_then(|row| row.try_get::<Option<String>, _>("team_id").ok().flatten()) else {
+    let Some(team_id) =
+        row.and_then(|row| row.try_get::<Option<String>, _>("team_id").ok().flatten())
+    else {
         return Ok(None);
     };
     let rows = state
@@ -727,9 +1026,17 @@ async fn load_team_chat_recipient_socket_ids(
         .await?;
     let character_ids = rows
         .into_iter()
-        .filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from))
+        .filter_map(|row| {
+            row.try_get::<Option<i32>, _>("character_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .collect::<Vec<_>>();
-    Ok(Some(collect_connected_socket_ids_for_characters(state, &character_ids)))
+    Ok(Some(collect_connected_socket_ids_for_characters(
+        state,
+        &character_ids,
+    )))
 }
 
 async fn load_sect_chat_recipient_socket_ids(
@@ -743,7 +1050,9 @@ async fn load_sect_chat_recipient_socket_ids(
             |query| query.bind(sender_character_id),
         )
         .await?;
-    let Some(sect_id) = row.and_then(|row| row.try_get::<Option<String>, _>("sect_id").ok().flatten()) else {
+    let Some(sect_id) =
+        row.and_then(|row| row.try_get::<Option<String>, _>("sect_id").ok().flatten())
+    else {
         return Ok(None);
     };
     let rows = state
@@ -755,16 +1064,30 @@ async fn load_sect_chat_recipient_socket_ids(
         .await?;
     let character_ids = rows
         .into_iter()
-        .filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from))
+        .filter_map(|row| {
+            row.try_get::<Option<i32>, _>("character_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .collect::<Vec<_>>();
-    Ok(Some(collect_connected_socket_ids_for_characters(state, &character_ids)))
+    Ok(Some(collect_connected_socket_ids_for_characters(
+        state,
+        &character_ids,
+    )))
 }
 
-fn collect_connected_socket_ids_for_characters(state: &AppState, character_ids: &[i64]) -> Vec<String> {
+fn collect_connected_socket_ids_for_characters(
+    state: &AppState,
+    character_ids: &[i64],
+) -> Vec<String> {
     let mut socket_ids = Vec::new();
     for character_id in character_ids {
         if let Some(record) = state.realtime_sessions.get_by_character_id(*character_id) {
-            if !socket_ids.iter().any(|existing| existing == &record.socket_id) {
+            if !socket_ids
+                .iter()
+                .any(|existing| existing == &record.socket_id)
+            {
                 socket_ids.push(record.socket_id);
             }
         }
@@ -789,7 +1112,8 @@ fn build_battle_sync_payload_for_user(
                     .as_ref()
                     .and_then(|session| match &session.context {
                         crate::state::BattleSessionContextDto::Pve { monster_ids }
-                            if matches!(state_snapshot.result.as_deref(), Some("attacker_win")) => {
+                            if matches!(state_snapshot.result.as_deref(), Some("attacker_win")) =>
+                        {
                             resolve_minimal_pve_item_rewards(monster_ids).ok()
                         }
                         _ => None,
@@ -806,7 +1130,9 @@ fn build_battle_sync_payload_for_user(
                             silver: reward_silver,
                             total_exp: None,
                             total_silver: None,
-                            participant_count: session_snapshot.as_ref().map(|s| s.participant_user_ids.len() as i64),
+                            participant_count: session_snapshot
+                                .as_ref()
+                                .map(|s| s.participant_user_ids.len() as i64),
                             items: Some(build_reward_item_values(&reward_items)),
                             per_player_rewards: Some(build_single_player_reward_values(
                                 user_id,
@@ -817,7 +1143,10 @@ fn build_battle_sync_payload_for_user(
                             )),
                         }),
                         result: state_snapshot.result.clone(),
-                        success: Some(matches!(state_snapshot.result.as_deref(), Some("attacker_win"))),
+                        success: Some(matches!(
+                            state_snapshot.result.as_deref(),
+                            Some("attacker_win")
+                        )),
                         message: Some(match state_snapshot.result.as_deref() {
                             Some("attacker_win") => "战斗胜利".to_string(),
                             Some("defender_win") => "战斗失败".to_string(),
@@ -846,12 +1175,9 @@ fn derive_finished_battle_rewards(state_snapshot: &BattleStateDto) -> (i64, i64)
     if !matches!(state_snapshot.result.as_deref(), Some("attacker_win")) {
         return (0, 0);
     }
-    state_snapshot
-        .teams
-        .defender
-        .units
-        .iter()
-        .fold((0_i64, 0_i64), |(exp, silver): (i64, i64), unit| {
+    state_snapshot.teams.defender.units.iter().fold(
+        (0_i64, 0_i64),
+        |(exp, silver): (i64, i64), unit| {
             let reward_exp = unit
                 .reward_exp
                 .filter(|value| *value > 0)
@@ -864,7 +1190,8 @@ fn derive_finished_battle_rewards(state_snapshot: &BattleStateDto) -> (i64, i64)
                 exp.saturating_add(reward_exp),
                 silver.saturating_add(reward_silver),
             )
-        })
+        },
+    )
 }
 
 fn parse_battle_owner_character_id(state_snapshot: &BattleStateDto) -> i64 {
@@ -899,12 +1226,20 @@ async fn load_game_character_full_by_user_id(
     let feature_unlocks = load_character_feature_unlocks(state, character_id).await?;
     let global_buffs = load_character_global_buffs(state, character_id).await?;
 
-    let current_stamina = row.try_get::<Option<i32>, _>("stamina")?.map(i64::from).unwrap_or_default();
-    let insight_level = row.try_get::<Option<i64>, _>("insight_level")?.unwrap_or_default();
+    let current_stamina = row
+        .try_get::<Option<i32>, _>("stamina")?
+        .map(i64::from)
+        .unwrap_or_default();
+    let insight_level = row
+        .try_get::<Option<i64>, _>("insight_level")?
+        .unwrap_or_default();
     let stamina_recover_at_text = row.try_get::<Option<String>, _>("stamina_recover_at_text")?;
     let month_card_start_at_text = row.try_get::<Option<String>, _>("month_card_start_at_text")?;
-    let month_card_expire_at_text = row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
-    let month_card_active = month_card_expire_at_text.as_deref().is_some_and(|value| !value.trim().is_empty());
+    let month_card_expire_at_text =
+        row.try_get::<Option<String>, _>("month_card_expire_at_text")?;
+    let month_card_active = month_card_expire_at_text
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
     let stamina_state = resolve_realtime_stamina_state(
         current_stamina,
         calc_character_stamina_max_by_insight_level(insight_level),
@@ -916,61 +1251,140 @@ async fn load_game_character_full_by_user_id(
 
     Ok(Some(GameCharacterFullSnapshot {
         id: character_id,
-        user_id: row.try_get::<Option<i32>, _>("user_id")?.map(i64::from).unwrap_or_default(),
-        nickname: row.try_get::<Option<String>, _>("nickname")?.unwrap_or_default(),
+        user_id: row
+            .try_get::<Option<i32>, _>("user_id")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        nickname: row
+            .try_get::<Option<String>, _>("nickname")?
+            .unwrap_or_default(),
         month_card_active,
-        title: row.try_get::<Option<String>, _>("title")?.unwrap_or_else(|| "散修".to_string()),
-        gender: row.try_get::<Option<String>, _>("gender")?.unwrap_or_else(|| "male".to_string()),
+        title: row
+            .try_get::<Option<String>, _>("title")?
+            .unwrap_or_else(|| "散修".to_string()),
+        gender: row
+            .try_get::<Option<String>, _>("gender")?
+            .unwrap_or_else(|| "male".to_string()),
         avatar: row.try_get::<Option<String>, _>("avatar")?,
-        auto_cast_skills: row.try_get::<Option<bool>, _>("auto_cast_skills")?.unwrap_or(true),
-        auto_disassemble_enabled: row.try_get::<Option<bool>, _>("auto_disassemble_enabled")?.unwrap_or(false),
-        dungeon_no_stamina_cost: row.try_get::<Option<bool>, _>("dungeon_no_stamina_cost")?.unwrap_or(false),
-        spirit_stones: row.try_get::<Option<i64>, _>("spirit_stones")?.unwrap_or_default(),
+        auto_cast_skills: row
+            .try_get::<Option<bool>, _>("auto_cast_skills")?
+            .unwrap_or(true),
+        auto_disassemble_enabled: row
+            .try_get::<Option<bool>, _>("auto_disassemble_enabled")?
+            .unwrap_or(false),
+        dungeon_no_stamina_cost: row
+            .try_get::<Option<bool>, _>("dungeon_no_stamina_cost")?
+            .unwrap_or(false),
+        spirit_stones: row
+            .try_get::<Option<i64>, _>("spirit_stones")?
+            .unwrap_or_default(),
         silver: row.try_get::<Option<i64>, _>("silver")?.unwrap_or_default(),
         stamina: stamina_state.0,
         stamina_max: stamina_state.1,
-        realm: row.try_get::<Option<String>, _>("realm")?.unwrap_or_else(|| "凡人".to_string()),
+        realm: row
+            .try_get::<Option<String>, _>("realm")?
+            .unwrap_or_else(|| "凡人".to_string()),
         sub_realm: row.try_get::<Option<String>, _>("sub_realm")?,
         exp: row.try_get::<Option<i64>, _>("exp")?.unwrap_or_default(),
-        attribute_points: row.try_get::<Option<i32>, _>("attribute_points")?.map(i64::from).unwrap_or_default(),
-        jing: row.try_get::<Option<i32>, _>("jing")?.map(i64::from).unwrap_or_default(),
-        qi: row.try_get::<Option<i32>, _>("qi")?.map(i64::from).unwrap_or_default(),
-        shen: row.try_get::<Option<i32>, _>("shen")?.map(i64::from).unwrap_or_default(),
-        attribute_type: row.try_get::<Option<String>, _>("attribute_type")?.unwrap_or_else(|| "physical".to_string()),
-        attribute_element: row.try_get::<Option<String>, _>("attribute_element")?.unwrap_or_else(|| "none".to_string()),
+        attribute_points: row
+            .try_get::<Option<i32>, _>("attribute_points")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        jing: row
+            .try_get::<Option<i32>, _>("jing")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        qi: row
+            .try_get::<Option<i32>, _>("qi")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        shen: row
+            .try_get::<Option<i32>, _>("shen")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        attribute_type: row
+            .try_get::<Option<String>, _>("attribute_type")?
+            .unwrap_or_else(|| "physical".to_string()),
+        attribute_element: row
+            .try_get::<Option<String>, _>("attribute_element")?
+            .unwrap_or_else(|| "none".to_string()),
         qixue: row.try_get::<Option<i64>, _>("qixue")?.unwrap_or_default(),
-        max_qixue: row.try_get::<Option<i64>, _>("max_qixue")?.unwrap_or_default(),
+        max_qixue: row
+            .try_get::<Option<i64>, _>("max_qixue")?
+            .unwrap_or_default(),
         lingqi: row.try_get::<Option<i64>, _>("lingqi")?.unwrap_or_default(),
-        max_lingqi: row.try_get::<Option<i64>, _>("max_lingqi")?.unwrap_or_default(),
+        max_lingqi: row
+            .try_get::<Option<i64>, _>("max_lingqi")?
+            .unwrap_or_default(),
         wugong: row.try_get::<Option<i64>, _>("wugong")?.unwrap_or_default(),
         fagong: row.try_get::<Option<i64>, _>("fagong")?.unwrap_or_default(),
         wufang: row.try_get::<Option<i64>, _>("wufang")?.unwrap_or_default(),
         fafang: row.try_get::<Option<i64>, _>("fafang")?.unwrap_or_default(),
-        mingzhong: row.try_get::<Option<i64>, _>("mingzhong")?.unwrap_or_default(),
+        mingzhong: row
+            .try_get::<Option<i64>, _>("mingzhong")?
+            .unwrap_or_default(),
         shanbi: row.try_get::<Option<i64>, _>("shanbi")?.unwrap_or_default(),
-        zhaojia: row.try_get::<Option<i64>, _>("zhaojia")?.unwrap_or_default(),
+        zhaojia: row
+            .try_get::<Option<i64>, _>("zhaojia")?
+            .unwrap_or_default(),
         baoji: row.try_get::<Option<i64>, _>("baoji")?.unwrap_or_default(),
-        baoshang: row.try_get::<Option<i64>, _>("baoshang")?.unwrap_or_default(),
-        jianbaoshang: row.try_get::<Option<i64>, _>("jianbaoshang")?.unwrap_or_default(),
-        jianfantan: row.try_get::<Option<i64>, _>("jianfantan")?.unwrap_or_default(),
-        kangbao: row.try_get::<Option<i64>, _>("kangbao")?.unwrap_or_default(),
-        zengshang: row.try_get::<Option<i64>, _>("zengshang")?.unwrap_or_default(),
-        zhiliao: row.try_get::<Option<i64>, _>("zhiliao")?.unwrap_or_default(),
-        jianliao: row.try_get::<Option<i64>, _>("jianliao")?.unwrap_or_default(),
+        baoshang: row
+            .try_get::<Option<i64>, _>("baoshang")?
+            .unwrap_or_default(),
+        jianbaoshang: row
+            .try_get::<Option<i64>, _>("jianbaoshang")?
+            .unwrap_or_default(),
+        jianfantan: row
+            .try_get::<Option<i64>, _>("jianfantan")?
+            .unwrap_or_default(),
+        kangbao: row
+            .try_get::<Option<i64>, _>("kangbao")?
+            .unwrap_or_default(),
+        zengshang: row
+            .try_get::<Option<i64>, _>("zengshang")?
+            .unwrap_or_default(),
+        zhiliao: row
+            .try_get::<Option<i64>, _>("zhiliao")?
+            .unwrap_or_default(),
+        jianliao: row
+            .try_get::<Option<i64>, _>("jianliao")?
+            .unwrap_or_default(),
         xixue: row.try_get::<Option<i64>, _>("xixue")?.unwrap_or_default(),
-        lengque: row.try_get::<Option<i64>, _>("lengque")?.unwrap_or_default(),
-        kongzhi_kangxing: row.try_get::<Option<i64>, _>("kongzhi_kangxing")?.unwrap_or_default(),
-        jin_kangxing: row.try_get::<Option<i64>, _>("jin_kangxing")?.unwrap_or_default(),
-        mu_kangxing: row.try_get::<Option<i64>, _>("mu_kangxing")?.unwrap_or_default(),
-        shui_kangxing: row.try_get::<Option<i64>, _>("shui_kangxing")?.unwrap_or_default(),
-        huo_kangxing: row.try_get::<Option<i64>, _>("huo_kangxing")?.unwrap_or_default(),
-        tu_kangxing: row.try_get::<Option<i64>, _>("tu_kangxing")?.unwrap_or_default(),
-        qixue_huifu: row.try_get::<Option<i64>, _>("qixue_huifu")?.unwrap_or_default(),
-        lingqi_huifu: row.try_get::<Option<i64>, _>("lingqi_huifu")?.unwrap_or_default(),
+        lengque: row
+            .try_get::<Option<i64>, _>("lengque")?
+            .unwrap_or_default(),
+        kongzhi_kangxing: row
+            .try_get::<Option<i64>, _>("kongzhi_kangxing")?
+            .unwrap_or_default(),
+        jin_kangxing: row
+            .try_get::<Option<i64>, _>("jin_kangxing")?
+            .unwrap_or_default(),
+        mu_kangxing: row
+            .try_get::<Option<i64>, _>("mu_kangxing")?
+            .unwrap_or_default(),
+        shui_kangxing: row
+            .try_get::<Option<i64>, _>("shui_kangxing")?
+            .unwrap_or_default(),
+        huo_kangxing: row
+            .try_get::<Option<i64>, _>("huo_kangxing")?
+            .unwrap_or_default(),
+        tu_kangxing: row
+            .try_get::<Option<i64>, _>("tu_kangxing")?
+            .unwrap_or_default(),
+        qixue_huifu: row
+            .try_get::<Option<i64>, _>("qixue_huifu")?
+            .unwrap_or_default(),
+        lingqi_huifu: row
+            .try_get::<Option<i64>, _>("lingqi_huifu")?
+            .unwrap_or_default(),
         sudu: row.try_get::<Option<i64>, _>("sudu")?.unwrap_or_default(),
         fuyuan: row.try_get::<Option<i64>, _>("fuyuan")?.unwrap_or_default(),
-        current_map_id: row.try_get::<Option<String>, _>("current_map_id")?.unwrap_or_else(|| "map-qingyun-village".to_string()),
-        current_room_id: row.try_get::<Option<String>, _>("current_room_id")?.unwrap_or_else(|| "room-village-center".to_string()),
+        current_map_id: row
+            .try_get::<Option<String>, _>("current_map_id")?
+            .unwrap_or_else(|| "map-qingyun-village".to_string()),
+        current_room_id: row
+            .try_get::<Option<String>, _>("current_room_id")?
+            .unwrap_or_else(|| "room-village-center".to_string()),
         feature_unlocks,
         global_buffs,
     }))
@@ -989,7 +1403,11 @@ async fn load_character_feature_unlocks(
         .await?;
     Ok(rows
         .into_iter()
-        .filter_map(|row| row.try_get::<Option<String>, _>("feature_code").ok().flatten())
+        .filter_map(|row| {
+            row.try_get::<Option<String>, _>("feature_code")
+                .ok()
+                .flatten()
+        })
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .collect())
@@ -1009,19 +1427,32 @@ async fn load_character_global_buffs(
 
     let mut buffs = Vec::new();
     for row in rows {
-        let buff_key = row.try_get::<Option<String>, _>("buff_key")?.unwrap_or_default();
-        let source_type = row.try_get::<Option<String>, _>("source_type")?.unwrap_or_default();
-        let source_id = row.try_get::<Option<String>, _>("source_id")?.unwrap_or_default();
-        let started_at = row.try_get::<Option<String>, _>("started_at_text")?.unwrap_or_default();
-        let expire_at = row.try_get::<Option<String>, _>("expire_at_text")?.unwrap_or_default();
-        if buff_key.trim().is_empty() || started_at.trim().is_empty() || expire_at.trim().is_empty() {
+        let buff_key = row
+            .try_get::<Option<String>, _>("buff_key")?
+            .unwrap_or_default();
+        let source_type = row
+            .try_get::<Option<String>, _>("source_type")?
+            .unwrap_or_default();
+        let source_id = row
+            .try_get::<Option<String>, _>("source_id")?
+            .unwrap_or_default();
+        let started_at = row
+            .try_get::<Option<String>, _>("started_at_text")?
+            .unwrap_or_default();
+        let expire_at = row
+            .try_get::<Option<String>, _>("expire_at_text")?
+            .unwrap_or_default();
+        if buff_key.trim().is_empty() || started_at.trim().is_empty() || expire_at.trim().is_empty()
+        {
             continue;
         }
         let total_duration_ms = calculate_duration_ms(&started_at, &expire_at);
         if total_duration_ms <= 0 {
             continue;
         }
-        let buff_value = row.try_get::<Option<f64>, _>("buff_value")?.unwrap_or_default();
+        let buff_value = row
+            .try_get::<Option<f64>, _>("buff_value")?
+            .unwrap_or_default();
         if let Some((label, icon_text, effect_text)) = format_known_global_buff(
             buff_key.trim(),
             source_type.trim(),
@@ -1029,7 +1460,12 @@ async fn load_character_global_buffs(
             buff_value,
         ) {
             buffs.push(GameCharacterGlobalBuff {
-                id: format!("{}|{}|{}", buff_key.trim(), source_type.trim(), source_id.trim()),
+                id: format!(
+                    "{}|{}|{}",
+                    buff_key.trim(),
+                    source_type.trim(),
+                    source_id.trim()
+                ),
                 buff_key: buff_key.trim().to_string(),
                 label,
                 icon_text,
@@ -1063,10 +1499,26 @@ fn format_known_global_buff(
             format!("{buff_value:.1}")
         };
         return match buff_key {
-            "wugong_flat" => Some(("力力散".to_string(), "力".to_string(), format!("物攻 +{normalized}"))),
-            "fagong_flat" => Some(("灵慧散".to_string(), "慧".to_string(), format!("法攻 +{normalized}"))),
-            "sudu_flat" => Some(("御风丹".to_string(), "风".to_string(), format!("速度 +{normalized}"))),
-            "poison" => Some(("中毒".to_string(), "毒".to_string(), format!("中毒 {normalized}"))),
+            "wugong_flat" => Some((
+                "力力散".to_string(),
+                "力".to_string(),
+                format!("物攻 +{normalized}"),
+            )),
+            "fagong_flat" => Some((
+                "灵慧散".to_string(),
+                "慧".to_string(),
+                format!("法攻 +{normalized}"),
+            )),
+            "sudu_flat" => Some((
+                "御风丹".to_string(),
+                "风".to_string(),
+                format!("速度 +{normalized}"),
+            )),
+            "poison" => Some((
+                "中毒".to_string(),
+                "毒".to_string(),
+                format!("中毒 {normalized}"),
+            )),
             _ => None,
         };
     }
@@ -1080,16 +1532,17 @@ fn calc_character_stamina_max_by_insight_level(insight_level: i64) -> i64 {
 fn load_default_month_card_stamina_recovery_rate() -> f64 {
     static RATE: OnceLock<f64> = OnceLock::new();
     *RATE.get_or_init(|| {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/month_card.json");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/month_card.json");
         let content = fs::read_to_string(path).unwrap_or_default();
         let payload: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
         payload
             .get("month_cards")
             .and_then(|value| value.as_array())
             .and_then(|cards| {
-                cards
-                    .iter()
-                    .find(|card| card.get("id").and_then(|value| value.as_str()) == Some("monthcard-001"))
+                cards.iter().find(|card| {
+                    card.get("id").and_then(|value| value.as_str()) == Some("monthcard-001")
+                })
             })
             .and_then(|card| card.get("stamina_recovery_rate"))
             .and_then(|value| value.as_f64())
@@ -1128,7 +1581,10 @@ fn resolve_realtime_stamina_state(
     }
 
     let recovered_total = ticks;
-    ((safe_stamina + recovered_total).clamp(0, safe_max_stamina), safe_max_stamina)
+    (
+        (safe_stamina + recovered_total).clamp(0, safe_max_stamina),
+        safe_max_stamina,
+    )
 }
 
 fn calc_effective_stamina_elapsed_ms(
@@ -1160,7 +1616,8 @@ fn parse_datetime_millis(raw: Option<&str>) -> Option<i64> {
     if text.is_empty() {
         return None;
     }
-    let parsed = time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
+    let parsed =
+        time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
     Some(parsed.unix_timestamp_nanos() as i64 / 1_000_000)
 }
 
@@ -1201,7 +1658,9 @@ fn schedule_emit_online_players(state: &AppState, io: &SocketIo, force: bool) {
             .online_players
             .set_online_players_last_emit_at_ms(current_timestamp_ms());
         emit_online_players_now(&io, &state);
-        state.online_players.clear_online_players_emit_timer_active();
+        state
+            .online_players
+            .clear_online_players_emit_timer_active();
         if state.online_players.take_online_players_emit_queued() {
             schedule_emit_online_players(&state, &io, false);
         }
@@ -1214,16 +1673,27 @@ fn emit_online_players_now(io: &SocketIo, state: &AppState) {
     let Some(payload) = build_online_players_broadcast_payload(&previous, &current) else {
         return;
     };
-    state.online_players.replace_last_broadcasted_players(current);
+    state
+        .online_players
+        .replace_last_broadcasted_players(current);
 
     let io = io.clone();
     tokio::spawn(async move {
-        io.to(AUTHED_ROOM_ID).emit("game:onlinePlayers", &payload).await.ok();
+        io.to(AUTHED_ROOM_ID)
+            .emit("game:onlinePlayers", &payload)
+            .await
+            .ok();
     });
 }
 
-fn load_online_players_full_payload(state: &AppState) -> crate::realtime::online_players::OnlinePlayersPayload {
-    let mut players = state.online_players.snapshot_dto_map().into_values().collect::<Vec<_>>();
+fn load_online_players_full_payload(
+    state: &AppState,
+) -> crate::realtime::online_players::OnlinePlayersPayload {
+    let mut players = state
+        .online_players
+        .snapshot_dto_map()
+        .into_values()
+        .collect::<Vec<_>>();
     players.sort_by(|a, b| a.nickname.cmp(&b.nickname).then(a.id.cmp(&b.id)));
     build_online_players_full_payload(players)
 }
@@ -1296,7 +1766,9 @@ pub async fn emit_game_character_full_to_user(
     state: &AppState,
     user_id: i64,
 ) -> Result<(), crate::shared::error::AppError> {
-    let payload = build_game_character_full_payload(load_game_character_full_by_user_id(state, user_id).await?);
+    let payload = build_game_character_full_payload(
+        load_game_character_full_by_user_id(state, user_id).await?,
+    );
     emit_game_character_to_user(state, user_id, &payload);
     Ok(())
 }
@@ -1335,11 +1807,7 @@ pub fn emit_achievement_update_to_user(
     }
 }
 
-pub fn emit_arena_update_to_user<T: serde::Serialize>(
-    state: &AppState,
-    user_id: i64,
-    payload: &T,
-) {
+pub fn emit_arena_update_to_user<T: serde::Serialize>(state: &AppState, user_id: i64, payload: &T) {
     let Some(io) = state.socket_io() else {
         return;
     };
@@ -1380,7 +1848,10 @@ pub fn emit_team_update_to_characters(
     let mut socket_ids = Vec::new();
     for character_id in character_ids {
         if let Some(record) = state.realtime_sessions.get_by_character_id(*character_id) {
-            if !socket_ids.iter().any(|existing| existing == &record.socket_id) {
+            if !socket_ids
+                .iter()
+                .any(|existing| existing == &record.socket_id)
+            {
                 socket_ids.push(record.socket_id);
             }
         }
@@ -1395,7 +1866,11 @@ pub fn emit_team_update_to_characters(
     }
 }
 
-pub fn emit_task_update_to_user(state: &AppState, user_id: i64, payload: &TaskOverviewUpdatePayload) {
+pub fn emit_task_update_to_user(
+    state: &AppState,
+    user_id: i64,
+    payload: &TaskOverviewUpdatePayload,
+) {
     let Some(io) = state.socket_io() else {
         return;
     };
@@ -1672,11 +2147,17 @@ fn adjust_battle_cooldown_payload_for_character(
     }
 }
 
-fn collect_connected_socket_ids_for_users(state: &AppState, participant_user_ids: &[i64]) -> Vec<String> {
+fn collect_connected_socket_ids_for_users(
+    state: &AppState,
+    participant_user_ids: &[i64],
+) -> Vec<String> {
     let mut socket_ids = Vec::new();
     for user_id in participant_user_ids {
         if let Some(record) = state.realtime_sessions.get_by_user_id(*user_id) {
-            if !socket_ids.iter().any(|existing| existing == &record.socket_id) {
+            if !socket_ids
+                .iter()
+                .any(|existing| existing == &record.socket_id)
+            {
                 socket_ids.push(record.socket_id);
             }
         }
@@ -1685,7 +2166,10 @@ fn collect_connected_socket_ids_for_users(state: &AppState, participant_user_ids
 }
 
 fn connected_socket_id_for_user(state: &AppState, user_id: i64) -> Option<String> {
-    state.realtime_sessions.get_by_user_id(user_id).map(|record| record.socket_id)
+    state
+        .realtime_sessions
+        .get_by_user_id(user_id)
+        .map(|record| record.socket_id)
 }
 
 fn validate_add_point_payload(payload: &AddPointPayload) -> Option<(&str, i64)> {
@@ -1711,18 +2195,25 @@ fn validate_battle_sync_payload(payload: &BattleSyncPayload) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AddPointPayload, BattleSyncPayload, build_battle_sync_payload_for_user,
-        build_battle_cooldown_recipient_payloads,
-        collect_connected_socket_ids_for_characters,
+        AddPointPayload, BattleSyncPayload, build_battle_cooldown_recipient_payloads,
+        build_battle_sync_payload_for_user, collect_connected_socket_ids_for_characters,
         collect_connected_socket_ids_for_users, connected_socket_id_for_user,
-        should_disconnect_replaced_socket,
-        validate_add_point_payload, validate_battle_sync_payload,
+        should_disconnect_replaced_socket, validate_add_point_payload,
+        validate_battle_sync_payload,
     };
-    use crate::http::character_technique::{TechniqueResearchNameRulesDto, TechniqueResearchStatusDto};
+    use crate::battle_runtime::build_minimal_pve_battle_state;
+    use crate::config::{
+        AppConfig, CaptchaConfig, CaptchaProvider, CosConfig, DatabaseConfig, HttpConfig,
+        LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig,
+        StorageConfig, WanderConfig,
+    };
     use crate::http::arena::ArenaStatusDto;
-    use crate::http::partner::PartnerRecruitStatusDto;
+    use crate::http::character_technique::{
+        TechniqueResearchNameRulesDto, TechniqueResearchStatusDto,
+    };
     use crate::http::partner::PartnerFusionStatusDto;
-    use crate::realtime::partner_recruit::PartnerRecruitResultPayload;
+    use crate::http::partner::PartnerRecruitStatusDto;
+    use crate::integrations::database::DatabaseRuntime;
     use crate::realtime::achievement::AchievementIndicatorPayload;
     use crate::realtime::arena::{ArenaRefreshPayload, ArenaStatusPayload};
     use crate::realtime::battle::BattleCooldownPayload;
@@ -1730,20 +2221,16 @@ mod tests {
     use crate::realtime::idle::IdleRealtimePayload;
     use crate::realtime::mail::MailUpdatePayload;
     use crate::realtime::partner_fusion::{PartnerFusionResultPayload, PartnerFusionStatusPayload};
-    use crate::realtime::partner_recruit::PartnerRecruitStatusPayload;
     use crate::realtime::partner_rebone::PartnerReboneResultPayload;
+    use crate::realtime::partner_recruit::PartnerRecruitResultPayload;
+    use crate::realtime::partner_recruit::PartnerRecruitStatusPayload;
     use crate::realtime::sect::SectIndicatorPayload;
-    use crate::realtime::technique_research::{TechniqueResearchResultPayload, TechniqueResearchStatusPayload};
     use crate::realtime::task::TaskOverviewUpdatePayload;
     use crate::realtime::team::TeamUpdatePayload;
-    use crate::realtime::wander::WanderUpdatePayload;
-    use crate::battle_runtime::build_minimal_pve_battle_state;
-    use crate::config::{
-        AppConfig, CaptchaConfig, CaptchaProvider, CosConfig, DatabaseConfig, HttpConfig,
-        LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig,
-        StorageConfig, WanderConfig,
+    use crate::realtime::technique_research::{
+        TechniqueResearchResultPayload, TechniqueResearchStatusPayload,
     };
-    use crate::integrations::database::DatabaseRuntime;
+    use crate::realtime::wander::WanderUpdatePayload;
     use crate::state::{
         AppState, BattleSessionContextDto, BattleSessionSnapshotDto, RealtimeSessionRecord,
     };
@@ -1751,29 +2238,57 @@ mod tests {
 
     #[test]
     fn duplicate_login_does_not_disconnect_same_socket_id() {
-        assert!(!should_disconnect_replaced_socket("same-socket-1234", "same-socket-1234"));
-        assert!(should_disconnect_replaced_socket("old-socket-1234", "new-socket-5678"));
+        assert!(!should_disconnect_replaced_socket(
+            "same-socket-1234",
+            "same-socket-1234"
+        ));
+        assert!(should_disconnect_replaced_socket(
+            "old-socket-1234",
+            "new-socket-5678"
+        ));
         assert!(!should_disconnect_replaced_socket("", "new-socket-5678"));
     }
 
     #[test]
     fn add_point_payload_validation_matches_contract() {
         assert_eq!(
-            validate_add_point_payload(&AddPointPayload { attribute: "jing".to_string(), amount: Some(2) })
-                .map(|(attribute, amount)| (attribute.to_string(), amount)),
+            validate_add_point_payload(&AddPointPayload {
+                attribute: "jing".to_string(),
+                amount: Some(2)
+            })
+            .map(|(attribute, amount)| (attribute.to_string(), amount)),
             Some(("jing".to_string(), 2))
         );
-        assert!(validate_add_point_payload(&AddPointPayload { attribute: "xxx".to_string(), amount: Some(1) }).is_none());
-        assert!(validate_add_point_payload(&AddPointPayload { attribute: "jing".to_string(), amount: Some(0) }).is_none());
+        assert!(
+            validate_add_point_payload(&AddPointPayload {
+                attribute: "xxx".to_string(),
+                amount: Some(1)
+            })
+            .is_none()
+        );
+        assert!(
+            validate_add_point_payload(&AddPointPayload {
+                attribute: "jing".to_string(),
+                amount: Some(0)
+            })
+            .is_none()
+        );
     }
 
     #[test]
     fn battle_sync_payload_validation_matches_contract() {
         assert_eq!(
-            validate_battle_sync_payload(&BattleSyncPayload { battle_id: Some("battle-1".to_string()) }),
+            validate_battle_sync_payload(&BattleSyncPayload {
+                battle_id: Some("battle-1".to_string())
+            }),
             Some("battle-1")
         );
-        assert!(validate_battle_sync_payload(&BattleSyncPayload { battle_id: Some("  ".to_string()) }).is_none());
+        assert!(
+            validate_battle_sync_payload(&BattleSyncPayload {
+                battle_id: Some("  ".to_string())
+            })
+            .is_none()
+        );
         assert!(validate_battle_sync_payload(&BattleSyncPayload { battle_id: None }).is_none());
     }
 
@@ -1844,10 +2359,18 @@ mod tests {
         let database = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy(&config.database.url)
             .expect("lazy postgres pool should build for tests");
-        let redis = Some(redis::Client::open(config.redis.url.clone()).expect("test redis client should build"));
+        let redis = Some(
+            redis::Client::open(config.redis.url.clone()).expect("test redis client should build"),
+        );
         let http_client = reqwest::Client::new();
 
-        AppState::new(config, DatabaseRuntime::new(database), redis, http_client, true)
+        AppState::new(
+            config,
+            DatabaseRuntime::new(database),
+            redis,
+            http_client,
+            true,
+        )
     }
 
     #[tokio::test]
@@ -1875,8 +2398,12 @@ mod tests {
             },
         });
 
-        let payload = serde_json::to_value(build_battle_sync_payload_for_user(&state, 77, "missing-battle"))
-            .expect("payload should serialize");
+        let payload = serde_json::to_value(build_battle_sync_payload_for_user(
+            &state,
+            77,
+            "missing-battle",
+        ))
+        .expect("payload should serialize");
         assert_eq!(payload["kind"], "battle_abandoned");
         assert_eq!(payload["battleId"], "missing-battle");
         assert_eq!(payload["message"], "战斗不存在或已结束");
@@ -1900,14 +2427,17 @@ mod tests {
                 monster_ids: vec!["monster-gray-wolf".to_string()],
             },
         });
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            "battle-88",
-            880,
-            &["monster-gray-wolf".to_string()],
-        ));
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                "battle-88",
+                880,
+                &["monster-gray-wolf".to_string()],
+            ));
 
-        let payload = serde_json::to_value(build_battle_sync_payload_for_user(&state, 88, "battle-88"))
-            .expect("payload should serialize");
+        let payload =
+            serde_json::to_value(build_battle_sync_payload_for_user(&state, 88, "battle-88"))
+                .expect("payload should serialize");
         assert_eq!(payload["kind"], "battle_started");
         assert_eq!(payload["battleId"], "battle-88");
         assert_eq!(payload["authoritative"], true);
@@ -1937,18 +2467,24 @@ mod tests {
                 monster_ids: vec!["monster-gray-wolf".to_string()],
             },
         });
-        state.battle_runtime.register(build_minimal_pve_battle_state(
-            "battle-finished",
-            880,
-            &["monster-gray-wolf".to_string()],
-        ));
+        state
+            .battle_runtime
+            .register(build_minimal_pve_battle_state(
+                "battle-finished",
+                880,
+                &["monster-gray-wolf".to_string()],
+            ));
         state.battle_runtime.update("battle-finished", |battle| {
             battle.phase = "finished".to_string();
             battle.result = Some("attacker_win".to_string());
         });
 
-        let payload = serde_json::to_value(build_battle_sync_payload_for_user(&state, 88, "battle-finished"))
-            .expect("payload should serialize");
+        let payload = serde_json::to_value(build_battle_sync_payload_for_user(
+            &state,
+            88,
+            "battle-finished",
+        ))
+        .expect("payload should serialize");
         assert_eq!(payload["kind"], "battle_finished");
         assert_eq!(payload["result"], "attacker_win");
         assert_eq!(payload["success"], true);
@@ -1977,7 +2513,10 @@ mod tests {
         });
 
         let socket_ids = collect_connected_socket_ids_for_users(&state, &[2, 3, 2, 1]);
-        assert_eq!(socket_ids, vec!["socket-2".to_string(), "socket-1".to_string()]);
+        assert_eq!(
+            socket_ids,
+            vec!["socket-2".to_string(), "socket-1".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -1999,7 +2538,10 @@ mod tests {
         });
 
         let socket_ids = collect_connected_socket_ids_for_characters(&state, &[202, 303, 202, 101]);
-        assert_eq!(socket_ids, vec!["socket-team-2".to_string(), "socket-team-1".to_string()]);
+        assert_eq!(
+            socket_ids,
+            vec!["socket-team-2".to_string(), "socket-team-1".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -2021,7 +2563,10 @@ mod tests {
         });
 
         let socket_ids = collect_connected_socket_ids_for_characters(&state, &[404, 505, 303]);
-        assert_eq!(socket_ids, vec!["socket-sect-2".to_string(), "socket-sect-1".to_string()]);
+        assert_eq!(
+            socket_ids,
+            vec!["socket-sect-2".to_string(), "socket-sect-1".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -2177,8 +2722,14 @@ mod tests {
         assert_eq!(payload["kind"], "team:update");
         assert_eq!(payload["teamId"], "team-1");
 
-        let first = state.realtime_sessions.get_by_character_id(111).map(|record| record.socket_id);
-        let second = state.realtime_sessions.get_by_character_id(222).map(|record| record.socket_id);
+        let first = state
+            .realtime_sessions
+            .get_by_character_id(111)
+            .map(|record| record.socket_id);
+        let second = state
+            .realtime_sessions
+            .get_by_character_id(222)
+            .map(|record| record.socket_id);
         assert_eq!(first.as_deref(), Some("socket-team-1"));
         assert_eq!(second.as_deref(), Some("socket-team-2"));
     }
@@ -2512,7 +3063,10 @@ mod tests {
         });
 
         let socket_id = connected_socket_id_for_user(&state, 84);
-        assert_eq!(socket_id.as_deref(), Some("socket-partner-recruit-result-1"));
+        assert_eq!(
+            socket_id.as_deref(),
+            Some("socket-partner-recruit-result-1")
+        );
 
         let payload = serde_json::to_value(PartnerRecruitResultPayload {
             character_id: 841,
@@ -2617,8 +3171,11 @@ mod tests {
 }
 
 fn calculate_duration_ms(started_at: &str, expire_at: &str) -> i64 {
-    let started = time::OffsetDateTime::parse(started_at, &time::format_description::well_known::Rfc3339).ok();
-    let expire = time::OffsetDateTime::parse(expire_at, &time::format_description::well_known::Rfc3339).ok();
+    let started =
+        time::OffsetDateTime::parse(started_at, &time::format_description::well_known::Rfc3339)
+            .ok();
+    let expire =
+        time::OffsetDateTime::parse(expire_at, &time::format_description::well_known::Rfc3339).ok();
     match (started, expire) {
         (Some(started), Some(expire)) => (expire - started)
             .whole_milliseconds()

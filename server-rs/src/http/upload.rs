@@ -86,7 +86,9 @@ pub async fn get_avatar_upload_sts(
     Json(payload): Json<AvatarUploadStsRequest>,
 ) -> Result<Json<SuccessResponse<AvatarUploadStsData>>, AppError> {
     auth::require_auth(&state, &headers).await?;
-    Ok(send_success(issue_avatar_upload_sts_response(&state, payload).await?))
+    Ok(send_success(
+        issue_avatar_upload_sts_response(&state, payload).await?,
+    ))
 }
 
 pub async fn get_avatar_asset_upload_sts(
@@ -95,7 +97,9 @@ pub async fn get_avatar_asset_upload_sts(
     Json(payload): Json<AvatarUploadStsRequest>,
 ) -> Result<Json<SuccessResponse<AvatarUploadStsData>>, AppError> {
     auth::require_auth(&state, &headers).await?;
-    Ok(send_success(issue_avatar_upload_sts_response(&state, payload).await?))
+    Ok(send_success(
+        issue_avatar_upload_sts_response(&state, payload).await?,
+    ))
 }
 
 pub async fn confirm_avatar_upload(
@@ -128,7 +132,10 @@ pub async fn confirm_avatar_asset_upload(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AppError::config("缺少 avatarUrl"))?;
-    Ok(send_upload_result(confirm_avatar_asset(&state, &avatar_url)?))
+    Ok(send_upload_result(confirm_avatar_asset(
+        &state,
+        &avatar_url,
+    )?))
 }
 
 pub async fn upload_avatar_local(
@@ -139,7 +146,12 @@ pub async fn upload_avatar_local(
     let user = auth::require_auth(&state, &headers).await?;
     ensure_local_avatar_upload_enabled(&state)?;
     let uploaded = read_avatar_part(multipart).await?;
-    let avatar_url = accept_avatar_local_upload(&state.config.storage, &uploaded.content_type, &uploaded.bytes).await?;
+    let avatar_url = accept_avatar_local_upload(
+        &state.config.storage,
+        &uploaded.content_type,
+        &uploaded.bytes,
+    )
+    .await?;
     let response = state
         .database
         .with_transaction(|| async { update_avatar_tx(&state, user.user_id, &avatar_url).await })
@@ -156,7 +168,12 @@ pub async fn upload_avatar_asset_local(
     auth::require_auth(&state, &headers).await?;
     ensure_local_avatar_upload_enabled(&state)?;
     let uploaded = read_avatar_part(multipart).await?;
-    let avatar_url = accept_avatar_local_upload(&state.config.storage, &uploaded.content_type, &uploaded.bytes).await?;
+    let avatar_url = accept_avatar_local_upload(
+        &state.config.storage,
+        &uploaded.content_type,
+        &uploaded.bytes,
+    )
+    .await?;
     Ok(send_upload_result(UploadResultResponse {
         success: true,
         message: "头像上传成功".to_string(),
@@ -189,7 +206,13 @@ async fn issue_avatar_upload_sts_response(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AppError::config("只支持 JPG、PNG、GIF、WEBP 格式的图片"))?;
     let file_size = payload.file_size.unwrap_or_default();
-    let payload = issue_avatar_sts_for_content(&state.outbound_http, &state.config.cos, &content_type, file_size).await?;
+    let payload = issue_avatar_sts_for_content(
+        &state.outbound_http,
+        &state.config.cos,
+        &content_type,
+        file_size,
+    )
+    .await?;
     Ok(map_avatar_sts_payload(payload))
 }
 
@@ -232,7 +255,10 @@ async fn read_avatar_part(mut multipart: Multipart) -> Result<UploadedAvatarPart
             .await
             .map_err(|_| upload_internal_error("上传失败"))?
             .to_vec();
-        return Ok(UploadedAvatarPart { content_type, bytes });
+        return Ok(UploadedAvatarPart {
+            content_type,
+            bytes,
+        });
     }
 
     Err(AppError::config("请选择图片文件"))
@@ -254,10 +280,13 @@ async fn confirm_avatar_tx(
     }
 
     let old_avatar = get_current_avatar(state, user_id).await?;
-    state.database.execute(
-        "UPDATE characters SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
-        |q| q.bind(avatar_url).bind(user_id),
-    ).await?;
+    state
+        .database
+        .execute(
+            "UPDATE characters SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+            |q| q.bind(avatar_url).bind(user_id),
+        )
+        .await?;
     queue_old_avatar_cleanup(state, old_avatar, Some(avatar_url.to_string())).await?;
     let character = load_upload_character_snapshot(state, user_id).await?;
 
@@ -265,14 +294,17 @@ async fn confirm_avatar_tx(
         success: true,
         message: "头像更新成功".to_string(),
         avatar_url: Some(avatar_url.to_string()),
-        debug_realtime: character
-            .as_ref()
-            .map(|snapshot| build_game_character_delta_payload(snapshot.id, snapshot.avatar.as_deref())),
+        debug_realtime: character.as_ref().map(|snapshot| {
+            build_game_character_delta_payload(snapshot.id, snapshot.avatar.as_deref())
+        }),
         character,
     })
 }
 
-fn confirm_avatar_asset(state: &AppState, avatar_url: &str) -> Result<UploadResultResponse, AppError> {
+fn confirm_avatar_asset(
+    state: &AppState,
+    avatar_url: &str,
+) -> Result<UploadResultResponse, AppError> {
     if !is_valid_managed_avatar_url(state, avatar_url) {
         return Ok(UploadResultResponse {
             success: false,
@@ -298,10 +330,13 @@ async fn update_avatar_tx(
     avatar_url: &str,
 ) -> Result<UploadResultResponse, AppError> {
     let old_avatar = get_current_avatar(state, user_id).await?;
-    state.database.execute(
-        "UPDATE characters SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
-        |q| q.bind(avatar_url).bind(user_id),
-    ).await?;
+    state
+        .database
+        .execute(
+            "UPDATE characters SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2",
+            |q| q.bind(avatar_url).bind(user_id),
+        )
+        .await?;
     queue_old_avatar_cleanup(state, old_avatar, Some(avatar_url.to_string())).await?;
     let character = load_upload_character_snapshot(state, user_id).await?;
 
@@ -309,9 +344,9 @@ async fn update_avatar_tx(
         success: true,
         message: "头像更新成功".to_string(),
         avatar_url: Some(avatar_url.to_string()),
-        debug_realtime: character
-            .as_ref()
-            .map(|snapshot| build_game_character_delta_payload(snapshot.id, snapshot.avatar.as_deref())),
+        debug_realtime: character.as_ref().map(|snapshot| {
+            build_game_character_delta_payload(snapshot.id, snapshot.avatar.as_deref())
+        }),
         character,
     })
 }
@@ -332,9 +367,9 @@ async fn delete_avatar_tx(
         success: true,
         message: "头像删除成功".to_string(),
         avatar_url: None,
-        debug_realtime: character
-            .as_ref()
-            .map(|snapshot| build_game_character_delta_payload(snapshot.id, snapshot.avatar.as_deref())),
+        debug_realtime: character.as_ref().map(|snapshot| {
+            build_game_character_delta_payload(snapshot.id, snapshot.avatar.as_deref())
+        }),
         character,
     })
 }
@@ -343,24 +378,32 @@ async fn load_upload_character_snapshot(
     state: &AppState,
     user_id: i64,
 ) -> Result<Option<UploadCharacterSnapshot>, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT id, avatar FROM characters WHERE user_id = $1 LIMIT 1",
-        |q| q.bind(user_id),
-    ).await?;
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT id, avatar FROM characters WHERE user_id = $1 LIMIT 1",
+            |q| q.bind(user_id),
+        )
+        .await?;
     row.map(|row| {
         Ok(UploadCharacterSnapshot {
-        id: i64::from(row.try_get::<i32, _>("id")?),
+            id: i64::from(row.try_get::<i32, _>("id")?),
             avatar: row.try_get::<Option<String>, _>("avatar")?,
         })
-    }).transpose()
+    })
+    .transpose()
 }
 
 async fn get_current_avatar(state: &AppState, user_id: i64) -> Result<Option<String>, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT avatar FROM characters WHERE user_id = $1",
-        |q| q.bind(user_id),
-    ).await?;
-    Ok(row.and_then(|row| row.try_get::<Option<String>, _>("avatar").ok()).flatten())
+    let row = state
+        .database
+        .fetch_optional("SELECT avatar FROM characters WHERE user_id = $1", |q| {
+            q.bind(user_id)
+        })
+        .await?;
+    Ok(row
+        .and_then(|row| row.try_get::<Option<String>, _>("avatar").ok())
+        .flatten())
 }
 
 async fn queue_old_avatar_cleanup(
@@ -371,16 +414,19 @@ async fn queue_old_avatar_cleanup(
     let outbound_http = state.outbound_http.clone();
     let storage = state.config.storage.clone();
     let cos = state.config.cos.clone();
-    state.database.after_transaction_commit(async move {
-        delete_managed_avatar_if_replaced(
-            &outbound_http,
-            &storage.uploads_dir,
-            &cos,
-            previous_avatar.as_deref(),
-            next_avatar.as_deref(),
-        )
+    state
+        .database
+        .after_transaction_commit(async move {
+            delete_managed_avatar_if_replaced(
+                &outbound_http,
+                &storage.uploads_dir,
+                &cos,
+                previous_avatar.as_deref(),
+                next_avatar.as_deref(),
+            )
+            .await
+        })
         .await
-    }).await
 }
 
 async fn delete_managed_avatar_if_replaced(
@@ -434,16 +480,25 @@ fn is_valid_cos_avatar_url(state: &AppState, avatar_url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(avatar_url) else {
         return false;
     };
-    let default_host = format!("{}.cos.{}.myqcloud.com", state.config.cos.bucket, state.config.cos.region);
+    let default_host = format!(
+        "{}.cos.{}.myqcloud.com",
+        state.config.cos.bucket, state.config.cos.region
+    );
     let allowed_hosts = if state.config.cos.domain.trim().is_empty() {
         vec![default_host]
     } else {
         vec![default_host, state.config.cos.domain.trim().to_string()]
     };
-    if !allowed_hosts.iter().any(|host| host == parsed.host_str().unwrap_or_default()) {
+    if !allowed_hosts
+        .iter()
+        .any(|host| host == parsed.host_str().unwrap_or_default())
+    {
         return false;
     }
-    parsed.path().trim_start_matches('/').starts_with(state.config.cos.avatar_prefix.trim())
+    parsed
+        .path()
+        .trim_start_matches('/')
+        .starts_with(state.config.cos.avatar_prefix.trim())
 }
 
 fn emit_upload_character_realtime(state: &AppState, user_id: i64, result: &UploadResultResponse) {
@@ -457,7 +512,11 @@ fn emit_upload_character_realtime(state: &AppState, user_id: i64, result: &Uploa
 }
 
 fn send_upload_result(result: UploadResultResponse) -> Response {
-    let status = if result.success { StatusCode::OK } else { StatusCode::BAD_REQUEST };
+    let status = if result.success {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
     (status, Json(result)).into_response()
 }
 
@@ -473,8 +532,7 @@ fn upload_internal_error(message: &str) -> AppError {
 mod tests {
     use super::{
         AvatarUploadStsData, LOCAL_AVATAR_UPLOAD_DISABLED_MESSAGE, UploadCharacterSnapshot,
-        UploadResultResponse,
-        normalize_managed_avatar_value,
+        UploadResultResponse, normalize_managed_avatar_value,
     };
     use crate::realtime::socket_protocol::build_game_character_delta_payload;
 
@@ -508,7 +566,10 @@ mod tests {
                 id: 1,
                 avatar: Some("/uploads/avatars/avatar-1.png".to_string()),
             }),
-            debug_realtime: Some(build_game_character_delta_payload(1, Some("/uploads/avatars/avatar-1.png"))),
+            debug_realtime: Some(build_game_character_delta_payload(
+                1,
+                Some("/uploads/avatars/avatar-1.png"),
+            )),
         })
         .expect("payload should serialize");
         assert_eq!(payload["success"], true);
@@ -524,7 +585,10 @@ mod tests {
             success: true,
             message: "头像删除成功".to_string(),
             avatar_url: None,
-            character: Some(UploadCharacterSnapshot { id: 1, avatar: None }),
+            character: Some(UploadCharacterSnapshot {
+                id: 1,
+                avatar: None,
+            }),
             debug_realtime: Some(build_game_character_delta_payload(1, None)),
         })
         .expect("payload should serialize");
@@ -536,12 +600,18 @@ mod tests {
 
     #[test]
     fn local_avatar_upload_disabled_message_matches_contract() {
-        assert_eq!(LOCAL_AVATAR_UPLOAD_DISABLED_MESSAGE, "COS 已启用，请使用预签名直传头像");
+        assert_eq!(
+            LOCAL_AVATAR_UPLOAD_DISABLED_MESSAGE,
+            "COS 已启用，请使用预签名直传头像"
+        );
     }
 
     #[test]
     fn normalize_managed_avatar_value_trims_empty_values() {
-        assert_eq!(normalize_managed_avatar_value(Some("  /uploads/avatars/a.png  ")), Some("/uploads/avatars/a.png".to_string()));
+        assert_eq!(
+            normalize_managed_avatar_value(Some("  /uploads/avatars/a.png  ")),
+            Some("/uploads/avatars/a.png".to_string())
+        );
         assert_eq!(normalize_managed_avatar_value(Some("   ")), None);
     }
 }

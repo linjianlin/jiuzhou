@@ -74,14 +74,24 @@ mod tests {
                 .unwrap_or_default()
         ));
         let avatar_dir = temp_dir.join("avatars");
-        tokio::fs::create_dir_all(&avatar_dir).await.expect("avatar dir should exist");
-        tokio::fs::write(avatar_dir.join("avatar-a.png"), b"a").await.expect("avatar a should write");
-        tokio::fs::write(avatar_dir.join("avatar-b.png"), b"b").await.expect("avatar b should write");
-        tokio::fs::create_dir_all(avatar_dir.join("nested")).await.expect("nested dir should write");
-
-        let deleted = clear_local_avatar_files(&StorageConfig { uploads_dir: temp_dir.clone() })
+        tokio::fs::create_dir_all(&avatar_dir)
             .await
-            .expect("avatar cleanup should succeed");
+            .expect("avatar dir should exist");
+        tokio::fs::write(avatar_dir.join("avatar-a.png"), b"a")
+            .await
+            .expect("avatar a should write");
+        tokio::fs::write(avatar_dir.join("avatar-b.png"), b"b")
+            .await
+            .expect("avatar b should write");
+        tokio::fs::create_dir_all(avatar_dir.join("nested"))
+            .await
+            .expect("nested dir should write");
+
+        let deleted = clear_local_avatar_files(&StorageConfig {
+            uploads_dir: temp_dir.clone(),
+        })
+        .await
+        .expect("avatar cleanup should succeed");
 
         assert_eq!(deleted, 2);
         assert!(avatar_dir.join("nested").exists());

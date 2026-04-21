@@ -134,7 +134,9 @@ pub async fn get_realm_ranks_handler(
     Query(query): Query<RankLimitQuery>,
 ) -> Result<Json<SuccessResponse<Vec<RealmRankRowDto>>>, AppError> {
     let _ = auth::require_auth(&state, &headers).await?;
-    Ok(send_success(load_realm_ranks(&state, clamp_limit(query.limit, 50, 200)).await?))
+    Ok(send_success(
+        load_realm_ranks(&state, clamp_limit(query.limit, 50, 200)).await?,
+    ))
 }
 
 pub async fn get_sect_ranks_handler(
@@ -143,7 +145,9 @@ pub async fn get_sect_ranks_handler(
     Query(query): Query<RankLimitQuery>,
 ) -> Result<Json<SuccessResponse<Vec<SectRankRowDto>>>, AppError> {
     let _ = auth::require_auth(&state, &headers).await?;
-    Ok(send_success(load_sect_ranks(&state, clamp_limit(query.limit, 30, 200)).await?))
+    Ok(send_success(
+        load_sect_ranks(&state, clamp_limit(query.limit, 30, 200)).await?,
+    ))
 }
 
 pub async fn get_wealth_ranks_handler(
@@ -152,7 +156,9 @@ pub async fn get_wealth_ranks_handler(
     Query(query): Query<RankLimitQuery>,
 ) -> Result<Json<SuccessResponse<Vec<WealthRankRowDto>>>, AppError> {
     let _ = auth::require_auth(&state, &headers).await?;
-    Ok(send_success(load_wealth_ranks(&state, clamp_limit(query.limit, 50, 200)).await?))
+    Ok(send_success(
+        load_wealth_ranks(&state, clamp_limit(query.limit, 50, 200)).await?,
+    ))
 }
 
 pub async fn get_arena_ranks_handler(
@@ -161,7 +167,9 @@ pub async fn get_arena_ranks_handler(
     Query(query): Query<RankLimitQuery>,
 ) -> Result<Json<SuccessResponse<Vec<ArenaRankRowDto>>>, AppError> {
     let _ = auth::require_auth(&state, &headers).await?;
-    Ok(send_success(load_arena_ranks(&state, clamp_limit(query.limit, 50, 200)).await?))
+    Ok(send_success(
+        load_arena_ranks(&state, clamp_limit(query.limit, 50, 200)).await?,
+    ))
 }
 
 pub async fn get_partner_ranks_handler(
@@ -171,7 +179,9 @@ pub async fn get_partner_ranks_handler(
 ) -> Result<Json<SuccessResponse<Vec<PartnerRankRowDto>>>, AppError> {
     let _ = auth::require_auth(&state, &headers).await?;
     let metric = normalize_partner_metric(query.metric.as_deref()).unwrap_or("level");
-    Ok(send_success(load_partner_ranks(&state, metric, clamp_limit(query.limit, 50, 200)).await?))
+    Ok(send_success(
+        load_partner_ranks(&state, metric, clamp_limit(query.limit, 50, 200)).await?,
+    ))
 }
 
 async fn load_realm_ranks(state: &AppState, limit: i64) -> Result<Vec<RealmRankRowDto>, AppError> {
@@ -179,36 +189,108 @@ async fn load_realm_ranks(state: &AppState, limit: i64) -> Result<Vec<RealmRankR
         "SELECT ROW_NUMBER() OVER (ORDER BY realm_rank DESC, power DESC, character_id ASC)::bigint AS rank, crs.character_id, crs.nickname AS name, c.title, c.avatar, crs.realm, crs.power FROM character_rank_snapshot crs JOIN characters c ON c.id = crs.character_id WHERE crs.nickname <> '' ORDER BY rank LIMIT $1",
         |query| query.bind(limit),
     ).await?;
-    let month_map = load_month_card_active_map_by_character_ids(state, rows.iter().filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten()).collect()).await?;
-    Ok(rows.into_iter().map(|row| RealmRankRowDto {
-        rank: row.try_get::<Option<i64>, _>("rank").unwrap_or(None).unwrap_or_default(),
-        character_id: opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default(),
-        name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-        title: row.try_get::<Option<String>, _>("title").unwrap_or(None).unwrap_or_default(),
-        avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
-        month_card_active: month_map.get(&opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default()).copied().unwrap_or(false),
-        realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-        power: row.try_get::<Option<i64>, _>("power").unwrap_or(None).unwrap_or_default(),
-    }).collect())
+    let month_map = load_month_card_active_map_by_character_ids(
+        state,
+        rows.iter()
+            .filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten())
+            .collect(),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| RealmRankRowDto {
+            rank: row
+                .try_get::<Option<i64>, _>("rank")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            character_id: opt_i64_from_i32(&row, "character_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            name: row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            title: row
+                .try_get::<Option<String>, _>("title")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
+            month_card_active: month_map
+                .get(
+                    &opt_i64_from_i32(&row, "character_id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                )
+                .copied()
+                .unwrap_or(false),
+            realm: row
+                .try_get::<Option<String>, _>("realm")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            power: row
+                .try_get::<Option<i64>, _>("power")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        })
+        .collect())
 }
 
-async fn load_wealth_ranks(state: &AppState, limit: i64) -> Result<Vec<WealthRankRowDto>, AppError> {
+async fn load_wealth_ranks(
+    state: &AppState,
+    limit: i64,
+) -> Result<Vec<WealthRankRowDto>, AppError> {
     let rows = state.database.fetch_all(
         "SELECT ROW_NUMBER() OVER (ORDER BY spirit_stones DESC, silver DESC, id ASC)::bigint AS rank, id AS character_id, nickname AS name, title, avatar, realm, COALESCE(spirit_stones, 0)::bigint AS spirit_stones, COALESCE(silver, 0)::bigint AS silver FROM characters WHERE nickname IS NOT NULL AND nickname <> '' ORDER BY rank LIMIT $1",
         |query| query.bind(limit),
     ).await?;
-    let month_map = load_month_card_active_map_by_character_ids(state, rows.iter().filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten()).collect()).await?;
-    Ok(rows.into_iter().map(|row| WealthRankRowDto {
-        rank: row.try_get::<Option<i64>, _>("rank").unwrap_or(None).unwrap_or_default(),
-        character_id: opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default(),
-        name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-        title: row.try_get::<Option<String>, _>("title").unwrap_or(None).unwrap_or_default(),
-        avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
-        month_card_active: month_map.get(&opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default()).copied().unwrap_or(false),
-        realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-        spirit_stones: row.try_get::<Option<i64>, _>("spirit_stones").unwrap_or(None).unwrap_or_default(),
-        silver: row.try_get::<Option<i64>, _>("silver").unwrap_or(None).unwrap_or_default(),
-    }).collect())
+    let month_map = load_month_card_active_map_by_character_ids(
+        state,
+        rows.iter()
+            .filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten())
+            .collect(),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| WealthRankRowDto {
+            rank: row
+                .try_get::<Option<i64>, _>("rank")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            character_id: opt_i64_from_i32(&row, "character_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            name: row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            title: row
+                .try_get::<Option<String>, _>("title")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
+            month_card_active: month_map
+                .get(
+                    &opt_i64_from_i32(&row, "character_id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                )
+                .copied()
+                .unwrap_or(false),
+            realm: row
+                .try_get::<Option<String>, _>("realm")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            spirit_stones: row
+                .try_get::<Option<i64>, _>("spirit_stones")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            silver: row
+                .try_get::<Option<i64>, _>("silver")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        })
+        .collect())
 }
 
 async fn load_sect_ranks(state: &AppState, limit: i64) -> Result<Vec<SectRankRowDto>, AppError> {
@@ -216,18 +298,48 @@ async fn load_sect_ranks(state: &AppState, limit: i64) -> Result<Vec<SectRankRow
         "SELECT ROW_NUMBER() OVER ( ORDER BY sd.level DESC, sd.member_count DESC, COALESCE(sd.reputation, 0) DESC, COALESCE(sd.funds, 0) DESC, sd.created_at ASC )::bigint AS rank, sd.name, sd.level::bigint AS level, sd.leader_id, COALESCE(c.nickname, '—') AS leader, sd.member_count::bigint AS members, sd.max_members::bigint AS member_cap, ( sd.level::bigint * 100000 + sd.member_count::bigint * 1000 + COALESCE(sd.reputation, 0)::bigint + (COALESCE(sd.funds, 0)::bigint / 10) )::bigint AS power FROM sect_def sd LEFT JOIN characters c ON c.id = sd.leader_id ORDER BY rank LIMIT $1",
         |query| query.bind(limit),
     ).await?;
-    let leader_ids: Vec<i64> = rows.iter().filter_map(|row| opt_i64_from_i32(row, "leader_id").ok().flatten()).collect();
+    let leader_ids: Vec<i64> = rows
+        .iter()
+        .filter_map(|row| opt_i64_from_i32(row, "leader_id").ok().flatten())
+        .collect();
     let month_map = load_month_card_active_map_by_character_ids(state, leader_ids).await?;
-    Ok(rows.into_iter().map(|row| SectRankRowDto {
-        rank: row.try_get::<Option<i64>, _>("rank").unwrap_or(None).unwrap_or_default(),
-        name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-        level: row.try_get::<Option<i64>, _>("level").unwrap_or(None).unwrap_or_default(),
-        leader: row.try_get::<Option<String>, _>("leader").unwrap_or(None).unwrap_or_else(|| "—".to_string()),
-        leader_month_card_active: opt_i64_from_i32(&row, "leader_id").unwrap_or(None).and_then(|id| month_map.get(&id).copied()).unwrap_or(false),
-        members: row.try_get::<Option<i64>, _>("members").unwrap_or(None).unwrap_or_default(),
-        member_cap: row.try_get::<Option<i64>, _>("member_cap").unwrap_or(None).unwrap_or_default(),
-        power: row.try_get::<Option<i64>, _>("power").unwrap_or(None).unwrap_or_default(),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| SectRankRowDto {
+            rank: row
+                .try_get::<Option<i64>, _>("rank")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            name: row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            level: row
+                .try_get::<Option<i64>, _>("level")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            leader: row
+                .try_get::<Option<String>, _>("leader")
+                .unwrap_or(None)
+                .unwrap_or_else(|| "—".to_string()),
+            leader_month_card_active: opt_i64_from_i32(&row, "leader_id")
+                .unwrap_or(None)
+                .and_then(|id| month_map.get(&id).copied())
+                .unwrap_or(false),
+            members: row
+                .try_get::<Option<i64>, _>("members")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            member_cap: row
+                .try_get::<Option<i64>, _>("member_cap")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            power: row
+                .try_get::<Option<i64>, _>("power")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        })
+        .collect())
 }
 
 async fn load_arena_ranks(state: &AppState, limit: i64) -> Result<Vec<ArenaRankRowDto>, AppError> {
@@ -235,22 +347,65 @@ async fn load_arena_ranks(state: &AppState, limit: i64) -> Result<Vec<ArenaRankR
         "SELECT ROW_NUMBER() OVER (ORDER BY score DESC, win_count DESC, lose_count ASC, character_id ASC)::bigint AS rank, character_id, name, title, avatar, realm, score::bigint AS score, win_count::bigint AS win_count, lose_count::bigint AS lose_count FROM ( SELECT c.id AS character_id, COALESCE(NULLIF(c.nickname, ''), CONCAT('修士', c.id::text)) AS name, c.title, c.avatar, c.realm, COALESCE(ar.rating, 1000)::int AS score, COALESCE(ar.win_count, 0)::int AS win_count, COALESCE(ar.lose_count, 0)::int AS lose_count FROM characters c LEFT JOIN arena_rating ar ON ar.character_id = c.id ) t ORDER BY rank LIMIT $1",
         |query| query.bind(limit),
     ).await?;
-    let month_map = load_month_card_active_map_by_character_ids(state, rows.iter().filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten()).collect()).await?;
-    Ok(rows.into_iter().map(|row| ArenaRankRowDto {
-        rank: row.try_get::<Option<i64>, _>("rank").unwrap_or(None).unwrap_or_default(),
-        character_id: opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default(),
-        name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-        title: row.try_get::<Option<String>, _>("title").unwrap_or(None).unwrap_or_default(),
-        avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
-        month_card_active: month_map.get(&opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default()).copied().unwrap_or(false),
-        realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-        score: row.try_get::<Option<i64>, _>("score").unwrap_or(None).unwrap_or_default(),
-        win_count: row.try_get::<Option<i64>, _>("win_count").unwrap_or(None).unwrap_or_default(),
-        lose_count: row.try_get::<Option<i64>, _>("lose_count").unwrap_or(None).unwrap_or_default(),
-    }).collect())
+    let month_map = load_month_card_active_map_by_character_ids(
+        state,
+        rows.iter()
+            .filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten())
+            .collect(),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| ArenaRankRowDto {
+            rank: row
+                .try_get::<Option<i64>, _>("rank")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            character_id: opt_i64_from_i32(&row, "character_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            name: row
+                .try_get::<Option<String>, _>("name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            title: row
+                .try_get::<Option<String>, _>("title")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
+            month_card_active: month_map
+                .get(
+                    &opt_i64_from_i32(&row, "character_id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                )
+                .copied()
+                .unwrap_or(false),
+            realm: row
+                .try_get::<Option<String>, _>("realm")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            score: row
+                .try_get::<Option<i64>, _>("score")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            win_count: row
+                .try_get::<Option<i64>, _>("win_count")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            lose_count: row
+                .try_get::<Option<i64>, _>("lose_count")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        })
+        .collect())
 }
 
-async fn load_partner_ranks(state: &AppState, metric: &str, limit: i64) -> Result<Vec<PartnerRankRowDto>, AppError> {
+async fn load_partner_ranks(
+    state: &AppState,
+    metric: &str,
+    limit: i64,
+) -> Result<Vec<PartnerRankRowDto>, AppError> {
     let order_sql = if metric == "power" {
         "prs.power DESC, prs.level DESC, prs.partner_id ASC"
     } else {
@@ -262,21 +417,65 @@ async fn load_partner_ranks(state: &AppState, metric: &str, limit: i64) -> Resul
         ),
         |query| query.bind(limit),
     ).await?;
-    let month_map = load_month_card_active_map_by_character_ids(state, rows.iter().filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten()).collect()).await?;
-    Ok(rows.into_iter().map(|row| PartnerRankRowDto {
-        rank: row.try_get::<Option<i64>, _>("rank").unwrap_or(None).unwrap_or_default(),
-        partner_id: opt_i64_from_i32(&row, "partner_id").unwrap_or(None).unwrap_or_default(),
-        character_id: opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default(),
-        owner_name: row.try_get::<Option<String>, _>("owner_name").unwrap_or(None).unwrap_or_default(),
-        owner_month_card_active: month_map.get(&opt_i64_from_i32(&row, "character_id").unwrap_or(None).unwrap_or_default()).copied().unwrap_or(false),
-        partner_name: row.try_get::<Option<String>, _>("partner_name").unwrap_or(None).unwrap_or_default(),
-        avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
-        quality: row.try_get::<Option<String>, _>("quality").unwrap_or(None).unwrap_or_default(),
-        element: row.try_get::<Option<String>, _>("element").unwrap_or(None).unwrap_or_default(),
-        role: row.try_get::<Option<String>, _>("role").unwrap_or(None).unwrap_or_default(),
-        level: row.try_get::<Option<i64>, _>("level").unwrap_or(None).unwrap_or_default(),
-        power: row.try_get::<Option<i64>, _>("power").unwrap_or(None).unwrap_or_default(),
-    }).collect())
+    let month_map = load_month_card_active_map_by_character_ids(
+        state,
+        rows.iter()
+            .filter_map(|row| opt_i64_from_i32(row, "character_id").ok().flatten())
+            .collect(),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PartnerRankRowDto {
+            rank: row
+                .try_get::<Option<i64>, _>("rank")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            partner_id: opt_i64_from_i32(&row, "partner_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            character_id: opt_i64_from_i32(&row, "character_id")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            owner_name: row
+                .try_get::<Option<String>, _>("owner_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            owner_month_card_active: month_map
+                .get(
+                    &opt_i64_from_i32(&row, "character_id")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                )
+                .copied()
+                .unwrap_or(false),
+            partner_name: row
+                .try_get::<Option<String>, _>("partner_name")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            avatar: row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
+            quality: row
+                .try_get::<Option<String>, _>("quality")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            element: row
+                .try_get::<Option<String>, _>("element")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            role: row
+                .try_get::<Option<String>, _>("role")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            level: row
+                .try_get::<Option<i64>, _>("level")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+            power: row
+                .try_get::<Option<i64>, _>("power")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        })
+        .collect())
 }
 
 async fn load_month_card_active_map_by_character_ids(
@@ -292,10 +491,14 @@ async fn load_month_card_active_map_by_character_ids(
         |query| query.bind(ids.clone()),
     ).await?;
     let mut out = HashMap::new();
-    for id in ids { out.insert(id, false); }
+    for id in ids {
+        out.insert(id, false);
+    }
     for row in rows {
         let character_id = opt_i64_from_i32(&row, "character_id")?.unwrap_or_default();
-        if character_id > 0 { out.insert(character_id, true); }
+        if character_id > 0 {
+            out.insert(character_id, true);
+        }
     }
     Ok(out)
 }

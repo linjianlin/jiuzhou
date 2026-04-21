@@ -1,14 +1,17 @@
-use base64::Engine;
 use axum::Json;
 use axum::extract::{ConnectInfo, State};
 use axum::http::HeaderMap;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::net::SocketAddr;
 
 use crate::auth::{self, AuthTokenPayload};
 use crate::config::CaptchaProvider;
-use crate::http::security::{AttemptAction, assert_action_attempt_allowed, clear_action_attempt_failures, enforce_qps_limit, record_action_attempt_failure};
+use crate::http::security::{
+    AttemptAction, assert_action_attempt_allowed, clear_action_attempt_failures, enforce_qps_limit,
+    record_action_attempt_failure,
+};
 use crate::integrations::redis::RedisRuntime;
 use crate::integrations::tencent_captcha;
 use crate::shared::error::AppError;
@@ -92,7 +95,9 @@ pub async fn get_captcha_config(
     })
 }
 
-pub async fn get_captcha(State(state): State<AppState>) -> Result<Json<crate::shared::response::SuccessResponse<CaptchaChallenge>>, AppError> {
+pub async fn get_captcha(
+    State(state): State<AppState>,
+) -> Result<Json<crate::shared::response::SuccessResponse<CaptchaChallenge>>, AppError> {
     if state.config.captcha.provider == CaptchaProvider::Tencent {
         return Err(AppError::config("当前验证码模式不支持此操作"));
     }
@@ -139,14 +144,21 @@ pub async fn register(
         "认证请求过于频繁，请稍后再试",
     )
     .await?;
-    let username = payload.username.clone().unwrap_or_default().trim().to_string();
+    let username = payload
+        .username
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let password = payload.password.clone().unwrap_or_default();
     validate_auth_input(&username, &password)?;
     verify_local_captcha_if_present(&state, &payload, &request_ip).await?;
 
     let existing = state
         .database
-        .fetch_optional("SELECT id FROM users WHERE username = $1", |query| query.bind(&username))
+        .fetch_optional("SELECT id FROM users WHERE username = $1", |query| {
+            query.bind(&username)
+        })
         .await?;
     if existing.is_some() {
         return Ok(send_result(ServiceResult::<AuthSuccessData> {
@@ -181,7 +193,10 @@ pub async fn register(
         success: true,
         message: Some("注册成功".to_string()),
         data: Some(AuthSuccessData {
-            user: AuthUserDto { id: user_id, username },
+            user: AuthUserDto {
+                id: user_id,
+                username,
+            },
             token,
             session_token: String::new(),
         }),
@@ -204,7 +219,12 @@ pub async fn login(
         "认证请求过于频繁，请稍后再试",
     )
     .await?;
-    let username = payload.username.clone().unwrap_or_default().trim().to_string();
+    let username = payload
+        .username
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let password = payload.password.clone().unwrap_or_default();
     validate_auth_input(&username, &password)?;
     assert_action_attempt_allowed(&state, AttemptAction::Login, &username, &request_ip).await?;
@@ -274,7 +294,10 @@ pub async fn login(
         success: true,
         message: Some("登录成功".to_string()),
         data: Some(AuthSuccessData {
-            user: AuthUserDto { id: user_id, username },
+            user: AuthUserDto {
+                id: user_id,
+                username,
+            },
             token,
             session_token,
         }),
@@ -331,7 +354,11 @@ async fn verify_local_captcha_if_present(
     match state.config.captcha.provider {
         CaptchaProvider::Tencent => {
             let ticket = payload.ticket.as_deref().map(str::trim).unwrap_or_default();
-            let randstr = payload.randstr.as_deref().map(str::trim).unwrap_or_default();
+            let randstr = payload
+                .randstr
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default();
             if ticket.is_empty() || randstr.is_empty() {
                 return Err(AppError::config("验证码票据不能为空"));
             }
@@ -347,7 +374,12 @@ async fn verify_local_captcha_if_present(
         CaptchaProvider::Local => {}
     }
 
-    let Some(captcha_id) = payload.captcha_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(captcha_id) = payload
+        .captcha_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Err(AppError::config("图片验证码不能为空"));
     };
     let captcha_code = payload
@@ -369,7 +401,10 @@ async fn verify_local_captcha_if_present(
     redis.del(&key).await?;
     let stored: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|error| AppError::config(format!("failed to decode captcha payload: {error}")))?;
-    let answer = stored["answer"].as_str().unwrap_or_default().to_ascii_uppercase();
+    let answer = stored["answer"]
+        .as_str()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
     let expires_at = stored["expiresAt"].as_u64().unwrap_or_default();
     if expires_at < now_secs() {
         return Err(AppError::config("图片验证码已失效，请重新获取"));

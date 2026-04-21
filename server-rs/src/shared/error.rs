@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -113,7 +113,10 @@ impl IntoResponse for AppError {
 
         let message = self.to_string();
         tracing::error!(%message, "request failed");
-        eprintln!("APP_ERROR_RESPONSE={message}\nBACKTRACE={}", std::backtrace::Backtrace::capture());
+        eprintln!(
+            "APP_ERROR_RESPONSE={message}\nBACKTRACE={}",
+            std::backtrace::Backtrace::capture()
+        );
 
         let extra = match self {
             Self::Business { extra, .. } => extra,
