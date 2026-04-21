@@ -623,13 +623,13 @@ mod tests {
     use super::{
         ArenaBattleSettlementTaskPayload, DungeonClearSettlementTaskPayload,
         DungeonSettlementRewardRecipient, GenericPveSettlementTaskPayload,
-        ONLINE_BATTLE_SETTLEMENT_BATTLE_INDEX_SQL,
-        ONLINE_BATTLE_SETTLEMENT_STATUS_INDEX_SQL,
-        ONLINE_BATTLE_SETTLEMENT_TABLE_SQL, OnlineBattleSettlementTaskKind,
-        TowerWinSettlementTaskPayload,
+        OnlineBattleSettlementTaskKind, TowerWinSettlementTaskPayload,
         compute_arena_rating_change, load_dungeon_first_clear_reward_items,
     };
     use crate::battle_runtime::MinimalBattleRewardItemDto;
+
+    const ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL: &str =
+        include_str!("../../migrations/20260421145500_ensure_online_battle_settlement_task.sql");
 
     #[test]
     fn dungeon_settlement_payload_serializes_minimal_shape() {
@@ -721,12 +721,12 @@ mod tests {
     }
 
     #[test]
-    fn settlement_schema_sql_covers_required_columns_and_indexes() {
-        assert!(ONLINE_BATTLE_SETTLEMENT_TABLE_SQL.contains("CREATE TABLE IF NOT EXISTS online_battle_settlement_task"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_TABLE_SQL.contains("id VARCHAR(128) PRIMARY KEY"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_TABLE_SQL.contains("payload JSONB NOT NULL"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_TABLE_SQL.contains("updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW()"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_STATUS_INDEX_SQL.contains("idx_online_battle_settlement_status"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_BATTLE_INDEX_SQL.contains("idx_online_battle_settlement_battle"));
+    fn settlement_schema_migration_covers_required_columns_and_indexes() {
+        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("CREATE TABLE IF NOT EXISTS public.online_battle_settlement_task"));
+        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("id character varying(128) PRIMARY KEY"));
+        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("payload jsonb NOT NULL"));
+        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("updated_at timestamp(6) with time zone DEFAULT now() NOT NULL"));
+        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("idx_online_battle_settlement_status"));
+        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("idx_online_battle_settlement_battle"));
     }
 }
