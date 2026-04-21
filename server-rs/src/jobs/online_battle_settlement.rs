@@ -16,9 +16,6 @@ use crate::state::AppState;
 
 const ONLINE_BATTLE_SETTLEMENT_TICK_MS: u64 = 1_500;
 const ONLINE_BATTLE_SETTLEMENT_STALE_RUNNING_SEC: i64 = 600;
-const ONLINE_BATTLE_SETTLEMENT_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS online_battle_settlement_task (id VARCHAR(128) PRIMARY KEY, battle_id VARCHAR(128) NOT NULL, kind VARCHAR(64) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'pending', attempt_count INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 5, payload JSONB NOT NULL, error_message TEXT, created_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW())";
-const ONLINE_BATTLE_SETTLEMENT_STATUS_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_online_battle_settlement_status ON online_battle_settlement_task (status, updated_at ASC)";
-const ONLINE_BATTLE_SETTLEMENT_BATTLE_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_online_battle_settlement_battle ON online_battle_settlement_task (battle_id)";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -132,35 +129,6 @@ pub struct OnlineBattleSettlementTaskRow {
     pub payload: serde_json::Value,
 }
 
-pub async fn online_battle_settlement_schema_exists(state: &AppState) -> Result<bool, AppError> {
-    let row = state
-        .database
-        .fetch_optional(
-            "SELECT to_regclass('public.online_battle_settlement_task') AS regclass_name",
-            |q| q,
-        )
-        .await?;
-    Ok(row
-        .and_then(|row| row.try_get::<Option<String>, _>("regclass_name").ok().flatten())
-        .is_some())
-}
-
-pub async fn ensure_online_battle_settlement_schema(state: &AppState) -> Result<(), AppError> {
-    state
-        .database
-        .execute(ONLINE_BATTLE_SETTLEMENT_TABLE_SQL, |q| q)
-        .await?;
-    state
-        .database
-        .execute(ONLINE_BATTLE_SETTLEMENT_STATUS_INDEX_SQL, |q| q)
-        .await?;
-    state
-        .database
-        .execute(ONLINE_BATTLE_SETTLEMENT_BATTLE_INDEX_SQL, |q| q)
-        .await?;
-    Ok(())
-}
-
 pub async fn enqueue_dungeon_clear_settlement_task(
     state: &AppState,
     battle_id: &str,
@@ -226,7 +194,6 @@ pub async fn enqueue_tower_win_settlement_task(
 }
 
 pub async fn recover_pending_online_battle_settlement_tasks(state: AppState) -> anyhow::Result<()> {
-    ensure_online_battle_settlement_schema(&state).await?;
     state.database.execute(
         "UPDATE online_battle_settlement_task SET status = 'failed', error_message = COALESCE(error_message, 'stale running task recovered'), updated_at = NOW() WHERE status = 'running' AND updated_at <= NOW() - (($1::text || ' seconds')::interval)",
         |q| q.bind(ONLINE_BATTLE_SETTLEMENT_STALE_RUNNING_SEC),

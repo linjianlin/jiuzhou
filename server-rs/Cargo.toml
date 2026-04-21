@@ -25,7 +25,7 @@ serde_json = "1.0"
 sha2 = "0.10"
 rand = "0.8"
 socketioxide = "0.18"
-sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls", "migrate", "macros"] }
 thiserror = "2.0"
 time = { version = "0.3", features = ["formatting", "macros"] }
 tokio = { version = "1.48", features = ["fs", "macros", "rt-multi-thread", "signal", "time"] }

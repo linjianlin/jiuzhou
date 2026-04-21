@@ -1174,33 +1174,6 @@ fn now_millis() -> u64 {
         .unwrap_or_default()
 }
 
-fn load_technique_def_map_for_market() -> Result<BTreeMap<String, serde_json::Value>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    let techniques = payload.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(techniques.into_iter().filter_map(|row| row.get("id").and_then(|v| v.as_str()).map(|id| (id.to_string(), row.clone()))).collect())
-}
-
-fn load_skill_def_map_for_market() -> Result<BTreeMap<String, serde_json::Value>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/skill_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read skill_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse skill_def.json: {error}")))?;
-    let skills = payload.get("skills").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(skills.into_iter().filter_map(|row| row.get("id").and_then(|v| v.as_str()).map(|id| (id.to_string(), row.clone()))).collect())
-}
-
-fn load_technique_layers_for_market(technique_id: &str) -> Result<Vec<serde_json::Value>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_layer.json"))
-        .map_err(|error| AppError::config(format!("failed to read technique_layer.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_layer.json [market.rs]: {error}")))?;
-    let layers = payload.get("layers").and_then(|value| value.as_array()).cloned().unwrap_or_default();
-    Ok(layers.into_iter().filter(|row| row.get("technique_id").and_then(|v| v.as_str()) == Some(technique_id)).collect())
-}
-
 async fn cancel_partner_market_listing_tx(
     state: &AppState,
     character_id: i64,
@@ -1698,7 +1671,6 @@ async fn build_market_partner_snapshot(
     realm: &str,
     sub_realm: &str,
 ) -> Result<serde_json::Value, AppError> {
-    let defs = load_market_partner_def_map()?;
     let growth_cfg = load_market_partner_growth_config()?;
     let def = load_market_partner_def_resolved(state, row.partner_def_id.trim()).await?
         .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;

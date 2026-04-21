@@ -4,7 +4,6 @@ use anyhow::Result;
 use sqlx::Row;
 use tokio::time::{Duration, sleep};
 
-use crate::jobs::online_battle_settlement::ensure_online_battle_settlement_schema;
 use crate::state::AppState;
 
 const PREPARING_DUNGEON_EXPIRE_HOURS: i64 = 6;
@@ -68,7 +67,6 @@ pub fn spawn_dungeon_expired_instance_cleanup_loop(state: AppState) {
 async fn load_protected_dungeon_instance_ids(
     state: &AppState,
 ) -> Result<BTreeSet<String>> {
-    ensure_online_battle_settlement_schema(state).await?;
     let rows = state
         .database
         .fetch_all(

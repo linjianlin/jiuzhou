@@ -16,9 +16,6 @@ use crate::jobs::battle_expired_cleanup::run_battle_expired_cleanup_once;
 use crate::jobs::dungeon_cleanup::run_dungeon_expired_instance_cleanup_once;
 use crate::jobs::idle_history_cleanup::run_idle_history_cleanup_once;
 use crate::jobs::mail_history_cleanup::run_mail_history_cleanup_once;
-use crate::jobs::online_battle_settlement::{
-    ensure_online_battle_settlement_schema, online_battle_settlement_schema_exists,
-};
 use crate::jobs::partner_recruit_draft_cleanup::run_partner_recruit_draft_cleanup_once;
 use crate::jobs::technique_draft_cleanup::run_technique_draft_cleanup_once;
 use crate::jobs::tower_frozen_pool::warmup_frozen_tower_pool_cache;
@@ -73,6 +70,16 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
     tracing::info!("→ database probe");
     let database = database::connect(&config.database).await?;
     tracing::info!("✓ database ready");
+
+    tracing::info!("→ sqlx schema migration");
+    let migration_summary = database.apply_migrations().await?;
+    tracing::info!(
+        adopted_existing_schema_as_baseline = migration_summary.adopted_existing_schema_as_baseline,
+        previously_applied_migration_count = migration_summary.previously_applied_migration_count,
+        total_applied_migration_count = migration_summary.total_applied_migration_count,
+        newly_applied_migration_count = migration_summary.newly_applied_migration_count,
+        "✓ sqlx schema migration complete"
+    );
 
     tracing::info!("→ redis probe");
     let (redis_client, redis_available) = redis::connect(&config.redis).await?;
@@ -144,17 +151,6 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
         rebuilt_index_count = performance_index_summary.rebuilt_index_count,
         "✓ performance index sync complete"
     );
-
-    tracing::info!("→ online battle settlement schema check");
-    let settlement_schema_existed = online_battle_settlement_schema_exists(&state).await?;
-    ensure_online_battle_settlement_schema(&state).await?;
-    if settlement_schema_existed {
-        tracing::info!("✓ online battle settlement schema ready");
-    } else {
-        tracing::warn!(
-            "⚠ online battle settlement schema was missing and has been auto-created; if Node Prisma sync and Rust startup use different DATABASE_URL values, please align server/.env and server-rs/.env"
-        );
-    }
 
     tracing::info!("→ expired dungeon instance cleanup");
     let dungeon_cleanup_summary = run_dungeon_expired_instance_cleanup_once(&state).await?;

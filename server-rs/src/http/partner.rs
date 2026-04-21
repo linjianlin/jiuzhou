@@ -40,7 +40,6 @@ fn opt_i64_from_i32_default(row: &sqlx::postgres::PgRow, column: &str, default: 
         .unwrap_or(default)
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct PartnerPreviewQuery {
     #[serde(rename = "partnerId")]
@@ -3728,7 +3727,6 @@ async fn build_partner_details_with_generated(
             .ok_or_else(|| AppError::config(format!("伙伴模板不存在: {}", row.partner_def_id)))?;
         let effective_level = resolve_partner_effective_level(&owner.realm, &owner.sub_realm, row.level);
         let techniques = build_partner_techniques_with_generated(state, &def, technique_map.get(&row.id).cloned().unwrap_or_default()).await?;
-        let computed = build_partner_computed_attrs(&def, &row, effective_level, &techniques);
         out.push(PartnerDetailDto {
             id: row.id,
             partner_def_id: def.id.clone(),

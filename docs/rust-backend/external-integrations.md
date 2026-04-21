@@ -35,7 +35,6 @@
 ## 6. 权威配置样例
 
 - 当前 `.env` 基线：`server-rs/.env.example`
-- phase 7 本地验证：`docs/rust-backend/phase-7-verification.md`
 
 ## 7. 当前约束
 

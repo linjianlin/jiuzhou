@@ -14,6 +14,17 @@
 
 ### 开发环境
 
+Rust 后端在本地编译时依赖系统 C 工具链；如果缺少 `cc`，`cargo build` / `pnpm dev` 会在依赖编译阶段失败。
+
+- Debian / Ubuntu: `sudo apt update && sudo apt install -y build-essential pkg-config`
+- Fedora / RHEL: `sudo dnf install -y gcc gcc-c++ make pkgconf-pkg-config`
+- Arch: `sudo pacman -S --needed base-devel pkgconf`
+- Alpine: `sudo apk add --no-cache build-base pkgconf`
+
+安装完成后先确认 `cargo --version` 和 `cc --version` 都可用，再启动开发环境。
+
+当前仓库锁定依赖需要 Rust 1.88；如果本机 Rust 版本更低，请执行 `rustup toolchain install 1.88.0 && rustup default 1.88.0`，或至少升级到兼容版本。
+
 ```bash
 # 安装依赖
 pnpm install

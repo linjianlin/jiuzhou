@@ -17,13 +17,6 @@ use crate::shared::error::AppError;
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
 use crate::state::{AppState, OnlineBattleProjectionRecord};
 
-fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
-    row.try_get::<Option<i32>, _>(column)
-        .unwrap_or(None)
-        .map(i64::from)
-        .unwrap_or_default()
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct DungeonCategoryDto {
     pub r#type: String,

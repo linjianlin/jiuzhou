@@ -24,13 +24,6 @@ use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_ok, send_success};
 use crate::state::AppState;
 
-fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
-    row.try_get::<Option<i32>, _>(column)
-        .unwrap_or(None)
-        .map(i64::from)
-        .unwrap_or_default()
-}
-
 const DEFAULT_IDLE_DURATION_MS: i64 = 3_600_000;
 const MIN_IDLE_DURATION_MS: i64 = 60_000;
 const BASE_IDLE_MAX_DURATION_MS: i64 = 28_800_000;

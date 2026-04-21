@@ -20,20 +20,6 @@ use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_coun
 use crate::shared::response::{ServiceResult, send_result};
 use crate::state::AppState;
 
-fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
-    row.try_get::<Option<i32>, _>(column)
-        .unwrap_or(None)
-        .map(i64::from)
-        .unwrap_or_default()
-}
-
-fn opt_i64_from_i32_default(row: &sqlx::postgres::PgRow, column: &str, default: i64) -> i64 {
-    row.try_get::<Option<i32>, _>(column)
-        .unwrap_or(None)
-        .map(i64::from)
-        .unwrap_or(default)
-}
-
 const TECHNIQUE_RESEARCH_REFUND_MAIL_TITLE: &str = "洞府研修退款通知";
 const TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID: &str = "mat-gongfa-canye";
 const TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID: &str = "token-005";

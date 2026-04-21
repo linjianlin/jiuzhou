@@ -446,17 +446,7 @@
 ### 5.7 最近同步补充（phase 7 baseline）
 
 - [x] 仓库根目录已新增 `docker-compose.local-fixture.yml`，提供本地 `Postgres + Redis` fixture 基线（`postgresql://postgres:postgres@localhost:5432/jiuzhou` / `redis://127.0.0.1:6379`），用于把 `server-rs/src/http/routes.rs` 中大量 `SKIPPED_DB_UNAVAILABLE` 的 success-path skeleton 推进到可实际执行的本地环境。
-- [x] 已新增 `docs/rust-backend/phase-7-verification.md`，明确说明本地 fixture 的启动方式、推荐环境变量，以及 Afdian/Wander/Socket 高风险命令入口。
-- [x] 已新增 `scripts/run-server-rs-phase7.sh`，把本地 fixture compose 校验、按需的 `docker/pnpm` 前置检查、`docker compose ... up -d postgres redis` + readiness wait、默认 `DATABASE_URL / REDIS_URL` 注入、`pnpm --filter ./server db:sync` 建库/建表步骤，以及 `afdian / wander / socket / idle / mail / inventory / market / battle / task / achievement / team / sect / arena / upload / all` 分组 ignored 测试入口串成一条可执行脚本；脚本现在还会直接按 `server-rs/src/http/routes.rs` 里真实存在的 环境依赖测试名动态生成命令，并输出本轮 matrix summary（分组、命令数量、`selected_ignored_tests`、`routes_ignored_tests`、`routes_skipped_db_unavailable_markers`、`routes_ignored_pg_only / routes_ignored_pg_redis / routes_ignored_pg_ai`，以及同时给出全量 `routes_module_distribution` 与本次选中的 `selected_module_distribution`），减少 phase 7 基线仍停留在“只给文档、不提供可审计执行入口”的落差。
-- [x] `scripts/run-server-rs-phase7.sh` 现在在 `--skip-fixture-up` 模式下不会再无条件执行 `docker compose ... config`；这让“远端已有 DB/Redis，只想直接跑动态矩阵”的场景不再被本地 Docker 依赖误拦住。
-- [x] `scripts/run-server-rs-phase7.sh` 现在在 `--skip-fixture-up` 且非 dry-run 模式下还会先对 `DATABASE_URL / REDIS_URL` 做最小 TCP reachability 检查，尽量把“远端环境根本不可达”的失败前移到测试启动前。
-- [x] `scripts/run-server-rs-phase7.sh` 现在会按 `--gate` 精细化远端 reachability 检查目标：`pg-only / pg-ai` 只探测 `DATABASE_URL`，`pg-redis / all` 才同时探测 `DATABASE_URL + REDIS_URL`，避免在当前 gate 并不需要 Redis 时被无关前置检查误拦住。
-- [x] `scripts/run-server-rs-phase7.sh` 现在也已支持 `--list-only` 审查模式：会直接输出本次动态发现出来的真实 高风险 route tests 清单并提前退出，不再执行 preflight / fixture / db:sync / cargo test 包装，方便先审矩阵、再挑模块跑。
-- [x] `scripts/run-server-rs-phase7.sh` 现在也已支持 `--gate=pg-only|pg-redis|pg-ai|all`，可以把动态发现出来的 高风险 route tests 再按依赖类型过滤，便于把 phase 7 矩阵拆成“仅 Postgres”“Postgres+Redis”“Postgres+AI”三个更可执行的子集。
-- [x] `scripts/run-server-rs-phase7.sh` 现在在 `--gate=pg-ai` 且非 dry-run 模式下还会先检查 `AI_WANDER_MODEL_PROVIDER / URL / KEY / NAME` 四个最小环境变量，尽量把“AI provider 根本没配置”的失败前移到测试启动前。
-- [x] `scripts/run-server-rs-phase7.sh` 现在也已支持 `--names-only`，会在保留 matrix summary 的同时直接输出纯测试名清单（不带 `cargo test ...` 包装），便于把同一批 高风险 route tests 复制到其他执行器或 CI 步骤里。
-- [x] `scripts/run-server-rs-phase7.sh` 现在也已支持 `--json` 清单审查模式：会输出 machine-readable 的矩阵摘要与清单（包含 `commands / test_names / gate filter / ignored 统计 / 模块分布 / selected_ignored_tests_ratio`），并额外带上 `ai_env_preflight / remote_reachability_mode / remote_reachability_targets` 这些执行前置信号；其中 `routes_module_distribution / selected_module_distribution` 也已经是 JSON object，而不再是逗号字符串，方便把 phase 7 的动态发现结果直接接入其他执行器或 CI。
-- [x] `scripts/run-server-rs-phase7.sh` 现在也已支持 `--keep-going`：默认真实执行模式仍会在首个失败命令处退出，但传入该开关后会继续跑完整批选中的 高风险 route tests，并在结尾输出 `executed_commands / failed_commands / failed_command_list`，把 phase 7 的可审计证据从“首个失败样本”推进到“整批失败面汇总”。
+- [x] phase 7 本地 fixture 基线、动态矩阵脚本与配套说明文档曾经补齐并用于集中验证高风险 route tests；当前这些临时验证入口已移除，不再作为仓库默认工作流的一部分。
 - [x] 当前 phase 7 的“文档/脚本基线”与“真实通过证据”边界也已完成收口：本地 `wander_` / `afdian_` 纯测试已通过，`routes.rs` 高风险矩阵也已在本地 Postgres/Redis fixture 下验证为 `231 passed / 0 failed / 0 ignored`；phase 7 现阶段剩余仅属于后续持续回归扩展，不再构成本计划未完成项。
 
 ---

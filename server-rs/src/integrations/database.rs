@@ -3,9 +3,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgArguments, PgPoolOptions, PgQueryResult, PgRow};
 use sqlx::query::Query;
-use sqlx::{PgPool, Postgres, query};
+use sqlx::{PgPool, Postgres, query, query_scalar};
 use tokio::sync::Mutex;
 
 use crate::config::DatabaseConfig;
@@ -14,6 +15,8 @@ use crate::shared::error::AppError;
 tokio::task_local! {
     static TRANSACTION_CONTEXT: Arc<TransactionContext>;
 }
+
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 type AfterCommitFuture = Pin<Box<dyn Future<Output = Result<(), AppError>> + Send>>;
 
@@ -66,6 +69,14 @@ pub struct DatabaseRuntime {
     pool: PgPool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MigrationSummary {
+    pub adopted_existing_schema_as_baseline: bool,
+    pub previously_applied_migration_count: i64,
+    pub total_applied_migration_count: i64,
+    pub newly_applied_migration_count: i64,
+}
+
 impl DatabaseRuntime {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
@@ -73,6 +84,23 @@ impl DatabaseRuntime {
 
     pub async fn close(&self) {
         self.pool.close().await;
+    }
+
+    pub async fn apply_migrations(&self) -> Result<MigrationSummary, AppError> {
+        let adopted_existing_schema_as_baseline = adopt_existing_schema_as_baseline(&self.pool).await?;
+        let previously_applied_migration_count = count_applied_migrations(&self.pool).await?;
+        MIGRATOR
+            .run(&self.pool)
+            .await
+            .map_err(|error| AppError::config(format!("failed to run sqlx migrations: {error}")))?;
+        let total_applied_migration_count = count_applied_migrations(&self.pool).await?;
+        Ok(MigrationSummary {
+            adopted_existing_schema_as_baseline,
+            previously_applied_migration_count,
+            total_applied_migration_count,
+            newly_applied_migration_count: total_applied_migration_count
+                .saturating_sub(previously_applied_migration_count),
+        })
     }
 
     pub fn is_in_transaction(&self) -> bool {
@@ -256,6 +284,75 @@ fn is_write_sql(sql: &str) -> bool {
             && ["INSERT", "UPDATE", "DELETE", "MERGE"]
                 .iter()
                 .any(|keyword| normalized.contains(keyword)))
+}
+
+async fn count_applied_migrations(pool: &PgPool) -> Result<i64, AppError> {
+    let migration_table_exists = query_scalar::<_, bool>(
+        "SELECT to_regclass('public._sqlx_migrations') IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await?;
+    if !migration_table_exists {
+        return Ok(0);
+    }
+
+    Ok(query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM _sqlx_migrations")
+        .fetch_one(pool)
+        .await?)
+}
+
+async fn adopt_existing_schema_as_baseline(pool: &PgPool) -> Result<bool, AppError> {
+    let migration_table_exists = query_scalar::<_, bool>(
+        "SELECT to_regclass('public._sqlx_migrations') IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await?;
+    if migration_table_exists {
+        return Ok(false);
+    }
+
+    let public_table_count = query_scalar::<_, i64>(
+        "SELECT COUNT(*)::bigint FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> '_sqlx_migrations'",
+    )
+    .fetch_one(pool)
+    .await?;
+    if public_table_count <= 0 {
+        return Ok(false);
+    }
+
+    let Some(baseline_migration) = MIGRATOR.iter().next() else {
+        return Ok(false);
+    };
+
+    query(
+        r#"
+CREATE TABLE IF NOT EXISTS _sqlx_migrations (
+    version BIGINT PRIMARY KEY,
+    description TEXT NOT NULL,
+    installed_on TIMESTAMPTZ NOT NULL DEFAULT now(),
+    success BOOLEAN NOT NULL,
+    checksum BYTEA NOT NULL,
+    execution_time BIGINT NOT NULL
+)
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    query(
+        r#"
+INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+VALUES ($1, $2, TRUE, $3, 0)
+ON CONFLICT (version) DO NOTHING
+        "#,
+    )
+    .bind(baseline_migration.version)
+    .bind(baseline_migration.description.as_ref())
+    .bind(baseline_migration.checksum.as_ref())
+    .execute(pool)
+    .await?;
+
+    Ok(true)
 }
 
 pub async fn connect(config: &DatabaseConfig) -> Result<DatabaseRuntime, AppError> {

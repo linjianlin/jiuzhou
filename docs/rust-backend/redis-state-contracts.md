@@ -31,5 +31,3 @@
 
 - `cargo test battle_ -- --ignored --nocapture`
 - `cargo test idle_ -- --ignored --nocapture`
-- `scripts/run-server-rs-phase7.sh battle --gate=pg-redis`
-- `scripts/run-server-rs-phase7.sh inventory --gate=pg-redis`

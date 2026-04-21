@@ -7698,7 +7698,7 @@ fn load_visible_inventory_technique_def_map() -> Result<BTreeMap<String, Invento
 pub(crate) async fn resolve_generated_technique_book_display(
     state: &AppState,
     item_def_id: &str,
-    seed_row: &serde_json::Value,
+    _seed_row: &serde_json::Value,
     metadata: Option<&serde_json::Value>,
 ) -> Result<Option<GeneratedTechniqueBookDisplayOverride>, AppError> {
     if item_def_id != "book-generated-technique" {
