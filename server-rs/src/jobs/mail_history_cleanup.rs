@@ -63,9 +63,7 @@ pub fn load_mail_history_cleanup_config() -> MailHistoryCleanupConfig {
     }
 }
 
-pub async fn run_mail_history_cleanup_once(
-    state: &AppState,
-) -> Result<MailHistoryCleanupSummary> {
+pub async fn run_mail_history_cleanup_once(state: &AppState) -> Result<MailHistoryCleanupSummary> {
     let config = load_mail_history_cleanup_config();
     if !config.enabled {
         return Ok(MailHistoryCleanupSummary::default());
@@ -75,7 +73,11 @@ pub async fn run_mail_history_cleanup_once(
         .database
         .fetch_one(
             "SELECT pg_try_advisory_lock($1::int, $2::int) AS acquired",
-            |query| query.bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_1).bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_2),
+            |query| {
+                query
+                    .bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_1)
+                    .bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_2)
+            },
         )
         .await?
         .try_get::<Option<bool>, _>("acquired")?
@@ -89,10 +91,11 @@ pub async fn run_mail_history_cleanup_once(
         for _ in 0..config.max_delete_batches_per_run {
             let deleted_soft_rows = state
                 .database
-                .fetch_all(
-                    MAIL_SOFT_DELETED_CLEANUP_SQL,
-                    |query| query.bind(config.retention_days).bind(config.delete_batch_size),
-                )
+                .fetch_all(MAIL_SOFT_DELETED_CLEANUP_SQL, |query| {
+                    query
+                        .bind(config.retention_days)
+                        .bind(config.delete_batch_size)
+                })
                 .await?;
             summary.deleted_soft_deleted_count += deleted_soft_rows.len();
             if deleted_soft_rows.len() as i64 >= config.delete_batch_size {
@@ -101,10 +104,11 @@ pub async fn run_mail_history_cleanup_once(
 
             let deleted_expired_rows = state
                 .database
-                .fetch_all(
-                    MAIL_EXPIRED_HISTORY_CLEANUP_SQL,
-                    |query| query.bind(config.retention_days).bind(config.delete_batch_size),
-                )
+                .fetch_all(MAIL_EXPIRED_HISTORY_CLEANUP_SQL, |query| {
+                    query
+                        .bind(config.retention_days)
+                        .bind(config.delete_batch_size)
+                })
                 .await?;
             summary.deleted_expired_count += deleted_expired_rows.len();
             if (deleted_expired_rows.len() as i64) < config.delete_batch_size {
@@ -117,10 +121,11 @@ pub async fn run_mail_history_cleanup_once(
 
     let _ = state
         .database
-        .execute(
-                "SELECT pg_advisory_unlock($1::int, $2::int)",
-            |query| query.bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_1).bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_2),
-        )
+        .execute("SELECT pg_advisory_unlock($1::int, $2::int)", |query| {
+            query
+                .bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_1)
+                .bind(MAIL_HISTORY_CLEANUP_LOCK_KEY_2)
+        })
         .await;
 
     result?;
@@ -153,7 +158,10 @@ pub fn spawn_mail_history_cleanup_loop(state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_DELETE_BATCH_SIZE, DEFAULT_MAX_DELETE_BATCHES_PER_RUN, DEFAULT_RETENTION_DAYS, MailHistoryCleanupSummary, load_mail_history_cleanup_config};
+    use super::{
+        DEFAULT_DELETE_BATCH_SIZE, DEFAULT_MAX_DELETE_BATCHES_PER_RUN, DEFAULT_RETENTION_DAYS,
+        MailHistoryCleanupSummary, load_mail_history_cleanup_config,
+    };
 
     #[test]
     fn mail_history_cleanup_summary_defaults_to_zero() {
@@ -167,7 +175,10 @@ mod tests {
         let config = load_mail_history_cleanup_config();
         assert_eq!(config.retention_days, DEFAULT_RETENTION_DAYS);
         assert_eq!(config.delete_batch_size, DEFAULT_DELETE_BATCH_SIZE);
-        assert_eq!(config.max_delete_batches_per_run, DEFAULT_MAX_DELETE_BATCHES_PER_RUN);
+        assert_eq!(
+            config.max_delete_batches_per_run,
+            DEFAULT_MAX_DELETE_BATCHES_PER_RUN
+        );
         println!("MAIL_HISTORY_CLEANUP_INTERVAL_MS={}", config.interval_ms);
     }
 }

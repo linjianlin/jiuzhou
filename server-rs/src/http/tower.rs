@@ -6,12 +6,17 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::battle_runtime::build_minimal_pve_battle_state;
+use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
 use crate::jobs::tower_frozen_pool::lookup_frozen_tower_monsters;
 use crate::realtime::battle::{build_battle_cooldown_ready_payload, build_battle_started_payload};
-use crate::realtime::public_socket::{emit_battle_cooldown_to_participants, emit_battle_update_to_participants};
+use crate::realtime::public_socket::{
+    emit_battle_cooldown_to_participants, emit_battle_update_to_participants,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
-use crate::state::{AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord};
+use crate::state::{
+    AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
+};
 
 fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
     row.try_get::<Option<i32>, _>(column)
@@ -118,13 +123,29 @@ pub async fn get_tower_overview(
         )
         .await?;
     let progress = TowerProgressDto {
-        best_floor: progress.as_ref().map(|row| opt_i64_from_i32(row, "best_floor")).unwrap_or_default(),
-        next_floor: progress.as_ref().map(|row| opt_i64_from_i32_default(row, "next_floor", 1)).unwrap_or(1),
-        current_run_id: progress
+        best_floor: progress
             .as_ref()
-            .and_then(|row| row.try_get::<Option<String>, _>("current_run_id").ok().flatten()),
-        current_floor: progress.as_ref().and_then(|row| row.try_get::<Option<i32>, _>("current_floor").ok().flatten().map(i64::from)),
-        last_settled_floor: progress.as_ref().map(|row| opt_i64_from_i32(row, "last_settled_floor")).unwrap_or_default(),
+            .map(|row| opt_i64_from_i32(row, "best_floor"))
+            .unwrap_or_default(),
+        next_floor: progress
+            .as_ref()
+            .map(|row| opt_i64_from_i32_default(row, "next_floor", 1))
+            .unwrap_or(1),
+        current_run_id: progress.as_ref().and_then(|row| {
+            row.try_get::<Option<String>, _>("current_run_id")
+                .ok()
+                .flatten()
+        }),
+        current_floor: progress.as_ref().and_then(|row| {
+            row.try_get::<Option<i32>, _>("current_floor")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        }),
+        last_settled_floor: progress
+            .as_ref()
+            .map(|row| opt_i64_from_i32(row, "last_settled_floor"))
+            .unwrap_or_default(),
     };
     let next_floor_preview = build_tower_floor_preview(progress.next_floor);
 
@@ -134,7 +155,9 @@ pub async fn get_tower_overview(
         .filter(|session| session.session_type == "tower")
         .map(|session| serde_json::to_value(session))
         .transpose()
-        .map_err(|error| AppError::config(format!("failed to serialize tower active session: {error}")))?;
+        .map_err(|error| {
+            AppError::config(format!("failed to serialize tower active session: {error}"))
+        })?;
 
     Ok(send_success(TowerOverviewDto {
         progress,
@@ -160,12 +183,23 @@ pub async fn get_tower_rank(
     Ok(send_success(
         rows.into_iter()
             .map(|row| TowerRankRowDto {
-                rank: row.try_get::<Option<i64>, _>("rank").unwrap_or(None).unwrap_or_default(),
+                rank: row
+                    .try_get::<Option<i64>, _>("rank")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
                 character_id: opt_i64_from_i32(&row, "character_id"),
-                name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-                realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
+                name: row
+                    .try_get::<Option<String>, _>("name")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm: row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
                 best_floor: opt_i64_from_i32(&row, "best_floor"),
-                reached_at: row.try_get::<Option<String>, _>("reached_at_text").unwrap_or(None),
+                reached_at: row
+                    .try_get::<Option<String>, _>("reached_at_text")
+                    .unwrap_or(None),
             })
             .collect(),
     ))
@@ -180,9 +214,12 @@ pub async fn start_tower_challenge(
         return Err(AppError::config("角色不存在"));
     };
 
-    let session = state.database.with_transaction(|| async {
-        start_tower_challenge_tx(&state, actor.user_id, character_id).await
-    }).await?;
+    let session = state
+        .database
+        .with_transaction(|| async {
+            start_tower_challenge_tx(&state, actor.user_id, character_id).await
+        })
+        .await?;
     state.battle_sessions.register(BattleSessionSnapshotDto {
         session_id: session.session_id.clone(),
         session_type: session.session_type.clone(),
@@ -199,30 +236,38 @@ pub async fn start_tower_challenge(
         },
     });
     if let Some(current_battle_id) = session.current_battle_id.clone() {
-        state.online_battle_projections.register(OnlineBattleProjectionRecord {
-            battle_id: current_battle_id,
-            owner_user_id: actor.user_id,
-            participant_user_ids: session.participant_user_ids.clone(),
-            r#type: "pve".to_string(),
-            session_id: Some(session.session_id.clone()),
-        });
+        state
+            .online_battle_projections
+            .register(OnlineBattleProjectionRecord {
+                battle_id: current_battle_id,
+                owner_user_id: actor.user_id,
+                participant_user_ids: session.participant_user_ids.clone(),
+                r#type: "pve".to_string(),
+                session_id: Some(session.session_id.clone()),
+            });
     }
     if let Some(current_battle_id) = session.current_battle_id.clone() {
-        let battle_state = build_minimal_pve_battle_state(
+        let mut battle_state = build_minimal_pve_battle_state(
             &current_battle_id,
             character_id,
             &resolve_tower_floor_monster_ids(session.context.floor),
         );
+        hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         state.battle_runtime.register(battle_state.clone());
         let debug_realtime = build_battle_started_payload(
             &current_battle_id,
-            battle_state,
+            battle_state.clone(),
             vec![serde_json::json!({"type": "round_start", "round": 1})],
             state.battle_sessions.get_by_battle_id(&current_battle_id),
         );
         emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
-        let debug_cooldown_realtime = build_battle_cooldown_ready_payload(Some(&format!("player-{}", actor.user_id)));
-        emit_battle_cooldown_to_participants(&state, &session.participant_user_ids, &debug_cooldown_realtime);
+        let debug_cooldown_realtime =
+            build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+        emit_battle_cooldown_to_participants(
+            &state,
+            &session.participant_user_ids,
+            &debug_cooldown_realtime,
+        );
     }
 
     Ok(send_success(TowerStartDataDto { session }))
@@ -238,10 +283,27 @@ async fn start_tower_challenge_tx(
         |query| query.bind(character_id),
     ).await?;
 
-    let next_floor = progress.as_ref().map(|row| opt_i64_from_i32_default(row, "next_floor", 1)).unwrap_or(1).max(1);
-    let current_run_id = progress.as_ref().and_then(|row| row.try_get::<Option<String>, _>("current_run_id").ok().flatten());
-    let current_floor = progress.as_ref().and_then(|row| row.try_get::<Option<i32>, _>("current_floor").ok().flatten().map(i64::from));
-    let current_battle_id = progress.as_ref().and_then(|row| row.try_get::<Option<String>, _>("current_battle_id").ok().flatten());
+    let next_floor = progress
+        .as_ref()
+        .map(|row| opt_i64_from_i32_default(row, "next_floor", 1))
+        .unwrap_or(1)
+        .max(1);
+    let current_run_id = progress.as_ref().and_then(|row| {
+        row.try_get::<Option<String>, _>("current_run_id")
+            .ok()
+            .flatten()
+    });
+    let current_floor = progress.as_ref().and_then(|row| {
+        row.try_get::<Option<i32>, _>("current_floor")
+            .ok()
+            .flatten()
+            .map(i64::from)
+    });
+    let current_battle_id = progress.as_ref().and_then(|row| {
+        row.try_get::<Option<String>, _>("current_battle_id")
+            .ok()
+            .flatten()
+    });
 
     let run_id = current_run_id.unwrap_or_else(|| build_tower_run_id(character_id));
     let floor = if current_battle_id.is_some() {

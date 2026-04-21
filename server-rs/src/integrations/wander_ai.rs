@@ -45,16 +45,56 @@ fn is_valid_wander_title_color(value: &str) -> bool {
 }
 
 const TITLE_EFFECT_KEYS: &[&str] = &[
-    "max_qixue", "max_lingqi", "wugong", "fagong", "wufang", "fafang", "sudu", "fuyuan",
-    "mingzhong", "shanbi", "zhaojia", "baoji", "baoshang", "jianbaoshang", "jianfantan",
-    "kangbao", "zengshang", "zhiliao", "jianliao", "xixue", "lengque", "kongzhi_kangxing",
-    "jin_kangxing", "mu_kangxing", "shui_kangxing", "huo_kangxing", "tu_kangxing",
-    "qixue_huifu", "lingqi_huifu",
+    "max_qixue",
+    "max_lingqi",
+    "wugong",
+    "fagong",
+    "wufang",
+    "fafang",
+    "sudu",
+    "fuyuan",
+    "mingzhong",
+    "shanbi",
+    "zhaojia",
+    "baoji",
+    "baoshang",
+    "jianbaoshang",
+    "jianfantan",
+    "kangbao",
+    "zengshang",
+    "zhiliao",
+    "jianliao",
+    "xixue",
+    "lengque",
+    "kongzhi_kangxing",
+    "jin_kangxing",
+    "mu_kangxing",
+    "shui_kangxing",
+    "huo_kangxing",
+    "tu_kangxing",
+    "qixue_huifu",
+    "lingqi_huifu",
 ];
 const TITLE_RATIO_EFFECT_KEYS: &[&str] = &[
-    "mingzhong", "shanbi", "zhaojia", "baoji", "baoshang", "jianbaoshang", "jianfantan",
-    "kangbao", "zengshang", "zhiliao", "jianliao", "xixue", "lengque", "kongzhi_kangxing",
-    "jin_kangxing", "mu_kangxing", "shui_kangxing", "huo_kangxing", "tu_kangxing",
+    "mingzhong",
+    "shanbi",
+    "zhaojia",
+    "baoji",
+    "baoshang",
+    "jianbaoshang",
+    "jianfantan",
+    "kangbao",
+    "zengshang",
+    "zhiliao",
+    "jianliao",
+    "xixue",
+    "lengque",
+    "kongzhi_kangxing",
+    "jin_kangxing",
+    "mu_kangxing",
+    "shui_kangxing",
+    "huo_kangxing",
+    "tu_kangxing",
 ];
 
 #[derive(Serialize)]
@@ -126,7 +166,10 @@ fn build_wander_title_effect_entry_schema() -> serde_json::Value {
         "qixue_huifu": 20,
         "lingqi_huifu": 15
     });
-    let ratio_keys = TITLE_RATIO_EFFECT_KEYS.iter().copied().collect::<BTreeSet<_>>();
+    let ratio_keys = TITLE_RATIO_EFFECT_KEYS
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
     serde_json::json!({
         "oneOf": keys.iter().map(|key| {
             let max = max_map.get(*key).cloned().unwrap_or(serde_json::json!(300));
@@ -241,10 +284,21 @@ fn is_unsupported_structured_schema_error(message: &str) -> bool {
 
 pub fn read_wander_ai_config(state: &AppState) -> Option<WanderAiConfigSnapshot> {
     let provider = state.config.wander.model_provider.trim().to_string();
-    let url = state.config.wander.model_url.trim().trim_end_matches('/').to_string();
+    let url = state
+        .config
+        .wander
+        .model_url
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
     let key = state.config.wander.model_key.trim().to_string();
     let model = state.config.wander.model_name.trim().to_string();
-    if !state.config.wander.ai_enabled || provider.is_empty() || url.is_empty() || key.is_empty() || model.is_empty() {
+    if !state.config.wander.ai_enabled
+        || provider.is_empty()
+        || url.is_empty()
+        || key.is_empty()
+        || model.is_empty()
+    {
         return None;
     }
     Some(WanderAiConfigSnapshot {
@@ -322,19 +376,19 @@ where
             let initial_user_message = initial_user_message.clone();
             let message_owned = message.to_string();
             async move {
-            request_wander_ai_content(
-                state,
-                draft_kind,
-                if message_owned == initial_user_message {
-                    initial_system_message.as_str()
-                } else {
-                    repair_system_message.as_str()
-                },
-                message_owned.as_str(),
-                seed,
-                use_structured_schema,
-            )
-            .await
+                request_wander_ai_content(
+                    state,
+                    draft_kind,
+                    if message_owned == initial_user_message {
+                        initial_system_message.as_str()
+                    } else {
+                        repair_system_message.as_str()
+                    },
+                    message_owned.as_str(),
+                    seed,
+                    use_structured_schema,
+                )
+                .await
             }
         },
         user_message,
@@ -364,7 +418,10 @@ where
         let content = loop {
             match request_content(latest_user_message.as_str(), use_structured_schema).await {
                 Ok(content) => break content,
-                Err(error) if use_structured_schema && is_unsupported_structured_schema_error(&error.to_string()) => {
+                Err(error)
+                    if use_structured_schema
+                        && is_unsupported_structured_schema_error(&error.to_string()) =>
+                {
                     use_structured_schema = false;
                     continue;
                 }
@@ -376,12 +433,16 @@ where
             Ok(draft) => return Ok(draft),
             Err(error) => {
                 latest_failure_reason = error.to_string();
-                latest_user_message = build_repair_user_message(content.as_str(), latest_failure_reason.as_str());
+                latest_user_message =
+                    build_repair_user_message(content.as_str(), latest_failure_reason.as_str());
             }
         }
     }
 
-    Err(AppError::config(format!("云游奇遇模型返回字段不符合业务约束：{}", latest_failure_reason)))
+    Err(AppError::config(format!(
+        "云游奇遇模型返回字段不符合业务约束：{}",
+        latest_failure_reason
+    )))
 }
 
 async fn request_wander_ai_content(
@@ -395,7 +456,10 @@ async fn request_wander_ai_content(
     let config = read_wander_ai_config(state)
         .ok_or_else(|| AppError::config("未配置 wander AI 文本模型"))?;
     if config.provider != "openai" {
-        return Err(AppError::config(format!("暂不支持的 wander AI provider: {}", config.provider)));
+        return Err(AppError::config(format!(
+            "暂不支持的 wander AI provider: {}",
+            config.provider
+        )));
     }
 
     let response = state
@@ -420,7 +484,9 @@ async fn request_wander_ai_content(
             response_format: if use_structured_schema {
                 match draft_kind {
                     WanderAiDraftKind::Setup => build_wander_ai_setup_response_format(),
-                    WanderAiDraftKind::Resolution { is_ending } => build_wander_ai_resolution_response_format(is_ending),
+                    WanderAiDraftKind::Resolution { is_ending } => {
+                        build_wander_ai_resolution_response_format(is_ending)
+                    }
                 }
             } else {
                 serde_json::json!({ "type": "json_object" })
@@ -435,7 +501,10 @@ async fn request_wander_ai_content(
         .await
         .map_err(|error| AppError::config(format!("wander AI 响应读取失败: {error}")))?;
     if !status.is_success() {
-        return Err(AppError::config(format!("wander AI 返回错误状态 {}: {}", status, body)));
+        return Err(AppError::config(format!(
+            "wander AI 返回错误状态 {}: {}",
+            status, body
+        )));
     }
     let parsed: OpenAiChatCompletionResponse = serde_json::from_str(&body)
         .map_err(|error| AppError::config(format!("wander AI 响应解析失败: {error}")))?;
@@ -554,9 +623,9 @@ fn parse_reward_title_effects(
             .filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::config("wander AI rewardTitleEffects 缺少 key"))?
             .to_string();
-        let raw_value = entry
-            .get("value")
-            .ok_or_else(|| AppError::config(format!("wander AI rewardTitleEffects 缺少 value: {key}")))?;
+        let raw_value = entry.get("value").ok_or_else(|| {
+            AppError::config(format!("wander AI rewardTitleEffects 缺少 value: {key}"))
+        })?;
         insert_reward_title_effect(&mut out, &allowed, &key, raw_value)?;
     }
     Ok(out)
@@ -569,22 +638,33 @@ fn insert_reward_title_effect(
     raw_value: &serde_json::Value,
 ) -> Result<(), AppError> {
     if !allowed.contains(key) {
-        return Err(AppError::config(format!("wander AI rewardTitleEffects 包含非法属性: {key}")));
+        return Err(AppError::config(format!(
+            "wander AI rewardTitleEffects 包含非法属性: {key}"
+        )));
     }
     if out.contains_key(key) {
-        return Err(AppError::config(format!("wander AI rewardTitleEffects 包含重复属性: {key}")));
+        return Err(AppError::config(format!(
+            "wander AI rewardTitleEffects 包含重复属性: {key}"
+        )));
     }
     let value = raw_value
         .as_f64()
         .or_else(|| raw_value.as_i64().map(|number| number as f64))
         .ok_or_else(|| AppError::config(format!("wander AI rewardTitleEffects 值非法: {key}")))?;
     if value <= 0.0 {
-        return Err(AppError::config(format!("wander AI rewardTitleEffects 值必须大于 0: {key}")));
+        return Err(AppError::config(format!(
+            "wander AI rewardTitleEffects 值必须大于 0: {key}"
+        )));
     }
-    let max = title_effect_value_max(key)
-        .ok_or_else(|| AppError::config(format!("wander AI rewardTitleEffects 属性无上限定义: {key}")))?;
+    let max = title_effect_value_max(key).ok_or_else(|| {
+        AppError::config(format!(
+            "wander AI rewardTitleEffects 属性无上限定义: {key}"
+        ))
+    })?;
     if value > max {
-        return Err(AppError::config(format!("wander AI rewardTitleEffects 超出上限: {key}")));
+        return Err(AppError::config(format!(
+            "wander AI rewardTitleEffects 超出上限: {key}"
+        )));
     }
     out.insert(key.to_string(), value);
     Ok(())
@@ -599,9 +679,9 @@ fn title_effect_value_max(key: &str) -> Option<f64> {
         "sudu" => 30.0,
         "fuyuan" => 15.0,
         "mingzhong" | "shanbi" | "zhaojia" | "baoji" | "baoshang" | "jianbaoshang"
-        | "jianfantan" | "kangbao" | "zengshang" | "zhiliao" | "jianliao" | "xixue"
-        | "lengque" | "kongzhi_kangxing" | "jin_kangxing" | "mu_kangxing"
-        | "shui_kangxing" | "huo_kangxing" | "tu_kangxing" => 0.08,
+        | "jianfantan" | "kangbao" | "zengshang" | "zhiliao" | "jianliao" | "xixue" | "lengque"
+        | "kongzhi_kangxing" | "jin_kangxing" | "mu_kangxing" | "shui_kangxing"
+        | "huo_kangxing" | "tu_kangxing" => 0.08,
         "qixue_huifu" => 20.0,
         "lingqi_huifu" => 15.0,
         _ => return None,
@@ -645,22 +725,16 @@ fn extract_three_options(value: &serde_json::Value) -> Result<[String; 3], AppEr
                 .ok_or_else(|| AppError::config("wander AI optionTexts 含空值"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok([
-        parsed[0].clone(),
-        parsed[1].clone(),
-        parsed[2].clone(),
-    ])
+    Ok([parsed[0].clone(), parsed[1].clone(), parsed[2].clone()])
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        build_wander_ai_resolution_response_format,
-        build_wander_ai_setup_response_format,
+        build_wander_ai_resolution_response_format, build_wander_ai_setup_response_format,
         is_unsupported_structured_schema_error,
         parse_and_validate_wander_ai_episode_resolution_draft,
-        parse_and_validate_wander_ai_episode_setup_draft,
-        wander_ai_timeout,
+        parse_and_validate_wander_ai_episode_setup_draft, wander_ai_timeout,
     };
 
     #[test]
@@ -702,7 +776,10 @@ mod tests {
             "{\n                \"summary\":\"你在《云梦夜航》的终幕中选择了驻足观望，最终借月下潮声看清了整段奇遇的真意，并为自己留下一枚完整的归航印记。\",\n                \"endingType\":\"good\",\n                \"rewardTitleName\":\"云航客\",\n                \"rewardTitleDesc\":\"在云梦夜航的终幕中仍能稳住心神之人。\",\n                \"rewardTitleColor\":\"#4CAF50\",\n                \"rewardTitleEffects\":[{\"key\":\"max_qixue\",\"value\":50},{\"key\":\"wugong\",\"value\":5}]\n            }",
         )
         .expect("array title effects should validate");
-        assert_eq!(draft.reward_title_effects.get("max_qixue").copied(), Some(50.0));
+        assert_eq!(
+            draft.reward_title_effects.get("max_qixue").copied(),
+            Some(50.0)
+        );
         assert_eq!(draft.reward_title_effects.get("wugong").copied(), Some(5.0));
     }
 
@@ -713,38 +790,113 @@ mod tests {
         let resolution_end = build_wander_ai_resolution_response_format(true);
         assert_eq!(setup["type"], "json_schema");
         assert_eq!(setup["json_schema"]["strict"], true);
-        assert_eq!(setup["json_schema"]["schema"]["additionalProperties"], false);
+        assert_eq!(
+            setup["json_schema"]["schema"]["additionalProperties"],
+            false
+        );
         assert_eq!(setup["json_schema"]["schema"]["required"][0], "storyTheme");
-        assert_eq!(setup["json_schema"]["schema"]["properties"]["storyTheme"]["minLength"], 2);
-        assert_eq!(setup["json_schema"]["schema"]["properties"]["storyPremise"]["maxLength"], 120);
-        assert_eq!(setup["json_schema"]["schema"]["properties"]["optionTexts"]["type"], "array");
-        assert_eq!(setup["json_schema"]["schema"]["properties"]["optionTexts"]["minItems"], 3);
-        assert_eq!(setup["json_schema"]["schema"]["properties"]["optionTexts"]["maxItems"], 3);
+        assert_eq!(
+            setup["json_schema"]["schema"]["properties"]["storyTheme"]["minLength"],
+            2
+        );
+        assert_eq!(
+            setup["json_schema"]["schema"]["properties"]["storyPremise"]["maxLength"],
+            120
+        );
+        assert_eq!(
+            setup["json_schema"]["schema"]["properties"]["optionTexts"]["type"],
+            "array"
+        );
+        assert_eq!(
+            setup["json_schema"]["schema"]["properties"]["optionTexts"]["minItems"],
+            3
+        );
+        assert_eq!(
+            setup["json_schema"]["schema"]["properties"]["optionTexts"]["maxItems"],
+            3
+        );
         assert_eq!(resolution_continue["type"], "json_schema");
-        assert_eq!(resolution_continue["json_schema"]["schema"]["properties"]["endingType"]["const"], "none");
-        assert_eq!(resolution_continue["json_schema"]["schema"]["properties"]["rewardTitleName"]["maxLength"], 0);
-        assert_eq!(resolution_continue["json_schema"]["schema"]["properties"]["rewardTitleDesc"]["maxLength"], 0);
-        assert_eq!(resolution_continue["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["maxItems"], 0);
+        assert_eq!(
+            resolution_continue["json_schema"]["schema"]["properties"]["endingType"]["const"],
+            "none"
+        );
+        assert_eq!(
+            resolution_continue["json_schema"]["schema"]["properties"]["rewardTitleName"]["maxLength"],
+            0
+        );
+        assert_eq!(
+            resolution_continue["json_schema"]["schema"]["properties"]["rewardTitleDesc"]["maxLength"],
+            0
+        );
+        assert_eq!(
+            resolution_continue["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["maxItems"],
+            0
+        );
         assert_eq!(resolution_end["type"], "json_schema");
         assert_eq!(resolution_end["json_schema"]["strict"], true);
-        assert_eq!(resolution_end["json_schema"]["schema"]["additionalProperties"], false);
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleName"]["minLength"], 2);
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["minItems"], 1);
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleColor"]["pattern"], "^#[0-9A-Fa-f]{6}$");
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["type"], "array");
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"][0]["properties"]["key"]["const"], "max_qixue");
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"][0]["properties"]["value"]["type"], "integer");
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["x-max-map"]["max_qixue"], 240);
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["x-max-map"]["wugong"], 60);
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"][8]["properties"]["key"]["const"], "mingzhong");
-        assert_eq!(resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"][8]["properties"]["value"]["type"], "number");
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleName"]["minLength"],
+            2
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["minItems"],
+            1
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleColor"]["pattern"],
+            "^#[0-9A-Fa-f]{6}$"
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["type"],
+            "array"
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"]
+                [0]["properties"]["key"]["const"],
+            "max_qixue"
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"]
+                [0]["properties"]["value"]["type"],
+            "integer"
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["x-max-map"]
+                ["max_qixue"],
+            240
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["x-max-map"]
+                ["wugong"],
+            60
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"]
+                [8]["properties"]["key"]["const"],
+            "mingzhong"
+        );
+        assert_eq!(
+            resolution_end["json_schema"]["schema"]["properties"]["rewardTitleEffects"]["items"]["oneOf"]
+                [8]["properties"]["value"]["type"],
+            "number"
+        );
     }
 
     #[test]
     fn wander_ai_structured_schema_error_detection_matches_node_semantics() {
-        assert!(is_unsupported_structured_schema_error("invalid_json_schema"));
-        assert!(is_unsupported_structured_schema_error("'allOf' is not permitted"));
-        assert!(is_unsupported_structured_schema_error("Invalid schema for response_format"));
+        assert!(is_unsupported_structured_schema_error(
+            "invalid_json_schema"
+        ));
+        assert!(is_unsupported_structured_schema_error(
+            "'allOf' is not permitted"
+        ));
+        assert!(is_unsupported_structured_schema_error(
+            "Invalid schema for response_format"
+        ));
         assert!(!is_unsupported_structured_schema_error("network timeout"));
     }
 
@@ -779,7 +931,10 @@ mod tests {
         .expect("valid title effects should pass");
         assert_eq!(draft.ending_type, "good");
         assert_eq!(draft.reward_title_name, "云航客");
-        assert_eq!(draft.reward_title_effects.get("max_qixue").copied(), Some(50.0));
+        assert_eq!(
+            draft.reward_title_effects.get("max_qixue").copied(),
+            Some(50.0)
+        );
         assert_eq!(draft.reward_title_effects.get("wugong").copied(), Some(5.0));
         assert_eq!(draft.reward_title_effects.get("sudu").copied(), Some(3.0));
     }
@@ -791,7 +946,10 @@ mod tests {
         )
         .expect("five title effects should pass");
         assert_eq!(draft.reward_title_effects.len(), 5);
-        println!("WANDER_TITLE_EFFECT_COUNT={}", draft.reward_title_effects.len());
+        println!(
+            "WANDER_TITLE_EFFECT_COUNT={}",
+            draft.reward_title_effects.len()
+        );
     }
 
     #[test]

@@ -91,9 +91,8 @@ pub async fn buffer_character_progress_delta_fields(
             let character_id = field.character_id;
             let increment = field.increment;
             let normalized_field = field.field.trim();
-            (character_id > 0 && increment > 0 && !normalized_field.is_empty()).then(|| {
-                (character_id, normalized_field.to_string(), increment)
-            })
+            (character_id > 0 && increment > 0 && !normalized_field.is_empty())
+                .then(|| (character_id, normalized_field.to_string(), increment))
         })
         .collect();
 
@@ -221,7 +220,8 @@ where
             continue;
         }
 
-        let claimed_hash = load_claimed_character_progress_delta_hash(runtime, character_id).await?;
+        let claimed_hash =
+            load_claimed_character_progress_delta_hash(runtime, character_id).await?;
         let parsed_hash = parse_progress_delta_hash(claimed_hash);
         if parsed_hash.is_empty() {
             finalize_claimed_character_progress_delta(runtime, character_id).await?;

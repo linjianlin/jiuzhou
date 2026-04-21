@@ -8,7 +8,8 @@ use crate::state::AppState;
 const TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_1: i64 = 2026;
 const TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_2: i64 = 401;
 const TECHNIQUE_DRAFT_CLEANUP_INTERVAL_MS: u64 = 10 * 60 * 1000;
-const TECHNIQUE_DRAFT_EXPIRED_MESSAGE: &str = "草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟";
+const TECHNIQUE_DRAFT_EXPIRED_MESSAGE: &str =
+    "草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟";
 const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE: f64 = 0.5;
 const TECHNIQUE_FRAGMENT_ITEM_DEF_ID: &str = "mat-gongfa-canye";
 
@@ -24,7 +25,11 @@ pub async fn run_technique_draft_cleanup_once(
         .database
         .fetch_one(
             "SELECT pg_try_advisory_lock($1::int, $2::int) AS acquired",
-            |query| query.bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_1).bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_2),
+            |query| {
+                query
+                    .bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_1)
+                    .bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_2)
+            },
         )
         .await?
         .try_get::<Option<bool>, _>("acquired")?
@@ -80,14 +85,17 @@ pub async fn run_technique_draft_cleanup_once(
 
     let _ = state
         .database
-        .execute(
-                "SELECT pg_advisory_unlock($1::int, $2::int)",
-            |query| query.bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_1).bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_2),
-        )
+        .execute("SELECT pg_advisory_unlock($1::int, $2::int)", |query| {
+            query
+                .bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_1)
+                .bind(TECHNIQUE_DRAFT_CLEANUP_LOCK_KEY_2)
+        })
         .await;
 
     result?;
-    Ok(TechniqueDraftCleanupSummary { refunded_draft_count })
+    Ok(TechniqueDraftCleanupSummary {
+        refunded_draft_count,
+    })
 }
 
 pub fn spawn_technique_draft_cleanup_loop(state: AppState) {

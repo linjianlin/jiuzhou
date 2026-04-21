@@ -6,7 +6,8 @@ use crate::shared::error::AppError;
 
 pub const ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY: &str = "character:item-instance-mutation:index";
 pub const ITEM_INSTANCE_MUTATION_KEY_PREFIX: &str = "character:item-instance-mutation:";
-pub const ITEM_INSTANCE_MUTATION_INFLIGHT_KEY_PREFIX: &str = "character:item-instance-mutation:inflight:";
+pub const ITEM_INSTANCE_MUTATION_INFLIGHT_KEY_PREFIX: &str =
+    "character:item-instance-mutation:inflight:";
 
 const CLAIM_ITEM_INSTANCE_MUTATION_LUA: &str = r#"
 local dirtyIndexKey = KEYS[1]
@@ -119,7 +120,9 @@ fn build_item_instance_mutation_field(item_id: i64) -> String {
     item_id.to_string()
 }
 
-fn normalize_mutation(mutation: &BufferedItemInstanceMutation) -> Option<BufferedItemInstanceMutation> {
+fn normalize_mutation(
+    mutation: &BufferedItemInstanceMutation,
+) -> Option<BufferedItemInstanceMutation> {
     let op_id = mutation.op_id.trim();
     if mutation.character_id <= 0 || mutation.item_id <= 0 || op_id.is_empty() {
         return None;
@@ -135,14 +138,16 @@ fn normalize_mutation(mutation: &BufferedItemInstanceMutation) -> Option<Buffere
         }),
         _ => {
             let snapshot = mutation.snapshot.clone()?;
-            (snapshot.id == mutation.item_id && snapshot.owner_character_id == mutation.character_id).then(|| BufferedItemInstanceMutation {
-                op_id: op_id.to_string(),
-                character_id: mutation.character_id,
-                item_id: mutation.item_id,
-                created_at_ms: mutation.created_at_ms.max(0),
-                kind: "upsert".to_string(),
-                snapshot: Some(snapshot),
-            })
+            (snapshot.id == mutation.item_id
+                && snapshot.owner_character_id == mutation.character_id)
+                .then(|| BufferedItemInstanceMutation {
+                    op_id: op_id.to_string(),
+                    character_id: mutation.character_id,
+                    item_id: mutation.item_id,
+                    created_at_ms: mutation.created_at_ms.max(0),
+                    kind: "upsert".to_string(),
+                    snapshot: Some(snapshot),
+                })
         }
     }
 }
@@ -151,32 +156,43 @@ pub async fn buffer_item_instance_mutations(
     runtime: &RedisRuntime,
     mutations: &[BufferedItemInstanceMutation],
 ) -> Result<(), AppError> {
-    let normalized = mutations.iter().filter_map(normalize_mutation).collect::<Vec<_>>();
+    let normalized = mutations
+        .iter()
+        .filter_map(normalize_mutation)
+        .collect::<Vec<_>>();
     if normalized.is_empty() {
         return Ok(());
     }
-    runtime.with_pipeline(|pipeline| {
-        for mutation in &normalized {
-            pipeline
-                .cmd("HSET")
-                .arg(build_item_instance_mutation_key(mutation.character_id))
-                .arg(build_item_instance_mutation_field(mutation.item_id))
-                .arg(serde_json::to_string(mutation).unwrap_or_else(|_| "{}".to_string()))
-                .ignore()
-                .cmd("SADD")
-                .arg(ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY)
-                .arg(mutation.character_id.to_string())
-                .ignore();
-        }
-    }).await
+    runtime
+        .with_pipeline(|pipeline| {
+            for mutation in &normalized {
+                pipeline
+                    .cmd("HSET")
+                    .arg(build_item_instance_mutation_key(mutation.character_id))
+                    .arg(build_item_instance_mutation_field(mutation.item_id))
+                    .arg(serde_json::to_string(mutation).unwrap_or_else(|_| "{}".to_string()))
+                    .ignore()
+                    .cmd("SADD")
+                    .arg(ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY)
+                    .arg(mutation.character_id.to_string())
+                    .ignore();
+            }
+        })
+        .await
 }
 
 pub async fn list_dirty_character_ids_for_item_instance_mutation(
     runtime: &RedisRuntime,
     limit: usize,
 ) -> Result<Vec<i64>, AppError> {
-    let values = runtime.srandmember(ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY, limit.max(1)).await?;
-    let mut normalized = values.into_iter().filter_map(|value| value.parse::<i64>().ok()).filter(|value| *value > 0).collect::<Vec<_>>();
+    let values = runtime
+        .srandmember(ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY, limit.max(1))
+        .await?;
+    let mut normalized = values
+        .into_iter()
+        .filter_map(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .collect::<Vec<_>>();
     normalized.sort_unstable();
     Ok(normalized)
 }
@@ -185,37 +201,44 @@ pub async fn claim_character_item_instance_mutations(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<bool, AppError> {
-    Ok(runtime.eval_i64(
-        CLAIM_ITEM_INSTANCE_MUTATION_LUA,
-        &[
-            ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
-            &build_item_instance_mutation_key(character_id),
-            &build_inflight_item_instance_mutation_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await? == 1)
+    Ok(runtime
+        .eval_i64(
+            CLAIM_ITEM_INSTANCE_MUTATION_LUA,
+            &[
+                ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
+                &build_item_instance_mutation_key(character_id),
+                &build_inflight_item_instance_mutation_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?
+        == 1)
 }
 
 pub async fn load_claimed_item_instance_mutation_hash(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<HashMap<String, String>, AppError> {
-    runtime.hgetall(&build_inflight_item_instance_mutation_key(character_id)).await
+    runtime
+        .hgetall(&build_inflight_item_instance_mutation_key(character_id))
+        .await
 }
 
 pub async fn finalize_claimed_item_instance_mutations(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<(), AppError> {
-    let _ = runtime.eval_i64(
-        FINALIZE_ITEM_INSTANCE_MUTATION_LUA,
-        &[
-            ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
-            &build_item_instance_mutation_key(character_id),
-            &build_inflight_item_instance_mutation_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await?;
+    let _ = runtime
+        .eval_i64(
+            FINALIZE_ITEM_INSTANCE_MUTATION_LUA,
+            &[
+                ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
+                &build_item_instance_mutation_key(character_id),
+                &build_inflight_item_instance_mutation_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?;
     Ok(())
 }
 
@@ -223,25 +246,33 @@ pub async fn restore_claimed_item_instance_mutations(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<(), AppError> {
-    let _ = runtime.eval_i64(
-        RESTORE_ITEM_INSTANCE_MUTATION_LUA,
-        &[
-            ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
-            &build_item_instance_mutation_key(character_id),
-            &build_inflight_item_instance_mutation_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await?;
+    let _ = runtime
+        .eval_i64(
+            RESTORE_ITEM_INSTANCE_MUTATION_LUA,
+            &[
+                ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
+                &build_item_instance_mutation_key(character_id),
+                &build_inflight_item_instance_mutation_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?;
     Ok(())
 }
 
-pub fn parse_item_instance_mutation_hash(hash: HashMap<String, String>) -> Vec<BufferedItemInstanceMutation> {
+pub fn parse_item_instance_mutation_hash(
+    hash: HashMap<String, String>,
+) -> Vec<BufferedItemInstanceMutation> {
     let mut out = hash
         .into_values()
         .filter_map(|raw| serde_json::from_str::<BufferedItemInstanceMutation>(&raw).ok())
         .filter_map(|mutation| normalize_mutation(&mutation))
         .collect::<Vec<_>>();
-    out.sort_by(|left, right| left.created_at_ms.cmp(&right.created_at_ms).then(left.op_id.cmp(&right.op_id)));
+    out.sort_by(|left, right| {
+        left.created_at_ms
+            .cmp(&right.created_at_ms)
+            .then(left.op_id.cmp(&right.op_id))
+    });
     out
 }
 
@@ -254,7 +285,8 @@ where
     F: Fn(i64, Vec<BufferedItemInstanceMutation>) -> Fut,
     Fut: Future<Output = Result<(), AppError>>,
 {
-    let dirty_character_ids = list_dirty_character_ids_for_item_instance_mutation(runtime, limit).await?;
+    let dirty_character_ids =
+        list_dirty_character_ids_for_item_instance_mutation(runtime, limit).await?;
     let mut flushed_character_ids = Vec::new();
     for character_id in dirty_character_ids {
         if !claim_character_item_instance_mutations(runtime, character_id).await? {
@@ -282,7 +314,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{BufferedItemInstanceMutation, ItemInstanceMutationSnapshot, parse_item_instance_mutation_hash};
+    use super::{
+        BufferedItemInstanceMutation, ItemInstanceMutationSnapshot,
+        parse_item_instance_mutation_hash,
+    };
     use std::collections::HashMap;
 
     #[test]
@@ -328,7 +363,16 @@ mod tests {
             serde_json::to_string(&mutation).expect("mutation should serialize"),
         )]));
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].snapshot.as_ref().map(|snapshot| snapshot.location.as_str()), Some("mail"));
-        println!("ITEM_INSTANCE_MUTATION_DELTA={}", serde_json::json!({"itemId": parsed[0].item_id, "location": parsed[0].snapshot.as_ref().map(|snapshot| snapshot.location.clone())}));
+        assert_eq!(
+            parsed[0]
+                .snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.location.as_str()),
+            Some("mail")
+        );
+        println!(
+            "ITEM_INSTANCE_MUTATION_DELTA={}",
+            serde_json::json!({"itemId": parsed[0].item_id, "location": parsed[0].snapshot.as_ref().map(|snapshot| snapshot.location.clone())})
+        );
     }
 }

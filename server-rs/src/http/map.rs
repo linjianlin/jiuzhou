@@ -5,12 +5,16 @@ use std::path::PathBuf;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
-use sqlx::Row;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 
 use crate::auth;
-use crate::http::info::{InfoItemResourceDto, InfoTargetDto, map_item_target, map_monster_target, map_npc_target};
-use crate::repo::info_target::{get_item_info_target, get_monster_info_target, get_npc_info_target};
+use crate::http::info::{
+    InfoItemResourceDto, InfoTargetDto, map_item_target, map_monster_target, map_npc_target,
+};
+use crate::repo::info_target::{
+    get_item_info_target, get_monster_info_target, get_npc_info_target,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
 use crate::state::AppState;
@@ -146,22 +150,74 @@ pub async fn get_world_map() -> Json<SuccessResponse<WorldMapData>> {
     send_success(WorldMapData {
         map_name: "九州大陆".to_string(),
         areas: vec![
-            WorldMapAreaDto { id: "NW".to_string(), name: "NW".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "N".to_string(), name: "N".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "NE".to_string(), name: "NE".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "W".to_string(), name: "W".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "C".to_string(), name: "C".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "E".to_string(), name: "E".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "SW".to_string(), name: "SW".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "S".to_string(), name: "S".to_string(), description: String::new(), level: "Lv.1".to_string() },
-            WorldMapAreaDto { id: "SE".to_string(), name: "SE".to_string(), description: String::new(), level: "Lv.1".to_string() },
+            WorldMapAreaDto {
+                id: "NW".to_string(),
+                name: "NW".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "N".to_string(),
+                name: "N".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "NE".to_string(),
+                name: "NE".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "W".to_string(),
+                name: "W".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "C".to_string(),
+                name: "C".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "E".to_string(),
+                name: "E".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "SW".to_string(),
+                name: "SW".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "S".to_string(),
+                name: "S".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
+            WorldMapAreaDto {
+                id: "SE".to_string(),
+                name: "SE".to_string(),
+                description: String::new(),
+                level: "Lv.1".to_string(),
+            },
         ],
         connections: vec![
-            ("NW".to_string(), "N".to_string()), ("N".to_string(), "NE".to_string()),
-            ("W".to_string(), "C".to_string()), ("C".to_string(), "E".to_string()),
-            ("SW".to_string(), "S".to_string()), ("S".to_string(), "SE".to_string()),
-            ("NW".to_string(), "W".to_string()), ("N".to_string(), "C".to_string()), ("NE".to_string(), "E".to_string()),
-            ("W".to_string(), "SW".to_string()), ("C".to_string(), "S".to_string()), ("E".to_string(), "SE".to_string()),
+            ("NW".to_string(), "N".to_string()),
+            ("N".to_string(), "NE".to_string()),
+            ("W".to_string(), "C".to_string()),
+            ("C".to_string(), "E".to_string()),
+            ("SW".to_string(), "S".to_string()),
+            ("S".to_string(), "SE".to_string()),
+            ("NW".to_string(), "W".to_string()),
+            ("N".to_string(), "C".to_string()),
+            ("NE".to_string(), "E".to_string()),
+            ("W".to_string(), "SW".to_string()),
+            ("C".to_string(), "S".to_string()),
+            ("E".to_string(), "SE".to_string()),
         ],
     })
 }
@@ -183,11 +239,18 @@ pub async fn get_enabled_maps() -> Result<Json<SuccessResponse<MapListData>>, Ap
             req_realm_min: map.req_realm_min,
         })
         .collect();
-    maps.sort_by(|left, right| right.sort_weight.cmp(&left.sort_weight).then_with(|| left.id.cmp(&right.id)));
+    maps.sort_by(|left, right| {
+        right
+            .sort_weight
+            .cmp(&left.sort_weight)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     Ok(send_success(MapListData { maps }))
 }
 
-pub async fn get_map_detail(Path(map_id): Path<String>) -> Result<Json<SuccessResponse<MapDetailData>>, AppError> {
+pub async fn get_map_detail(
+    Path(map_id): Path<String>,
+) -> Result<Json<SuccessResponse<MapDetailData>>, AppError> {
     let map = load_map_seeds()?
         .into_iter()
         .find(|map| map.enabled != Some(false) && map.id == map_id)
@@ -196,7 +259,9 @@ pub async fn get_map_detail(Path(map_id): Path<String>) -> Result<Json<SuccessRe
     Ok(send_success(MapDetailData { map, rooms }))
 }
 
-pub async fn get_room_detail(Path((map_id, room_id)): Path<(String, String)>) -> Result<Json<SuccessResponse<RoomDetailData>>, AppError> {
+pub async fn get_room_detail(
+    Path((map_id, room_id)): Path<(String, String)>,
+) -> Result<Json<SuccessResponse<RoomDetailData>>, AppError> {
     let map = load_map_seeds()?
         .into_iter()
         .find(|map| map.enabled != Some(false) && map.id == map_id)
@@ -224,13 +289,19 @@ pub async fn get_room_objects(
         .find(|room| room.id == room_id)
         .ok_or_else(|| AppError::not_found("房间不存在"))?;
     let task_markers = resolve_room_task_markers(&state, &headers, &room).await?;
-    let resource_state_by_id = load_room_resource_states(&state, task_markers.character_id, &map_id, &room_id, &room).await?;
+    let resource_state_by_id =
+        load_room_resource_states(&state, task_markers.character_id, &map_id, &room_id, &room)
+            .await?;
 
     let mut objects = Vec::new();
     for npc_id in room.npcs.clone().unwrap_or_default() {
         if let Some(target) = get_npc_info_target(&npc_id)? {
             let mut mapped = map_npc_target(target);
-            apply_task_marker(&mut mapped, task_markers.npc_markers.get(npc_id.trim()).copied(), task_markers.tracked_npc_ids.contains(npc_id.trim()));
+            apply_task_marker(
+                &mut mapped,
+                task_markers.npc_markers.get(npc_id.trim()).copied(),
+                task_markers.tracked_npc_ids.contains(npc_id.trim()),
+            );
             objects.push(RoomObjectDto::Info(mapped));
         }
     }
@@ -239,22 +310,42 @@ pub async fn get_room_objects(
             if let Some(target) = get_monster_info_target(&monster.monster_def_id)? {
                 let mut mapped = map_monster_target(target);
                 let id = monster.monster_def_id.trim().to_string();
-                apply_task_marker(&mut mapped, task_markers.monster_markers.get(id.as_str()).copied(), task_markers.tracked_monster_ids.contains(id.as_str()));
+                apply_task_marker(
+                    &mut mapped,
+                    task_markers.monster_markers.get(id.as_str()).copied(),
+                    task_markers.tracked_monster_ids.contains(id.as_str()),
+                );
                 objects.push(RoomObjectDto::Info(mapped));
             }
         }
     }
     if let Some(resources) = room.resources.clone() {
         for resource in resources {
-            if let Some(resource_id) = resource.get("resource_id").and_then(|value| value.as_str()) {
+            if let Some(resource_id) = resource.get("resource_id").and_then(|value| value.as_str())
+            {
                 if let Some(item) = get_item_info_target(resource_id)? {
                     let mut info = map_item_target(item);
-                    if let InfoTargetDto::Item { ref mut id, ref mut object_kind, ref mut resource, .. } = info {
+                    if let InfoTargetDto::Item {
+                        ref mut id,
+                        ref mut object_kind,
+                        ref mut resource,
+                        ..
+                    } = info
+                    {
                         *id = resource_id.to_string();
                         *object_kind = Some("resource".to_string());
                         *resource = resource_state_by_id.get(resource_id).cloned();
                     }
-                    apply_task_marker(&mut info, task_markers.resource_markers.get(resource_id.trim()).copied(), task_markers.tracked_resource_ids.contains(resource_id.trim()));
+                    apply_task_marker(
+                        &mut info,
+                        task_markers
+                            .resource_markers
+                            .get(resource_id.trim())
+                            .copied(),
+                        task_markers
+                            .tracked_resource_ids
+                            .contains(resource_id.trim()),
+                    );
                     objects.push(RoomObjectDto::Info(info));
                 }
             }
@@ -284,7 +375,8 @@ pub async fn gather_room_resource(
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     let room = get_room_seed(&map_id, &room_id)?;
-    let cfg = get_room_resource_config(&room, &resource_id).ok_or_else(|| AppError::config("资源不存在"))?;
+    let cfg = get_room_resource_config(&room, &resource_id)
+        .ok_or_else(|| AppError::config("资源不存在"))?;
     let action_sec = 5_i64;
     let row = state
         .database
@@ -294,44 +386,78 @@ pub async fn gather_room_resource(
         )
         .await?;
     let now = time::OffsetDateTime::now_utc();
-    let row_id = row.as_ref().and_then(|row| row.try_get::<Option<i64>, _>("id").ok().flatten());
-    let used_count = row.as_ref().and_then(|row| row.try_get::<Option<i64>, _>("used_count").ok().flatten()).unwrap_or_default();
-    let cooldown_until = row.as_ref().and_then(|row| row.try_get::<Option<String>, _>("cooldown_until_text").ok().flatten());
-    let gather_until = row.as_ref().and_then(|row| row.try_get::<Option<String>, _>("gather_until_text").ok().flatten());
+    let row_id = row
+        .as_ref()
+        .and_then(|row| row.try_get::<Option<i64>, _>("id").ok().flatten());
+    let used_count = row
+        .as_ref()
+        .and_then(|row| row.try_get::<Option<i64>, _>("used_count").ok().flatten())
+        .unwrap_or_default();
+    let cooldown_until = row.as_ref().and_then(|row| {
+        row.try_get::<Option<String>, _>("cooldown_until_text")
+            .ok()
+            .flatten()
+    });
+    let gather_until = row.as_ref().and_then(|row| {
+        row.try_get::<Option<String>, _>("gather_until_text")
+            .ok()
+            .flatten()
+    });
     if let Some(cooldown_until) = cooldown_until.as_deref().and_then(parse_rfc3339) {
         if cooldown_until > now {
-            let remaining = ((cooldown_until.unix_timestamp() - now.unix_timestamp()).max(1)) as i64;
-            return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<GatherRoomResourceData> {
-                success: false,
-                message: Some(format!("资源尚未刷新，剩余{}秒", remaining)),
-                data: None,
-            }));
+            let remaining =
+                ((cooldown_until.unix_timestamp() - now.unix_timestamp()).max(1)) as i64;
+            return Ok(crate::shared::response::send_result(
+                crate::shared::response::ServiceResult::<GatherRoomResourceData> {
+                    success: false,
+                    message: Some(format!("资源尚未刷新，剩余{}秒", remaining)),
+                    data: None,
+                },
+            ));
         }
     }
-    let normalized_used = if cooldown_until.as_deref().and_then(parse_rfc3339).map(|value| value <= now).unwrap_or(false) { 0 } else { used_count.max(0) };
+    let normalized_used = if cooldown_until
+        .as_deref()
+        .and_then(parse_rfc3339)
+        .map(|value| value <= now)
+        .unwrap_or(false)
+    {
+        0
+    } else {
+        used_count.max(0)
+    };
     let remaining_before = (cfg.collect_limit - normalized_used).max(0);
     if remaining_before <= 0 {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<GatherRoomResourceData> {
-            success: false,
-            message: Some("资源已耗尽".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<GatherRoomResourceData> {
+                success: false,
+                message: Some("资源已耗尽".to_string()),
+                data: None,
+            },
+        ));
     }
     if let Some(gather_until) = gather_until.as_deref().and_then(parse_rfc3339) {
         if gather_until > now {
-            let cooldown_sec = ((gather_until.unix_timestamp() - now.unix_timestamp()).max(1)) as i64;
-            return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-                success: true,
-                message: Some("采集中".to_string()),
-                data: Some(GatherRoomResourceData {
-                    item_def_id: resource_id.clone(),
-                    qty: 0,
-                    remaining: remaining_before,
-                    cooldown_sec,
-                    action_sec: Some(action_sec),
-                    gather_until: Some(gather_until.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-                }),
-            }));
+            let cooldown_sec =
+                ((gather_until.unix_timestamp() - now.unix_timestamp()).max(1)) as i64;
+            return Ok(crate::shared::response::send_result(
+                crate::shared::response::ServiceResult {
+                    success: true,
+                    message: Some("采集中".to_string()),
+                    data: Some(GatherRoomResourceData {
+                        item_def_id: resource_id.clone(),
+                        qty: 0,
+                        remaining: remaining_before,
+                        cooldown_sec,
+                        action_sec: Some(action_sec),
+                        gather_until: Some(
+                            gather_until
+                                .format(&time::format_description::well_known::Rfc3339)
+                                .unwrap_or_default(),
+                        ),
+                    }),
+                },
+            ));
         }
     }
     if gather_until.is_none() {
@@ -347,31 +473,47 @@ pub async fn gather_room_resource(
                 |query| query.bind(actor.character_id).bind(&map_id).bind(&room_id).bind(&resource_id).bind(normalized_used).bind(next_gather_until.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
             ).await?;
         }
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-            success: true,
-            message: Some("开始采集".to_string()),
-            data: Some(GatherRoomResourceData {
-                item_def_id: resource_id,
-                qty: 0,
-                remaining: remaining_before,
-                cooldown_sec: action_sec,
-                action_sec: Some(action_sec),
-                gather_until: Some(next_gather_until.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-            }),
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult {
+                success: true,
+                message: Some("开始采集".to_string()),
+                data: Some(GatherRoomResourceData {
+                    item_def_id: resource_id,
+                    qty: 0,
+                    remaining: remaining_before,
+                    cooldown_sec: action_sec,
+                    action_sec: Some(action_sec),
+                    gather_until: Some(
+                        next_gather_until
+                            .format(&time::format_description::well_known::Rfc3339)
+                            .unwrap_or_default(),
+                    ),
+                }),
+            },
+        ));
     }
 
     let next_used = normalized_used + 1;
     if next_used > cfg.collect_limit {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<GatherRoomResourceData> {
-            success: false,
-            message: Some("资源已耗尽".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<GatherRoomResourceData> {
+                success: false,
+                message: Some("资源已耗尽".to_string()),
+                data: None,
+            },
+        ));
     }
     let will_deplete = next_used >= cfg.collect_limit;
-    let cooldown_until = if will_deplete { Some(now + time::Duration::seconds(cfg.respawn_sec)) } else { None };
-    let next_gather_until = if will_deplete { None } else { Some(now + time::Duration::seconds(action_sec)) };
+    let cooldown_until = if will_deplete {
+        Some(now + time::Duration::seconds(cfg.respawn_sec))
+    } else {
+        None
+    };
+    let next_gather_until = if will_deplete {
+        None
+    } else {
+        Some(now + time::Duration::seconds(action_sec))
+    };
     if let Some(id) = row_id {
         state.database.execute(
             "UPDATE character_room_resource_state SET used_count = $1, gather_until = $2::timestamptz, cooldown_until = $3::timestamptz, updated_at = NOW() WHERE id = $4",
@@ -387,18 +529,24 @@ pub async fn gather_room_resource(
         "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from) VALUES ($1, $2, $3, 1, 'none', 'bag', NOW(), NOW(), 'gather') RETURNING id",
         |query| query.bind(actor.user_id).bind(actor.character_id).bind(&resource_id),
     ).await?;
-    return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-        success: true,
-        message: Some("采集成功".to_string()),
-        data: Some(GatherRoomResourceData {
-            item_def_id: resource_id,
-            qty: 1,
-            remaining: (cfg.collect_limit - next_used).max(0),
-            cooldown_sec: next_gather_until.map(|_| action_sec).unwrap_or(0),
-            action_sec: Some(action_sec),
-            gather_until: next_gather_until.and_then(|value| value.format(&time::format_description::well_known::Rfc3339).ok()),
-        }),
-    }))
+    return Ok(crate::shared::response::send_result(
+        crate::shared::response::ServiceResult {
+            success: true,
+            message: Some("采集成功".to_string()),
+            data: Some(GatherRoomResourceData {
+                item_def_id: resource_id,
+                qty: 1,
+                remaining: (cfg.collect_limit - next_used).max(0),
+                cooldown_sec: next_gather_until.map(|_| action_sec).unwrap_or(0),
+                action_sec: Some(action_sec),
+                gather_until: next_gather_until.and_then(|value| {
+                    value
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .ok()
+                }),
+            }),
+        },
+    ));
 }
 
 pub async fn pickup_room_item(
@@ -409,24 +557,30 @@ pub async fn pickup_room_item(
     let actor = auth::require_character(&state, &headers).await?;
     let room = get_room_seed(&map_id, &room_id)?;
     let Some(cfg) = get_room_item_config(&room, &item_def_id) else {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<PickupRoomItemData> {
-            success: false,
-            message: Some("物品不存在".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<PickupRoomItemData> {
+                success: false,
+                message: Some("物品不存在".to_string()),
+                data: None,
+            },
+        ));
     };
     if let Some(req_quest_id) = cfg.req_quest_id.as_deref() {
         let can_pickup = state.database.fetch_optional(
             "SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 LIMIT 1",
             |query| query.bind(actor.character_id).bind(req_quest_id),
         ).await?;
-        let status = can_pickup.and_then(|row| row.try_get::<Option<String>, _>("status").ok().flatten()).unwrap_or_default();
+        let status = can_pickup
+            .and_then(|row| row.try_get::<Option<String>, _>("status").ok().flatten())
+            .unwrap_or_default();
         if status.is_empty() || status == "claimed" {
-            return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<PickupRoomItemData> {
-                success: false,
-                message: Some("不满足拾取条件".to_string()),
-                data: None,
-            }));
+            return Ok(crate::shared::response::send_result(
+                crate::shared::response::ServiceResult::<PickupRoomItemData> {
+                    success: false,
+                    message: Some("不满足拾取条件".to_string()),
+                    data: None,
+                },
+            ));
         }
     }
     if cfg.once {
@@ -435,19 +589,23 @@ pub async fn pickup_room_item(
             |query| query.bind(actor.character_id).bind(&map_id).bind(&room_id).bind(&item_def_id),
         ).await?;
         if picked.is_some() {
-            return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<PickupRoomItemData> {
-                success: false,
-                message: Some("该物品已拾取过".to_string()),
-                data: None,
-            }));
+            return Ok(crate::shared::response::send_result(
+                crate::shared::response::ServiceResult::<PickupRoomItemData> {
+                    success: false,
+                    message: Some("该物品已拾取过".to_string()),
+                    data: None,
+                },
+            ));
         }
     }
     if cfg.chance < 1.0 {
-        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<PickupRoomItemData> {
-            success: false,
-            message: Some("拾取失败".to_string()),
-            data: None,
-        }));
+        return Ok(crate::shared::response::send_result(
+            crate::shared::response::ServiceResult::<PickupRoomItemData> {
+                success: false,
+                message: Some("拾取失败".to_string()),
+                data: None,
+            },
+        ));
     }
     state.database.fetch_one(
         "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from) VALUES ($1, $2, $3, 1, 'none', 'bag', NOW(), NOW(), 'pickup') RETURNING id",
@@ -459,11 +617,16 @@ pub async fn pickup_room_item(
             |query| query.bind(actor.character_id).bind(&map_id).bind(&room_id).bind(&item_def_id),
         ).await?;
     }
-    Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult {
-        success: true,
-        message: Some("拾取成功".to_string()),
-        data: Some(PickupRoomItemData { item_def_id, qty: 1 }),
-    }))
+    Ok(crate::shared::response::send_result(
+        crate::shared::response::ServiceResult {
+            success: true,
+            message: Some("拾取成功".to_string()),
+            data: Some(PickupRoomItemData {
+                item_def_id,
+                qty: 1,
+            }),
+        },
+    ))
 }
 
 #[derive(Clone)]
@@ -483,26 +646,54 @@ fn get_room_seed(map_id: &str, room_id: &str) -> Result<MapRoomDto, AppError> {
     load_map_seeds()?
         .into_iter()
         .find(|map| map.enabled != Some(false) && map.id == map_id)
-        .and_then(|map| map.rooms.unwrap_or_default().into_iter().find(|room| room.id == room_id))
+        .and_then(|map| {
+            map.rooms
+                .unwrap_or_default()
+                .into_iter()
+                .find(|room| room.id == room_id)
+        })
         .ok_or_else(|| AppError::config("房间不存在"))
 }
 
 fn get_room_resource_config(room: &MapRoomDto, resource_id: &str) -> Option<RoomResourceConfig> {
     room.resources.as_ref()?.iter().find_map(|entry| {
-        (entry.get("resource_id").and_then(|value| value.as_str()) == Some(resource_id)).then(|| RoomResourceConfig {
-            collect_limit: entry.get("collect_limit").and_then(|value| value.as_i64()).unwrap_or(1).max(1),
-            respawn_sec: entry.get("respawn_sec").and_then(|value| value.as_i64()).unwrap_or(300).max(1),
-        })
+        (entry.get("resource_id").and_then(|value| value.as_str()) == Some(resource_id)).then(
+            || RoomResourceConfig {
+                collect_limit: entry
+                    .get("collect_limit")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(1)
+                    .max(1),
+                respawn_sec: entry
+                    .get("respawn_sec")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(300)
+                    .max(1),
+            },
+        )
     })
 }
 
 fn get_room_item_config(room: &MapRoomDto, item_def_id: &str) -> Option<RoomItemConfig> {
     room.items.as_ref()?.iter().find_map(|entry| {
-        (entry.get("item_def_id").and_then(|value| value.as_str()) == Some(item_def_id)).then(|| RoomItemConfig {
-            once: entry.get("once").and_then(|value| value.as_bool()).unwrap_or(false),
-            chance: entry.get("chance").and_then(|value| value.as_f64()).unwrap_or(1.0).clamp(0.0, 1.0),
-            req_quest_id: entry.get("req_quest_id").and_then(|value| value.as_str()).map(|value| value.to_string()).filter(|value| !value.trim().is_empty()),
-        })
+        (entry.get("item_def_id").and_then(|value| value.as_str()) == Some(item_def_id)).then(
+            || RoomItemConfig {
+                once: entry
+                    .get("once")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+                chance: entry
+                    .get("chance")
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(1.0)
+                    .clamp(0.0, 1.0),
+                req_quest_id: entry
+                    .get("req_quest_id")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string())
+                    .filter(|value| !value.trim().is_empty()),
+            },
+        )
     })
 }
 
@@ -510,7 +701,11 @@ fn collect_room_resource_ids(room: &MapRoomDto) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut ids = Vec::new();
     for entry in room.resources.as_ref().into_iter().flatten() {
-        let Some(resource_id) = entry.get("resource_id").and_then(|value| value.as_str()).map(str::trim) else {
+        let Some(resource_id) = entry
+            .get("resource_id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+        else {
             continue;
         };
         if resource_id.is_empty() || !seen.insert(resource_id.to_string()) {
@@ -540,11 +735,15 @@ async fn load_room_resource_states(
             |query| query.bind(character_id).bind(map_id).bind(room_id).bind(&resource_ids),
         ).await?;
         for row in rows {
-            let resource_id = row.try_get::<Option<String>, _>("resource_id")?.unwrap_or_default();
+            let resource_id = row
+                .try_get::<Option<String>, _>("resource_id")?
+                .unwrap_or_default();
             if resource_id.trim().is_empty() {
                 continue;
             }
-            let used_count = row.try_get::<Option<i64>, _>("used_count")?.unwrap_or_default();
+            let used_count = row
+                .try_get::<Option<i64>, _>("used_count")?
+                .unwrap_or_default();
             let cooldown_until = row.try_get::<Option<String>, _>("cooldown_until_text")?;
             row_by_resource_id.insert(resource_id, (used_count, cooldown_until));
         }
@@ -556,13 +755,22 @@ async fn load_room_resource_states(
         let Some(cfg) = get_room_resource_config(room, &resource_id) else {
             continue;
         };
-        let (raw_used_count, cooldown_until_text) = row_by_resource_id.get(resource_id.as_str()).cloned().unwrap_or((0, None));
+        let (raw_used_count, cooldown_until_text) = row_by_resource_id
+            .get(resource_id.as_str())
+            .cloned()
+            .unwrap_or((0, None));
         let cooldown_until = cooldown_until_text.as_deref().and_then(parse_rfc3339);
         let in_cooldown = cooldown_until.map(|value| value > now).unwrap_or(false);
-        let used_count = if cooldown_until.map(|value| value <= now).unwrap_or(false) { 0 } else { raw_used_count.max(0) };
+        let used_count = if cooldown_until.map(|value| value <= now).unwrap_or(false) {
+            0
+        } else {
+            raw_used_count.max(0)
+        };
         let remaining = (cfg.collect_limit - used_count).max(0);
         let cooldown_sec = if in_cooldown {
-            cooldown_until.map(|value| (value.unix_timestamp() - now.unix_timestamp()).max(1)).unwrap_or_default()
+            cooldown_until
+                .map(|value| (value.unix_timestamp() - now.unix_timestamp()).max(1))
+                .unwrap_or_default()
         } else {
             0
         };
@@ -574,7 +782,11 @@ async fn load_room_resource_states(
                 remaining,
                 cooldown_sec,
                 respawn_sec: cfg.respawn_sec,
-                cooldown_until: if in_cooldown { cooldown_until_text } else { None },
+                cooldown_until: if in_cooldown {
+                    cooldown_until_text
+                } else {
+                    None
+                },
             },
         );
     }
@@ -622,14 +834,17 @@ async fn resolve_room_task_markers(
         .await?;
     let mut progress_by_id = HashMap::new();
     for row in progress_rows {
-        let task_id = row.try_get::<Option<String>, _>("task_id")?.unwrap_or_default();
+        let task_id = row
+            .try_get::<Option<String>, _>("task_id")?
+            .unwrap_or_default();
         if task_id.trim().is_empty() {
             continue;
         }
         progress_by_id.insert(
             task_id,
             (
-                row.try_get::<Option<String>, _>("status")?.unwrap_or_else(|| "ongoing".to_string()),
+                row.try_get::<Option<String>, _>("status")?
+                    .unwrap_or_else(|| "ongoing".to_string()),
                 row.try_get::<Option<bool>, _>("tracked")?.unwrap_or(false),
                 parse_progress_record(row.try_get::<Option<serde_json::Value>, _>("progress")?),
             ),
@@ -640,9 +855,26 @@ async fn resolve_room_task_markers(
         character_id: Some(character_id),
         ..RoomTaskMarkers::default()
     };
-    let room_npc_ids: std::collections::HashSet<_> = room.npcs.clone().unwrap_or_default().into_iter().collect();
-    let room_monster_ids: std::collections::HashSet<_> = room.monsters.clone().unwrap_or_default().into_iter().map(|m| m.monster_def_id).collect();
-    let room_resource_ids: std::collections::HashSet<_> = room.resources.clone().unwrap_or_default().into_iter().filter_map(|res| res.get("resource_id").and_then(|v| v.as_str()).map(|s| s.to_string())).collect();
+    let room_npc_ids: std::collections::HashSet<_> =
+        room.npcs.clone().unwrap_or_default().into_iter().collect();
+    let room_monster_ids: std::collections::HashSet<_> = room
+        .monsters
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| m.monster_def_id)
+        .collect();
+    let room_resource_ids: std::collections::HashSet<_> = room
+        .resources
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|res| {
+            res.get("resource_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
 
     for task in task_defs {
         let (status, tracked, progress) = progress_by_id
@@ -669,24 +901,36 @@ async fn resolve_room_task_markers(
                 "talk_npc" => {
                     if let Some(npc_id) = params.get("npc_id").and_then(|v| v.as_str()) {
                         if room_npc_ids.contains(npc_id) {
-                            if let Some(marker) = active_marker { set_marker(&mut result.npc_markers, npc_id, marker); }
-                            if tracked { result.tracked_npc_ids.insert(npc_id.to_string()); }
+                            if let Some(marker) = active_marker {
+                                set_marker(&mut result.npc_markers, npc_id, marker);
+                            }
+                            if tracked {
+                                result.tracked_npc_ids.insert(npc_id.to_string());
+                            }
                         }
                     }
                 }
                 "kill_monster" => {
                     if let Some(monster_id) = params.get("monster_id").and_then(|v| v.as_str()) {
                         if room_monster_ids.contains(monster_id) {
-                            if let Some(marker) = active_marker { set_marker(&mut result.monster_markers, monster_id, marker); }
-                            if tracked { result.tracked_monster_ids.insert(monster_id.to_string()); }
+                            if let Some(marker) = active_marker {
+                                set_marker(&mut result.monster_markers, monster_id, marker);
+                            }
+                            if tracked {
+                                result.tracked_monster_ids.insert(monster_id.to_string());
+                            }
                         }
                     }
                 }
                 "gather_resource" => {
                     if let Some(resource_id) = params.get("resource_id").and_then(|v| v.as_str()) {
                         if room_resource_ids.contains(resource_id) {
-                            if let Some(marker) = active_marker { set_marker(&mut result.resource_markers, resource_id, marker); }
-                            if tracked { result.tracked_resource_ids.insert(resource_id.to_string()); }
+                            if let Some(marker) = active_marker {
+                                set_marker(&mut result.resource_markers, resource_id, marker);
+                            }
+                            if tracked {
+                                result.tracked_resource_ids.insert(resource_id.to_string());
+                            }
                         }
                     }
                 }
@@ -697,7 +941,9 @@ async fn resolve_room_task_markers(
             if let Some(giver_npc_id) = task.giver_npc_id.as_deref() {
                 if room_npc_ids.contains(giver_npc_id) {
                     set_marker(&mut result.npc_markers, giver_npc_id, '!');
-                    if tracked { result.tracked_npc_ids.insert(giver_npc_id.to_string()); }
+                    if tracked {
+                        result.tracked_npc_ids.insert(giver_npc_id.to_string());
+                    }
                 }
             }
         }
@@ -762,11 +1008,17 @@ struct TaskMarkerObjective {
 }
 
 fn load_task_marker_seeds() -> Result<Vec<TaskMarkerSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/task_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read task_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/task_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read task_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse task_def.json: {error}")))?;
-    let tasks = payload.get("tasks").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let tasks = payload
+        .get("tasks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(tasks
         .into_iter()
         .filter_map(|value| serde_json::from_value::<TaskMarkerSeed>(value).ok())
@@ -783,24 +1035,37 @@ fn parse_progress_record(raw: Option<serde_json::Value>) -> HashMap<String, i64>
     };
     object
         .iter()
-        .filter_map(|(key, value)| value.as_i64().or_else(|| value.as_f64().map(|v| v.floor() as i64)).map(|value| (key.clone(), value.max(0))))
+        .filter_map(|(key, value)| {
+            value
+                .as_i64()
+                .or_else(|| value.as_f64().map(|v| v.floor() as i64))
+                .map(|value| (key.clone(), value.max(0)))
+        })
         .collect()
 }
 
 fn load_map_seeds() -> Result<Vec<MapSeed>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/map_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read map_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/map_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read map_def.json: {error}")))?;
     let payload: MapSeedFile = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse map_def.json: {error}")))?;
     Ok(payload.maps)
 }
 
 fn load_monster_name_map() -> Result<HashMap<String, String>, AppError> {
-    let content = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/monster_def.json"))
-        .map_err(|error| AppError::config(format!("failed to read monster_def.json: {error}")))?;
+    let content = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/monster_def.json"),
+    )
+    .map_err(|error| AppError::config(format!("failed to read monster_def.json: {error}")))?;
     let payload: serde_json::Value = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse monster_def.json: {error}")))?;
-    let monsters = payload.get("monsters").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let monsters = payload
+        .get("monsters")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(monsters
         .into_iter()
         .filter_map(|monster| {

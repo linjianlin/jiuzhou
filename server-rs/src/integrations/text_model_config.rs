@@ -74,7 +74,7 @@ pub fn require_text_model_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{read_text_model_config, TextModelScope};
+    use super::{TextModelScope, read_text_model_config};
 
     #[test]
     fn read_text_model_config_returns_none_without_required_keys() {

@@ -9,16 +9,32 @@ use serde::Deserialize;
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::{BattleStateDto, build_minimal_pve_battle_state, build_minimal_pvp_battle_state};
+use crate::battle_runtime::{
+    BattleStateDto, build_minimal_pve_battle_state, build_minimal_pvp_battle_state,
+};
 use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::tower::resolve_tower_floor_monster_ids;
-use crate::integrations::battle_persistence::{clear_battle_persistence, persist_battle_projection, persist_battle_session, persist_battle_snapshot};
+use crate::integrations::battle_character_profile::{
+    hydrate_pve_battle_state_owner, hydrate_pvp_battle_state_players,
+};
+use crate::integrations::battle_persistence::{
+    clear_battle_persistence, persist_battle_projection, persist_battle_session,
+    persist_battle_snapshot,
+};
 use crate::realtime::arena::build_arena_refresh_payload;
-use crate::realtime::battle::{build_battle_abandoned_payload, build_battle_cooldown_ready_payload, build_battle_started_payload};
-use crate::realtime::public_socket::{emit_arena_update_to_user, emit_battle_cooldown_to_participants, emit_battle_update_to_participants};
+use crate::realtime::battle::{
+    build_battle_abandoned_payload, build_battle_cooldown_ready_payload,
+    build_battle_started_payload,
+};
+use crate::realtime::public_socket::{
+    emit_arena_update_to_user, emit_battle_cooldown_to_participants,
+    emit_battle_update_to_participants,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
-use crate::state::{AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord};
+use crate::state::{
+    AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
+};
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,7 +93,10 @@ pub async fn get_current_battle_session(
     let actor = auth::require_auth(&state, &headers).await?;
     let session = state.battle_sessions.get_current_for_user(actor.user_id);
     Ok(send_success(CurrentBattleSessionResponseData {
-        state: session.as_ref().and_then(|session| session.current_battle_id.as_deref()).and_then(|battle_id| state.battle_runtime.get(battle_id)),
+        state: session
+            .as_ref()
+            .and_then(|session| session.current_battle_id.as_deref())
+            .and_then(|battle_id| state.battle_runtime.get(battle_id)),
         session,
         finished: false,
     }))
@@ -90,11 +109,20 @@ pub async fn start_battle_session(
 ) -> Result<Response, AppError> {
     let actor = auth::require_auth(&state, &headers).await?;
     if payload.r#type == "pve" {
-        let monster_ids = payload.monster_ids.unwrap_or_default().into_iter().map(|id| id.trim().to_string()).filter(|id| !id.is_empty()).take(5).collect::<Vec<_>>();
+        let monster_ids = payload
+            .monster_ids
+            .unwrap_or_default()
+            .into_iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .take(5)
+            .collect::<Vec<_>>();
         if monster_ids.is_empty() {
             return Err(AppError::config("请指定战斗目标"));
         }
-        let character_id = auth::get_character_id_by_user_id(&state, actor.user_id).await?.unwrap_or(actor.user_id);
+        let character_id = auth::get_character_id_by_user_id(&state, actor.user_id)
+            .await?
+            .ok_or_else(|| AppError::config("角色不存在"))?;
         let (map_id, room_id) = load_character_location(&state, character_id).await?;
         if map_id.trim().is_empty() || room_id.trim().is_empty() {
             return Err(AppError::config("角色位置异常，无法战斗"));
@@ -104,7 +132,10 @@ pub async fn start_battle_session(
             return Err(AppError::config("当前房间不存在可战斗目标"));
         }
         let room_monster_id_set = room_monster_ids.into_iter().collect::<BTreeSet<_>>();
-        if monster_ids.iter().any(|monster_id| !room_monster_id_set.contains(monster_id)) {
+        if monster_ids
+            .iter()
+            .any(|monster_id| !room_monster_id_set.contains(monster_id))
+        {
             return Err(AppError::config("战斗目标不在当前房间"));
         }
         let battle_id = format!("pve-battle-{}-{}", actor.user_id, now_millis());
@@ -121,11 +152,19 @@ pub async fn start_battle_session(
             context: BattleSessionContextDto::Pve { monster_ids },
         };
         state.battle_sessions.register(session.clone());
-        let battle_id = session.current_battle_id.clone().unwrap_or_else(|| format!("pve-battle-{}-{}", actor.user_id, now_millis()));
-        let battle_state = build_minimal_pve_battle_state(&battle_id, character_id, match &session.context {
-            BattleSessionContextDto::Pve { monster_ids } => monster_ids,
-            _ => unreachable!(),
-        });
+        let battle_id = session
+            .current_battle_id
+            .clone()
+            .ok_or_else(|| AppError::config("战斗ID不存在"))?;
+        let mut battle_state = build_minimal_pve_battle_state(
+            &battle_id,
+            character_id,
+            match &session.context {
+                BattleSessionContextDto::Pve { monster_ids } => monster_ids,
+                _ => unreachable!(),
+            },
+        );
+        hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         state.battle_runtime.register(battle_state.clone());
         let projection = OnlineBattleProjectionRecord {
             battle_id,
@@ -145,9 +184,19 @@ pub async fn start_battle_session(
             Some(session.clone()),
         );
         emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
-        let debug_cooldown_realtime = build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
-        emit_battle_cooldown_to_participants(&state, &session.participant_user_ids, &debug_cooldown_realtime);
-        return Ok(send_success(BattleSessionResponseData { finished: false, session, state: Some(battle_state) }).into_response());
+        let debug_cooldown_realtime =
+            build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+        emit_battle_cooldown_to_participants(
+            &state,
+            &session.participant_user_ids,
+            &debug_cooldown_realtime,
+        );
+        return Ok(send_success(BattleSessionResponseData {
+            finished: false,
+            session,
+            state: Some(battle_state),
+        })
+        .into_response());
     }
 
     if payload.r#type == "pvp" {
@@ -165,7 +214,14 @@ pub async fn start_battle_session(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("pvp-battle-{}-{}-{}", actor.user_id, opponent_character_id, now_millis()));
+            .unwrap_or_else(|| {
+                format!(
+                    "pvp-battle-{}-{}-{}",
+                    actor.user_id,
+                    opponent_character_id,
+                    now_millis()
+                )
+            });
         let session = BattleSessionSnapshotDto {
             session_id: format!("pvp-session-{}", battle_id),
             session_type: "pvp".to_string(),
@@ -182,8 +238,23 @@ pub async fn start_battle_session(
             },
         };
         state.battle_sessions.register(session.clone());
-        let battle_id = session.current_battle_id.clone().unwrap_or_else(|| format!("pvp-battle-{}-{}", actor.user_id, opponent_character_id));
-        let battle_state = build_minimal_pvp_battle_state(&battle_id, actor.user_id, opponent_character_id);
+        let actor_character_id = auth::get_character_id_by_user_id(&state, actor.user_id)
+            .await?
+            .ok_or_else(|| AppError::config("角色不存在"))?;
+        let battle_id = session
+            .current_battle_id
+            .clone()
+            .ok_or_else(|| AppError::config("战斗ID不存在"))?;
+        let mut battle_state =
+            build_minimal_pvp_battle_state(&battle_id, actor_character_id, opponent_character_id);
+        hydrate_pvp_battle_state_players(
+            &state,
+            &mut battle_state,
+            actor_character_id,
+            opponent_character_id,
+            if mode == "arena" { "npc" } else { "player" },
+        )
+        .await?;
         state.battle_runtime.register(battle_state.clone());
         let projection = OnlineBattleProjectionRecord {
             battle_id,
@@ -203,15 +274,29 @@ pub async fn start_battle_session(
             Some(session.clone()),
         );
         emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
-        let debug_cooldown_realtime = build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
-        emit_battle_cooldown_to_participants(&state, &session.participant_user_ids, &debug_cooldown_realtime);
-        return Ok(send_success(BattleSessionResponseData { finished: false, session, state: Some(battle_state) }).into_response());
+        let debug_cooldown_realtime =
+            build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+        emit_battle_cooldown_to_participants(
+            &state,
+            &session.participant_user_ids,
+            &debug_cooldown_realtime,
+        );
+        return Ok(send_success(BattleSessionResponseData {
+            finished: false,
+            session,
+            state: Some(battle_state),
+        })
+        .into_response());
     }
 
     if payload.r#type != "dungeon" {
         return Err(AppError::config("不支持的战斗会话类型"));
     }
-    let instance_id = payload.instance_id.as_deref().map(str::trim).unwrap_or_default();
+    let instance_id = payload
+        .instance_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
     if instance_id.is_empty() {
         return Err(AppError::config("缺少秘境实例ID"));
     }
@@ -235,36 +320,62 @@ pub async fn start_battle_session(
     if !participant_user_ids.contains(&actor.user_id) {
         return Err(AppError::unauthorized("无权访问该秘境"));
     }
-    let current_stage = row.try_get::<Option<i32>, _>("current_stage")?.map(i64::from).unwrap_or(1);
-    let current_wave = row.try_get::<Option<i32>, _>("current_wave")?.map(i64::from).unwrap_or(1);
-    let battle_id = format!("dungeon-battle-{}-{}-{}", instance_id, current_stage, current_wave);
+    let current_stage = row
+        .try_get::<Option<i32>, _>("current_stage")?
+        .map(i64::from)
+        .unwrap_or(1);
+    let current_wave = row
+        .try_get::<Option<i32>, _>("current_wave")?
+        .map(i64::from)
+        .unwrap_or(1);
+    let battle_id = format!(
+        "dungeon-battle-{}-{}-{}",
+        instance_id, current_stage, current_wave
+    );
     let session_id = format!("dungeon-session-{}", instance_id);
     let session = BattleSessionSnapshotDto {
         session_id: session_id.clone(),
         session_type: "dungeon".to_string(),
         owner_user_id: actor.user_id,
-        participant_user_ids: if participant_user_ids.is_empty() { vec![actor.user_id] } else { participant_user_ids.clone() },
+        participant_user_ids: if participant_user_ids.is_empty() {
+            vec![actor.user_id]
+        } else {
+            participant_user_ids.clone()
+        },
         current_battle_id: Some(battle_id.clone()),
         status: "running".to_string(),
         next_action: "none".to_string(),
         can_advance: false,
         last_result: None,
-        context: BattleSessionContextDto::Dungeon { instance_id: instance_id.to_string() },
+        context: BattleSessionContextDto::Dungeon {
+            instance_id: instance_id.to_string(),
+        },
     };
     state.battle_sessions.register(session.clone());
     let owner_character_id = participants
         .iter()
         .find_map(|entry| entry.get("characterId").and_then(|value| value.as_i64()))
-        .unwrap_or(actor.user_id);
-    let dungeon_id = row.try_get::<Option<String>, _>("dungeon_id")?.unwrap_or_default();
-    let difficulty_id = row.try_get::<Option<String>, _>("difficulty_id")?.unwrap_or_default();
-    let monster_ids = load_dungeon_wave_monster_ids(&dungeon_id, &difficulty_id, current_stage, current_wave)?;
-    let battle_state = build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
+        .ok_or_else(|| AppError::config("秘境参与角色不存在"))?;
+    let dungeon_id = row
+        .try_get::<Option<String>, _>("dungeon_id")?
+        .unwrap_or_default();
+    let difficulty_id = row
+        .try_get::<Option<String>, _>("difficulty_id")?
+        .unwrap_or_default();
+    let monster_ids =
+        load_dungeon_wave_monster_ids(&dungeon_id, &difficulty_id, current_stage, current_wave)?;
+    let mut battle_state =
+        build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
+    hydrate_pve_battle_state_owner(&state, &mut battle_state, owner_character_id).await?;
     state.battle_runtime.register(battle_state.clone());
     let projection = OnlineBattleProjectionRecord {
         battle_id: battle_id.clone(),
         owner_user_id: actor.user_id,
-        participant_user_ids: if participant_user_ids.is_empty() { vec![actor.user_id] } else { participant_user_ids.clone() },
+        participant_user_ids: if participant_user_ids.is_empty() {
+            vec![actor.user_id]
+        } else {
+            participant_user_ids.clone()
+        },
         r#type: "pve".to_string(),
         session_id: Some(session.session_id.clone()),
     };
@@ -279,8 +390,13 @@ pub async fn start_battle_session(
         Some(session.clone()),
     );
     emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
-    let debug_cooldown_realtime = build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
-    emit_battle_cooldown_to_participants(&state, &session.participant_user_ids, &debug_cooldown_realtime);
+    let debug_cooldown_realtime =
+        build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+    emit_battle_cooldown_to_participants(
+        &state,
+        &session.participant_user_ids,
+        &debug_cooldown_realtime,
+    );
     state.database.execute(
         "UPDATE dungeon_instance SET status = 'running', start_time = COALESCE(start_time, NOW()), instance_data = COALESCE(instance_data, '{}'::jsonb) || jsonb_build_object('currentBattleId', $2, 'difficultyRank', COALESCE((instance_data ->> 'difficultyRank')::int, 1)), created_at = created_at WHERE id = $1",
         |query| query.bind(instance_id).bind(&battle_id),
@@ -290,7 +406,8 @@ pub async fn start_battle_session(
         finished: false,
         session,
         state: Some(battle_state),
-    }).into_response())
+    })
+    .into_response())
 }
 
 pub async fn get_battle_session_by_battle_id(
@@ -303,7 +420,10 @@ pub async fn get_battle_session_by_battle_id(
         return Err(AppError::not_found("战斗会话不存在"));
     };
     ensure_session_visible_to_user(&session, actor.user_id)?;
-    let battle_state = session.current_battle_id.as_deref().and_then(|battle_id| state.battle_runtime.get(battle_id));
+    let battle_state = session
+        .current_battle_id
+        .as_deref()
+        .and_then(|battle_id| state.battle_runtime.get(battle_id));
     Ok(send_success(BattleSessionResponseData {
         finished: is_session_finished(&session),
         session,
@@ -321,7 +441,10 @@ pub async fn get_battle_session_by_id(
         return Err(AppError::not_found("战斗会话不存在"));
     };
     ensure_session_visible_to_user(&session, actor.user_id)?;
-    let battle_state = session.current_battle_id.as_deref().and_then(|battle_id| state.battle_runtime.get(battle_id));
+    let battle_state = session
+        .current_battle_id
+        .as_deref()
+        .and_then(|battle_id| state.battle_runtime.get(battle_id));
     Ok(send_success(BattleSessionResponseData {
         finished: is_session_finished(&session),
         session,
@@ -346,7 +469,7 @@ pub async fn advance_battle_session(
     let should_emit_arena_refresh = should_emit_abandoned
         && matches!(session.context, BattleSessionContextDto::Pvp { ref mode, .. } if mode == "arena");
 
-        let updated = match session.context.clone() {
+    let updated = match session.context.clone() {
         BattleSessionContextDto::Pve { monster_ids } => {
             if session.next_action == "return_to_map" {
                 if let Some(current_battle_id) = session.current_battle_id.clone() {
@@ -399,11 +522,13 @@ pub async fn advance_battle_session(
                     state.online_battle_projections.clear(&current_battle_id);
                     clear_battle_persistence(&state, &current_battle_id, Some(&session_id)).await?;
                 }
-                state.battle_runtime.register(crate::battle_runtime::build_minimal_pve_battle_state(
+                let mut next_battle_state = crate::battle_runtime::build_minimal_pve_battle_state(
                     &next_battle_id,
                     character_id,
                     &resolve_tower_floor_monster_ids(next_floor),
-                ));
+                );
+                hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id).await?;
+                state.battle_runtime.register(next_battle_state);
                 state.database.execute(
                     "UPDATE character_tower_progress SET current_run_id = $2, current_floor = $3, current_battle_id = $4, updated_at = NOW() WHERE character_id = $1",
                     |query| query.bind(character_id).bind(&run_id).bind(next_floor).bind(&next_battle_id),
@@ -479,7 +604,10 @@ pub async fn advance_battle_session(
     }
     .ok_or_else(|| AppError::not_found("战斗会话不存在"))?;
 
-    let battle_state = updated.current_battle_id.as_deref().and_then(|battle_id| state.battle_runtime.get(battle_id));
+    let battle_state = updated
+        .current_battle_id
+        .as_deref()
+        .and_then(|battle_id| state.battle_runtime.get(battle_id));
     if let Some(battle_state) = battle_state.clone() {
         let debug_realtime = build_battle_started_payload(
             updated.current_battle_id.as_deref().unwrap_or_default(),
@@ -488,8 +616,13 @@ pub async fn advance_battle_session(
             Some(updated.clone()),
         );
         emit_battle_update_to_participants(&state, &updated.participant_user_ids, &debug_realtime);
-        let debug_cooldown_realtime = build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
-        emit_battle_cooldown_to_participants(&state, &updated.participant_user_ids, &debug_cooldown_realtime);
+        let debug_cooldown_realtime =
+            build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+        emit_battle_cooldown_to_participants(
+            &state,
+            &updated.participant_user_ids,
+            &debug_cooldown_realtime,
+        );
     } else if should_emit_abandoned {
         if let Some(previous_battle_id) = previous_battle_id.as_deref() {
             let debug_realtime = build_battle_abandoned_payload(
@@ -502,7 +635,11 @@ pub async fn advance_battle_session(
         }
     }
     if should_emit_arena_refresh {
-        emit_arena_update_to_user(&state, updated.owner_user_id, &build_arena_refresh_payload());
+        emit_arena_update_to_user(
+            &state,
+            updated.owner_user_id,
+            &build_arena_refresh_payload(),
+        );
     }
     Ok(send_success(BattleSessionResponseData {
         finished: is_session_finished(&updated),
@@ -511,7 +648,10 @@ pub async fn advance_battle_session(
     }))
 }
 
-fn ensure_session_visible_to_user(session: &BattleSessionSnapshotDto, user_id: i64) -> Result<(), AppError> {
+fn ensure_session_visible_to_user(
+    session: &BattleSessionSnapshotDto,
+    user_id: i64,
+) -> Result<(), AppError> {
     if session.owner_user_id == user_id || session.participant_user_ids.contains(&user_id) {
         return Ok(());
     }
@@ -519,7 +659,10 @@ fn ensure_session_visible_to_user(session: &BattleSessionSnapshotDto, user_id: i
 }
 
 fn is_session_finished(session: &BattleSessionSnapshotDto) -> bool {
-    matches!(session.status.as_str(), "completed" | "failed" | "abandoned") || session.current_battle_id.is_none()
+    matches!(
+        session.status.as_str(),
+        "completed" | "failed" | "abandoned"
+    ) || session.current_battle_id.is_none()
 }
 
 fn now_millis() -> u64 {
@@ -529,27 +672,40 @@ fn now_millis() -> u64 {
         .unwrap_or_default()
 }
 
-async fn load_character_location(state: &AppState, character_id: i64) -> Result<(String, String), AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT current_map_id, current_room_id FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
+async fn load_character_location(
+    state: &AppState,
+    character_id: i64,
+) -> Result<(String, String), AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT current_map_id, current_room_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
     let Some(row) = row else {
         return Ok((String::new(), String::new()));
     };
     Ok((
-        row.try_get::<Option<String>, _>("current_map_id")?.unwrap_or_default(),
-        row.try_get::<Option<String>, _>("current_room_id")?.unwrap_or_default(),
+        row.try_get::<Option<String>, _>("current_map_id")?
+            .unwrap_or_default(),
+        row.try_get::<Option<String>, _>("current_room_id")?
+            .unwrap_or_default(),
     ))
 }
 
 fn load_room_monster_ids(map_id: &str, room_id: &str) -> Result<Vec<String>, AppError> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/map_def.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/map_def.json");
     let content = fs::read_to_string(&path)
         .map_err(|error| AppError::config(format!("failed to read map_def.json: {error}")))?;
     let payload: MapSeedFile = serde_json::from_str(&content)
         .map_err(|error| AppError::config(format!("failed to parse map_def.json: {error}")))?;
-    let Some(map) = payload.maps.into_iter().find(|map| map.id == map_id && map.enabled != Some(false)) else {
+    let Some(map) = payload
+        .maps
+        .into_iter()
+        .find(|map| map.id == map_id && map.enabled != Some(false))
+    else {
         return Ok(Vec::new());
     };
     let Some(room) = map.rooms.into_iter().find(|room| room.id == room_id) else {
@@ -590,7 +746,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["session"]["currentBattleId"], "tower-battle-run-1-13");
+        assert_eq!(
+            payload["data"]["session"]["currentBattleId"],
+            "tower-battle-run-1-13"
+        );
         println!("BATTLE_SESSION_BY_BATTLE_RESPONSE={}", payload);
     }
 
@@ -732,18 +891,20 @@ mod tests {
 
     #[test]
     fn battle_session_dungeon_start_uses_real_seed_monsters() {
-        let monster_ids = load_dungeon_wave_monster_ids(
-            "dungeon-qiqi-wolf-den",
-            "dd-qiqi-wolf-den-n",
-            1,
-            1,
-        )
-        .expect("dungeon wave monster ids should load");
-        assert_eq!(monster_ids, vec![
-            "monster-gray-wolf".to_string(),
-            "monster-gray-wolf".to_string(),
-            "monster-wild-boar".to_string(),
-        ]);
-        println!("BATTLE_SESSION_DUNGEON_MONSTER_IDS={}", serde_json::json!(monster_ids));
+        let monster_ids =
+            load_dungeon_wave_monster_ids("dungeon-qiqi-wolf-den", "dd-qiqi-wolf-den-n", 1, 1)
+                .expect("dungeon wave monster ids should load");
+        assert_eq!(
+            monster_ids,
+            vec![
+                "monster-gray-wolf".to_string(),
+                "monster-gray-wolf".to_string(),
+                "monster-wild-boar".to_string(),
+            ]
+        );
+        println!(
+            "BATTLE_SESSION_DUNGEON_MONSTER_IDS={}",
+            serde_json::json!(monster_ids)
+        );
     }
 }

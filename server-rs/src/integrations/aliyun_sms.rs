@@ -92,9 +92,17 @@ pub async fn send_sms_verify_code(
 
     let response = client.post(DYPNSAPI_ENDPOINT).form(&params).send().await?;
     let text = response.text().await?;
-    let parsed: AliyunSmsResponseEnvelope = serde_json::from_str(&text)
-        .map_err(|error| AppError::config(format!("failed to parse Aliyun send response: {error}; body={text}")))?;
-    assert_aliyun_success(parsed.code.as_deref(), parsed.success, parsed.message.as_deref(), "短信验证码发送")?;
+    let parsed: AliyunSmsResponseEnvelope = serde_json::from_str(&text).map_err(|error| {
+        AppError::config(format!(
+            "failed to parse Aliyun send response: {error}; body={text}"
+        ))
+    })?;
+    assert_aliyun_success(
+        parsed.code.as_deref(),
+        parsed.success,
+        parsed.message.as_deref(),
+        "短信验证码发送",
+    )?;
     Ok(())
 }
 
@@ -105,19 +113,34 @@ pub async fn check_sms_verify_code(
     verification_code: &str,
 ) -> Result<bool, AppError> {
     let mut params = build_common_rpc_params(&config.aliyun_access_key_id, "CheckSmsVerifyCode")?;
-    params.extend(build_check_sms_verify_code_params(phone_number, verification_code));
+    params.extend(build_check_sms_verify_code_params(
+        phone_number,
+        verification_code,
+    ));
     let signature = sign_rpc_query(&config.aliyun_access_key_secret, &params)?;
     params.insert("Signature".to_string(), signature);
 
     let response = client.post(DYPNSAPI_ENDPOINT).form(&params).send().await?;
     let text = response.text().await?;
-    let parsed: AliyunSmsResponseEnvelope = serde_json::from_str(&text)
-        .map_err(|error| AppError::config(format!("failed to parse Aliyun verify response: {error}; body={text}")))?;
+    let parsed: AliyunSmsResponseEnvelope = serde_json::from_str(&text).map_err(|error| {
+        AppError::config(format!(
+            "failed to parse Aliyun verify response: {error}; body={text}"
+        ))
+    })?;
     if parsed.code.as_deref() == Some("isv.ValidateFail") {
         return Err(AppError::config("验证码错误或已失效，请重新获取"));
     }
-    assert_aliyun_success(parsed.code.as_deref(), parsed.success, parsed.message.as_deref(), "短信验证码校验")?;
-    Ok(parsed.model.and_then(|model| model.verify_result).as_deref() == Some("PASS"))
+    assert_aliyun_success(
+        parsed.code.as_deref(),
+        parsed.success,
+        parsed.message.as_deref(),
+        "短信验证码校验",
+    )?;
+    Ok(parsed
+        .model
+        .and_then(|model| model.verify_result)
+        .as_deref()
+        == Some("PASS"))
 }
 
 pub fn build_check_sms_verify_code_params(
@@ -152,7 +175,10 @@ pub fn sign_rpc_query(
     Ok(base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes()))
 }
 
-fn build_common_rpc_params(access_key_id: &str, action: &str) -> Result<BTreeMap<String, String>, AppError> {
+fn build_common_rpc_params(
+    access_key_id: &str,
+    action: &str,
+) -> Result<BTreeMap<String, String>, AppError> {
     Ok(BTreeMap::from([
         ("AccessKeyId".to_string(), access_key_id.to_string()),
         ("Action".to_string(), action.to_string()),
@@ -166,10 +192,7 @@ fn build_common_rpc_params(access_key_id: &str, action: &str) -> Result<BTreeMap
 }
 
 fn build_signature_nonce() -> String {
-    format!(
-        "nonce-{}",
-        OffsetDateTime::now_utc().unix_timestamp_nanos()
-    )
+    format!("nonce-{}", OffsetDateTime::now_utc().unix_timestamp_nanos())
 }
 
 fn build_timestamp() -> Result<String, AppError> {
@@ -238,10 +261,12 @@ mod tests {
         assert_eq!(params.get("CountryCode").map(String::as_str), Some("86"));
         assert_eq!(params.get("CodeLength").map(String::as_str), Some("6"));
         assert_eq!(params.get("Interval").map(String::as_str), Some("60"));
-        assert!(params
-            .get("TemplateParam")
-            .map(|value| value.contains("##code##"))
-            .unwrap_or(false));
+        assert!(
+            params
+                .get("TemplateParam")
+                .map(|value| value.contains("##code##"))
+                .unwrap_or(false)
+        );
     }
 
     #[test]

@@ -91,36 +91,43 @@ pub async fn buffer_character_resource_delta_fields(
             let character_id = field.character_id;
             let increment = field.increment;
             let normalized_field = field.field.trim();
-            (character_id > 0 && increment > 0 && !normalized_field.is_empty()).then(|| {
-                (character_id, normalized_field.to_string(), increment)
-            })
+            (character_id > 0 && increment > 0 && !normalized_field.is_empty())
+                .then(|| (character_id, normalized_field.to_string(), increment))
         })
         .collect::<Vec<_>>();
     if normalized.is_empty() {
         return Ok(());
     }
-    runtime.with_pipeline(|pipeline| {
-        for (character_id, field, increment) in &normalized {
-            pipeline
-                .cmd("HINCRBY")
-                .arg(build_resource_delta_key(*character_id))
-                .arg(field)
-                .arg(*increment)
-                .ignore()
-                .cmd("SADD")
-                .arg(RESOURCE_DELTA_DIRTY_INDEX_KEY)
-                .arg(character_id.to_string())
-                .ignore();
-        }
-    }).await
+    runtime
+        .with_pipeline(|pipeline| {
+            for (character_id, field, increment) in &normalized {
+                pipeline
+                    .cmd("HINCRBY")
+                    .arg(build_resource_delta_key(*character_id))
+                    .arg(field)
+                    .arg(*increment)
+                    .ignore()
+                    .cmd("SADD")
+                    .arg(RESOURCE_DELTA_DIRTY_INDEX_KEY)
+                    .arg(character_id.to_string())
+                    .ignore();
+            }
+        })
+        .await
 }
 
 pub async fn list_dirty_character_ids_for_resource_delta(
     runtime: &RedisRuntime,
     limit: usize,
 ) -> Result<Vec<i64>, AppError> {
-    let values = runtime.srandmember(RESOURCE_DELTA_DIRTY_INDEX_KEY, limit.max(1)).await?;
-    let mut normalized = values.into_iter().filter_map(|value| value.parse::<i64>().ok()).filter(|value| *value > 0).collect::<Vec<_>>();
+    let values = runtime
+        .srandmember(RESOURCE_DELTA_DIRTY_INDEX_KEY, limit.max(1))
+        .await?;
+    let mut normalized = values
+        .into_iter()
+        .filter_map(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .collect::<Vec<_>>();
     normalized.sort_unstable();
     Ok(normalized)
 }
@@ -129,37 +136,44 @@ pub async fn claim_character_resource_delta(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<bool, AppError> {
-    Ok(runtime.eval_i64(
-        CLAIM_RESOURCE_DELTA_LUA,
-        &[
-            RESOURCE_DELTA_DIRTY_INDEX_KEY,
-            &build_resource_delta_key(character_id),
-            &build_inflight_resource_delta_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await? == 1)
+    Ok(runtime
+        .eval_i64(
+            CLAIM_RESOURCE_DELTA_LUA,
+            &[
+                RESOURCE_DELTA_DIRTY_INDEX_KEY,
+                &build_resource_delta_key(character_id),
+                &build_inflight_resource_delta_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?
+        == 1)
 }
 
 pub async fn load_claimed_character_resource_delta_hash(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<HashMap<String, String>, AppError> {
-    runtime.hgetall(&build_inflight_resource_delta_key(character_id)).await
+    runtime
+        .hgetall(&build_inflight_resource_delta_key(character_id))
+        .await
 }
 
 pub async fn finalize_claimed_character_resource_delta(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<(), AppError> {
-    let _ = runtime.eval_i64(
-        FINALIZE_RESOURCE_DELTA_LUA,
-        &[
-            RESOURCE_DELTA_DIRTY_INDEX_KEY,
-            &build_resource_delta_key(character_id),
-            &build_inflight_resource_delta_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await?;
+    let _ = runtime
+        .eval_i64(
+            FINALIZE_RESOURCE_DELTA_LUA,
+            &[
+                RESOURCE_DELTA_DIRTY_INDEX_KEY,
+                &build_resource_delta_key(character_id),
+                &build_inflight_resource_delta_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?;
     Ok(())
 }
 
@@ -167,20 +181,24 @@ pub async fn restore_claimed_character_resource_delta(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<(), AppError> {
-    let _ = runtime.eval_i64(
-        RESTORE_RESOURCE_DELTA_LUA,
-        &[
-            RESOURCE_DELTA_DIRTY_INDEX_KEY,
-            &build_resource_delta_key(character_id),
-            &build_inflight_resource_delta_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await?;
+    let _ = runtime
+        .eval_i64(
+            RESTORE_RESOURCE_DELTA_LUA,
+            &[
+                RESOURCE_DELTA_DIRTY_INDEX_KEY,
+                &build_resource_delta_key(character_id),
+                &build_inflight_resource_delta_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?;
     Ok(())
 }
 
 pub fn parse_resource_delta_hash(hash: HashMap<String, String>) -> HashMap<String, i64> {
-    hash.into_iter().filter_map(|(field, value)| value.parse::<i64>().ok().map(|parsed| (field, parsed))).collect()
+    hash.into_iter()
+        .filter_map(|(field, value)| value.parse::<i64>().ok().map(|parsed| (field, parsed)))
+        .collect()
 }
 
 pub async fn flush_character_resource_deltas<F, Fut>(
@@ -198,7 +216,8 @@ where
         if !claim_character_resource_delta(runtime, character_id).await? {
             continue;
         }
-        let claimed_hash = load_claimed_character_resource_delta_hash(runtime, character_id).await?;
+        let claimed_hash =
+            load_claimed_character_resource_delta_hash(runtime, character_id).await?;
         let parsed = parse_resource_delta_hash(claimed_hash);
         if parsed.is_empty() {
             finalize_claimed_character_resource_delta(runtime, character_id).await?;

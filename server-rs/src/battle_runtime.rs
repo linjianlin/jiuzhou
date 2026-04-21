@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct BattleStateDto {
     pub battle_id: String,
     pub battle_type: String,
+    pub cooldown_timing_mode: String,
     pub teams: BattleTeamsDto,
     pub round_count: i64,
     pub current_team: String,
@@ -16,6 +17,8 @@ pub struct BattleStateDto {
     pub phase: String,
     pub first_mover: String,
     pub result: Option<String>,
+    pub random_seed: i64,
+    pub random_index: i64,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub runtime_skill_cooldowns: BTreeMap<String, i64>,
 }
@@ -41,15 +44,33 @@ pub struct BattleUnitDto {
     pub id: String,
     pub name: String,
     pub r#type: String,
+    pub source_id: serde_json::Value,
+    pub base_attrs: BattleUnitCurrentAttrsDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub formation_order: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_unit_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub month_card_active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar: Option<String>,
     pub qixue: i64,
     pub lingqi: i64,
     pub current_attrs: BattleUnitCurrentAttrsDto,
+    pub shields: Vec<serde_json::Value>,
     pub is_alive: bool,
+    pub can_act: bool,
     pub buffs: Vec<serde_json::Value>,
+    pub marks: Vec<serde_json::Value>,
+    pub momentum: Option<serde_json::Value>,
+    pub set_bonus_effects: Vec<serde_json::Value>,
+    pub skills: Vec<serde_json::Value>,
+    pub skill_cooldowns: BTreeMap<String, i64>,
+    pub skill_cooldown_discount_bank: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partner_skill_policy: Option<serde_json::Value>,
+    pub control_diminishing: BTreeMap<String, serde_json::Value>,
+    pub stats: BattleUnitStatsDto,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reward_exp: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,11 +78,61 @@ pub struct BattleUnitDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
 pub struct BattleUnitCurrentAttrsDto {
     pub max_qixue: i64,
     pub max_lingqi: i64,
+    pub wugong: i64,
+    pub fagong: i64,
+    pub wufang: i64,
+    pub fafang: i64,
+    pub sudu: i64,
+    pub mingzhong: i64,
+    pub shanbi: i64,
+    pub zhaojia: i64,
+    pub baoji: i64,
+    pub baoshang: i64,
+    pub jianbaoshang: i64,
+    pub jianfantan: i64,
+    pub kangbao: i64,
+    pub zengshang: i64,
+    pub zhiliao: i64,
+    pub jianliao: i64,
+    pub xixue: i64,
+    pub lengque: i64,
+    pub kongzhi_kangxing: i64,
+    pub jin_kangxing: i64,
+    pub mu_kangxing: i64,
+    pub shui_kangxing: i64,
+    pub huo_kangxing: i64,
+    pub tu_kangxing: i64,
+    pub qixue_huifu: i64,
+    pub lingqi_huifu: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub realm: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub element: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BattleUnitStatsDto {
+    pub damage_dealt: i64,
+    pub damage_taken: i64,
+    pub healing_done: i64,
+    pub healing_received: i64,
+    pub kill_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BattleCharacterUnitProfile {
+    pub character_id: i64,
+    pub user_id: i64,
+    pub name: String,
+    pub month_card_active: bool,
+    pub avatar: Option<String>,
+    pub qixue: i64,
+    pub lingqi: i64,
+    pub attrs: BattleUnitCurrentAttrsDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,28 +219,212 @@ struct MonsterBaseAttrs {
     wugong: Option<i64>,
 }
 
+fn build_battle_attrs(
+    max_qixue: i64,
+    max_lingqi: i64,
+    wugong: i64,
+    sudu: i64,
+    realm: Option<String>,
+) -> BattleUnitCurrentAttrsDto {
+    BattleUnitCurrentAttrsDto {
+        max_qixue: max_qixue.max(1),
+        max_lingqi: max_lingqi.max(0),
+        wugong: wugong.max(0),
+        fagong: 0,
+        wufang: 0,
+        fafang: 0,
+        sudu: sudu.max(0),
+        mingzhong: 100,
+        shanbi: 0,
+        zhaojia: 0,
+        baoji: 0,
+        baoshang: 0,
+        jianbaoshang: 0,
+        jianfantan: 0,
+        kangbao: 0,
+        zengshang: 0,
+        zhiliao: 0,
+        jianliao: 0,
+        xixue: 0,
+        lengque: 0,
+        kongzhi_kangxing: 0,
+        jin_kangxing: 0,
+        mu_kangxing: 0,
+        shui_kangxing: 0,
+        huo_kangxing: 0,
+        tu_kangxing: 0,
+        qixue_huifu: 0,
+        lingqi_huifu: 0,
+        realm,
+        element: Some("none".to_string()),
+    }
+}
+
+fn empty_battle_stats() -> BattleUnitStatsDto {
+    BattleUnitStatsDto {
+        damage_dealt: 0,
+        damage_taken: 0,
+        healing_done: 0,
+        healing_received: 0,
+        kill_count: 0,
+    }
+}
+
+fn build_skill_value(
+    id: &str,
+    name: &str,
+    cost_lingqi: i64,
+    cost_qixue: i64,
+    cooldown: i64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "name": name,
+        "description": name,
+        "type": "active",
+        "damageType": "physical",
+        "targetType": "single_enemy",
+        "cost": {
+            "lingqi": cost_lingqi.max(0),
+            "qixue": cost_qixue.max(0)
+        },
+        "cooldown": cooldown.max(0),
+        "effects": []
+    })
+}
+
+fn player_battle_skills() -> Vec<serde_json::Value> {
+    vec![
+        build_skill_value("sk-basic-slash", "普通攻击", 0, 0, 0),
+        build_skill_value("sk-heavy-slash", "重斩", 20, 0, 1),
+    ]
+}
+
+fn monster_battle_skills() -> Vec<serde_json::Value> {
+    vec![build_skill_value("sk-bite", "撕咬", 5, 0, 1)]
+}
+
+fn deterministic_battle_seed(battle_id: &str) -> i64 {
+    let seed = battle_id.as_bytes().iter().fold(17_u64, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(u64::from(*byte))
+    });
+    (seed % i64::MAX as u64) as i64
+}
+
+pub fn refresh_battle_team_total_speed(state: &mut BattleStateDto) {
+    state.teams.attacker.total_speed = state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .map(|unit| unit.current_attrs.sudu.max(0))
+        .sum();
+    state.teams.defender.total_speed = state
+        .teams
+        .defender
+        .units
+        .iter()
+        .map(|unit| unit.current_attrs.sudu.max(0))
+        .sum();
+}
+
+pub fn apply_character_profile_to_battle_state(
+    state: &mut BattleStateDto,
+    existing_unit_id: &str,
+    unit_kind: &str,
+    profile: &BattleCharacterUnitProfile,
+) -> Option<String> {
+    let normalized_kind = match unit_kind.trim() {
+        "player" | "partner" | "npc" => unit_kind.trim(),
+        _ => return None,
+    };
+    let next_unit_id = format!("{normalized_kind}-{}", profile.character_id);
+    let mut found = false;
+    for unit in state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .chain(state.teams.defender.units.iter_mut())
+    {
+        if unit.id != existing_unit_id {
+            continue;
+        }
+        unit.id = next_unit_id.clone();
+        unit.name = profile.name.clone();
+        unit.r#type = normalized_kind.to_string();
+        unit.source_id = serde_json::json!(profile.character_id);
+        unit.base_attrs = profile.attrs.clone();
+        unit.current_attrs = profile.attrs.clone();
+        unit.qixue = profile.qixue.clamp(0, profile.attrs.max_qixue.max(1));
+        unit.lingqi = profile.lingqi.clamp(0, profile.attrs.max_lingqi.max(0));
+        unit.month_card_active = Some(profile.month_card_active);
+        unit.avatar = if normalized_kind == "player" || normalized_kind == "partner" {
+            profile.avatar.clone()
+        } else {
+            None
+        };
+        unit.is_alive = unit.qixue > 0;
+        unit.can_act = unit.is_alive;
+        found = true;
+        break;
+    }
+    if !found {
+        return None;
+    }
+    if state.current_unit_id.as_deref() == Some(existing_unit_id) {
+        state.current_unit_id = Some(next_unit_id.clone());
+    }
+    let old_prefix = format!("{existing_unit_id}:");
+    let cooldown_rewrites = state
+        .runtime_skill_cooldowns
+        .iter()
+        .filter_map(|(key, value)| {
+            key.strip_prefix(&old_prefix)
+                .map(|skill_id| (key.clone(), format!("{next_unit_id}:{skill_id}"), *value))
+        })
+        .collect::<Vec<_>>();
+    for (old_key, new_key, value) in cooldown_rewrites {
+        state.runtime_skill_cooldowns.remove(&old_key);
+        state.runtime_skill_cooldowns.insert(new_key, value);
+    }
+    sync_unit_skill_cooldowns_from_runtime(state);
+    refresh_battle_team_total_speed(state);
+    Some(next_unit_id)
+}
+
 pub fn build_minimal_pve_battle_state(
     battle_id: &str,
     player_character_id: i64,
     monster_ids: &[String],
 ) -> BattleStateDto {
+    let attacker_attrs = build_battle_attrs(180, 100, 32, 6, Some("凡人".to_string()));
     let attacker = BattleUnitDto {
         id: format!("player-{}", player_character_id),
         name: format!("修士{}", player_character_id),
         r#type: "player".to_string(),
+        source_id: serde_json::json!(player_character_id),
+        base_attrs: attacker_attrs.clone(),
         formation_order: Some(1),
         owner_unit_id: None,
         month_card_active: Some(false),
         avatar: None,
         qixue: 180,
         lingqi: 100,
-        current_attrs: BattleUnitCurrentAttrsDto {
-            max_qixue: 180,
-            max_lingqi: 100,
-            realm: None,
-        },
+        current_attrs: attacker_attrs,
+        shields: Vec::new(),
         is_alive: true,
+        can_act: true,
         buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        skills: player_battle_skills(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
         reward_exp: None,
         reward_silver: None,
     };
@@ -190,6 +445,21 @@ pub fn build_minimal_pve_battle_state(
                 .and_then(|attrs| attrs.lingqi)
                 .unwrap_or_default()
                 .max(0);
+            let wugong = seed
+                .as_ref()
+                .and_then(|seed| seed.base_attrs.as_ref())
+                .and_then(|attrs| attrs.wugong)
+                .unwrap_or(8)
+                .max(0);
+            let attrs = build_battle_attrs(
+                qixue,
+                lingqi,
+                wugong,
+                (qixue / 50 + 1).max(1),
+                seed.as_ref()
+                    .and_then(|seed| seed.level)
+                    .map(|level| format!("Lv.{level}")),
+            );
             BattleUnitDto {
                 id: format!("monster-{}-{}", index + 1, monster_id),
                 name: seed
@@ -197,22 +467,28 @@ pub fn build_minimal_pve_battle_state(
                     .and_then(|seed| seed.name.clone())
                     .unwrap_or_else(|| monster_id.clone()),
                 r#type: "monster".to_string(),
+                source_id: serde_json::json!(monster_id),
+                base_attrs: attrs.clone(),
                 formation_order: Some(index as i64 + 1),
                 owner_unit_id: None,
                 month_card_active: None,
                 avatar: None,
                 qixue,
                 lingqi,
-                current_attrs: BattleUnitCurrentAttrsDto {
-                    max_qixue: qixue,
-                    max_lingqi: lingqi,
-                    realm: seed
-                        .as_ref()
-                        .and_then(|seed| seed.level)
-                        .map(|level| format!("Lv.{level}")),
-                },
+                current_attrs: attrs,
+                shields: Vec::new(),
                 is_alive: true,
+                can_act: true,
                 buffs: Vec::new(),
+                marks: Vec::new(),
+                momentum: None,
+                set_bonus_effects: Vec::new(),
+                skills: monster_battle_skills(),
+                skill_cooldowns: BTreeMap::new(),
+                skill_cooldown_discount_bank: BTreeMap::new(),
+                partner_skill_policy: None,
+                control_diminishing: BTreeMap::new(),
+                stats: empty_battle_stats(),
                 reward_exp: Some(
                     seed.as_ref()
                         .and_then(|seed| seed.exp_reward)
@@ -232,6 +508,7 @@ pub fn build_minimal_pve_battle_state(
     BattleStateDto {
         battle_id: battle_id.to_string(),
         battle_type: "pve".to_string(),
+        cooldown_timing_mode: "self_action_end".to_string(),
         teams: BattleTeamsDto {
             attacker: BattleTeamDto {
                 odwner_id: Some(player_character_id),
@@ -253,61 +530,84 @@ pub fn build_minimal_pve_battle_state(
         phase: "action".to_string(),
         first_mover: "attacker".to_string(),
         result: None,
+        random_seed: deterministic_battle_seed(battle_id),
+        random_index: 0,
         runtime_skill_cooldowns: BTreeMap::new(),
     }
 }
 
 pub fn build_minimal_pvp_battle_state(
     battle_id: &str,
-    owner_user_id: i64,
+    owner_character_id: i64,
     opponent_character_id: i64,
 ) -> BattleStateDto {
+    let attacker_attrs = build_battle_attrs(100, 100, 28, 1, Some("凡人".to_string()));
     let attacker = BattleUnitDto {
-        id: format!("player-{}", owner_user_id),
-        name: format!("修士{}", owner_user_id),
+        id: format!("player-{}", owner_character_id),
+        name: format!("修士{}", owner_character_id),
         r#type: "player".to_string(),
+        source_id: serde_json::json!(owner_character_id),
+        base_attrs: attacker_attrs.clone(),
         formation_order: Some(1),
         owner_unit_id: None,
         month_card_active: Some(false),
         avatar: None,
         qixue: 100,
         lingqi: 100,
-        current_attrs: BattleUnitCurrentAttrsDto {
-            max_qixue: 100,
-            max_lingqi: 100,
-            realm: None,
-        },
+        current_attrs: attacker_attrs,
+        shields: Vec::new(),
         is_alive: true,
+        can_act: true,
         buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        skills: player_battle_skills(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
         reward_exp: None,
         reward_silver: None,
     };
+    let defender_attrs = build_battle_attrs(100, 100, 24, 1, Some("凡人".to_string()));
     let defender = BattleUnitDto {
         id: format!("opponent-{}", opponent_character_id),
         name: format!("对手{}", opponent_character_id),
         r#type: "player".to_string(),
+        source_id: serde_json::json!(opponent_character_id),
+        base_attrs: defender_attrs.clone(),
         formation_order: Some(1),
         owner_unit_id: None,
         month_card_active: Some(false),
         avatar: None,
         qixue: 100,
         lingqi: 100,
-        current_attrs: BattleUnitCurrentAttrsDto {
-            max_qixue: 100,
-            max_lingqi: 100,
-            realm: None,
-        },
+        current_attrs: defender_attrs,
+        shields: Vec::new(),
         is_alive: true,
+        can_act: true,
         buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        skills: player_battle_skills(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
         reward_exp: None,
         reward_silver: None,
     };
     BattleStateDto {
         battle_id: battle_id.to_string(),
         battle_type: "pvp".to_string(),
+        cooldown_timing_mode: "self_action_end".to_string(),
         teams: BattleTeamsDto {
             attacker: BattleTeamDto {
-                odwner_id: Some(owner_user_id),
+                odwner_id: Some(owner_character_id),
                 units: vec![attacker.clone()],
                 total_speed: 1,
             },
@@ -323,7 +623,50 @@ pub fn build_minimal_pvp_battle_state(
         phase: "action".to_string(),
         first_mover: "attacker".to_string(),
         result: None,
+        random_seed: deterministic_battle_seed(battle_id),
+        random_index: 0,
         runtime_skill_cooldowns: BTreeMap::new(),
+    }
+}
+
+pub fn build_minimal_partner_battle_unit(
+    partner_id: i64,
+    name: String,
+    avatar: Option<String>,
+    owner_unit_id: String,
+    max_qixue: i64,
+    speed: i64,
+    formation_order: i64,
+) -> BattleUnitDto {
+    let attrs = build_battle_attrs(max_qixue.max(1), 0, 18, speed.max(1), None);
+    BattleUnitDto {
+        id: format!("partner-{partner_id}"),
+        name,
+        r#type: "partner".to_string(),
+        source_id: serde_json::json!(partner_id),
+        base_attrs: attrs.clone(),
+        formation_order: Some(formation_order),
+        owner_unit_id: Some(owner_unit_id),
+        month_card_active: None,
+        avatar,
+        qixue: max_qixue.max(1),
+        lingqi: 0,
+        current_attrs: attrs,
+        shields: Vec::new(),
+        is_alive: true,
+        can_act: true,
+        buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        skills: player_battle_skills(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
+        reward_exp: None,
+        reward_silver: None,
     }
 }
 
@@ -373,6 +716,7 @@ pub fn apply_minimal_pve_action(
     let damage = resolve_player_skill_damage(skill_id);
     target.qixue = (target.qixue - damage).max(0);
     target.is_alive = target.qixue > 0;
+    target.can_act = target.is_alive;
 
     let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
     if !enemy_alive {
@@ -407,6 +751,7 @@ pub fn apply_minimal_pve_action(
         .sum::<i64>();
     player.qixue = (player.qixue - total_enemy_damage).max(0);
     player.is_alive = player.qixue > 0;
+    player.can_act = player.is_alive;
     state.round_count += 1;
 
     if !player.is_alive {
@@ -434,7 +779,7 @@ pub fn apply_minimal_pve_action(
 
 pub fn apply_minimal_pvp_action(
     state: &mut BattleStateDto,
-    actor_user_id: i64,
+    actor_character_id: i64,
     target_ids: &[String],
 ) -> Result<MinimalBattleActionOutcome, String> {
     if state.battle_type != "pvp" {
@@ -446,7 +791,7 @@ pub fn apply_minimal_pvp_action(
     if state.current_team != "attacker" {
         return Err("当前不是我方行动回合".to_string());
     }
-    let expected_actor_id = format!("player-{}", actor_user_id);
+    let expected_actor_id = format!("player-{}", actor_character_id);
     if state.current_unit_id.as_deref() != Some(expected_actor_id.as_str()) {
         return Err("当前不可行动".to_string());
     }
@@ -476,6 +821,7 @@ pub fn apply_minimal_pvp_action(
 
     target.qixue = 0;
     target.is_alive = false;
+    target.can_act = false;
     state.round_count += 1;
 
     let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
@@ -506,6 +852,36 @@ fn tick_down_runtime_skill_cooldowns(state: &mut BattleStateDto) {
     for value in state.runtime_skill_cooldowns.values_mut() {
         *value = value.saturating_sub(1);
     }
+    state.runtime_skill_cooldowns.retain(|_, value| *value > 0);
+    sync_unit_skill_cooldowns_from_runtime(state);
+}
+
+fn sync_unit_skill_cooldowns_from_runtime(state: &mut BattleStateDto) {
+    for unit in state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .chain(state.teams.defender.units.iter_mut())
+    {
+        unit.skill_cooldowns.clear();
+    }
+    for (cooldown_key, remaining) in state.runtime_skill_cooldowns.clone() {
+        let Some((unit_id, skill_id)) = cooldown_key.split_once(':') else {
+            continue;
+        };
+        let Some(unit) = state
+            .teams
+            .attacker
+            .units
+            .iter_mut()
+            .chain(state.teams.defender.units.iter_mut())
+            .find(|unit| unit.id == unit_id)
+        else {
+            continue;
+        };
+        unit.skill_cooldowns.insert(skill_id.to_string(), remaining);
+    }
 }
 
 fn consume_runtime_skill_cost_and_validate_cooldown(
@@ -517,10 +893,22 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
         return Ok(());
     };
     let cooldown_key = format!("{actor_id}:{skill_id}");
-    if state.runtime_skill_cooldowns.get(cooldown_key.as_str()).copied().unwrap_or_default() > 0 {
+    if state
+        .runtime_skill_cooldowns
+        .get(cooldown_key.as_str())
+        .copied()
+        .unwrap_or_default()
+        > 0
+    {
         return Err("技能冷却中".to_string());
     }
-    let Some(actor) = state.teams.attacker.units.iter_mut().find(|unit| unit.id == actor_id && unit.is_alive) else {
+    let Some(actor) = state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .find(|unit| unit.id == actor_id && unit.is_alive)
+    else {
         return Err("当前不可行动".to_string());
     };
     if actor.lingqi < config.cost_lingqi.max(0) {
@@ -532,16 +920,31 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
     actor.lingqi = (actor.lingqi - config.cost_lingqi.max(0)).max(0);
     actor.qixue = (actor.qixue - config.cost_qixue.max(0)).max(1);
     if config.cooldown_turns > 0 {
-        state.runtime_skill_cooldowns.insert(cooldown_key, config.cooldown_turns + 1);
+        state
+            .runtime_skill_cooldowns
+            .insert(cooldown_key, config.cooldown_turns + 1);
+        sync_unit_skill_cooldowns_from_runtime(state);
     }
     Ok(())
 }
 
 fn battle_skill_runtime_config(skill_id: &str) -> Option<BattleSkillRuntimeConfig> {
     match skill_id.trim() {
-        "sk-basic-slash" => Some(BattleSkillRuntimeConfig { cost_lingqi: 0, cost_qixue: 0, cooldown_turns: 0 }),
-        "sk-heavy-slash" => Some(BattleSkillRuntimeConfig { cost_lingqi: 20, cost_qixue: 0, cooldown_turns: 1 }),
-        "sk-bite" => Some(BattleSkillRuntimeConfig { cost_lingqi: 5, cost_qixue: 0, cooldown_turns: 1 }),
+        "sk-basic-slash" => Some(BattleSkillRuntimeConfig {
+            cost_lingqi: 0,
+            cost_qixue: 0,
+            cooldown_turns: 0,
+        }),
+        "sk-heavy-slash" => Some(BattleSkillRuntimeConfig {
+            cost_lingqi: 20,
+            cost_qixue: 0,
+            cooldown_turns: 1,
+        }),
+        "sk-bite" => Some(BattleSkillRuntimeConfig {
+            cost_lingqi: 5,
+            cost_qixue: 0,
+            cooldown_turns: 1,
+        }),
         _ => None,
     }
 }
@@ -848,8 +1251,10 @@ fn as_drop_entry_i64(value: Option<&serde_json::Value>, fallback: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_minimal_pve_action, apply_minimal_pvp_action, build_minimal_pve_battle_state,
-        build_minimal_pvp_battle_state, resolve_minimal_pve_item_rewards,
+        BattleCharacterUnitProfile, BattleUnitCurrentAttrsDto,
+        apply_character_profile_to_battle_state, apply_minimal_pve_action,
+        apply_minimal_pvp_action, build_minimal_pve_battle_state, build_minimal_pvp_battle_state,
+        resolve_minimal_pve_item_rewards,
     };
 
     #[test]
@@ -869,6 +1274,30 @@ mod tests {
         assert_eq!(state.teams.attacker.units.len(), 1);
         assert_eq!(state.teams.defender.units.len(), 2);
         assert_eq!(state.current_unit_id.as_deref(), Some("player-1"));
+        let attacker = &state.teams.attacker.units[0];
+        assert_eq!(attacker.source_id, serde_json::json!(1));
+        assert_eq!(attacker.current_attrs.realm.as_deref(), Some("凡人"));
+        assert_eq!(
+            attacker.base_attrs.max_qixue,
+            attacker.current_attrs.max_qixue
+        );
+        assert!(attacker.can_act);
+        assert!(attacker.shields.is_empty());
+        assert!(attacker.marks.is_empty());
+        assert!(
+            attacker
+                .skills
+                .iter()
+                .any(|skill| skill["id"] == "sk-basic-slash")
+        );
+        assert!(attacker.skill_cooldowns.is_empty());
+        assert_eq!(attacker.stats.damage_dealt, 0);
+        let serialized = serde_json::to_value(attacker).expect("attacker should serialize");
+        assert_eq!(
+            serialized["currentAttrs"]["max_qixue"],
+            serde_json::json!(180)
+        );
+        assert!(serialized["currentAttrs"].get("maxQixue").is_none());
     }
 
     #[test]
@@ -892,10 +1321,7 @@ mod tests {
         assert!(outcome.silver_gained > 0);
         println!(
             "BATTLE_RUNTIME_PVE_FINISH_OUTCOME={{\"finished\":{},\"result\":{:?},\"expGained\":{},\"silverGained\":{}}}",
-            outcome.finished,
-            outcome.result,
-            outcome.exp_gained,
-            outcome.silver_gained
+            outcome.finished, outcome.result, outcome.exp_gained, outcome.silver_gained
         );
     }
 
@@ -961,12 +1387,22 @@ mod tests {
         .expect("action should succeed");
 
         assert_eq!(state.teams.attacker.units[0].lingqi, 80);
-        assert!(state
-            .runtime_skill_cooldowns
-            .get("player-1:sk-heavy-slash")
-            .copied()
-            .unwrap_or_default()
-            > 0);
+        assert!(
+            state
+                .runtime_skill_cooldowns
+                .get("player-1:sk-heavy-slash")
+                .copied()
+                .unwrap_or_default()
+                > 0
+        );
+        assert_eq!(
+            state.teams.attacker.units[0]
+                .skill_cooldowns
+                .get("sk-heavy-slash")
+                .copied()
+                .unwrap_or_default(),
+            2
+        );
     }
 
     #[test]
@@ -1011,15 +1447,108 @@ mod tests {
     }
 
     #[test]
+    fn character_profile_replaces_placeholder_unit_identity_and_resources() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 42, &["monster-gray-wolf".to_string()]);
+        let profile = test_profile(42, 7, "青玄", 360, 140, 18);
+
+        let unit_id =
+            apply_character_profile_to_battle_state(&mut state, "player-42", "player", &profile)
+                .expect("profile should apply");
+
+        assert_eq!(unit_id, "player-42");
+        assert_eq!(state.current_unit_id.as_deref(), Some("player-42"));
+        assert_eq!(state.teams.attacker.total_speed, 18);
+        let attacker = &state.teams.attacker.units[0];
+        assert_eq!(attacker.name, "青玄");
+        assert_eq!(attacker.qixue, 360);
+        assert_eq!(attacker.lingqi, 140);
+        assert_eq!(attacker.current_attrs.max_qixue, 360);
+        assert_eq!(attacker.current_attrs.max_lingqi, 200);
+        assert_eq!(attacker.month_card_active, Some(true));
+    }
+
+    #[test]
+    fn character_profile_aligns_pvp_defender_to_node_npc_unit_id() {
+        let mut state = build_minimal_pvp_battle_state("pvp-battle-1", 10, 20);
+        let profile = test_profile(20, 8, "镜像修士", 480, 100, 12);
+
+        let unit_id =
+            apply_character_profile_to_battle_state(&mut state, "opponent-20", "npc", &profile)
+                .expect("profile should apply");
+
+        assert_eq!(unit_id, "npc-20");
+        let defender = &state.teams.defender.units[0];
+        assert_eq!(defender.id, "npc-20");
+        assert_eq!(defender.r#type, "npc");
+        assert_eq!(defender.name, "镜像修士");
+        assert_eq!(defender.qixue, 480);
+        assert_eq!(defender.avatar, None);
+    }
+
+    #[test]
     fn minimal_pve_reward_items_include_guaranteed_boar_drop() {
         let rewards = resolve_minimal_pve_item_rewards(&["monster-wild-boar".to_string()])
             .expect("boar rewards should resolve");
-        assert!(rewards
-            .iter()
-            .any(|item| item.item_def_id == "mat-005" && item.qty > 0));
+        assert!(
+            rewards
+                .iter()
+                .any(|item| item.item_def_id == "mat-005" && item.qty > 0)
+        );
         println!(
             "BATTLE_RUNTIME_REWARD_ITEMS={}",
             serde_json::to_string(&rewards).expect("rewards should serialize")
         );
+    }
+
+    fn test_profile(
+        character_id: i64,
+        user_id: i64,
+        name: &str,
+        qixue: i64,
+        lingqi: i64,
+        sudu: i64,
+    ) -> BattleCharacterUnitProfile {
+        BattleCharacterUnitProfile {
+            character_id,
+            user_id,
+            name: name.to_string(),
+            month_card_active: true,
+            avatar: Some("/uploads/avatars/test.png".to_string()),
+            qixue,
+            lingqi,
+            attrs: BattleUnitCurrentAttrsDto {
+                max_qixue: qixue,
+                max_lingqi: 200,
+                wugong: 31,
+                fagong: 0,
+                wufang: 3,
+                fafang: 4,
+                sudu,
+                mingzhong: 100,
+                shanbi: 0,
+                zhaojia: 0,
+                baoji: 0,
+                baoshang: 0,
+                jianbaoshang: 0,
+                jianfantan: 0,
+                kangbao: 0,
+                zengshang: 0,
+                zhiliao: 0,
+                jianliao: 0,
+                xixue: 0,
+                lengque: 0,
+                kongzhi_kangxing: 0,
+                jin_kangxing: 0,
+                mu_kangxing: 0,
+                shui_kangxing: 0,
+                huo_kangxing: 0,
+                tu_kangxing: 0,
+                qixue_huifu: 0,
+                lingqi_huifu: 0,
+                realm: Some("炼精化炁·养气期".to_string()),
+                element: Some("wood".to_string()),
+            },
+        }
     }
 }

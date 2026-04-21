@@ -49,7 +49,10 @@ pub async fn generate_technique_ai_draft(
 ) -> Result<TechniqueAiDraft, AppError> {
     let config = require_text_model_config(TextModelScope::Technique)?;
     if config.provider != "openai" {
-        return Err(AppError::config(format!("暂不支持的功法 AI provider: {}", config.provider)));
+        return Err(AppError::config(format!(
+            "暂不支持的功法 AI provider: {}",
+            config.provider
+        )));
     }
     let system_message = "You generate concise xianxia technique draft metadata. Return JSON with fields suggestedName, description, longDesc. suggestedName must be 2-12 Chinese characters. description max 40 Chinese chars. longDesc max 120 Chinese chars.";
     let user_message = format!(
@@ -85,7 +88,10 @@ pub async fn generate_technique_ai_draft(
         .await
         .map_err(|error| AppError::config(format!("功法 AI 响应读取失败: {error}")))?;
     if !status.is_success() {
-        return Err(AppError::config(format!("功法 AI 返回错误状态 {}: {}", status, body)));
+        return Err(AppError::config(format!(
+            "功法 AI 返回错误状态 {}: {}",
+            status, body
+        )));
     }
     let parsed: OpenAiChatCompletionResponse = serde_json::from_str(&body)
         .map_err(|error| AppError::config(format!("功法 AI 响应解析失败: {error}")))?;
@@ -142,7 +148,9 @@ fn extract_bounded_chinese_text(
 ) -> Result<String, AppError> {
     let text = extract_bounded_text(value, field, min_len, max_len)?;
     if !text.chars().all(|ch| ('一'..='龥').contains(&ch)) {
-        return Err(AppError::config(format!("功法 AI 字段 {field} 必须为纯中文")));
+        return Err(AppError::config(format!(
+            "功法 AI 字段 {field} 必须为纯中文"
+        )));
     }
     Ok(text)
 }

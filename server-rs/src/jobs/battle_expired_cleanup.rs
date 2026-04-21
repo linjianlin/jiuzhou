@@ -42,7 +42,9 @@ pub async fn run_battle_expired_cleanup_once(
         expired_battle_count += 1;
     }
 
-    Ok(BattleExpiredCleanupSummary { expired_battle_count })
+    Ok(BattleExpiredCleanupSummary {
+        expired_battle_count,
+    })
 }
 
 pub fn spawn_battle_expired_cleanup_loop(state: AppState) {
@@ -95,7 +97,10 @@ mod tests {
 
     #[test]
     fn battle_timestamp_parser_only_accepts_unix_ms_suffixes() {
-        assert_eq!(parse_battle_timestamp_ms("pve-battle-12-1713000000000"), Some(1713000000000));
+        assert_eq!(
+            parse_battle_timestamp_ms("pve-battle-12-1713000000000"),
+            Some(1713000000000)
+        );
         assert_eq!(parse_battle_timestamp_ms("dungeon-battle-inst-3-1"), None);
         assert_eq!(parse_battle_timestamp_ms("tower-battle-run-14"), None);
         println!("BATTLE_EXPIRED_MAX_AGE_MS={BATTLE_MAX_AGE_MS}");

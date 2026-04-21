@@ -111,7 +111,10 @@ pub fn extract_avatar_cos_key_from_url(config: &CosConfig, url: &str) -> Option<
     } else {
         vec![default_host, config.domain.trim().to_string()]
     };
-    if !allowed_hosts.iter().any(|host| host == parsed.host_str().unwrap_or_default()) {
+    if !allowed_hosts
+        .iter()
+        .any(|host| host == parsed.host_str().unwrap_or_default())
+    {
         return None;
     }
     let key = parsed.path().trim_start_matches('/').trim().to_string();
@@ -189,12 +192,18 @@ pub fn issue_avatar_upload_sts_fallback(
     }
 }
 
-pub fn build_avatar_upload_resource(bucket: &str, region: &str, key: &str) -> Result<String, AppError> {
+pub fn build_avatar_upload_resource(
+    bucket: &str,
+    region: &str,
+    key: &str,
+) -> Result<String, AppError> {
     let last_dash_index = bucket
         .rfind('-')
         .ok_or_else(|| AppError::config("COS_BUCKET 格式不合法，需为 BucketName-APPID"))?;
     if last_dash_index == 0 || last_dash_index == bucket.len() - 1 {
-        return Err(AppError::config("COS_BUCKET 格式不合法，需为 BucketName-APPID"));
+        return Err(AppError::config(
+            "COS_BUCKET 格式不合法，需为 BucketName-APPID",
+        ));
     }
 
     let app_id = &bucket[last_dash_index + 1..];
@@ -233,12 +242,19 @@ pub async fn issue_avatar_upload_sts(
     max_file_size_bytes: u64,
 ) -> Result<AvatarUploadStsPayload, AppError> {
     if !cos_enabled(config) {
-        return Ok(issue_avatar_upload_sts_fallback(config, max_file_size_bytes));
+        return Ok(issue_avatar_upload_sts_fallback(
+            config,
+            max_file_size_bytes,
+        ));
     }
 
     let extension = avatar_extension_from_content_type(content_type)
         .ok_or_else(|| AppError::config("只支持 JPG、PNG、GIF、WEBP 格式的图片"))?;
-    let key = format!("{}{}", config.avatar_prefix, generate_cos_avatar_filename(extension));
+    let key = format!(
+        "{}{}",
+        config.avatar_prefix,
+        generate_cos_avatar_filename(extension)
+    );
     let policy = build_avatar_upload_policy(
         &config.bucket,
         &config.region,
@@ -255,8 +271,9 @@ pub async fn issue_avatar_upload_sts(
         policy,
         duration_seconds: config.sts_duration_seconds,
     };
-    let body = serde_json::to_string(&request_payload)
-        .map_err(|error| AppError::config(format!("failed to serialize STS request body: {error}")))?;
+    let body = serde_json::to_string(&request_payload).map_err(|error| {
+        AppError::config(format!("failed to serialize STS request body: {error}"))
+    })?;
 
     let authorization = build_tc3_authorization(config, &body, start_time)?;
     let response = client
@@ -274,8 +291,11 @@ pub async fn issue_avatar_upload_sts(
 
     let status = response.status();
     let text = response.text().await?;
-    let envelope: FederationTokenEnvelope = serde_json::from_str(&text)
-        .map_err(|error| AppError::config(format!("failed to parse Tencent STS response: {error}; body={text}")))?;
+    let envelope: FederationTokenEnvelope = serde_json::from_str(&text).map_err(|error| {
+        AppError::config(format!(
+            "failed to parse Tencent STS response: {error}; body={text}"
+        ))
+    })?;
 
     if !status.is_success() {
         if let Some(error) = envelope.response.error {
@@ -284,7 +304,9 @@ pub async fn issue_avatar_upload_sts(
                 error.code, error.message
             )));
         }
-        return Err(AppError::config(format!("Tencent STS request failed with status {status}")));
+        return Err(AppError::config(format!(
+            "Tencent STS request failed with status {status}"
+        )));
     }
 
     if let Some(error) = envelope.response.error {
@@ -391,7 +413,11 @@ fn build_cos_delete_authorization(
     let sign_time = format!("{};{}", now.saturating_sub(60), now.saturating_add(600));
     let sign_key = hex::encode(hmac_sha1(config.secret_key.as_bytes(), &sign_time)?);
     let header_list = "date;host";
-    let http_headers = format!("date={}&host={}", urlencoding::encode(date), urlencoding::encode(host));
+    let http_headers = format!(
+        "date={}&host={}",
+        urlencoding::encode(date),
+        urlencoding::encode(host)
+    );
     let http_string = format!("delete\n/{}\n\n{}\n", key, http_headers);
     let string_to_sign = format!("sha1\n{}\n{}\n", sign_time, sha1_hex(http_string));
     let signature = hex::encode(hmac_sha1(sign_key.as_bytes(), &string_to_sign)?);
@@ -429,8 +455,9 @@ fn build_tc3_authorization(
 }
 
 fn build_tc3_date(timestamp: u64) -> Result<String, AppError> {
-    let datetime = OffsetDateTime::from_unix_timestamp(timestamp as i64)
-        .map_err(|error| AppError::config(format!("failed to build TC3 date from timestamp: {error}")))?;
+    let datetime = OffsetDateTime::from_unix_timestamp(timestamp as i64).map_err(|error| {
+        AppError::config(format!("failed to build TC3 date from timestamp: {error}"))
+    })?;
     Ok(format!(
         "{:04}-{:02}-{:02}",
         datetime.year(),
@@ -489,8 +516,14 @@ mod tests {
         .expect("policy should build");
 
         assert_eq!(policy["statement"][0]["action"][0], "name/cos:PutObject");
-        assert_eq!(policy["statement"][0]["condition"]["string_equal"]["cos:content-type"], "image/png");
-        assert_eq!(policy["statement"][0]["condition"]["numeric_less_than_equal"]["cos:content-length"], 2 * 1024 * 1024);
+        assert_eq!(
+            policy["statement"][0]["condition"]["string_equal"]["cos:content-type"],
+            "image/png"
+        );
+        assert_eq!(
+            policy["statement"][0]["condition"]["numeric_less_than_equal"]["cos:content-length"],
+            2 * 1024 * 1024
+        );
     }
 
     #[test]
@@ -507,7 +540,10 @@ mod tests {
         };
 
         assert_eq!(
-            super::extract_avatar_cos_key_from_url(&config, "https://bucket-12345.cos.ap-shanghai.myqcloud.com/avatars/example.png"),
+            super::extract_avatar_cos_key_from_url(
+                &config,
+                "https://bucket-12345.cos.ap-shanghai.myqcloud.com/avatars/example.png"
+            ),
             Some("avatars/example.png".to_string())
         );
     }
@@ -526,7 +562,10 @@ mod tests {
         };
 
         assert_eq!(
-            super::extract_avatar_cos_key_from_url(&config, "https://oss.example.com/avatars/example.png"),
+            super::extract_avatar_cos_key_from_url(
+                &config,
+                "https://oss.example.com/avatars/example.png"
+            ),
             Some("avatars/example.png".to_string())
         );
     }

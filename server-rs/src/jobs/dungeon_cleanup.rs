@@ -64,9 +64,7 @@ pub fn spawn_dungeon_expired_instance_cleanup_loop(state: AppState) {
     });
 }
 
-async fn load_protected_dungeon_instance_ids(
-    state: &AppState,
-) -> Result<BTreeSet<String>> {
+async fn load_protected_dungeon_instance_ids(state: &AppState) -> Result<BTreeSet<String>> {
     let rows = state
         .database
         .fetch_all(
@@ -77,7 +75,8 @@ async fn load_protected_dungeon_instance_ids(
     let mut out = BTreeSet::new();
     for row in rows {
         let instance_id: Option<String> = row.try_get("instance_id")?;
-        if let Some(instance_id) = instance_id.filter(|instance_id| !instance_id.trim().is_empty()) {
+        if let Some(instance_id) = instance_id.filter(|instance_id| !instance_id.trim().is_empty())
+        {
             out.insert(instance_id);
         }
     }

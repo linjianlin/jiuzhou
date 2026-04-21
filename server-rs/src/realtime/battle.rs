@@ -25,15 +25,25 @@ pub struct BattleRewardsPayload {
 pub struct BattleRealtimePayload {
     pub kind: String,
     pub battle_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<BattleStateDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub logs: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub log_start: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub log_delta: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<BattleSessionSnapshotDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rewards: Option<BattleRewardsPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub authoritative: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub success: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
@@ -319,6 +329,9 @@ mod tests {
         .expect("payload should serialize");
         assert_eq!(payload["kind"], "battle_abandoned");
         assert_eq!(payload["authoritative"], true);
+        assert!(payload.get("state").is_none());
+        assert!(payload.get("logs").is_none());
+        assert!(payload.get("rewards").is_none());
         println!("BATTLE_REALTIME_ABANDONED_RESPONSE={}", payload);
     }
 

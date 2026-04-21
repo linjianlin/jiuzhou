@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::repo::info_target::{InfoItemTarget, InfoMonsterTarget, InfoNpcTarget, get_item_info_target, get_monster_info_target, get_npc_info_target};
+use crate::repo::info_target::{
+    InfoItemTarget, InfoMonsterTarget, InfoNpcTarget, get_item_info_target,
+    get_monster_info_target, get_npc_info_target,
+};
 use crate::repo::item_taxonomy::build_game_item_taxonomy;
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
@@ -147,11 +150,10 @@ pub async fn get_info_target(
         "monster" => get_monster_info_target(&id)?.map(map_monster_target),
         "player" => load_player_target(&state, &id).await?,
         _ => return Err(AppError::config("参数错误")),
-    }.ok_or_else(|| AppError::not_found("对象不存在"))?;
+    }
+    .ok_or_else(|| AppError::not_found("对象不存在"))?;
 
-    Ok(send_success(InfoTargetEnvelope {
-        target,
-    }))
+    Ok(send_success(InfoTargetEnvelope { target }))
 }
 
 pub fn map_monster_target(target: InfoMonsterTarget) -> InfoTargetDto {
@@ -234,11 +236,14 @@ async fn load_player_target(
         .await?
         .is_some();
 
-    let (title_name, title_description) = load_equipped_title_presentation(state, character_id).await?;
+    let (title_name, title_description) =
+        load_equipped_title_presentation(state, character_id).await?;
     let equipment = load_player_equipment(state, character_id).await?;
     let techniques = load_player_techniques(state, character_id).await?;
 
-    let persisted_title = row.try_get::<Option<String>, _>("title")?.unwrap_or_default();
+    let persisted_title = row
+        .try_get::<Option<String>, _>("title")?
+        .unwrap_or_default();
     let title = title_name
         .or_else(|| (!persisted_title.trim().is_empty()).then_some(persisted_title))
         .or(Some("散修".to_string()));
@@ -281,7 +286,9 @@ async fn load_equipped_title_presentation(
     let Some(row) = row else {
         return Ok((None, None));
     };
-    let title_id = row.try_get::<Option<String>, _>("title_id")?.unwrap_or_default();
+    let title_id = row
+        .try_get::<Option<String>, _>("title_id")?
+        .unwrap_or_default();
     if title_id.trim().is_empty() {
         return Ok((None, None));
     }
@@ -306,18 +313,27 @@ async fn load_player_equipment(
         .await?;
     let mut equipment = Vec::new();
     for row in rows {
-        let item_def_id = row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default();
+        let item_def_id = row
+            .try_get::<Option<String>, _>("item_def_id")?
+            .unwrap_or_default();
         let Some((name, quality_from_def)) = item_map.get(item_def_id.trim()) else {
             continue;
         };
-        let quality = row.try_get::<Option<String>, _>("quality")?.unwrap_or_else(|| quality_from_def.clone());
+        let quality = row
+            .try_get::<Option<String>, _>("quality")?
+            .unwrap_or_else(|| quality_from_def.clone());
         let slot = map_equipped_slot(
-            &row.try_get::<Option<String>, _>("equipped_slot")?.unwrap_or_default(),
+            &row.try_get::<Option<String>, _>("equipped_slot")?
+                .unwrap_or_default(),
         );
         equipment.push(PlayerEquipmentDto {
             slot,
             name: name.clone(),
-            quality: if quality.trim().is_empty() { "-".to_string() } else { quality },
+            quality: if quality.trim().is_empty() {
+                "-".to_string()
+            } else {
+                quality
+            },
         });
     }
     Ok(equipment)
@@ -337,14 +353,20 @@ async fn load_player_techniques(
         .await?;
     let mut techniques = Vec::new();
     for row in rows {
-        let technique_id = row.try_get::<Option<String>, _>("technique_id")?.unwrap_or_default();
+        let technique_id = row
+            .try_get::<Option<String>, _>("technique_id")?
+            .unwrap_or_default();
         let Some((name, technique_type)) = technique_map.get(technique_id.trim()) else {
             continue;
         };
         let layer = opt_i64_from_i32(&row, "current_layer")?.unwrap_or_default();
         techniques.push(PlayerTechniqueDto {
             name: name.clone(),
-            level: if layer > 0 { format!("{}重", layer) } else { "-".to_string() },
+            level: if layer > 0 {
+                format!("{}重", layer)
+            } else {
+                "-".to_string()
+            },
             technique_type: technique_type.clone(),
         });
     }
@@ -396,7 +418,9 @@ fn build_player_stats(
                     .map(i64::from)
                     .map(serde_json::Value::from)
             });
-        let Some(value) = value else { continue; };
+        let Some(value) = value else {
+            continue;
+        };
         let normalized = if ratio {
             if let Some(number) = value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)) {
                 serde_json::Value::String(format_percent(number))
@@ -414,8 +438,8 @@ fn build_player_stats(
     Ok(stats)
 }
 
-fn load_title_definition_map(
-) -> Result<BTreeMap<String, (Option<String>, Option<String>)>, AppError> {
+fn load_title_definition_map()
+-> Result<BTreeMap<String, (Option<String>, Option<String>)>, AppError> {
     let content = fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/title_def.json"),
     )
@@ -431,8 +455,15 @@ fn load_title_definition_map(
         .into_iter()
         .filter_map(|row| {
             let id = row.get("id")?.as_str()?.trim().to_string();
-            let name = row.get("name")?.as_str().map(|value| value.trim().to_string());
-            let description = row.get("description").and_then(|value| value.as_str()).map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+            let name = row
+                .get("name")?
+                .as_str()
+                .map(|value| value.trim().to_string());
+            let description = row
+                .get("description")
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
             (!id.is_empty()).then_some((id, (name.filter(|value| !value.is_empty()), description)))
         })
         .collect())
@@ -442,17 +473,39 @@ fn load_item_definition_map() -> Result<BTreeMap<String, (String, String)>, AppE
     let mut map = BTreeMap::new();
     for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
         let content = fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../server/src/data/seeds/{filename}")),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../server/src/data/seeds/{filename}")),
         )
         .map_err(|error| AppError::config(format!("failed to read {filename}: {error}")))?;
         let payload: serde_json::Value = serde_json::from_str(&content)
             .map_err(|error| AppError::config(format!("failed to parse {filename}: {error}")))?;
-        let items = payload.get("items").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+        let items = payload
+            .get("items")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         for item in items {
-            let id = item.get("id").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            let name = item.get("name").and_then(|value| value.as_str()).unwrap_or_default().trim().to_string();
-            if id.is_empty() || name.is_empty() { continue; }
-            let quality = item.get("quality").and_then(|value| value.as_str()).unwrap_or("-").trim().to_string();
+            let id = item
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if id.is_empty() || name.is_empty() {
+                continue;
+            }
+            let quality = item
+                .get("quality")
+                .and_then(|value| value.as_str())
+                .unwrap_or("-")
+                .trim()
+                .to_string();
             map.insert(id, (name, quality));
         }
     }
@@ -461,18 +514,29 @@ fn load_item_definition_map() -> Result<BTreeMap<String, (String, String)>, AppE
 
 fn load_technique_definition_map() -> Result<BTreeMap<String, (String, String)>, AppError> {
     let content = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/technique_def.json"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../server/src/data/seeds/technique_def.json"),
     )
     .map_err(|error| AppError::config(format!("failed to read technique_def.json: {error}")))?;
-    let payload: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse technique_def.json: {error}")))?;
-    let techniques = payload.get("techniques").and_then(|value| value.as_array()).cloned().unwrap_or_default();
+    let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
+        AppError::config(format!("failed to parse technique_def.json: {error}"))
+    })?;
+    let techniques = payload
+        .get("techniques")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     Ok(techniques
         .into_iter()
         .filter_map(|row| {
             let id = row.get("id")?.as_str()?.trim().to_string();
             let name = row.get("name")?.as_str()?.trim().to_string();
-            let technique_type = row.get("type").and_then(|value| value.as_str()).unwrap_or("功法").trim().to_string();
+            let technique_type = row
+                .get("type")
+                .and_then(|value| value.as_str())
+                .unwrap_or("功法")
+                .trim()
+                .to_string();
             (!id.is_empty() && !name.is_empty()).then_some((id, (name, technique_type)))
         })
         .collect())
@@ -536,8 +600,8 @@ mod tests {
     use crate::bootstrap::app::build_router;
     use crate::config::{
         AppConfig, CaptchaConfig, CaptchaProvider, CosConfig, DatabaseConfig, HttpConfig,
-        LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig, StorageConfig,
-        WanderConfig,
+        LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig,
+        StorageConfig, WanderConfig,
     };
     use crate::integrations::database::DatabaseRuntime;
     use crate::state::AppState;
@@ -614,7 +678,13 @@ mod tests {
         );
         let http_client = reqwest::Client::new();
 
-        AppState::new(config, DatabaseRuntime::new(database), redis, http_client, true)
+        AppState::new(
+            config,
+            DatabaseRuntime::new(database),
+            redis,
+            http_client,
+            true,
+        )
     }
 
     #[tokio::test]
@@ -636,10 +706,12 @@ mod tests {
             .expect("body should read");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("json should parse");
         assert_eq!(payload["success"], true);
-        assert!(payload["data"]["taxonomy"]["categories"]["options"]
-            .as_array()
-            .map(|items| !items.is_empty())
-            .unwrap_or(false));
+        assert!(
+            payload["data"]["taxonomy"]["categories"]["options"]
+                .as_array()
+                .map(|items| !items.is_empty())
+                .unwrap_or(false)
+        );
         println!("ITEM_TAXONOMY_RESPONSE={}", payload);
     }
 

@@ -61,9 +61,7 @@ pub fn load_idle_history_cleanup_config() -> IdleHistoryCleanupConfig {
     }
 }
 
-pub async fn run_idle_history_cleanup_once(
-    state: &AppState,
-) -> Result<IdleHistoryCleanupSummary> {
+pub async fn run_idle_history_cleanup_once(state: &AppState) -> Result<IdleHistoryCleanupSummary> {
     let config = load_idle_history_cleanup_config();
     if !config.enabled {
         return Ok(IdleHistoryCleanupSummary::default());
@@ -73,7 +71,11 @@ pub async fn run_idle_history_cleanup_once(
         .database
         .fetch_one(
             "SELECT pg_try_advisory_lock($1::int, $2::int) AS acquired",
-            |query| query.bind(IDLE_CLEANUP_LOCK_KEY_1).bind(IDLE_CLEANUP_LOCK_KEY_2),
+            |query| {
+                query
+                    .bind(IDLE_CLEANUP_LOCK_KEY_1)
+                    .bind(IDLE_CLEANUP_LOCK_KEY_2)
+            },
         )
         .await?
         .try_get::<Option<bool>, _>("acquired")?
@@ -103,10 +105,11 @@ pub async fn run_idle_history_cleanup_once(
 
     let _ = state
         .database
-        .execute(
-                "SELECT pg_advisory_unlock($1::int, $2::int)",
-            |query| query.bind(IDLE_CLEANUP_LOCK_KEY_1).bind(IDLE_CLEANUP_LOCK_KEY_2),
-        )
+        .execute("SELECT pg_advisory_unlock($1::int, $2::int)", |query| {
+            query
+                .bind(IDLE_CLEANUP_LOCK_KEY_1)
+                .bind(IDLE_CLEANUP_LOCK_KEY_2)
+        })
         .await;
 
     result?;
@@ -138,7 +141,11 @@ pub fn spawn_idle_history_cleanup_loop(state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_DELETE_SESSION_BATCH_SIZE, DEFAULT_IDLE_HISTORY_KEEP_COUNT, DEFAULT_MAX_DELETE_BATCHES_PER_RUN, IdleHistoryCleanupSummary, load_idle_history_cleanup_config};
+    use super::{
+        DEFAULT_DELETE_SESSION_BATCH_SIZE, DEFAULT_IDLE_HISTORY_KEEP_COUNT,
+        DEFAULT_MAX_DELETE_BATCHES_PER_RUN, IdleHistoryCleanupSummary,
+        load_idle_history_cleanup_config,
+    };
 
     #[test]
     fn idle_history_cleanup_summary_defaults_to_zero() {
@@ -150,8 +157,14 @@ mod tests {
     fn idle_history_cleanup_config_uses_defaults() {
         let config = load_idle_history_cleanup_config();
         assert_eq!(config.keep_session_count, DEFAULT_IDLE_HISTORY_KEEP_COUNT);
-        assert_eq!(config.delete_session_batch_size, DEFAULT_DELETE_SESSION_BATCH_SIZE);
-        assert_eq!(config.max_delete_batches_per_run, DEFAULT_MAX_DELETE_BATCHES_PER_RUN);
+        assert_eq!(
+            config.delete_session_batch_size,
+            DEFAULT_DELETE_SESSION_BATCH_SIZE
+        );
+        assert_eq!(
+            config.max_delete_batches_per_run,
+            DEFAULT_MAX_DELETE_BATCHES_PER_RUN
+        );
         println!("IDLE_HISTORY_CLEANUP_INTERVAL_MS={}", config.interval_ms);
     }
 }

@@ -61,9 +61,13 @@ async fn refresh_partner_rank_snapshots(state: &AppState) -> Result<usize> {
 }
 
 fn duration_until_next_rank_snapshot_refresh() -> TokioDuration {
-    let now = OffsetDateTime::now_utc().to_offset(UtcOffset::from_hms(8, 0, 0).expect("+8 offset should exist"));
+    let now = OffsetDateTime::now_utc()
+        .to_offset(UtcOffset::from_hms(8, 0, 0).expect("+8 offset should exist"));
     let current_day = now.date();
-    let scheduled_today = current_day.with_hms(RANK_SNAPSHOT_NIGHTLY_HOUR_CN as u8, 0, 0).expect("valid rank snapshot time").assume_offset(now.offset());
+    let scheduled_today = current_day
+        .with_hms(RANK_SNAPSHOT_NIGHTLY_HOUR_CN as u8, 0, 0)
+        .expect("valid rank snapshot time")
+        .assume_offset(now.offset());
     let next_run = if now < scheduled_today {
         scheduled_today
     } else {

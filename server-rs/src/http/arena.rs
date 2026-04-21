@@ -6,13 +6,21 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::battle_runtime::build_minimal_pvp_battle_state;
-use crate::integrations::battle_persistence::{persist_battle_projection, persist_battle_session, persist_battle_snapshot};
+use crate::integrations::battle_character_profile::hydrate_pvp_battle_state_players;
+use crate::integrations::battle_persistence::{
+    persist_battle_projection, persist_battle_session, persist_battle_snapshot,
+};
 use crate::realtime::arena::build_arena_status_payload;
 use crate::realtime::battle::{build_battle_cooldown_ready_payload, build_battle_started_payload};
-use crate::realtime::public_socket::{emit_arena_update_to_user, emit_battle_cooldown_to_participants, emit_battle_update_to_participants};
+use crate::realtime::public_socket::{
+    emit_arena_update_to_user, emit_battle_cooldown_to_participants,
+    emit_battle_update_to_participants,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
-use crate::state::{AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord};
+use crate::state::{
+    AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
+};
 
 const ARENA_TODAY_LIMIT: i64 = 20;
 
@@ -20,7 +28,12 @@ fn opt_i64(row: &sqlx::postgres::PgRow, column: &str) -> i64 {
     row.try_get::<Option<i64>, _>(column)
         .ok()
         .flatten()
-        .or_else(|| row.try_get::<Option<i32>, _>(column).ok().flatten().map(i64::from))
+        .or_else(|| {
+            row.try_get::<Option<i32>, _>(column)
+                .ok()
+                .flatten()
+                .map(i64::from)
+        })
         .unwrap_or_default()
 }
 
@@ -132,7 +145,9 @@ pub async fn get_arena_opponents(
 ) -> Result<Json<SuccessResponse<Vec<ArenaOpponentDto>>>, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     let limit = query.limit.unwrap_or(10).clamp(1, 50);
-    let self_score = load_arena_status_from_truth(&state, actor.character_id).await?.score;
+    let self_score = load_arena_status_from_truth(&state, actor.character_id)
+        .await?
+        .score;
 
     let rows = state
         .database
@@ -144,10 +159,22 @@ pub async fn get_arena_opponents(
     Ok(send_success(
         rows.into_iter()
             .map(|row| ArenaOpponentDto {
-                id: row.try_get::<Option<i64>, _>("id").unwrap_or(None).unwrap_or_default(),
-                name: row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-                realm: row.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-                power: row.try_get::<Option<i64>, _>("power").unwrap_or(None).unwrap_or_default(),
+                id: row
+                    .try_get::<Option<i64>, _>("id")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                name: row
+                    .try_get::<Option<String>, _>("name")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                realm: row
+                    .try_get::<Option<String>, _>("realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                power: row
+                    .try_get::<Option<i64>, _>("power")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
                 score: opt_i64(&row, "score"),
             })
             .collect(),
@@ -171,12 +198,30 @@ pub async fn get_arena_records(
     Ok(send_success(
         rows.into_iter()
             .map(|row| ArenaRecordDto {
-                id: row.try_get::<Option<String>, _>("id_text").unwrap_or(None).unwrap_or_default(),
-                ts: row.try_get::<Option<i64>, _>("ts").unwrap_or(None).unwrap_or_default(),
-                opponent_name: row.try_get::<Option<String>, _>("opponent_name").unwrap_or(None).unwrap_or_default(),
-                opponent_realm: row.try_get::<Option<String>, _>("opponent_realm").unwrap_or(None).unwrap_or_default(),
-                opponent_power: row.try_get::<Option<i64>, _>("opponent_power").unwrap_or(None).unwrap_or_default(),
-                result: row.try_get::<Option<String>, _>("result").unwrap_or(None).unwrap_or_else(|| "draw".to_string()),
+                id: row
+                    .try_get::<Option<String>, _>("id_text")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                ts: row
+                    .try_get::<Option<i64>, _>("ts")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                opponent_name: row
+                    .try_get::<Option<String>, _>("opponent_name")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                opponent_realm: row
+                    .try_get::<Option<String>, _>("opponent_realm")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                opponent_power: row
+                    .try_get::<Option<i64>, _>("opponent_power")
+                    .unwrap_or(None)
+                    .unwrap_or_default(),
+                result: row
+                    .try_get::<Option<String>, _>("result")
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| "draw".to_string()),
                 delta_score: opt_i64(&row, "delta_score"),
                 score_after: opt_i64(&row, "score_after"),
             })
@@ -208,14 +253,34 @@ pub async fn start_arena_match(
         return Err(AppError::config("暂无可匹配对手"));
     };
     let opponent = ArenaOpponentDto {
-        id: opponent.try_get::<Option<i64>, _>("id").unwrap_or(None).unwrap_or_default(),
-        name: opponent.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-        realm: opponent.try_get::<Option<String>, _>("realm").unwrap_or(None).unwrap_or_default(),
-        power: opponent.try_get::<Option<i64>, _>("power").unwrap_or(None).unwrap_or_default(),
-        score: opponent.try_get::<Option<i64>, _>("score").unwrap_or(None).unwrap_or_default(),
+        id: opponent
+            .try_get::<Option<i64>, _>("id")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        name: opponent
+            .try_get::<Option<String>, _>("name")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        realm: opponent
+            .try_get::<Option<String>, _>("realm")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        power: opponent
+            .try_get::<Option<i64>, _>("power")
+            .unwrap_or(None)
+            .unwrap_or_default(),
+        score: opponent
+            .try_get::<Option<i64>, _>("score")
+            .unwrap_or(None)
+            .unwrap_or_default(),
     };
 
-    let battle_id = format!("arena-battle-{}-{}-{}", actor.character_id, opponent.id, now_millis());
+    let battle_id = format!(
+        "arena-battle-{}-{}-{}",
+        actor.character_id,
+        opponent.id,
+        now_millis()
+    );
     let session = ArenaBattleSessionSnapshotDto {
         session_id: format!("arena-session-{}", battle_id),
         session_type: "pvp".to_string(),
@@ -246,14 +311,25 @@ pub async fn start_arena_match(
             mode: "arena".to_string(),
         },
     });
-    state.online_battle_projections.register(OnlineBattleProjectionRecord {
-        battle_id: battle_id.clone(),
-        owner_user_id: actor.user_id,
-        participant_user_ids: vec![actor.user_id],
-        r#type: "pvp".to_string(),
-        session_id: Some(session.session_id.clone()),
-    });
-    let battle_state = build_minimal_pvp_battle_state(&battle_id, actor.user_id, opponent.id);
+    state
+        .online_battle_projections
+        .register(OnlineBattleProjectionRecord {
+            battle_id: battle_id.clone(),
+            owner_user_id: actor.user_id,
+            participant_user_ids: vec![actor.user_id],
+            r#type: "pvp".to_string(),
+            session_id: Some(session.session_id.clone()),
+        });
+    let mut battle_state =
+        build_minimal_pvp_battle_state(&battle_id, actor.character_id, opponent.id);
+    hydrate_pvp_battle_state_players(
+        &state,
+        &mut battle_state,
+        actor.character_id,
+        opponent.id,
+        "npc",
+    )
+    .await?;
     state.battle_runtime.register(battle_state.clone());
     if let Some(session_snapshot) = state.battle_sessions.get_by_battle_id(&battle_id) {
         persist_battle_session(&state, &session_snapshot).await?;
@@ -264,13 +340,18 @@ pub async fn start_arena_match(
     persist_battle_snapshot(&state, &battle_state).await?;
     let debug_realtime = build_battle_started_payload(
         &battle_id,
-        battle_state,
+        battle_state.clone(),
         vec![serde_json::json!({"type": "round_start", "round": 1})],
         state.battle_sessions.get_by_battle_id(&battle_id),
     );
     emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
-    let debug_cooldown_realtime = build_battle_cooldown_ready_payload(Some(&format!("player-{}", actor.user_id)));
-    emit_battle_cooldown_to_participants(&state, &session.participant_user_ids, &debug_cooldown_realtime);
+    let debug_cooldown_realtime =
+        build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+    emit_battle_cooldown_to_participants(
+        &state,
+        &session.participant_user_ids,
+        &debug_cooldown_realtime,
+    );
     emit_arena_update_to_user(
         &state,
         actor.user_id,
@@ -314,16 +395,20 @@ pub async fn start_arena_challenge(
 
     let opponent = state
         .database
-        .fetch_optional(
-            "SELECT id FROM characters WHERE id = $1 LIMIT 1",
-            |query| query.bind(opponent_character_id),
-        )
+        .fetch_optional("SELECT id FROM characters WHERE id = $1 LIMIT 1", |query| {
+            query.bind(opponent_character_id)
+        })
         .await?;
     if opponent.is_none() {
         return Err(AppError::config("对手不存在"));
     }
 
-    let battle_id = format!("arena-battle-{}-{}-{}", actor.character_id, opponent_character_id, now_millis());
+    let battle_id = format!(
+        "arena-battle-{}-{}-{}",
+        actor.character_id,
+        opponent_character_id,
+        now_millis()
+    );
     let session = ArenaBattleSessionSnapshotDto {
         session_id: format!("arena-session-{}", battle_id),
         session_type: "pvp".to_string(),
@@ -354,14 +439,25 @@ pub async fn start_arena_challenge(
             mode: "arena".to_string(),
         },
     });
-    state.online_battle_projections.register(OnlineBattleProjectionRecord {
-        battle_id: battle_id.clone(),
-        owner_user_id: actor.user_id,
-        participant_user_ids: vec![actor.user_id],
-        r#type: "pvp".to_string(),
-        session_id: Some(session.session_id.clone()),
-    });
-    let battle_state = build_minimal_pvp_battle_state(&battle_id, actor.user_id, opponent_character_id);
+    state
+        .online_battle_projections
+        .register(OnlineBattleProjectionRecord {
+            battle_id: battle_id.clone(),
+            owner_user_id: actor.user_id,
+            participant_user_ids: vec![actor.user_id],
+            r#type: "pvp".to_string(),
+            session_id: Some(session.session_id.clone()),
+        });
+    let mut battle_state =
+        build_minimal_pvp_battle_state(&battle_id, actor.character_id, opponent_character_id);
+    hydrate_pvp_battle_state_players(
+        &state,
+        &mut battle_state,
+        actor.character_id,
+        opponent_character_id,
+        "npc",
+    )
+    .await?;
     state.battle_runtime.register(battle_state.clone());
     if let Some(session_snapshot) = state.battle_sessions.get_by_battle_id(&battle_id) {
         persist_battle_session(&state, &session_snapshot).await?;
@@ -372,13 +468,18 @@ pub async fn start_arena_challenge(
     persist_battle_snapshot(&state, &battle_state).await?;
     let debug_realtime = build_battle_started_payload(
         &battle_id,
-        battle_state,
+        battle_state.clone(),
         vec![serde_json::json!({"type": "round_start", "round": 1})],
         state.battle_sessions.get_by_battle_id(&battle_id),
     );
     emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
-    let debug_cooldown_realtime = build_battle_cooldown_ready_payload(Some(&format!("player-{}", actor.user_id)));
-    emit_battle_cooldown_to_participants(&state, &session.participant_user_ids, &debug_cooldown_realtime);
+    let debug_cooldown_realtime =
+        build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+    emit_battle_cooldown_to_participants(
+        &state,
+        &session.participant_user_ids,
+        &debug_cooldown_realtime,
+    );
     emit_arena_update_to_user(
         &state,
         actor.user_id,
@@ -392,10 +493,7 @@ pub async fn start_arena_challenge(
         }),
     );
 
-    Ok(send_success(ArenaChallengeDataDto {
-        battle_id,
-        session,
-    }))
+    Ok(send_success(ArenaChallengeDataDto { battle_id, session }))
 }
 
 fn now_millis() -> u128 {
@@ -405,7 +503,10 @@ fn now_millis() -> u128 {
         .unwrap_or_default()
 }
 
-async fn load_arena_status_from_truth(state: &AppState, character_id: i64) -> Result<ArenaStatusDto, AppError> {
+async fn load_arena_status_from_truth(
+    state: &AppState,
+    character_id: i64,
+) -> Result<ArenaStatusDto, AppError> {
     let rating_row = state
         .database
         .fetch_optional(
@@ -420,9 +521,18 @@ async fn load_arena_status_from_truth(state: &AppState, character_id: i64) -> Re
             |query| query.bind(character_id),
         )
         .await?;
-    let score = rating_row.as_ref().map(|row| opt_i64(row, "rating")).unwrap_or(1000);
-    let win_count = rating_row.as_ref().map(|row| opt_i64(row, "win_count")).unwrap_or_default();
-    let lose_count = rating_row.as_ref().map(|row| opt_i64(row, "lose_count")).unwrap_or_default();
+    let score = rating_row
+        .as_ref()
+        .map(|row| opt_i64(row, "rating"))
+        .unwrap_or(1000);
+    let win_count = rating_row
+        .as_ref()
+        .map(|row| opt_i64(row, "win_count"))
+        .unwrap_or_default();
+    let lose_count = rating_row
+        .as_ref()
+        .map(|row| opt_i64(row, "lose_count"))
+        .unwrap_or_default();
     let today_used = usage_row
         .as_ref()
         .and_then(|row| row.try_get::<Option<i64>, _>("today_used").ok().flatten())
@@ -490,7 +600,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(payload["data"]["session"]["currentBattleId"], "arena-battle-1-2-123");
+        assert_eq!(
+            payload["data"]["session"]["currentBattleId"],
+            "arena-battle-1-2-123"
+        );
         println!("ARENA_MATCH_RESPONSE={}", payload);
     }
 

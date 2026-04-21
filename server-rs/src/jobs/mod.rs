@@ -5,8 +5,8 @@ pub mod idle_history_cleanup;
 pub mod mail_history_cleanup;
 pub mod online_battle_settlement;
 pub mod partner_recruit_draft_cleanup;
-pub mod technique_draft_cleanup;
 pub mod rank_snapshot;
+pub mod technique_draft_cleanup;
 pub mod tower_frozen_pool;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,26 +14,38 @@ use std::collections::{BTreeMap, BTreeSet};
 use sqlx::Row;
 use tokio::time::{Duration, sleep};
 
-use crate::integrations::redis::RedisRuntime;
-use crate::integrations::battle_persistence::{persist_battle_projection, persist_battle_session, persist_battle_snapshot, recover_battle_bundle};
-use crate::integrations::redis_item_grant_delta::{DecodedCharacterItemGrantDelta, flush_character_item_grant_deltas};
-use crate::integrations::redis_item_instance_mutation::{BufferedItemInstanceMutation, flush_item_instance_mutations};
-use crate::integrations::redis_progress_delta::flush_character_progress_deltas;
-use crate::integrations::redis_resource_delta::flush_character_resource_deltas;
 use crate::battle_runtime::build_minimal_pve_battle_state;
+use crate::http::afdian;
+use crate::http::character_technique;
+use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::idle;
 use crate::http::partner;
-use crate::http::character_technique;
-use crate::http::afdian;
-use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::tower::resolve_tower_floor_monster_ids;
 use crate::http::wander;
+use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
+use crate::integrations::battle_persistence::{
+    persist_battle_projection, persist_battle_session, persist_battle_snapshot,
+    recover_battle_bundle,
+};
+use crate::integrations::redis::RedisRuntime;
+use crate::integrations::redis_item_grant_delta::{
+    DecodedCharacterItemGrantDelta, flush_character_item_grant_deltas,
+};
+use crate::integrations::redis_item_instance_mutation::{
+    BufferedItemInstanceMutation, flush_item_instance_mutations,
+};
+use crate::integrations::redis_progress_delta::flush_character_progress_deltas;
+use crate::integrations::redis_resource_delta::flush_character_resource_deltas;
 use crate::realtime::battle::{build_battle_cooldown_ready_payload, build_battle_started_payload};
-use crate::realtime::public_socket::{emit_battle_cooldown_to_participants, emit_battle_update_to_participants};
 use crate::realtime::public_socket::emit_wander_update_to_user;
+use crate::realtime::public_socket::{
+    emit_battle_cooldown_to_participants, emit_battle_update_to_participants,
+};
 use crate::realtime::wander::build_wander_update_payload;
 use crate::shared::error::AppError;
-use crate::state::{AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord};
+use crate::state::{
+    AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
+};
 
 fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> Result<Option<i64>, AppError> {
     Ok(row.try_get::<Option<i32>, _>(column)?.map(i64::from))
@@ -93,9 +105,12 @@ impl JobRuntime {
         if afdian_retry_enabled {
             spawn_afdian_message_retry_loop(state.clone());
         }
-        let arena_weekly_settlement_summary = arena_weekly_settlement::run_arena_weekly_settlement_once(&state).await?;
+        let arena_weekly_settlement_summary =
+            arena_weekly_settlement::run_arena_weekly_settlement_once(&state).await?;
         arena_weekly_settlement::spawn_arena_weekly_settlement_loop(state.clone());
-        let rank_snapshot_summary = match rank_snapshot::refresh_all_rank_snapshots_once(&state).await {
+        let rank_snapshot_summary = match rank_snapshot::refresh_all_rank_snapshots_once(&state)
+            .await
+        {
             Ok(summary) => summary,
             Err(error) => {
                 tracing::warn!(
@@ -112,10 +127,12 @@ impl JobRuntime {
         partner_recruit_draft_cleanup::spawn_partner_recruit_draft_cleanup_loop(state.clone());
         technique_draft_cleanup::spawn_technique_draft_cleanup_loop(state.clone());
         let partner_recovery = recover_pending_partner_jobs(state.clone()).await?;
-        let technique_generation_job_count = recover_pending_technique_generation_jobs(state.clone()).await?;
+        let technique_generation_job_count =
+            recover_pending_technique_generation_jobs(state.clone()).await?;
         let wander_generation_job_count = recover_pending_wander_jobs(state.clone()).await?;
         dungeon_cleanup::spawn_dungeon_expired_instance_cleanup_loop(state.clone());
-        online_battle_settlement::recover_pending_online_battle_settlement_tasks(state.clone()).await?;
+        online_battle_settlement::recover_pending_online_battle_settlement_tasks(state.clone())
+            .await?;
         online_battle_settlement::spawn_online_battle_settlement_loop(state.clone());
         spawn_progress_delta_flush_loop(state.clone());
         spawn_item_grant_delta_flush_loop(state.clone());
@@ -212,8 +229,14 @@ pub async fn enqueue_wander_generation_job(
         match wander::process_pending_generation_job(&state, character_id, &generation_id).await {
             Ok(result) => {
                 if let Ok(Some(user_id)) = load_character_user_id(&state, character_id).await {
-                    if let Ok(overview) = wander::load_wander_overview_data(&state, character_id).await {
-                        emit_wander_update_to_user(&state, user_id, &build_wander_update_payload(overview));
+                    if let Ok(overview) =
+                        wander::load_wander_overview_data(&state, character_id).await
+                    {
+                        emit_wander_update_to_user(
+                            &state,
+                            user_id,
+                            &build_wander_update_payload(overview),
+                        );
                     }
                 }
                 tracing::info!(
@@ -237,11 +260,17 @@ pub async fn enqueue_wander_generation_job(
     Ok(())
 }
 
-async fn load_character_user_id(state: &AppState, character_id: i64) -> Result<Option<i64>, AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
+async fn load_character_user_id(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Option<i64>, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
     Ok(row.and_then(|row| opt_i64_from_i32(&row, "user_id").ok().flatten()))
 }
 
@@ -255,7 +284,8 @@ pub async fn enqueue_partner_recruit_job(
         return Ok(());
     }
     tokio::spawn(async move {
-        let _ = partner::process_pending_partner_recruit_job(&state, character_id, &generation_id).await;
+        let _ = partner::process_pending_partner_recruit_job(&state, character_id, &generation_id)
+            .await;
     });
     Ok(())
 }
@@ -266,11 +296,21 @@ pub async fn enqueue_technique_generation_job(
     generation_id: String,
 ) -> Result<(), AppError> {
     if state.config.service.node_env == "test" {
-        character_technique::process_pending_technique_generation_job(&state, character_id, &generation_id).await?;
+        character_technique::process_pending_technique_generation_job(
+            &state,
+            character_id,
+            &generation_id,
+        )
+        .await?;
         return Ok(());
     }
     tokio::spawn(async move {
-        let _ = character_technique::process_pending_technique_generation_job(&state, character_id, &generation_id).await;
+        let _ = character_technique::process_pending_technique_generation_job(
+            &state,
+            character_id,
+            &generation_id,
+        )
+        .await;
     });
     Ok(())
 }
@@ -342,14 +382,18 @@ struct PendingPartnerJobRecoverySummary {
     rebone_count: usize,
 }
 
-async fn recover_pending_partner_jobs(state: AppState) -> anyhow::Result<PendingPartnerJobRecoverySummary> {
+async fn recover_pending_partner_jobs(
+    state: AppState,
+) -> anyhow::Result<PendingPartnerJobRecoverySummary> {
     let recruit_rows = state.database.fetch_all(
         "SELECT id::text AS id_text, character_id FROM partner_recruit_job WHERE status = 'pending' ORDER BY created_at ASC",
         |q| q,
     ).await?;
     let mut summary = PendingPartnerJobRecoverySummary::default();
     for row in recruit_rows {
-        let id = row.try_get::<Option<String>, _>("id_text")?.unwrap_or_default();
+        let id = row
+            .try_get::<Option<String>, _>("id_text")?
+            .unwrap_or_default();
         let character_id = opt_i64_from_i32(&row, "character_id")?.unwrap_or_default();
         if !id.is_empty() && character_id > 0 {
             enqueue_partner_recruit_job(state.clone(), character_id, id).await?;
@@ -361,7 +405,9 @@ async fn recover_pending_partner_jobs(state: AppState) -> anyhow::Result<Pending
         |q| q,
     ).await?;
     for row in fusion_rows {
-        let id = row.try_get::<Option<String>, _>("id_text")?.unwrap_or_default();
+        let id = row
+            .try_get::<Option<String>, _>("id_text")?
+            .unwrap_or_default();
         let character_id = opt_i64_from_i32(&row, "character_id")?.unwrap_or_default();
         if !id.is_empty() && character_id > 0 {
             enqueue_partner_fusion_job(state.clone(), character_id, id).await?;
@@ -373,7 +419,9 @@ async fn recover_pending_partner_jobs(state: AppState) -> anyhow::Result<Pending
         |q| q,
     ).await?;
     for row in rebone_rows {
-        let id = row.try_get::<Option<String>, _>("id_text")?.unwrap_or_default();
+        let id = row
+            .try_get::<Option<String>, _>("id_text")?
+            .unwrap_or_default();
         let character_id = opt_i64_from_i32(&row, "character_id")?.unwrap_or_default();
         if !id.is_empty() && character_id > 0 {
             enqueue_partner_rebone_job(state.clone(), character_id, id).await?;
@@ -390,7 +438,9 @@ async fn recover_pending_technique_generation_jobs(state: AppState) -> anyhow::R
     ).await?;
     let mut recovered = 0_usize;
     for row in rows {
-        let id = row.try_get::<Option<String>, _>("id_text")?.unwrap_or_default();
+        let id = row
+            .try_get::<Option<String>, _>("id_text")?
+            .unwrap_or_default();
         let character_id = opt_i64_from_i32(&row, "character_id")?.unwrap_or_default();
         if !id.is_empty() && character_id > 0 {
             enqueue_technique_generation_job(state.clone(), character_id, id).await?;
@@ -400,7 +450,9 @@ async fn recover_pending_technique_generation_jobs(state: AppState) -> anyhow::R
     Ok(recovered)
 }
 
-pub(crate) async fn recover_pending_afdian_message_deliveries(state: AppState) -> anyhow::Result<usize> {
+pub(crate) async fn recover_pending_afdian_message_deliveries(
+    state: AppState,
+) -> anyhow::Result<usize> {
     let batch_size = load_afdian_message_retry_batch_size();
     let recovered = afdian::run_due_afdian_message_retries_once(&state, batch_size).await?;
     Ok(recovered)
@@ -414,7 +466,10 @@ fn spawn_afdian_message_retry_loop(state: AppState) {
             match recover_pending_afdian_message_deliveries(state.clone()).await {
                 Ok(recovered) => {
                     if recovered > 0 {
-                        tracing::info!(recovered, "afdian message retry loop dispatched due deliveries");
+                        tracing::info!(
+                            recovered,
+                            "afdian message retry loop dispatched due deliveries"
+                        );
                     }
                 }
                 Err(error) => {
@@ -510,7 +565,10 @@ fn spawn_item_instance_mutation_flush_loop(state: AppState) {
     tokio::spawn(async move {
         let redis = RedisRuntime::new(redis_client);
         loop {
-            sleep(Duration::from_secs(ITEM_INSTANCE_MUTATION_FLUSH_INTERVAL_SECONDS)).await;
+            sleep(Duration::from_secs(
+                ITEM_INSTANCE_MUTATION_FLUSH_INTERVAL_SECONDS,
+            ))
+            .await;
             match flush_item_instance_mutations(&redis, 100, |character_id, mutations| {
                 let state = state.clone();
                 async move { apply_item_instance_mutation_batch(&state, character_id, mutations).await }
@@ -561,8 +619,14 @@ async fn apply_character_progress_delta_batch(
     if character_id <= 0 || deltas.is_empty() {
         return Ok(());
     }
-    let (total_points, combat_points, cultivation_points, exploration_points, social_points, collection_points) =
-        extract_achievement_point_delta_tuple(&deltas);
+    let (
+        total_points,
+        combat_points,
+        cultivation_points,
+        exploration_points,
+        social_points,
+        collection_points,
+    ) = extract_achievement_point_delta_tuple(&deltas);
     if total_points > 0
         || combat_points > 0
         || cultivation_points > 0
@@ -599,7 +663,11 @@ async fn apply_character_item_grant_delta_batch(
         return Ok(());
     }
     for grant in grants {
-        if grant.user_id <= 0 || grant.qty <= 0 || grant.item_def_id.trim().is_empty() || grant.obtained_from.trim().is_empty() {
+        if grant.user_id <= 0
+            || grant.qty <= 0
+            || grant.item_def_id.trim().is_empty()
+            || grant.obtained_from.trim().is_empty()
+        {
             continue;
         }
         state.database.execute(
@@ -626,7 +694,11 @@ async fn apply_character_resource_delta_batch(
         return Ok(());
     }
     let silver_delta = deltas.get("silver").copied().unwrap_or_default().max(0);
-    let spirit_stones_delta = deltas.get("spirit_stones").copied().unwrap_or_default().max(0);
+    let spirit_stones_delta = deltas
+        .get("spirit_stones")
+        .copied()
+        .unwrap_or_default()
+        .max(0);
     let exp_delta = deltas.get("exp").copied().unwrap_or_default().max(0);
     if silver_delta <= 0 && spirit_stones_delta <= 0 && exp_delta <= 0 {
         return Ok(());
@@ -646,21 +718,42 @@ async fn apply_item_instance_mutation_batch(
     if character_id <= 0 || mutations.is_empty() {
         return Ok(());
     }
-    let slot_release_ids = mutations.iter().map(|mutation| mutation.item_id).collect::<Vec<_>>();
-    ensure_no_duplicate_item_instance_slot_targets(character_id, mutations.iter().filter_map(|mutation| mutation.snapshot.as_ref()))?;
-    ensure_no_existing_item_instance_slot_conflicts(state, character_id, &slot_release_ids, mutations.iter().filter_map(|mutation| mutation.snapshot.as_ref())).await?;
+    let slot_release_ids = mutations
+        .iter()
+        .map(|mutation| mutation.item_id)
+        .collect::<Vec<_>>();
+    ensure_no_duplicate_item_instance_slot_targets(
+        character_id,
+        mutations
+            .iter()
+            .filter_map(|mutation| mutation.snapshot.as_ref()),
+    )?;
+    ensure_no_existing_item_instance_slot_conflicts(
+        state,
+        character_id,
+        &slot_release_ids,
+        mutations
+            .iter()
+            .filter_map(|mutation| mutation.snapshot.as_ref()),
+    )
+    .await?;
     release_item_instance_slots_for_update(state, character_id, &slot_release_ids).await?;
 
     for mutation in mutations {
         match mutation.kind.as_str() {
             "delete" => {
-                state.database.execute(
-                    "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
-                    |query| query.bind(mutation.item_id).bind(character_id),
-                ).await?;
+                state
+                    .database
+                    .execute(
+                        "DELETE FROM item_instance WHERE id = $1 AND owner_character_id = $2",
+                        |query| query.bind(mutation.item_id).bind(character_id),
+                    )
+                    .await?;
             }
             _ => {
-                let Some(snapshot) = mutation.snapshot else { continue; };
+                let Some(snapshot) = mutation.snapshot else {
+                    continue;
+                };
                 state.database.execute(
                     "UPDATE item_instance SET owner_user_id = $2, owner_character_id = $3, item_def_id = $4, qty = $5, quality = $6, quality_rank = $7, bind_type = $8, bind_owner_user_id = $9, bind_owner_character_id = $10, location = $11, location_slot = $12, equipped_slot = $13, strengthen_level = $14, refine_level = $15, socketed_gems = $16::jsonb, random_seed = $17, affixes = $18::jsonb, identified = $19, affix_gen_version = $20, affix_roll_meta = $21::jsonb, custom_name = $22, locked = $23, expire_at = $24::timestamptz, obtained_from = $25, obtained_ref_id = $26, metadata = $27::jsonb, updated_at = NOW() WHERE id = $1 AND owner_character_id = $28",
                     |query| query
@@ -716,7 +809,9 @@ async fn release_item_instance_slots_for_update(
 
 fn ensure_no_duplicate_item_instance_slot_targets<'a>(
     character_id: i64,
-    snapshots: impl Iterator<Item = &'a crate::integrations::redis_item_instance_mutation::ItemInstanceMutationSnapshot>,
+    snapshots: impl Iterator<
+        Item = &'a crate::integrations::redis_item_instance_mutation::ItemInstanceMutationSnapshot,
+    >,
 ) -> Result<(), AppError> {
     let mut seen = BTreeSet::new();
     for snapshot in snapshots {
@@ -729,9 +824,14 @@ fn ensure_no_duplicate_item_instance_slot_targets<'a>(
         let Some(location_slot) = snapshot.location_slot else {
             continue;
         };
-        let key = format!("{}:{}:{}", snapshot.owner_character_id, snapshot.location, location_slot);
+        let key = format!(
+            "{}:{}:{}",
+            snapshot.owner_character_id, snapshot.location, location_slot
+        );
         if !seen.insert(key.clone()) {
-            return Err(AppError::config(format!("实例 mutation 目标槽位冲突: {key}")));
+            return Err(AppError::config(format!(
+                "实例 mutation 目标槽位冲突: {key}"
+            )));
         }
     }
     Ok(())
@@ -741,7 +841,9 @@ async fn ensure_no_existing_item_instance_slot_conflicts(
     state: &AppState,
     character_id: i64,
     batch_item_ids: &[i64],
-    snapshots: impl Iterator<Item = &crate::integrations::redis_item_instance_mutation::ItemInstanceMutationSnapshot>,
+    snapshots: impl Iterator<
+        Item = &crate::integrations::redis_item_instance_mutation::ItemInstanceMutationSnapshot,
+    >,
 ) -> Result<(), AppError> {
     if character_id <= 0 {
         return Ok(());
@@ -757,9 +859,18 @@ async fn ensure_no_existing_item_instance_slot_conflicts(
             if batch_item_ids.contains(&id) {
                 return None;
             }
-            let location = row.try_get::<Option<String>, _>("location").ok().flatten()?;
-            let location_slot = row.try_get::<Option<i32>, _>("location_slot").ok().flatten()?;
-            Some((format!("{}:{}:{}", character_id, location, location_slot), id))
+            let location = row
+                .try_get::<Option<String>, _>("location")
+                .ok()
+                .flatten()?;
+            let location_slot = row
+                .try_get::<Option<i32>, _>("location_slot")
+                .ok()
+                .flatten()?;
+            Some((
+                format!("{}:{}:{}", character_id, location, location_slot),
+                id,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -773,9 +884,14 @@ async fn ensure_no_existing_item_instance_slot_conflicts(
         let Some(location_slot) = snapshot.location_slot else {
             continue;
         };
-        let key = format!("{}:{}:{}", snapshot.owner_character_id, snapshot.location, location_slot);
+        let key = format!(
+            "{}:{}:{}",
+            snapshot.owner_character_id, snapshot.location, location_slot
+        );
         if let Some(occupant_id) = occupied_keys.get(&key) {
-            return Err(AppError::config(format!("实例 mutation 目标槽位冲突: {key} 已被物品 {occupant_id} 占用")));
+            return Err(AppError::config(format!(
+                "实例 mutation 目标槽位冲突: {key} 已被物品 {occupant_id} 占用"
+            )));
         }
     }
     Ok(())
@@ -785,12 +901,36 @@ fn extract_achievement_point_delta_tuple(
     deltas: &std::collections::HashMap<String, i64>,
 ) -> (i64, i64, i64, i64, i64, i64) {
     (
-        deltas.get("achievement_points:total").copied().unwrap_or_default().max(0),
-        deltas.get("achievement_points:combat_points").copied().unwrap_or_default().max(0),
-        deltas.get("achievement_points:cultivation_points").copied().unwrap_or_default().max(0),
-        deltas.get("achievement_points:exploration_points").copied().unwrap_or_default().max(0),
-        deltas.get("achievement_points:social_points").copied().unwrap_or_default().max(0),
-        deltas.get("achievement_points:collection_points").copied().unwrap_or_default().max(0),
+        deltas
+            .get("achievement_points:total")
+            .copied()
+            .unwrap_or_default()
+            .max(0),
+        deltas
+            .get("achievement_points:combat_points")
+            .copied()
+            .unwrap_or_default()
+            .max(0),
+        deltas
+            .get("achievement_points:cultivation_points")
+            .copied()
+            .unwrap_or_default()
+            .max(0),
+        deltas
+            .get("achievement_points:exploration_points")
+            .copied()
+            .unwrap_or_default()
+            .max(0),
+        deltas
+            .get("achievement_points:social_points")
+            .copied()
+            .unwrap_or_default()
+            .max(0),
+        deltas
+            .get("achievement_points:collection_points")
+            .copied()
+            .unwrap_or_default()
+            .max(0),
     )
 }
 
@@ -814,15 +954,24 @@ async fn recover_idle_sessions(state: AppState) -> anyhow::Result<usize> {
         let Some(session_row) = session_row else {
             continue;
         };
-        let session_id = session_row.try_get::<Option<String>, _>("id_text")?.unwrap_or_default();
+        let session_id = session_row
+            .try_get::<Option<String>, _>("id_text")?
+            .unwrap_or_default();
         let user_id = opt_i64_from_i32(&session_row, "user_id")?.unwrap_or_default();
         if !session_id.is_empty() && user_id > 0 {
-            let max_duration_row = state.database.fetch_optional(
-                "SELECT max_duration_ms FROM idle_sessions WHERE id::text = $1 LIMIT 1",
-                |query| query.bind(&session_id),
-            ).await?;
+            let max_duration_row = state
+                .database
+                .fetch_optional(
+                    "SELECT max_duration_ms FROM idle_sessions WHERE id::text = $1 LIMIT 1",
+                    |query| query.bind(&session_id),
+                )
+                .await?;
             let max_duration_ms = max_duration_row
-                .and_then(|row| row.try_get::<Option<i64>, _>("max_duration_ms").ok().flatten())
+                .and_then(|row| {
+                    row.try_get::<Option<i64>, _>("max_duration_ms")
+                        .ok()
+                        .flatten()
+                })
                 .unwrap_or_default();
             idle::spawn_idle_execution_loop(state.clone(), session_id, character_id, user_id);
             idle::sync_idle_lock_projection(&state, character_id, Some(max_duration_ms)).await?;
@@ -866,11 +1015,21 @@ async fn recover_tower_battles(state: AppState) -> anyhow::Result<usize> {
     ).await?;
     let mut recovered = 0_usize;
     for row in rows {
-        let Some(user_id) = opt_i64_from_i32(&row, "user_id")? else { continue; };
-        let Some(character_id) = opt_i64_from_i32(&row, "character_id")? else { continue; };
-        let Some(run_id) = row.try_get::<Option<String>, _>("current_run_id")? else { continue; };
-        let Some(floor) = opt_i64_from_i32(&row, "current_floor")? else { continue; };
-        let Some(battle_id) = row.try_get::<Option<String>, _>("current_battle_id")? else { continue; };
+        let Some(user_id) = opt_i64_from_i32(&row, "user_id")? else {
+            continue;
+        };
+        let Some(character_id) = opt_i64_from_i32(&row, "character_id")? else {
+            continue;
+        };
+        let Some(run_id) = row.try_get::<Option<String>, _>("current_run_id")? else {
+            continue;
+        };
+        let Some(floor) = opt_i64_from_i32(&row, "current_floor")? else {
+            continue;
+        };
+        let Some(battle_id) = row.try_get::<Option<String>, _>("current_battle_id")? else {
+            continue;
+        };
         if recover_battle_bundle(&state, &battle_id).await? {
             if let Some(projection) = state.online_battle_projections.get_by_battle_id(&battle_id) {
                 if let Some(session) = projection
@@ -897,13 +1056,17 @@ async fn recover_tower_battles(state: AppState) -> anyhow::Result<usize> {
             next_action: "none".to_string(),
             can_advance: false,
             last_result: None,
-            context: BattleSessionContextDto::Tower { run_id: run_id.clone(), floor },
+            context: BattleSessionContextDto::Tower {
+                run_id: run_id.clone(),
+                floor,
+            },
         };
-        let battle_state = build_minimal_pve_battle_state(
+        let mut battle_state = build_minimal_pve_battle_state(
             &battle_id,
             character_id,
             &resolve_tower_floor_monster_ids(floor),
         );
+        hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         state.battle_sessions.register(session.clone());
         state.battle_runtime.register(battle_state.clone());
         let projection = OnlineBattleProjectionRecord {
@@ -935,17 +1098,32 @@ async fn recover_dungeon_battles(state: AppState) -> anyhow::Result<usize> {
             .try_get::<Option<serde_json::Value>, _>("participants")?
             .and_then(|value| serde_json::from_value::<Vec<serde_json::Value>>(value).ok())
             .unwrap_or_default();
-        let participant_user_ids = participants.iter().filter_map(|entry| entry.get("userId").and_then(|v| v.as_i64())).collect::<Vec<_>>();
+        let participant_user_ids = participants
+            .iter()
+            .filter_map(|entry| entry.get("userId").and_then(|v| v.as_i64()))
+            .collect::<Vec<_>>();
         let owner_user_id = participant_user_ids.first().copied().unwrap_or_default();
         if owner_user_id <= 0 {
             continue;
         }
         let current_stage = opt_i64_from_i32(&row, "current_stage")?.unwrap_or(1);
         let current_wave = opt_i64_from_i32(&row, "current_wave")?.unwrap_or(1);
-        let dungeon_id = row.try_get::<Option<String>, _>("dungeon_id")?.unwrap_or_default();
-        let difficulty_id = row.try_get::<Option<String>, _>("difficulty_id")?.unwrap_or_default();
-        let instance_data = row.try_get::<Option<serde_json::Value>, _>("instance_data")?.unwrap_or_else(|| serde_json::json!({}));
-        let Some(battle_id) = instance_data.get("currentBattleId").and_then(|v| v.as_str()).map(|v| v.to_string()) else { continue; };
+        let dungeon_id = row
+            .try_get::<Option<String>, _>("dungeon_id")?
+            .unwrap_or_default();
+        let difficulty_id = row
+            .try_get::<Option<String>, _>("difficulty_id")?
+            .unwrap_or_default();
+        let instance_data = row
+            .try_get::<Option<serde_json::Value>, _>("instance_data")?
+            .unwrap_or_else(|| serde_json::json!({}));
+        let Some(battle_id) = instance_data
+            .get("currentBattleId")
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string())
+        else {
+            continue;
+        };
         if recover_battle_bundle(&state, &battle_id).await? {
             if let Some(projection) = state.online_battle_projections.get_by_battle_id(&battle_id) {
                 if let Some(session) = projection
@@ -961,7 +1139,12 @@ async fn recover_dungeon_battles(state: AppState) -> anyhow::Result<usize> {
             recovered += 1;
             continue;
         }
-        let owner_character_id = participants.iter().find_map(|entry| entry.get("characterId").and_then(|v| v.as_i64())).unwrap_or(owner_user_id);
+        let Some(owner_character_id) = participants
+            .iter()
+            .find_map(|entry| entry.get("characterId").and_then(|v| v.as_i64()))
+        else {
+            continue;
+        };
         let session_id = format!("dungeon-session-{}", instance_id);
         let session = BattleSessionSnapshotDto {
             session_id: session_id.clone(),
@@ -973,14 +1156,19 @@ async fn recover_dungeon_battles(state: AppState) -> anyhow::Result<usize> {
             next_action: "none".to_string(),
             can_advance: false,
             last_result: None,
-            context: BattleSessionContextDto::Dungeon { instance_id: instance_id.clone() },
+            context: BattleSessionContextDto::Dungeon {
+                instance_id: instance_id.clone(),
+            },
         };
-        let monster_ids = load_dungeon_wave_monster_ids(&dungeon_id, &difficulty_id, current_stage, current_wave)?;
-        let battle_state = build_minimal_pve_battle_state(
-            &battle_id,
-            owner_character_id,
-            &monster_ids,
-        );
+        let monster_ids = load_dungeon_wave_monster_ids(
+            &dungeon_id,
+            &difficulty_id,
+            current_stage,
+            current_wave,
+        )?;
+        let mut battle_state =
+            build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
+        hydrate_pve_battle_state_owner(&state, &mut battle_state, owner_character_id).await?;
         state.battle_sessions.register(session.clone());
         state.battle_runtime.register(battle_state.clone());
         let projection = OnlineBattleProjectionRecord {
@@ -1003,8 +1191,8 @@ async fn recover_dungeon_battles(state: AppState) -> anyhow::Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActiveBattleRecoverySummary, JobInitializationSummary,
-        PendingPartnerJobRecoverySummary, extract_achievement_point_delta_tuple,
+        ActiveBattleRecoverySummary, JobInitializationSummary, PendingPartnerJobRecoverySummary,
+        extract_achievement_point_delta_tuple,
     };
     use std::collections::HashMap;
 
@@ -1027,15 +1215,21 @@ mod tests {
 
     #[test]
     fn nested_recovery_summaries_default_to_zero() {
-        assert_eq!(PendingPartnerJobRecoverySummary::default(), PendingPartnerJobRecoverySummary {
-            recruit_count: 0,
-            fusion_count: 0,
-            rebone_count: 0,
-        });
-        assert_eq!(ActiveBattleRecoverySummary::default(), ActiveBattleRecoverySummary {
-            recovered_tower_battle_count: 0,
-            recovered_dungeon_battle_count: 0,
-        });
+        assert_eq!(
+            PendingPartnerJobRecoverySummary::default(),
+            PendingPartnerJobRecoverySummary {
+                recruit_count: 0,
+                fusion_count: 0,
+                rebone_count: 0,
+            }
+        );
+        assert_eq!(
+            ActiveBattleRecoverySummary::default(),
+            ActiveBattleRecoverySummary {
+                recovered_tower_battle_count: 0,
+                recovered_dungeon_battle_count: 0,
+            }
+        );
     }
 
     #[test]
@@ -1048,21 +1242,36 @@ mod tests {
         let key = "AFDIAN_MESSAGE_RETRY_BATCH_SIZE";
         let original = std::env::var(key).ok();
 
-        unsafe { std::env::remove_var(key); }
-        assert_eq!(super::load_afdian_message_retry_batch_size(), super::AFDIAN_MESSAGE_RETRY_BATCH_SIZE);
+        unsafe {
+            std::env::remove_var(key);
+        }
+        assert_eq!(
+            super::load_afdian_message_retry_batch_size(),
+            super::AFDIAN_MESSAGE_RETRY_BATCH_SIZE
+        );
 
-        unsafe { std::env::set_var(key, "0"); }
+        unsafe {
+            std::env::set_var(key, "0");
+        }
         assert_eq!(super::load_afdian_message_retry_batch_size(), 1);
 
-        unsafe { std::env::set_var(key, "999"); }
+        unsafe {
+            std::env::set_var(key, "999");
+        }
         assert_eq!(super::load_afdian_message_retry_batch_size(), 50);
 
-        unsafe { std::env::set_var(key, "7"); }
+        unsafe {
+            std::env::set_var(key, "7");
+        }
         assert_eq!(super::load_afdian_message_retry_batch_size(), 7);
 
         match original {
-            Some(value) => unsafe { std::env::set_var(key, value); },
-            None => unsafe { std::env::remove_var(key); },
+            Some(value) => unsafe {
+                std::env::set_var(key, value);
+            },
+            None => unsafe {
+                std::env::remove_var(key);
+            },
         }
 
         println!(
@@ -1076,24 +1285,38 @@ mod tests {
         let key = "AFDIAN_MESSAGE_RETRY_ENABLED";
         let original = std::env::var(key).ok();
 
-        unsafe { std::env::remove_var(key); }
+        unsafe {
+            std::env::remove_var(key);
+        }
         assert!(super::load_afdian_message_retry_enabled());
 
-        unsafe { std::env::set_var(key, "false"); }
+        unsafe {
+            std::env::set_var(key, "false");
+        }
         assert!(!super::load_afdian_message_retry_enabled());
 
-        unsafe { std::env::set_var(key, "true"); }
+        unsafe {
+            std::env::set_var(key, "true");
+        }
         assert!(super::load_afdian_message_retry_enabled());
 
-        unsafe { std::env::set_var(key, "garbage"); }
+        unsafe {
+            std::env::set_var(key, "garbage");
+        }
         assert!(super::load_afdian_message_retry_enabled());
 
         match original {
-            Some(value) => unsafe { std::env::set_var(key, value); },
-            None => unsafe { std::env::remove_var(key); },
+            Some(value) => unsafe {
+                std::env::set_var(key, value);
+            },
+            None => unsafe {
+                std::env::remove_var(key);
+            },
         }
 
-        println!("AFDIAN_RETRY_ENABLED={{\"default\":true,\"false\":false,\"true\":true,\"garbageFallsBack\":true}}");
+        println!(
+            "AFDIAN_RETRY_ENABLED={{\"default\":true,\"false\":false,\"true\":true,\"garbageFallsBack\":true}}"
+        );
     }
 
     #[test]
@@ -1101,21 +1324,36 @@ mod tests {
         let key = "AFDIAN_MESSAGE_RETRY_INTERVAL_SECONDS";
         let original = std::env::var(key).ok();
 
-        unsafe { std::env::remove_var(key); }
-        assert_eq!(super::load_afdian_message_retry_interval_seconds(), super::AFDIAN_MESSAGE_RETRY_INTERVAL_SECONDS);
+        unsafe {
+            std::env::remove_var(key);
+        }
+        assert_eq!(
+            super::load_afdian_message_retry_interval_seconds(),
+            super::AFDIAN_MESSAGE_RETRY_INTERVAL_SECONDS
+        );
 
-        unsafe { std::env::set_var(key, "1"); }
+        unsafe {
+            std::env::set_var(key, "1");
+        }
         assert_eq!(super::load_afdian_message_retry_interval_seconds(), 10);
 
-        unsafe { std::env::set_var(key, "999999"); }
+        unsafe {
+            std::env::set_var(key, "999999");
+        }
         assert_eq!(super::load_afdian_message_retry_interval_seconds(), 3600);
 
-        unsafe { std::env::set_var(key, "45"); }
+        unsafe {
+            std::env::set_var(key, "45");
+        }
         assert_eq!(super::load_afdian_message_retry_interval_seconds(), 45);
 
         match original {
-            Some(value) => unsafe { std::env::set_var(key, value); },
-            None => unsafe { std::env::remove_var(key); },
+            Some(value) => unsafe {
+                std::env::set_var(key, value);
+            },
+            None => unsafe {
+                std::env::remove_var(key);
+            },
         }
 
         println!(
@@ -1152,8 +1390,13 @@ fn emit_recovered_battle_realtime(
         Some(session.clone()),
     );
     emit_battle_update_to_participants(state, &session.participant_user_ids, &debug_realtime);
-    let debug_cooldown_realtime = build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
-    emit_battle_cooldown_to_participants(state, &session.participant_user_ids, &debug_cooldown_realtime);
+    let debug_cooldown_realtime =
+        build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
+    emit_battle_cooldown_to_participants(
+        state,
+        &session.participant_user_ids,
+        &debug_cooldown_realtime,
+    );
 }
 
 pub fn spawn_idle_heartbeat_loop(state: AppState, character_id: i64) {

@@ -29,7 +29,11 @@ pub struct RedisCacheLayer<K, T> {
     key_prefix: String,
     redis_ttl_sec: u64,
     memory_ttl_ms: u64,
-    loader: Arc<dyn Fn(K) -> std::pin::Pin<Box<dyn Future<Output = Result<Option<T>, AppError>> + Send>> + Send + Sync>,
+    loader: Arc<
+        dyn Fn(K) -> std::pin::Pin<Box<dyn Future<Output = Result<Option<T>, AppError>> + Send>>
+            + Send
+            + Sync,
+    >,
     memory_cache: Arc<Mutex<HashMap<K, CacheEntry<T>>>>,
     inflight_loads: Arc<Mutex<HashMap<K, Arc<Mutex<()>>>>>,
 }
@@ -59,29 +63,49 @@ impl RedisRuntime {
 
     pub async fn pexpire(&self, key: &str, ttl_ms: i64) -> Result<bool, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let value: bool = redis::cmd("PEXPIRE").arg(key).arg(ttl_ms).query_async(&mut connection).await?;
+        let value: bool = redis::cmd("PEXPIRE")
+            .arg(key)
+            .arg(ttl_ms)
+            .query_async(&mut connection)
+            .await?;
         Ok(value)
     }
 
     pub async fn psetex(&self, key: &str, ttl_ms: i64, value: &str) -> Result<(), AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let _: () = redis::cmd("PSETEX").arg(key).arg(ttl_ms).arg(value).query_async(&mut connection).await?;
+        let _: () = redis::cmd("PSETEX")
+            .arg(key)
+            .arg(ttl_ms)
+            .arg(value)
+            .query_async(&mut connection)
+            .await?;
         Ok(())
     }
 
     pub async fn mget(&self, keys: &[&str]) -> Result<Vec<Option<String>>, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let values: Vec<Option<String>> = redis::cmd("MGET").arg(keys).query_async(&mut connection).await?;
+        let values: Vec<Option<String>> = redis::cmd("MGET")
+            .arg(keys)
+            .query_async(&mut connection)
+            .await?;
         Ok(values)
     }
 
     pub async fn del_many(&self, keys: &[&str]) -> Result<(), AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let _: usize = redis::cmd("DEL").arg(keys).query_async(&mut connection).await?;
+        let _: usize = redis::cmd("DEL")
+            .arg(keys)
+            .query_async(&mut connection)
+            .await?;
         Ok(())
     }
 
-    pub async fn set_string_ex(&self, key: &str, value: &str, ttl_sec: u64) -> Result<(), AppError> {
+    pub async fn set_string_ex(
+        &self,
+        key: &str,
+        value: &str,
+        ttl_sec: u64,
+    ) -> Result<(), AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
         let _: () = connection.set_ex(key, value, ttl_sec).await?;
         Ok(())
@@ -147,25 +171,56 @@ impl RedisRuntime {
 
     pub async fn zadd(&self, key: &str, score: i64, member: &str) -> Result<usize, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let value: usize = redis::cmd("ZADD").arg(key).arg(score).arg(member).query_async(&mut connection).await?;
+        let value: usize = redis::cmd("ZADD")
+            .arg(key)
+            .arg(score)
+            .arg(member)
+            .query_async(&mut connection)
+            .await?;
         Ok(value)
     }
 
-    pub async fn zremrangebyscore(&self, key: &str, min_score: i64, max_score: i64) -> Result<i64, AppError> {
+    pub async fn zremrangebyscore(
+        &self,
+        key: &str,
+        min_score: i64,
+        max_score: i64,
+    ) -> Result<i64, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let value: i64 = redis::cmd("ZREMRANGEBYSCORE").arg(key).arg(min_score).arg(max_score).query_async(&mut connection).await?;
+        let value: i64 = redis::cmd("ZREMRANGEBYSCORE")
+            .arg(key)
+            .arg(min_score)
+            .arg(max_score)
+            .query_async(&mut connection)
+            .await?;
         Ok(value)
     }
 
     pub async fn zcount(&self, key: &str, min_score: i64, max_score: i64) -> Result<i64, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let value: i64 = redis::cmd("ZCOUNT").arg(key).arg(min_score).arg(max_score).query_async(&mut connection).await?;
+        let value: i64 = redis::cmd("ZCOUNT")
+            .arg(key)
+            .arg(min_score)
+            .arg(max_score)
+            .query_async(&mut connection)
+            .await?;
         Ok(value)
     }
 
-    pub async fn zrange_withscores(&self, key: &str, start: i64, stop: i64) -> Result<Vec<String>, AppError> {
+    pub async fn zrange_withscores(
+        &self,
+        key: &str,
+        start: i64,
+        stop: i64,
+    ) -> Result<Vec<String>, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
-        let value: Vec<String> = redis::cmd("ZRANGE").arg(key).arg(start).arg(stop).arg("WITHSCORES").query_async(&mut connection).await?;
+        let value: Vec<String> = redis::cmd("ZRANGE")
+            .arg(key)
+            .arg(start)
+            .arg(stop)
+            .arg("WITHSCORES")
+            .query_async(&mut connection)
+            .await?;
         Ok(value)
     }
 
@@ -179,7 +234,12 @@ impl RedisRuntime {
         Ok(value)
     }
 
-    pub async fn eval_i64(&self, script: &str, keys: &[&str], args: &[&str]) -> Result<i64, AppError> {
+    pub async fn eval_i64(
+        &self,
+        script: &str,
+        keys: &[&str],
+        args: &[&str],
+    ) -> Result<i64, AppError> {
         let mut connection = self.client.get_multiplexed_tokio_connection().await?;
         let mut command = redis::cmd("EVAL");
         command.arg(script).arg(keys.len());
@@ -284,8 +344,9 @@ where
 
         let redis_key = format!("{}{}", self.key_prefix, key.to_string());
         if let Ok(Some(raw)) = self.runtime.get_string(&redis_key).await {
-            let value: T = serde_json::from_str(&raw)
-                .map_err(|error| AppError::config(format!("failed to deserialize redis cache entry: {error}")))?;
+            let value: T = serde_json::from_str(&raw).map_err(|error| {
+                AppError::config(format!("failed to deserialize redis cache entry: {error}"))
+            })?;
             self.memory_cache.lock().await.insert(
                 key.clone(),
                 CacheEntry {
@@ -335,8 +396,9 @@ where
 
     pub async fn set(&self, key: K, value: T) -> Result<(), AppError> {
         let redis_key = format!("{}{}", self.key_prefix, key.to_string());
-        let serialized = serde_json::to_string(&value)
-            .map_err(|error| AppError::config(format!("failed to serialize redis cache entry: {error}")))?;
+        let serialized = serde_json::to_string(&value).map_err(|error| {
+            AppError::config(format!("failed to serialize redis cache entry: {error}"))
+        })?;
         self.memory_cache.lock().await.insert(
             key.clone(),
             CacheEntry {
@@ -392,7 +454,10 @@ pub async fn connect(config: &RedisConfig) -> Result<(redis::Client, bool), AppE
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use super::RedisCacheLayer;
     use crate::shared::error::AppError;
@@ -413,8 +478,14 @@ mod tests {
         });
 
         let (left, right) = tokio::join!(cache.get(7), cache.get(7));
-        assert_eq!(left.expect("left should succeed"), Some("value-7".to_string()));
-        assert_eq!(right.expect("right should succeed"), Some("value-7".to_string()));
+        assert_eq!(
+            left.expect("left should succeed"),
+            Some("value-7".to_string())
+        );
+        assert_eq!(
+            right.expect("right should succeed"),
+            Some("value-7".to_string())
+        );
         assert_eq!(loader_calls.load(Ordering::SeqCst), 1);
     }
 }

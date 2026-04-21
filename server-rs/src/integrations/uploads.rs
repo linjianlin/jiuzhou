@@ -7,12 +7,8 @@ use crate::integrations::cos::{AvatarUploadStsPayload, issue_avatar_upload_sts};
 use crate::shared::error::AppError;
 
 pub const AVATAR_UPLOAD_MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024;
-pub const ALLOWED_AVATAR_MIME_TYPES: [&str; 4] = [
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-];
+pub const ALLOWED_AVATAR_MIME_TYPES: [&str; 4] =
+    ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 pub fn is_allowed_avatar_mime_type(content_type: &str) -> bool {
     ALLOWED_AVATAR_MIME_TYPES.contains(&content_type)
@@ -133,9 +129,17 @@ mod tests {
         let client = reqwest::Client::new();
         let payload = tokio::runtime::Runtime::new()
             .expect("runtime should build")
-            .block_on(super::issue_avatar_sts_for_content(&client, &cos, "image/png", 1024))
+            .block_on(super::issue_avatar_sts_for_content(
+                &client,
+                &cos,
+                "image/png",
+                1024,
+            ))
             .expect("sts fallback should succeed");
         assert!(!payload.cos_enabled);
-        assert_eq!(payload.max_file_size_bytes, super::AVATAR_UPLOAD_MAX_FILE_SIZE_BYTES);
+        assert_eq!(
+            payload.max_file_size_bytes,
+            super::AVATAR_UPLOAD_MAX_FILE_SIZE_BYTES
+        );
     }
 }

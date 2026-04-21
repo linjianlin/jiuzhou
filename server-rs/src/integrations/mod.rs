@@ -1,4 +1,5 @@
 pub mod battle_persistence;
+pub mod battle_character_profile;
 pub mod aliyun_sms;
 pub mod cos;
 pub mod database;

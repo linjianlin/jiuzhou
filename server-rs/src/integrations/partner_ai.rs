@@ -49,7 +49,10 @@ pub async fn generate_partner_ai_preview_draft(
 ) -> Result<PartnerAiPreviewDraft, AppError> {
     let config = require_text_model_config(TextModelScope::Partner)?;
     if config.provider != "openai" {
-        return Err(AppError::config(format!("暂不支持的伙伴 AI provider: {}", config.provider)));
+        return Err(AppError::config(format!(
+            "暂不支持的伙伴 AI provider: {}",
+            config.provider
+        )));
     }
     let system_message = "You generate concise xianxia partner preview metadata. Return JSON with fields name, description, attributeElement, role. name must be 2-12 Chinese characters. description max 60 Chinese chars. attributeElement must be one of none, wood, fire, water, earth, metal. role must be one of attacker, support, tank.";
     let user_message = format!(
@@ -64,8 +67,14 @@ pub async fn generate_partner_ai_preview_draft(
         .json(&OpenAiChatCompletionRequest {
             model: &config.model_name,
             messages: vec![
-                OpenAiChatMessage { role: "system", content: system_message },
-                OpenAiChatMessage { role: "user", content: &user_message },
+                OpenAiChatMessage {
+                    role: "system",
+                    content: system_message,
+                },
+                OpenAiChatMessage {
+                    role: "user",
+                    content: &user_message,
+                },
             ],
             temperature: 0.7,
             response_format: serde_json::json!({"type": "json_object"}),
@@ -79,7 +88,10 @@ pub async fn generate_partner_ai_preview_draft(
         .await
         .map_err(|error| AppError::config(format!("伙伴 AI 响应读取失败: {error}")))?;
     if !status.is_success() {
-        return Err(AppError::config(format!("伙伴 AI 返回错误状态 {}: {}", status, body)));
+        return Err(AppError::config(format!(
+            "伙伴 AI 返回错误状态 {}: {}",
+            status, body
+        )));
     }
     let parsed: OpenAiChatCompletionResponse = serde_json::from_str(&body)
         .map_err(|error| AppError::config(format!("伙伴 AI 响应解析失败: {error}")))?;
@@ -105,7 +117,12 @@ pub fn parse_and_validate_partner_ai_preview_draft(
         .get("attributeElement")
         .and_then(|entry| entry.as_str())
         .map(str::trim)
-        .filter(|value| matches!(*value, "none" | "wood" | "fire" | "water" | "earth" | "metal"))
+        .filter(|value| {
+            matches!(
+                *value,
+                "none" | "wood" | "fire" | "water" | "earth" | "metal"
+            )
+        })
         .ok_or_else(|| AppError::config("伙伴 AI attributeElement 非法"))?
         .to_string();
     let role = value
@@ -124,7 +141,12 @@ pub fn parse_and_validate_partner_ai_preview_draft(
     })
 }
 
-fn extract_bounded_text(value: &serde_json::Value, field: &str, min_len: usize, max_len: usize) -> Result<String, AppError> {
+fn extract_bounded_text(
+    value: &serde_json::Value,
+    field: &str,
+    min_len: usize,
+    max_len: usize,
+) -> Result<String, AppError> {
     let text = value
         .get(field)
         .and_then(|entry| entry.as_str())
@@ -137,10 +159,17 @@ fn extract_bounded_text(value: &serde_json::Value, field: &str, min_len: usize, 
     Ok(text.to_string())
 }
 
-fn extract_bounded_chinese_text(value: &serde_json::Value, field: &str, min_len: usize, max_len: usize) -> Result<String, AppError> {
+fn extract_bounded_chinese_text(
+    value: &serde_json::Value,
+    field: &str,
+    min_len: usize,
+    max_len: usize,
+) -> Result<String, AppError> {
     let text = extract_bounded_text(value, field, min_len, max_len)?;
     if !text.chars().all(|ch| ('一'..='龥').contains(&ch)) {
-        return Err(AppError::config(format!("伙伴 AI 字段 {field} 必须为纯中文")));
+        return Err(AppError::config(format!(
+            "伙伴 AI 字段 {field} 必须为纯中文"
+        )));
     }
     Ok(text)
 }

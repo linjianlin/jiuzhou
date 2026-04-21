@@ -6,8 +6,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::battle_runtime::{
-    apply_minimal_pve_action, build_minimal_pve_battle_state, BattleStateDto,
-    BattleUnitCurrentAttrsDto, BattleUnitDto,
+    apply_minimal_pve_action, build_minimal_partner_battle_unit, build_minimal_pve_battle_state, BattleStateDto,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -241,26 +240,15 @@ pub fn build_idle_execution_snapshot(
             .teams
             .attacker
             .units
-            .push(BattleUnitDto {
-                id: format!("partner-{}", partner.partner_id),
-                name: partner.name.clone(),
-                r#type: "partner".to_string(),
-                formation_order: Some(2),
-                owner_unit_id: Some(format!("player-{character_id}")),
-                month_card_active: None,
-                avatar: partner.avatar.clone(),
-                qixue: partner.max_qixue.max(1),
-                lingqi: 0,
-                current_attrs: BattleUnitCurrentAttrsDto {
-                    max_qixue: partner.max_qixue.max(1),
-                    max_lingqi: 0,
-                    realm: None,
-                },
-                is_alive: true,
-                buffs: Vec::new(),
-                reward_exp: None,
-                reward_silver: None,
-            });
+            .push(build_minimal_partner_battle_unit(
+                partner.partner_id,
+                partner.name.clone(),
+                partner.avatar.clone(),
+                format!("player-{character_id}"),
+                partner.max_qixue,
+                partner.speed,
+                2,
+            ));
     }
     Ok(IdleExecutionSnapshot {
         version: 1,

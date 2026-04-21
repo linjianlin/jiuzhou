@@ -33,7 +33,8 @@ pub async fn run_arena_weekly_settlement_once(
     let mut settled_week_count = 0_usize;
     for week_start in pending_weeks {
         let week_end = add_days_to_local_date(&week_start, 7)?;
-        let top_character_ids = load_top_three_character_ids_for_week(state, &week_start, &week_end).await?;
+        let top_character_ids =
+            load_top_three_character_ids_for_week(state, &week_start, &week_end).await?;
         if persist_weekly_settlement(state, &week_start, &week_end, &top_character_ids).await? {
             settled_week_count += 1;
         }
@@ -44,7 +45,10 @@ pub async fn run_arena_weekly_settlement_once(
 pub fn spawn_arena_weekly_settlement_loop(state: AppState) {
     tokio::spawn(async move {
         loop {
-            sleep(TokioDuration::from_millis(ARENA_WEEKLY_SETTLEMENT_CHECK_INTERVAL_MS)).await;
+            sleep(TokioDuration::from_millis(
+                ARENA_WEEKLY_SETTLEMENT_CHECK_INTERVAL_MS,
+            ))
+            .await;
             match run_arena_weekly_settlement_once(&state).await {
                 Ok(summary) => {
                     if summary.settled_week_count > 0 {
@@ -71,7 +75,11 @@ async fn collect_pending_week_starts(state: &AppState) -> Result<Vec<String>> {
             |q| q,
         )
         .await?;
-    let last_settled = row.and_then(|row| row.try_get::<Option<String>, _>("last_week_start_local_date").ok().flatten());
+    let last_settled = row.and_then(|row| {
+        row.try_get::<Option<String>, _>("last_week_start_local_date")
+            .ok()
+            .flatten()
+    });
     collect_pending_week_starts_from_inputs(
         &boundary.current_week_start_local_date,
         &boundary.previous_week_start_local_date,
@@ -88,8 +96,12 @@ async fn get_week_boundary(state: &AppState) -> Result<WeekBoundary> {
         )
         .await?;
     Ok(WeekBoundary {
-        current_week_start_local_date: row.try_get::<Option<String>, _>("current_week_start_local_date")?.unwrap_or_default(),
-        previous_week_start_local_date: row.try_get::<Option<String>, _>("previous_week_start_local_date")?.unwrap_or_default(),
+        current_week_start_local_date: row
+            .try_get::<Option<String>, _>("current_week_start_local_date")?
+            .unwrap_or_default(),
+        previous_week_start_local_date: row
+            .try_get::<Option<String>, _>("previous_week_start_local_date")?
+            .unwrap_or_default(),
     })
 }
 
@@ -98,7 +110,9 @@ fn collect_pending_week_starts_from_inputs(
     previous_week_start_local_date: &str,
     last_settled_week_start_local_date: Option<&str>,
 ) -> Result<Vec<String>> {
-    let first_pending_week = if let Some(last) = last_settled_week_start_local_date.filter(|value| !value.trim().is_empty()) {
+    let first_pending_week = if let Some(last) =
+        last_settled_week_start_local_date.filter(|value| !value.trim().is_empty())
+    {
         add_days_to_local_date(last, 7)?
     } else {
         previous_week_start_local_date.trim().to_string()
@@ -151,8 +165,11 @@ async fn persist_weekly_settlement(
 }
 
 fn add_days_to_local_date(local_date: &str, days: i64) -> Result<String> {
-    let date = Date::parse(local_date, &time::format_description::well_known::Iso8601::DATE)
-        .map_err(anyhow::Error::from)?;
+    let date = Date::parse(
+        local_date,
+        &time::format_description::well_known::Iso8601::DATE,
+    )
+    .map_err(anyhow::Error::from)?;
     Ok(date.saturating_add(Duration::days(days)).to_string())
 }
 
@@ -175,9 +192,12 @@ mod tests {
 
     #[test]
     fn collect_pending_week_starts_advances_in_seven_day_steps() {
-        let weeks = collect_pending_week_starts_from_inputs("2026-05-11", "2026-05-04", Some("2026-04-20"))
-            .expect("pending weeks should collect");
-        assert_eq!(weeks, vec!["2026-04-27".to_string(), "2026-05-04".to_string()]);
+        let weeks =
+            collect_pending_week_starts_from_inputs("2026-05-11", "2026-05-04", Some("2026-04-20"))
+                .expect("pending weeks should collect");
+        assert_eq!(
+            weeks,
+            vec!["2026-04-27".to_string(), "2026-05-04".to_string()]
+        );
     }
-
 }

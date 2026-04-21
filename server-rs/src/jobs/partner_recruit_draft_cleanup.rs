@@ -21,7 +21,11 @@ pub async fn run_partner_recruit_draft_cleanup_once(
         .database
         .fetch_one(
             "SELECT pg_try_advisory_lock($1::int, $2::int) AS acquired",
-            |query| query.bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_1).bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_2),
+            |query| {
+                query
+                    .bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_1)
+                    .bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_2)
+            },
         )
         .await?
         .try_get::<Option<bool>, _>("acquired")?
@@ -40,10 +44,11 @@ pub async fn run_partner_recruit_draft_cleanup_once(
 
     let _ = state
         .database
-        .execute(
-            "SELECT pg_advisory_unlock($1::int, $2::int)",
-            |query| query.bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_1).bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_2),
-        )
+        .execute("SELECT pg_advisory_unlock($1::int, $2::int)", |query| {
+            query
+                .bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_1)
+                .bind(PARTNER_RECRUIT_DRAFT_CLEANUP_LOCK_KEY_2)
+        })
         .await;
 
     Ok(PartnerRecruitDraftCleanupSummary {
@@ -54,10 +59,16 @@ pub async fn run_partner_recruit_draft_cleanup_once(
 pub fn spawn_partner_recruit_draft_cleanup_loop(state: AppState) {
     tokio::spawn(async move {
         loop {
-            sleep(Duration::from_millis(PARTNER_RECRUIT_DRAFT_CLEANUP_INTERVAL_MS)).await;
+            sleep(Duration::from_millis(
+                PARTNER_RECRUIT_DRAFT_CLEANUP_INTERVAL_MS,
+            ))
+            .await;
             match run_partner_recruit_draft_cleanup_once(&state).await {
                 Ok(summary) => {
-                    tracing::info!(discarded_draft_count = summary.discarded_draft_count, "partner recruit draft cleanup loop iteration complete");
+                    tracing::info!(
+                        discarded_draft_count = summary.discarded_draft_count,
+                        "partner recruit draft cleanup loop iteration complete"
+                    );
                 }
                 Err(error) => {
                     tracing::error!(error = %error, "partner recruit draft cleanup loop iteration failed");
@@ -75,7 +86,9 @@ mod tests {
     fn partner_recruit_draft_cleanup_summary_defaults_to_zero() {
         assert_eq!(
             PartnerRecruitDraftCleanupSummary::default(),
-            PartnerRecruitDraftCleanupSummary { discarded_draft_count: 0 }
+            PartnerRecruitDraftCleanupSummary {
+                discarded_draft_count: 0
+            }
         );
         assert_eq!(PARTNER_RECRUIT_DRAFT_EXPIRE_HOURS, 24);
     }

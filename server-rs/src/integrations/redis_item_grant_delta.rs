@@ -99,7 +99,12 @@ fn encode_item_grant_payload(delta: &CharacterItemGrantDelta) -> Option<String> 
     let item_def_id = delta.item_def_id.trim();
     let bind_type = delta.bind_type.trim();
     let obtained_from = delta.obtained_from.trim();
-    if delta.character_id <= 0 || delta.user_id <= 0 || delta.qty <= 0 || item_def_id.is_empty() || obtained_from.is_empty() {
+    if delta.character_id <= 0
+        || delta.user_id <= 0
+        || delta.qty <= 0
+        || item_def_id.is_empty()
+        || obtained_from.is_empty()
+    {
         return None;
     }
     serde_json::to_string(&serde_json::json!({
@@ -117,17 +122,38 @@ pub fn decode_item_grant_payload(raw: &str, qty: i64) -> Option<DecodedCharacter
     }
     let parsed: serde_json::Value = serde_json::from_str(raw).ok()?;
     let user_id = parsed.get("userId").and_then(|value| value.as_i64())?;
-    let item_def_id = parsed.get("itemDefId").and_then(|value| value.as_str())?.trim().to_string();
-    let bind_type = parsed.get("bindType").and_then(|value| value.as_str()).unwrap_or("none").trim().to_string();
-    let obtained_from = parsed.get("obtainedFrom").and_then(|value| value.as_str())?.trim().to_string();
-    let obtained_ref_id = parsed.get("obtainedRefId").and_then(|value| value.as_str()).map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let item_def_id = parsed
+        .get("itemDefId")
+        .and_then(|value| value.as_str())?
+        .trim()
+        .to_string();
+    let bind_type = parsed
+        .get("bindType")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none")
+        .trim()
+        .to_string();
+    let obtained_from = parsed
+        .get("obtainedFrom")
+        .and_then(|value| value.as_str())?
+        .trim()
+        .to_string();
+    let obtained_ref_id = parsed
+        .get("obtainedRefId")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     if user_id <= 0 || item_def_id.is_empty() || obtained_from.is_empty() {
         return None;
     }
     Some(DecodedCharacterItemGrantDelta {
         user_id,
         item_def_id,
-        bind_type: if bind_type.is_empty() { "none".to_string() } else { bind_type },
+        bind_type: if bind_type.is_empty() {
+            "none".to_string()
+        } else {
+            bind_type
+        },
         obtained_from,
         obtained_ref_id,
         qty,
@@ -140,7 +166,9 @@ pub async fn buffer_character_item_grant_deltas(
 ) -> Result<(), AppError> {
     let normalized = deltas
         .iter()
-        .filter_map(|delta| encode_item_grant_payload(delta).map(|payload| (delta.character_id, payload, delta.qty)))
+        .filter_map(|delta| {
+            encode_item_grant_payload(delta).map(|payload| (delta.character_id, payload, delta.qty))
+        })
         .collect::<Vec<_>>();
     if normalized.is_empty() {
         return Ok(());
@@ -167,7 +195,9 @@ pub async fn list_dirty_character_ids_for_item_grant_delta(
     runtime: &RedisRuntime,
     limit: usize,
 ) -> Result<Vec<i64>, AppError> {
-    let values = runtime.srandmember(ITEM_GRANT_DELTA_DIRTY_INDEX_KEY, limit.max(1)).await?;
+    let values = runtime
+        .srandmember(ITEM_GRANT_DELTA_DIRTY_INDEX_KEY, limit.max(1))
+        .await?;
     let mut normalized = values
         .into_iter()
         .filter_map(|value| value.parse::<i64>().ok())
@@ -181,37 +211,44 @@ pub async fn claim_character_item_grant_delta(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<bool, AppError> {
-    Ok(runtime.eval_i64(
-        CLAIM_ITEM_GRANT_DELTA_LUA,
-        &[
-            ITEM_GRANT_DELTA_DIRTY_INDEX_KEY,
-            &build_item_grant_delta_key(character_id),
-            &build_inflight_item_grant_delta_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await? == 1)
+    Ok(runtime
+        .eval_i64(
+            CLAIM_ITEM_GRANT_DELTA_LUA,
+            &[
+                ITEM_GRANT_DELTA_DIRTY_INDEX_KEY,
+                &build_item_grant_delta_key(character_id),
+                &build_inflight_item_grant_delta_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?
+        == 1)
 }
 
 pub async fn load_claimed_character_item_grant_delta_hash(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<HashMap<String, String>, AppError> {
-    runtime.hgetall(&build_inflight_item_grant_delta_key(character_id)).await
+    runtime
+        .hgetall(&build_inflight_item_grant_delta_key(character_id))
+        .await
 }
 
 pub async fn finalize_claimed_character_item_grant_delta(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<(), AppError> {
-    let _ = runtime.eval_i64(
-        FINALIZE_ITEM_GRANT_DELTA_LUA,
-        &[
-            ITEM_GRANT_DELTA_DIRTY_INDEX_KEY,
-            &build_item_grant_delta_key(character_id),
-            &build_inflight_item_grant_delta_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await?;
+    let _ = runtime
+        .eval_i64(
+            FINALIZE_ITEM_GRANT_DELTA_LUA,
+            &[
+                ITEM_GRANT_DELTA_DIRTY_INDEX_KEY,
+                &build_item_grant_delta_key(character_id),
+                &build_inflight_item_grant_delta_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?;
     Ok(())
 }
 
@@ -219,21 +256,30 @@ pub async fn restore_claimed_character_item_grant_delta(
     runtime: &RedisRuntime,
     character_id: i64,
 ) -> Result<(), AppError> {
-    let _ = runtime.eval_i64(
-        RESTORE_ITEM_GRANT_DELTA_LUA,
-        &[
-            ITEM_GRANT_DELTA_DIRTY_INDEX_KEY,
-            &build_item_grant_delta_key(character_id),
-            &build_inflight_item_grant_delta_key(character_id),
-        ],
-        &[&character_id.to_string()],
-    ).await?;
+    let _ = runtime
+        .eval_i64(
+            RESTORE_ITEM_GRANT_DELTA_LUA,
+            &[
+                ITEM_GRANT_DELTA_DIRTY_INDEX_KEY,
+                &build_item_grant_delta_key(character_id),
+                &build_inflight_item_grant_delta_key(character_id),
+            ],
+            &[&character_id.to_string()],
+        )
+        .await?;
     Ok(())
 }
 
-pub fn parse_item_grant_delta_hash(hash: HashMap<String, String>) -> Vec<DecodedCharacterItemGrantDelta> {
+pub fn parse_item_grant_delta_hash(
+    hash: HashMap<String, String>,
+) -> Vec<DecodedCharacterItemGrantDelta> {
     hash.into_iter()
-        .filter_map(|(field, value)| value.parse::<i64>().ok().and_then(|qty| decode_item_grant_payload(&field, qty)))
+        .filter_map(|(field, value)| {
+            value
+                .parse::<i64>()
+                .ok()
+                .and_then(|qty| decode_item_grant_payload(&field, qty))
+        })
         .collect()
 }
 
@@ -252,7 +298,8 @@ where
         if !claim_character_item_grant_delta(runtime, character_id).await? {
             continue;
         }
-        let claimed_hash = load_claimed_character_item_grant_delta_hash(runtime, character_id).await?;
+        let claimed_hash =
+            load_claimed_character_item_grant_delta_hash(runtime, character_id).await?;
         let parsed = parse_item_grant_delta_hash(claimed_hash);
         if parsed.is_empty() {
             finalize_claimed_character_item_grant_delta(runtime, character_id).await?;
@@ -287,11 +334,14 @@ mod tests {
         assert_eq!(decoded.user_id, 7);
         assert_eq!(decoded.item_def_id, "mat-005");
         assert_eq!(decoded.qty, 2);
-        println!("ITEM_GRANT_DELTA_DECODED={}", serde_json::json!({
-            "userId": decoded.user_id,
-            "itemDefId": decoded.item_def_id,
-            "qty": decoded.qty,
-        }));
+        println!(
+            "ITEM_GRANT_DELTA_DECODED={}",
+            serde_json::json!({
+                "userId": decoded.user_id,
+                "itemDefId": decoded.item_def_id,
+                "qty": decoded.qty,
+            })
+        );
     }
 
     #[test]

@@ -73,8 +73,11 @@ pub async fn verify_tencent_captcha_ticket(
         captcha_app_id: config.tencent_app_id,
         app_secret_key: &config.tencent_app_secret_key,
     };
-    let body = serde_json::to_string(&request)
-        .map_err(|error| AppError::config(format!("failed to serialize tencent captcha request: {error}")))?;
+    let body = serde_json::to_string(&request).map_err(|error| {
+        AppError::config(format!(
+            "failed to serialize tencent captcha request: {error}"
+        ))
+    })?;
     let timestamp = OffsetDateTime::now_utc().unix_timestamp() as u64;
     let authorization = build_tc3_authorization(
         &config.tencent_secret_id,
@@ -97,23 +100,35 @@ pub async fn verify_tencent_captcha_ticket(
 
     let status = response.status();
     let text = response.text().await?;
-    let envelope: DescribeCaptchaResultEnvelope = serde_json::from_str(&text)
-        .map_err(|error| AppError::config(format!("failed to parse Tencent captcha response: {error}; body={text}")))?;
+    let envelope: DescribeCaptchaResultEnvelope = serde_json::from_str(&text).map_err(|error| {
+        AppError::config(format!(
+            "failed to parse Tencent captcha response: {error}; body={text}"
+        ))
+    })?;
 
     if !status.is_success() {
         if let Some(error) = envelope.response.error {
-            return Err(AppError::config(format!("验证码校验失败：{} {}", error.code, error.message)));
+            return Err(AppError::config(format!(
+                "验证码校验失败：{} {}",
+                error.code, error.message
+            )));
         }
         return Err(AppError::config(format!("验证码校验失败：HTTP {status}")));
     }
     if let Some(error) = envelope.response.error {
-        return Err(AppError::config(format!("验证码校验失败：{} {}", error.code, error.message)));
+        return Err(AppError::config(format!(
+            "验证码校验失败：{} {}",
+            error.code, error.message
+        )));
     }
     let captcha_code = envelope.response.captcha_code.unwrap_or_default();
     if captcha_code != 1 {
         return Err(AppError::config(format!(
             "验证码校验失败：{}",
-            envelope.response.captcha_msg.unwrap_or_else(|| "未知错误".to_string())
+            envelope
+                .response
+                .captcha_msg
+                .unwrap_or_else(|| "未知错误".to_string())
         )));
     }
 
@@ -149,8 +164,11 @@ fn build_tc3_authorization(
 }
 
 fn hmac_sha256(key: &[u8], message: &str) -> Result<Vec<u8>, AppError> {
-    let mut mac = HmacSha256::new_from_slice(key)
-        .map_err(|error| AppError::config(format!("failed to initialize Tencent captcha signer: {error}")))?;
+    let mut mac = HmacSha256::new_from_slice(key).map_err(|error| {
+        AppError::config(format!(
+            "failed to initialize Tencent captcha signer: {error}"
+        ))
+    })?;
     mac.update(message.as_bytes());
     Ok(mac.finalize().into_bytes().to_vec())
 }
@@ -160,8 +178,9 @@ fn sha256_hex(input: impl AsRef<[u8]>) -> String {
 }
 
 fn format_tc3_date(timestamp: u64) -> Result<String, AppError> {
-    let now = OffsetDateTime::from_unix_timestamp(timestamp as i64)
-        .map_err(|error| AppError::config(format!("failed to build Tencent captcha date: {error}")))?;
+    let now = OffsetDateTime::from_unix_timestamp(timestamp as i64).map_err(|error| {
+        AppError::config(format!("failed to build Tencent captcha date: {error}"))
+    })?;
     Ok(format!(
         "{:04}-{:02}-{:02}",
         now.year(),
@@ -199,7 +218,10 @@ mod tests {
             1_735_689_600,
         )
         .expect("signature should build");
-        assert!(signature.contains("TC3-HMAC-SHA256 Credential=secret-id/2025-01-01/captcha/tc3_request"));
+        assert!(
+            signature
+                .contains("TC3-HMAC-SHA256 Credential=secret-id/2025-01-01/captcha/tc3_request")
+        );
     }
 
     #[test]

@@ -87,7 +87,8 @@ impl DatabaseRuntime {
     }
 
     pub async fn apply_migrations(&self) -> Result<MigrationSummary, AppError> {
-        let adopted_existing_schema_as_baseline = adopt_existing_schema_as_baseline(&self.pool).await?;
+        let adopted_existing_schema_as_baseline =
+            adopt_existing_schema_as_baseline(&self.pool).await?;
         let previously_applied_migration_count = count_applied_migrations(&self.pool).await?;
         MIGRATOR
             .run(&self.pool)
@@ -113,14 +114,20 @@ impl DatabaseRuntime {
     {
         if !self.is_in_transaction() && is_write_sql(sql) {
             return self
-                .with_transaction(|| async move { self.execute_in_current_context(sql, bind).await })
+                .with_transaction(
+                    || async move { self.execute_in_current_context(sql, bind).await },
+                )
                 .await;
         }
 
         self.execute_in_current_context(sql, bind).await
     }
 
-    pub async fn fetch_optional<'q, F>(&self, sql: &'q str, bind: F) -> Result<Option<PgRow>, AppError>
+    pub async fn fetch_optional<'q, F>(
+        &self,
+        sql: &'q str,
+        bind: F,
+    ) -> Result<Option<PgRow>, AppError>
     where
         F: FnOnce(Query<'q, Postgres, PgArguments>) -> Query<'q, Postgres, PgArguments>,
     {
@@ -174,7 +181,9 @@ impl DatabaseRuntime {
         sqlx::query("BEGIN").execute(&mut *connection).await?;
 
         let context = Arc::new(TransactionContext::new(connection));
-        let result = TRANSACTION_CONTEXT.scope(Arc::clone(&context), callback()).await;
+        let result = TRANSACTION_CONTEXT
+            .scope(Arc::clone(&context), callback())
+            .await;
         let rollback_only = context.rollback_only.load(Ordering::SeqCst);
 
         if result.is_ok() && rollback_only {
@@ -225,7 +234,11 @@ impl DatabaseRuntime {
         Fut: Future<Output = Result<(), AppError>> + Send + 'static,
     {
         if let Ok(context) = TRANSACTION_CONTEXT.try_with(Arc::clone) {
-            context.after_commit_callbacks.lock().await.push(Box::pin(callback));
+            context
+                .after_commit_callbacks
+                .lock()
+                .await
+                .push(Box::pin(callback));
             return Ok(());
         }
 
@@ -264,7 +277,9 @@ impl DatabaseRuntime {
             let connection = connection
                 .as_mut()
                 .expect("transaction-scoped query requires an active connection");
-            return Ok(bind(sqlx::query(sql)).fetch_optional(&mut **connection).await?);
+            return Ok(bind(sqlx::query(sql))
+                .fetch_optional(&mut **connection)
+                .await?);
         }
 
         Ok(bind(sqlx::query(sql)).fetch_optional(&self.pool).await?)
@@ -287,26 +302,26 @@ fn is_write_sql(sql: &str) -> bool {
 }
 
 async fn count_applied_migrations(pool: &PgPool) -> Result<i64, AppError> {
-    let migration_table_exists = query_scalar::<_, bool>(
-        "SELECT to_regclass('public._sqlx_migrations') IS NOT NULL",
-    )
-    .fetch_one(pool)
-    .await?;
+    let migration_table_exists =
+        query_scalar::<_, bool>("SELECT to_regclass('public._sqlx_migrations') IS NOT NULL")
+            .fetch_one(pool)
+            .await?;
     if !migration_table_exists {
         return Ok(0);
     }
 
-    Ok(query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM _sqlx_migrations")
-        .fetch_one(pool)
-        .await?)
+    Ok(
+        query_scalar::<_, i64>("SELECT COUNT(*)::bigint FROM _sqlx_migrations")
+            .fetch_one(pool)
+            .await?,
+    )
 }
 
 async fn adopt_existing_schema_as_baseline(pool: &PgPool) -> Result<bool, AppError> {
-    let migration_table_exists = query_scalar::<_, bool>(
-        "SELECT to_regclass('public._sqlx_migrations') IS NOT NULL",
-    )
-    .fetch_one(pool)
-    .await?;
+    let migration_table_exists =
+        query_scalar::<_, bool>("SELECT to_regclass('public._sqlx_migrations') IS NOT NULL")
+            .fetch_one(pool)
+            .await?;
     if migration_table_exists {
         return Ok(false);
     }
@@ -414,7 +429,9 @@ mod tests {
         let result = TRANSACTION_CONTEXT
             .scope(Arc::clone(&context), async {
                 let nested = runtime
-                    .with_transaction(|| async { Err::<(), AppError>(AppError::config("nested failure")) })
+                    .with_transaction(|| async {
+                        Err::<(), AppError>(AppError::config("nested failure"))
+                    })
                     .await;
                 assert!(nested.is_err());
                 Ok::<(), AppError>(())
@@ -423,6 +440,9 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(context.rollback_only.load(Ordering::SeqCst));
-        assert_eq!(context.rollback_cause_message().await, "configuration error: nested failure");
+        assert_eq!(
+            context.rollback_cause_message().await,
+            "configuration error: nested failure"
+        );
     }
 }

@@ -8,8 +8,12 @@ use crate::battle_runtime::MinimalBattleRewardItemDto;
 use crate::http::achievement::record_dungeon_clear_achievement_event;
 use crate::http::task::record_dungeon_clear_task_event;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{CharacterItemGrantDelta, buffer_character_item_grant_deltas};
-use crate::integrations::redis_resource_delta::{CharacterResourceDeltaField, buffer_character_resource_delta_fields};
+use crate::integrations::redis_item_grant_delta::{
+    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
+};
+use crate::integrations::redis_resource_delta::{
+    CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
 use crate::realtime::public_socket::emit_game_character_full_to_user;
 use crate::shared::error::AppError;
 use crate::state::AppState;
@@ -136,8 +140,11 @@ pub async fn enqueue_dungeon_clear_settlement_task(
 ) -> Result<(), AppError> {
     let task_id = format!("dungeon-clear:{}", payload.instance_id.trim());
     let kind = OnlineBattleSettlementTaskKind::DungeonClearV1;
-    let payload_json = serde_json::to_value(payload)
-        .map_err(|error| AppError::config(format!("failed to serialize dungeon settlement payload: {error}")))?;
+    let payload_json = serde_json::to_value(payload).map_err(|error| {
+        AppError::config(format!(
+            "failed to serialize dungeon settlement payload: {error}"
+        ))
+    })?;
     state.database.execute(
         "INSERT INTO online_battle_settlement_task (id, battle_id, kind, status, attempt_count, max_attempts, payload, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, 5, $4::jsonb, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
         |q| q.bind(&task_id).bind(battle_id.trim()).bind(kind.as_str()).bind(payload_json),
@@ -152,8 +159,11 @@ pub async fn enqueue_arena_battle_settlement_task(
 ) -> Result<(), AppError> {
     let task_id = format!("arena-battle:{}", battle_id.trim());
     let kind = OnlineBattleSettlementTaskKind::ArenaBattleV1;
-    let payload_json = serde_json::to_value(payload)
-        .map_err(|error| AppError::config(format!("failed to serialize arena settlement payload: {error}")))?;
+    let payload_json = serde_json::to_value(payload).map_err(|error| {
+        AppError::config(format!(
+            "failed to serialize arena settlement payload: {error}"
+        ))
+    })?;
     state.database.execute(
         "INSERT INTO online_battle_settlement_task (id, battle_id, kind, status, attempt_count, max_attempts, payload, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, 5, $4::jsonb, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
         |q| q.bind(&task_id).bind(battle_id.trim()).bind(kind.as_str()).bind(payload_json),
@@ -168,8 +178,11 @@ pub async fn enqueue_generic_pve_settlement_task(
 ) -> Result<(), AppError> {
     let task_id = format!("generic-pve:{battle_id}");
     let kind = OnlineBattleSettlementTaskKind::GenericPveV1;
-    let payload_json = serde_json::to_value(payload)
-        .map_err(|error| AppError::config(format!("failed to serialize generic pve settlement payload: {error}")))?;
+    let payload_json = serde_json::to_value(payload).map_err(|error| {
+        AppError::config(format!(
+            "failed to serialize generic pve settlement payload: {error}"
+        ))
+    })?;
     state.database.execute(
         "INSERT INTO online_battle_settlement_task (id, battle_id, kind, status, attempt_count, max_attempts, payload, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, 5, $4::jsonb, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
         |q| q.bind(&task_id).bind(battle_id.trim()).bind(kind.as_str()).bind(payload_json),
@@ -184,8 +197,11 @@ pub async fn enqueue_tower_win_settlement_task(
 ) -> Result<(), AppError> {
     let task_id = format!("tower-win:{battle_id}");
     let kind = OnlineBattleSettlementTaskKind::TowerWinV1;
-    let payload_json = serde_json::to_value(payload)
-        .map_err(|error| AppError::config(format!("failed to serialize tower settlement payload: {error}")))?;
+    let payload_json = serde_json::to_value(payload).map_err(|error| {
+        AppError::config(format!(
+            "failed to serialize tower settlement payload: {error}"
+        ))
+    })?;
     state.database.execute(
         "INSERT INTO online_battle_settlement_task (id, battle_id, kind, status, attempt_count, max_attempts, payload, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, 5, $4::jsonb, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
         |q| q.bind(&task_id).bind(battle_id.trim()).bind(kind.as_str()).bind(payload_json),
@@ -218,7 +234,15 @@ pub async fn run_online_battle_settlement_tick(state: &AppState) -> Result<(), A
     };
     match process_online_battle_settlement_task(state, &task).await {
         Ok(()) => mark_online_battle_settlement_task_completed(state, &task.id).await,
-        Err(error) => mark_online_battle_settlement_task_failed(state, &task.id, task.attempt_count + 1, &error.to_string()).await,
+        Err(error) => {
+            mark_online_battle_settlement_task_failed(
+                state,
+                &task.id,
+                task.attempt_count + 1,
+                &error.to_string(),
+            )
+            .await
+        }
     }
 }
 
@@ -232,18 +256,32 @@ async fn claim_next_online_battle_settlement_task(
     let Some(row) = row else {
         return Ok(None);
     };
-    let kind_raw = row.try_get::<Option<String>, _>("kind")?.unwrap_or_default();
+    let kind_raw = row
+        .try_get::<Option<String>, _>("kind")?
+        .unwrap_or_default();
     let Some(kind) = OnlineBattleSettlementTaskKind::from_str(&kind_raw) else {
         return Ok(None);
     };
-    let payload_value = row.try_get::<Option<serde_json::Value>, _>("payload")?.unwrap_or_default();
+    let payload_value = row
+        .try_get::<Option<serde_json::Value>, _>("payload")?
+        .unwrap_or_default();
     Ok(Some(OnlineBattleSettlementTaskRow {
         id: row.try_get::<Option<String>, _>("id")?.unwrap_or_default(),
-        battle_id: row.try_get::<Option<String>, _>("battle_id")?.unwrap_or_default(),
+        battle_id: row
+            .try_get::<Option<String>, _>("battle_id")?
+            .unwrap_or_default(),
         kind,
-        status: row.try_get::<Option<String>, _>("status")?.unwrap_or_default(),
-        attempt_count: row.try_get::<Option<i32>, _>("attempt_count")?.map(i64::from).unwrap_or_default(),
-        max_attempts: row.try_get::<Option<i32>, _>("max_attempts")?.map(i64::from).unwrap_or(5),
+        status: row
+            .try_get::<Option<String>, _>("status")?
+            .unwrap_or_default(),
+        attempt_count: row
+            .try_get::<Option<i32>, _>("attempt_count")?
+            .map(i64::from)
+            .unwrap_or_default(),
+        max_attempts: row
+            .try_get::<Option<i32>, _>("max_attempts")?
+            .map(i64::from)
+            .unwrap_or(5),
         payload: payload_value,
     }))
 }
@@ -254,23 +292,43 @@ async fn process_online_battle_settlement_task(
 ) -> Result<(), AppError> {
     match task.kind {
         OnlineBattleSettlementTaskKind::DungeonClearV1 => {
-            let payload = serde_json::from_value::<DungeonClearSettlementTaskPayload>(task.payload.clone())
-                .map_err(|error| AppError::config(format!("failed to deserialize dungeon settlement payload: {error}")))?;
+            let payload =
+                serde_json::from_value::<DungeonClearSettlementTaskPayload>(task.payload.clone())
+                    .map_err(|error| {
+                    AppError::config(format!(
+                        "failed to deserialize dungeon settlement payload: {error}"
+                    ))
+                })?;
             apply_dungeon_clear_settlement(state, &payload).await
         }
         OnlineBattleSettlementTaskKind::ArenaBattleV1 => {
-            let payload = serde_json::from_value::<ArenaBattleSettlementTaskPayload>(task.payload.clone())
-                .map_err(|error| AppError::config(format!("failed to deserialize arena settlement payload: {error}")))?;
+            let payload =
+                serde_json::from_value::<ArenaBattleSettlementTaskPayload>(task.payload.clone())
+                    .map_err(|error| {
+                        AppError::config(format!(
+                            "failed to deserialize arena settlement payload: {error}"
+                        ))
+                    })?;
             apply_arena_battle_settlement(state, &task.battle_id, &payload).await
         }
         OnlineBattleSettlementTaskKind::GenericPveV1 => {
-            let payload = serde_json::from_value::<GenericPveSettlementTaskPayload>(task.payload.clone())
-                .map_err(|error| AppError::config(format!("failed to deserialize generic pve settlement payload: {error}")))?;
+            let payload =
+                serde_json::from_value::<GenericPveSettlementTaskPayload>(task.payload.clone())
+                    .map_err(|error| {
+                        AppError::config(format!(
+                            "failed to deserialize generic pve settlement payload: {error}"
+                        ))
+                    })?;
             apply_generic_pve_settlement(state, &payload).await
         }
         OnlineBattleSettlementTaskKind::TowerWinV1 => {
-            let payload = serde_json::from_value::<TowerWinSettlementTaskPayload>(task.payload.clone())
-                .map_err(|error| AppError::config(format!("failed to deserialize tower settlement payload: {error}")))?;
+            let payload =
+                serde_json::from_value::<TowerWinSettlementTaskPayload>(task.payload.clone())
+                    .map_err(|error| {
+                        AppError::config(format!(
+                            "failed to deserialize tower settlement payload: {error}"
+                        ))
+                    })?;
             apply_tower_win_settlement(state, &payload).await
         }
     }
@@ -297,38 +355,56 @@ async fn apply_generic_pve_settlement(
     payload: &GenericPveSettlementTaskPayload,
 ) -> Result<(), AppError> {
     if payload.character_id <= 0 || payload.user_id <= 0 {
-        return Err(AppError::config("generic pve settlement payload missing actor"));
+        return Err(AppError::config(
+            "generic pve settlement payload missing actor",
+        ));
     }
     if state.redis_available {
         if let Some(redis_client) = state.redis.clone() {
             let redis = RedisRuntime::new(redis_client);
-            buffer_character_resource_delta_fields(&redis, &[
-                CharacterResourceDeltaField {
-                    character_id: payload.character_id,
-                    field: "exp".to_string(),
-                    increment: payload.exp_gained.max(0),
-                },
-                CharacterResourceDeltaField {
-                    character_id: payload.character_id,
-                    field: "silver".to_string(),
-                    increment: payload.silver_gained.max(0),
-                },
-            ]).await?;
-            let deltas = payload.reward_items.iter().filter_map(|reward_item| {
-                (!reward_item.item_def_id.trim().is_empty() && reward_item.qty > 0).then(|| CharacterItemGrantDelta {
-                    character_id: payload.character_id,
-                    user_id: payload.user_id,
-                    item_def_id: reward_item.item_def_id.clone(),
-                    qty: reward_item.qty,
-                    bind_type: reward_item.bind_type.clone(),
-                    obtained_from: "battle_reward".to_string(),
-                    obtained_ref_id: Some("generic_pve_v1".to_string()),
+            buffer_character_resource_delta_fields(
+                &redis,
+                &[
+                    CharacterResourceDeltaField {
+                        character_id: payload.character_id,
+                        field: "exp".to_string(),
+                        increment: payload.exp_gained.max(0),
+                    },
+                    CharacterResourceDeltaField {
+                        character_id: payload.character_id,
+                        field: "silver".to_string(),
+                        increment: payload.silver_gained.max(0),
+                    },
+                ],
+            )
+            .await?;
+            let deltas = payload
+                .reward_items
+                .iter()
+                .filter_map(|reward_item| {
+                    (!reward_item.item_def_id.trim().is_empty() && reward_item.qty > 0).then(|| {
+                        CharacterItemGrantDelta {
+                            character_id: payload.character_id,
+                            user_id: payload.user_id,
+                            item_def_id: reward_item.item_def_id.clone(),
+                            qty: reward_item.qty,
+                            bind_type: reward_item.bind_type.clone(),
+                            obtained_from: "battle_reward".to_string(),
+                            obtained_ref_id: Some("generic_pve_v1".to_string()),
+                        }
+                    })
                 })
-            }).collect::<Vec<_>>();
+                .collect::<Vec<_>>();
             buffer_character_item_grant_deltas(&redis, &deltas).await?;
         }
     } else {
-        apply_character_battle_rewards(state, payload.character_id, payload.exp_gained, payload.silver_gained).await?;
+        apply_character_battle_rewards(
+            state,
+            payload.character_id,
+            payload.exp_gained,
+            payload.silver_gained,
+        )
+        .await?;
         for reward_item in &payload.reward_items {
             if reward_item.item_def_id.trim().is_empty() || reward_item.qty <= 0 {
                 continue;
@@ -368,10 +444,19 @@ async fn apply_tower_win_settlement(
     payload: &TowerWinSettlementTaskPayload,
 ) -> Result<(), AppError> {
     if payload.character_id <= 0 || payload.user_id <= 0 || payload.run_id.trim().is_empty() {
-        return Err(AppError::config("tower settlement payload missing actor or run"));
+        return Err(AppError::config(
+            "tower settlement payload missing actor or run",
+        ));
     }
-    apply_character_battle_rewards(state, payload.character_id, payload.exp_gained, payload.silver_gained).await?;
-    apply_tower_progress_on_win(state, payload.character_id, &payload.run_id, payload.floor).await?;
+    apply_character_battle_rewards(
+        state,
+        payload.character_id,
+        payload.exp_gained,
+        payload.silver_gained,
+    )
+    .await?;
+    apply_tower_progress_on_win(state, payload.character_id, &payload.run_id, payload.floor)
+        .await?;
     let _ = emit_game_character_full_to_user(state, payload.user_id).await;
     Ok(())
 }
@@ -387,14 +472,18 @@ async fn apply_dungeon_clear_settlement(
             .copied()
             .zip(payload.participant_user_ids.iter().copied())
             .filter(|(character_id, user_id)| *character_id > 0 && *user_id > 0)
-            .map(|(character_id, user_id)| DungeonSettlementRewardRecipient { character_id, user_id })
+            .map(|(character_id, user_id)| DungeonSettlementRewardRecipient {
+                character_id,
+                user_id,
+            })
             .collect::<Vec<_>>()
     } else {
         payload.reward_recipients.clone()
     };
     let participant_count = reward_recipients.len() as i64;
 
-    let first_clear_reward_defs = load_dungeon_first_clear_reward_items(&payload.dungeon_id, &payload.difficulty_id)?;
+    let first_clear_reward_defs =
+        load_dungeon_first_clear_reward_items(&payload.dungeon_id, &payload.difficulty_id)?;
 
     for recipient in reward_recipients {
         if recipient.character_id <= 0 || recipient.user_id <= 0 {
@@ -427,7 +516,11 @@ async fn apply_dungeon_clear_settlement(
                 granted_items.push(DungeonSettlementRewardItem {
                     item_def_id: reward.item_def_id.clone(),
                     qty: reward.qty,
-                    item_ids: if item_id > 0 { vec![item_id] } else { Vec::new() },
+                    item_ids: if item_id > 0 {
+                        vec![item_id]
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
         }
@@ -475,19 +568,35 @@ fn load_dungeon_first_clear_reward_items(
 ) -> Result<Vec<DungeonSettlementRewardItem>, AppError> {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds");
     let mut paths = fs::read_dir(&base)
-        .map_err(|error| AppError::config(format!("failed to read dungeon seed dir {}: {error}", base.display())))?
+        .map_err(|error| {
+            AppError::config(format!(
+                "failed to read dungeon seed dir {}: {error}",
+                base.display()
+            ))
+        })?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.file_name().and_then(|v| v.to_str()).map(|name| name.starts_with("dungeon_") && name.ends_with(".json")).unwrap_or(false))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|v| v.to_str())
+                .map(|name| name.starts_with("dungeon_") && name.ends_with(".json"))
+                .unwrap_or(false)
+        })
         .collect::<Vec<_>>();
     paths.sort();
     for path in paths {
-        let content = fs::read_to_string(&path)
-            .map_err(|error| AppError::config(format!("failed to read {}: {error}", path.display())))?;
-        let payload: DungeonSeedFile = serde_json::from_str(&content)
-            .map_err(|error| AppError::config(format!("failed to parse {}: {error}", path.display())))?;
+        let content = fs::read_to_string(&path).map_err(|error| {
+            AppError::config(format!("failed to read {}: {error}", path.display()))
+        })?;
+        let payload: DungeonSeedFile = serde_json::from_str(&content).map_err(|error| {
+            AppError::config(format!("failed to parse {}: {error}", path.display()))
+        })?;
         for entry in payload.dungeons {
             for difficulty in entry.difficulties {
-                if difficulty.get("dungeon_id").and_then(|value| value.as_str()) != Some(dungeon_id) {
+                if difficulty
+                    .get("dungeon_id")
+                    .and_then(|value| value.as_str())
+                    != Some(dungeon_id)
+                {
                     continue;
                 }
                 if difficulty.get("id").and_then(|value| value.as_str()) != Some(difficulty_id) {
@@ -501,8 +610,16 @@ fn load_dungeon_first_clear_reward_items(
                     .unwrap_or_default()
                     .into_iter()
                     .map(|item| DungeonSettlementRewardItem {
-                        item_def_id: item.get("item_def_id").and_then(|value| value.as_str()).unwrap_or_default().to_string(),
-                        qty: item.get("qty").and_then(|value| value.as_i64()).unwrap_or(1).max(1),
+                        item_def_id: item
+                            .get("item_def_id")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        qty: item
+                            .get("qty")
+                            .and_then(|value| value.as_i64())
+                            .unwrap_or(1)
+                            .max(1),
                         item_ids: Vec::new(),
                     })
                     .filter(|item| !item.item_def_id.trim().is_empty())
@@ -521,12 +638,17 @@ async fn apply_arena_battle_settlement(
     let challenger_id = payload.challenger_character_id.max(0);
     let opponent_id = payload.opponent_character_id.max(0);
     if challenger_id <= 0 || opponent_id <= 0 {
-        return Err(AppError::config("arena settlement payload missing characters"));
+        return Err(AppError::config(
+            "arena settlement payload missing characters",
+        ));
     }
     let challenger_before = ensure_arena_rating_row(state, challenger_id).await?;
     let opponent_before = ensure_arena_rating_row(state, opponent_id).await?;
-    let (challenger_result, challenger_delta, challenger_after) =
-        compute_arena_rating_change(challenger_before, opponent_before, payload.battle_result.trim());
+    let (challenger_result, challenger_delta, challenger_after) = compute_arena_rating_change(
+        challenger_before,
+        opponent_before,
+        payload.battle_result.trim(),
+    );
     let opposite_battle_result = invert_battle_result(payload.battle_result.trim());
     let (opponent_result, _opponent_delta, opponent_after) =
         compute_arena_rating_change(opponent_before, challenger_before, &opposite_battle_result);
@@ -549,11 +671,16 @@ async fn ensure_arena_rating_row(state: &AppState, character_id: i64) -> Result<
         "INSERT INTO arena_rating (character_id, rating, win_count, lose_count, created_at, updated_at) VALUES ($1, 1000, 0, 0, NOW(), NOW()) ON CONFLICT (character_id) DO NOTHING",
         |q| q.bind(character_id),
     ).await?;
-    let row = state.database.fetch_optional(
-        "SELECT rating FROM arena_rating WHERE character_id = $1 LIMIT 1",
-        |q| q.bind(character_id),
-    ).await?;
-    Ok(row.and_then(|row| row.try_get::<Option<i64>, _>("rating").ok().flatten()).unwrap_or(1000))
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT rating FROM arena_rating WHERE character_id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?;
+    Ok(row
+        .and_then(|row| row.try_get::<Option<i64>, _>("rating").ok().flatten())
+        .unwrap_or(1000))
 }
 
 async fn update_arena_rating_row(
@@ -571,7 +698,11 @@ async fn update_arena_rating_row(
     Ok(())
 }
 
-fn compute_arena_rating_change(self_rating: i64, opponent_rating: i64, battle_result: &str) -> (String, i64, i64) {
+fn compute_arena_rating_change(
+    self_rating: i64,
+    opponent_rating: i64,
+    battle_result: &str,
+) -> (String, i64, i64) {
     let expected = 1.0 / (1.0 + 10_f64.powf((opponent_rating - self_rating) as f64 / 400.0));
     let (result, delta) = match battle_result {
         "attacker_win" => ("win".to_string(), (20.0 * (1.0 - expected)).round() as i64),
@@ -610,7 +741,10 @@ async fn mark_online_battle_settlement_task_failed(
     Ok(())
 }
 
-async fn mark_online_battle_settlement_task_completed(state: &AppState, task_id: &str) -> Result<(), AppError> {
+async fn mark_online_battle_settlement_task_completed(
+    state: &AppState,
+    task_id: &str,
+) -> Result<(), AppError> {
     state.database.execute(
         "UPDATE online_battle_settlement_task SET status = 'completed', error_message = NULL, updated_at = NOW() WHERE id = $1",
         |q| q.bind(task_id),
@@ -623,8 +757,8 @@ mod tests {
     use super::{
         ArenaBattleSettlementTaskPayload, DungeonClearSettlementTaskPayload,
         DungeonSettlementRewardRecipient, GenericPveSettlementTaskPayload,
-        OnlineBattleSettlementTaskKind, TowerWinSettlementTaskPayload,
-        compute_arena_rating_change, load_dungeon_first_clear_reward_items,
+        OnlineBattleSettlementTaskKind, TowerWinSettlementTaskPayload, compute_arena_rating_change,
+        load_dungeon_first_clear_reward_items,
     };
     use crate::battle_runtime::MinimalBattleRewardItemDto;
 
@@ -654,18 +788,25 @@ mod tests {
         assert_eq!(payload["totalDamage"], 12345);
         assert_eq!(payload["deathCount"], 1);
         assert_eq!(payload["rewardRecipients"][0]["characterId"], 1);
-        assert_eq!(OnlineBattleSettlementTaskKind::DungeonClearV1.as_str(), "dungeon_clear_v1");
+        assert_eq!(
+            OnlineBattleSettlementTaskKind::DungeonClearV1.as_str(),
+            "dungeon_clear_v1"
+        );
         println!("ONLINE_BATTLE_SETTLEMENT_PAYLOAD={payload}");
     }
 
     #[test]
     fn dungeon_first_clear_reward_loader_reads_seed_items() {
-        let rewards = load_dungeon_first_clear_reward_items("dungeon-qiqi-wolf-den", "dd-qiqi-wolf-den-n")
-            .expect("dungeon first clear rewards should load");
+        let rewards =
+            load_dungeon_first_clear_reward_items("dungeon-qiqi-wolf-den", "dd-qiqi-wolf-den-n")
+                .expect("dungeon first clear rewards should load");
         assert_eq!(rewards.len(), 3);
         assert_eq!(rewards[0].item_def_id, "cons-001");
         assert_eq!(rewards[0].qty, 4);
-        println!("DUNGEON_FIRST_CLEAR_REWARDS={}", serde_json::to_value(rewards).expect("rewards should serialize"));
+        println!(
+            "DUNGEON_FIRST_CLEAR_REWARDS={}",
+            serde_json::to_value(rewards).expect("rewards should serialize")
+        );
     }
 
     #[test]
@@ -680,7 +821,10 @@ mod tests {
         let (result, delta, after) = compute_arena_rating_change(1000, 1000, "attacker_win");
         assert_eq!(payload["schemaVersion"], 1);
         assert_eq!(payload["battleResult"], "attacker_win");
-        assert_eq!(OnlineBattleSettlementTaskKind::ArenaBattleV1.as_str(), "arena_battle_v1");
+        assert_eq!(
+            OnlineBattleSettlementTaskKind::ArenaBattleV1.as_str(),
+            "arena_battle_v1"
+        );
         assert_eq!(result, "win");
         assert_eq!(delta, 10);
         assert_eq!(after, 1010);
@@ -701,7 +845,8 @@ mod tests {
                 qty: 1,
                 bind_type: "none".to_string(),
             }],
-        }).expect("generic pve payload should serialize");
+        })
+        .expect("generic pve payload should serialize");
         let tower = serde_json::to_value(TowerWinSettlementTaskPayload {
             schema_version: 1,
             character_id: 11,
@@ -710,23 +855,45 @@ mod tests {
             floor: 13,
             exp_gained: 33,
             silver_gained: 44,
-        }).expect("tower payload should serialize");
+        })
+        .expect("tower payload should serialize");
         assert_eq!(pve["characterId"], 11);
         assert_eq!(pve["expGained"], 33);
         assert_eq!(pve["rewardItems"][0]["itemDefId"], "mat-005");
         assert_eq!(tower["runId"], "tower-run-1");
         assert_eq!(tower["floor"], 13);
-        assert_eq!(OnlineBattleSettlementTaskKind::GenericPveV1.as_str(), "generic_pve_v1");
-        assert_eq!(OnlineBattleSettlementTaskKind::TowerWinV1.as_str(), "tower_win_v1");
+        assert_eq!(
+            OnlineBattleSettlementTaskKind::GenericPveV1.as_str(),
+            "generic_pve_v1"
+        );
+        assert_eq!(
+            OnlineBattleSettlementTaskKind::TowerWinV1.as_str(),
+            "tower_win_v1"
+        );
     }
 
     #[test]
     fn settlement_schema_migration_covers_required_columns_and_indexes() {
-        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("CREATE TABLE IF NOT EXISTS public.online_battle_settlement_task"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("id character varying(128) PRIMARY KEY"));
+        assert!(
+            ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL
+                .contains("CREATE TABLE IF NOT EXISTS public.online_battle_settlement_task")
+        );
+        assert!(
+            ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL
+                .contains("id character varying(128) PRIMARY KEY")
+        );
         assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("payload jsonb NOT NULL"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("updated_at timestamp(6) with time zone DEFAULT now() NOT NULL"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("idx_online_battle_settlement_status"));
-        assert!(ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL.contains("idx_online_battle_settlement_battle"));
+        assert!(
+            ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL
+                .contains("updated_at timestamp(6) with time zone DEFAULT now() NOT NULL")
+        );
+        assert!(
+            ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL
+                .contains("idx_online_battle_settlement_status")
+        );
+        assert!(
+            ONLINE_BATTLE_SETTLEMENT_REPAIR_MIGRATION_SQL
+                .contains("idx_online_battle_settlement_battle")
+        );
     }
 }
