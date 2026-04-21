@@ -41,6 +41,17 @@ pub struct PlayerTechniqueDto {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfoItemResourceDto {
+    pub collect_limit: i64,
+    pub used_count: i64,
+    pub remaining: i64,
+    pub cooldown_sec: i64,
+    pub respawn_sec: i64,
+    pub cooldown_until: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum InfoTargetDto {
     #[serde(rename = "monster")]
@@ -80,6 +91,10 @@ pub enum InfoTargetDto {
     #[serde(rename = "item")]
     Item {
         id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        object_kind: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        resource: Option<InfoItemResourceDto>,
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         task_marker: Option<String>,
@@ -176,6 +191,8 @@ pub fn map_npc_target(target: InfoNpcTarget) -> InfoTargetDto {
 pub fn map_item_target(target: InfoItemTarget) -> InfoTargetDto {
     InfoTargetDto::Item {
         id: target.id,
+        object_kind: None,
+        resource: None,
         name: target.name,
         task_marker: None,
         task_tracked: false,

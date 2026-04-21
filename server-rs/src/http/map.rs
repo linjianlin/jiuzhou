@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -9,7 +9,7 @@ use sqlx::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::auth;
-use crate::http::info::{InfoTargetDto, map_item_target, map_monster_target, map_npc_target};
+use crate::http::info::{InfoItemResourceDto, InfoTargetDto, map_item_target, map_monster_target, map_npc_target};
 use crate::repo::info_target::{get_item_info_target, get_monster_info_target, get_npc_info_target};
 use crate::shared::error::AppError;
 use crate::shared::response::{SuccessResponse, send_success};
@@ -224,6 +224,7 @@ pub async fn get_room_objects(
         .find(|room| room.id == room_id)
         .ok_or_else(|| AppError::not_found("房间不存在"))?;
     let task_markers = resolve_room_task_markers(&state, &headers, &room).await?;
+    let resource_state_by_id = load_room_resource_states(&state, task_markers.character_id, &map_id, &room_id, &room).await?;
 
     let mut objects = Vec::new();
     for npc_id in room.npcs.clone().unwrap_or_default() {
@@ -248,8 +249,10 @@ pub async fn get_room_objects(
             if let Some(resource_id) = resource.get("resource_id").and_then(|value| value.as_str()) {
                 if let Some(item) = get_item_info_target(resource_id)? {
                     let mut info = map_item_target(item);
-                    if let InfoTargetDto::Item { ref mut id, .. } = info {
+                    if let InfoTargetDto::Item { ref mut id, ref mut object_kind, ref mut resource, .. } = info {
                         *id = resource_id.to_string();
+                        *object_kind = Some("resource".to_string());
+                        *resource = resource_state_by_id.get(resource_id).cloned();
                     }
                     apply_task_marker(&mut info, task_markers.resource_markers.get(resource_id.trim()).copied(), task_markers.tracked_resource_ids.contains(resource_id.trim()));
                     objects.push(RoomObjectDto::Info(info));
@@ -286,7 +289,7 @@ pub async fn gather_room_resource(
     let row = state
         .database
         .fetch_optional(
-            "SELECT id, used_count, gather_until::text AS gather_until_text, cooldown_until::text AS cooldown_until_text FROM character_room_resource_state WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = $4 LIMIT 1 FOR UPDATE",
+            "SELECT id, used_count, to_char(gather_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS gather_until_text, to_char(cooldown_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS cooldown_until_text FROM character_room_resource_state WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = $4 LIMIT 1 FOR UPDATE",
             |query| query.bind(actor.character_id).bind(&map_id).bind(&room_id).bind(&resource_id),
         )
         .await?;
@@ -405,7 +408,13 @@ pub async fn pickup_room_item(
 ) -> Result<axum::response::Response, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     let room = get_room_seed(&map_id, &room_id)?;
-    let cfg = get_room_item_config(&room, &item_def_id).ok_or_else(|| AppError::config("物品不存在"))?;
+    let Some(cfg) = get_room_item_config(&room, &item_def_id) else {
+        return Ok(crate::shared::response::send_result(crate::shared::response::ServiceResult::<PickupRoomItemData> {
+            success: false,
+            message: Some("物品不存在".to_string()),
+            data: None,
+        }));
+    };
     if let Some(req_quest_id) = cfg.req_quest_id.as_deref() {
         let can_pickup = state.database.fetch_optional(
             "SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 LIMIT 1",
@@ -497,12 +506,88 @@ fn get_room_item_config(room: &MapRoomDto, item_def_id: &str) -> Option<RoomItem
     })
 }
 
+fn collect_room_resource_ids(room: &MapRoomDto) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+    for entry in room.resources.as_ref().into_iter().flatten() {
+        let Some(resource_id) = entry.get("resource_id").and_then(|value| value.as_str()).map(str::trim) else {
+            continue;
+        };
+        if resource_id.is_empty() || !seen.insert(resource_id.to_string()) {
+            continue;
+        }
+        ids.push(resource_id.to_string());
+    }
+    ids
+}
+
+async fn load_room_resource_states(
+    state: &AppState,
+    character_id: Option<i64>,
+    map_id: &str,
+    room_id: &str,
+    room: &MapRoomDto,
+) -> Result<HashMap<String, InfoItemResourceDto>, AppError> {
+    let resource_ids = collect_room_resource_ids(room);
+    if resource_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut row_by_resource_id = HashMap::<String, (i64, Option<String>)>::new();
+    if let Some(character_id) = character_id {
+        let rows = state.database.fetch_all(
+            "SELECT resource_id, COALESCE(used_count, 0)::bigint AS used_count, to_char(cooldown_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS cooldown_until_text FROM character_room_resource_state WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = ANY($4::varchar[])",
+            |query| query.bind(character_id).bind(map_id).bind(room_id).bind(&resource_ids),
+        ).await?;
+        for row in rows {
+            let resource_id = row.try_get::<Option<String>, _>("resource_id")?.unwrap_or_default();
+            if resource_id.trim().is_empty() {
+                continue;
+            }
+            let used_count = row.try_get::<Option<i64>, _>("used_count")?.unwrap_or_default();
+            let cooldown_until = row.try_get::<Option<String>, _>("cooldown_until_text")?;
+            row_by_resource_id.insert(resource_id, (used_count, cooldown_until));
+        }
+    }
+
+    let now = time::OffsetDateTime::now_utc();
+    let mut states = HashMap::new();
+    for resource_id in resource_ids {
+        let Some(cfg) = get_room_resource_config(room, &resource_id) else {
+            continue;
+        };
+        let (raw_used_count, cooldown_until_text) = row_by_resource_id.get(resource_id.as_str()).cloned().unwrap_or((0, None));
+        let cooldown_until = cooldown_until_text.as_deref().and_then(parse_rfc3339);
+        let in_cooldown = cooldown_until.map(|value| value > now).unwrap_or(false);
+        let used_count = if cooldown_until.map(|value| value <= now).unwrap_or(false) { 0 } else { raw_used_count.max(0) };
+        let remaining = (cfg.collect_limit - used_count).max(0);
+        let cooldown_sec = if in_cooldown {
+            cooldown_until.map(|value| (value.unix_timestamp() - now.unix_timestamp()).max(1)).unwrap_or_default()
+        } else {
+            0
+        };
+        states.insert(
+            resource_id,
+            InfoItemResourceDto {
+                collect_limit: cfg.collect_limit,
+                used_count,
+                remaining,
+                cooldown_sec,
+                respawn_sec: cfg.respawn_sec,
+                cooldown_until: if in_cooldown { cooldown_until_text } else { None },
+            },
+        );
+    }
+    Ok(states)
+}
+
 fn parse_rfc3339(raw: &str) -> Option<time::OffsetDateTime> {
     time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339).ok()
 }
 
 #[derive(Default)]
 struct RoomTaskMarkers {
+    character_id: Option<i64>,
     npc_markers: HashMap<String, char>,
     monster_markers: HashMap<String, char>,
     resource_markers: HashMap<String, char>,
@@ -551,7 +636,10 @@ async fn resolve_room_task_markers(
         );
     }
 
-    let mut result = RoomTaskMarkers::default();
+    let mut result = RoomTaskMarkers {
+        character_id: Some(character_id),
+        ..RoomTaskMarkers::default()
+    };
     let room_npc_ids: std::collections::HashSet<_> = room.npcs.clone().unwrap_or_default().into_iter().collect();
     let room_monster_ids: std::collections::HashSet<_> = room.monsters.clone().unwrap_or_default().into_iter().map(|m| m.monster_def_id).collect();
     let room_resource_ids: std::collections::HashSet<_> = room.resources.clone().unwrap_or_default().into_iter().filter_map(|res| res.get("resource_id").and_then(|v| v.as_str()).map(|s| s.to_string())).collect();
