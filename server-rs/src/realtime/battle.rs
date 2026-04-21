@@ -289,7 +289,7 @@ pub fn build_reward_item_values(
                 "itemDefId": item.item_def_id,
                 "name": item.item_name,
                 "quantity": item.qty,
-                "receiverId": receiver_id,
+                "receiverId": item.receiver_character_id.unwrap_or(receiver_id),
             })
         })
         .collect()
@@ -579,6 +579,10 @@ mod tests {
             item_name: "铁木芯".to_string(),
             qty: 2,
             bind_type: "none".to_string(),
+            receiver_character_id: Some(22),
+            receiver_user_id: Some(11),
+            receiver_fuyuan: Some(0.0),
+            quality_weights: None,
         }];
         let item_values = build_reward_item_values(&items, 22);
         let player_values = build_single_player_reward_values(11, 22, 33, 44, &items);

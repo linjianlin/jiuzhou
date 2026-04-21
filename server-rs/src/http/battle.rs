@@ -10,8 +10,9 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::battle_runtime::{
-    BattleStateDto, apply_minimal_pve_action, apply_minimal_pvp_action,
-    build_minimal_pve_battle_state, resolve_minimal_pve_item_rewards,
+    BattleStateDto, MinimalBattleRewardParticipant, MinimalPveItemRewardResolveOptions,
+    apply_minimal_pve_action, apply_minimal_pvp_action, build_minimal_pve_battle_state,
+    resolve_minimal_pve_item_rewards,
 };
 use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
 use crate::integrations::battle_persistence::{
@@ -338,7 +339,26 @@ pub async fn battle_action(
                 if action_outcome.finished
                     && matches!(state_snapshot.result.as_deref(), Some("attacker_win")) =>
             {
-                resolve_minimal_pve_item_rewards(monster_ids).ok()
+                resolve_minimal_pve_item_rewards(
+                    monster_ids,
+                    &MinimalPveItemRewardResolveOptions {
+                        reward_seed: battle_id.trim().to_string(),
+                        participants: vec![MinimalBattleRewardParticipant {
+                            character_id,
+                            user_id: actor.user_id,
+                            fuyuan: 0.0,
+                            realm: state_snapshot
+                                .teams
+                                .attacker
+                                .units
+                                .first()
+                                .and_then(|unit| unit.current_attrs.realm.clone()),
+                        }],
+                        is_dungeon_battle: false,
+                        dungeon_reward_multiplier: None,
+                    },
+                )
+                .ok()
             }
             _ => None,
         })
@@ -387,7 +407,9 @@ pub async fn battle_action(
                 }
             } else if matches!(state_snapshot.battle_type.as_str(), "pve")
                 && matches!(state_snapshot.result.as_deref(), Some("attacker_win"))
-                && (action_outcome.exp_gained > 0 || action_outcome.silver_gained > 0)
+                && (action_outcome.exp_gained > 0
+                    || action_outcome.silver_gained > 0
+                    || !reward_items.is_empty())
             {
                 enqueue_generic_pve_settlement_task(
                     &state,

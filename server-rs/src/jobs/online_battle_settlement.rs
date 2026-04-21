@@ -1,16 +1,17 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use sqlx::Row;
 use tokio::time::{Duration, sleep};
 
 use crate::battle_runtime::MinimalBattleRewardItemDto;
 use crate::http::achievement::record_dungeon_clear_achievement_event;
+use crate::http::inventory::{InventoryDefSeed, load_inventory_def_map};
 use crate::http::task::record_dungeon_clear_task_event;
 use crate::integrations::redis::RedisRuntime;
-use crate::integrations::redis_item_grant_delta::{
-    CharacterItemGrantDelta, buffer_character_item_grant_deltas,
-};
 use crate::integrations::redis_resource_delta::{
     CharacterResourceDeltaField, buffer_character_resource_delta_fields,
 };
@@ -350,6 +351,40 @@ async fn apply_character_battle_rewards(
     Ok(())
 }
 
+async fn apply_or_buffer_character_battle_rewards(
+    state: &AppState,
+    character_id: i64,
+    exp_gained: i64,
+    silver_gained: i64,
+) -> Result<(), AppError> {
+    if exp_gained <= 0 && silver_gained <= 0 {
+        return Ok(());
+    }
+    if state.redis_available {
+        if let Some(redis_client) = state.redis.clone() {
+            let redis = RedisRuntime::new(redis_client);
+            buffer_character_resource_delta_fields(
+                &redis,
+                &[
+                    CharacterResourceDeltaField {
+                        character_id,
+                        field: "exp".to_string(),
+                        increment: exp_gained.max(0),
+                    },
+                    CharacterResourceDeltaField {
+                        character_id,
+                        field: "silver".to_string(),
+                        increment: silver_gained.max(0),
+                    },
+                ],
+            )
+            .await?;
+            return Ok(());
+        }
+    }
+    apply_character_battle_rewards(state, character_id, exp_gained, silver_gained).await
+}
+
 async fn apply_generic_pve_settlement(
     state: &AppState,
     payload: &GenericPveSettlementTaskPayload,
@@ -359,69 +394,568 @@ async fn apply_generic_pve_settlement(
             "generic pve settlement payload missing actor",
         ));
     }
-    if state.redis_available {
-        if let Some(redis_client) = state.redis.clone() {
-            let redis = RedisRuntime::new(redis_client);
-            buffer_character_resource_delta_fields(
-                &redis,
-                &[
-                    CharacterResourceDeltaField {
-                        character_id: payload.character_id,
-                        field: "exp".to_string(),
-                        increment: payload.exp_gained.max(0),
-                    },
-                    CharacterResourceDeltaField {
-                        character_id: payload.character_id,
-                        field: "silver".to_string(),
-                        increment: payload.silver_gained.max(0),
-                    },
-                ],
-            )
-            .await?;
-            let deltas = payload
-                .reward_items
-                .iter()
-                .filter_map(|reward_item| {
-                    (!reward_item.item_def_id.trim().is_empty() && reward_item.qty > 0).then(|| {
-                        CharacterItemGrantDelta {
-                            character_id: payload.character_id,
-                            user_id: payload.user_id,
-                            item_def_id: reward_item.item_def_id.clone(),
-                            qty: reward_item.qty,
-                            bind_type: reward_item.bind_type.clone(),
-                            obtained_from: "battle_drop".to_string(),
-                            obtained_ref_id: Some("generic_pve_v1".to_string()),
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
-            buffer_character_item_grant_deltas(&redis, &deltas).await?;
+    apply_or_buffer_character_battle_rewards(
+        state,
+        payload.character_id,
+        payload.exp_gained,
+        payload.silver_gained,
+    )
+    .await?;
+    let defs = load_inventory_def_map()?;
+    let mut rng = StdRng::seed_from_u64(generic_pve_reward_seed(payload));
+    let mut auto_disassemble_settings = BTreeMap::<i64, AutoDisassembleSetting>::new();
+    let mut extra_silver_by_character = BTreeMap::<i64, i64>::new();
+    let mut refresh_user_ids = BTreeSet::from([payload.user_id]);
+    for reward_item in &payload.reward_items {
+        let receiver_character_id = reward_item
+            .receiver_character_id
+            .filter(|value| *value > 0)
+            .unwrap_or(payload.character_id);
+        let receiver_user_id = reward_item
+            .receiver_user_id
+            .filter(|value| *value > 0)
+            .unwrap_or(payload.user_id);
+        refresh_user_ids.insert(receiver_user_id);
+        let receiver_fuyuan = reward_item.receiver_fuyuan.unwrap_or(0.0);
+        if !auto_disassemble_settings.contains_key(&receiver_character_id) {
+            let setting = load_auto_disassemble_setting(state, receiver_character_id).await?;
+            auto_disassemble_settings.insert(receiver_character_id, setting);
         }
-    } else {
-        apply_character_battle_rewards(
+        let setting = auto_disassemble_settings
+            .get(&receiver_character_id)
+            .ok_or_else(|| AppError::config("自动分解配置读取失败"))?;
+        let extra_silver = settle_battle_reward_item(
             state,
-            payload.character_id,
-            payload.exp_gained,
-            payload.silver_gained,
+            &defs,
+            setting,
+            receiver_character_id,
+            receiver_user_id,
+            reward_item,
+            receiver_fuyuan,
+            &mut rng,
         )
         .await?;
-        for reward_item in &payload.reward_items {
-            if reward_item.item_def_id.trim().is_empty() || reward_item.qty <= 0 {
-                continue;
-            }
-            state.database.execute(
-                "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), 'battle_drop', 'generic_pve_v1')",
-                |q| q
-                    .bind(payload.user_id)
-                    .bind(payload.character_id)
-                    .bind(reward_item.item_def_id.as_str())
-                    .bind(reward_item.qty)
-                    .bind(reward_item.bind_type.as_str()),
-            ).await?;
+        if extra_silver > 0 {
+            *extra_silver_by_character
+                .entry(receiver_character_id)
+                .or_insert(0) += extra_silver;
         }
     }
-    let _ = emit_game_character_full_to_user(state, payload.user_id).await;
+    for (character_id, extra_silver) in extra_silver_by_character {
+        if extra_silver > 0 {
+            apply_or_buffer_character_battle_rewards(state, character_id, 0, extra_silver).await?;
+        }
+    }
+    for user_id in refresh_user_ids {
+        let _ = emit_game_character_full_to_user(state, user_id).await;
+    }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct AutoDisassembleSetting {
+    enabled: bool,
+    rules: Vec<AutoDisassembleRuleSet>,
+}
+
+#[derive(Debug, Clone)]
+struct AutoDisassembleRuleSet {
+    categories: Vec<String>,
+    sub_categories: Vec<String>,
+    excluded_sub_categories: Vec<String>,
+    include_name_keywords: Vec<String>,
+    exclude_name_keywords: Vec<String>,
+    max_quality_rank: i64,
+}
+
+#[derive(Debug, Clone)]
+struct RewardItemMeta {
+    item_name: String,
+    category: String,
+    sub_category: Option<String>,
+    effect_defs: serde_json::Value,
+    quality_rank: i64,
+    can_disassemble: bool,
+}
+
+async fn load_auto_disassemble_setting(
+    state: &AppState,
+    character_id: i64,
+) -> Result<AutoDisassembleSetting, AppError> {
+    let row = state.database.fetch_optional(
+        "SELECT auto_disassemble_enabled, auto_disassemble_rules FROM characters WHERE id = $1 LIMIT 1",
+        |q| q.bind(character_id),
+    ).await?;
+    let Some(row) = row else {
+        return Err(AppError::config("角色不存在"));
+    };
+    let enabled = row
+        .try_get::<Option<bool>, _>("auto_disassemble_enabled")?
+        .unwrap_or(false);
+    let rules = row
+        .try_get::<Option<serde_json::Value>, _>("auto_disassemble_rules")?
+        .unwrap_or_else(|| serde_json::json!([]));
+    Ok(AutoDisassembleSetting {
+        enabled,
+        rules: normalize_auto_disassemble_rule_sets(&rules),
+    })
+}
+
+async fn settle_battle_reward_item(
+    state: &AppState,
+    defs: &BTreeMap<String, InventoryDefSeed>,
+    setting: &AutoDisassembleSetting,
+    character_id: i64,
+    user_id: i64,
+    reward_item: &MinimalBattleRewardItemDto,
+    receiver_fuyuan: f64,
+    rng: &mut StdRng,
+) -> Result<i64, AppError> {
+    let item_def_id = reward_item.item_def_id.trim();
+    if item_def_id.is_empty() || reward_item.qty <= 0 {
+        return Ok(0);
+    }
+    let source_meta = reward_item_meta(defs, item_def_id, None)?;
+    let bind_type = normalize_bind_type(&reward_item.bind_type);
+    if source_meta.category == "equipment" {
+        let mut gained_silver = 0_i64;
+        for _ in 0..reward_item.qty {
+            let (quality, quality_rank) =
+                roll_equipment_quality(reward_item.quality_weights.as_ref(), receiver_fuyuan, rng);
+            let unit_meta = reward_item_meta(defs, item_def_id, Some((quality, quality_rank)))?;
+            if should_auto_disassemble(setting, &unit_meta) {
+                gained_silver += grant_auto_disassemble_rewards(
+                    state,
+                    defs,
+                    user_id,
+                    character_id,
+                    &unit_meta,
+                    1,
+                    rng,
+                )
+                .await?;
+            } else {
+                insert_reward_item_instance(
+                    state,
+                    user_id,
+                    character_id,
+                    item_def_id,
+                    1,
+                    &bind_type,
+                    "battle_drop",
+                    Some("generic_pve_v1"),
+                    Some(quality),
+                    Some(quality_rank),
+                    rng,
+                )
+                .await?;
+            }
+        }
+        return Ok(gained_silver);
+    }
+
+    if should_auto_disassemble(setting, &source_meta) {
+        grant_auto_disassemble_rewards(
+            state,
+            defs,
+            user_id,
+            character_id,
+            &source_meta,
+            reward_item.qty,
+            rng,
+        )
+        .await
+    } else {
+        insert_reward_item_instance(
+            state,
+            user_id,
+            character_id,
+            item_def_id,
+            reward_item.qty,
+            &bind_type,
+            "battle_drop",
+            Some("generic_pve_v1"),
+            None,
+            None,
+            rng,
+        )
+        .await?;
+        Ok(0)
+    }
+}
+
+async fn grant_auto_disassemble_rewards(
+    state: &AppState,
+    defs: &BTreeMap<String, InventoryDefSeed>,
+    user_id: i64,
+    character_id: i64,
+    source_meta: &RewardItemMeta,
+    qty: i64,
+    rng: &mut StdRng,
+) -> Result<i64, AppError> {
+    if qty <= 0 {
+        return Ok(0);
+    }
+    if source_meta.category == "equipment" {
+        let reward_item_def_id = if source_meta.quality_rank <= 2 {
+            "enhance-001"
+        } else {
+            "enhance-002"
+        };
+        ensure_inventory_def(defs, reward_item_def_id)?;
+        insert_reward_item_instance(
+            state,
+            user_id,
+            character_id,
+            reward_item_def_id,
+            qty,
+            "none",
+            "auto_disassemble",
+            Some("generic_pve_v1"),
+            None,
+            None,
+            rng,
+        )
+        .await?;
+        return Ok(0);
+    }
+    if is_technique_book_reward(source_meta) {
+        let reward_qty = match source_meta.quality_rank {
+            1 => 15_i64,
+            2 => 30_i64,
+            3 => 60_i64,
+            _ => 120_i64,
+        }
+        .saturating_mul(qty);
+        ensure_inventory_def(defs, "mat-gongfa-canye")?;
+        insert_reward_item_instance(
+            state,
+            user_id,
+            character_id,
+            "mat-gongfa-canye",
+            reward_qty,
+            "none",
+            "auto_disassemble",
+            Some("generic_pve_v1"),
+            None,
+            None,
+            rng,
+        )
+        .await?;
+        return Ok(0);
+    }
+    let quality_factor = match source_meta.quality_rank {
+        1 => 1.0,
+        2 => 1.8,
+        3 => 3.0,
+        _ => 4.8,
+    };
+    let unit_silver = ((100.0_f64 * quality_factor) / 10.0_f64).floor() as i64;
+    Ok(unit_silver.max(1).saturating_mul(qty))
+}
+
+async fn insert_reward_item_instance(
+    state: &AppState,
+    user_id: i64,
+    character_id: i64,
+    item_def_id: &str,
+    qty: i64,
+    bind_type: &str,
+    obtained_from: &str,
+    obtained_ref_id: Option<&str>,
+    quality: Option<&str>,
+    quality_rank: Option<i64>,
+    rng: &mut StdRng,
+) -> Result<(), AppError> {
+    if item_def_id.trim().is_empty() || qty <= 0 {
+        return Ok(());
+    }
+    let random_seed = quality.map(|_| rng.gen_range(1_i64..=2_147_483_647_i64));
+    state.database.execute(
+        "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, location, random_seed, affixes, identified, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, $6, $7, 'bag', $8, $9::jsonb, TRUE, NOW(), NOW(), $10, $11)",
+        |q| q
+            .bind(user_id)
+            .bind(character_id)
+            .bind(item_def_id.trim())
+            .bind(qty.max(1))
+            .bind(quality)
+            .bind(quality_rank)
+            .bind(normalize_bind_type(bind_type))
+            .bind(random_seed)
+            .bind(serde_json::json!([]))
+            .bind(obtained_from)
+            .bind(obtained_ref_id),
+    ).await?;
+    Ok(())
+}
+
+fn reward_item_meta(
+    defs: &BTreeMap<String, InventoryDefSeed>,
+    item_def_id: &str,
+    quality_override: Option<(&str, i64)>,
+) -> Result<RewardItemMeta, AppError> {
+    let def = ensure_inventory_def(defs, item_def_id)?;
+    let item_name = def
+        .row
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or(item_def_id)
+        .to_string();
+    let category = def
+        .row
+        .get("category")
+        .and_then(|value| value.as_str())
+        .unwrap_or("other")
+        .trim()
+        .to_string();
+    let sub_category = def
+        .row
+        .get("sub_category")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let effect_defs = def
+        .row
+        .get("effect_defs")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    let quality = quality_override
+        .map(|(quality, _)| quality.to_string())
+        .or_else(|| {
+            def.row
+                .get("quality")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
+        .unwrap_or_else(|| "黄".to_string());
+    let quality_rank = quality_override
+        .map(|(_, rank)| rank)
+        .unwrap_or_else(|| map_quality_rank(&quality));
+    let can_disassemble = def
+        .row
+        .get("can_disassemble")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    Ok(RewardItemMeta {
+        item_name,
+        category,
+        sub_category,
+        effect_defs,
+        quality_rank,
+        can_disassemble,
+    })
+}
+
+fn ensure_inventory_def<'a>(
+    defs: &'a BTreeMap<String, InventoryDefSeed>,
+    item_def_id: &str,
+) -> Result<&'a InventoryDefSeed, AppError> {
+    defs.get(item_def_id.trim())
+        .ok_or_else(|| AppError::config(format!("物品不存在: {}", item_def_id.trim())))
+}
+
+fn should_auto_disassemble(setting: &AutoDisassembleSetting, meta: &RewardItemMeta) -> bool {
+    if !setting.enabled || !meta.can_disassemble || meta.quality_rank <= 0 {
+        return false;
+    }
+    setting
+        .rules
+        .iter()
+        .any(|rule| auto_disassemble_rule_matches(rule, meta))
+}
+
+fn auto_disassemble_rule_matches(rule: &AutoDisassembleRuleSet, meta: &RewardItemMeta) -> bool {
+    if meta.quality_rank > rule.max_quality_rank {
+        return false;
+    }
+    let category = normalize_rule_token(&meta.category);
+    let sub_category = meta
+        .sub_category
+        .as_deref()
+        .map(normalize_rule_token)
+        .unwrap_or_default();
+    let item_name = meta.item_name.trim().to_lowercase();
+    let sub_category_matched =
+        !rule.sub_categories.is_empty() && rule.sub_categories.contains(&sub_category);
+    if !rule.sub_categories.is_empty() && !sub_category_matched {
+        return false;
+    }
+    if !sub_category_matched && !rule.categories.is_empty() && !rule.categories.contains(&category)
+    {
+        return false;
+    }
+    if rule.excluded_sub_categories.contains(&sub_category) {
+        return false;
+    }
+    if !rule.include_name_keywords.is_empty()
+        && !rule
+            .include_name_keywords
+            .iter()
+            .any(|keyword| item_name.contains(keyword))
+    {
+        return false;
+    }
+    !rule
+        .exclude_name_keywords
+        .iter()
+        .any(|keyword| item_name.contains(keyword))
+}
+
+fn normalize_auto_disassemble_rule_sets(raw: &serde_json::Value) -> Vec<AutoDisassembleRuleSet> {
+    let rows = raw.as_array().cloned().unwrap_or_default();
+    let mut out = rows
+        .iter()
+        .take(20)
+        .map(normalize_auto_disassemble_rule_set)
+        .collect::<Vec<_>>();
+    if out.is_empty() {
+        out.push(default_auto_disassemble_rule_set());
+    }
+    out
+}
+
+fn normalize_auto_disassemble_rule_set(raw: &serde_json::Value) -> AutoDisassembleRuleSet {
+    AutoDisassembleRuleSet {
+        categories: normalize_rule_list(raw.get("categories"), 100, true),
+        sub_categories: normalize_rule_list(raw.get("subCategories"), 100, false),
+        excluded_sub_categories: normalize_rule_list(raw.get("excludedSubCategories"), 100, false),
+        include_name_keywords: normalize_rule_list(raw.get("includeNameKeywords"), 100, false),
+        exclude_name_keywords: normalize_rule_list(raw.get("excludeNameKeywords"), 100, false),
+        max_quality_rank: raw
+            .get("maxQualityRank")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(1)
+            .clamp(1, 4),
+    }
+}
+
+fn default_auto_disassemble_rule_set() -> AutoDisassembleRuleSet {
+    AutoDisassembleRuleSet {
+        categories: vec!["equipment".to_string()],
+        sub_categories: Vec::new(),
+        excluded_sub_categories: Vec::new(),
+        include_name_keywords: Vec::new(),
+        exclude_name_keywords: Vec::new(),
+        max_quality_rank: 1,
+    }
+}
+
+fn normalize_rule_list(
+    raw: Option<&serde_json::Value>,
+    max_size: usize,
+    use_default_equipment: bool,
+) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = raw
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str())
+        .map(normalize_rule_token)
+        .filter(|value| !value.is_empty())
+        .filter(|value| seen.insert(value.clone()))
+        .take(max_size)
+        .collect::<Vec<_>>();
+    if out.is_empty() && use_default_equipment {
+        out.push("equipment".to_string());
+    }
+    out
+}
+
+fn normalize_rule_token(raw: &str) -> String {
+    raw.trim().to_lowercase()
+}
+
+fn is_technique_book_reward(meta: &RewardItemMeta) -> bool {
+    meta.sub_category.as_deref() == Some("technique_book")
+        || meta
+            .effect_defs
+            .as_array()
+            .map(|effects| {
+                effects.iter().any(|effect| {
+                    effect.get("effect_type").and_then(|value| value.as_str())
+                        == Some("learn_technique")
+                })
+            })
+            .unwrap_or(false)
+}
+
+fn roll_equipment_quality(
+    weights: Option<&BTreeMap<String, f64>>,
+    fuyuan: f64,
+    rng: &mut StdRng,
+) -> (&'static str, i64) {
+    let qualities = [("黄", 1_i64), ("玄", 2_i64), ("地", 3_i64), ("天", 4_i64)];
+    let mut base_weights = BTreeMap::<&'static str, f64>::new();
+    for (quality, _) in qualities.iter().copied() {
+        let configured = weights
+            .and_then(|weights| weights.get(quality))
+            .copied()
+            .unwrap_or(0.0);
+        base_weights.insert(quality, configured.max(0.0));
+    }
+    if base_weights.values().all(|value| *value <= 0.0) {
+        base_weights.insert("黄", 70.0);
+        base_weights.insert("玄", 35.0);
+        base_weights.insert("地", 17.5);
+        base_weights.insert("天", 8.75);
+    }
+    let capped_fuyuan = fuyuan.clamp(0.0, 200.0);
+    let rate = 1.0 + capped_fuyuan * 0.0025;
+    let weighted = qualities
+        .iter()
+        .map(|(quality, rank)| {
+            let mut weight = *base_weights.get(quality).unwrap_or(&0.0);
+            let diff = *rank - 1;
+            if capped_fuyuan > 0.0 && diff > 0 {
+                weight *= 1.0 + (rate - 1.0) * diff as f64;
+            }
+            (*quality, *rank, weight.max(0.0))
+        })
+        .filter(|(_, _, weight)| *weight > 0.0)
+        .collect::<Vec<_>>();
+    let total_weight = weighted.iter().map(|(_, _, weight)| *weight).sum::<f64>();
+    if total_weight <= 0.0 {
+        return ("黄", 1);
+    }
+    let mut roll = rng.r#gen::<f64>() * total_weight;
+    for (quality, rank, weight) in weighted {
+        roll -= weight;
+        if roll <= 0.0 {
+            return (quality, rank);
+        }
+    }
+    ("黄", 1)
+}
+
+fn map_quality_rank(name: &str) -> i64 {
+    match name.trim() {
+        "黄" => 1,
+        "玄" => 2,
+        "地" => 3,
+        "天" => 4,
+        _ => 1,
+    }
+}
+
+fn normalize_bind_type(raw: &str) -> String {
+    let value = raw.trim();
+    if value.is_empty() {
+        "none".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn generic_pve_reward_seed(payload: &GenericPveSettlementTaskPayload) -> u64 {
+    let digest = md5::compute(
+        serde_json::to_string(payload)
+            .unwrap_or_else(|_| format!("{}:{}", payload.character_id, payload.user_id))
+            .as_bytes(),
+    );
+    u64::from_be_bytes([
+        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+    ])
 }
 
 async fn apply_tower_progress_on_win(
@@ -844,6 +1378,10 @@ mod tests {
                 item_name: "铁木芯".to_string(),
                 qty: 1,
                 bind_type: "none".to_string(),
+                receiver_character_id: Some(11),
+                receiver_user_id: Some(22),
+                receiver_fuyuan: Some(0.0),
+                quality_weights: None,
             }],
         })
         .expect("generic pve payload should serialize");

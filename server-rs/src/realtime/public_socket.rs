@@ -14,7 +14,10 @@ use socketioxide::{
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::{BattleStateDto, resolve_minimal_pve_item_rewards};
+use crate::battle_runtime::{
+    BattleStateDto, MinimalBattleRewardParticipant, MinimalPveItemRewardResolveOptions,
+    resolve_minimal_pve_item_rewards,
+};
 use crate::http::achievement::load_claimable_achievement_count;
 use crate::http::character::local_sensitive_words_contain;
 use crate::http::character_technique::load_technique_research_status_data;
@@ -1114,7 +1117,28 @@ fn build_battle_sync_payload_for_user(
                         crate::state::BattleSessionContextDto::Pve { monster_ids }
                             if matches!(state_snapshot.result.as_deref(), Some("attacker_win")) =>
                         {
-                            resolve_minimal_pve_item_rewards(monster_ids).ok()
+                            let owner_character_id =
+                                parse_battle_owner_character_id(&state_snapshot);
+                            resolve_minimal_pve_item_rewards(
+                                monster_ids,
+                                &MinimalPveItemRewardResolveOptions {
+                                    reward_seed: battle_id.to_string(),
+                                    participants: vec![MinimalBattleRewardParticipant {
+                                        character_id: owner_character_id,
+                                        user_id,
+                                        fuyuan: 0.0,
+                                        realm: state_snapshot
+                                            .teams
+                                            .attacker
+                                            .units
+                                            .first()
+                                            .and_then(|unit| unit.current_attrs.realm.clone()),
+                                    }],
+                                    is_dungeon_battle: false,
+                                    dungeon_reward_multiplier: None,
+                                },
+                            )
+                            .ok()
                         }
                         _ => None,
                     })

@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -158,6 +160,30 @@ pub struct MinimalBattleRewardItemDto {
     pub item_name: String,
     pub qty: i64,
     pub bind_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_character_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_user_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_fuyuan: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality_weights: Option<BTreeMap<String, f64>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MinimalBattleRewardParticipant {
+    pub character_id: i64,
+    pub user_id: i64,
+    pub fuyuan: f64,
+    pub realm: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MinimalPveItemRewardResolveOptions {
+    pub reward_seed: String,
+    pub participants: Vec<MinimalBattleRewardParticipant>,
+    pub is_dungeon_battle: bool,
+    pub dungeon_reward_multiplier: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,8 +195,8 @@ struct MonsterSeedFile {
 struct MonsterSeed {
     id: Option<String>,
     name: Option<String>,
-    #[serde(rename = "realm")]
-    _realm: Option<String>,
+    realm: Option<String>,
+    kind: Option<String>,
     level: Option<i64>,
     exp_reward: Option<i64>,
     silver_reward_min: Option<i64>,
@@ -184,6 +210,11 @@ struct BattleRewardItemMeta {
     id: Option<String>,
     name: Option<String>,
     bind_type: Option<String>,
+    category: Option<String>,
+    sub_category: Option<String>,
+    effect_defs: Option<serde_json::Value>,
+    quality: Option<String>,
+    can_disassemble: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -209,8 +240,35 @@ struct BattleDropPoolSeed {
 struct BattleDropPoolEntrySeed {
     item_def_id: Option<String>,
     chance: Option<serde_json::Value>,
+    weight: Option<serde_json::Value>,
     qty_min: Option<serde_json::Value>,
     qty_max: Option<serde_json::Value>,
+    chance_add_by_monster_realm: Option<serde_json::Value>,
+    qty_min_add_by_monster_realm: Option<serde_json::Value>,
+    qty_max_add_by_monster_realm: Option<serde_json::Value>,
+    qty_multiply_by_monster_realm: Option<serde_json::Value>,
+    quality_weights: Option<serde_json::Value>,
+    bind_type: Option<String>,
+    sort_order: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BattleDropSourceType {
+    Common,
+    Exclusive,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedBattleDropEntrySeed {
+    entry: BattleDropPoolEntrySeed,
+    source_type: BattleDropSourceType,
+    source_pool_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedBattleDropPoolSeed {
+    mode: String,
+    entries: Vec<ResolvedBattleDropEntrySeed>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -1183,13 +1241,30 @@ fn sum_monster_rewards(units: &[BattleUnitDto]) -> (i64, i64) {
 
 pub fn resolve_minimal_pve_item_rewards(
     monster_ids: &[String],
+    options: &MinimalPveItemRewardResolveOptions,
 ) -> Result<Vec<MinimalBattleRewardItemDto>, String> {
     let monster_map = load_monster_seed_map()?;
     let item_defs = load_battle_reward_item_map()?;
     let drop_pools = load_battle_drop_pool_map()?;
+    let participants = options
+        .participants
+        .iter()
+        .filter(|participant| participant.character_id > 0 && participant.user_id > 0)
+        .cloned()
+        .collect::<Vec<_>>();
+    if participants.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut rng = StdRng::seed_from_u64(seed_u64(&options.reward_seed));
     let mut merged = BTreeMap::<String, MinimalBattleRewardItemDto>::new();
+    let participant_count = participants.len() as f64;
+    let team_average_fuyuan = participants
+        .iter()
+        .map(|participant| participant.fuyuan)
+        .sum::<f64>()
+        / participant_count.max(1.0);
 
-    for (monster_index, monster_id) in monster_ids.iter().enumerate() {
+    for monster_id in monster_ids {
         let Some(monster) = monster_map.get(monster_id.as_str()) else {
             continue;
         };
@@ -1201,66 +1276,555 @@ pub fn resolve_minimal_pve_item_rewards(
         else {
             continue;
         };
-        let entries = resolve_battle_drop_pool_entries(&drop_pools, drop_pool_id)?;
-        for (entry_index, entry) in entries.iter().enumerate() {
-            let Some(item_def_id) = entry
-                .item_def_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            else {
+        let drop_pool = resolve_battle_drop_pool(&drop_pools, drop_pool_id)?;
+        let monster_kind = normalize_monster_kind(monster.kind.as_deref());
+        let monster_realm = monster.realm.as_deref();
+        let realm_suppression_multiplier = if options.is_dungeon_battle {
+            1.0
+        } else {
+            participants
+                .iter()
+                .map(|participant| {
+                    realm_suppression_multiplier(participant.realm.as_deref(), monster_realm)
+                })
+                .sum::<f64>()
+                / participant_count.max(1.0)
+        }
+        .clamp(0.0, 1.0);
+        let drops = roll_battle_drop_pool(
+            &drop_pool,
+            &item_defs,
+            monster_kind,
+            monster_realm,
+            team_average_fuyuan,
+            realm_suppression_multiplier,
+            options.is_dungeon_battle,
+            options.dungeon_reward_multiplier,
+            &mut rng,
+        );
+        for drop in drops {
+            let Some(item_meta) = item_defs.get(drop.item_def_id.as_str()) else {
                 continue;
             };
-            let chance = as_drop_entry_f64(entry.chance.as_ref())
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
-            if chance <= 0.0 {
+            if participants.len() <= 1 {
+                let receiver = &participants[0];
+                merge_minimal_reward_drop(
+                    &mut merged,
+                    &drop,
+                    item_meta,
+                    receiver.character_id,
+                    receiver.user_id,
+                    receiver.fuyuan,
+                );
                 continue;
             }
-            let roll = deterministic_reward_roll_unit_interval(
-                monster_id,
-                monster_index as i64,
-                entry_index as i64,
-                item_def_id,
-            );
-            if roll > chance {
-                continue;
+            let mut qty_by_receiver = BTreeMap::<i64, (MinimalBattleRewardParticipant, i64)>::new();
+            for _ in 0..drop.qty {
+                let receiver_index = rng.gen_range(0..participants.len());
+                let receiver = participants[receiver_index].clone();
+                qty_by_receiver
+                    .entry(receiver.character_id)
+                    .and_modify(|(_, qty)| *qty += 1)
+                    .or_insert((receiver, 1));
             }
-            let qty_min = as_drop_entry_i64(entry.qty_min.as_ref(), 1).max(1);
-            let qty_max = as_drop_entry_i64(entry.qty_max.as_ref(), qty_min).max(qty_min);
-            let quantity = deterministic_reward_roll_i64(
-                monster_id,
-                monster_index as i64,
-                entry_index as i64,
-                qty_min,
-                qty_max,
-            );
-            if quantity <= 0 {
-                continue;
+            for (_, (receiver, qty)) in qty_by_receiver {
+                let allocated_drop = MinimalRolledBattleDrop {
+                    qty,
+                    ..drop.clone()
+                };
+                merge_minimal_reward_drop(
+                    &mut merged,
+                    &allocated_drop,
+                    item_meta,
+                    receiver.character_id,
+                    receiver.user_id,
+                    receiver.fuyuan,
+                );
             }
-            let Some(item_meta) = item_defs.get(item_def_id) else {
-                continue;
-            };
-            merged
-                .entry(item_def_id.to_string())
-                .and_modify(|row| row.qty += quantity)
-                .or_insert_with(|| MinimalBattleRewardItemDto {
-                    item_def_id: item_def_id.to_string(),
-                    item_name: item_meta
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| item_def_id.to_string()),
-                    qty: quantity,
-                    bind_type: item_meta
-                        .bind_type
-                        .clone()
-                        .unwrap_or_else(|| "none".to_string()),
-                });
         }
     }
 
     Ok(merged.into_values().collect())
 }
+
+#[derive(Debug, Clone)]
+struct MinimalRolledBattleDrop {
+    item_def_id: String,
+    qty: i64,
+    bind_type: String,
+    quality_weights: Option<BTreeMap<String, f64>>,
+}
+
+fn merge_minimal_reward_drop(
+    merged: &mut BTreeMap<String, MinimalBattleRewardItemDto>,
+    drop: &MinimalRolledBattleDrop,
+    item_meta: &BattleRewardItemMeta,
+    receiver_character_id: i64,
+    receiver_user_id: i64,
+    receiver_fuyuan: f64,
+) {
+    let quality_key = stable_quality_weights_key(drop.quality_weights.as_ref());
+    let key = format!(
+        "{}|{}|{}|{}",
+        receiver_character_id, drop.item_def_id, drop.bind_type, quality_key
+    );
+    merged
+        .entry(key)
+        .and_modify(|row| row.qty += drop.qty)
+        .or_insert_with(|| MinimalBattleRewardItemDto {
+            item_def_id: drop.item_def_id.clone(),
+            item_name: item_meta
+                .name
+                .clone()
+                .unwrap_or_else(|| drop.item_def_id.clone()),
+            qty: drop.qty,
+            bind_type: if drop.bind_type.trim().is_empty() {
+                "none".to_string()
+            } else {
+                drop.bind_type.clone()
+            },
+            receiver_character_id: Some(receiver_character_id),
+            receiver_user_id: Some(receiver_user_id),
+            receiver_fuyuan: Some(receiver_fuyuan),
+            quality_weights: drop.quality_weights.clone(),
+        });
+}
+
+fn roll_battle_drop_pool(
+    drop_pool: &ResolvedBattleDropPoolSeed,
+    item_defs: &BTreeMap<String, BattleRewardItemMeta>,
+    monster_kind: BattleMonsterKind,
+    monster_realm: Option<&str>,
+    fuyuan: f64,
+    realm_suppression_multiplier: f64,
+    is_dungeon_battle: bool,
+    dungeon_reward_multiplier: Option<f64>,
+    rng: &mut StdRng,
+) -> Vec<MinimalRolledBattleDrop> {
+    let mut results = Vec::new();
+    if drop_pool.mode == "weight" {
+        let total_weight = drop_pool
+            .entries
+            .iter()
+            .map(|resolved| {
+                adjusted_weight(
+                    as_drop_entry_f64(resolved.entry.weight.as_ref()).unwrap_or(0.0),
+                    resolved.source_type,
+                    &resolved.source_pool_id,
+                    monster_kind,
+                    is_dungeon_battle,
+                    dungeon_reward_multiplier,
+                )
+            })
+            .sum::<f64>();
+        if total_weight <= 0.0 || rng.r#gen::<f64>() >= realm_suppression_multiplier {
+            return results;
+        }
+        let mut roll = rng.r#gen::<f64>() * total_weight;
+        for resolved in &drop_pool.entries {
+            roll -= adjusted_weight(
+                as_drop_entry_f64(resolved.entry.weight.as_ref()).unwrap_or(0.0),
+                resolved.source_type,
+                &resolved.source_pool_id,
+                monster_kind,
+                is_dungeon_battle,
+                dungeon_reward_multiplier,
+            );
+            if roll <= 0.0 {
+                if let Some(drop) = roll_entry_quantity(
+                    resolved,
+                    item_defs,
+                    monster_kind,
+                    monster_realm,
+                    is_dungeon_battle,
+                    dungeon_reward_multiplier,
+                    rng,
+                ) {
+                    results.push(drop);
+                }
+                break;
+            }
+        }
+        return results;
+    }
+
+    let capped_fuyuan = fuyuan.clamp(0.0, 200.0);
+    let chance_multiplier = 1.0 + capped_fuyuan * 0.0025;
+    for resolved in &drop_pool.entries {
+        if normalized_entry_item_def_id(&resolved.entry).is_none() {
+            continue;
+        }
+        let chance = as_drop_entry_f64(resolved.entry.chance.as_ref()).unwrap_or(0.0);
+        let effective_chance = (adjusted_chance(
+            chance * chance_multiplier,
+            resolved.source_type,
+            &resolved.source_pool_id,
+            monster_kind,
+            monster_realm,
+            as_drop_entry_f64(resolved.entry.chance_add_by_monster_realm.as_ref()).unwrap_or(0.0),
+            is_dungeon_battle,
+            dungeon_reward_multiplier,
+        ) * realm_suppression_multiplier)
+            .clamp(0.0, 1.0);
+        if rng.r#gen::<f64>() >= effective_chance {
+            continue;
+        }
+        if let Some(drop) = roll_entry_quantity(
+            resolved,
+            item_defs,
+            monster_kind,
+            monster_realm,
+            is_dungeon_battle,
+            dungeon_reward_multiplier,
+            rng,
+        ) {
+            results.push(drop);
+        }
+    }
+    results
+}
+
+fn roll_entry_quantity(
+    resolved: &ResolvedBattleDropEntrySeed,
+    item_defs: &BTreeMap<String, BattleRewardItemMeta>,
+    monster_kind: BattleMonsterKind,
+    monster_realm: Option<&str>,
+    is_dungeon_battle: bool,
+    dungeon_reward_multiplier: Option<f64>,
+    rng: &mut StdRng,
+) -> Option<MinimalRolledBattleDrop> {
+    let item_def_id = normalized_entry_item_def_id(&resolved.entry)?;
+    let item_def = item_defs.get(&item_def_id);
+    let (qty_min, qty_max) = adjusted_drop_quantity_range(
+        &resolved.entry,
+        resolved.source_type,
+        &resolved.source_pool_id,
+        monster_kind,
+        monster_realm,
+        item_def,
+        is_dungeon_battle,
+        dungeon_reward_multiplier,
+    );
+    let qty = if qty_max <= qty_min {
+        qty_min
+    } else {
+        rng.gen_range(qty_min..=qty_max)
+    };
+    if qty <= 0 {
+        return None;
+    }
+    let bind_type = resolved
+        .entry
+        .bind_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .or_else(|| item_def.and_then(|meta| meta.bind_type.clone()))
+        .unwrap_or_else(|| "none".to_string());
+    Some(MinimalRolledBattleDrop {
+        item_def_id,
+        qty,
+        bind_type,
+        quality_weights: normalize_quality_weights(resolved.entry.quality_weights.as_ref()),
+    })
+}
+
+fn adjusted_drop_quantity_range(
+    entry: &BattleDropPoolEntrySeed,
+    source_type: BattleDropSourceType,
+    source_pool_id: &str,
+    monster_kind: BattleMonsterKind,
+    monster_realm: Option<&str>,
+    item_def: Option<&BattleRewardItemMeta>,
+    is_dungeon_battle: bool,
+    dungeon_reward_multiplier: Option<f64>,
+) -> (i64, i64) {
+    let qty_min = as_drop_entry_i64(entry.qty_min.as_ref(), 1).max(1);
+    let qty_max = as_drop_entry_i64(entry.qty_max.as_ref(), qty_min).max(qty_min);
+    let realm_rank = get_realm_rank_zero_based(monster_realm) as f64;
+    let qty_min_add = as_drop_entry_f64(entry.qty_min_add_by_monster_realm.as_ref())
+        .unwrap_or(0.0)
+        .max(0.0);
+    let qty_max_add = as_drop_entry_f64(entry.qty_max_add_by_monster_realm.as_ref())
+        .unwrap_or(qty_min_add)
+        .max(0.0)
+        .max(qty_min_add);
+    let base_min = ((qty_min as f64) + realm_rank * qty_min_add)
+        .floor()
+        .max(1.0) as i64;
+    let base_max = ((qty_max as f64) + realm_rank * qty_max_add)
+        .floor()
+        .max(base_min as f64) as i64;
+    let apply_qty_multiplier = should_apply_drop_quantity_multiplier(item_def);
+    let common_multiplier = if apply_qty_multiplier {
+        common_pool_multiplier(source_type, source_pool_id, monster_kind, is_dungeon_battle)
+    } else {
+        1.0
+    };
+    let min_after_common = if common_multiplier <= 1.0 {
+        base_min
+    } else {
+        ((base_min as f64) * common_multiplier).floor().max(1.0) as i64
+    };
+    let max_after_common = if common_multiplier <= 1.0 {
+        base_max.max(min_after_common)
+    } else {
+        ((base_max as f64) * common_multiplier)
+            .floor()
+            .max(min_after_common as f64) as i64
+    };
+    let qty_multiply_by_realm =
+        as_drop_entry_f64(entry.qty_multiply_by_monster_realm.as_ref()).unwrap_or(1.0);
+    let realm_mult = effective_realm_quantity_multiplier(qty_multiply_by_realm, monster_realm);
+    let final_min = ((min_after_common as f64) * realm_mult).floor().max(1.0) as i64;
+    let final_max = ((max_after_common as f64) * realm_mult)
+        .floor()
+        .max(final_min as f64) as i64;
+    let _ = dungeon_reward_multiplier;
+    (final_min, final_max)
+}
+
+fn should_apply_drop_quantity_multiplier(item_def: Option<&BattleRewardItemMeta>) -> bool {
+    let Some(item_def) = item_def else {
+        return true;
+    };
+    let category = item_def
+        .category
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let sub_category = item_def
+        .sub_category
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let has_learn_technique = item_def
+        .effect_defs
+        .as_ref()
+        .and_then(|value| value.as_array())
+        .map(|effects| {
+            effects.iter().any(|effect| {
+                effect.get("effect_type").and_then(|value| value.as_str())
+                    == Some("learn_technique")
+            })
+        })
+        .unwrap_or(false);
+    category != "equipment"
+        && sub_category != "technique"
+        && sub_category != "technique_book"
+        && !has_learn_technique
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BattleMonsterKind {
+    Normal,
+    Elite,
+    Boss,
+}
+
+fn normalize_monster_kind(raw: Option<&str>) -> BattleMonsterKind {
+    match raw.unwrap_or_default().trim().to_lowercase().as_str() {
+        "elite" => BattleMonsterKind::Elite,
+        "boss" => BattleMonsterKind::Boss,
+        _ => BattleMonsterKind::Normal,
+    }
+}
+
+fn adjusted_chance(
+    chance: f64,
+    source_type: BattleDropSourceType,
+    source_pool_id: &str,
+    monster_kind: BattleMonsterKind,
+    monster_realm: Option<&str>,
+    chance_add_by_monster_realm: f64,
+    is_dungeon_battle: bool,
+    dungeon_reward_multiplier: Option<f64>,
+) -> f64 {
+    if chance <= 0.0 {
+        return 0.0;
+    }
+    let multiplied = chance
+        * common_pool_multiplier(source_type, source_pool_id, monster_kind, is_dungeon_battle);
+    let realm_bonus =
+        get_realm_rank_zero_based(monster_realm) as f64 * chance_add_by_monster_realm.max(0.0);
+    ((multiplied + realm_bonus)
+        * dungeon_reward_rate_multiplier(
+            source_pool_id,
+            is_dungeon_battle,
+            dungeon_reward_multiplier,
+        ))
+    .clamp(0.0, 1.0)
+}
+
+fn adjusted_weight(
+    weight: f64,
+    source_type: BattleDropSourceType,
+    source_pool_id: &str,
+    monster_kind: BattleMonsterKind,
+    is_dungeon_battle: bool,
+    dungeon_reward_multiplier: Option<f64>,
+) -> f64 {
+    if weight <= 0.0 {
+        return 0.0;
+    }
+    weight
+        * common_pool_multiplier(source_type, source_pool_id, monster_kind, is_dungeon_battle)
+        * dungeon_reward_rate_multiplier(
+            source_pool_id,
+            is_dungeon_battle,
+            dungeon_reward_multiplier,
+        )
+}
+
+fn common_pool_multiplier(
+    source_type: BattleDropSourceType,
+    source_pool_id: &str,
+    monster_kind: BattleMonsterKind,
+    is_dungeon_battle: bool,
+) -> f64 {
+    if source_type != BattleDropSourceType::Common {
+        return 1.0;
+    }
+    if matches!(
+        source_pool_id,
+        "dp-common-monster-elite"
+            | "dp-common-monster-boss"
+            | "dp-common-dungeon-boss-unbind"
+            | "dp-common-dungeon-boss-advanced-recruit-token"
+    ) {
+        return 1.0;
+    }
+    match (monster_kind, is_dungeon_battle) {
+        (BattleMonsterKind::Normal, false) => 1.0,
+        (BattleMonsterKind::Normal, true) => 2.0,
+        (BattleMonsterKind::Elite, false) => 2.0,
+        (BattleMonsterKind::Elite, true) => 4.0,
+        (BattleMonsterKind::Boss, false) => 4.0,
+        (BattleMonsterKind::Boss, true) => 6.0,
+    }
+}
+
+fn dungeon_reward_rate_multiplier(
+    source_pool_id: &str,
+    is_dungeon_battle: bool,
+    dungeon_reward_multiplier: Option<f64>,
+) -> f64 {
+    if !is_dungeon_battle || excluded_pool_for_dungeon_reward_multiplier(source_pool_id) {
+        return 1.0;
+    }
+    dungeon_reward_multiplier.unwrap_or(1.0).max(0.0)
+}
+
+fn excluded_pool_for_dungeon_reward_multiplier(source_pool_id: &str) -> bool {
+    matches!(
+        source_pool_id,
+        "dp-common-dungeon-boss-unbind" | "dp-common-dungeon-boss-advanced-recruit-token"
+    )
+}
+
+fn effective_realm_quantity_multiplier(multiplier: f64, monster_realm: Option<&str>) -> f64 {
+    if multiplier <= 0.0 || (multiplier - 1.0).abs() < f64::EPSILON {
+        return 1.0;
+    }
+    if multiplier < 1.0 {
+        return multiplier.max(0.0);
+    }
+    let realm_rank = get_realm_rank_one_based_strict(monster_realm) as f64;
+    1.0 + (multiplier - 1.0) * realm_rank
+}
+
+fn realm_suppression_multiplier(player_realm: Option<&str>, monster_realm: Option<&str>) -> f64 {
+    let player_rank = get_realm_order_index(player_realm);
+    let monster_rank = get_realm_order_index(monster_realm);
+    if player_rank < 0 || monster_rank < 0 {
+        return 1.0;
+    }
+    let extra_levels = player_rank - (monster_rank + 1);
+    if extra_levels <= 0 {
+        1.0
+    } else {
+        0.5_f64.powi(extra_levels as i32)
+    }
+}
+
+fn normalized_entry_item_def_id(entry: &BattleDropPoolEntrySeed) -> Option<String> {
+    entry
+        .item_def_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+}
+
+fn normalize_quality_weights(value: Option<&serde_json::Value>) -> Option<BTreeMap<String, f64>> {
+    let object = value.and_then(|value| value.as_object())?;
+    let mut weights = BTreeMap::new();
+    for (key, raw) in object {
+        let Some(weight) = as_drop_entry_f64(Some(raw)) else {
+            continue;
+        };
+        if weight > 0.0 {
+            weights.insert(key.clone(), weight);
+        }
+    }
+    (!weights.is_empty()).then_some(weights)
+}
+
+fn stable_quality_weights_key(weights: Option<&BTreeMap<String, f64>>) -> String {
+    weights
+        .map(|weights| {
+            weights
+                .iter()
+                .map(|(key, value)| format!("{key}:{value:.6}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
+}
+
+fn seed_u64(seed: &str) -> u64 {
+    let digest = md5::compute(seed.as_bytes());
+    u64::from_be_bytes([
+        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+    ])
+}
+
+fn get_realm_order_index(realm: Option<&str>) -> i64 {
+    REALM_ORDER
+        .iter()
+        .position(|value| *value == realm.unwrap_or_default().trim())
+        .map(|index| index as i64)
+        .unwrap_or(-1)
+}
+
+fn get_realm_rank_zero_based(realm: Option<&str>) -> i64 {
+    let index = get_realm_order_index(realm);
+    if index >= 0 { index } else { 0 }
+}
+
+fn get_realm_rank_one_based_strict(realm: Option<&str>) -> i64 {
+    let index = get_realm_order_index(realm);
+    if index >= 0 { index + 1 } else { 1 }
+}
+
+const REALM_ORDER: &[&str] = &[
+    "凡人",
+    "炼精化炁·养气期",
+    "炼精化炁·通脉期",
+    "炼精化炁·凝炁期",
+    "炼炁化神·炼己期",
+    "炼炁化神·采药期",
+    "炼炁化神·结胎期",
+    "炼神返虚·养神期",
+    "炼神返虚·还虚期",
+    "炼神返虚·合道期",
+    "炼虚合道·证道期",
+    "炼虚合道·历劫期",
+    "炼虚合道·成圣期",
+];
 
 fn load_monster_seed(monster_def_id: &str) -> Result<MonsterSeed, String> {
     let path =
@@ -1325,6 +1889,11 @@ fn load_battle_reward_item_map() -> Result<BTreeMap<String, BattleRewardItemMeta
                     id: item.id,
                     name: item.name,
                     bind_type: item.bind_type,
+                    category: item.category,
+                    sub_category: item.sub_category,
+                    effect_defs: item.effect_defs,
+                    quality: item.quality,
+                    can_disassemble: item.can_disassemble,
                 },
             );
         }
@@ -1360,65 +1929,85 @@ fn load_battle_drop_pool_map() -> Result<BTreeMap<String, BattleDropPoolSeed>, S
     Ok(map)
 }
 
-fn resolve_battle_drop_pool_entries(
+fn resolve_battle_drop_pool(
     pools: &BTreeMap<String, BattleDropPoolSeed>,
     pool_id: &str,
-) -> Result<Vec<BattleDropPoolEntrySeed>, String> {
-    let mut visited = BTreeSet::new();
-    let mut out = Vec::new();
-    collect_battle_drop_pool_entries(pools, pool_id, &mut visited, &mut out)?;
-    Ok(out)
-}
-
-fn collect_battle_drop_pool_entries(
-    pools: &BTreeMap<String, BattleDropPoolSeed>,
-    pool_id: &str,
-    visited: &mut BTreeSet<String>,
-    out: &mut Vec<BattleDropPoolEntrySeed>,
-) -> Result<(), String> {
+) -> Result<ResolvedBattleDropPoolSeed, String> {
     let normalized = pool_id.trim();
-    if normalized.is_empty() || !visited.insert(normalized.to_string()) {
-        return Ok(());
+    if normalized.is_empty() {
+        return Ok(ResolvedBattleDropPoolSeed {
+            mode: "prob".to_string(),
+            entries: Vec::new(),
+        });
     }
     let Some(pool) = pools.get(normalized) else {
-        return Ok(());
+        return Ok(ResolvedBattleDropPoolSeed {
+            mode: "prob".to_string(),
+            entries: Vec::new(),
+        });
     };
-    if pool.mode.as_deref().map(str::trim) != Some("prob") {
-        return Ok(());
+    let mut merged = BTreeMap::<String, ResolvedBattleDropEntrySeed>::new();
+    for common_pool_id in normalize_common_pool_ids(pool.common_pool_ids.as_ref()) {
+        let Some(common_pool) = pools.get(common_pool_id.as_str()) else {
+            continue;
+        };
+        for entry in common_pool.entries.clone().unwrap_or_default() {
+            let Some(item_def_id) = normalized_entry_item_def_id(&entry) else {
+                continue;
+            };
+            merged.insert(
+                item_def_id,
+                ResolvedBattleDropEntrySeed {
+                    entry,
+                    source_type: BattleDropSourceType::Common,
+                    source_pool_id: common_pool_id.clone(),
+                },
+            );
+        }
     }
-    for common_pool_id in pool.common_pool_ids.clone().unwrap_or_default() {
-        collect_battle_drop_pool_entries(pools, &common_pool_id, visited, out)?;
+    for entry in pool.entries.clone().unwrap_or_default() {
+        let Some(item_def_id) = normalized_entry_item_def_id(&entry) else {
+            continue;
+        };
+        merged.insert(
+            item_def_id,
+            ResolvedBattleDropEntrySeed {
+                entry,
+                source_type: BattleDropSourceType::Exclusive,
+                source_pool_id: normalized.to_string(),
+            },
+        );
     }
-    out.extend(pool.entries.clone().unwrap_or_default().into_iter());
-    Ok(())
+    let mut entries = merged.into_values().collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        let left_order = as_drop_entry_i64(left.entry.sort_order.as_ref(), 0);
+        let right_order = as_drop_entry_i64(right.entry.sort_order.as_ref(), 0);
+        left_order.cmp(&right_order).then_with(|| {
+            normalized_entry_item_def_id(&left.entry)
+                .unwrap_or_default()
+                .cmp(&normalized_entry_item_def_id(&right.entry).unwrap_or_default())
+        })
+    });
+    Ok(ResolvedBattleDropPoolSeed {
+        mode: if pool.mode.as_deref().map(str::trim) == Some("weight") {
+            "weight".to_string()
+        } else {
+            "prob".to_string()
+        },
+        entries,
+    })
 }
 
-fn deterministic_reward_roll_unit_interval(
-    monster_id: &str,
-    monster_index: i64,
-    entry_index: i64,
-    item_def_id: &str,
-) -> f64 {
-    let seed = format!("battle-reward:{monster_id}:{monster_index}:{entry_index}:{item_def_id}");
-    let digest = md5::compute(seed.as_bytes());
-    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
-    (value as f64) / (u32::MAX as f64)
-}
-
-fn deterministic_reward_roll_i64(
-    monster_id: &str,
-    monster_index: i64,
-    entry_index: i64,
-    min: i64,
-    max: i64,
-) -> i64 {
-    if max <= min {
-        return min;
-    }
-    let seed = format!("battle-reward-qty:{monster_id}:{monster_index}:{entry_index}:{min}:{max}");
-    let digest = md5::compute(seed.as_bytes());
-    let value = u32::from_be_bytes([digest[4], digest[5], digest[6], digest[7]]) as i64;
-    min + value.rem_euclid(max - min + 1)
+fn normalize_common_pool_ids(value: Option<&Vec<String>>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    value
+        .into_iter()
+        .flatten()
+        .filter_map(|raw| {
+            let id = raw.trim();
+            (!id.is_empty() && seen.insert(id.to_string())).then(|| id.to_string())
+        })
+        .collect()
 }
 
 fn as_drop_entry_f64(value: Option<&serde_json::Value>) -> Option<f64> {
@@ -1429,21 +2018,23 @@ fn as_drop_entry_f64(value: Option<&serde_json::Value>) -> Option<f64> {
     }
 }
 
-fn as_drop_entry_i64(value: Option<&serde_json::Value>, fallback: i64) -> i64 {
+fn as_drop_entry_i64(value: Option<&serde_json::Value>, default_value: i64) -> i64 {
     match value {
-        Some(serde_json::Value::Number(number)) => number.as_i64().unwrap_or(fallback),
-        Some(serde_json::Value::String(text)) => text.trim().parse::<i64>().unwrap_or(fallback),
-        _ => fallback,
+        Some(serde_json::Value::Number(number)) => number.as_i64().unwrap_or(default_value),
+        Some(serde_json::Value::String(text)) => {
+            text.trim().parse::<i64>().unwrap_or(default_value)
+        }
+        _ => default_value,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        BattleCharacterUnitProfile, BattleUnitCurrentAttrsDto,
-        apply_character_profile_to_battle_state, apply_minimal_pve_action,
-        apply_minimal_pvp_action, build_minimal_pve_battle_state, build_minimal_pvp_battle_state,
-        build_skill_value, resolve_minimal_pve_item_rewards,
+        BattleCharacterUnitProfile, BattleUnitCurrentAttrsDto, MinimalBattleRewardParticipant,
+        MinimalPveItemRewardResolveOptions, apply_character_profile_to_battle_state,
+        apply_minimal_pve_action, apply_minimal_pvp_action, build_minimal_pve_battle_state,
+        build_minimal_pvp_battle_state, build_skill_value, resolve_minimal_pve_item_rewards,
     };
 
     #[test]
@@ -1731,8 +2322,21 @@ mod tests {
 
     #[test]
     fn minimal_pve_reward_items_include_guaranteed_boar_drop() {
-        let rewards = resolve_minimal_pve_item_rewards(&["monster-wild-boar".to_string()])
-            .expect("boar rewards should resolve");
+        let rewards = resolve_minimal_pve_item_rewards(
+            &["monster-wild-boar".to_string()],
+            &MinimalPveItemRewardResolveOptions {
+                reward_seed: "test-boar-reward".to_string(),
+                participants: vec![MinimalBattleRewardParticipant {
+                    character_id: 11,
+                    user_id: 22,
+                    fuyuan: 0.0,
+                    realm: Some("凡人".to_string()),
+                }],
+                is_dungeon_battle: false,
+                dungeon_reward_multiplier: None,
+            },
+        )
+        .expect("boar rewards should resolve");
         assert!(
             rewards
                 .iter()
