@@ -1535,23 +1535,28 @@ fn complete_unit_action_and_advance(
     }
 }
 
-fn resolve_alive_target_or_first_available(
-    state: &BattleStateDto,
-    team: &str,
-    target_ids: &[String],
-) -> Option<String> {
-    if let Some(target_id) = target_ids.first() {
-        if team_units(state, team)
-            .iter()
-            .any(|unit| unit.id == *target_id && unit.is_alive)
-        {
-            return Some(target_id.clone());
-        }
-    }
+fn first_alive_unit_id(state: &BattleStateDto, team: &str) -> Option<String> {
     team_units(state, team)
         .iter()
         .find(|unit| unit.is_alive)
         .map(|unit| unit.id.clone())
+}
+
+fn resolve_selected_alive_target(
+    state: &BattleStateDto,
+    team: &str,
+    target_ids: &[String],
+) -> Result<Option<String>, String> {
+    let Some(target_id) = target_ids.first() else {
+        return Ok(None);
+    };
+    if team_units(state, team)
+        .iter()
+        .any(|unit| unit.id == *target_id && unit.is_alive)
+    {
+        return Ok(Some(target_id.clone()));
+    }
+    Err("目标不存在或已死亡".to_string())
 }
 
 fn unit_by_id<'a>(state: &'a BattleStateDto, unit_id: &str) -> Option<&'a BattleUnitDto> {
@@ -1640,9 +1645,10 @@ fn resolve_runtime_skill_targets(
 
     let targets = match target_type {
         "self" => vec![actor_id.to_string()],
-        "single_ally" => resolve_alive_target_or_first_available(state, ally_team, selected_target_ids)
-            .map(|id| vec![id])
-            .unwrap_or_default(),
+        "single_ally" => match resolve_selected_alive_target(state, ally_team, selected_target_ids)? {
+            Some(target_id) => vec![target_id],
+            None => first_alive_unit_id(state, ally_team).map(|id| vec![id]).unwrap_or_default(),
+        },
         "all_ally" => team_units(state, ally_team)
             .iter()
             .filter(|unit| unit.is_alive)
@@ -1653,9 +1659,11 @@ fn resolve_runtime_skill_targets(
             .filter(|unit| unit.is_alive)
             .map(|unit| unit.id.clone())
             .collect::<Vec<_>>(),
-        _ => resolve_alive_target_or_first_available(state, enemy_team, selected_target_ids)
-            .map(|id| vec![id])
-            .unwrap_or_default(),
+        "single_enemy" | "random_enemy" => match resolve_selected_alive_target(state, enemy_team, selected_target_ids)? {
+            Some(target_id) => vec![target_id],
+            None => first_alive_unit_id(state, enemy_team).map(|id| vec![id]).unwrap_or_default(),
+        },
+        _ => return Err(format!("不支持的目标类型: {target_type}")),
     };
     if targets.is_empty() {
         return Err("没有可攻击目标".to_string());
@@ -1775,19 +1783,22 @@ fn resolve_effect_target_ids(
     let ally_team = actor_team;
     let effect_type = effect.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
     let mode = effect_target_mode(effect, skill_target_type, effect_type);
-    let ids = match mode {
+    let resolved = match mode {
         "self" => vec![actor_id.to_string()],
-        "ally" => resolve_alive_target_or_first_available(state, ally_team, selected_target_ids)
-            .map(|id| vec![id])
-            .unwrap_or_default(),
-        "enemy" => resolve_alive_target_or_first_available(state, enemy_team, selected_target_ids)
-            .map(|id| vec![id])
-            .unwrap_or_default(),
+        "ally" => match resolve_selected_alive_target(state, ally_team, selected_target_ids)? {
+            Some(target_id) => vec![target_id],
+            None => first_alive_unit_id(state, ally_team).map(|id| vec![id]).unwrap_or_default(),
+        },
+        "enemy" => match resolve_selected_alive_target(state, enemy_team, selected_target_ids)? {
+            Some(target_id) => vec![target_id],
+            None => first_alive_unit_id(state, enemy_team).map(|id| vec![id]).unwrap_or_default(),
+        },
         _ => match skill_target_type {
             "self" => vec![actor_id.to_string()],
-            "single_ally" => resolve_alive_target_or_first_available(state, ally_team, selected_target_ids)
-                .map(|id| vec![id])
-                .unwrap_or_default(),
+            "single_ally" => match resolve_selected_alive_target(state, ally_team, selected_target_ids)? {
+                Some(target_id) => vec![target_id],
+                None => first_alive_unit_id(state, ally_team).map(|id| vec![id]).unwrap_or_default(),
+            },
             "all_ally" => team_units(state, ally_team)
                 .iter()
                 .filter(|unit| unit.is_alive)
@@ -1798,15 +1809,17 @@ fn resolve_effect_target_ids(
                 .filter(|unit| unit.is_alive)
                 .map(|unit| unit.id.clone())
                 .collect::<Vec<_>>(),
-            _ => resolve_alive_target_or_first_available(state, enemy_team, selected_target_ids)
-                .map(|id| vec![id])
-                .unwrap_or_default(),
+            "single_enemy" | "random_enemy" => match resolve_selected_alive_target(state, enemy_team, selected_target_ids)? {
+                Some(target_id) => vec![target_id],
+                None => first_alive_unit_id(state, enemy_team).map(|id| vec![id]).unwrap_or_default(),
+            },
+            _ => return Err(format!("不支持的目标类型: {skill_target_type}")),
         },
     };
-    if ids.is_empty() {
+    if resolved.is_empty() {
         return Err("没有有效目标".to_string());
     }
-    Ok(ids)
+    Ok(resolved)
 }
 
 fn get_or_create_target_log<'a>(
@@ -4234,6 +4247,28 @@ mod tests {
         .expect_err("action should fail");
 
         assert_eq!(error, "当前不是我方行动回合");
+    }
+
+    #[test]
+    fn minimal_pve_action_rejects_stale_selected_target() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &[
+                "monster-gray-wolf".to_string(),
+                "monster-white-wolf".to_string(),
+            ],
+        );
+
+        let error = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-does-not-exist".to_string()],
+        )
+        .expect_err("stale target should be rejected");
+
+        assert_eq!(error, "目标不存在或已死亡");
     }
 
     #[test]
