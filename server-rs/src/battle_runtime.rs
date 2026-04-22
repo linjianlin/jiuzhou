@@ -82,10 +82,14 @@ pub struct BattleUnitDto {
     pub momentum: Option<serde_json::Value>,
     pub set_bonus_effects: Vec<serde_json::Value>,
     pub skills: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggered_phase_ids: Vec<String>,
     pub skill_cooldowns: BTreeMap<String, i64>,
     pub skill_cooldown_discount_bank: BTreeMap<String, i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partner_skill_policy: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_profile: Option<serde_json::Value>,
     pub control_diminishing: BTreeMap<String, serde_json::Value>,
     pub stats: BattleUnitStatsDto,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,9 +254,11 @@ struct MonsterSeed {
     enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct MonsterAiProfileSeed {
     skills: Option<Vec<String>>,
+    #[serde(rename = "phaseTriggers")]
+    phase_triggers: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -566,6 +572,15 @@ fn resolve_monster_battle_skills(seed: &MonsterSeed) -> Vec<serde_json::Value> {
     skills
 }
 
+fn resolve_monster_ai_profile_value(seed: &MonsterSeed) -> Option<serde_json::Value> {
+    seed.ai_profile.as_ref().map(|profile| {
+        serde_json::json!({
+            "skills": profile.skills.clone().unwrap_or_default(),
+            "phaseTriggers": profile.phase_triggers.clone().unwrap_or_default(),
+        })
+    })
+}
+
 fn empty_battle_stats() -> BattleUnitStatsDto {
     BattleUnitStatsDto {
         damage_dealt: 0,
@@ -729,9 +744,11 @@ pub fn build_minimal_pve_battle_state(
         momentum: None,
         set_bonus_effects: Vec::new(),
         skills: player_battle_skills(),
+        triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
         skill_cooldown_discount_bank: BTreeMap::new(),
         partner_skill_policy: None,
+        ai_profile: None,
         control_diminishing: BTreeMap::new(),
         stats: empty_battle_stats(),
         reward_exp: None,
@@ -781,9 +798,11 @@ pub fn build_minimal_pve_battle_state(
                 momentum: None,
                 set_bonus_effects: Vec::new(),
                 skills: resolve_monster_battle_skills(&seed),
+                triggered_phase_ids: Vec::new(),
                 skill_cooldowns: BTreeMap::new(),
                 skill_cooldown_discount_bank: BTreeMap::new(),
                 partner_skill_policy: None,
+                ai_profile: resolve_monster_ai_profile_value(&seed),
                 control_diminishing: BTreeMap::new(),
                 stats: empty_battle_stats(),
                 reward_exp: Some(
@@ -863,9 +882,11 @@ pub fn build_minimal_pvp_battle_state(
         momentum: None,
         set_bonus_effects: Vec::new(),
         skills: player_battle_skills(),
+        triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
         skill_cooldown_discount_bank: BTreeMap::new(),
         partner_skill_policy: None,
+        ai_profile: None,
         control_diminishing: BTreeMap::new(),
         stats: empty_battle_stats(),
         reward_exp: None,
@@ -893,9 +914,11 @@ pub fn build_minimal_pvp_battle_state(
         momentum: None,
         set_bonus_effects: Vec::new(),
         skills: player_battle_skills(),
+        triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
         skill_cooldown_discount_bank: BTreeMap::new(),
         partner_skill_policy: None,
+        ai_profile: None,
         control_diminishing: BTreeMap::new(),
         stats: empty_battle_stats(),
         reward_exp: None,
@@ -973,9 +996,11 @@ pub fn build_minimal_partner_battle_unit(
         momentum: None,
         set_bonus_effects: Vec::new(),
         skills,
+        triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
         skill_cooldown_discount_bank: BTreeMap::new(),
         partner_skill_policy: Some(skill_policy),
+        ai_profile: None,
         control_diminishing: BTreeMap::new(),
         stats: empty_battle_stats(),
         reward_exp: None,
@@ -1010,9 +1035,11 @@ pub fn build_minimal_character_battle_unit(
         momentum: None,
         set_bonus_effects: Vec::new(),
         skills,
+        triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
         skill_cooldown_discount_bank: BTreeMap::new(),
         partner_skill_policy: None,
+        ai_profile: None,
         control_diminishing: BTreeMap::new(),
         stats: empty_battle_stats(),
         reward_exp: None,
@@ -2537,6 +2564,110 @@ fn apply_runtime_buff_effect(
     Some(buff_key)
 }
 
+fn process_runtime_phase_triggers_before_action(
+    state: &mut BattleStateDto,
+    actor_id: &str,
+    logs: &mut Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let action_round = state.round_count.max(1);
+    let Some(unit) = unit_by_id_mut(state, actor_id) else {
+        return Err("当前不可行动".to_string());
+    };
+    if unit.r#type != "monster" && unit.r#type != "summon" {
+        return Ok(());
+    }
+    let Some(phase_triggers) = unit
+        .ai_profile
+        .as_ref()
+        .and_then(|profile| profile.get("phaseTriggers"))
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+    else {
+        return Ok(());
+    };
+    let max_qixue = unit.current_attrs.max_qixue.max(1) as f64;
+    let current_hp_percent = (unit.qixue.max(0) as f64) / max_qixue;
+    for trigger in phase_triggers {
+        let Some(trigger_id) = trigger
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if unit
+            .triggered_phase_ids
+            .iter()
+            .any(|value| value == trigger_id)
+        {
+            continue;
+        }
+        let Some(hp_percent) = trigger.get("hpPercent").and_then(serde_json::Value::as_f64) else {
+            continue;
+        };
+        let Some(action) = trigger
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if current_hp_percent > hp_percent {
+            continue;
+        }
+        if action != "enrage" {
+            continue;
+        }
+        let mut buffs_applied = Vec::new();
+        if let Some(effects) = trigger
+            .get("effects")
+            .and_then(serde_json::Value::as_array)
+        {
+            for effect in effects {
+                let Some(effect_type) = effect
+                    .get("type")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| matches!(*value, "buff" | "debuff"))
+                else {
+                    continue;
+                };
+                if let Some(buff_key) = apply_runtime_buff_effect(unit, actor_id, effect_type, effect)
+                {
+                    buffs_applied.push(buff_key);
+                }
+            }
+        }
+        unit.triggered_phase_ids.push(trigger_id.to_string());
+        let target_logs = vec![RuntimeResolvedTargetLog {
+            target_id: unit.id.clone(),
+            target_name: unit.name.clone(),
+            damage: 0,
+            heal: 0,
+            shield: 0,
+            buffs_applied,
+            is_miss: false,
+            is_crit: false,
+            is_parry: false,
+            is_element_bonus: false,
+            shield_absorbed: 0,
+            momentum_gained: Vec::new(),
+            momentum_consumed: Vec::new(),
+        }];
+        logs.push(build_runtime_action_log(
+            action_round,
+            unit.id.as_str(),
+            unit.name.as_str(),
+            &format!("proc-phase-enrage-{trigger_id}"),
+            "阶段触发·狂暴",
+            &target_logs,
+        ));
+    }
+    Ok(())
+}
+
 fn can_use_runtime_skill_now(state: &BattleStateDto, actor_id: &str, skill_id: &str) -> bool {
     let Some(config) = resolve_runtime_skill_config(state, actor_id, skill_id) else {
         return true;
@@ -2630,6 +2761,10 @@ fn execute_runtime_auto_turn(
     actor_id: &str,
     logs: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
+    process_runtime_phase_triggers_before_action(state, actor_id, logs)?;
+    if state.phase == "finished" {
+        return Ok(());
+    }
     let actor = unit_by_id(state, actor_id)
         .cloned()
         .ok_or_else(|| "当前不可行动".to_string())?;
@@ -4532,9 +4667,11 @@ mod tests {
             momentum: None,
             set_bonus_effects: Vec::new(),
             skills: vec![build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0)],
+            triggered_phase_ids: Vec::new(),
             skill_cooldowns: std::collections::BTreeMap::new(),
             skill_cooldown_discount_bank: std::collections::BTreeMap::new(),
             partner_skill_policy: None,
+            ai_profile: None,
             control_diminishing: std::collections::BTreeMap::new(),
             stats: super::BattleUnitStatsDto {
                 damage_dealt: 0,
@@ -5164,9 +5301,11 @@ mod tests {
             momentum: None,
             set_bonus_effects: Vec::new(),
             skills: vec![build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0)],
+            triggered_phase_ids: Vec::new(),
             skill_cooldowns: std::collections::BTreeMap::new(),
             skill_cooldown_discount_bank: std::collections::BTreeMap::new(),
             partner_skill_policy: None,
+            ai_profile: None,
             control_diminishing: std::collections::BTreeMap::new(),
             stats: super::BattleUnitStatsDto {
                 damage_dealt: 0,
@@ -5364,6 +5503,136 @@ mod tests {
         assert!(target.get("shield").is_none());
         assert!(target.get("buffsApplied").is_none());
         assert!(target.get("momentumConsumed").is_none());
+    }
+
+    #[test]
+    fn monster_phase_trigger_enrage_applies_buff_before_action() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        {
+            let defender = &mut state.teams.defender.units[0];
+            defender.qixue = 10;
+            defender.current_attrs.max_qixue = 180;
+            defender.current_attrs.wufang = 10000;
+            defender.ai_profile = Some(serde_json::json!({
+                "skills": ["skill-normal-attack"],
+                "phaseTriggers": [{
+                    "id": "low-hp-enrage",
+                    "hpPercent": 0.5,
+                    "action": "enrage",
+                    "effects": [{
+                        "type": "buff",
+                        "buffKind": "attr",
+                        "attrKey": "wugong",
+                        "applyType": "flat",
+                        "value": 5,
+                        "duration": 2
+                    }]
+                }]
+            }));
+        }
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        let phase_index = outcome
+            .logs
+            .iter()
+            .position(|log| log["skillId"] == "proc-phase-enrage-low-hp-enrage")
+            .expect("phase trigger log should exist");
+        let defender_action_index = outcome
+            .logs
+            .iter()
+            .position(|log| {
+                log["actorId"] == "monster-1-monster-gray-wolf"
+                    && log["skillId"] != "proc-phase-enrage-low-hp-enrage"
+            })
+            .expect("defender action should exist");
+
+        assert!(phase_index < defender_action_index);
+        assert_eq!(outcome.logs[phase_index]["skillName"], "阶段触发·狂暴");
+        assert_eq!(outcome.logs[phase_index]["targets"][0]["buffsApplied"], serde_json::json!(["buff-wugong"]));
+        assert!(state.teams.defender.units[0]
+            .triggered_phase_ids
+            .iter()
+            .any(|value| value == "low-hp-enrage"));
+        assert_eq!(
+            state.teams.defender.units[0].current_attrs.wugong,
+            state.teams.defender.units[0].base_attrs.wugong + 5
+        );
+    }
+
+    #[test]
+    fn monster_phase_trigger_enrage_logs_without_valid_effects() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        {
+            let defender = &mut state.teams.defender.units[0];
+            defender.qixue = 10;
+            defender.current_attrs.max_qixue = 180;
+            defender.current_attrs.wufang = 10000;
+            defender.ai_profile = Some(serde_json::json!({
+                "phaseTriggers": [{
+                    "id": "low-hp-empty-enrage",
+                    "hpPercent": 0.5,
+                    "action": "enrage",
+                    "effects": [{
+                        "type": "damage"
+                    }]
+                }]
+            }));
+        }
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        let phase_log = outcome
+            .logs
+            .iter()
+            .find(|log| log["skillId"] == "proc-phase-enrage-low-hp-empty-enrage")
+            .expect("phase trigger log should exist");
+
+        assert!(phase_log["targets"][0].get("buffsApplied").is_none());
+        assert!(state.teams.defender.units[0]
+            .triggered_phase_ids
+            .iter()
+            .any(|value| value == "low-hp-empty-enrage"));
+    }
+
+    #[test]
+    fn monster_ai_profile_value_uses_node_array_shape() {
+        let seed = super::MonsterSeed {
+            id: Some("monster-test".to_string()),
+            name: Some("测试怪".to_string()),
+            realm: None,
+            kind: None,
+            element: None,
+            level: None,
+            exp_reward: None,
+            silver_reward_min: None,
+            base_attrs: None,
+            ai_profile: Some(super::MonsterAiProfileSeed {
+                skills: None,
+                phase_triggers: None,
+            }),
+            drop_pool_id: None,
+            enabled: Some(true),
+        };
+
+        let profile = super::resolve_monster_ai_profile_value(&seed).expect("profile should exist");
+
+        assert_eq!(profile["skills"], serde_json::json!([]));
+        assert_eq!(profile["phaseTriggers"], serde_json::json!([]));
     }
 
     #[test]
