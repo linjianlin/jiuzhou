@@ -257,8 +257,17 @@ struct MonsterSeed {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct MonsterAiProfileSeed {
     skills: Option<Vec<String>>,
-    #[serde(rename = "phaseTriggers")]
+    #[serde(rename = "phaseTriggers", alias = "phase_triggers")]
     phase_triggers: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeSummonTemplate {
+    id: String,
+    name: String,
+    attrs: BattleUnitCurrentAttrsDto,
+    skills: Vec<serde_json::Value>,
+    ai_profile: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -425,6 +434,148 @@ fn build_battle_attrs(
     }
 }
 
+fn json_number_to_i64_round(value: Option<&serde_json::Value>) -> Option<i64> {
+    value.and_then(|raw| match raw {
+        serde_json::Value::Number(number) => number.as_f64().map(|v| v.round() as i64),
+        _ => None,
+    })
+}
+
+fn json_number_to_i64_floor(value: Option<&serde_json::Value>) -> Option<i64> {
+    value.and_then(|raw| match raw {
+        serde_json::Value::Number(number) => number.as_f64().map(|v| v.floor() as i64),
+        _ => None,
+    })
+}
+
+fn json_number_to_i64_round_or_zero(value: Option<&serde_json::Value>) -> i64 {
+    json_number_to_i64_round(value).unwrap_or_default()
+}
+
+fn battle_attrs_from_json(base_attrs: &serde_json::Value) -> Option<BattleUnitCurrentAttrsDto> {
+    let object = base_attrs.as_object()?;
+    let max_qixue = json_number_to_i64_round(object.get("max_qixue"))?;
+    let max_lingqi = json_number_to_i64_round(object.get("max_lingqi"))?;
+    let wugong = json_number_to_i64_round(object.get("wugong"))?;
+    let fagong = json_number_to_i64_round(object.get("fagong"))?;
+    let wufang = json_number_to_i64_round(object.get("wufang"))?;
+    let fafang = json_number_to_i64_round(object.get("fafang"))?;
+    let sudu = json_number_to_i64_round(object.get("sudu"))?;
+
+    Some(BattleUnitCurrentAttrsDto {
+        max_qixue: max_qixue.max(1),
+        max_lingqi: max_lingqi.max(0),
+        wugong: wugong.max(0),
+        fagong: fagong.max(0),
+        wufang: wufang.max(0),
+        fafang: fafang.max(0),
+        sudu: sudu.max(1),
+        mingzhong: json_number_to_i64_round_or_zero(object.get("mingzhong")).max(0),
+        shanbi: json_number_to_i64_round_or_zero(object.get("shanbi")).max(0),
+        zhaojia: json_number_to_i64_round_or_zero(object.get("zhaojia")).max(0),
+        baoji: json_number_to_i64_round_or_zero(object.get("baoji")).max(0),
+        baoshang: json_number_to_i64_round_or_zero(object.get("baoshang")).max(0),
+        jianbaoshang: json_number_to_i64_round_or_zero(object.get("jianbaoshang")).max(0),
+        jianfantan: json_number_to_i64_round_or_zero(object.get("jianfantan")).max(0),
+        kangbao: json_number_to_i64_round_or_zero(object.get("kangbao")).max(0),
+        zengshang: json_number_to_i64_round_or_zero(object.get("zengshang")).max(0),
+        zhiliao: json_number_to_i64_round_or_zero(object.get("zhiliao")).max(0),
+        jianliao: json_number_to_i64_round_or_zero(object.get("jianliao")).max(0),
+        xixue: json_number_to_i64_round_or_zero(object.get("xixue")).max(0),
+        lengque: json_number_to_i64_round_or_zero(object.get("lengque")).max(0),
+        kongzhi_kangxing: json_number_to_i64_round_or_zero(object.get("kongzhi_kangxing")).max(0),
+        jin_kangxing: json_number_to_i64_round_or_zero(object.get("jin_kangxing")).max(0),
+        mu_kangxing: json_number_to_i64_round_or_zero(object.get("mu_kangxing")).max(0),
+        shui_kangxing: json_number_to_i64_round_or_zero(object.get("shui_kangxing")).max(0),
+        huo_kangxing: json_number_to_i64_round_or_zero(object.get("huo_kangxing")).max(0),
+        tu_kangxing: json_number_to_i64_round_or_zero(object.get("tu_kangxing")).max(0),
+        qixue_huifu: json_number_to_i64_round_or_zero(object.get("qixue_huifu")).max(0),
+        lingqi_huifu: json_number_to_i64_round_or_zero(object.get("lingqi_huifu")).max(0),
+        realm: object
+            .get("realm")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value.to_string()),
+        element: object
+            .get("element")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value.to_string()),
+    })
+}
+
+fn runtime_summon_template_from_json(
+    summon_template: &serde_json::Value,
+) -> Option<RuntimeSummonTemplate> {
+    let object = summon_template.as_object()?;
+    let id = object
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let name = object
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let attrs = battle_attrs_from_json(object.get("baseAttrs")?)?;
+    let skills = object.get("skills").and_then(serde_json::Value::as_array)?.clone();
+    let ai_profile = match object.get("aiProfile") {
+        Some(value) if value.is_object() => Some(value.clone()),
+        _ => None,
+    };
+
+    Some(RuntimeSummonTemplate {
+        id,
+        name,
+        attrs,
+        skills,
+        ai_profile,
+    })
+}
+
+fn build_runtime_summon_unit(
+    template: &RuntimeSummonTemplate,
+    actor_id: &str,
+    action_round: i64,
+    summon_sequence: i64,
+) -> BattleUnitDto {
+    BattleUnitDto {
+        id: format!(
+            "summon-{}-{}-{}-{}",
+            template.id, actor_id, action_round, summon_sequence
+        ),
+        name: template.name.clone(),
+        r#type: "summon".to_string(),
+        source_id: serde_json::json!(template.id),
+        base_attrs: template.attrs.clone(),
+        formation_order: None,
+        owner_unit_id: Some(actor_id.to_string()),
+        month_card_active: None,
+        avatar: None,
+        qixue: template.attrs.max_qixue.max(1),
+        lingqi: template.attrs.max_lingqi.max(0),
+        current_attrs: template.attrs.clone(),
+        shields: Vec::new(),
+        is_alive: true,
+        can_act: false,
+        buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        skills: template.skills.clone(),
+        triggered_phase_ids: Vec::new(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        ai_profile: template.ai_profile.clone(),
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
+        reward_exp: None,
+        reward_silver: None,
+    }
+}
+
 fn value_to_i64(raw: Option<serde_json::Value>, fallback: i64) -> i64 {
     match raw {
         Some(serde_json::Value::Number(number)) => {
@@ -573,12 +724,152 @@ fn resolve_monster_battle_skills(seed: &MonsterSeed) -> Vec<serde_json::Value> {
 }
 
 fn resolve_monster_ai_profile_value(seed: &MonsterSeed) -> Option<serde_json::Value> {
+    let mut resolving = BTreeSet::new();
+    resolve_monster_ai_profile_value_with_seen(seed, &mut resolving)
+}
+
+fn resolve_monster_ai_profile_value_with_seen(
+    seed: &MonsterSeed,
+    resolving: &mut BTreeSet<String>,
+) -> Option<serde_json::Value> {
     seed.ai_profile.as_ref().map(|profile| {
+        let seed_id = seed
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let inserted = seed_id
+            .as_ref()
+            .map(|id| resolving.insert(id.clone()))
+            .unwrap_or(false);
+        let phase_triggers = if seed_id.is_some() && !inserted {
+            Vec::new()
+        } else {
+            resolve_monster_phase_triggers_value(seed, profile, resolving)
+        };
+        if inserted {
+            if let Some(id) = seed_id.as_ref() {
+                resolving.remove(id);
+            }
+        }
         serde_json::json!({
             "skills": profile.skills.clone().unwrap_or_default(),
-            "phaseTriggers": profile.phase_triggers.clone().unwrap_or_default(),
+            "phaseTriggers": phase_triggers,
         })
     })
+}
+
+fn resolve_monster_phase_triggers_value(
+    seed: &MonsterSeed,
+    profile: &MonsterAiProfileSeed,
+    resolving: &mut BTreeSet<String>,
+) -> Vec<serde_json::Value> {
+    let Some(raw_triggers) = profile.phase_triggers.as_ref() else {
+        return Vec::new();
+    };
+    let Some(monster_id) = seed
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Vec::new();
+    };
+    let mut triggers = Vec::new();
+    for (index, trigger) in raw_triggers.iter().enumerate() {
+        let trigger_id = trigger
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{monster_id}-phase-{}", index + 1));
+        let Some(hp_percent) = trigger
+            .get("hpPercent")
+            .or_else(|| trigger.get("hp_percent"))
+            .and_then(serde_json::Value::as_f64)
+            .filter(|value| *value > 0.0 && *value <= 1.0)
+        else {
+            continue;
+        };
+        let Some(action) = trigger
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if action == "enrage" {
+            let effects = trigger
+                .get("effects")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            triggers.push(serde_json::json!({
+                "id": trigger_id,
+                "hpPercent": hp_percent,
+                "action": "enrage",
+                "effects": effects,
+            }));
+            continue;
+        }
+        if action != "summon" {
+            continue;
+        }
+        let Some(summon_id) = trigger
+            .get("summonMonsterId")
+            .or_else(|| trigger.get("summon_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let Some(summon_count) = trigger
+            .get("summonCount")
+            .or_else(|| trigger.get("summon_count"))
+            .and_then(|value| json_number_to_i64_floor(Some(value)))
+            .filter(|value| *value >= 1)
+        else {
+            continue;
+        };
+        let Ok(summon_seed) = load_monster_seed(summon_id) else {
+            continue;
+        };
+        let Some(template_name) = summon_seed
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let attrs = build_monster_battle_attrs(&summon_seed);
+        let skills = resolve_monster_battle_skills(&summon_seed);
+        let mut summon_template = serde_json::json!({
+            "id": summon_id,
+            "name": template_name,
+            "baseAttrs": attrs,
+            "skills": skills,
+        });
+        if let Some(ai_profile) = resolve_monster_ai_profile_value_with_seen(&summon_seed, resolving) {
+            if let Some(object) = summon_template.as_object_mut() {
+                object.insert("aiProfile".to_string(), ai_profile);
+            }
+        }
+        triggers.push(serde_json::json!({
+            "id": trigger_id,
+            "hpPercent": hp_percent,
+            "action": "summon",
+            "effects": [],
+            "summonMonsterId": summon_id,
+            "summonCount": summon_count,
+            "summonTemplate": summon_template,
+        }));
+    }
+    triggers
 }
 
 fn empty_battle_stats() -> BattleUnitStatsDto {
@@ -1610,6 +1901,16 @@ fn unit_by_id_mut<'a>(state: &'a mut BattleStateDto, unit_id: &str) -> Option<&'
         .find(|unit| unit.id == unit_id)
 }
 
+fn unit_team_key(state: &BattleStateDto, unit_id: &str) -> Option<&'static str> {
+    if state.teams.attacker.units.iter().any(|unit| unit.id == unit_id) {
+        Some("attacker")
+    } else if state.teams.defender.units.iter().any(|unit| unit.id == unit_id) {
+        Some("defender")
+    } else {
+        None
+    }
+}
+
 fn runtime_skill_value<'a>(unit: &'a BattleUnitDto, skill_id: &str) -> Option<&'a serde_json::Value> {
     unit.skills.iter().find(|skill| {
         skill.get("id").and_then(serde_json::Value::as_str) == Some(skill_id.trim())
@@ -2570,7 +2871,7 @@ fn process_runtime_phase_triggers_before_action(
     logs: &mut Vec<serde_json::Value>,
 ) -> Result<(), String> {
     let action_round = state.round_count.max(1);
-    let Some(unit) = unit_by_id_mut(state, actor_id) else {
+    let Some(unit) = unit_by_id(state, actor_id).cloned() else {
         return Err("当前不可行动".to_string());
     };
     if unit.r#type != "monster" && unit.r#type != "summon" {
@@ -2596,10 +2897,14 @@ fn process_runtime_phase_triggers_before_action(
         else {
             continue;
         };
-        if unit
-            .triggered_phase_ids
-            .iter()
-            .any(|value| value == trigger_id)
+        if unit_by_id(state, actor_id)
+            .map(|actor_unit| {
+                actor_unit
+                    .triggered_phase_ids
+                    .iter()
+                    .any(|value| value == trigger_id)
+            })
+            .unwrap_or(true)
         {
             continue;
         }
@@ -2617,51 +2922,122 @@ fn process_runtime_phase_triggers_before_action(
         if current_hp_percent > hp_percent {
             continue;
         }
-        if action != "enrage" {
-            continue;
-        }
-        let mut buffs_applied = Vec::new();
-        if let Some(effects) = trigger
-            .get("effects")
-            .and_then(serde_json::Value::as_array)
-        {
-            for effect in effects {
-                let Some(effect_type) = effect
-                    .get("type")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| matches!(*value, "buff" | "debuff"))
-                else {
-                    continue;
-                };
-                if let Some(buff_key) = apply_runtime_buff_effect(unit, actor_id, effect_type, effect)
-                {
-                    buffs_applied.push(buff_key);
+        if action == "enrage" {
+            let mut buffs_applied = Vec::new();
+            if let Some(effects) = trigger
+                .get("effects")
+                .and_then(serde_json::Value::as_array)
+            {
+                for effect in effects {
+                    let Some(effect_type) = effect
+                        .get("type")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| matches!(*value, "buff" | "debuff"))
+                    else {
+                        continue;
+                    };
+                    if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                        if let Some(buff_key) =
+                            apply_runtime_buff_effect(actor_unit, actor_id, effect_type, effect)
+                        {
+                            buffs_applied.push(buff_key);
+                        }
+                    }
                 }
             }
+            if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                actor_unit.triggered_phase_ids.push(trigger_id.to_string());
+                let target_logs = vec![RuntimeResolvedTargetLog {
+                    target_id: actor_unit.id.clone(),
+                    target_name: actor_unit.name.clone(),
+                    damage: 0,
+                    heal: 0,
+                    shield: 0,
+                    buffs_applied,
+                    is_miss: false,
+                    is_crit: false,
+                    is_parry: false,
+                    is_element_bonus: false,
+                    shield_absorbed: 0,
+                    momentum_gained: Vec::new(),
+                    momentum_consumed: Vec::new(),
+                }];
+                logs.push(build_runtime_action_log(
+                    action_round,
+                    actor_unit.id.as_str(),
+                    actor_unit.name.as_str(),
+                    &format!("proc-phase-enrage-{trigger_id}"),
+                    "阶段触发·狂暴",
+                    &target_logs,
+                ));
+            }
+            continue;
         }
-        unit.triggered_phase_ids.push(trigger_id.to_string());
-        let target_logs = vec![RuntimeResolvedTargetLog {
-            target_id: unit.id.clone(),
-            target_name: unit.name.clone(),
-            damage: 0,
-            heal: 0,
-            shield: 0,
-            buffs_applied,
-            is_miss: false,
-            is_crit: false,
-            is_parry: false,
-            is_element_bonus: false,
-            shield_absorbed: 0,
-            momentum_gained: Vec::new(),
-            momentum_consumed: Vec::new(),
-        }];
+        if action != "summon" {
+            continue;
+        }
+        let Some(summon_count) = trigger
+            .get("summonCount")
+            .and_then(|value| json_number_to_i64_floor(Some(value)))
+            .filter(|value| *value >= 1)
+        else {
+            continue;
+        };
+        let Some(summon_template) = trigger.get("summonTemplate") else {
+            continue;
+        };
+        let Some(template) = runtime_summon_template_from_json(summon_template) else {
+            continue;
+        };
+        let Some(actor_team_key) = unit_team_key(state, actor_id) else {
+            return Err("当前不可行动".to_string());
+        };
+        let mut target_logs = Vec::new();
+        {
+            let team_units = team_units_mut(state, actor_team_key);
+            let Some(actor_index) = team_units.iter().position(|team_unit| team_unit.id == actor_id)
+            else {
+                return Err("当前不可行动".to_string());
+            };
+            let existing_summon_count = team_units
+                .iter()
+                .filter(|team_unit| team_unit.r#type == "summon")
+                .count() as i64;
+            let mut summoned_units = Vec::new();
+            for summon_offset in 1..=summon_count {
+                let summon_sequence = existing_summon_count + summon_offset;
+                let summon_unit =
+                    build_runtime_summon_unit(&template, actor_id, action_round, summon_sequence);
+                target_logs.push(RuntimeResolvedTargetLog {
+                    target_id: summon_unit.id.clone(),
+                    target_name: summon_unit.name.clone(),
+                    damage: 0,
+                    heal: 0,
+                    shield: 0,
+                    buffs_applied: Vec::new(),
+                    is_miss: false,
+                    is_crit: false,
+                    is_parry: false,
+                    is_element_bonus: false,
+                    shield_absorbed: 0,
+                    momentum_gained: Vec::new(),
+                    momentum_consumed: Vec::new(),
+                });
+                summoned_units.push(summon_unit);
+            }
+            team_units[actor_index]
+                .triggered_phase_ids
+                .push(trigger_id.to_string());
+            team_units.extend(summoned_units);
+        }
+        refresh_battle_team_total_speed(state);
         logs.push(build_runtime_action_log(
             action_round,
             unit.id.as_str(),
             unit.name.as_str(),
-            &format!("proc-phase-enrage-{trigger_id}"),
-            "阶段触发·狂暴",
+            &format!("proc-phase-summon-{trigger_id}"),
+            "阶段触发·召唤",
             &target_logs,
         ));
     }
@@ -5568,6 +5944,186 @@ mod tests {
     }
 
     #[test]
+    fn monster_phase_trigger_summon_adds_next_round_unit() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        {
+            let defender = &mut state.teams.defender.units[0];
+            defender.qixue = 60;
+            defender.current_attrs.max_qixue = 180;
+            defender.current_attrs.wufang = 10000;
+            let summon_skill = super::build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0);
+            let summon_base_attrs = serde_json::json!({
+                "max_qixue": 90,
+                "max_lingqi": 30,
+                "wugong": 18,
+                "fagong": 6,
+                "wufang": 12,
+                "fafang": 6,
+                "sudu": 9,
+                "mingzhong": 100,
+                "shanbi": 0,
+                "zhaojia": 0,
+                "baoji": 0,
+                "baoshang": 0,
+                "jianbaoshang": 0,
+                "jianfantan": 0,
+                "kangbao": 0,
+                "zengshang": 0,
+                "zhiliao": 0,
+                "jianliao": 0,
+                "xixue": 0,
+                "lengque": 0,
+                "kongzhi_kangxing": 0,
+                "jin_kangxing": 0,
+                "mu_kangxing": 0,
+                "shui_kangxing": 0,
+                "huo_kangxing": 0,
+                "tu_kangxing": 0,
+                "qixue_huifu": 0,
+                "lingqi_huifu": 0,
+                "realm": "凡人",
+                "element": "wood"
+            });
+            let summon_phase_trigger = serde_json::json!({
+                "id": "call-wolf",
+                "hpPercent": 0.5,
+                "action": "summon",
+                "summonCount": 1,
+                "summonTemplate": {
+                    "id": "wolf-cub",
+                    "name": "狼崽",
+                    "baseAttrs": summon_base_attrs,
+                    "skills": [summon_skill]
+                }
+            });
+            defender.ai_profile = Some(serde_json::json!({
+                "skills": ["skill-normal-attack"],
+                "phaseTriggers": [summon_phase_trigger]
+            }));
+        }
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        let summon_index = outcome
+            .logs
+            .iter()
+            .position(|log| log["skillId"] == "proc-phase-summon-call-wolf")
+            .expect("phase summon log should exist");
+        let attacker_action_index = outcome
+            .logs
+            .iter()
+            .position(|log| {
+                log["actorId"] == "player-1" && log["skillId"] == "skill-normal-attack"
+            })
+            .expect("player action log should exist");
+        assert_ne!(summon_index, attacker_action_index);
+        assert_eq!(outcome.logs[summon_index]["skillName"], "阶段触发·召唤");
+        assert!(outcome.logs[summon_index]["targets"][0]["targetId"]
+            .as_str()
+            .is_some_and(|target_id| target_id.contains("summon-wolf-cub")));
+        assert_eq!(outcome.logs[summon_index]["targets"][0]["damage"], 0);
+
+        let summon_unit = state
+            .teams
+            .defender
+            .units
+            .iter()
+            .find(|unit| unit.id.contains("summon-wolf-cub"))
+            .expect("summon unit should exist");
+        assert!(!summon_unit.can_act);
+        assert!(summon_unit.is_alive);
+        assert_eq!(summon_unit.owner_unit_id.as_deref(), Some("monster-1-monster-gray-wolf"));
+        let original_monster = state
+            .teams
+            .defender
+            .units
+            .iter()
+            .find(|unit| unit.id == "monster-1-monster-gray-wolf")
+            .expect("original monster should still exist");
+        assert!(original_monster
+            .triggered_phase_ids
+            .iter()
+            .any(|value| value == "call-wolf"));
+    }
+
+    #[test]
+    fn monster_phase_trigger_summon_uses_unique_ids_for_same_template_triggers() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        {
+            let defender = &mut state.teams.defender.units[0];
+            defender.qixue = 60;
+            defender.current_attrs.max_qixue = 180;
+            defender.current_attrs.wufang = 10000;
+            let summon_template = serde_json::json!({
+                "id": "wolf-cub",
+                "name": "狼崽",
+                "baseAttrs": {
+                    "max_qixue": 30,
+                    "max_lingqi": 0,
+                    "wugong": 6,
+                    "fagong": 0,
+                    "wufang": 0,
+                    "fafang": 0,
+                    "sudu": 1
+                },
+                "skills": [super::build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0)]
+            });
+            defender.ai_profile = Some(serde_json::json!({
+                "phaseTriggers": [{
+                    "id": "call-wolf-a",
+                    "hpPercent": 0.5,
+                    "action": "summon",
+                    "summonCount": 1,
+                    "summonTemplate": summon_template.clone()
+                }, {
+                    "id": "call-wolf-b",
+                    "hpPercent": 0.5,
+                    "action": "summon",
+                    "summonCount": 1,
+                    "summonTemplate": summon_template
+                }]
+            }));
+        }
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        assert!(outcome
+            .logs
+            .iter()
+            .any(|log| log["skillId"] == "proc-phase-summon-call-wolf-a"));
+        assert!(outcome
+            .logs
+            .iter()
+            .any(|log| log["skillId"] == "proc-phase-summon-call-wolf-b"));
+        let mut summon_ids = state
+            .teams
+            .defender
+            .units
+            .iter()
+            .filter(|unit| unit.r#type == "summon")
+            .map(|unit| unit.id.clone())
+            .collect::<Vec<_>>();
+        summon_ids.sort();
+        summon_ids.dedup();
+
+        assert_eq!(summon_ids.len(), 2);
+    }
+
+    #[test]
     fn monster_phase_trigger_enrage_logs_without_valid_effects() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
@@ -5633,6 +6189,32 @@ mod tests {
 
         assert_eq!(profile["skills"], serde_json::json!([]));
         assert_eq!(profile["phaseTriggers"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn monster_ai_profile_value_normalizes_seed_phase_triggers() {
+        let seed = super::load_monster_seed("monster-boss-ancient-tree")
+            .expect("monster seed should exist");
+
+        let profile = super::resolve_monster_ai_profile_value(&seed).expect("profile should exist");
+        let phase_triggers = profile["phaseTriggers"]
+            .as_array()
+            .expect("phaseTriggers should be an array");
+
+        assert!(phase_triggers.iter().any(|trigger| {
+            trigger["id"] == "monster-boss-ancient-tree-phase-1"
+                && trigger["hpPercent"] == serde_json::json!(0.5)
+                && trigger["action"] == "enrage"
+        }));
+        assert!(phase_triggers.iter().any(|trigger| {
+            trigger["id"] == "monster-boss-ancient-tree-phase-2"
+                && trigger["hpPercent"] == serde_json::json!(0.2)
+                && trigger["action"] == "summon"
+                && trigger["summonCount"] == serde_json::json!(1)
+                && trigger["summonTemplate"]["id"] == "monster-tree-spirit"
+                && trigger["summonTemplate"]["baseAttrs"]["max_qixue"].is_number()
+                && trigger["summonTemplate"]["skills"].as_array().is_some()
+        }));
     }
 
     #[test]
