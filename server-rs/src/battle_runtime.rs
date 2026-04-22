@@ -257,7 +257,6 @@ struct MonsterSeed {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct MonsterAiProfileSeed {
     skills: Option<Vec<String>>,
-    #[serde(rename = "phaseTriggers", alias = "phase_triggers")]
     phase_triggers: Option<Vec<serde_json::Value>>,
 }
 
@@ -786,8 +785,7 @@ fn resolve_monster_phase_triggers_value(
             .map(str::to_string)
             .unwrap_or_else(|| format!("{monster_id}-phase-{}", index + 1));
         let Some(hp_percent) = trigger
-            .get("hpPercent")
-            .or_else(|| trigger.get("hp_percent"))
+            .get("hp_percent")
             .and_then(serde_json::Value::as_f64)
             .filter(|value| *value > 0.0 && *value <= 1.0)
         else {
@@ -819,8 +817,7 @@ fn resolve_monster_phase_triggers_value(
             continue;
         }
         let Some(summon_id) = trigger
-            .get("summonMonsterId")
-            .or_else(|| trigger.get("summon_id"))
+            .get("summon_id")
             .and_then(serde_json::Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -828,8 +825,7 @@ fn resolve_monster_phase_triggers_value(
             continue;
         };
         let Some(summon_count) = trigger
-            .get("summonCount")
-            .or_else(|| trigger.get("summon_count"))
+            .get("summon_count")
             .and_then(|value| json_number_to_i64_floor(Some(value)))
             .filter(|value| *value >= 1)
         else {
@@ -2963,7 +2959,7 @@ fn process_runtime_phase_triggers_before_action(
                     momentum_gained: Vec::new(),
                     momentum_consumed: Vec::new(),
                 }];
-                logs.push(build_runtime_action_log(
+                logs.push(build_runtime_phase_action_log(
                     action_round,
                     actor_unit.id.as_str(),
                     actor_unit.name.as_str(),
@@ -3032,7 +3028,7 @@ fn process_runtime_phase_triggers_before_action(
             team_units.extend(summoned_units);
         }
         refresh_battle_team_total_speed(state);
-        logs.push(build_runtime_action_log(
+        logs.push(build_runtime_phase_action_log(
             action_round,
             unit.id.as_str(),
             unit.name.as_str(),
@@ -3301,6 +3297,40 @@ fn build_runtime_action_log(
                     object.insert(
                         "momentumConsumed".to_string(),
                         serde_json::json!(target.momentum_consumed),
+                    );
+                }
+            }
+            target_value
+        }).collect::<Vec<_>>()
+    })
+}
+
+fn build_runtime_phase_action_log(
+    round: i64,
+    actor_id: &str,
+    actor_name: &str,
+    skill_id: &str,
+    skill_name: &str,
+    targets: &[RuntimeResolvedTargetLog],
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "action",
+        "round": round,
+        "actorId": actor_id,
+        "actorName": actor_name,
+        "skillId": skill_id,
+        "skillName": skill_name,
+        "targets": targets.iter().map(|target| {
+            let mut target_value = serde_json::json!({
+                "targetId": target.target_id,
+                "targetName": target.target_name,
+                "hits": [],
+            });
+            if let Some(object) = target_value.as_object_mut() {
+                if !target.buffs_applied.is_empty() {
+                    object.insert(
+                        "buffsApplied".to_string(),
+                        serde_json::json!(target.buffs_applied),
                     );
                 }
             }
@@ -5933,6 +5963,8 @@ mod tests {
         assert!(phase_index < defender_action_index);
         assert_eq!(outcome.logs[phase_index]["skillName"], "阶段触发·狂暴");
         assert_eq!(outcome.logs[phase_index]["targets"][0]["buffsApplied"], serde_json::json!(["buff-wugong"]));
+        assert_eq!(outcome.logs[phase_index]["targets"][0]["hits"], serde_json::json!([]));
+        assert!(outcome.logs[phase_index]["targets"][0].get("damage").is_none());
         assert!(state.teams.defender.units[0]
             .triggered_phase_ids
             .iter()
@@ -6028,7 +6060,8 @@ mod tests {
         assert!(outcome.logs[summon_index]["targets"][0]["targetId"]
             .as_str()
             .is_some_and(|target_id| target_id.contains("summon-wolf-cub")));
-        assert_eq!(outcome.logs[summon_index]["targets"][0]["damage"], 0);
+        assert_eq!(outcome.logs[summon_index]["targets"][0]["hits"], serde_json::json!([]));
+        assert!(outcome.logs[summon_index]["targets"][0].get("damage").is_none());
 
         let summon_unit = state
             .teams
@@ -6159,6 +6192,8 @@ mod tests {
             .expect("phase trigger log should exist");
 
         assert!(phase_log["targets"][0].get("buffsApplied").is_none());
+        assert_eq!(phase_log["targets"][0]["hits"], serde_json::json!([]));
+        assert!(phase_log["targets"][0].get("damage").is_none());
         assert!(state.teams.defender.units[0]
             .triggered_phase_ids
             .iter()
