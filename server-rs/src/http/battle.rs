@@ -769,7 +769,7 @@ mod tests {
                         "damage": 120
                     }]
                 }],
-                "debugRealtime": {"kind": "battle_finished"},
+                "debugRealtime": {"kind": "battle_finished", "battleId": "pve-battle-1-123"},
                 "debugCooldownRealtime": {"kind": "battle:cooldown-sync", "remainingMs": 3000},
                 "battleStartCooldownMs": 3000,
                 "nextBattleAvailableAt": 1770000003000_i64,
@@ -782,17 +782,26 @@ mod tests {
                 }
             }
         });
+        assert_eq!(payload["success"], true);
         assert_eq!(payload["data"]["session"]["status"], "waiting_transition");
         assert_eq!(payload["data"]["session"]["nextAction"], "advance");
         assert_eq!(payload["data"]["battleStartCooldownMs"], 3000);
         assert_eq!(payload["data"]["state"]["phase"], "finished");
+        assert_eq!(payload["data"]["state"]["result"], "attacker_win");
         assert_eq!(payload["data"]["logs"][0]["type"], "action");
         assert_eq!(payload["data"]["logs"][0]["actorName"], "修士1");
         assert_eq!(payload["data"]["logs"][0]["skillName"], "重斩");
+        assert!(payload["data"]["logs"][0]["targets"][0]["hits"][0]
+            .get("damage")
+            .is_some());
+        assert!(payload["data"]["logs"][0]["targets"][0]["hits"][0]
+            .get("isMiss")
+            .is_some());
         assert_eq!(
             payload["data"]["logs"][0]["targets"][0]["hits"][0]["damage"],
             120
         );
+        assert!(payload["data"]["debugRealtime"].get("battleId").is_some());
         assert_eq!(payload["data"]["debugRealtime"]["kind"], "battle_finished");
         assert_eq!(
             payload["data"]["debugCooldownRealtime"]["kind"],
