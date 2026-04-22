@@ -2408,6 +2408,7 @@ fn calculate_runtime_damage(
 
 fn apply_runtime_buff_effect(
     unit: &mut BattleUnitDto,
+    source_unit_id: &str,
     effect_type: &str,
     effect: &serde_json::Value,
 ) -> Option<String> {
@@ -2429,7 +2430,7 @@ fn apply_runtime_buff_effect(
         "name": buff_key,
         "type": effect_type,
         "category": "runtime",
-        "sourceUnitId": serde_json::Value::Null,
+        "sourceUnitId": source_unit_id,
         "remainingDuration": effect.get("duration").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
         "stacks": effect.get("stacks").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
         "maxStacks": effect.get("stacks").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
@@ -2891,7 +2892,7 @@ fn execute_runtime_skill_action(
                 "buff" | "debuff" => {
                     let target = unit_by_id_mut(state, effect_target_id.as_str())
                         .ok_or_else(|| "没有有效目标".to_string())?;
-                    if let Some(buff_key) = apply_runtime_buff_effect(target, effect_type, effect) {
+                    if let Some(buff_key) = apply_runtime_buff_effect(target, actor_id, effect_type, effect) {
                         if !log_entry.buffs_applied.iter().any(|entry| entry == &buff_key) {
                             log_entry.buffs_applied.push(buff_key);
                         }
@@ -4787,6 +4788,41 @@ mod tests {
     }
 
     #[test]
+    fn controlled_unit_skip_log_has_empty_targets() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "control-stun",
+            "buffDefId": "control-stun",
+            "name": "眩晕",
+            "type": "debuff",
+            "category": "control",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "control": "stun",
+            "tags": ["stun"],
+            "dispellable": true
+        }));
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        let skip_log = outcome
+            .logs
+            .iter()
+            .find(|log| log["skillId"] == "skip")
+            .expect("skip log should exist");
+        assert_eq!(skip_log["targets"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
     fn minimal_pve_action_cleanse_control_removes_stun_from_ally() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
@@ -4857,6 +4893,42 @@ mod tests {
         let ally = state.teams.attacker.units.iter().find(|unit| unit.id == "player-2").expect("ally exists");
         assert!(ally.buffs.iter().all(|buff| buff.get("control").is_none()));
         assert_eq!(outcome.logs[0]["targets"][0]["targetId"], "player-2");
+    }
+
+    #[test]
+    fn runtime_buff_effect_records_source_unit_id() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-self-buff-source",
+            "name": "凝神",
+            "description": "提升武攻",
+            "type": "active",
+            "targetType": "self",
+            "damageType": "magic",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {
+                    "type": "buff",
+                    "buffKind": "attr",
+                    "attrKey": "wugong",
+                    "value": 5,
+                    "applyType": "flat",
+                    "duration": 2
+                }
+            ]
+        }));
+
+        apply_minimal_pve_action(&mut state, 1, "skill-self-buff-source", &[])
+            .expect("buff skill should succeed");
+
+        let buff = state.teams.attacker.units[0]
+            .buffs
+            .iter()
+            .find(|buff| buff["buffDefId"] == "buff-wugong")
+            .expect("buff should exist");
+        assert_eq!(buff["sourceUnitId"], "player-1");
     }
 
     #[test]
