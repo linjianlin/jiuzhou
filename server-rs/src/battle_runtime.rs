@@ -2677,6 +2677,18 @@ fn build_runtime_action_log(
                         serde_json::json!(target.buffs_applied),
                     );
                 }
+                if !target.momentum_gained.is_empty() {
+                    object.insert(
+                        "momentumGained".to_string(),
+                        serde_json::json!(target.momentum_gained),
+                    );
+                }
+                if !target.momentum_consumed.is_empty() {
+                    object.insert(
+                        "momentumConsumed".to_string(),
+                        serde_json::json!(target.momentum_consumed),
+                    );
+                }
             }
             target_value
         }).collect::<Vec<_>>()
@@ -4856,6 +4868,47 @@ mod tests {
         .expect_err("unknown snapshot skill should be rejected");
 
         assert_eq!(error, "战斗技能不存在: skill-normal-attack");
+    }
+
+    #[test]
+    fn runtime_action_log_omits_empty_optional_fields_and_keeps_node_shape() {
+        let log = super::build_runtime_action_log(
+            3,
+            "player-1",
+            "修士1",
+            "skill-normal-attack",
+            "普通攻击",
+            &[super::RuntimeResolvedTargetLog {
+                target_id: "monster-1".to_string(),
+                target_name: "灰狼".to_string(),
+                damage: 12,
+                heal: 0,
+                shield: 0,
+                buffs_applied: Vec::new(),
+                is_miss: false,
+                is_crit: true,
+                is_parry: false,
+                is_element_bonus: true,
+                shield_absorbed: 4,
+                momentum_gained: vec!["moon_trace".to_string()],
+                momentum_consumed: Vec::new(),
+            }],
+        );
+
+        let target = &log["targets"][0];
+        assert_eq!(log["type"], "action");
+        assert_eq!(log["round"], 3);
+        assert_eq!(target["targetId"], "monster-1");
+        assert_eq!(target["damage"], 12);
+        assert_eq!(target["shieldAbsorbed"], 4);
+        assert_eq!(target["hits"][0]["damage"], 12);
+        assert_eq!(target["hits"][0]["isCrit"], true);
+        assert_eq!(target["hits"][0]["isElementBonus"], true);
+        assert_eq!(target["momentumGained"][0], "moon_trace");
+        assert!(target.get("heal").is_none());
+        assert!(target.get("shield").is_none());
+        assert!(target.get("buffsApplied").is_none());
+        assert!(target.get("momentumConsumed").is_none());
     }
 
     #[test]
