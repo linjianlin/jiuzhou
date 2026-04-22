@@ -6,6 +6,21 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
+const MAX_ROUNDS_PVE: i64 = 100;
+const MAX_ROUNDS_PVP: i64 = 100;
+const MIN_HIT_RATE: f64 = 0.2;
+const MAX_HIT_RATE: f64 = 1.0;
+const MAX_PARRY_RATE: f64 = 0.6;
+const PARRY_REDUCTION: f64 = 0.7;
+const MAX_CRIT_RATE: f64 = 1.0;
+const MONSTER_MAX_CRIT_DAMAGE_MULTIPLIER: f64 = 3.0;
+const MAX_ELEMENT_RESIST: f64 = 0.8;
+const ELEMENT_COUNTER_BONUS: f64 = 0.15;
+const DEFENSE_DAMAGE_K: f64 = 1200.0;
+const VOID_EROSION_MARK_ID: &str = "void_erosion";
+const VOID_EROSION_DAMAGE_PER_STACK: f64 = 0.02;
+const VOID_EROSION_DAMAGE_BONUS_CAP: f64 = 0.1;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct BattleStateDto {
@@ -153,6 +168,34 @@ struct BattleSkillRuntimeConfig {
     cooldown_turns: i64,
 }
 
+#[derive(Debug, Clone)]
+struct RuntimeResolvedTargetLog {
+    target_id: String,
+    target_name: String,
+    damage: i64,
+    heal: i64,
+    shield: i64,
+    buffs_applied: Vec<String>,
+    is_miss: bool,
+    is_crit: bool,
+    is_parry: bool,
+    is_element_bonus: bool,
+    shield_absorbed: i64,
+    momentum_gained: Vec<String>,
+    momentum_consumed: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RuntimeDamageOutcome {
+    damage: i64,
+    actual_damage: i64,
+    is_miss: bool,
+    is_parry: bool,
+    is_crit: bool,
+    is_element_bonus: bool,
+    shield_absorbed: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MinimalBattleRewardItemDto {
@@ -197,12 +240,19 @@ struct MonsterSeed {
     name: Option<String>,
     realm: Option<String>,
     kind: Option<String>,
+    element: Option<String>,
     level: Option<i64>,
     exp_reward: Option<i64>,
     silver_reward_min: Option<i64>,
     base_attrs: Option<MonsterBaseAttrs>,
+    ai_profile: Option<MonsterAiProfileSeed>,
     drop_pool_id: Option<String>,
     enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct MonsterAiProfileSeed {
+    skills: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -274,8 +324,58 @@ struct ResolvedBattleDropPoolSeed {
 #[derive(Debug, Deserialize, Clone)]
 struct MonsterBaseAttrs {
     qixue: Option<i64>,
+    max_qixue: Option<i64>,
     lingqi: Option<i64>,
+    max_lingqi: Option<i64>,
     wugong: Option<i64>,
+    fagong: Option<i64>,
+    wufang: Option<i64>,
+    fafang: Option<i64>,
+    sudu: Option<i64>,
+    mingzhong: Option<serde_json::Value>,
+    shanbi: Option<serde_json::Value>,
+    zhaojia: Option<serde_json::Value>,
+    baoji: Option<serde_json::Value>,
+    baoshang: Option<serde_json::Value>,
+    jianbaoshang: Option<serde_json::Value>,
+    jianfantan: Option<serde_json::Value>,
+    kangbao: Option<serde_json::Value>,
+    zengshang: Option<serde_json::Value>,
+    zhiliao: Option<serde_json::Value>,
+    jianliao: Option<serde_json::Value>,
+    xixue: Option<serde_json::Value>,
+    lengque: Option<serde_json::Value>,
+    kongzhi_kangxing: Option<serde_json::Value>,
+    jin_kangxing: Option<serde_json::Value>,
+    mu_kangxing: Option<serde_json::Value>,
+    shui_kangxing: Option<serde_json::Value>,
+    huo_kangxing: Option<serde_json::Value>,
+    tu_kangxing: Option<serde_json::Value>,
+    qixue_huifu: Option<serde_json::Value>,
+    lingqi_huifu: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct RuntimeSkillSeedFile {
+    skills: Vec<RuntimeSkillSeed>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct RuntimeSkillSeed {
+    id: String,
+    name: String,
+    description: Option<String>,
+    cost_lingqi: Option<i64>,
+    cost_qixue: Option<i64>,
+    cooldown: Option<i64>,
+    target_type: Option<String>,
+    target_count: Option<i64>,
+    damage_type: Option<String>,
+    element: Option<String>,
+    effects: Option<Vec<serde_json::Value>>,
+    trigger_type: Option<String>,
+    ai_priority: Option<i64>,
+    enabled: Option<bool>,
 }
 
 fn build_battle_attrs(
@@ -319,6 +419,153 @@ fn build_battle_attrs(
     }
 }
 
+fn value_to_i64(raw: Option<serde_json::Value>, fallback: i64) -> i64 {
+    match raw {
+        Some(serde_json::Value::Number(number)) => {
+            if let Some(value) = number.as_i64() {
+                value
+            } else if let Some(value) = number.as_f64() {
+                value.round() as i64
+            } else {
+                fallback
+            }
+        }
+        Some(serde_json::Value::String(text)) => text.trim().parse::<f64>().ok().map(|v| v.round() as i64).unwrap_or(fallback),
+        _ => fallback,
+    }
+}
+
+fn build_monster_battle_attrs(seed: &MonsterSeed) -> BattleUnitCurrentAttrsDto {
+    let base_attrs = seed.base_attrs.clone().unwrap_or(MonsterBaseAttrs {
+        qixue: None,
+        max_qixue: None,
+        lingqi: None,
+        max_lingqi: None,
+        wugong: None,
+        fagong: None,
+        wufang: None,
+        fafang: None,
+        sudu: None,
+        mingzhong: None,
+        shanbi: None,
+        zhaojia: None,
+        baoji: None,
+        baoshang: None,
+        jianbaoshang: None,
+        jianfantan: None,
+        kangbao: None,
+        zengshang: None,
+        zhiliao: None,
+        jianliao: None,
+        xixue: None,
+        lengque: None,
+        kongzhi_kangxing: None,
+        jin_kangxing: None,
+        mu_kangxing: None,
+        shui_kangxing: None,
+        huo_kangxing: None,
+        tu_kangxing: None,
+        qixue_huifu: None,
+        lingqi_huifu: None,
+    });
+    BattleUnitCurrentAttrsDto {
+        max_qixue: base_attrs.max_qixue.or(base_attrs.qixue).unwrap_or(50).max(1),
+        max_lingqi: base_attrs.max_lingqi.or(base_attrs.lingqi).unwrap_or_default().max(0),
+        wugong: base_attrs.wugong.unwrap_or(8).max(0),
+        fagong: base_attrs.fagong.unwrap_or_default().max(0),
+        wufang: base_attrs.wufang.unwrap_or_default().max(0),
+        fafang: base_attrs.fafang.unwrap_or_default().max(0),
+        sudu: base_attrs.sudu.unwrap_or(1).max(1),
+        mingzhong: value_to_i64(base_attrs.mingzhong, 100),
+        shanbi: value_to_i64(base_attrs.shanbi, 0),
+        zhaojia: value_to_i64(base_attrs.zhaojia, 0),
+        baoji: value_to_i64(base_attrs.baoji, 0),
+        baoshang: value_to_i64(base_attrs.baoshang, 0),
+        jianbaoshang: value_to_i64(base_attrs.jianbaoshang, 0),
+        jianfantan: value_to_i64(base_attrs.jianfantan, 0),
+        kangbao: value_to_i64(base_attrs.kangbao, 0),
+        zengshang: value_to_i64(base_attrs.zengshang, 0),
+        zhiliao: value_to_i64(base_attrs.zhiliao, 0),
+        jianliao: value_to_i64(base_attrs.jianliao, 0),
+        xixue: value_to_i64(base_attrs.xixue, 0),
+        lengque: value_to_i64(base_attrs.lengque, 0),
+        kongzhi_kangxing: value_to_i64(base_attrs.kongzhi_kangxing, 0),
+        jin_kangxing: value_to_i64(base_attrs.jin_kangxing, 0),
+        mu_kangxing: value_to_i64(base_attrs.mu_kangxing, 0),
+        shui_kangxing: value_to_i64(base_attrs.shui_kangxing, 0),
+        huo_kangxing: value_to_i64(base_attrs.huo_kangxing, 0),
+        tu_kangxing: value_to_i64(base_attrs.tu_kangxing, 0),
+        qixue_huifu: value_to_i64(base_attrs.qixue_huifu, 0),
+        lingqi_huifu: value_to_i64(base_attrs.lingqi_huifu, 0),
+        realm: seed.level.map(|level| format!("Lv.{level}")),
+        element: Some(seed.element.clone().unwrap_or_else(|| "none".to_string())),
+    }
+}
+
+fn runtime_skill_value_from_seed(seed: &RuntimeSkillSeed) -> serde_json::Value {
+    serde_json::json!({
+        "id": seed.id,
+        "name": seed.name,
+        "description": seed.description.clone().unwrap_or_else(|| seed.name.clone()),
+        "type": "active",
+        "damageType": seed.damage_type.clone().unwrap_or_else(|| "physical".to_string()),
+        "targetType": seed.target_type.clone().unwrap_or_else(|| "single_enemy".to_string()),
+        "targetCount": seed.target_count.unwrap_or(1).max(1),
+        "element": seed.element.clone().unwrap_or_else(|| "none".to_string()),
+        "triggerType": seed.trigger_type.clone().unwrap_or_else(|| "active".to_string()),
+        "aiPriority": seed.ai_priority.unwrap_or(0),
+        "cooldown": seed.cooldown.unwrap_or_default().max(0),
+        "cost": {
+            "lingqi": seed.cost_lingqi.unwrap_or_default().max(0),
+            "qixue": seed.cost_qixue.unwrap_or_default().max(0)
+        },
+        "effects": seed.effects.clone().unwrap_or_default(),
+    })
+}
+
+fn load_runtime_skill_seed_map() -> Result<BTreeMap<String, RuntimeSkillSeed>, String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/skill_def.json");
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read skill_def.json: {error}"))?;
+    let payload: RuntimeSkillSeedFile = serde_json::from_str(&content)
+        .map_err(|error| format!("failed to parse skill_def.json: {error}"))?;
+    Ok(payload
+        .skills
+        .into_iter()
+        .filter(|skill| skill.enabled != Some(false))
+        .map(|skill| (skill.id.clone(), skill))
+        .collect())
+}
+
+fn resolve_monster_battle_skills(seed: &MonsterSeed) -> Vec<serde_json::Value> {
+    let skill_seed_map = load_runtime_skill_seed_map().ok();
+    let configured_skill_ids = seed
+        .ai_profile
+        .as_ref()
+        .and_then(|profile| profile.skills.clone())
+        .unwrap_or_default();
+    let mut skills = Vec::new();
+    for skill_id in configured_skill_ids {
+        let normalized = skill_id.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+        if let Some(skill_seed) = skill_seed_map
+            .as_ref()
+            .and_then(|map| map.get(normalized))
+        {
+            skills.push(runtime_skill_value_from_seed(skill_seed));
+        }
+    }
+    if !skills.iter().any(|skill| skill.get("id").and_then(serde_json::Value::as_str) == Some("skill-normal-attack")) {
+        skills.insert(0, build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0));
+    }
+    if skills.is_empty() {
+        skills.push(build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0));
+    }
+    skills
+}
+
 fn empty_battle_stats() -> BattleUnitStatsDto {
     BattleUnitStatsDto {
         damage_dealt: 0,
@@ -329,7 +576,7 @@ fn empty_battle_stats() -> BattleUnitStatsDto {
     }
 }
 
-fn build_skill_value(
+pub fn build_skill_value(
     id: &str,
     name: &str,
     cost_lingqi: i64,
@@ -360,7 +607,10 @@ fn player_battle_skills() -> Vec<serde_json::Value> {
 }
 
 fn monster_battle_skills() -> Vec<serde_json::Value> {
-    vec![build_skill_value("sk-bite", "撕咬", 5, 0, 1)]
+    vec![
+        build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0),
+        build_skill_value("sk-bite", "撕咬", 5, 0, 1),
+    ]
 }
 
 fn deterministic_battle_seed(battle_id: &str) -> i64 {
@@ -492,39 +742,27 @@ pub fn build_minimal_pve_battle_state(
         .enumerate()
         .map(|(index, monster_id)| {
             let seed = load_monster_seed(monster_id).ok();
-            let qixue = seed
-                .as_ref()
-                .and_then(|seed| seed.base_attrs.as_ref())
-                .and_then(|attrs| attrs.qixue)
-                .unwrap_or(50)
-                .max(1);
-            let lingqi = seed
-                .as_ref()
-                .and_then(|seed| seed.base_attrs.as_ref())
-                .and_then(|attrs| attrs.lingqi)
-                .unwrap_or_default()
-                .max(0);
-            let wugong = seed
-                .as_ref()
-                .and_then(|seed| seed.base_attrs.as_ref())
-                .and_then(|attrs| attrs.wugong)
-                .unwrap_or(8)
-                .max(0);
-            let attrs = build_battle_attrs(
-                qixue,
-                lingqi,
-                wugong,
-                (qixue / 50 + 1).max(1),
-                seed.as_ref()
-                    .and_then(|seed| seed.level)
-                    .map(|level| format!("Lv.{level}")),
-            );
+            let seed_fallback = MonsterSeed {
+                id: Some(monster_id.clone()),
+                name: Some(monster_id.clone()),
+                realm: None,
+                kind: None,
+                element: Some("none".to_string()),
+                level: None,
+                exp_reward: None,
+                silver_reward_min: None,
+                base_attrs: None,
+                ai_profile: None,
+                drop_pool_id: None,
+                enabled: Some(true),
+            };
+            let seed = seed.unwrap_or(seed_fallback);
+            let attrs = build_monster_battle_attrs(&seed);
+            let qixue = attrs.max_qixue.max(1);
+            let lingqi = attrs.max_lingqi.max(0);
             BattleUnitDto {
                 id: format!("monster-{}-{}", index + 1, monster_id),
-                name: seed
-                    .as_ref()
-                    .and_then(|seed| seed.name.clone())
-                    .unwrap_or_else(|| monster_id.clone()),
+                name: seed.name.clone().unwrap_or_else(|| monster_id.clone()),
                 r#type: "monster".to_string(),
                 source_id: serde_json::json!(monster_id),
                 base_attrs: attrs.clone(),
@@ -542,21 +780,21 @@ pub fn build_minimal_pve_battle_state(
                 marks: Vec::new(),
                 momentum: None,
                 set_bonus_effects: Vec::new(),
-                skills: monster_battle_skills(),
+                skills: resolve_monster_battle_skills(&seed),
                 skill_cooldowns: BTreeMap::new(),
                 skill_cooldown_discount_bank: BTreeMap::new(),
                 partner_skill_policy: None,
                 control_diminishing: BTreeMap::new(),
                 stats: empty_battle_stats(),
                 reward_exp: Some(
-                    seed.as_ref()
-                        .and_then(|seed| seed.exp_reward)
+                    seed
+                        .exp_reward
                         .unwrap_or_default()
                         .max(0),
                 ),
                 reward_silver: Some(
-                    seed.as_ref()
-                        .and_then(|seed| seed.silver_reward_min)
+                    seed
+                        .silver_reward_min
                         .unwrap_or_default()
                         .max(0),
                 ),
@@ -564,7 +802,7 @@ pub fn build_minimal_pve_battle_state(
         })
         .collect::<Vec<_>>();
 
-    BattleStateDto {
+    let mut state = BattleStateDto {
         battle_id: battle_id.to_string(),
         battle_type: "pve".to_string(),
         cooldown_timing_mode: "self_action_end".to_string(),
@@ -583,16 +821,19 @@ pub fn build_minimal_pve_battle_state(
                 units: defender_units,
             },
         },
-        round_count: 1,
+        round_count: 0,
         current_team: "attacker".to_string(),
-        current_unit_id: Some(attacker.id),
-        phase: "action".to_string(),
+        current_unit_id: None,
+        phase: "roundStart".to_string(),
         first_mover: "attacker".to_string(),
         result: None,
         random_seed: deterministic_battle_seed(battle_id),
         random_index: 0,
         runtime_skill_cooldowns: BTreeMap::new(),
-    }
+    };
+    let mut start_logs = Vec::new();
+    start_battle_runtime(&mut state, &mut start_logs);
+    state
 }
 
 pub fn build_minimal_pvp_battle_state(
@@ -660,7 +901,7 @@ pub fn build_minimal_pvp_battle_state(
         reward_exp: None,
         reward_silver: None,
     };
-    BattleStateDto {
+    let mut state = BattleStateDto {
         battle_id: battle_id.to_string(),
         battle_type: "pvp".to_string(),
         cooldown_timing_mode: "self_action_end".to_string(),
@@ -676,16 +917,19 @@ pub fn build_minimal_pvp_battle_state(
                 total_speed: 1,
             },
         },
-        round_count: 1,
+        round_count: 0,
         current_team: "attacker".to_string(),
-        current_unit_id: Some(attacker.id),
-        phase: "action".to_string(),
+        current_unit_id: None,
+        phase: "roundStart".to_string(),
         first_mover: "attacker".to_string(),
         result: None,
         random_seed: deterministic_battle_seed(battle_id),
         random_index: 0,
         runtime_skill_cooldowns: BTreeMap::new(),
-    }
+    };
+    let mut start_logs = Vec::new();
+    start_battle_runtime(&mut state, &mut start_logs);
+    state
 }
 
 pub fn build_minimal_partner_battle_unit(
@@ -693,11 +937,21 @@ pub fn build_minimal_partner_battle_unit(
     name: String,
     avatar: Option<String>,
     owner_unit_id: String,
-    max_qixue: i64,
-    speed: i64,
+    attrs: BattleUnitCurrentAttrsDto,
+    qixue: i64,
+    lingqi: i64,
+    mut skills: Vec<serde_json::Value>,
+    skill_policy: serde_json::Value,
     formation_order: i64,
 ) -> BattleUnitDto {
-    let attrs = build_battle_attrs(max_qixue.max(1), 0, 18, speed.max(1), None);
+    if !skills.iter().any(|skill| {
+        skill.get("id").and_then(|value| value.as_str()) == Some("skill-normal-attack")
+    }) {
+        skills.insert(
+            0,
+            build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0),
+        );
+    }
     BattleUnitDto {
         id: format!("partner-{partner_id}"),
         name,
@@ -708,8 +962,8 @@ pub fn build_minimal_partner_battle_unit(
         owner_unit_id: Some(owner_unit_id),
         month_card_active: None,
         avatar,
-        qixue: max_qixue.max(1),
-        lingqi: 0,
+        qixue: qixue.max(1),
+        lingqi: lingqi.max(0),
         current_attrs: attrs,
         shields: Vec::new(),
         is_alive: true,
@@ -718,7 +972,44 @@ pub fn build_minimal_partner_battle_unit(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
-        skills: player_battle_skills(),
+        skills,
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: Some(skill_policy),
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
+        reward_exp: None,
+        reward_silver: None,
+    }
+}
+
+pub fn build_minimal_character_battle_unit(
+    unit_kind: &str,
+    profile: &BattleCharacterUnitProfile,
+    formation_order: i64,
+    skills: Vec<serde_json::Value>,
+) -> BattleUnitDto {
+    BattleUnitDto {
+        id: format!("{unit_kind}-{}", profile.character_id),
+        name: profile.name.clone(),
+        r#type: unit_kind.to_string(),
+        source_id: serde_json::json!(profile.character_id),
+        base_attrs: profile.attrs.clone(),
+        formation_order: Some(formation_order),
+        owner_unit_id: None,
+        month_card_active: Some(profile.month_card_active),
+        avatar: profile.avatar.clone(),
+        qixue: profile.qixue.clamp(0, profile.attrs.max_qixue.max(1)),
+        lingqi: profile.lingqi.clamp(0, profile.attrs.max_lingqi.max(0)),
+        current_attrs: profile.attrs.clone(),
+        shields: Vec::new(),
+        is_alive: profile.qixue > 0,
+        can_act: profile.qixue > 0,
+        buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        skills,
         skill_cooldowns: BTreeMap::new(),
         skill_cooldown_discount_bank: BTreeMap::new(),
         partner_skill_policy: None,
@@ -729,9 +1020,1971 @@ pub fn build_minimal_partner_battle_unit(
     }
 }
 
+fn determine_first_mover(state: &BattleStateDto) -> &'static str {
+    if state.teams.defender.total_speed > state.teams.attacker.total_speed {
+        "defender"
+    } else {
+        "attacker"
+    }
+}
+
+fn opposing_team_key(team: &str) -> &'static str {
+    if team == "attacker" {
+        "defender"
+    } else {
+        "attacker"
+    }
+}
+
+fn team_units<'a>(state: &'a BattleStateDto, team: &str) -> &'a [BattleUnitDto] {
+    if team == "attacker" {
+        &state.teams.attacker.units
+    } else {
+        &state.teams.defender.units
+    }
+}
+
+fn team_units_mut<'a>(state: &'a mut BattleStateDto, team: &str) -> &'a mut Vec<BattleUnitDto> {
+    if team == "attacker" {
+        &mut state.teams.attacker.units
+    } else {
+        &mut state.teams.defender.units
+    }
+}
+
+fn is_actable_unit(unit: &BattleUnitDto) -> bool {
+    unit.is_alive && unit.can_act
+}
+
+fn sort_units_by_speed(units: &mut Vec<BattleUnitDto>) {
+    units.sort_by(|left, right| {
+        right
+            .current_attrs
+            .sudu
+            .cmp(&left.current_attrs.sudu)
+            .then_with(|| left.formation_order.unwrap_or(i64::MAX).cmp(&right.formation_order.unwrap_or(i64::MAX)))
+    });
+}
+
+fn first_actable_unit_id(state: &BattleStateDto, team: &str) -> Option<String> {
+    team_units(state, team)
+        .iter()
+        .find(|unit| is_actable_unit(unit))
+        .map(|unit| unit.id.clone())
+}
+
+fn find_next_actable_unit_id_after(
+    units: &[BattleUnitDto],
+    start_exclusive_index: isize,
+) -> Option<String> {
+    let start = (start_exclusive_index + 1).max(0) as usize;
+    units.iter()
+        .skip(start)
+        .find(|unit| is_actable_unit(unit))
+        .map(|unit| unit.id.clone())
+}
+
+fn is_current_unit_actable(state: &BattleStateDto) -> bool {
+    let Some(current_unit_id) = state.current_unit_id.as_deref() else {
+        return false;
+    };
+    team_units(state, state.current_team.as_str())
+        .iter()
+        .any(|unit| unit.id == current_unit_id && is_actable_unit(unit))
+}
+
+fn build_round_start_log(round: i64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "round_start",
+        "round": round.max(1),
+    })
+}
+
+fn build_round_end_log(round: i64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "round_end",
+        "round": round.max(1),
+    })
+}
+
+fn build_dot_log(round: i64, unit_id: &str, unit_name: &str, buff_name: &str, damage: i64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "dot",
+        "round": round,
+        "unitId": unit_id,
+        "unitName": unit_name,
+        "buffName": buff_name,
+        "damage": damage.max(0),
+    })
+}
+
+fn build_hot_log(round: i64, unit_id: &str, unit_name: &str, buff_name: &str, heal: i64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "hot",
+        "round": round,
+        "unitId": unit_id,
+        "unitName": unit_name,
+        "buffName": buff_name,
+        "heal": heal.max(0),
+    })
+}
+
+fn build_buff_expire_log(round: i64, unit_id: &str, unit_name: &str, buff_name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "buff_expire",
+        "round": round,
+        "unitId": unit_id,
+        "unitName": unit_name,
+        "buffName": buff_name,
+    })
+}
+
+fn process_passive_skills(state: &mut BattleStateDto, logs: &mut Vec<serde_json::Value>) {
+    let passive_casts = state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .chain(state.teams.defender.units.iter())
+        .filter(|unit| unit.is_alive)
+        .flat_map(|unit| {
+            unit.skills.iter().filter_map(|skill| {
+                if skill.get("triggerType").and_then(serde_json::Value::as_str) == Some("passive") {
+                    skill.get("id")
+                        .and_then(serde_json::Value::as_str)
+                        .map(|skill_id| (unit.id.clone(), skill_id.to_string()))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    for (actor_id, skill_id) in passive_casts {
+        if let Ok(mut passive_logs) = execute_runtime_skill_action(state, actor_id.as_str(), skill_id.as_str(), &[]) {
+            logs.append(&mut passive_logs);
+        }
+    }
+}
+
+fn process_unit_round_start_effects(
+    state: &mut BattleStateDto,
+    unit_id: &str,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    let round = state.round_count;
+    let Some(unit) = unit_by_id_mut(state, unit_id) else {
+        return;
+    };
+    let unit_name = unit.name.clone();
+    let buffs = unit.buffs.clone();
+    for buff in buffs {
+        if !unit.is_alive {
+            break;
+        }
+        if let Some(dot) = buff.get("dot") {
+            let damage = dot.get("damage").and_then(serde_json::Value::as_i64).unwrap_or_default().max(0);
+            let qixue_before = unit.qixue;
+            unit.qixue = (unit.qixue - damage).max(0);
+            let actual_damage = (qixue_before - unit.qixue).max(0);
+            unit.is_alive = unit.qixue > 0;
+            unit.can_act = unit.is_alive;
+            logs.push(build_dot_log(
+                round,
+                unit_id,
+                unit_name.as_str(),
+                buff.get("name").and_then(serde_json::Value::as_str).unwrap_or("持续伤害"),
+                actual_damage,
+            ));
+            if !unit.is_alive {
+                logs.push(build_minimal_death_log(round, unit_id, unit_name.as_str(), None, None));
+            }
+        }
+        if let Some(hot) = buff.get("hot") {
+            if !unit.is_alive {
+                continue;
+            }
+            let heal = hot.get("heal").and_then(serde_json::Value::as_i64).unwrap_or_default().max(0);
+            let qixue_before = unit.qixue;
+            unit.qixue = (unit.qixue + heal).min(unit.current_attrs.max_qixue.max(1));
+            let actual_heal = (unit.qixue - qixue_before).max(0);
+            if actual_heal > 0 {
+                logs.push(build_hot_log(
+                    round,
+                    unit_id,
+                    unit_name.as_str(),
+                    buff.get("name").and_then(serde_json::Value::as_str).unwrap_or("持续治疗"),
+                    actual_heal,
+                ));
+            }
+        }
+    }
+}
+
+fn process_round_end_buffs(state: &mut BattleStateDto, unit_id: &str, logs: &mut Vec<serde_json::Value>) {
+    let round = state.round_count;
+    let Some(unit) = unit_by_id_mut(state, unit_id) else {
+        return;
+    };
+    let unit_name = unit.name.clone();
+    unit.buffs = unit
+        .buffs
+        .clone()
+        .into_iter()
+        .filter_map(|mut buff| {
+            let remaining = buff
+                .get("remainingDuration")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(-1);
+            if remaining == -1 {
+                return Some(buff);
+            }
+            let next_remaining = remaining - 1;
+            if next_remaining <= 0 {
+                logs.push(build_buff_expire_log(
+                    round,
+                    unit_id,
+                    unit_name.as_str(),
+                    buff.get("name").and_then(serde_json::Value::as_str).unwrap_or("效果"),
+                ));
+                None
+            } else {
+                if let Some(object) = buff.as_object_mut() {
+                    object.insert("remainingDuration".to_string(), serde_json::json!(next_remaining));
+                }
+                Some(buff)
+            }
+        })
+        .collect::<Vec<_>>();
+    unit.shields = unit
+        .shields
+        .clone()
+        .into_iter()
+        .filter_map(|mut shield| {
+            let duration = shield.get("duration").and_then(serde_json::Value::as_i64).unwrap_or(-1);
+            if duration == -1 {
+                return Some(shield);
+            }
+            let next_duration = duration - 1;
+            if next_duration <= 0 {
+                None
+            } else {
+                if let Some(object) = shield.as_object_mut() {
+                    object.insert("duration".to_string(), serde_json::json!(next_duration));
+                }
+                Some(shield)
+            }
+        })
+        .collect::<Vec<_>>();
+    apply_runtime_attr_buffs(unit);
+}
+
+fn start_battle_runtime(state: &mut BattleStateDto, logs: &mut Vec<serde_json::Value>) {
+    state.round_count = 1;
+    state.current_unit_id = None;
+    state.phase = "roundStart".to_string();
+    apply_runtime_set_bonus_equip_effects(state);
+    process_passive_skills(state, logs);
+    process_round_start(state, logs);
+}
+
+pub fn restart_battle_runtime(state: &mut BattleStateDto) -> Vec<serde_json::Value> {
+    state.current_team = "attacker".to_string();
+    state.current_unit_id = None;
+    state.phase = "roundStart".to_string();
+    state.first_mover = "attacker".to_string();
+    state.result = None;
+    state.random_index = 0;
+    state.runtime_skill_cooldowns.clear();
+    for unit in state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .chain(state.teams.defender.units.iter_mut())
+    {
+        unit.current_attrs = unit.base_attrs.clone();
+        unit.shields.clear();
+        unit.buffs.clear();
+        unit.marks.clear();
+        unit.momentum = None;
+        unit.skill_cooldowns.clear();
+        unit.skill_cooldown_discount_bank.clear();
+        unit.control_diminishing.clear();
+        unit.is_alive = unit.qixue > 0;
+        unit.can_act = unit.is_alive;
+    }
+    let mut logs = Vec::new();
+    start_battle_runtime(state, &mut logs);
+    logs
+}
+
+fn recover_unit_resources_for_round_start(unit: &mut BattleUnitDto) {
+    let qixue_regen = unit.current_attrs.qixue_huifu.max(0);
+    if qixue_regen > 0 {
+        unit.qixue = (unit.qixue + qixue_regen).min(unit.current_attrs.max_qixue.max(1));
+    }
+    let lingqi_regen = unit.current_attrs.lingqi_huifu.max(0);
+    if lingqi_regen > 0 {
+        unit.lingqi = (unit.lingqi + lingqi_regen).min(unit.current_attrs.max_lingqi.max(0));
+    }
+}
+
+fn process_round_start(state: &mut BattleStateDto, logs: &mut Vec<serde_json::Value>) {
+    state.phase = "roundStart".to_string();
+    logs.push(build_round_start_log(state.round_count));
+    let unit_ids = state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .chain(state.teams.defender.units.iter())
+        .map(|unit| unit.id.clone())
+        .collect::<Vec<_>>();
+    for unit_id in unit_ids {
+        let Some(unit) = unit_by_id_mut(state, unit_id.as_str()) else {
+            continue;
+        };
+        if !unit.is_alive {
+            unit.can_act = false;
+            continue;
+        }
+        unit.can_act = true;
+        decay_runtime_marks_at_round_start(unit);
+        recover_unit_resources_for_round_start(unit);
+        let unit_id = unit.id.clone();
+        process_unit_round_start_effects(state, unit_id.as_str(), logs);
+        process_runtime_set_bonus_turn_start_effects(state, unit_id.as_str(), logs);
+    }
+    refresh_battle_team_total_speed(state);
+    state.first_mover = determine_first_mover(state).to_string();
+    sort_units_by_speed(&mut state.teams.attacker.units);
+    sort_units_by_speed(&mut state.teams.defender.units);
+    state.current_team = state.first_mover.clone();
+    state.phase = "action".to_string();
+    state.current_unit_id = first_actable_unit_id(state, state.current_team.as_str());
+    finish_battle_if_needed(state);
+}
+
+fn max_rounds_for_battle(state: &BattleStateDto) -> i64 {
+    if state.battle_type == "pvp" {
+        MAX_ROUNDS_PVP
+    } else {
+        MAX_ROUNDS_PVE
+    }
+}
+
+fn process_round_end_and_start_next_round(
+    state: &mut BattleStateDto,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    state.phase = "roundEnd".to_string();
+    logs.push(build_round_end_log(state.round_count));
+    let unit_ids = state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .chain(state.teams.defender.units.iter())
+        .map(|unit| unit.id.clone())
+        .collect::<Vec<_>>();
+    for unit_id in unit_ids {
+        process_round_end_buffs(state, unit_id.as_str(), logs);
+        if let Some(unit) = unit_by_id_mut(state, unit_id.as_str()) {
+            if !unit.is_alive {
+                unit.can_act = false;
+            }
+        }
+    }
+    if finish_battle_if_needed(state) {
+        return;
+    }
+    if state.round_count >= max_rounds_for_battle(state) {
+        state.phase = "finished".to_string();
+        state.current_unit_id = None;
+        state.result = Some("draw".to_string());
+        return;
+    }
+    state.round_count += 1;
+    state.current_unit_id = None;
+    process_round_start(state, logs);
+}
+
+fn finish_battle_if_needed(state: &mut BattleStateDto) -> bool {
+    let attacker_alive = state.teams.attacker.units.iter().any(|unit| unit.is_alive);
+    let defender_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
+    if attacker_alive && defender_alive {
+        return false;
+    }
+    state.phase = "finished".to_string();
+    state.current_unit_id = None;
+    state.result = Some(if attacker_alive {
+        "attacker_win".to_string()
+    } else {
+        "defender_win".to_string()
+    });
+    true
+}
+
+fn advance_cursor_without_action(state: &mut BattleStateDto) {
+    let current_team = state.current_team.clone();
+    let current_index = state
+        .current_unit_id
+        .as_ref()
+        .and_then(|unit_id| {
+            team_units(state, current_team.as_str())
+                .iter()
+                .position(|unit| unit.id == *unit_id)
+        })
+        .map(|index| index as isize)
+        .unwrap_or(-1);
+    if let Some(next_unit_id) =
+        find_next_actable_unit_id_after(team_units(state, current_team.as_str()), current_index)
+    {
+        state.current_unit_id = Some(next_unit_id);
+        return;
+    }
+    state.current_unit_id = None;
+    if state.current_team == state.first_mover {
+        state.current_team = opposing_team_key(state.current_team.as_str()).to_string();
+        state.current_unit_id = first_actable_unit_id(state, state.current_team.as_str());
+        if state.current_unit_id.is_none() && !finish_battle_if_needed(state) {
+            let mut noop_logs = Vec::new();
+            process_round_end_and_start_next_round(state, &mut noop_logs);
+        }
+        return;
+    }
+    if !finish_battle_if_needed(state) {
+        let mut noop_logs = Vec::new();
+        process_round_end_and_start_next_round(state, &mut noop_logs);
+    }
+}
+
+fn repair_action_cursor(state: &mut BattleStateDto) -> bool {
+    if state.phase == "finished" {
+        return false;
+    }
+    if is_current_unit_actable(state) {
+        return false;
+    }
+    let max_steps = state.teams.attacker.units.len() + state.teams.defender.units.len() + 2;
+    let mut repaired = false;
+    for _ in 0..max_steps {
+        if finish_battle_if_needed(state) || is_current_unit_actable(state) {
+            return repaired;
+        }
+        let before = (
+            state.phase.clone(),
+            state.round_count,
+            state.current_team.clone(),
+            state.current_unit_id.clone(),
+        );
+        advance_cursor_without_action(state);
+        repaired = true;
+        let after = (
+            state.phase.clone(),
+            state.round_count,
+            state.current_team.clone(),
+            state.current_unit_id.clone(),
+        );
+        if before == after {
+            break;
+        }
+    }
+    repaired
+}
+
+fn complete_unit_action_and_advance(
+    state: &mut BattleStateDto,
+    actor_id: &str,
+    used_skill_id: Option<&str>,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    let current_team = state.current_team.clone();
+    let current_index = team_units(state, current_team.as_str())
+        .iter()
+        .position(|unit| unit.id == actor_id)
+        .map(|index| index as isize)
+        .unwrap_or(-1);
+    if let Some(actor) = team_units_mut(state, current_team.as_str())
+        .iter_mut()
+        .find(|unit| unit.id == actor_id)
+    {
+        actor.can_act = false;
+    }
+    reduce_runtime_skill_cooldowns_for_unit(state, actor_id, used_skill_id);
+    if finish_battle_if_needed(state) {
+        return;
+    }
+    if let Some(next_unit_id) =
+        find_next_actable_unit_id_after(team_units(state, current_team.as_str()), current_index)
+    {
+        state.current_unit_id = Some(next_unit_id);
+        return;
+    }
+    state.current_unit_id = None;
+    if state.current_team == state.first_mover {
+        state.current_team = opposing_team_key(state.current_team.as_str()).to_string();
+        state.current_unit_id = first_actable_unit_id(state, state.current_team.as_str());
+        if state.current_unit_id.is_none() && !finish_battle_if_needed(state) {
+            process_round_end_and_start_next_round(state, logs);
+        }
+        return;
+    }
+    if !finish_battle_if_needed(state) {
+        process_round_end_and_start_next_round(state, logs);
+    }
+}
+
+fn resolve_alive_target_or_first_available(
+    state: &BattleStateDto,
+    team: &str,
+    target_ids: &[String],
+) -> Option<String> {
+    if let Some(target_id) = target_ids.first() {
+        if team_units(state, team)
+            .iter()
+            .any(|unit| unit.id == *target_id && unit.is_alive)
+        {
+            return Some(target_id.clone());
+        }
+    }
+    team_units(state, team)
+        .iter()
+        .find(|unit| unit.is_alive)
+        .map(|unit| unit.id.clone())
+}
+
+fn unit_by_id<'a>(state: &'a BattleStateDto, unit_id: &str) -> Option<&'a BattleUnitDto> {
+    state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .chain(state.teams.defender.units.iter())
+        .find(|unit| unit.id == unit_id)
+}
+
+fn unit_by_id_mut<'a>(state: &'a mut BattleStateDto, unit_id: &str) -> Option<&'a mut BattleUnitDto> {
+    state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .chain(state.teams.defender.units.iter_mut())
+        .find(|unit| unit.id == unit_id)
+}
+
+fn runtime_skill_value<'a>(unit: &'a BattleUnitDto, skill_id: &str) -> Option<&'a serde_json::Value> {
+    unit.skills.iter().find(|skill| {
+        skill.get("id").and_then(serde_json::Value::as_str) == Some(skill_id.trim())
+    })
+}
+
+fn runtime_skill_config_from_value(skill: &serde_json::Value) -> BattleSkillRuntimeConfig {
+    BattleSkillRuntimeConfig {
+        cost_lingqi: skill
+            .get("cost")
+            .and_then(|cost| cost.get("lingqi"))
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default()
+            .max(0),
+        cost_qixue: skill
+            .get("cost")
+            .and_then(|cost| cost.get("qixue"))
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default()
+            .max(0),
+        cooldown_turns: skill
+            .get("cooldown")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default()
+            .max(0),
+    }
+}
+
+fn resolve_runtime_skill_config(
+    state: &BattleStateDto,
+    actor_id: &str,
+    skill_id: &str,
+) -> Option<BattleSkillRuntimeConfig> {
+    let skill_id = skill_id.trim();
+    unit_by_id(state, actor_id)
+        .and_then(|unit| runtime_skill_value(unit, skill_id))
+        .map(runtime_skill_config_from_value)
+        .or_else(|| battle_skill_runtime_config(skill_id))
+}
+
+fn skill_target_type(skill: &serde_json::Value) -> &str {
+    skill.get("targetType")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("single_enemy")
+}
+
+fn resolve_runtime_skill_targets(
+    state: &BattleStateDto,
+    actor_id: &str,
+    skill_id: &str,
+    selected_target_ids: &[String],
+) -> Result<Vec<String>, String> {
+    let actor = unit_by_id(state, actor_id).ok_or_else(|| "当前不可行动".to_string())?;
+    let skill = runtime_skill_value(actor, skill_id)
+        .ok_or_else(|| format!("战斗技能不存在: {}", skill_id.trim()))?;
+    let target_type = skill_target_type(skill);
+    let actor_team = if state.teams.attacker.units.iter().any(|unit| unit.id == actor_id) {
+        "attacker"
+    } else {
+        "defender"
+    };
+    let enemy_team = opposing_team_key(actor_team);
+    let ally_team = actor_team;
+
+    let targets = match target_type {
+        "self" => vec![actor_id.to_string()],
+        "single_ally" => resolve_alive_target_or_first_available(state, ally_team, selected_target_ids)
+            .map(|id| vec![id])
+            .unwrap_or_default(),
+        "all_ally" => team_units(state, ally_team)
+            .iter()
+            .filter(|unit| unit.is_alive)
+            .map(|unit| unit.id.clone())
+            .collect::<Vec<_>>(),
+        "all_enemy" => team_units(state, enemy_team)
+            .iter()
+            .filter(|unit| unit.is_alive)
+            .map(|unit| unit.id.clone())
+            .collect::<Vec<_>>(),
+        _ => resolve_alive_target_or_first_available(state, enemy_team, selected_target_ids)
+            .map(|id| vec![id])
+            .unwrap_or_default(),
+    };
+    if targets.is_empty() {
+        return Err("没有可攻击目标".to_string());
+    }
+    Ok(targets)
+}
+
+fn resolve_effect_base_value(
+    actor: &BattleUnitDto,
+    target: &BattleUnitDto,
+    effect: &serde_json::Value,
+    fallback_scale_attr: &str,
+) -> i64 {
+    let value = effect.get("value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+    let value_type = effect
+        .get("valueType")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("scale");
+    let scale_attr = effect
+        .get("scaleAttr")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(fallback_scale_attr);
+    let actor_attr_value = battle_attr_value(actor.current_attrs.clone(), scale_attr);
+    match value_type {
+        "flat" => value.floor() as i64,
+        "percent" => ((target.current_attrs.max_qixue as f64) * value).floor() as i64,
+        "combined" => {
+            let base = effect.get("baseValue").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+            let rate = effect.get("scaleRate").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+            (base + (actor_attr_value as f64) * rate).floor() as i64
+        }
+        _ => {
+            let rate = effect
+                .get("scaleRate")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(value);
+            ((actor_attr_value as f64) * rate).floor() as i64
+        }
+    }
+}
+
+fn battle_attr_value(attrs: BattleUnitCurrentAttrsDto, attr_key: &str) -> i64 {
+    match attr_key.trim() {
+        "max_qixue" => attrs.max_qixue,
+        "max_lingqi" => attrs.max_lingqi,
+        "wugong" => attrs.wugong,
+        "fagong" => attrs.fagong,
+        "wufang" => attrs.wufang,
+        "fafang" => attrs.fafang,
+        "sudu" => attrs.sudu,
+        "mingzhong" => attrs.mingzhong,
+        "shanbi" => attrs.shanbi,
+        "zhaojia" => attrs.zhaojia,
+        "baoji" => attrs.baoji,
+        "baoshang" => attrs.baoshang,
+        "jianbaoshang" => attrs.jianbaoshang,
+        "jianfantan" => attrs.jianfantan,
+        "kangbao" => attrs.kangbao,
+        "zengshang" => attrs.zengshang,
+        "zhiliao" => attrs.zhiliao,
+        "jianliao" => attrs.jianliao,
+        "xixue" => attrs.xixue,
+        "lengque" => attrs.lengque,
+        "kongzhi_kangxing" => attrs.kongzhi_kangxing,
+        "jin_kangxing" => attrs.jin_kangxing,
+        "mu_kangxing" => attrs.mu_kangxing,
+        "shui_kangxing" => attrs.shui_kangxing,
+        "huo_kangxing" => attrs.huo_kangxing,
+        "tu_kangxing" => attrs.tu_kangxing,
+        "qixue_huifu" => attrs.qixue_huifu,
+        "lingqi_huifu" => attrs.lingqi_huifu,
+        _ => 0,
+    }
+}
+
+fn effect_target_mode(effect: &serde_json::Value, skill_target_type: &str, effect_type: &str) -> &'static str {
+    match effect.get("target").and_then(serde_json::Value::as_str) {
+        Some("self") => "self",
+        Some("target") => "target",
+        Some("enemy") => "enemy",
+        Some("ally") => "ally",
+        _ => match effect_type {
+            "buff" => {
+                if matches!(skill_target_type, "single_enemy" | "all_enemy" | "random_enemy") {
+                    "self"
+                } else {
+                    "target"
+                }
+            }
+            "debuff" => "enemy",
+            "heal" | "shield" | "restore_lingqi" | "resource" => {
+                if matches!(skill_target_type, "single_enemy" | "all_enemy" | "random_enemy") {
+                    "self"
+                } else {
+                    "target"
+                }
+            }
+            _ => "target",
+        },
+    }
+}
+
+fn resolve_effect_target_ids(
+    state: &BattleStateDto,
+    actor_id: &str,
+    selected_target_ids: &[String],
+    skill_target_type: &str,
+    effect: &serde_json::Value,
+) -> Result<Vec<String>, String> {
+    let actor_team = if state.teams.attacker.units.iter().any(|unit| unit.id == actor_id) {
+        "attacker"
+    } else {
+        "defender"
+    };
+    let enemy_team = opposing_team_key(actor_team);
+    let ally_team = actor_team;
+    let effect_type = effect.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
+    let mode = effect_target_mode(effect, skill_target_type, effect_type);
+    let ids = match mode {
+        "self" => vec![actor_id.to_string()],
+        "ally" => resolve_alive_target_or_first_available(state, ally_team, selected_target_ids)
+            .map(|id| vec![id])
+            .unwrap_or_default(),
+        "enemy" => resolve_alive_target_or_first_available(state, enemy_team, selected_target_ids)
+            .map(|id| vec![id])
+            .unwrap_or_default(),
+        _ => match skill_target_type {
+            "self" => vec![actor_id.to_string()],
+            "single_ally" => resolve_alive_target_or_first_available(state, ally_team, selected_target_ids)
+                .map(|id| vec![id])
+                .unwrap_or_default(),
+            "all_ally" => team_units(state, ally_team)
+                .iter()
+                .filter(|unit| unit.is_alive)
+                .map(|unit| unit.id.clone())
+                .collect::<Vec<_>>(),
+            "all_enemy" => team_units(state, enemy_team)
+                .iter()
+                .filter(|unit| unit.is_alive)
+                .map(|unit| unit.id.clone())
+                .collect::<Vec<_>>(),
+            _ => resolve_alive_target_or_first_available(state, enemy_team, selected_target_ids)
+                .map(|id| vec![id])
+                .unwrap_or_default(),
+        },
+    };
+    if ids.is_empty() {
+        return Err("没有有效目标".to_string());
+    }
+    Ok(ids)
+}
+
+fn get_or_create_target_log<'a>(
+    target_logs: &'a mut Vec<RuntimeResolvedTargetLog>,
+    target_id: &str,
+    target_name: &str,
+) -> &'a mut RuntimeResolvedTargetLog {
+    if let Some(index) = target_logs.iter().position(|entry| entry.target_id == target_id) {
+        return &mut target_logs[index];
+    }
+    target_logs.push(RuntimeResolvedTargetLog {
+        target_id: target_id.to_string(),
+        target_name: target_name.to_string(),
+        damage: 0,
+        heal: 0,
+        shield: 0,
+        buffs_applied: Vec::new(),
+        is_miss: false,
+        is_crit: false,
+        is_parry: false,
+        is_element_bonus: false,
+        shield_absorbed: 0,
+        momentum_gained: Vec::new(),
+        momentum_consumed: Vec::new(),
+    });
+    target_logs.last_mut().expect("target log just pushed")
+}
+
+fn buff_effect_key(effect_type: &str, effect: &serde_json::Value) -> String {
+    if let Some(raw) = effect.get("buffKey").and_then(serde_json::Value::as_str) {
+        let normalized = raw.trim();
+        if !normalized.is_empty() {
+            return normalized.to_string();
+        }
+    }
+    let attr_key = effect
+        .get("attrKey")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("effect")
+        .trim();
+    if effect_type == "debuff" {
+        format!("debuff-{attr_key}")
+    } else {
+        format!("buff-{attr_key}")
+    }
+}
+
+fn apply_runtime_attr_buffs(unit: &mut BattleUnitDto) {
+    unit.current_attrs = unit.base_attrs.clone();
+    for buff in &unit.buffs {
+        let modifiers = buff
+            .get("attrModifiers")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for modifier in modifiers {
+            let attr = modifier.get("attr").and_then(serde_json::Value::as_str).unwrap_or("");
+            let mode = modifier.get("mode").and_then(serde_json::Value::as_str).unwrap_or("flat");
+            let value = modifier.get("value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+            let base_value = battle_attr_value(unit.current_attrs.clone(), attr) as f64;
+            let next_value = if mode == "percent" {
+                base_value * (1.0 + value)
+            } else {
+                base_value + value
+            };
+            apply_attr_value(&mut unit.current_attrs, attr, next_value.round() as i64);
+        }
+    }
+}
+
+fn battle_unit_has_set_bonus_effects(unit: &BattleUnitDto) -> bool {
+    !unit.set_bonus_effects.is_empty()
+}
+
+fn apply_runtime_attr_modifier_to_unit(
+    unit: &mut BattleUnitDto,
+    attr_key: &str,
+    apply_type: &str,
+    value: f64,
+) {
+    let current = battle_attr_value(unit.current_attrs.clone(), attr_key) as f64;
+    let next = if apply_type == "percent" {
+        current * (1.0 + value)
+    } else {
+        current + value
+    };
+    apply_attr_value(&mut unit.current_attrs, attr_key, next.round() as i64);
+}
+
+fn apply_runtime_set_bonus_equip_effects(state: &mut BattleStateDto) {
+    for unit in state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .chain(state.teams.defender.units.iter_mut())
+    {
+        if !battle_unit_has_set_bonus_effects(unit) {
+            continue;
+        }
+        for effect in unit.set_bonus_effects.clone() {
+            if effect.get("trigger").and_then(serde_json::Value::as_str) != Some("equip") {
+                continue;
+            }
+            if effect.get("target").and_then(serde_json::Value::as_str) != Some("self") {
+                continue;
+            }
+            let effect_type = effect.get("effectType").and_then(serde_json::Value::as_str).unwrap_or("");
+            let params = effect.get("params").and_then(serde_json::Value::as_object).cloned().unwrap_or_default();
+            match effect_type {
+                "buff" => {
+                    let attr_key = params.get("attr_key").and_then(serde_json::Value::as_str).unwrap_or("").trim();
+                    let apply_type = params.get("apply_type").and_then(serde_json::Value::as_str).unwrap_or("flat");
+                    let value = params
+                        .get("value")
+                        .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))
+                        .unwrap_or_default();
+                    if !attr_key.is_empty() && value != 0.0 {
+                        apply_runtime_attr_modifier_to_unit(unit, attr_key, apply_type, value);
+                    }
+                }
+                "shield" => {
+                    let value = params
+                        .get("value")
+                        .and_then(|value| value.as_i64().or_else(|| value.as_f64().map(|v| v.round() as i64)))
+                        .unwrap_or_default();
+                    if value > 0 {
+                        unit.shields.push(serde_json::json!({
+                            "id": format!("set-shield-{}-{}", unit.id, effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set")),
+                            "sourceSkillId": effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set-bonus"),
+                            "value": value,
+                            "maxValue": value,
+                            "duration": effect.get("durationRound").and_then(serde_json::Value::as_i64).unwrap_or(1),
+                            "absorbType": "all",
+                            "priority": 0,
+                        }));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn process_runtime_set_bonus_turn_start_effects(
+    state: &mut BattleStateDto,
+    unit_id: &str,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    let round = state.round_count;
+    let Some(unit) = unit_by_id_mut(state, unit_id) else {
+        return;
+    };
+    let unit_name = unit.name.clone();
+    for effect in unit.set_bonus_effects.clone() {
+        if effect.get("trigger").and_then(serde_json::Value::as_str) != Some("on_turn_start") {
+            continue;
+        }
+        if effect.get("target").and_then(serde_json::Value::as_str) != Some("self") {
+            continue;
+        }
+        let effect_type = effect.get("effectType").and_then(serde_json::Value::as_str).unwrap_or("");
+        let params = effect.get("params").and_then(serde_json::Value::as_object).cloned().unwrap_or_default();
+        match effect_type {
+            "heal" => {
+                let heal = params
+                    .get("value")
+                    .and_then(|value| value.as_i64().or_else(|| value.as_f64().map(|v| v.round() as i64)))
+                    .unwrap_or_default()
+                    .max(0);
+                if heal > 0 && unit.is_alive {
+                    let before = unit.qixue;
+                    unit.qixue = (unit.qixue + heal).min(unit.current_attrs.max_qixue.max(1));
+                    let actual = (unit.qixue - before).max(0);
+                    if actual > 0 {
+                        logs.push(build_hot_log(round, unit_id, unit_name.as_str(), effect.get("setName").and_then(serde_json::Value::as_str).unwrap_or("套装效果"), actual));
+                    }
+                }
+            }
+            "resource" => {
+                let value = params
+                    .get("value")
+                    .and_then(|val| val.as_i64().or_else(|| val.as_f64().map(|v| v.round() as i64)))
+                    .unwrap_or_default();
+                let resource_type = params.get("resource_type").and_then(serde_json::Value::as_str).unwrap_or("lingqi");
+                if resource_type == "qixue" {
+                    unit.qixue = (unit.qixue + value).clamp(0, unit.current_attrs.max_qixue.max(1));
+                } else {
+                    unit.lingqi = (unit.lingqi + value).clamp(0, unit.current_attrs.max_lingqi.max(0));
+                }
+            }
+            "buff" => {
+                let attr_key = params.get("attr_key").and_then(serde_json::Value::as_str).unwrap_or("").trim();
+                let apply_type = params.get("apply_type").and_then(serde_json::Value::as_str).unwrap_or("flat");
+                let value = params
+                    .get("value")
+                    .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))
+                    .unwrap_or_default();
+                if !attr_key.is_empty() && value != 0.0 {
+                    unit.buffs.push(serde_json::json!({
+                        "id": format!("set-buff-{}-{}", unit.id, effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set")),
+                        "buffDefId": format!("set-buff-{}", attr_key),
+                        "name": effect.get("setName").and_then(serde_json::Value::as_str).unwrap_or("套装效果"),
+                        "type": "buff",
+                        "category": "set_bonus",
+                        "sourceUnitId": unit.id,
+                        "remainingDuration": effect.get("durationRound").and_then(serde_json::Value::as_i64).unwrap_or(1),
+                        "stacks": 1,
+                        "maxStacks": 1,
+                        "attrModifiers": [{
+                            "attr": attr_key,
+                            "value": value,
+                            "mode": apply_type,
+                        }],
+                        "tags": ["set_bonus"],
+                        "dispellable": true,
+                    }));
+                    apply_runtime_attr_buffs(unit);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn runtime_has_control(unit: &BattleUnitDto, control_type: &str) -> bool {
+    unit.buffs.iter().any(|buff| {
+        buff.get("control").and_then(serde_json::Value::as_str) == Some(control_type)
+    })
+}
+
+fn runtime_is_stunned(unit: &BattleUnitDto) -> bool {
+    runtime_has_control(unit, "stun") || runtime_has_control(unit, "freeze")
+}
+
+fn runtime_is_feared(unit: &BattleUnitDto) -> bool {
+    runtime_has_control(unit, "fear")
+}
+
+fn runtime_is_silenced(unit: &BattleUnitDto) -> bool {
+    runtime_has_control(unit, "silence")
+}
+
+fn runtime_is_disarmed(unit: &BattleUnitDto) -> bool {
+    runtime_has_control(unit, "disarm")
+}
+
+fn remove_runtime_buffs_by_predicate<F>(unit: &mut BattleUnitDto, predicate: F) -> Vec<String>
+where
+    F: Fn(&serde_json::Value) -> bool,
+{
+    let mut removed = Vec::new();
+    unit.buffs = unit
+        .buffs
+        .clone()
+        .into_iter()
+        .filter(|buff| {
+            if predicate(buff) {
+                if let Some(name) = buff.get("name").and_then(serde_json::Value::as_str) {
+                    removed.push(name.to_string());
+                }
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>();
+    apply_runtime_attr_buffs(unit);
+    removed
+}
+
+fn apply_runtime_mark_effect(
+    target: &mut BattleUnitDto,
+    source_unit_id: &str,
+    effect: &serde_json::Value,
+) -> Option<String> {
+    let mark_id = effect
+        .get("markId")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(VOID_EROSION_MARK_ID)
+        .to_string();
+    let stacks = effect
+        .get("applyStacks")
+        .or_else(|| effect.get("stacks"))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(1)
+        .max(1);
+    let max_stacks = effect
+        .get("maxStacks")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(5)
+        .max(1);
+    let duration = effect
+        .get("duration")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(2)
+        .max(1);
+    let marks = &mut target.marks;
+    if let Some(existing) = marks.iter_mut().find(|mark| {
+        mark.get("id").and_then(serde_json::Value::as_str) == Some(mark_id.as_str())
+            && mark.get("sourceUnitId").and_then(serde_json::Value::as_str) == Some(source_unit_id)
+    }) {
+        let current_stacks = existing.get("stacks").and_then(serde_json::Value::as_i64).unwrap_or_default();
+        if let Some(object) = existing.as_object_mut() {
+            object.insert("stacks".to_string(), serde_json::json!((current_stacks + stacks).min(max_stacks)));
+            object.insert("remainingDuration".to_string(), serde_json::json!(duration));
+            object.insert("maxStacks".to_string(), serde_json::json!(max_stacks));
+        }
+    } else {
+        marks.push(serde_json::json!({
+            "id": mark_id,
+            "sourceUnitId": source_unit_id,
+            "stacks": stacks.min(max_stacks),
+            "maxStacks": max_stacks,
+            "remainingDuration": duration,
+        }));
+    }
+    Some(mark_id)
+}
+
+fn decay_runtime_marks_at_round_start(unit: &mut BattleUnitDto) {
+    unit.marks = unit
+        .marks
+        .clone()
+        .into_iter()
+        .filter_map(|mut mark| {
+            let remaining = mark
+                .get("remainingDuration")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or_default();
+            let next_remaining = remaining - 1;
+            if next_remaining <= 0 {
+                None
+            } else {
+                if let Some(object) = mark.as_object_mut() {
+                    object.insert("remainingDuration".to_string(), serde_json::json!(next_remaining));
+                }
+                Some(mark)
+            }
+        })
+        .collect::<Vec<_>>();
+}
+
+fn runtime_void_erosion_damage_bonus(attacker: &BattleUnitDto, defender: &BattleUnitDto) -> f64 {
+    let total_stacks = defender
+        .marks
+        .iter()
+        .filter(|mark| {
+            mark.get("id").and_then(serde_json::Value::as_str) == Some(VOID_EROSION_MARK_ID)
+                && mark.get("sourceUnitId").and_then(serde_json::Value::as_str) == Some(attacker.id.as_str())
+        })
+        .map(|mark| mark.get("stacks").and_then(serde_json::Value::as_i64).unwrap_or_default())
+        .sum::<i64>();
+    ((total_stacks as f64) * VOID_EROSION_DAMAGE_PER_STACK).min(VOID_EROSION_DAMAGE_BONUS_CAP)
+}
+
+fn apply_attr_value(attrs: &mut BattleUnitCurrentAttrsDto, attr: &str, value: i64) {
+    match attr.trim() {
+        "max_qixue" => attrs.max_qixue = value.max(1),
+        "max_lingqi" => attrs.max_lingqi = value.max(0),
+        "wugong" => attrs.wugong = value,
+        "fagong" => attrs.fagong = value,
+        "wufang" => attrs.wufang = value,
+        "fafang" => attrs.fafang = value,
+        "sudu" => attrs.sudu = value.max(0),
+        "mingzhong" => attrs.mingzhong = value,
+        "shanbi" => attrs.shanbi = value,
+        "zhaojia" => attrs.zhaojia = value,
+        "baoji" => attrs.baoji = value,
+        "baoshang" => attrs.baoshang = value,
+        "jianbaoshang" => attrs.jianbaoshang = value,
+        "jianfantan" => attrs.jianfantan = value,
+        "kangbao" => attrs.kangbao = value,
+        "zengshang" => attrs.zengshang = value,
+        "zhiliao" => attrs.zhiliao = value,
+        "jianliao" => attrs.jianliao = value,
+        "xixue" => attrs.xixue = value,
+        "lengque" => attrs.lengque = value,
+        "kongzhi_kangxing" => attrs.kongzhi_kangxing = value,
+        "jin_kangxing" => attrs.jin_kangxing = value,
+        "mu_kangxing" => attrs.mu_kangxing = value,
+        "shui_kangxing" => attrs.shui_kangxing = value,
+        "huo_kangxing" => attrs.huo_kangxing = value,
+        "tu_kangxing" => attrs.tu_kangxing = value,
+        "qixue_huifu" => attrs.qixue_huifu = value,
+        "lingqi_huifu" => attrs.lingqi_huifu = value,
+        _ => {}
+    }
+}
+
+fn normalized_rate(value: i64) -> f64 {
+    if value <= 0 {
+        0.0
+    } else if value > 1 {
+        (value as f64) / 100.0
+    } else {
+        value as f64
+    }
+}
+
+fn normalized_multiplier(value: i64) -> f64 {
+    if value <= 0 {
+        0.0
+    } else if value >= 10 {
+        (value as f64) / 100.0
+    } else {
+        value as f64
+    }
+}
+
+fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
+    value.max(min).min(max)
+}
+
+fn next_runtime_random(state: &mut BattleStateDto) -> f64 {
+    let seed = (state.random_seed as u64)
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add((state.random_index as u64).wrapping_add(1442695040888963407));
+    state.random_index += 1;
+    ((seed >> 11) as f64) / ((u64::MAX >> 11) as f64)
+}
+
+fn roll_runtime_chance(state: &mut BattleStateDto, chance: f64) -> bool {
+    if chance <= 0.0 {
+        return false;
+    }
+    if chance >= 1.0 {
+        return true;
+    }
+    next_runtime_random(state) < chance
+}
+
+fn damage_type_defense(target: &BattleUnitDto, damage_type: &str) -> f64 {
+    match damage_type {
+        "magic" => target.current_attrs.fafang as f64,
+        _ => target.current_attrs.wufang as f64,
+    }
+}
+
+fn is_element_counter(attack_element: Option<&str>, defend_element: Option<&str>) -> bool {
+    matches!(
+        (attack_element.unwrap_or("none"), defend_element.unwrap_or("none")),
+        ("jin", "mu") | ("mu", "tu") | ("tu", "shui") | ("shui", "huo") | ("huo", "jin")
+    )
+}
+
+fn element_resistance(target: &BattleUnitDto, element: Option<&str>) -> f64 {
+    match element.unwrap_or("none") {
+        "jin" => normalized_rate(target.current_attrs.jin_kangxing),
+        "mu" => normalized_rate(target.current_attrs.mu_kangxing),
+        "shui" => normalized_rate(target.current_attrs.shui_kangxing),
+        "huo" => normalized_rate(target.current_attrs.huo_kangxing),
+        "tu" => normalized_rate(target.current_attrs.tu_kangxing),
+        _ => 0.0,
+    }
+}
+
+fn apply_runtime_damage_to_target(
+    target: &mut BattleUnitDto,
+    damage: i64,
+    damage_type: &str,
+) -> (i64, i64) {
+    let mut remaining_damage = damage.max(0);
+    let mut total_absorbed = 0_i64;
+    let mut indexed_shields = target
+        .shields
+        .iter()
+        .enumerate()
+        .filter_map(|(index, shield)| {
+            shield.as_object().map(|object| {
+                (
+                    index,
+                    object.get("priority").and_then(serde_json::Value::as_i64).unwrap_or_default(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    indexed_shields.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut remove_indices = Vec::new();
+    for (index, _) in indexed_shields {
+        if remaining_damage <= 0 {
+            break;
+        }
+        let Some(shield) = target.shields.get_mut(index) else {
+            continue;
+        };
+        let absorb_type = shield
+            .get("absorbType")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("all");
+        if absorb_type != "all" && absorb_type != damage_type {
+            continue;
+        }
+        let current_value = shield.get("value").and_then(serde_json::Value::as_i64).unwrap_or_default();
+        let absorbed = current_value.min(remaining_damage).max(0);
+        remaining_damage -= absorbed;
+        total_absorbed += absorbed;
+        let next_value = current_value - absorbed;
+        if let Some(object) = shield.as_object_mut() {
+            object.insert("value".to_string(), serde_json::json!(next_value.max(0)));
+        }
+        if next_value <= 0 {
+            remove_indices.push(index);
+        }
+    }
+    remove_indices.sort_unstable();
+    remove_indices.reverse();
+    for index in remove_indices {
+        target.shields.remove(index);
+    }
+    let actual_damage = remaining_damage.min(target.qixue).max(0);
+    target.qixue -= actual_damage;
+    target.stats.damage_taken += actual_damage;
+    target.is_alive = target.qixue > 0;
+    if !target.is_alive {
+        target.qixue = 0;
+        target.can_act = false;
+    }
+    (actual_damage, total_absorbed)
+}
+
+fn calculate_runtime_damage(
+    state: &mut BattleStateDto,
+    attacker: &BattleUnitDto,
+    defender: &BattleUnitDto,
+    damage_type: &str,
+    element: Option<&str>,
+    base_damage: i64,
+) -> RuntimeDamageOutcome {
+    let mut outcome = RuntimeDamageOutcome::default();
+    let mut damage = (base_damage as f64).max(0.0);
+    if damage <= 0.0 {
+        return outcome;
+    }
+    let hit_rate = clamp_f64(
+        normalized_rate(attacker.current_attrs.mingzhong) - normalized_rate(defender.current_attrs.shanbi),
+        MIN_HIT_RATE,
+        MAX_HIT_RATE,
+    );
+    if !roll_runtime_chance(state, hit_rate) {
+        outcome.is_miss = true;
+        return outcome;
+    }
+    if damage_type != "true" {
+        let defense = damage_type_defense(defender, damage_type).max(0.0);
+        damage *= DEFENSE_DAMAGE_K / (defense + DEFENSE_DAMAGE_K);
+    }
+    let parry_rate = clamp_f64(normalized_rate(defender.current_attrs.zhaojia), 0.0, MAX_PARRY_RATE);
+    if roll_runtime_chance(state, parry_rate) {
+        outcome.is_parry = true;
+        damage *= PARRY_REDUCTION;
+    }
+    if damage_type != "true" {
+        let crit_rate = clamp_f64(
+            normalized_rate(attacker.current_attrs.baoji) - normalized_rate(defender.current_attrs.kangbao),
+            0.0,
+            MAX_CRIT_RATE,
+        );
+        if roll_runtime_chance(state, crit_rate) {
+            outcome.is_crit = true;
+            let attacker_baoshang = normalized_multiplier(attacker.current_attrs.baoshang);
+            let capped_baoshang = if attacker.r#type == "monster" {
+                attacker_baoshang.min(MONSTER_MAX_CRIT_DAMAGE_MULTIPLIER)
+            } else {
+                attacker_baoshang
+            };
+            let crit_multiplier = (capped_baoshang - normalized_rate(defender.current_attrs.jianbaoshang)).max(1.0);
+            damage *= crit_multiplier;
+        }
+    }
+    damage *= 1.0 + normalized_rate(attacker.current_attrs.zengshang);
+    let mark_bonus = runtime_void_erosion_damage_bonus(attacker, defender);
+    if mark_bonus > 0.0 {
+        damage *= 1.0 + mark_bonus;
+    }
+    if is_element_counter(element, defender.current_attrs.element.as_deref()) {
+        outcome.is_element_bonus = true;
+        damage *= 1.0 + ELEMENT_COUNTER_BONUS;
+    }
+    let resistance = clamp_f64(element_resistance(defender, element), 0.0, MAX_ELEMENT_RESIST);
+    damage *= 1.0 - resistance;
+    outcome.damage = damage.floor().max(1.0) as i64;
+    outcome
+}
+
+fn apply_runtime_buff_effect(
+    unit: &mut BattleUnitDto,
+    effect_type: &str,
+    effect: &serde_json::Value,
+) -> Option<String> {
+    let buff_kind = effect.get("buffKind").and_then(serde_json::Value::as_str).unwrap_or("");
+    if buff_kind != "attr" {
+        return None;
+    }
+    let attr_key = effect.get("attrKey").and_then(serde_json::Value::as_str).unwrap_or("");
+    if attr_key.trim().is_empty() {
+        return None;
+    }
+    let mode = effect.get("applyType").and_then(serde_json::Value::as_str).unwrap_or("flat");
+    let raw_value = effect.get("value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+    let value = if effect_type == "debuff" { -raw_value } else { raw_value };
+    let buff_key = buff_effect_key(effect_type, effect);
+    let buff_value = serde_json::json!({
+        "id": buff_key,
+        "buffDefId": buff_key,
+        "name": buff_key,
+        "type": effect_type,
+        "category": "runtime",
+        "sourceUnitId": serde_json::Value::Null,
+        "remainingDuration": effect.get("duration").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
+        "stacks": effect.get("stacks").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
+        "maxStacks": effect.get("stacks").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
+        "attrModifiers": [{
+            "attr": attr_key,
+            "value": value,
+            "mode": mode,
+        }],
+        "tags": [],
+        "dispellable": true,
+    });
+    unit.buffs.retain(|buff| buff.get("buffDefId") != Some(&serde_json::json!(buff_key)));
+    unit.buffs.push(buff_value);
+    apply_runtime_attr_buffs(unit);
+    Some(buff_key)
+}
+
+fn can_use_runtime_skill_now(state: &BattleStateDto, actor_id: &str, skill_id: &str) -> bool {
+    let Some(config) = resolve_runtime_skill_config(state, actor_id, skill_id) else {
+        return true;
+    };
+    if state
+        .runtime_skill_cooldowns
+        .get(format!("{actor_id}:{skill_id}").as_str())
+        .copied()
+        .unwrap_or_default()
+        > 0
+    {
+        return false;
+    }
+    let Some(actor) = unit_by_id(state, actor_id) else {
+        return false;
+    };
+    let damage_type = runtime_skill_value(actor, skill_id)
+        .and_then(|skill| skill.get("damageType").and_then(serde_json::Value::as_str))
+        .unwrap_or("physical");
+    actor.is_alive
+        && !runtime_is_stunned(actor)
+        && !runtime_is_feared(actor)
+        && !(damage_type == "magic" && runtime_is_silenced(actor))
+        && !(damage_type == "physical" && runtime_is_disarmed(actor))
+        && actor.lingqi >= config.cost_lingqi.max(0)
+        && actor.qixue > config.cost_qixue.max(0)
+}
+
+fn resolve_ai_skill_id(state: &BattleStateDto, actor_id: &str) -> Result<String, String> {
+    let Some(unit) = unit_by_id(state, actor_id) else {
+        return Err("当前不可行动".to_string());
+    };
+    if runtime_is_stunned(unit) || runtime_is_feared(unit) {
+        return Ok("skill-normal-attack".to_string());
+    }
+    for preferred_skill_id in ["sk-bite", "skill-normal-attack"] {
+        if unit
+            .skills
+            .iter()
+            .any(|skill| skill.get("id").and_then(serde_json::Value::as_str) == Some(preferred_skill_id))
+            && can_use_runtime_skill_now(state, actor_id, preferred_skill_id)
+        {
+            return Ok(preferred_skill_id.to_string());
+        }
+    }
+    unit.skills
+        .iter()
+        .filter_map(|skill| skill.get("id").and_then(serde_json::Value::as_str))
+        .find(|skill_id| can_use_runtime_skill_now(state, actor_id, skill_id))
+        .map(str::to_string)
+        .ok_or_else(|| "当前不可行动".to_string())
+}
+
+fn resolve_partner_skill_id(state: &BattleStateDto, actor_id: &str) -> Result<String, String> {
+    let Some(unit) = unit_by_id(state, actor_id) else {
+        return Err("当前不可行动".to_string());
+    };
+    let ordered_policy_skills = unit
+        .partner_skill_policy
+        .as_ref()
+        .and_then(|policy| policy.get("slots"))
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|slot| {
+            let skill_id = slot.get("skillId")?.as_str()?.trim().to_string();
+            if skill_id.is_empty() {
+                return None;
+            }
+            let enabled = slot.get("enabled").and_then(serde_json::Value::as_bool).unwrap_or(true);
+            if !enabled {
+                return None;
+            }
+            let priority = slot.get("priority").and_then(serde_json::Value::as_i64).unwrap_or(i64::MAX);
+            Some((priority, skill_id))
+        })
+        .collect::<Vec<_>>();
+    let mut ordered_policy_skills = ordered_policy_skills;
+    ordered_policy_skills.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    for (_, skill_id) in ordered_policy_skills {
+        if can_use_runtime_skill_now(state, actor_id, skill_id.as_str()) {
+            return Ok(skill_id);
+        }
+    }
+    resolve_ai_skill_id(state, actor_id)
+}
+
+fn execute_runtime_auto_turn(
+    state: &mut BattleStateDto,
+    actor_id: &str,
+    logs: &mut Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let actor = unit_by_id(state, actor_id)
+        .cloned()
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    if runtime_is_stunned(&actor) || runtime_is_feared(&actor) {
+        logs.push(build_runtime_action_log(
+            state.round_count.max(1),
+            actor.id.as_str(),
+            actor.name.as_str(),
+            "skip",
+            "跳过",
+            &[],
+        ));
+        complete_unit_action_and_advance(state, actor_id, None, logs);
+        return Ok(());
+    }
+    let skill_id = if actor.r#type == "partner" {
+        resolve_partner_skill_id(state, actor_id)?
+    } else {
+        resolve_ai_skill_id(state, actor_id)?
+    };
+    consume_runtime_skill_cost_and_validate_cooldown(state, actor_id, skill_id.as_str())?;
+    let target_ids = resolve_runtime_skill_targets(state, actor_id, skill_id.as_str(), &[])?;
+    logs.extend(execute_runtime_skill_action(state, actor_id, skill_id.as_str(), &target_ids)?);
+    complete_unit_action_and_advance(state, actor_id, Some(skill_id.as_str()), logs);
+    Ok(())
+}
+
+fn run_attacker_auto_turns_until_owner_or_switch(
+    state: &mut BattleStateDto,
+    owner_actor_id: &str,
+    logs: &mut Vec<serde_json::Value>,
+) -> Result<(), String> {
+    while state.phase != "finished" && state.current_team == "attacker" {
+        repair_action_cursor(state);
+        let Some(current_actor_id) = state.current_unit_id.clone() else {
+            break;
+        };
+        if current_actor_id == owner_actor_id {
+            break;
+        }
+        let Some(actor) = unit_by_id(state, current_actor_id.as_str()) else {
+            break;
+        };
+        if actor.r#type == "player" {
+            break;
+        }
+        execute_runtime_auto_turn(state, current_actor_id.as_str(), logs)?;
+    }
+    Ok(())
+}
+
+fn execute_runtime_damage_action(
+    state: &mut BattleStateDto,
+    actor_id: &str,
+    target_id: &str,
+    skill_id: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let actor_name = unit_by_id(state, actor_id)
+        .map(|unit| unit.name.clone())
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    let skill_name = unit_by_id(state, actor_id)
+        .and_then(|unit| resolve_unit_skill_name(unit, skill_id).ok())
+        .ok_or_else(|| format!("战斗技能不存在: {}", skill_id.trim()))?;
+    let damage = resolve_runtime_skill_damage(state, actor_id, skill_id);
+    let action_round = state.round_count.max(1);
+
+    let target_name = unit_by_id(state, target_id)
+        .map(|unit| unit.name.clone())
+        .ok_or_else(|| "目标不存在或已死亡".to_string())?;
+    let (actual_damage, target_dead) = {
+        let Some(target) = unit_by_id_mut(state, target_id) else {
+            return Err("目标不存在或已死亡".to_string());
+        };
+        if !target.is_alive {
+            return Err("目标不存在或已死亡".to_string());
+        }
+        let qixue_before = target.qixue;
+        target.qixue = (target.qixue - damage).max(0);
+        let dealt = (qixue_before - target.qixue).max(0);
+        target.is_alive = target.qixue > 0;
+        target.can_act = target.is_alive && target.can_act;
+        (dealt, !target.is_alive)
+    };
+
+    let mut logs = vec![build_minimal_action_log(MinimalActionLogDraft {
+        round: action_round,
+        actor_id,
+        actor_name: &actor_name,
+        skill_id: skill_id.trim(),
+        skill_name: &skill_name,
+        target_id,
+        target_name: &target_name,
+        damage: actual_damage,
+    })];
+    if target_dead {
+        logs.push(build_minimal_death_log(
+            action_round,
+            target_id,
+            &target_name,
+            Some(actor_id),
+            Some(&actor_name),
+        ));
+    }
+    Ok(logs)
+}
+
+fn build_runtime_action_log(
+    round: i64,
+    actor_id: &str,
+    actor_name: &str,
+    skill_id: &str,
+    skill_name: &str,
+    targets: &[RuntimeResolvedTargetLog],
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "action",
+        "round": round,
+        "actorId": actor_id,
+        "actorName": actor_name,
+        "skillId": skill_id,
+        "skillName": skill_name,
+        "targets": targets.iter().map(|target| {
+            let mut target_value = serde_json::json!({
+                "targetId": target.target_id,
+                "targetName": target.target_name,
+                "hits": [{
+                    "index": 1,
+                    "damage": target.damage.max(0),
+                    "isMiss": target.is_miss,
+                    "isCrit": target.is_crit,
+                    "isParry": target.is_parry,
+                    "isElementBonus": target.is_element_bonus,
+                    "shieldAbsorbed": target.shield_absorbed.max(0),
+                }],
+                "damage": target.damage.max(0),
+                "shieldAbsorbed": target.shield_absorbed.max(0),
+            });
+            if let Some(object) = target_value.as_object_mut() {
+                if target.heal > 0 {
+                    object.insert("heal".to_string(), serde_json::json!(target.heal));
+                }
+                if target.shield > 0 {
+                    object.insert("shield".to_string(), serde_json::json!(target.shield));
+                }
+                if !target.buffs_applied.is_empty() {
+                    object.insert(
+                        "buffsApplied".to_string(),
+                        serde_json::json!(target.buffs_applied),
+                    );
+                }
+            }
+            target_value
+        }).collect::<Vec<_>>()
+    })
+}
+
+fn execute_runtime_skill_action(
+    state: &mut BattleStateDto,
+    actor_id: &str,
+    skill_id: &str,
+    selected_target_ids: &[String],
+) -> Result<Vec<serde_json::Value>, String> {
+    let actor = unit_by_id(state, actor_id)
+        .cloned()
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    let actor_name = actor.name.clone();
+    let skill = runtime_skill_value(&actor, skill_id)
+        .cloned()
+        .ok_or_else(|| format!("战斗技能不存在: {}", skill_id.trim()))?;
+    let skill_name = resolve_unit_skill_name(&actor, skill_id)?;
+    let action_round = state.round_count.max(1);
+    let target_ids = resolve_runtime_skill_targets(state, actor_id, skill_id, selected_target_ids)?;
+    let skill_target_type = skill_target_type(&skill).to_string();
+    let effects = skill
+        .get("effects")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let damage_effects = effects
+        .iter()
+        .cloned()
+        .filter(|effect| effect.get("type").and_then(serde_json::Value::as_str) == Some("damage"))
+        .collect::<Vec<_>>();
+
+    let mut target_logs = Vec::new();
+    let mut logs = Vec::new();
+    for target_id in target_ids {
+        let target_snapshot = unit_by_id(state, target_id.as_str())
+            .cloned()
+            .ok_or_else(|| "目标不存在或已死亡".to_string())?;
+        if !target_snapshot.is_alive {
+            continue;
+        }
+        let mut total_damage = 0;
+        if damage_effects.is_empty() {
+            if matches!(skill_id.trim(), "skill-normal-attack" | "sk-heavy-slash" | "sk-bite") {
+                total_damage = resolve_runtime_skill_damage(state, actor_id, skill_id).max(0);
+            }
+        } else {
+            for effect in &damage_effects {
+                let damage_type = effect
+                    .get("damageType")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| skill.get("damageType").and_then(serde_json::Value::as_str))
+                    .unwrap_or("physical");
+                let fallback_scale_attr = if damage_type == "magic" { "fagong" } else { "wugong" };
+                total_damage += resolve_effect_base_value(&actor, &target_snapshot, effect, fallback_scale_attr)
+                    .max(0);
+            }
+        }
+
+        let mut damage_outcome = calculate_runtime_damage(
+            state,
+            &actor,
+            &target_snapshot,
+            skill
+                .get("damageType")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("physical"),
+            skill.get("element").and_then(serde_json::Value::as_str),
+            total_damage,
+        );
+
+        let (actual_damage, target_dead, target_name, shield_absorbed) = {
+            let target = unit_by_id_mut(state, target_id.as_str())
+                .ok_or_else(|| "目标不存在或已死亡".to_string())?;
+            let target_name = target.name.clone();
+            if !damage_outcome.is_miss {
+                let (actual_damage, shield_absorbed) = apply_runtime_damage_to_target(
+                    target,
+                    damage_outcome.damage,
+                    skill
+                        .get("damageType")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("physical"),
+                );
+                damage_outcome.actual_damage = actual_damage;
+                damage_outcome.shield_absorbed = shield_absorbed;
+                (actual_damage, !target.is_alive, target_name, shield_absorbed)
+            } else {
+                (0, false, target_name, 0)
+            }
+        };
+        target_logs.push(RuntimeResolvedTargetLog {
+            target_id: target_id.clone(),
+            target_name: target_name.clone(),
+            damage: actual_damage,
+            heal: 0,
+            shield: 0,
+            buffs_applied: Vec::new(),
+            is_miss: damage_outcome.is_miss,
+            is_crit: damage_outcome.is_crit,
+            is_parry: damage_outcome.is_parry,
+            is_element_bonus: damage_outcome.is_element_bonus,
+            shield_absorbed,
+            momentum_gained: Vec::new(),
+            momentum_consumed: Vec::new(),
+        });
+        if target_dead {
+            logs.push(build_minimal_death_log(
+                action_round,
+                target_id.as_str(),
+                target_name.as_str(),
+                Some(actor_id),
+                Some(actor_name.as_str()),
+            ));
+        }
+    }
+    for effect in effects.iter().filter(|effect| {
+        matches!(
+            effect.get("type").and_then(serde_json::Value::as_str),
+            Some("heal" | "restore_lingqi" | "resource" | "buff" | "debuff" | "shield" | "control" | "cleanse" | "cleanse_control" | "dispel" | "mark")
+        )
+    }) {
+        let effect_type = effect.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
+        let effect_target_ids =
+            resolve_effect_target_ids(state, actor_id, selected_target_ids, skill_target_type.as_str(), effect)?;
+        for effect_target_id in effect_target_ids {
+            let target_snapshot = unit_by_id(state, effect_target_id.as_str())
+                .cloned()
+                .ok_or_else(|| "没有有效目标".to_string())?;
+            let log_entry = get_or_create_target_log(
+                &mut target_logs,
+                effect_target_id.as_str(),
+                target_snapshot.name.as_str(),
+            );
+            match effect_type {
+                "heal" => {
+                    let heal_value = resolve_effect_base_value(&actor, &target_snapshot, effect, "fagong").max(0);
+                    if heal_value > 0 {
+                        let healed = {
+                            let target = unit_by_id_mut(state, effect_target_id.as_str())
+                                .ok_or_else(|| "没有有效目标".to_string())?;
+                            let before = target.qixue;
+                            target.qixue = (target.qixue + heal_value).min(target.current_attrs.max_qixue.max(1));
+                            (target.qixue - before).max(0)
+                        };
+                        log_entry.heal += healed;
+                    }
+                }
+                "restore_lingqi" => {
+                    let restore_value = effect.get("value").and_then(serde_json::Value::as_i64).unwrap_or_default().max(0);
+                    if restore_value > 0 {
+                        let target = unit_by_id_mut(state, effect_target_id.as_str())
+                            .ok_or_else(|| "没有有效目标".to_string())?;
+                        target.lingqi = (target.lingqi + restore_value).min(target.current_attrs.max_lingqi.max(0));
+                    }
+                }
+                "resource" => {
+                    let resource_type = effect.get("resourceType").and_then(serde_json::Value::as_str).unwrap_or("lingqi");
+                    let delta = effect.get("value").and_then(serde_json::Value::as_i64).unwrap_or_default();
+                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                        .ok_or_else(|| "没有有效目标".to_string())?;
+                    if resource_type == "qixue" {
+                        target.qixue = (target.qixue + delta).clamp(0, target.current_attrs.max_qixue.max(1));
+                    } else {
+                        target.lingqi = (target.lingqi + delta).clamp(0, target.current_attrs.max_lingqi.max(0));
+                    }
+                }
+                "shield" => {
+                    let shield_value = resolve_effect_base_value(&actor, &target_snapshot, effect, "fagong").max(0);
+                    if shield_value > 0 {
+                        let target = unit_by_id_mut(state, effect_target_id.as_str())
+                            .ok_or_else(|| "没有有效目标".to_string())?;
+                        target.shields.push(serde_json::json!({
+                            "id": format!("shield-{}-{}", effect_target_id, action_round),
+                            "sourceSkillId": skill_id,
+                            "value": shield_value,
+                            "maxValue": shield_value,
+                            "duration": effect.get("duration").and_then(serde_json::Value::as_i64).unwrap_or(1),
+                            "absorbType": "all",
+                            "priority": 0,
+                        }));
+                        log_entry.shield += shield_value;
+                    }
+                }
+                "buff" | "debuff" => {
+                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                        .ok_or_else(|| "没有有效目标".to_string())?;
+                    if let Some(buff_key) = apply_runtime_buff_effect(target, effect_type, effect) {
+                        if !log_entry.buffs_applied.iter().any(|entry| entry == &buff_key) {
+                            log_entry.buffs_applied.push(buff_key);
+                        }
+                    }
+                }
+                "control" => {
+                    let control_type = effect.get("controlType").and_then(serde_json::Value::as_str).unwrap_or("").trim();
+                    if !control_type.is_empty() {
+                        let target = unit_by_id_mut(state, effect_target_id.as_str())
+                            .ok_or_else(|| "没有有效目标".to_string())?;
+                        target.buffs.push(serde_json::json!({
+                            "id": format!("control-{}-{}", control_type, action_round),
+                            "buffDefId": format!("control-{}", control_type),
+                            "name": control_type,
+                            "type": "debuff",
+                            "category": "control",
+                            "sourceUnitId": actor_id,
+                            "remainingDuration": effect.get("duration").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1),
+                            "stacks": 1,
+                            "maxStacks": 1,
+                            "control": control_type,
+                            "tags": [control_type],
+                            "dispellable": true,
+                        }));
+                        if !log_entry.buffs_applied.iter().any(|entry| entry == control_type) {
+                            log_entry.buffs_applied.push(control_type.to_string());
+                        }
+                    }
+                }
+                "cleanse" => {
+                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                        .ok_or_else(|| "没有有效目标".to_string())?;
+                    let removed = remove_runtime_buffs_by_predicate(target, |buff| {
+                        buff.get("type").and_then(serde_json::Value::as_str) == Some("debuff")
+                    });
+                    for buff_name in removed {
+                        if !log_entry.buffs_applied.iter().any(|entry| entry == &buff_name) {
+                            log_entry.buffs_applied.push(buff_name);
+                        }
+                    }
+                }
+                "cleanse_control" => {
+                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                        .ok_or_else(|| "没有有效目标".to_string())?;
+                    let removed = remove_runtime_buffs_by_predicate(target, |buff| {
+                        buff.get("control").and_then(serde_json::Value::as_str).is_some()
+                    });
+                    for buff_name in removed {
+                        if !log_entry.buffs_applied.iter().any(|entry| entry == &buff_name) {
+                            log_entry.buffs_applied.push(buff_name);
+                        }
+                    }
+                }
+                "dispel" => {
+                    let dispel_type = effect.get("dispelType").and_then(serde_json::Value::as_str).unwrap_or("all");
+                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                        .ok_or_else(|| "没有有效目标".to_string())?;
+                    let removed = remove_runtime_buffs_by_predicate(target, |buff| match dispel_type {
+                        "buff" => buff.get("type").and_then(serde_json::Value::as_str) == Some("buff"),
+                        "debuff" => buff.get("type").and_then(serde_json::Value::as_str) == Some("debuff"),
+                        _ => true,
+                    });
+                    for buff_name in removed {
+                        if !log_entry.buffs_applied.iter().any(|entry| entry == &buff_name) {
+                            log_entry.buffs_applied.push(buff_name);
+                        }
+                    }
+                }
+                "mark" => {
+                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                        .ok_or_else(|| "没有有效目标".to_string())?;
+                    if let Some(mark_id) = apply_runtime_mark_effect(target, actor_id, effect) {
+                        if !log_entry.buffs_applied.iter().any(|entry| entry == &mark_id) {
+                            log_entry.buffs_applied.push(mark_id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if target_logs.is_empty() {
+        return Err("没有可攻击目标".to_string());
+    }
+    logs.insert(
+        0,
+        build_runtime_action_log(
+            action_round,
+            actor_id,
+            actor_name.as_str(),
+            skill_id.trim(),
+            skill_name.as_str(),
+            &target_logs,
+        ),
+    );
+    Ok(logs)
+}
+
+fn run_defender_turns_until_attacker_or_finish(
+    state: &mut BattleStateDto,
+    logs: &mut Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut defender_logs = Vec::new();
+    while state.phase != "finished" && state.current_team != "attacker" {
+        repair_action_cursor(state);
+        if state.phase == "finished" || state.current_team == "attacker" {
+            break;
+        }
+        let actor_id = state.current_unit_id.clone().ok_or_else(|| "当前不可行动".to_string())?;
+        execute_runtime_auto_turn(state, actor_id.as_str(), &mut defender_logs)?;
+    }
+    logs.extend(defender_logs.iter().cloned());
+    Ok(defender_logs)
+}
+
 pub fn apply_minimal_pve_action(
     state: &mut BattleStateDto,
-    actor_character_id: i64,
+    _actor_character_id: i64,
     skill_id: &str,
     target_ids: &[String],
 ) -> Result<MinimalBattleActionOutcome, String> {
@@ -741,175 +2994,39 @@ pub fn apply_minimal_pve_action(
     if state.phase == "finished" {
         return Err("战斗已结束".to_string());
     }
+    repair_action_cursor(state);
+    let mut logs = Vec::new();
+    let placeholder_owner_actor_id = state.current_unit_id.clone().unwrap_or_default();
+    run_attacker_auto_turns_until_owner_or_switch(state, placeholder_owner_actor_id.as_str(), &mut logs)?;
     if state.current_team != "attacker" {
         return Err("当前不是我方行动回合".to_string());
     }
-    let expected_actor_id = format!("player-{}", actor_character_id);
-    if state.current_unit_id.as_deref() != Some(expected_actor_id.as_str()) {
+    let current_actor_id = state
+        .current_unit_id
+        .clone()
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    let current_actor = unit_by_id(state, current_actor_id.as_str())
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    if current_actor.r#type != "player" {
         return Err("当前不可行动".to_string());
     }
-    tick_down_runtime_skill_cooldowns(state);
-    consume_runtime_skill_cost_and_validate_cooldown(state, &expected_actor_id, skill_id)?;
-    let (actor_name, skill_name) = resolve_unit_name_and_skill_name(
-        &state.teams.attacker.units,
-        &expected_actor_id,
-        skill_id,
-    )?;
-    let action_round = state.round_count.max(1);
-    let target_id = target_ids.first().cloned().or_else(|| {
-        state
-            .teams
-            .defender
-            .units
-            .iter()
-            .find(|unit| unit.is_alive)
-            .map(|unit| unit.id.clone())
-    });
-    let Some(target_id) = target_id else {
-        return Err("没有可攻击目标".to_string());
+    resolve_unit_skill_name(current_actor, skill_id)?;
+    consume_runtime_skill_cost_and_validate_cooldown(state, current_actor_id.as_str(), skill_id)?;
+    logs.extend(execute_runtime_skill_action(state, current_actor_id.as_str(), skill_id, target_ids)?);
+    complete_unit_action_and_advance(state, current_actor_id.as_str(), Some(skill_id), &mut logs);
+    run_attacker_auto_turns_until_owner_or_switch(state, current_actor_id.as_str(), &mut logs)?;
+    run_defender_turns_until_attacker_or_finish(state, &mut logs)?;
+
+    let (exp_gained, silver_gained) = if state.result.as_deref() == Some("attacker_win") {
+        sum_monster_rewards(&state.teams.defender.units)
+    } else {
+        (0, 0)
     };
-    let Some(target) = state
-        .teams
-        .defender
-        .units
-        .iter_mut()
-        .find(|unit| unit.id == target_id && unit.is_alive)
-    else {
-        return Err("目标不存在或已死亡".to_string());
-    };
-
-    let damage = resolve_player_skill_damage(skill_id);
-    let target_name = target.name.clone();
-    let target_qixue_before = target.qixue;
-    target.qixue = (target.qixue - damage).max(0);
-    let actual_damage = (target_qixue_before - target.qixue).max(0);
-    target.is_alive = target.qixue > 0;
-    target.can_act = target.is_alive;
-    let mut logs = vec![build_minimal_action_log(MinimalActionLogDraft {
-        round: action_round,
-        actor_id: &expected_actor_id,
-        actor_name: &actor_name,
-        skill_id: skill_id.trim(),
-        skill_name: &skill_name,
-        target_id: &target_id,
-        target_name: &target_name,
-        damage: actual_damage,
-    })];
-    if !target.is_alive {
-        logs.push(build_minimal_death_log(
-            action_round,
-            &target_id,
-            &target_name,
-            Some(&expected_actor_id),
-            Some(&actor_name),
-        ));
-    }
-
-    let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
-    if !enemy_alive {
-        state.phase = "finished".to_string();
-        state.result = Some("attacker_win".to_string());
-        state.current_unit_id = None;
-        let (exp_gained, silver_gained) = sum_monster_rewards(&state.teams.defender.units);
-        return Ok(MinimalBattleActionOutcome {
-            finished: true,
-            result: Some("attacker_win".to_string()),
-            exp_gained,
-            silver_gained,
-            logs,
-        });
-    }
-
-    let counter_actions = state
-        .teams
-        .defender
-        .units
-        .iter()
-        .filter(|unit| unit.is_alive)
-        .map(|unit| {
-            let skill_id = "sk-bite";
-            let skill_name = resolve_unit_skill_name(unit, skill_id)?;
-            Ok((
-                unit.id.clone(),
-                unit.name.clone(),
-                skill_id.to_string(),
-                skill_name,
-                resolve_monster_counter_damage(unit),
-            ))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let Some(player) = state
-        .teams
-        .attacker
-        .units
-        .iter_mut()
-        .find(|unit| unit.id == expected_actor_id)
-    else {
-        return Err("当前不可行动".to_string());
-    };
-    let mut killer_id = None;
-    let mut killer_name = None;
-    for (
-        counter_actor_id,
-        counter_actor_name,
-        counter_skill_id,
-        counter_skill_name,
-        counter_damage,
-    ) in counter_actions
-    {
-        if player.qixue <= 0 {
-            break;
-        }
-        let qixue_before = player.qixue;
-        player.qixue = (player.qixue - counter_damage).max(0);
-        let actual_counter_damage = (qixue_before - player.qixue).max(0);
-        logs.push(build_minimal_action_log(MinimalActionLogDraft {
-            round: action_round,
-            actor_id: &counter_actor_id,
-            actor_name: &counter_actor_name,
-            skill_id: &counter_skill_id,
-            skill_name: &counter_skill_name,
-            target_id: &expected_actor_id,
-            target_name: &actor_name,
-            damage: actual_counter_damage,
-        }));
-        if player.qixue <= 0 {
-            killer_id = Some(counter_actor_id);
-            killer_name = Some(counter_actor_name);
-        }
-    }
-    player.is_alive = player.qixue > 0;
-    player.can_act = player.is_alive;
-    state.round_count += 1;
-
-    if !player.is_alive {
-        state.phase = "finished".to_string();
-        state.result = Some("defender_win".to_string());
-        state.current_unit_id = None;
-        logs.push(build_minimal_death_log(
-            action_round,
-            &expected_actor_id,
-            &actor_name,
-            killer_id.as_deref(),
-            killer_name.as_deref(),
-        ));
-        return Ok(MinimalBattleActionOutcome {
-            finished: true,
-            result: Some("defender_win".to_string()),
-            exp_gained: 0,
-            silver_gained: 0,
-            logs,
-        });
-    }
-
-    state.phase = "action".to_string();
-    state.current_team = "attacker".to_string();
-    state.current_unit_id = Some(expected_actor_id);
     Ok(MinimalBattleActionOutcome {
-        finished: false,
-        result: None,
-        exp_gained: 0,
-        silver_gained: 0,
+        finished: state.phase == "finished",
+        result: state.result.clone(),
+        exp_gained,
+        silver_gained,
         logs,
     })
 }
@@ -917,6 +3034,7 @@ pub fn apply_minimal_pve_action(
 pub fn apply_minimal_pvp_action(
     state: &mut BattleStateDto,
     actor_character_id: i64,
+    skill_id: &str,
     target_ids: &[String],
 ) -> Result<MinimalBattleActionOutcome, String> {
     if state.battle_type != "pvp" {
@@ -925,6 +3043,7 @@ pub fn apply_minimal_pvp_action(
     if state.phase == "finished" {
         return Err("战斗已结束".to_string());
     }
+    repair_action_cursor(state);
     if state.current_team != "attacker" {
         return Err("当前不是我方行动回合".to_string());
     }
@@ -932,84 +3051,16 @@ pub fn apply_minimal_pvp_action(
     if state.current_unit_id.as_deref() != Some(expected_actor_id.as_str()) {
         return Err("当前不可行动".to_string());
     }
-    tick_down_runtime_skill_cooldowns(state);
-    consume_runtime_skill_cost_and_validate_cooldown(state, &expected_actor_id, "sk-heavy-slash")?;
-    let skill_id = "sk-heavy-slash";
-    let (actor_name, skill_name) = resolve_unit_name_and_skill_name(
-        &state.teams.attacker.units,
-        &expected_actor_id,
-        skill_id,
-    )?;
-    let action_round = state.round_count.max(1);
-    let target_id = target_ids.first().cloned().or_else(|| {
-        state
-            .teams
-            .defender
-            .units
-            .iter()
-            .find(|unit| unit.is_alive)
-            .map(|unit| unit.id.clone())
-    });
-    let Some(target_id) = target_id else {
-        return Err("没有可攻击目标".to_string());
-    };
-    let Some(target) = state
-        .teams
-        .defender
-        .units
-        .iter_mut()
-        .find(|unit| unit.id == target_id && unit.is_alive)
-    else {
-        return Err("目标不存在或已死亡".to_string());
-    };
-
-    let target_name = target.name.clone();
-    let target_qixue_before = target.qixue;
-    target.qixue = 0;
-    let actual_damage = target_qixue_before.max(0);
-    target.is_alive = false;
-    target.can_act = false;
-    let logs = vec![
-        build_minimal_action_log(MinimalActionLogDraft {
-            round: action_round,
-            actor_id: &expected_actor_id,
-            actor_name: &actor_name,
-            skill_id,
-            skill_name: &skill_name,
-            target_id: &target_id,
-            target_name: &target_name,
-            damage: actual_damage,
-        }),
-        build_minimal_death_log(
-            action_round,
-            &target_id,
-            &target_name,
-            Some(&expected_actor_id),
-            Some(&actor_name),
-        ),
-    ];
-    state.round_count += 1;
-
-    let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
-    if !enemy_alive {
-        state.phase = "finished".to_string();
-        state.result = Some("attacker_win".to_string());
-        state.current_unit_id = None;
-        return Ok(MinimalBattleActionOutcome {
-            finished: true,
-            result: Some("attacker_win".to_string()),
-            exp_gained: 0,
-            silver_gained: 0,
-            logs,
-        });
-    }
-
-    state.phase = "action".to_string();
-    state.current_team = "attacker".to_string();
-    state.current_unit_id = Some(expected_actor_id);
+    let current_actor = unit_by_id(state, expected_actor_id.as_str())
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    resolve_unit_skill_name(current_actor, skill_id)?;
+    consume_runtime_skill_cost_and_validate_cooldown(state, &expected_actor_id, skill_id)?;
+    let mut logs = execute_runtime_skill_action(state, expected_actor_id.as_str(), skill_id, target_ids)?;
+    complete_unit_action_and_advance(state, expected_actor_id.as_str(), Some(skill_id), &mut logs);
+    run_defender_turns_until_attacker_or_finish(state, &mut logs)?;
     Ok(MinimalBattleActionOutcome {
-        finished: false,
-        result: None,
+        finished: state.phase == "finished",
+        result: state.result.clone(),
         exp_gained: 0,
         silver_gained: 0,
         logs,
@@ -1082,9 +3133,6 @@ fn resolve_unit_name_and_skill_name(
 
 fn resolve_unit_skill_name(unit: &BattleUnitDto, skill_id: &str) -> Result<String, String> {
     let normalized_skill_id = skill_id.trim();
-    if normalized_skill_id == "skill-normal-attack" {
-        return Ok("普通攻击".to_string());
-    }
     unit.skills
         .iter()
         .find(|skill| {
@@ -1095,11 +3143,36 @@ fn resolve_unit_skill_name(unit: &BattleUnitDto, skill_id: &str) -> Result<Strin
         .ok_or_else(|| format!("战斗技能不存在: {normalized_skill_id}"))
 }
 
-fn tick_down_runtime_skill_cooldowns(state: &mut BattleStateDto) {
-    for value in state.runtime_skill_cooldowns.values_mut() {
-        *value = value.saturating_sub(1);
+fn reduce_runtime_skill_cooldowns_for_unit(
+    state: &mut BattleStateDto,
+    actor_id: &str,
+    used_skill_id: Option<&str>,
+) {
+    let actor_prefix = format!("{actor_id}:");
+    let skip_key = used_skill_id.map(|skill_id| format!("{actor_id}:{skill_id}"));
+    let keys_to_update = state
+        .runtime_skill_cooldowns
+        .keys()
+        .filter(|key| key.starts_with(actor_prefix.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    for key in keys_to_update {
+        if skip_key.as_deref() == Some(key.as_str()) {
+            continue;
+        }
+        let remaining = state
+            .runtime_skill_cooldowns
+            .get(key.as_str())
+            .copied()
+            .unwrap_or_default();
+        if remaining <= 1 {
+            state.runtime_skill_cooldowns.remove(key.as_str());
+            continue;
+        }
+        state
+            .runtime_skill_cooldowns
+            .insert(key, remaining.saturating_sub(1));
     }
-    state.runtime_skill_cooldowns.retain(|_, value| *value > 0);
     sync_unit_skill_cooldowns_from_runtime(state);
 }
 
@@ -1136,7 +3209,7 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
     actor_id: &str,
     skill_id: &str,
 ) -> Result<(), String> {
-    let Some(config) = battle_skill_runtime_config(skill_id) else {
+    let Some(config) = resolve_runtime_skill_config(state, actor_id, skill_id) else {
         return Ok(());
     };
     let cooldown_key = format!("{actor_id}:{skill_id}");
@@ -1147,17 +3220,19 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
         .unwrap_or_default()
         > 0
     {
-        return Err("技能冷却中".to_string());
+        let remaining = state
+            .runtime_skill_cooldowns
+            .get(cooldown_key.as_str())
+            .copied()
+            .unwrap_or_default();
+        return Err(format!("技能冷却中: {}回合", remaining));
     }
-    let Some(actor) = state
-        .teams
-        .attacker
-        .units
-        .iter_mut()
-        .find(|unit| unit.id == actor_id && unit.is_alive)
-    else {
+    let Some(actor) = unit_by_id_mut(state, actor_id) else {
         return Err("当前不可行动".to_string());
     };
+    if !actor.is_alive {
+        return Err("当前不可行动".to_string());
+    }
     if actor.lingqi < config.cost_lingqi.max(0) {
         return Err("灵气不足".to_string());
     }
@@ -1169,7 +3244,7 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
     if config.cooldown_turns > 0 {
         state
             .runtime_skill_cooldowns
-            .insert(cooldown_key, config.cooldown_turns + 1);
+            .insert(cooldown_key, config.cooldown_turns);
         sync_unit_skill_cooldowns_from_runtime(state);
     }
     Ok(())
@@ -1196,12 +3271,19 @@ fn battle_skill_runtime_config(skill_id: &str) -> Option<BattleSkillRuntimeConfi
     }
 }
 
-fn resolve_player_skill_damage(skill_id: &str) -> i64 {
+fn resolve_runtime_skill_damage(state: &BattleStateDto, actor_id: &str, skill_id: &str) -> i64 {
     match skill_id.trim() {
         "sk-heavy-slash" => 220,
-        "skill-normal-attack" => 32,
-        "sk-bite" => 24,
-        _ => 28,
+        "skill-normal-attack" => unit_by_id(state, actor_id)
+            .map(|unit| unit.current_attrs.wugong.max(32))
+            .unwrap_or(32),
+        "sk-bite" => unit_by_id(state, actor_id)
+            .map(resolve_monster_counter_damage)
+            .map(|damage| damage.max(24))
+            .unwrap_or(24),
+        _ => unit_by_id(state, actor_id)
+            .map(|unit| unit.current_attrs.wugong.max(28))
+            .unwrap_or(28),
     }
 }
 
@@ -2032,9 +4114,12 @@ fn as_drop_entry_i64(value: Option<&serde_json::Value>, default_value: i64) -> i
 mod tests {
     use super::{
         BattleCharacterUnitProfile, BattleUnitCurrentAttrsDto, MinimalBattleRewardParticipant,
-        MinimalPveItemRewardResolveOptions, apply_character_profile_to_battle_state,
-        apply_minimal_pve_action, apply_minimal_pvp_action, build_minimal_pve_battle_state,
-        build_minimal_pvp_battle_state, build_skill_value, resolve_minimal_pve_item_rewards,
+        DEFENSE_DAMAGE_K, MAX_ROUNDS_PVE, MinimalPveItemRewardResolveOptions,
+        apply_character_profile_to_battle_state, apply_minimal_pve_action,
+        apply_minimal_pvp_action, build_minimal_pve_battle_state,
+        build_minimal_pvp_battle_state, build_skill_value, determine_first_mover,
+        process_round_start, refresh_battle_team_total_speed, resolve_minimal_pve_item_rewards,
+        restart_battle_runtime, start_battle_runtime,
     };
 
     #[test]
@@ -2178,7 +4263,580 @@ mod tests {
     }
 
     #[test]
-    fn minimal_pve_action_allows_innate_normal_attack_when_snapshot_skills_are_stale() {
+    fn minimal_pve_action_emits_round_end_and_next_round_start_logs() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].current_attrs.sudu = 0;
+        refresh_battle_team_total_speed(&mut state);
+        state.first_mover = determine_first_mover(&state).to_string();
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        assert!(outcome.logs.iter().any(|log| log["type"] == "round_end" && log["round"] == 1));
+        assert!(outcome.logs.iter().any(|log| log["type"] == "round_start" && log["round"] == 2));
+        assert_eq!(state.round_count, 2);
+    }
+
+    #[test]
+    fn minimal_pve_action_draws_when_max_rounds_are_exhausted() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.round_count = MAX_ROUNDS_PVE;
+        state.teams.attacker.units[0].current_attrs.sudu = 0;
+        refresh_battle_team_total_speed(&mut state);
+        state.first_mover = determine_first_mover(&state).to_string();
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should finish as draw");
+
+        assert!(outcome.finished);
+        assert_eq!(outcome.result.as_deref(), Some("draw"));
+        assert_eq!(state.phase, "finished");
+        assert_eq!(state.result.as_deref(), Some("draw"));
+        assert!(outcome.logs.iter().any(|log| log["type"] == "round_end"));
+    }
+
+    #[test]
+    fn minimal_pve_action_supports_self_lingqi_restore_skill_effect() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].lingqi = 20;
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-restore-self",
+            "name": "养气回灵",
+            "description": "恢复灵气",
+            "type": "active",
+            "targetType": "self",
+            "damageType": "magic",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "restore_lingqi", "value": 15, "valueType": "flat"}
+            ]
+        }));
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-restore-self", &[])
+            .expect("self restore skill should succeed");
+
+        assert_eq!(outcome.logs[0]["actorId"], "player-1");
+        assert_eq!(outcome.logs[0]["targets"][0]["targetId"], "player-1");
+        assert_eq!(state.teams.attacker.units[0].lingqi, 35);
+    }
+
+    #[test]
+    fn minimal_pve_action_supports_single_ally_heal_and_buff_targeting() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let ally_attrs = BattleUnitCurrentAttrsDto {
+            max_qixue: 300,
+            max_lingqi: 120,
+            wugong: 80,
+            fagong: 60,
+            wufang: 30,
+            fafang: 30,
+            sudu: 10,
+            mingzhong: 100,
+            shanbi: 0,
+            zhaojia: 0,
+            baoji: 0,
+            baoshang: 0,
+            jianbaoshang: 0,
+            jianfantan: 0,
+            kangbao: 0,
+            zengshang: 0,
+            zhiliao: 0,
+            jianliao: 0,
+            xixue: 0,
+            lengque: 0,
+            kongzhi_kangxing: 0,
+            jin_kangxing: 0,
+            mu_kangxing: 0,
+            shui_kangxing: 0,
+            huo_kangxing: 0,
+            tu_kangxing: 0,
+            qixue_huifu: 0,
+            lingqi_huifu: 0,
+            realm: Some("凡人".to_string()),
+            element: Some("none".to_string()),
+        };
+        state.teams.attacker.units.push(super::BattleUnitDto {
+            id: "player-2".to_string(),
+            name: "队友".to_string(),
+            r#type: "player".to_string(),
+            source_id: serde_json::json!(2),
+            base_attrs: ally_attrs.clone(),
+            formation_order: Some(2),
+            owner_unit_id: None,
+            month_card_active: Some(false),
+            avatar: None,
+            qixue: 120,
+            lingqi: 60,
+            current_attrs: ally_attrs,
+            shields: Vec::new(),
+            is_alive: true,
+            can_act: true,
+            buffs: Vec::new(),
+            marks: Vec::new(),
+            momentum: None,
+            set_bonus_effects: Vec::new(),
+            skills: vec![build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0)],
+            skill_cooldowns: std::collections::BTreeMap::new(),
+            skill_cooldown_discount_bank: std::collections::BTreeMap::new(),
+            partner_skill_policy: None,
+            control_diminishing: std::collections::BTreeMap::new(),
+            stats: super::BattleUnitStatsDto {
+                damage_dealt: 0,
+                damage_taken: 0,
+                healing_done: 0,
+                healing_received: 0,
+                kill_count: 0,
+            },
+            reward_exp: None,
+            reward_silver: None,
+        });
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-support-ally",
+            "name": "回春护体诀",
+            "description": "治疗并增益队友",
+            "type": "active",
+            "targetType": "single_ally",
+            "damageType": "magic",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "heal", "value": 180, "valueType": "flat"},
+                {"type": "buff", "buffKind": "attr", "attrKey": "wugong", "applyType": "percent", "value": 0.25, "duration": 2}
+            ]
+        }));
+        refresh_battle_team_total_speed(&mut state);
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-support-ally", &["player-2".to_string()])
+            .expect("single ally support skill should succeed");
+
+        let ally = state
+            .teams
+            .attacker
+            .units
+            .iter()
+            .find(|unit| unit.id == "player-2")
+            .expect("ally should exist");
+        println!(
+            "BATTLE_RUNTIME_SUPPORT_SKILL_OUTCOME={{\"allyQixue\":{},\"allyWugong\":{},\"baseWugong\":{},\"log\":{}}}",
+            ally.qixue,
+            ally.current_attrs.wugong,
+            ally.base_attrs.wugong,
+            outcome.logs[0]
+        );
+        assert_eq!(outcome.logs[0]["targets"][0]["targetId"], "player-2");
+        assert_eq!(outcome.logs[0]["targets"][0]["heal"], 180);
+        assert_eq!(outcome.logs[0]["targets"][0]["buffsApplied"][0], "buff-wugong");
+        assert_eq!(ally.qixue, 300);
+        assert!(ally.current_attrs.wugong > ally.base_attrs.wugong);
+    }
+
+    #[test]
+    fn minimal_pve_battle_state_applies_passive_entry_effects_on_start() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-passive-zengshang",
+            "name": "先天战意",
+            "description": "进场提高增伤",
+            "type": "active",
+            "targetType": "self",
+            "damageType": "physical",
+            "cooldown": 0,
+            "triggerType": "passive",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "buff", "buffKind": "attr", "attrKey": "wugong", "applyType": "percent", "value": 0.2, "duration": 2}
+            ]
+        }));
+
+        let mut logs = Vec::new();
+        start_battle_runtime(&mut state, &mut logs);
+
+        assert!(logs.iter().any(|log| log["skillId"] == "skill-passive-zengshang"));
+        assert!(state.teams.attacker.units[0].current_attrs.wugong > state.teams.attacker.units[0].base_attrs.wugong);
+    }
+
+    #[test]
+    fn minimal_pve_action_expires_attr_buff_at_round_end() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-self-buff",
+            "name": "战意昂扬",
+            "description": "提高攻击",
+            "type": "active",
+            "targetType": "self",
+            "damageType": "physical",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "buff", "buffKind": "attr", "attrKey": "wugong", "applyType": "percent", "value": 0.25, "duration": 1}
+            ]
+        }));
+        state.teams.attacker.units[0].current_attrs.sudu = 0;
+        refresh_battle_team_total_speed(&mut state);
+        state.first_mover = determine_first_mover(&state).to_string();
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-self-buff", &[])
+            .expect("self buff should succeed");
+
+        assert!(outcome.logs.iter().any(|log| log["type"] == "buff_expire"));
+        assert!(state.teams.attacker.units[0].buffs.is_empty());
+        assert_eq!(
+            state.teams.attacker.units[0].current_attrs.wugong,
+            state.teams.attacker.units[0].base_attrs.wugong
+        );
+    }
+
+    #[test]
+    fn runtime_damage_respects_defense_reduction_formula() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let attacker = super::BattleUnitDto {
+            current_attrs: BattleUnitCurrentAttrsDto {
+                max_qixue: 1000,
+                max_lingqi: 100,
+                wugong: 200,
+                fagong: 200,
+                wufang: 0,
+                fafang: 0,
+                sudu: 10,
+                mingzhong: 100,
+                shanbi: 0,
+                zhaojia: 0,
+                baoji: 0,
+                baoshang: 2,
+                jianbaoshang: 0,
+                jianfantan: 0,
+                kangbao: 0,
+                zengshang: 0,
+                zhiliao: 0,
+                jianliao: 0,
+                xixue: 0,
+                lengque: 0,
+                kongzhi_kangxing: 0,
+                jin_kangxing: 0,
+                mu_kangxing: 0,
+                shui_kangxing: 0,
+                huo_kangxing: 0,
+                tu_kangxing: 0,
+                qixue_huifu: 0,
+                lingqi_huifu: 0,
+                realm: None,
+                element: Some("none".to_string()),
+            },
+            ..state.teams.attacker.units[0].clone()
+        };
+        let defender = super::BattleUnitDto {
+            current_attrs: BattleUnitCurrentAttrsDto {
+                wufang: 180,
+                fafang: 100,
+                shanbi: 0,
+                zhaojia: 0,
+                kangbao: 0,
+                ..state.teams.defender.units[0].current_attrs.clone()
+            },
+            ..state.teams.defender.units[0].clone()
+        };
+
+        let outcome = super::calculate_runtime_damage(
+            &mut state,
+            &attacker,
+            &defender,
+            "physical",
+            Some("none"),
+            200,
+        );
+        let expected = ((200.0_f64) * (DEFENSE_DAMAGE_K / (180.0 + DEFENSE_DAMAGE_K))).floor() as i64;
+        assert_eq!(outcome.damage, expected);
+        assert_eq!(outcome.is_miss, false);
+        assert_eq!(outcome.is_crit, false);
+    }
+
+    #[test]
+    fn runtime_damage_applies_shield_absorption_before_qixue_loss() {
+        let mut target = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-gray-wolf".to_string()],
+        )
+        .teams
+        .defender
+        .units[0]
+        .clone();
+        target.qixue = 100;
+        target.shields.push(serde_json::json!({
+            "id": "shield-1",
+            "sourceSkillId": "skill-shield",
+            "value": 30,
+            "maxValue": 30,
+            "duration": 2,
+            "absorbType": "all",
+            "priority": 10,
+        }));
+
+        let (actual_damage, shield_absorbed) = super::apply_runtime_damage_to_target(&mut target, 50, "physical");
+        assert_eq!(shield_absorbed, 30);
+        assert_eq!(actual_damage, 20);
+        assert_eq!(target.qixue, 80);
+        assert!(target.shields.is_empty());
+    }
+
+    #[test]
+    fn battle_start_applies_equip_trigger_set_bonus_buff() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-fanren",
+            "setName": "凡尘套装",
+            "pieceCount": 2,
+            "trigger": "equip",
+            "target": "self",
+            "effectType": "buff",
+            "params": {
+                "attr_key": "wugong",
+                "value": 6,
+                "apply_type": "flat"
+            }
+        })];
+
+        let mut logs = Vec::new();
+        restart_battle_runtime(&mut state);
+        process_round_start(&mut state, &mut logs);
+
+        assert!(state.teams.attacker.units[0].current_attrs.wugong > state.teams.attacker.units[0].base_attrs.wugong);
+    }
+
+    #[test]
+    fn round_start_applies_on_turn_start_set_bonus_heal() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.attacker.units[0].qixue = 60;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-test",
+            "setName": "测试套装",
+            "pieceCount": 2,
+            "trigger": "on_turn_start",
+            "target": "self",
+            "effectType": "heal",
+            "params": {
+                "value": 20
+            }
+        })];
+
+        let mut logs = Vec::new();
+        process_round_start(&mut state, &mut logs);
+
+        assert_eq!(state.teams.attacker.units[0].qixue, 80);
+        assert!(logs.iter().any(|log| log["type"] == "hot"));
+    }
+
+    #[test]
+    fn minimal_pve_battle_state_uses_seed_monster_attrs_and_skills() {
+        let state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-mountain-wolf".to_string()],
+        );
+        let monster = &state.teams.defender.units[0];
+        assert_eq!(monster.current_attrs.wugong, 22);
+        assert_eq!(monster.current_attrs.wufang, 10);
+        assert_eq!(monster.current_attrs.sudu, 6);
+        assert!(monster.skills.iter().any(|skill| skill["id"] == "sk-bite"));
+        assert!(monster.skills.iter().any(|skill| skill["id"] == "sk-howl"));
+    }
+
+    #[test]
+    fn minimal_pve_action_control_effect_causes_enemy_turn_skip() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-stun-enemy",
+            "name": "定魂击",
+            "description": "使敌人眩晕",
+            "type": "active",
+            "targetType": "single_enemy",
+            "damageType": "physical",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "control", "controlType": "stun", "duration": 1}
+            ]
+        }));
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-stun-enemy", &["monster-1-monster-gray-wolf".to_string()])
+            .expect("stun skill should succeed");
+
+        assert!(outcome.logs.iter().any(|log| log["skillId"] == "skip"));
+        assert!(state.round_count >= 2);
+    }
+
+    #[test]
+    fn minimal_pve_action_cleanse_control_removes_stun_from_ally() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units.push(super::BattleUnitDto {
+            id: "player-2".to_string(),
+            name: "队友".to_string(),
+            r#type: "player".to_string(),
+            source_id: serde_json::json!(2),
+            base_attrs: state.teams.attacker.units[0].base_attrs.clone(),
+            formation_order: Some(2),
+            owner_unit_id: None,
+            month_card_active: Some(false),
+            avatar: None,
+            qixue: 100,
+            lingqi: 100,
+            current_attrs: state.teams.attacker.units[0].current_attrs.clone(),
+            shields: Vec::new(),
+            is_alive: true,
+            can_act: true,
+            buffs: vec![serde_json::json!({
+                "id": "control-stun-1",
+                "buffDefId": "control-stun",
+                "name": "stun",
+                "type": "debuff",
+                "category": "control",
+                "sourceUnitId": "monster-1",
+                "remainingDuration": 1,
+                "stacks": 1,
+                "maxStacks": 1,
+                "control": "stun",
+                "tags": ["stun"],
+                "dispellable": true
+            })],
+            marks: Vec::new(),
+            momentum: None,
+            set_bonus_effects: Vec::new(),
+            skills: vec![build_skill_value("skill-normal-attack", "普通攻击", 0, 0, 0)],
+            skill_cooldowns: std::collections::BTreeMap::new(),
+            skill_cooldown_discount_bank: std::collections::BTreeMap::new(),
+            partner_skill_policy: None,
+            control_diminishing: std::collections::BTreeMap::new(),
+            stats: super::BattleUnitStatsDto {
+                damage_dealt: 0,
+                damage_taken: 0,
+                healing_done: 0,
+                healing_received: 0,
+                kill_count: 0,
+            },
+            reward_exp: None,
+            reward_silver: None,
+        });
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-cleanse-ally",
+            "name": "清心诀",
+            "description": "解除控制",
+            "type": "active",
+            "targetType": "single_ally",
+            "damageType": "magic",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "cleanse_control"}
+            ]
+        }));
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-cleanse-ally", &["player-2".to_string()])
+            .expect("cleanse control should succeed");
+        let ally = state.teams.attacker.units.iter().find(|unit| unit.id == "player-2").expect("ally exists");
+        assert!(ally.buffs.iter().all(|buff| buff.get("control").is_none()));
+        assert_eq!(outcome.logs[0]["targets"][0]["targetId"], "player-2");
+    }
+
+    #[test]
+    fn minimal_pve_action_applies_mark_and_bonus_damage_uses_same_source_only() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].skills.push(serde_json::json!({
+            "id": "skill-mark-enemy",
+            "name": "虚蚀印诀",
+            "description": "施加虚蚀印记",
+            "type": "active",
+            "targetType": "single_enemy",
+            "damageType": "magic",
+            "cooldown": 0,
+            "cost": {"lingqi": 0, "qixue": 0},
+            "effects": [
+                {"type": "mark", "markId": "void_erosion", "applyStacks": 2, "maxStacks": 5, "duration": 2}
+            ]
+        }));
+
+        let mark_outcome = apply_minimal_pve_action(&mut state, 1, "skill-mark-enemy", &["monster-1-monster-gray-wolf".to_string()])
+            .expect("mark skill should succeed");
+        assert_eq!(mark_outcome.logs[0]["targets"][0]["buffsApplied"][0], "void_erosion");
+
+        let defender = state.teams.defender.units[0].clone();
+        let attacker = state.teams.attacker.units[0].clone();
+        let no_mark_damage = super::calculate_runtime_damage(
+            &mut state,
+            &attacker,
+            &super::BattleUnitDto { marks: Vec::new(), ..defender.clone() },
+            "physical",
+            Some("none"),
+            100,
+        )
+        .damage;
+        let marked_damage = super::calculate_runtime_damage(
+            &mut state,
+            &attacker,
+            &defender,
+            "physical",
+            Some("none"),
+            100,
+        )
+        .damage;
+        assert!(marked_damage > no_mark_damage);
+    }
+
+    #[test]
+    fn minimal_pve_round_start_decays_marks() {
+        let mut unit = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-gray-wolf".to_string()],
+        )
+        .teams
+        .defender
+        .units[0]
+        .clone();
+        unit.marks = vec![
+            serde_json::json!({"id": "void_erosion", "sourceUnitId": "player-1", "stacks": 2, "maxStacks": 5, "remainingDuration": 2}),
+            serde_json::json!({"id": "void_erosion", "sourceUnitId": "player-2", "stacks": 1, "maxStacks": 5, "remainingDuration": 1}),
+        ];
+
+        super::decay_runtime_marks_at_round_start(&mut unit);
+        assert_eq!(unit.marks.len(), 1);
+        assert_eq!(unit.marks[0]["sourceUnitId"], "player-1");
+        assert_eq!(unit.marks[0]["remainingDuration"], 1);
+    }
+
+    #[test]
+    fn minimal_pve_action_rejects_unknown_snapshot_skill_even_for_normal_attack() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
         state.teams.attacker.units[0].skills = vec![build_skill_value(
@@ -2189,17 +4847,15 @@ mod tests {
             0,
         )];
 
-        let outcome = apply_minimal_pve_action(
+        let error = apply_minimal_pve_action(
             &mut state,
             1,
             "skill-normal-attack",
             &["monster-1-monster-gray-wolf".to_string()],
         )
-        .expect("innate normal attack should be resolved");
+        .expect_err("unknown snapshot skill should be rejected");
 
-        assert_eq!(outcome.logs[0]["type"], "action");
-        assert_eq!(outcome.logs[0]["skillId"], "skill-normal-attack");
-        assert_eq!(outcome.logs[0]["skillName"], "普通攻击");
+        assert_eq!(error, "战斗技能不存在: skill-normal-attack");
     }
 
     #[test]
@@ -2230,7 +4886,7 @@ mod tests {
                 .get("sk-heavy-slash")
                 .copied()
                 .unwrap_or_default(),
-            2
+            1
         );
     }
 
@@ -2250,7 +4906,123 @@ mod tests {
         )
         .expect_err("action should fail");
 
-        assert_eq!(error, "技能冷却中");
+        assert_eq!(error, "技能冷却中: 2回合");
+    }
+
+    #[test]
+    fn minimal_pve_action_runs_all_defender_turns_before_returning_to_attacker() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &[
+                "monster-gray-wolf".to_string(),
+                "monster-white-wolf".to_string(),
+            ],
+        );
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should succeed");
+
+        assert!(!outcome.finished);
+        assert_eq!(state.phase, "action");
+        assert_eq!(state.current_team, "attacker");
+        assert_eq!(state.current_unit_id.as_deref(), Some("player-1"));
+        assert_eq!(state.round_count, 2);
+        assert_eq!(outcome.logs.len(), 5);
+        assert_eq!(outcome.logs[0]["actorId"], "player-1");
+        assert_eq!(outcome.logs[1]["actorId"], "monster-1-monster-gray-wolf");
+        assert_eq!(outcome.logs[2]["actorId"], "monster-2-monster-white-wolf");
+        assert_eq!(outcome.logs[3]["type"], "round_end");
+        assert_eq!(outcome.logs[4]["type"], "round_start");
+    }
+
+    #[test]
+    fn minimal_pve_action_cooldown_blocks_next_own_turn_then_unlocks_after_other_skill() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &[
+                "monster-gray-wolf".to_string(),
+                "monster-white-wolf".to_string(),
+            ],
+        );
+
+        apply_minimal_pve_action(
+            &mut state,
+            1,
+            "sk-heavy-slash",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("heavy slash should succeed on first own turn");
+
+        assert_eq!(state.current_team, "attacker");
+        assert_eq!(state.round_count, 2);
+        assert_eq!(
+            state.teams.attacker.units[0]
+                .skill_cooldowns
+                .get("sk-heavy-slash")
+                .copied(),
+            Some(1)
+        );
+
+        let blocked = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "sk-heavy-slash",
+            &["monster-2-monster-white-wolf".to_string()],
+        )
+        .expect_err("second own turn should still be blocked");
+        assert_eq!(blocked, "技能冷却中: 1回合");
+
+        apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-2-monster-white-wolf".to_string()],
+        )
+        .expect("normal attack should advance own-turn cooldowns");
+
+        assert!(
+            state.teams.attacker.units[0]
+                .skill_cooldowns
+                .get("sk-heavy-slash")
+                .is_none()
+        );
+
+        apply_minimal_pve_action(
+            &mut state,
+            1,
+            "sk-heavy-slash",
+            &["monster-2-monster-white-wolf".to_string()],
+        )
+        .expect("third own turn should unlock heavy slash again");
+    }
+
+    #[test]
+    fn minimal_pve_action_repairs_missing_action_cursor_before_validation() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-gray-wolf".to_string(), "monster-white-wolf".to_string()],
+        );
+        state.current_unit_id = None;
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action cursor should self-heal");
+
+        assert_eq!(outcome.logs[0]["actorId"], "player-1");
+        assert_eq!(state.current_team, "attacker");
+        assert_eq!(state.current_unit_id.as_deref(), Some("player-1"));
     }
 
     #[test]
@@ -2267,7 +5039,7 @@ mod tests {
     fn minimal_pvp_action_kills_target_and_finishes_last_enemy() {
         let mut state = build_minimal_pvp_battle_state("pvp-battle-1", 1, 2);
 
-        let outcome = apply_minimal_pvp_action(&mut state, 1, &["opponent-2".to_string()])
+        let outcome = apply_minimal_pvp_action(&mut state, 1, "sk-heavy-slash", &["opponent-2".to_string()])
             .expect("pvp action should succeed");
 
         assert!(outcome.finished);
