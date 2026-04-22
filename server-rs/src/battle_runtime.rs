@@ -2064,6 +2064,9 @@ fn settle_runtime_set_deferred_damage_at_round_end(
     let unit_name = unit.name.clone();
     let mut next_buffs = Vec::new();
     for mut buff in unit.buffs.clone() {
+        if !unit.is_alive {
+            break;
+        }
         let Some(deferred) = buff.get("deferredDamage").cloned() else {
             next_buffs.push(buff);
             continue;
@@ -4226,7 +4229,8 @@ mod tests {
         apply_character_profile_to_battle_state, apply_minimal_pve_action,
         apply_minimal_pvp_action, build_minimal_pve_battle_state,
         build_minimal_pvp_battle_state, build_skill_value, determine_first_mover,
-        process_round_start, refresh_battle_team_total_speed, resolve_minimal_pve_item_rewards,
+        process_round_end_and_start_next_round, process_round_start,
+        refresh_battle_team_total_speed, resolve_minimal_pve_item_rewards,
         restart_battle_runtime, start_battle_runtime,
     };
 
@@ -4866,6 +4870,72 @@ mod tests {
 
         assert!(outcome.logs.iter().any(|log| log["type"] == "dot" && log["damage"] == 30));
         assert!(state.teams.defender.units[0].qixue <= 70);
+    }
+
+    #[test]
+    fn round_end_stops_deferred_damage_after_death() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.defender.units[0].qixue = 10;
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "set-deferred-1",
+            "buffDefId": "set-deferred-damage",
+            "name": "延迟伤害A",
+            "type": "debuff",
+            "category": "set_bonus",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 20,
+                "settleRate": 1.0,
+                "damageType": "physical"
+            },
+            "tags": ["set_bonus"],
+            "dispellable": false
+        }));
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "set-deferred-2",
+            "buffDefId": "set-deferred-damage",
+            "name": "延迟伤害B",
+            "type": "debuff",
+            "category": "set_bonus",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 20,
+                "settleRate": 1.0,
+                "damageType": "physical"
+            },
+            "tags": ["set_bonus"],
+            "dispellable": false
+        }));
+        state.teams.defender.units[0].shields.push(serde_json::json!({
+            "id": "test-shield",
+            "sourceSkillId": "skill-shield",
+            "value": 1,
+            "maxValue": 1,
+            "duration": 1,
+            "absorbType": "all",
+            "priority": 10
+        }));
+        let mut logs = Vec::new();
+        process_round_end_and_start_next_round(&mut state, &mut logs);
+
+        let defender_dot_logs = logs
+            .iter()
+            .filter(|log| {
+                log["type"] == "dot"
+                    && log["unitId"] == "monster-1-monster-gray-wolf"
+                    && log["buffName"].as_str().unwrap_or("").starts_with("延迟伤害")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(defender_dot_logs.len(), 1);
+        assert_eq!(state.teams.defender.units[0].qixue, 0);
+        assert!(!state.teams.defender.units[0].is_alive);
     }
 
     #[test]
