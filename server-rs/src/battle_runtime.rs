@@ -2071,25 +2071,29 @@ fn settle_runtime_set_deferred_damage_at_round_end(
             next_buffs.push(buff);
             continue;
         };
-        let pool = deferred
-            .get("pool")
-            .and_then(serde_json::Value::as_i64)
-            .unwrap_or_default()
-            .max(0);
-        let settle_rate = deferred
-            .get("settleRate")
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.5)
-            .clamp(0.0, 1.0);
-        let damage_type = deferred
-            .get("damageType")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("physical");
-        let remaining_duration = buff
+        let Some(pool) = deferred.get("pool").and_then(serde_json::Value::as_i64) else {
+            next_buffs.push(buff);
+            continue;
+        };
+        let Some(settle_rate) = deferred.get("settleRate").and_then(serde_json::Value::as_f64) else {
+            next_buffs.push(buff);
+            continue;
+        };
+        let Some(damage_type) = deferred.get("damageType").and_then(serde_json::Value::as_str) else {
+            next_buffs.push(buff);
+            continue;
+        };
+        let Some(remaining_duration) = buff
             .get("remainingDuration")
             .and_then(serde_json::Value::as_i64)
-            .unwrap_or(1);
-        let settle_damage = if remaining_duration <= 1 {
+        else {
+            next_buffs.push(buff);
+            continue;
+        };
+        let pool = pool.max(0);
+        let settle_rate = settle_rate.clamp(0.0, 1.0);
+        let is_permanent = remaining_duration == -1;
+        let settle_damage = if !is_permanent && remaining_duration <= 1 {
             pool
         } else {
             ((pool as f64) * settle_rate).floor().max(1.0) as i64
@@ -2108,8 +2112,8 @@ fn settle_runtime_set_deferred_damage_at_round_end(
             ));
         }
         let next_pool = (pool - settle_damage).max(0);
-        let next_duration = remaining_duration - 1;
-        if next_pool > 0 && next_duration > 0 && unit.is_alive {
+        let next_duration = if is_permanent { -1 } else { remaining_duration - 1 };
+        if next_pool > 0 && (is_permanent || next_duration > 0) && unit.is_alive {
             if let Some(object) = buff.as_object_mut() {
                 object.insert("remainingDuration".to_string(), serde_json::json!(next_duration));
                 object.insert(
@@ -4936,6 +4940,115 @@ mod tests {
         assert_eq!(defender_dot_logs.len(), 1);
         assert_eq!(state.teams.defender.units[0].qixue, 0);
         assert!(!state.teams.defender.units[0].is_alive);
+    }
+
+    #[test]
+    fn round_end_preserves_permanent_deferred_damage() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.defender.units[0].qixue = 100;
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "set-deferred-permanent",
+            "buffDefId": "set-deferred-damage",
+            "name": "永久延迟伤害",
+            "type": "debuff",
+            "category": "set_bonus",
+            "sourceUnitId": "player-1",
+            "remainingDuration": -1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 40,
+                "settleRate": 0.5,
+                "damageType": "physical"
+            },
+            "tags": ["set_bonus"],
+            "dispellable": false
+        }));
+
+        let mut logs = Vec::new();
+        process_round_end_and_start_next_round(&mut state, &mut logs);
+
+        assert!(logs.iter().any(|log| log["type"] == "dot" && log["damage"] == 20));
+        let buff = state.teams.defender.units[0]
+            .buffs
+            .iter()
+            .find(|buff| buff["id"] == "set-deferred-permanent")
+            .expect("permanent deferred buff should remain");
+        assert_eq!(buff["remainingDuration"], serde_json::json!(-1));
+        assert_eq!(buff["deferredDamage"]["pool"], serde_json::json!(20));
+    }
+
+    #[test]
+    fn round_end_keeps_invalid_deferred_damage_without_settling() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.defender.units[0].qixue = 100;
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "set-deferred-invalid-settle-rate",
+            "buffDefId": "set-deferred-damage",
+            "name": "无效延迟伤害",
+            "type": "debuff",
+            "category": "set_bonus",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 40,
+                "damageType": "physical"
+            },
+            "tags": ["set_bonus"],
+            "dispellable": false
+        }));
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "set-deferred-invalid-damage-type",
+            "buffDefId": "set-deferred-damage",
+            "name": "无效延迟伤害2",
+            "type": "debuff",
+            "category": "set_bonus",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 40,
+                "settleRate": 0.5
+            },
+            "tags": ["set_bonus"],
+            "dispellable": false
+        }));
+
+        let mut logs = Vec::new();
+        process_round_end_and_start_next_round(&mut state, &mut logs);
+
+        assert!(!logs.iter().any(|log| {
+            log["type"] == "dot" && log["unitId"] == "monster-1-monster-gray-wolf"
+        }));
+        assert_eq!(state.teams.defender.units[0].qixue, 100);
+
+        let invalid_settle_rate = state.teams.defender.units[0]
+            .buffs
+            .iter()
+            .find(|buff| buff["id"] == "set-deferred-invalid-settle-rate")
+            .expect("invalid buff should remain");
+        assert_eq!(invalid_settle_rate["remainingDuration"], serde_json::json!(1));
+        assert_eq!(invalid_settle_rate["deferredDamage"]["pool"], serde_json::json!(40));
+        assert!(invalid_settle_rate["deferredDamage"].get("settleRate").is_none());
+        assert_eq!(
+            invalid_settle_rate["deferredDamage"]["damageType"],
+            serde_json::json!("physical")
+        );
+
+        let invalid_damage_type = state.teams.defender.units[0]
+            .buffs
+            .iter()
+            .find(|buff| buff["id"] == "set-deferred-invalid-damage-type")
+            .expect("invalid buff should remain");
+        assert_eq!(invalid_damage_type["remainingDuration"], serde_json::json!(1));
+        assert_eq!(invalid_damage_type["deferredDamage"]["pool"], serde_json::json!(40));
+        assert_eq!(invalid_damage_type["deferredDamage"]["settleRate"], serde_json::json!(0.5));
+        assert!(invalid_damage_type["deferredDamage"].get("damageType").is_none());
     }
 
     #[test]
