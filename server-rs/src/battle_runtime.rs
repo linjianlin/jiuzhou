@@ -1378,7 +1378,6 @@ fn process_round_end_and_start_next_round(
     logs: &mut Vec<serde_json::Value>,
 ) {
     state.phase = "roundEnd".to_string();
-    logs.push(build_round_end_log(state.round_count));
     let unit_ids = state
         .teams
         .attacker
@@ -1395,6 +1394,7 @@ fn process_round_end_and_start_next_round(
             }
         }
     }
+    logs.push(build_round_end_log(state.round_count));
     if finish_battle_if_needed(state) {
         return;
     }
@@ -4551,6 +4551,50 @@ mod tests {
             state.teams.attacker.units[0].current_attrs.wugong,
             state.teams.attacker.units[0].base_attrs.wugong
         );
+    }
+
+    #[test]
+    fn round_end_buff_expire_logs_before_round_end() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        state.teams.attacker.units[0].buffs.push(serde_json::json!({
+            "id": "buff-expire",
+            "buffDefId": "buff-expire",
+            "name": "短效增益",
+            "type": "buff",
+            "category": "runtime",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "attrModifiers": [],
+            "tags": [],
+            "dispellable": true
+        }));
+        state.teams.attacker.units[0].current_attrs.sudu = 0;
+        refresh_battle_team_total_speed(&mut state);
+        state.first_mover = determine_first_mover(&state).to_string();
+
+        let outcome = apply_minimal_pve_action(
+            &mut state,
+            1,
+            "skill-normal-attack",
+            &["monster-1-monster-gray-wolf".to_string()],
+        )
+        .expect("action should advance round");
+
+        let expire_index = outcome
+            .logs
+            .iter()
+            .position(|log| log["type"] == "buff_expire")
+            .expect("buff expire log should exist");
+        let round_end_index = outcome
+            .logs
+            .iter()
+            .position(|log| log["type"] == "round_end")
+            .expect("round_end log should exist");
+
+        assert!(expire_index < round_end_index);
     }
 
     #[test]
