@@ -3262,13 +3262,25 @@ fn process_runtime_set_bonus_trigger(
             .unwrap_or_default();
         let resolved_target_id =
             if effect.get("target").and_then(serde_json::Value::as_str) == Some("enemy") {
-                target_id.unwrap_or(owner_id)
+                let Some(target_id) = target_id else {
+                    continue;
+                };
+                let Some(owner_team) = unit_team_key(state, owner_id) else {
+                    continue;
+                };
+                if unit_team_key(state, target_id) != Some(opposing_team_key(owner_team)) {
+                    continue;
+                }
+                target_id
             } else {
                 owner_id
             };
         let Some(target_snapshot) = unit_by_id(state, resolved_target_id).cloned() else {
             continue;
         };
+        if !target_snapshot.is_alive {
+            continue;
+        }
         match effect_type {
             "damage" => {
                 let damage = params
@@ -3595,6 +3607,10 @@ fn process_runtime_set_bonus_trigger(
                     } else {
                         consumed.text.clone()
                     };
+                    let set_id = effect
+                        .get("setId")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("set-bonus");
                     let mut target_log = RuntimeResolvedTargetLog {
                         target_id: resolved_target_id.to_string(),
                         target_name: target_snapshot.name.clone(),
@@ -3612,6 +3628,14 @@ fn process_runtime_set_bonus_trigger(
                         momentum_gained: Vec::new(),
                         momentum_consumed: Vec::new(),
                     };
+                    apply_runtime_mark_consume_addons(
+                        state,
+                        owner_id,
+                        resolved_target_id,
+                        &consumed,
+                        &mut target_log,
+                        set_id,
+                    );
 
                     let mut death_log = None;
                     if consumed.final_value > 0 {
@@ -4028,6 +4052,9 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RuntimeMarkConsumeResult {
+    mark_id: String,
+    consumed_stacks: i64,
+    remaining_stacks: i64,
     final_value: i64,
     was_capped: bool,
     result_type: String,
@@ -4209,11 +4236,151 @@ fn consume_runtime_mark_effect(
     );
 
     Some(RuntimeMarkConsumeResult {
+        mark_id,
+        consumed_stacks,
+        remaining_stacks,
         final_value,
         was_capped: raw_final > capped_final,
         result_type,
         text,
     })
+}
+
+fn apply_runtime_mark_consume_addons(
+    state: &mut BattleStateDto,
+    caster_id: &str,
+    target_id: &str,
+    consumed: &RuntimeMarkConsumeResult,
+    target_log: &mut RuntimeResolvedTargetLog,
+    source_skill_id: &str,
+) {
+    if consumed.consumed_stacks <= 0 {
+        return;
+    }
+
+    match consumed.mark_id.as_str() {
+        "ember_brand" => {
+            let burn_damage = ((consumed.final_value.max(0) as f64) * 0.25)
+                .floor()
+                .max(0.0) as i64;
+            if burn_damage <= 0 {
+                return;
+            }
+            let burst_damage = ((consumed.final_value.max(0) as f64) * 0.35)
+                .floor()
+                .max(1.0) as i64;
+            let mark_name = runtime_mark_name(consumed.mark_id.as_str()).to_string();
+            if let Some(target) = unit_by_id_mut(state, target_id) {
+                target.buffs.push(serde_json::json!({
+                    "id": format!("mark-addon-{}-{}-burn-{}", source_skill_id, consumed.mark_id, target.buffs.len() + 1),
+                    "buffDefId": format!("mark-addon-{}-{}-burn", source_skill_id, consumed.mark_id),
+                    "name": format!("{}·灼烧", mark_name),
+                    "type": "debuff",
+                    "category": "mark",
+                    "sourceUnitId": caster_id,
+                    "remainingDuration": 2,
+                    "stacks": 1,
+                    "maxStacks": 1,
+                    "dot": {
+                        "damage": burn_damage,
+                        "damageType": "magic",
+                        "element": "huo",
+                    },
+                    "tags": ["mark_addon", consumed.mark_id],
+                    "dispellable": true,
+                }));
+                target.buffs.push(serde_json::json!({
+                    "id": format!("mark-addon-{}-{}-burst-{}", source_skill_id, consumed.mark_id, target.buffs.len() + 1),
+                    "buffDefId": format!("mark-addon-{}-{}-burst", source_skill_id, consumed.mark_id),
+                    "name": format!("{}·余烬潜爆", mark_name),
+                    "type": "debuff",
+                    "category": "mark",
+                    "sourceUnitId": caster_id,
+                    "remainingDuration": 1,
+                    "stacks": 1,
+                    "maxStacks": 1,
+                    "delayedBurst": {
+                        "damage": burst_damage,
+                        "damageType": "magic",
+                        "element": "huo",
+                        "remainingRounds": 1,
+                    },
+                    "tags": ["mark_addon", consumed.mark_id, "delayed_burst"],
+                    "dispellable": true,
+                }));
+            }
+            target_log.buffs_applied.push(format!("{}·灼烧", mark_name));
+            target_log
+                .buffs_applied
+                .push(format!("{}·余烬潜爆", mark_name));
+        }
+        SOUL_SHACKLE_MARK_ID => {
+            let drain_lingqi = consumed.consumed_stacks * 6;
+            if drain_lingqi <= 0 {
+                return;
+            }
+            let target_lingqi = unit_by_id(state, target_id)
+                .map(|unit| unit.lingqi.max(0))
+                .unwrap_or_default();
+            let caster_space = unit_by_id(state, caster_id)
+                .map(|unit| (unit.current_attrs.max_lingqi - unit.lingqi).max(0))
+                .unwrap_or_default();
+            let actual_gain = drain_lingqi.min(target_lingqi).min(caster_space).max(0);
+            if actual_gain <= 0 {
+                return;
+            }
+            if let Some(target) = unit_by_id_mut(state, target_id) {
+                target.lingqi = (target.lingqi - actual_gain).max(0);
+            }
+            if let Some(caster) = unit_by_id_mut(state, caster_id) {
+                caster.lingqi = (caster.lingqi + actual_gain).min(caster.current_attrs.max_lingqi);
+            }
+            push_runtime_resource_log(target_log, "lingqi", actual_gain);
+        }
+        "moon_echo" => {
+            let restore_lingqi = consumed.consumed_stacks * 8;
+            if restore_lingqi > 0 {
+                let actual_gain = {
+                    let Some(caster) = unit_by_id_mut(state, caster_id) else {
+                        return;
+                    };
+                    let before = caster.lingqi;
+                    caster.lingqi =
+                        (caster.lingqi + restore_lingqi).min(caster.current_attrs.max_lingqi);
+                    (caster.lingqi - before).max(0)
+                };
+                if actual_gain > 0 {
+                    push_runtime_resource_log(target_log, "lingqi", actual_gain);
+                }
+            }
+
+            let bonus_rate = ((consumed.consumed_stacks as f64) * 0.12).min(0.36);
+            if bonus_rate <= 0.0 {
+                return;
+            }
+            let mark_name = runtime_mark_name(consumed.mark_id.as_str()).to_string();
+            if let Some(caster) = unit_by_id_mut(state, caster_id) {
+                caster.buffs.push(serde_json::json!({
+                    "id": format!("mark-addon-{}-{}-next-skill-{}", source_skill_id, consumed.mark_id, caster.buffs.len() + 1),
+                    "buffDefId": format!("mark-addon-{}-{}-next-skill", source_skill_id, consumed.mark_id),
+                    "name": format!("{}·追月", mark_name),
+                    "type": "buff",
+                    "category": "mark",
+                    "sourceUnitId": caster_id,
+                    "remainingDuration": 1,
+                    "stacks": 1,
+                    "maxStacks": 1,
+                    "nextSkillBonus": {
+                        "rate": bonus_rate,
+                        "bonusType": "damage",
+                    },
+                    "tags": ["mark_addon", consumed.mark_id, "next_skill_bonus"],
+                    "dispellable": true,
+                }));
+            }
+        }
+        _ => {}
+    }
 }
 
 fn apply_runtime_delayed_burst_effect(
@@ -6022,6 +6189,14 @@ fn execute_runtime_skill_action(
                             consumed.text.clone()
                         };
                         log_entry.marks_consumed.push(consume_text);
+                        apply_runtime_mark_consume_addons(
+                            state,
+                            actor_id,
+                            effect_target_id.as_str(),
+                            &consumed,
+                            log_entry,
+                            skill_id,
+                        );
                         if consumed.final_value <= 0 {
                             continue;
                         }
@@ -6203,13 +6378,16 @@ fn execute_runtime_skill_action(
             }
         }
     }
-    if target_logs.is_empty() {
-        return Err("没有可攻击目标".to_string());
-    }
     if pending_actor_momentum != actor.momentum {
         let actor_unit =
             unit_by_id_mut(state, actor_id).ok_or_else(|| "当前不可行动".to_string())?;
         actor_unit.momentum = pending_actor_momentum;
+    }
+    if target_logs.is_empty() {
+        if logs.is_empty() {
+            return Err("没有可攻击目标".to_string());
+        }
+        return Ok(logs);
     }
     logs.insert(
         0,
@@ -8594,6 +8772,145 @@ mod tests {
     }
 
     #[test]
+    fn runtime_set_bonus_mark_consume_skips_self_target_for_enemy_effect() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-mark-skip-self",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.attacker.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-mark-skip-self",
+            "setName": "虚蚀套",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "enemy",
+            "effectType": "mark",
+            "params": {
+                "operation": "consume",
+                "markId": "void_erosion",
+                "consumeMode": "all",
+                "value": 40,
+                "perStackRate": 0.34,
+                "resultType": "damage"
+            }
+        })];
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-self-no-enemy-context",
+                "name": "自守诀",
+                "type": "active",
+                "targetType": "self",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "shield",
+                    "valueType": "flat",
+                    "value": 1
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-self-no-enemy-context",
+            &[],
+        )
+        .expect("self skill should succeed without enemy set target");
+
+        assert_eq!(state.teams.attacker.units[0].marks[0]["stacks"], 3);
+        assert_eq!(state.teams.defender.units[0].marks[0]["stacks"], 3);
+        assert!(
+            logs.iter()
+                .all(|log| log["skillId"] != "proc-set-mark-skip-self-on_skill")
+        );
+    }
+
+    #[test]
+    fn runtime_set_bonus_mark_consume_kills_primary_target_without_action_error() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-mark-kill-path",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].qixue = 30;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-mark-kill-path",
+            "setName": "虚蚀套",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "enemy",
+            "effectType": "mark",
+            "params": {
+                "operation": "consume",
+                "markId": "void_erosion",
+                "consumeMode": "all",
+                "value": 40,
+                "perStackRate": 1.0,
+                "resultType": "damage"
+            }
+        })];
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-empty-trigger-set",
+                "name": "引套空诀",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": []
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-empty-trigger-set",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("on_skill kill should return proc logs instead of error");
+
+        assert!(!state.teams.defender.units[0].is_alive);
+        assert_eq!(state.teams.defender.units[0].qixue, 0);
+        assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 30);
+        assert!(logs.iter().any(|log| {
+            log["skillId"] == "proc-set-mark-kill-path-on_skill"
+                && log["targets"][0]["damage"] == serde_json::json!(30)
+                && log["targets"][0]["marksConsumed"][0]
+                    == serde_json::json!("虚蚀印记消耗3层（剩余0层，引爆）")
+        }));
+        assert!(
+            logs.iter()
+                .any(|log| log["type"] == "death" && log["unitId"] == target_id)
+        );
+    }
+
+    #[test]
     fn runtime_set_bonus_mark_consume_shield_self_does_not_log_enemy_shield() {
         let mut state = build_minimal_pve_battle_state(
             "pve-battle-set-mark-shield",
@@ -10970,6 +11287,181 @@ mod tests {
         assert!(logs[0]["targets"][0].get("shield").is_none());
         assert!(logs[0]["targets"][0].get("heal").is_none());
         assert!(logs[0]["targets"][0].get("buffsApplied").is_none());
+    }
+
+    #[test]
+    fn runtime_mark_consume_addon_soul_shackle_drains_lingqi() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.attacker.units[0].lingqi = 10;
+        state.teams.attacker.units[0].current_attrs.max_lingqi = 100;
+        state.teams.defender.units[0].lingqi = 30;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "soul_shackle",
+            "sourceUnitId": "player-1",
+            "stacks": 2,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-consume-soul-shackle",
+                "name": "蚀心抽灵",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "mark",
+                    "operation": "consume",
+                    "markId": "soul_shackle",
+                    "consumeMode": "all",
+                    "valueType": "flat",
+                    "value": 1,
+                    "perStackRate": 0.0,
+                    "resultType": "damage"
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-consume-soul-shackle",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("soul shackle consume should succeed");
+
+        assert_eq!(state.teams.attacker.units[0].lingqi, 22);
+        assert_eq!(state.teams.defender.units[0].lingqi, 18);
+        assert!(state.teams.defender.units[0].marks.is_empty());
+        assert_eq!(
+            logs[0]["targets"][0]["resources"],
+            serde_json::json!([{"type": "lingqi", "amount": 12}])
+        );
+    }
+
+    #[test]
+    fn runtime_mark_consume_addon_moon_echo_restores_lingqi_and_next_skill_bonus() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.attacker.units[0].lingqi = 10;
+        state.teams.attacker.units[0].current_attrs.max_lingqi = 100;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "moon_echo",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-consume-moon-echo",
+                "name": "追月回灵",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "mark",
+                    "operation": "consume",
+                    "markId": "moon_echo",
+                    "consumeMode": "all",
+                    "valueType": "flat",
+                    "value": 1,
+                    "perStackRate": 0.0,
+                    "resultType": "damage"
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-consume-moon-echo",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("moon echo consume should succeed");
+
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.lingqi, 34);
+        let next_skill_bonus = caster
+            .buffs
+            .iter()
+            .find_map(|buff| buff.get("nextSkillBonus"))
+            .expect("next skill bonus should be applied");
+        assert_eq!(next_skill_bonus["bonusType"], "damage");
+        assert_eq!(next_skill_bonus["rate"], serde_json::json!(0.36));
+        assert_eq!(
+            logs[0]["targets"][0]["resources"],
+            serde_json::json!([{"type": "lingqi", "amount": 24}])
+        );
+    }
+
+    #[test]
+    fn runtime_mark_consume_addon_ember_brand_applies_burn_and_delayed_burst() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "ember_brand",
+            "sourceUnitId": "player-1",
+            "stacks": 1,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-consume-ember-brand",
+                "name": "灼痕引燃",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "mark",
+                    "operation": "consume",
+                    "markId": "ember_brand",
+                    "consumeMode": "all",
+                    "valueType": "flat",
+                    "value": 100,
+                    "perStackRate": 1.0,
+                    "resultType": "damage"
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-consume-ember-brand",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("ember brand consume should succeed");
+
+        let target = &state.teams.defender.units[0];
+        assert!(
+            target
+                .buffs
+                .iter()
+                .any(|buff| buff["dot"]["damage"] == serde_json::json!(25))
+        );
+        assert!(
+            target
+                .buffs
+                .iter()
+                .any(|buff| buff["delayedBurst"]["damage"] == serde_json::json!(35))
+        );
+        assert_eq!(
+            logs[0]["targets"][0]["buffsApplied"],
+            serde_json::json!(["灼痕·灼烧", "灼痕·余烬潜爆"])
+        );
     }
 
     #[test]
