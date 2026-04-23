@@ -2627,6 +2627,10 @@ fn resolve_effect_target_ids(
             _ => return Err(format!("不支持的目标类型: {skill_target_type}")),
         },
     };
+    let resolved = resolved
+        .into_iter()
+        .filter(|target_id| unit_by_id(state, target_id.as_str()).is_some_and(|unit| unit.is_alive))
+        .collect::<Vec<_>>();
     if resolved.is_empty() {
         return Err("没有有效目标".to_string());
     }
@@ -5694,6 +5698,22 @@ fn execute_runtime_skill_action(
     let actor = unit_by_id(state, actor_id)
         .cloned()
         .ok_or_else(|| "当前不可行动".to_string())?;
+    let active_target_ids = target_ids
+        .iter()
+        .filter(|target_id| unit_by_id(state, target_id.as_str()).is_some_and(|unit| unit.is_alive))
+        .cloned()
+        .collect::<Vec<_>>();
+    if active_target_ids.is_empty() {
+        if pending_actor_momentum != actor.momentum {
+            let actor_unit =
+                unit_by_id_mut(state, actor_id).ok_or_else(|| "当前不可行动".to_string())?;
+            actor_unit.momentum = pending_actor_momentum;
+        }
+        if logs.is_empty() {
+            return Err("没有可攻击目标".to_string());
+        }
+        return Ok(logs);
+    }
     let actor_next_skill_damage_bonus = runtime_next_skill_bonus_rate(&actor, "damage");
     let should_resolve_damage_targets = !damage_effects.is_empty()
         || matches!(
@@ -5701,7 +5721,7 @@ fn execute_runtime_skill_action(
             "skill-normal-attack" | "sk-heavy-slash" | "sk-bite"
         );
     if should_resolve_damage_targets {
-        for target_id in &target_ids {
+        for target_id in &active_target_ids {
             let target_snapshot = unit_by_id(state, target_id.as_str())
                 .cloned()
                 .ok_or_else(|| "目标不存在或已死亡".to_string())?;
@@ -5913,7 +5933,7 @@ fn execute_runtime_skill_action(
         let effect_target_ids = resolve_effect_target_ids(
             state,
             actor_id,
-            &target_ids,
+            &active_target_ids,
             selected_target_ids,
             skill_target_type.as_str(),
             skill_target_count,
@@ -8907,6 +8927,96 @@ mod tests {
         assert!(
             logs.iter()
                 .any(|log| log["type"] == "death" && log["unitId"] == target_id)
+        );
+    }
+
+    #[test]
+    fn runtime_set_bonus_mark_consume_kills_target_and_skips_dead_primary_effects() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-mark-kill-skip-effects",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].qixue = 30;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-mark-kill-skip-effects",
+            "setName": "虚蚀套",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "enemy",
+            "effectType": "mark",
+            "params": {
+                "operation": "consume",
+                "markId": "void_erosion",
+                "consumeMode": "all",
+                "value": 40,
+                "perStackRate": 1.0,
+                "resultType": "damage"
+            }
+        })];
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-dead-target-followup-mark",
+                "name": "死靶追印",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [
+                    {
+                        "type": "mark",
+                        "operation": "apply",
+                        "markId": "ember_brand",
+                        "applyStacks": 1,
+                        "maxStacks": 5,
+                        "duration": 2
+                    },
+                    {
+                        "type": "debuff",
+                        "buffKind": "attr",
+                        "attrKey": "wufang",
+                        "value": 5,
+                        "applyType": "flat",
+                        "duration": 2
+                    }
+                ]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-dead-target-followup-mark",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("on_skill kill should return proc logs and skip dead target followups");
+
+        let target = &state.teams.defender.units[0];
+        assert!(!target.is_alive);
+        assert_eq!(target.qixue, 0);
+        assert!(target.marks.is_empty());
+        assert!(target.buffs.is_empty());
+        assert!(logs.iter().any(|log| {
+            log["skillId"] == "proc-set-mark-kill-skip-effects-on_skill"
+                && log["targets"][0]["damage"] == serde_json::json!(30)
+        }));
+        assert!(
+            logs.iter()
+                .any(|log| log["type"] == "death" && log["unitId"] == target_id)
+        );
+        assert!(
+            logs.iter()
+                .all(|log| log["skillId"] != "skill-dead-target-followup-mark")
         );
     }
 
