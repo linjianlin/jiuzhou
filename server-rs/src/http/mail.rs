@@ -362,6 +362,11 @@ async fn buffer_mail_attachment_reward_deltas(
                 bind_type: "none".to_string(),
                 obtained_from: "mail".to_string(),
                 obtained_ref_id: Some(mail_id.to_string()),
+                idle_session_id: None,
+                metadata: None,
+                quality: None,
+                quality_rank: None,
+                equip_options: None,
             })
         })
         .collect::<Vec<_>>();

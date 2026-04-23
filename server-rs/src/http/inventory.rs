@@ -7656,6 +7656,11 @@ async fn buffer_inventory_item_reward_deltas(
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .map(|value| value.to_string()),
+                idle_session_id: None,
+                metadata: None,
+                quality: None,
+                quality_rank: None,
+                equip_options: None,
             })
         })
         .collect::<Vec<_>>();

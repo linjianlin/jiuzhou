@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
+use crate::battle_runtime::BattleUnitCurrentAttrsDto;
 use crate::http::inventory::{load_inventory_def_map, resolve_generated_technique_book_display};
 use crate::http::technique::load_technique_detail_data;
+use crate::idle_runtime::IdlePartnerExecutionSnapshot;
 use crate::integrations::partner_ai::generate_partner_ai_preview_draft;
 use crate::integrations::text_model_config::{
     TextModelScope, read_text_model_config, require_text_model_config,
@@ -4095,6 +4097,94 @@ async fn load_partner_rows(
     rows.into_iter().map(parse_partner_row).collect()
 }
 
+pub(crate) async fn build_active_partner_idle_execution_snapshot(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Option<IdlePartnerExecutionSnapshot>, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT * FROM character_partner WHERE character_id = $1 AND is_active = TRUE ORDER BY id ASC LIMIT 1",
+            |query| query.bind(character_id),
+        )
+        .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let partner_row = parse_partner_row(row)?;
+    let owner = load_partner_owner_context(state, character_id).await?;
+    let def = load_partner_def_resolved(state, partner_row.partner_def_id.trim())
+        .await?
+        .ok_or_else(|| {
+            AppError::config(format!("伙伴模板不存在: {}", partner_row.partner_def_id))
+        })?;
+    let technique_rows = load_partner_technique_rows(state, vec![partner_row.id])
+        .await?
+        .get(&partner_row.id)
+        .cloned()
+        .unwrap_or_default();
+    let techniques =
+        build_partner_techniques_with_generated(state, &def, technique_rows.clone()).await?;
+    let effective_level = resolve_partner_effective_level(
+        owner.realm.as_str(),
+        owner.sub_realm.as_str(),
+        partner_row.level,
+    );
+    let computed_attrs =
+        build_partner_computed_attrs(&def, &partner_row, effective_level, &techniques);
+    let element = def
+        .attribute_element
+        .as_deref()
+        .unwrap_or("none")
+        .trim()
+        .to_string();
+    let attrs = partner_computed_attrs_to_battle_attrs(&computed_attrs, element);
+    let skills = techniques
+        .iter()
+        .flat_map(|technique| technique.skills.iter())
+        .map(partner_skill_to_battle_data_value)
+        .collect::<Vec<_>>();
+    let policy_entries = build_partner_skill_policy_entries_with_generated(
+        state,
+        &partner_row,
+        technique_rows,
+        load_partner_skill_policy_rows(state, partner_row.id).await?,
+    )
+    .await?;
+    let policy_slots = policy_entries
+        .into_iter()
+        .map(|entry| PartnerSkillPolicySlotDto {
+            skill_id: entry.skill_id,
+            priority: entry.priority,
+            enabled: entry.enabled,
+        })
+        .collect::<Vec<_>>();
+    let name = {
+        let nickname = partner_row.nickname.trim();
+        if nickname.is_empty() {
+            def.name.trim().to_string()
+        } else {
+            nickname.to_string()
+        }
+    };
+    let avatar = partner_row
+        .avatar
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| def.avatar.clone().filter(|value| !value.trim().is_empty()));
+
+    Ok(Some(IdlePartnerExecutionSnapshot {
+        partner_id: partner_row.id,
+        name,
+        avatar,
+        qixue: computed_attrs.qixue.max(1),
+        lingqi: computed_attrs.lingqi.max(0),
+        attrs,
+        skills,
+        skill_policy: serde_json::json!({ "slots": policy_slots }),
+    }))
+}
+
 async fn load_partner_def_resolved(
     state: &AppState,
     partner_def_id: &str,
@@ -4848,6 +4938,71 @@ fn build_partner_computed_attrs(
     }
 }
 
+fn ratio_attr_to_i64(value: f64) -> i64 {
+    if value.is_finite() { value as i64 } else { 0 }
+}
+
+fn partner_computed_attrs_to_battle_attrs(
+    attrs: &PartnerComputedAttrsDto,
+    element: String,
+) -> BattleUnitCurrentAttrsDto {
+    BattleUnitCurrentAttrsDto {
+        max_qixue: attrs.max_qixue.max(1),
+        max_lingqi: attrs.max_lingqi.max(0),
+        wugong: attrs.wugong.max(0),
+        fagong: attrs.fagong.max(0),
+        wufang: attrs.wufang.max(0),
+        fafang: attrs.fafang.max(0),
+        sudu: attrs.sudu.max(1),
+        mingzhong: ratio_attr_to_i64(attrs.mingzhong),
+        shanbi: ratio_attr_to_i64(attrs.shanbi),
+        zhaojia: ratio_attr_to_i64(attrs.zhaojia),
+        baoji: ratio_attr_to_i64(attrs.baoji),
+        baoshang: ratio_attr_to_i64(attrs.baoshang),
+        jianbaoshang: ratio_attr_to_i64(attrs.jianbaoshang),
+        jianfantan: ratio_attr_to_i64(attrs.jianfantan),
+        kangbao: ratio_attr_to_i64(attrs.kangbao),
+        zengshang: ratio_attr_to_i64(attrs.zengshang),
+        zhiliao: ratio_attr_to_i64(attrs.zhiliao),
+        jianliao: ratio_attr_to_i64(attrs.jianliao),
+        xixue: ratio_attr_to_i64(attrs.xixue),
+        lengque: ratio_attr_to_i64(attrs.lengque),
+        kongzhi_kangxing: ratio_attr_to_i64(attrs.kongzhi_kangxing),
+        jin_kangxing: ratio_attr_to_i64(attrs.jin_kangxing),
+        mu_kangxing: ratio_attr_to_i64(attrs.mu_kangxing),
+        shui_kangxing: ratio_attr_to_i64(attrs.shui_kangxing),
+        huo_kangxing: ratio_attr_to_i64(attrs.huo_kangxing),
+        tu_kangxing: ratio_attr_to_i64(attrs.tu_kangxing),
+        qixue_huifu: ratio_attr_to_i64(attrs.qixue_huifu),
+        lingqi_huifu: ratio_attr_to_i64(attrs.lingqi_huifu),
+        realm: None,
+        element: Some(if element.trim().is_empty() {
+            "none".to_string()
+        } else {
+            element
+        }),
+    }
+}
+
+fn partner_skill_to_battle_data_value(skill: &PartnerTechniqueSkillDto) -> serde_json::Value {
+    serde_json::json!({
+        "id": skill.id.clone(),
+        "name": skill.name.clone(),
+        "cost_lingqi": skill.cost_lingqi.unwrap_or_default().max(0),
+        "cost_lingqi_rate": skill.cost_lingqi_rate.unwrap_or_default().max(0.0),
+        "cost_qixue": skill.cost_qixue.unwrap_or_default().max(0),
+        "cost_qixue_rate": skill.cost_qixue_rate.unwrap_or_default().max(0.0),
+        "cooldown": skill.cooldown.unwrap_or_default().max(0),
+        "target_type": skill.target_type.as_deref().unwrap_or("single_enemy"),
+        "target_count": skill.target_count.unwrap_or(1).max(1),
+        "damage_type": skill.damage_type.as_deref().unwrap_or("none"),
+        "element": skill.element.as_deref().unwrap_or("none"),
+        "effects": skill.effects.clone().unwrap_or_default(),
+        "trigger_type": skill.trigger_type.as_deref().unwrap_or("active"),
+        "ai_priority": skill.ai_priority.unwrap_or_default().max(0),
+    })
+}
+
 async fn build_partner_skill_policy_entries_with_generated(
     state: &AppState,
     row: &PartnerRow,
@@ -4861,8 +5016,9 @@ async fn build_partner_skill_policy_entries_with_generated(
     let mut available = Vec::new();
     for technique in &techniques {
         for skill in &technique.skills {
-            let trigger_type = skill.target_type.as_deref().map(|_| skill.effects.as_ref());
-            let _ = trigger_type;
+            if skill.trigger_type.as_deref().unwrap_or("active") != "active" {
+                continue;
+            }
             available.push(PartnerSkillPolicyEntryDto {
                 skill_id: skill.id.clone(),
                 skill_name: skill.name.clone(),

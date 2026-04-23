@@ -11,11 +11,13 @@ use sqlx::Row;
 use crate::auth;
 use crate::battle_runtime::{
     BattleStateDto, build_minimal_pve_battle_state, build_minimal_pvp_battle_state,
+    restart_battle_runtime,
 };
 use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::tower::resolve_tower_floor_monster_ids;
 use crate::integrations::battle_character_profile::{
-    hydrate_pve_battle_state_owner, hydrate_pvp_battle_state_players,
+    hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
+    hydrate_pve_battle_state_participants, hydrate_pvp_battle_state_players,
 };
 use crate::integrations::battle_persistence::{
     clear_battle_persistence, persist_battle_projection, persist_battle_session,
@@ -152,6 +154,53 @@ pub async fn start_battle_session(
             context: BattleSessionContextDto::Pve { monster_ids },
         };
         state.battle_sessions.register(session.clone());
+        let team_rows = state.database.fetch_all(
+            "SELECT tm.team_id, tm.role, tm.character_id, c.user_id FROM team_members tm JOIN characters c ON c.id = tm.character_id WHERE tm.team_id = (SELECT team_id FROM team_members WHERE character_id = $1 LIMIT 1) ORDER BY CASE WHEN tm.role = 'leader' THEN 0 ELSE 1 END, tm.character_id ASC",
+            |q| q.bind(character_id),
+        ).await?;
+        let (participant_user_ids, participant_character_ids) = if team_rows.is_empty() {
+            (vec![actor.user_id], vec![character_id])
+        } else {
+            let is_leader = team_rows.iter().any(|row| {
+                row.try_get::<Option<i32>, _>("character_id")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+                    == Some(character_id)
+                    && row
+                        .try_get::<Option<String>, _>("role")
+                        .ok()
+                        .flatten()
+                        .as_deref()
+                        == Some("leader")
+            });
+            if !is_leader {
+                return Err(AppError::config("组队中只有队长可以发起战斗会话"));
+            }
+            (
+                team_rows
+                    .iter()
+                    .filter_map(|row| {
+                        row.try_get::<Option<i32>, _>("user_id")
+                            .ok()
+                            .flatten()
+                            .map(i64::from)
+                    })
+                    .collect::<Vec<_>>(),
+                team_rows
+                    .iter()
+                    .filter_map(|row| {
+                        row.try_get::<Option<i32>, _>("character_id")
+                            .ok()
+                            .flatten()
+                            .map(i64::from)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let updated_session = state.battle_sessions.update(&session.session_id, |record| {
+            record.participant_user_ids = participant_user_ids.clone();
+        });
         let battle_id = session
             .current_battle_id
             .clone()
@@ -165,35 +214,52 @@ pub async fn start_battle_session(
             },
         );
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
+        hydrate_pve_battle_state_participants(
+            &state,
+            &mut battle_state,
+            &participant_character_ids,
+        )
+        .await?;
+        let start_logs = restart_battle_runtime(&mut battle_state);
         state.battle_runtime.register(battle_state.clone());
         let projection = OnlineBattleProjectionRecord {
-            battle_id,
+            battle_id: battle_id.clone(),
             owner_user_id: actor.user_id,
-            participant_user_ids: vec![actor.user_id],
+            participant_user_ids: participant_user_ids.clone(),
             r#type: "pve".to_string(),
             session_id: Some(session.session_id.clone()),
         };
         state.online_battle_projections.register(projection.clone());
-        persist_battle_session(&state, &session).await?;
+        let persisted_session = updated_session.clone().unwrap_or_else(|| {
+            state
+                .battle_sessions
+                .get_by_battle_id(&battle_id)
+                .unwrap_or(session.clone())
+        });
+        persist_battle_session(&state, &persisted_session).await?;
         persist_battle_snapshot(&state, &battle_state).await?;
         persist_battle_projection(&state, &projection).await?;
         let debug_realtime = build_battle_started_payload(
             session.current_battle_id.as_deref().unwrap_or_default(),
             battle_state.clone(),
-            vec![serde_json::json!({"type": "round_start", "round": 1})],
-            Some(session.clone()),
+            start_logs,
+            Some(persisted_session.clone()),
         );
-        emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
+        emit_battle_update_to_participants(
+            &state,
+            &persisted_session.participant_user_ids,
+            &debug_realtime,
+        );
         let debug_cooldown_realtime =
             build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
         emit_battle_cooldown_to_participants(
             &state,
-            &session.participant_user_ids,
+            &persisted_session.participant_user_ids,
             &debug_cooldown_realtime,
         );
         return Ok(send_success(BattleSessionResponseData {
             finished: false,
-            session,
+            session: persisted_session,
             state: Some(battle_state),
         })
         .into_response());
@@ -255,35 +321,51 @@ pub async fn start_battle_session(
             if mode == "arena" { "npc" } else { "player" },
         )
         .await?;
+        let start_logs = restart_battle_runtime(&mut battle_state);
+        let participant_user_ids = if mode == "arena" {
+            vec![actor.user_id]
+        } else {
+            let mut ids = vec![actor.user_id];
+            if let Some(defender_user_id) = battle_state.teams.defender.odwner_id {
+                if !ids.contains(&defender_user_id) {
+                    ids.push(defender_user_id);
+                }
+            }
+            ids
+        };
+        let updated_session = state.battle_sessions.update(&session.session_id, |record| {
+            record.participant_user_ids = participant_user_ids.clone();
+        });
         state.battle_runtime.register(battle_state.clone());
         let projection = OnlineBattleProjectionRecord {
             battle_id,
             owner_user_id: actor.user_id,
-            participant_user_ids: vec![actor.user_id],
+            participant_user_ids: participant_user_ids.clone(),
             r#type: "pvp".to_string(),
             session_id: Some(session.session_id.clone()),
         };
         state.online_battle_projections.register(projection.clone());
-        persist_battle_session(&state, &session).await?;
+        let persisted_session = updated_session.clone().unwrap_or(session.clone());
+        persist_battle_session(&state, &persisted_session).await?;
         persist_battle_snapshot(&state, &battle_state).await?;
         persist_battle_projection(&state, &projection).await?;
         let debug_realtime = build_battle_started_payload(
             session.current_battle_id.as_deref().unwrap_or_default(),
             battle_state.clone(),
-            vec![serde_json::json!({"type": "round_start", "round": 1})],
-            Some(session.clone()),
+            start_logs,
+            Some(persisted_session.clone()),
         );
-        emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
+        emit_battle_update_to_participants(&state, &participant_user_ids, &debug_realtime);
         let debug_cooldown_realtime =
             build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
         emit_battle_cooldown_to_participants(
             &state,
-            &session.participant_user_ids,
+            &participant_user_ids,
             &debug_cooldown_realtime,
         );
         return Ok(send_success(BattleSessionResponseData {
             finished: false,
-            session,
+            session: persisted_session,
             state: Some(battle_state),
         })
         .into_response());
@@ -367,6 +449,13 @@ pub async fn start_battle_session(
     let mut battle_state =
         build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
     hydrate_pve_battle_state_owner(&state, &mut battle_state, owner_character_id).await?;
+    let participant_character_ids = participants
+        .iter()
+        .filter_map(|entry| entry.get("characterId").and_then(|value| value.as_i64()))
+        .collect::<Vec<_>>();
+    hydrate_pve_battle_state_participants(&state, &mut battle_state, &participant_character_ids)
+        .await?;
+    let start_logs = restart_battle_runtime(&mut battle_state);
     state.battle_runtime.register(battle_state.clone());
     let projection = OnlineBattleProjectionRecord {
         battle_id: battle_id.clone(),
@@ -386,7 +475,7 @@ pub async fn start_battle_session(
     let debug_realtime = build_battle_started_payload(
         &battle_id,
         battle_state.clone(),
-        vec![serde_json::json!({"type": "round_start", "round": 1})],
+        start_logs,
         Some(session.clone()),
     );
     emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
@@ -499,22 +588,59 @@ pub async fn advance_battle_session(
                     clear_battle_persistence(&state, &current_battle_id, Some(&session_id)).await?;
                 }
                 let next_battle_id = format!("pve-battle-{}-{}", actor.user_id, now_millis());
+                let team_rows = state.database.fetch_all(
+                    "SELECT tm.team_id, tm.role, tm.character_id, c.user_id FROM team_members tm JOIN characters c ON c.id = tm.character_id WHERE tm.team_id = (SELECT team_id FROM team_members WHERE character_id = $1 LIMIT 1) ORDER BY CASE WHEN tm.role = 'leader' THEN 0 ELSE 1 END, tm.character_id ASC",
+                    |q| q.bind(character_id),
+                ).await?;
+                let (participant_user_ids, participant_character_ids) = if team_rows.is_empty() {
+                    (vec![actor.user_id], vec![character_id])
+                } else {
+                    let is_leader = team_rows.iter().any(|row| {
+                        row.try_get::<Option<i32>, _>("character_id")
+                            .ok()
+                            .flatten()
+                            .map(i64::from)
+                            == Some(character_id)
+                            && row
+                                .try_get::<Option<String>, _>("role")
+                                .ok()
+                                .flatten()
+                                .as_deref()
+                                == Some("leader")
+                    });
+                    if !is_leader {
+                        return Err(AppError::config("组队中只有队长可以推进战斗会话"));
+                    }
+                    (
+                        team_rows
+                            .iter()
+                            .filter_map(|row| row.try_get::<Option<i32>, _>("user_id").ok().flatten().map(i64::from))
+                            .collect::<Vec<_>>(),
+                        team_rows
+                            .iter()
+                            .filter_map(|row| row.try_get::<Option<i32>, _>("character_id").ok().flatten().map(i64::from))
+                            .collect::<Vec<_>>(),
+                    )
+                };
                 let mut next_battle_state =
                     build_minimal_pve_battle_state(&next_battle_id, character_id, &monster_ids);
                 hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id)
                     .await?;
+                hydrate_pve_battle_state_participants(&state, &mut next_battle_state, &participant_character_ids)
+                    .await?;
+                let start_logs = restart_battle_runtime(&mut next_battle_state);
                 state.battle_runtime.register(next_battle_state.clone());
                 let projection = OnlineBattleProjectionRecord {
                     battle_id: next_battle_id.clone(),
                     owner_user_id: actor.user_id,
-                    participant_user_ids: vec![actor.user_id],
+                    participant_user_ids: participant_user_ids.clone(),
                     r#type: "pve".to_string(),
                     session_id: Some(session_id.clone()),
                 };
                 state.online_battle_projections.register(projection.clone());
                 let updated_session = state.battle_sessions.update(&session_id, |record| {
                     record.current_battle_id = Some(next_battle_id.clone());
-                    record.participant_user_ids = vec![actor.user_id];
+                    record.participant_user_ids = participant_user_ids.clone();
                     record.status = "running".to_string();
                     record.next_action = "none".to_string();
                     record.can_advance = false;
@@ -525,6 +651,24 @@ pub async fn advance_battle_session(
                     persist_battle_session(&state, updated_session_ref).await?;
                     persist_battle_snapshot(&state, &next_battle_state).await?;
                     persist_battle_projection(&state, &projection).await?;
+                    let debug_realtime = build_battle_started_payload(
+                        &next_battle_id,
+                        next_battle_state.clone(),
+                        start_logs,
+                        Some(updated_session_ref.clone()),
+                    );
+                    emit_battle_update_to_participants(
+                        &state,
+                        &updated_session_ref.participant_user_ids,
+                        &debug_realtime,
+                    );
+                    let debug_cooldown_realtime =
+                        build_battle_cooldown_ready_payload(next_battle_state.current_unit_id.as_deref());
+                    emit_battle_cooldown_to_participants(
+                        &state,
+                        &updated_session_ref.participant_user_ids,
+                        &debug_cooldown_realtime,
+                    );
                 }
                 updated_session
             } else {
@@ -571,7 +715,10 @@ pub async fn advance_battle_session(
                     &resolve_tower_floor_monster_ids(next_floor),
                 );
                 hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id).await?;
-                state.battle_runtime.register(next_battle_state);
+                hydrate_pve_battle_state_active_partner(&state, &mut next_battle_state, character_id)
+                    .await?;
+                let start_logs = restart_battle_runtime(&mut next_battle_state);
+                state.battle_runtime.register(next_battle_state.clone());
                 state.database.execute(
                     "UPDATE character_tower_progress SET current_run_id = $2, current_floor = $3, current_battle_id = $4, updated_at = NOW() WHERE character_id = $1",
                     |query| query.bind(character_id).bind(&run_id).bind(next_floor).bind(&next_battle_id),
@@ -599,6 +746,25 @@ pub async fn advance_battle_session(
                         persist_battle_session(&state, updated_session_ref).await?;
                         persist_battle_snapshot(&state, &updated_battle_state).await?;
                         persist_battle_projection(&state, &projection).await?;
+                        let debug_realtime = build_battle_started_payload(
+                            &next_battle_id,
+                            updated_battle_state.clone(),
+                            start_logs,
+                            Some(updated_session_ref.clone()),
+                        );
+                        emit_battle_update_to_participants(
+                            &state,
+                            &updated_session_ref.participant_user_ids,
+                            &debug_realtime,
+                        );
+                        let debug_cooldown_realtime = build_battle_cooldown_ready_payload(
+                            updated_battle_state.current_unit_id.as_deref(),
+                        );
+                        emit_battle_cooldown_to_participants(
+                            &state,
+                            &updated_session_ref.participant_user_ids,
+                            &debug_cooldown_realtime,
+                        );
                     }
                 }
                 updated_session
@@ -655,7 +821,7 @@ pub async fn advance_battle_session(
         let debug_realtime = build_battle_started_payload(
             updated.current_battle_id.as_deref().unwrap_or_default(),
             battle_state.clone(),
-            vec![serde_json::json!({"type": "round_start", "round": 1})],
+            vec![serde_json::json!({"type": "round_start", "round": battle_state.round_count})],
             Some(updated.clone()),
         );
         emit_battle_update_to_participants(&state, &updated.participant_user_ids, &debug_realtime);

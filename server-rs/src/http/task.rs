@@ -616,6 +616,11 @@ pub async fn claim_task_reward(
                             bind_type: "none".to_string(),
                             obtained_from: "task_reward".to_string(),
                             obtained_ref_id: Some(task_id.trim().to_string()),
+                            idle_session_id: None,
+                            metadata: None,
+                            quality: None,
+                            quality_rank: None,
+                            equip_options: None,
                         });
                         let meta = item_meta_map.get(item_def_id.trim()).cloned();
                         rewards.push(ClaimedTaskRewardDto::Item {

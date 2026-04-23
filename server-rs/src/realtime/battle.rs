@@ -327,6 +327,40 @@ pub fn build_single_player_reward_values(
     })]
 }
 
+pub fn build_multi_player_reward_values(
+    participants: &[(i64, i64)],
+    exp: i64,
+    silver: i64,
+    items: &[MinimalBattleRewardItemDto],
+) -> Vec<serde_json::Value> {
+    if participants.is_empty() {
+        return Vec::new();
+    }
+    let participant_count = participants.len() as i64;
+    let base_exp = exp.div_euclid(participant_count.max(1));
+    let exp_remainder = exp.rem_euclid(participant_count.max(1));
+    let base_silver = silver.div_euclid(participant_count.max(1));
+    let silver_remainder = silver.rem_euclid(participant_count.max(1));
+    participants
+        .iter()
+        .enumerate()
+        .map(|(index, (user_id, character_id))| {
+            let participant_items = items
+                .iter()
+                .filter(|item| item.receiver_character_id == Some(*character_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            serde_json::json!({
+                "userId": user_id,
+                "characterId": character_id,
+                "exp": base_exp + if (index as i64) < exp_remainder { 1 } else { 0 },
+                "silver": base_silver + if (index as i64) < silver_remainder { 1 } else { 0 },
+                "items": build_single_player_reward_item_values(&participant_items),
+            })
+        })
+        .collect()
+}
+
 fn parse_character_id_from_actor_id(actor_id: Option<&str>) -> i64 {
     actor_id
         .and_then(|value| value.strip_prefix("player-"))

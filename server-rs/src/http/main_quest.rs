@@ -1084,6 +1084,11 @@ async fn grant_main_quest_rewards_tx(
             bind_type: "none".to_string(),
             obtained_from: obtained_from.trim().to_string(),
             obtained_ref_id: Some(obtained_ref_id.trim().to_string()),
+            idle_session_id: None,
+            metadata: None,
+            quality: None,
+            quality_rank: None,
+            equip_options: None,
         });
         let meta = item_meta.get(item_def_id.as_str()).cloned();
         out.push(MainQuestRewardDto::Item {
@@ -1554,6 +1559,11 @@ async fn apply_dialogue_effects_tx(
                         bind_type: "none".to_string(),
                         obtained_from: "dialogue".to_string(),
                         obtained_ref_id: None,
+                        idle_session_id: None,
+                        metadata: None,
+                        quality: None,
+                        quality_rank: None,
+                        equip_options: None,
                     });
                     effect_results.push(serde_json::json!({"type": "item", "itemDefId": item_def_id, "quantity": qty}));
                 }

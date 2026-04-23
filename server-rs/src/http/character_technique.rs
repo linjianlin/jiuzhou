@@ -228,6 +228,25 @@ pub struct CharacterAvailableSkillDto {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CharacterBattleSkillValue {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "type")]
+    pub skill_type: String,
+    pub damage_type: Option<String>,
+    pub target_type: String,
+    pub target_count: i64,
+    pub element: String,
+    pub trigger_type: String,
+    pub ai_priority: i64,
+    pub cooldown: i64,
+    pub cost: serde_json::Value,
+    pub effects: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CharacterTechniqueStatusDto {
     pub techniques: Vec<CharacterTechniqueDto>,
     pub equipped_main: Option<CharacterTechniqueDto>,
@@ -2335,6 +2354,66 @@ fn build_available_skills(
                 element: skill.element.clone().unwrap_or_else(|| "none".to_string()),
                 effects: skill.effects.clone().unwrap_or_default(),
             });
+        }
+    }
+    Ok(out)
+}
+
+fn to_battle_skill_value(skill: &CharacterAvailableSkillDto) -> serde_json::Value {
+    serde_json::json!({
+        "id": skill.skill_id,
+        "name": skill.skill_name,
+        "description": skill.description.clone().unwrap_or_default(),
+        "type": "active",
+        "damageType": skill.damage_type.clone().unwrap_or_else(|| "physical".to_string()),
+        "targetType": skill.target_type,
+        "targetCount": skill.target_count.max(1),
+        "element": if skill.element.trim().is_empty() { "none" } else { skill.element.trim() },
+        "triggerType": "active",
+        "aiPriority": 50,
+        "cooldown": skill.cooldown.max(0),
+        "cost": {
+            "lingqi": skill.cost_lingqi.max(0),
+            "lingqiRate": skill.cost_lingqi_rate.max(0.0),
+            "qixue": skill.cost_qixue.max(0),
+            "qixueRate": skill.cost_qixue_rate.max(0.0),
+        },
+        "effects": skill.effects,
+    })
+}
+
+pub async fn load_character_battle_skill_values(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let techniques = load_character_techniques(state, character_id).await?;
+    let available_skills = build_available_skills(&techniques)?;
+    let available_id_set = available_skills
+        .iter()
+        .map(|skill| skill.skill_id.clone())
+        .collect::<BTreeSet<_>>();
+    let equipped = load_equipped_skills(state, character_id, &available_id_set).await?;
+    let available_map = available_skills
+        .into_iter()
+        .map(|skill| (skill.skill_id.clone(), skill))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for slot in equipped {
+        if !seen.insert(slot.skill_id.clone()) {
+            continue;
+        }
+        if let Some(skill) = available_map.get(slot.skill_id.as_str()) {
+            out.push(to_battle_skill_value(skill));
+        }
+    }
+    if out.is_empty() {
+        for (skill_id, skill) in &available_map {
+            if !seen.insert(skill_id.clone()) {
+                continue;
+            }
+            out.push(to_battle_skill_value(skill));
         }
     }
     Ok(out)

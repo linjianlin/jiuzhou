@@ -11,15 +11,23 @@ use sqlx::Row;
 use tokio::time::{Duration, sleep};
 
 use crate::auth;
+use crate::battle_runtime::{
+    MinimalBattleRewardItemDto, MinimalBattleRewardParticipant, MinimalPveItemRewardResolveOptions,
+    resolve_minimal_pve_item_rewards,
+};
 use crate::http::character_technique::list_character_available_skill_id_set;
+use crate::http::partner::build_active_partner_idle_execution_snapshot;
 use crate::idle_runtime::{
-    IdleExecutionSnapshot, IdlePartnerExecutionSnapshot, IdleSessionActivitySnapshot,
-    build_idle_execution_snapshot, build_idle_reconcile_plan, execute_idle_batch_from_snapshot,
+    IdleExecutionSnapshot, IdleSessionActivitySnapshot, build_idle_execution_snapshot,
+    build_idle_reconcile_plan, execute_idle_batch_from_snapshot,
 };
 use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
 use crate::integrations::redis::RedisRuntime;
 use crate::integrations::redis_resource_delta::{
     CharacterResourceDeltaField, buffer_character_resource_delta_fields,
+};
+use crate::jobs::online_battle_settlement::{
+    GenericPveSettlementTaskPayload, settle_generic_pve_reward_items,
 };
 use crate::realtime::idle::{build_idle_finished_payload, build_idle_update_batch_payload};
 use crate::realtime::public_socket::{
@@ -59,7 +67,7 @@ pub struct IdleSessionDto {
     pub viewed_at: Option<String>,
     pub target_monster_def_id: Option<String>,
     pub target_monster_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub execution_snapshot: Option<IdleExecutionSnapshot>,
     #[serde(skip_serializing)]
     pub(crate) raw_snapshot: serde_json::Value,
@@ -153,7 +161,6 @@ struct MonsterSeed {
     _name: Option<String>,
     exp_reward: Option<i64>,
     silver_reward_min: Option<i64>,
-    drop_pool_id: Option<String>,
     enabled: Option<bool>,
 }
 
@@ -181,61 +188,12 @@ struct MapRoomMonsterSeed {
     count: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct DropPoolFile {
-    pools: Vec<DropPoolSeed>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct DropPoolSeed {
-    id: Option<String>,
-    mode: Option<String>,
-    common_pool_ids: Option<Vec<String>>,
-    entries: Option<Vec<DropPoolEntrySeed>>,
-    enabled: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct DropPoolEntrySeed {
-    item_def_id: Option<String>,
-    chance: Option<serde_json::Value>,
-    qty_min: Option<serde_json::Value>,
-    qty_max: Option<serde_json::Value>,
-    #[serde(rename = "show_in_ui")]
-    _show_in_ui: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
-struct IdleInventoryDefMeta {
-    item_name: String,
-    bind_type: String,
-    stack_max: i64,
-}
-
-#[derive(Debug, Clone)]
-struct IdlePlannedItemDrop {
-    item_def_id: String,
-    item_name: String,
-    quantity: i64,
-    bind_type: String,
-    stack_max: i64,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IdleItemGain {
     item_def_id: String,
     item_name: String,
     quantity: i64,
-}
-
-#[derive(Debug, Clone)]
-struct IdleBagItemRow {
-    id: i64,
-    item_def_id: String,
-    qty: i64,
-    location_slot: Option<i64>,
-    bind_type: String,
 }
 
 #[derive(Debug, Clone)]
@@ -246,7 +204,7 @@ struct IdleBatchResult {
     silver_gained: i64,
     items_gained: Vec<IdleItemGain>,
     _bag_full_flag: bool,
-    planned_item_drops: Vec<IdlePlannedItemDrop>,
+    planned_item_drops: Vec<MinimalBattleRewardItemDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,6 +214,8 @@ pub(crate) struct IdleBufferedBatchDelta {
     round_count: i64,
     exp_gained: i64,
     silver_gained: i64,
+    #[serde(default)]
+    planned_item_drops: Vec<MinimalBattleRewardItemDto>,
 }
 
 enum IdleExecutionStep {
@@ -277,8 +237,12 @@ pub async fn get_idle_history(
     headers: HeaderMap,
 ) -> Result<Json<SuccessResponse<IdleHistoryDataDto>>, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
+    state.database.execute(
+        "DELETE FROM idle_sessions WHERE character_id = $1 AND status IN ('completed', 'interrupted') AND id NOT IN (SELECT id FROM idle_sessions WHERE character_id = $1 AND status IN ('completed', 'interrupted') ORDER BY ended_at DESC NULLS LAST, started_at DESC, id DESC LIMIT 3)",
+        |q| q.bind(actor.character_id),
+    ).await?;
     let sessions = state.database.fetch_all(
-        "SELECT id::text AS id_text, character_id, status, map_id, room_id, max_duration_ms, session_snapshot, total_battles, win_count, lose_count, total_exp, total_silver, bag_full_flag, started_at::text AS started_at_text, ended_at::text AS ended_at_text, viewed_at::text AS viewed_at_text FROM idle_sessions WHERE character_id = $1 ORDER BY started_at DESC LIMIT 3",
+        "SELECT id::text AS id_text, character_id, status, map_id, room_id, max_duration_ms, session_snapshot, total_battles, win_count, lose_count, total_exp, total_silver, bag_full_flag, started_at::text AS started_at_text, ended_at::text AS ended_at_text, viewed_at::text AS viewed_at_text FROM idle_sessions WHERE character_id = $1 AND status IN ('completed', 'interrupted') ORDER BY ended_at DESC NULLS LAST, started_at DESC, id DESC LIMIT 3",
         |q| q.bind(actor.character_id),
     ).await?;
     let monster_names = load_monster_name_map()?;
@@ -328,11 +292,15 @@ pub async fn get_idle_config(
         let persisted_duration = row
             .try_get::<Option<i64>, _>("max_duration_ms")?
             .unwrap_or(DEFAULT_IDLE_DURATION_MS);
+        let max_duration_ms = if persisted_duration > duration_limit.max_duration_ms {
+            duration_limit.max_duration_ms
+        } else {
+            persisted_duration
+        };
         IdleConfigDto {
             map_id: row.try_get::<Option<String>, _>("map_id")?,
             room_id: row.try_get::<Option<String>, _>("room_id")?,
-            max_duration_ms: persisted_duration
-                .clamp(MIN_IDLE_DURATION_MS, duration_limit.max_duration_ms),
+            max_duration_ms,
             auto_skill_policy: normalized_policy,
             target_monster_def_id: row.try_get::<Option<String>, _>("target_monster_def_id")?,
             include_partner_in_battle: row
@@ -383,6 +351,12 @@ pub async fn start_idle_session(
             MIN_IDLE_DURATION_MS, duration_limit.max_duration_ms
         )));
     }
+    ensure_character_not_in_team(&state, actor.character_id).await?;
+    ensure_idle_target_monster_in_room(
+        map_id.trim(),
+        room_id.trim(),
+        target_monster_def_id.trim(),
+    )?;
     let normalized_policy = normalize_idle_auto_skill_policy_for_character(
         &state,
         actor.character_id,
@@ -399,7 +373,26 @@ pub async fn start_idle_session(
         return Ok((axum::http::StatusCode::CONFLICT, Json(body)).into_response());
     }
 
-    try_acquire_idle_start_lock(&state, actor.character_id, max_duration_ms).await?;
+    if !try_acquire_idle_start_lock(&state, actor.character_id, max_duration_ms).await? {
+        if let Some(existing) = load_active_idle_session(&state, actor.character_id).await? {
+            let body = serde_json::json!({
+                "success": false,
+                "message": "已有活跃挂机会话",
+                "existingSessionId": existing.id,
+            });
+            return Ok((axum::http::StatusCode::CONFLICT, Json(body)).into_response());
+        }
+        return Err(AppError::config("挂机会话正在初始化，请稍后重试"));
+    }
+    if let Some(existing) = load_active_idle_session(&state, actor.character_id).await? {
+        release_idle_lock_projection(&state, actor.character_id).await?;
+        let body = serde_json::json!({
+            "success": false,
+            "message": "已有活跃挂机会话",
+            "existingSessionId": existing.id,
+        });
+        return Ok((axum::http::StatusCode::CONFLICT, Json(body)).into_response());
+    }
 
     let digest = format!(
         "{:x}",
@@ -413,39 +406,46 @@ pub async fn start_idle_session(
         &digest[16..20],
         &digest[20..32],
     );
-    let partner_snapshot = if payload.include_partner_in_battle.unwrap_or(false) {
-        load_idle_partner_execution_snapshot(&state, actor.character_id).await?
-    } else {
-        None
-    };
-    let mut execution_snapshot = build_idle_execution_snapshot(
-        actor.character_id,
-        map_id.trim(),
-        room_id.trim(),
-        target_monster_def_id.trim(),
-        &normalized_policy,
-        partner_snapshot,
-    )
-    .map_err(AppError::config)?;
-    hydrate_pve_battle_state_owner(
-        &state,
-        &mut execution_snapshot.initial_battle_state,
-        actor.character_id,
-    )
-    .await?;
-    let session_snapshot = serde_json::json!({
-        "characterId": actor.character_id,
-        "targetMonsterDefId": target_monster_def_id.trim(),
-        "includePartnerInBattle": payload.include_partner_in_battle.unwrap_or(false),
-        "autoSkillPolicy": normalized_policy,
-        "executionSnapshot": execution_snapshot,
-        "bufferedBatchDeltas": [],
-        "bufferedSinceMs": serde_json::Value::Null,
-    });
-    state.database.execute(
-        "INSERT INTO idle_sessions (id, character_id, status, map_id, room_id, max_duration_ms, session_snapshot, total_battles, win_count, lose_count, total_exp, total_silver, bag_full_flag, started_at, ended_at, viewed_at, created_at, updated_at) VALUES ($1::uuid, $2, 'active', $3, $4, $5, $6::jsonb, 0, 0, 0, 0, 0, FALSE, NOW(), NULL, NULL, NOW(), NOW())",
-        |q| q.bind(&session_id).bind(actor.character_id).bind(map_id.trim()).bind(room_id.trim()).bind(max_duration_ms).bind(&session_snapshot),
-    ).await?;
+    let create_result = async {
+        let partner_snapshot = if payload.include_partner_in_battle.unwrap_or(false) {
+            build_active_partner_idle_execution_snapshot(&state, actor.character_id).await?
+        } else {
+            None
+        };
+        let mut execution_snapshot = build_idle_execution_snapshot(
+            actor.character_id,
+            map_id.trim(),
+            room_id.trim(),
+            target_monster_def_id.trim(),
+            &normalized_policy,
+            partner_snapshot,
+        )
+        .map_err(AppError::config)?;
+        hydrate_pve_battle_state_owner(
+            &state,
+            &mut execution_snapshot.initial_battle_state,
+            actor.character_id,
+        )
+        .await?;
+        let session_snapshot = serde_json::json!({
+            "characterId": actor.character_id,
+            "targetMonsterDefId": target_monster_def_id.trim(),
+            "includePartnerInBattle": payload.include_partner_in_battle.unwrap_or(false),
+            "autoSkillPolicy": normalized_policy,
+            "executionSnapshot": execution_snapshot,
+            "bufferedBatchDeltas": [],
+            "bufferedSinceMs": serde_json::Value::Null,
+        });
+        state.database.execute(
+            "INSERT INTO idle_sessions (id, character_id, status, map_id, room_id, max_duration_ms, session_snapshot, total_battles, win_count, lose_count, total_exp, total_silver, bag_full_flag, started_at, ended_at, viewed_at, created_at, updated_at) VALUES ($1::uuid, $2, 'active', $3, $4, $5, $6::jsonb, 0, 0, 0, 0, 0, FALSE, NOW(), NULL, NULL, NOW(), NOW())",
+            |q| q.bind(&session_id).bind(actor.character_id).bind(map_id.trim()).bind(room_id.trim()).bind(max_duration_ms).bind(&session_snapshot),
+        ).await?;
+        Ok::<(), AppError>(())
+    }.await;
+    if let Err(error) = create_result {
+        release_idle_lock_projection(&state, actor.character_id).await?;
+        return Err(error);
+    }
     spawn_idle_execution_loop(
         state.clone(),
         session_id.clone(),
@@ -466,9 +466,12 @@ pub async fn stop_idle_session(
 ) -> Result<Json<SuccessResponse<()>>, AppError> {
     let actor = auth::require_character(&state, &headers).await?;
     let rows = state.database.fetch_all(
-        "UPDATE idle_sessions SET status = 'stopping', updated_at = NOW() WHERE character_id = $1 AND status = 'active' RETURNING id::text AS id_text",
+        "UPDATE idle_sessions SET status = 'stopping', updated_at = NOW() WHERE character_id = $1 AND status IN ('active', 'stopping') RETURNING id::text AS id_text",
         |q| q.bind(actor.character_id),
     ).await?;
+    if rows.is_empty() {
+        return Err(AppError::config("没有活跃的挂机会话"));
+    }
     for row in rows {
         let session_id = row.try_get::<String, _>("id_text")?;
         state.idle_execution_registry.request_stop(&session_id);
@@ -536,7 +539,7 @@ pub async fn update_idle_config(
             .bind(max_duration_ms)
             .bind(&normalized_policy)
             .bind(payload.target_monster_def_id)
-            .bind(payload.include_partner_in_battle.unwrap_or(true)),
+            .bind(payload.include_partner_in_battle.unwrap_or(false)),
     ).await?;
     Ok(send_ok())
 }
@@ -551,7 +554,7 @@ pub async fn mark_idle_history_viewed(
         return Err(AppError::config("缺少 sessionId"));
     }
     state.database.execute(
-        "UPDATE idle_sessions SET viewed_at = NOW(), updated_at = NOW() WHERE id::text = $1 AND character_id = $2",
+        "UPDATE idle_sessions SET viewed_at = NOW(), updated_at = NOW() WHERE id::text = $1 AND character_id = $2 AND viewed_at IS NULL",
         |q| q.bind(id.trim()).bind(actor.character_id),
     ).await?;
     Ok(send_ok())
@@ -783,25 +786,13 @@ async fn run_idle_execution_tick(
     character_id: i64,
     user_id: i64,
 ) -> Result<IdleExecutionStep, AppError> {
-    println!("IDLE_TRACE: tick_enter session_id={session_id} character_id={character_id}");
-    let session = match load_idle_session_by_id(state, session_id).await {
-        Ok(session) => session,
-        Err(error) => {
-            println!("IDLE_TRACE: load_session_failed session_id={session_id} error={error}");
-            return Err(error);
-        }
-    };
+    let session = load_idle_session_by_id(state, session_id).await?;
     let Some(session) = session else {
-        println!("IDLE_TRACE: tick_session_missing session_id={session_id}");
         state.idle_execution_registry.remove(session_id);
         return Ok(IdleExecutionStep::Stop);
     };
 
     if state.idle_execution_registry.is_stop_requested(session_id) || session.status == "stopping" {
-        println!(
-            "IDLE_TRACE: tick_stop_requested session_id={session_id} status={}",
-            session.status
-        );
         finalize_idle_session(state, session_id, character_id, user_id, "interrupted").await?;
         return Ok(IdleExecutionStep::Stop);
     }
@@ -810,75 +801,43 @@ async fn run_idle_execution_tick(
         parse_datetime_millis(Some(session.started_at.as_str())).unwrap_or_default();
     let now_ms = now_millis() as i64;
     if started_at_ms.saturating_add(session.max_duration_ms.max(0)) <= now_ms {
-        println!(
-            "IDLE_TRACE: tick_timeout_complete session_id={session_id} started_at_ms={started_at_ms} now_ms={now_ms} max_duration_ms={}",
-            session.max_duration_ms
-        );
         finalize_idle_session(state, session_id, character_id, user_id, "completed").await?;
         return Ok(IdleExecutionStep::Stop);
     }
 
-    println!(
-        "IDLE_TRACE: before_resolve_batch session_id={session_id} total_battles={} max_duration_ms={} started_at_ms={started_at_ms} now_ms={now_ms}",
-        session.total_battles, session.max_duration_ms
-    );
-
     let batch_index = session.total_battles + 1;
-    let batch = match resolve_idle_batch_result(&session) {
-        Ok(batch) => batch,
-        Err(error) => {
-            println!("IDLE_TRACE: resolve_batch_failed session_id={session_id} error={error}");
-            return Err(AppError::config(error.to_string()));
-        }
-    };
-    println!(
-        "IDLE_TRACE: batch_resolved session_id={session_id} batch_index={batch_index} result={} exp={} silver={} items={}",
-        batch.result,
-        batch.exp_gained,
-        batch.silver_gained,
-        batch.items_gained.len()
-    );
-    let settled_batch = match settle_idle_batch_items(state, session_id, character_id, &batch).await
-    {
-        Ok(batch) => batch,
-        Err(error) => {
-            println!("IDLE_TRACE: settle_batch_failed session_id={session_id} error={error}");
-            return Err(error);
-        }
-    };
-    println!(
-        "IDLE_TRACE: batch_settled session_id={session_id} batch_index={batch_index} result={} exp={} silver={} items={}",
-        settled_batch.result,
-        settled_batch.exp_gained,
-        settled_batch.silver_gained,
-        settled_batch.items_gained.len()
-    );
+    let batch = resolve_idle_batch_result(&session, user_id)?;
     let should_flush = should_flush_idle_buffer(&session, now_ms, 1);
-    let flushed_batch = if should_flush {
-        println!("IDLE_TRACE: batch_flush_now session_id={session_id} batch_index={batch_index}");
-        flush_idle_buffer(state, session_id, character_id, &session, &batch, now_ms).await?
+    let flushed = if should_flush {
+        flush_idle_buffer(
+            state,
+            session_id,
+            character_id,
+            user_id,
+            &session,
+            &batch,
+            now_ms,
+        )
+        .await?
     } else {
-        println!("IDLE_TRACE: batch_buffer_only session_id={session_id} batch_index={batch_index}");
         buffer_idle_batch_delta(state, session_id, &session, &batch, now_ms).await?;
         None
     };
     let payload = build_idle_update_batch_payload(
         session.id.clone(),
         batch_index,
-        settled_batch.result.clone(),
-        settled_batch.exp_gained,
-        settled_batch.silver_gained,
-        settled_batch
+        batch.result.clone(),
+        batch.exp_gained,
+        batch.silver_gained,
+        batch
             .items_gained
             .iter()
             .filter_map(|item| serde_json::to_value(item).ok())
             .collect(),
-        settled_batch.round_count,
+        batch.round_count,
     );
-    println!("IDLE_TRACE: before_emit_update session_id={session_id} batch_index={batch_index}");
     emit_idle_realtime_to_user(state, user_id, &payload);
-    println!("IDLE_TRACE: after_emit_update session_id={session_id} batch_index={batch_index}");
-    if flushed_batch.is_some() {
+    if flushed.is_some() {
         let _ = emit_game_character_full_to_user(state, user_id).await;
     }
     Ok(IdleExecutionStep::Continue)
@@ -897,6 +856,7 @@ async fn finalize_idle_session(
                 state,
                 session_id,
                 character_id,
+                user_id,
                 &session,
                 &IdleBatchResult {
                     result: "draw".to_string(),
@@ -930,42 +890,11 @@ async fn finalize_idle_session(
     Ok(())
 }
 
-async fn settle_idle_batch_items(
-    state: &AppState,
-    session_id: &str,
-    character_id: i64,
-    batch: &IdleBatchResult,
-) -> Result<IdleBatchResult, AppError> {
-    let (items_gained, bag_full_flag) = state.database.with_transaction(|| async {
-        let (items_gained, bag_full_flag) = settle_idle_item_rewards_tx(
-            state,
-            session_id,
-            character_id,
-            &batch.planned_item_drops,
-        )
-        .await?;
-        if bag_full_flag {
-            state.database.execute(
-                "UPDATE idle_sessions SET bag_full_flag = true, updated_at = NOW() WHERE id::text = $1 AND status = 'active'",
-                |q| q.bind(session_id),
-            ).await?;
-        }
-        Ok::<(Vec<IdleItemGain>, bool), AppError>((items_gained, bag_full_flag))
-    }).await?;
-    Ok(IdleBatchResult {
-        result: batch.result.clone(),
-        round_count: batch.round_count,
-        exp_gained: batch.exp_gained,
-        silver_gained: batch.silver_gained,
-        items_gained,
-        _bag_full_flag: bag_full_flag,
-        planned_item_drops: batch.planned_item_drops.clone(),
-    })
-}
-
 async fn flush_idle_batch_deltas(
     state: &AppState,
     session_id: &str,
+    character_id: i64,
+    user_id: i64,
     batches: &[IdleBatchResult],
 ) -> Result<(), AppError> {
     if batches.is_empty() {
@@ -982,26 +911,49 @@ async fn flush_idle_batch_deltas(
         .filter(|batch| batch.result == "defender_win")
         .count() as i64;
     let total_battles = batches.len() as i64;
+    let reward_items = batches
+        .iter()
+        .flat_map(|batch| batch.planned_item_drops.iter().cloned())
+        .collect::<Vec<_>>();
     state.database.with_transaction(|| async {
+        let item_settlement = if reward_items.is_empty() {
+            None
+        } else {
+            Some(
+                settle_generic_pve_reward_items(
+                    state,
+                    &GenericPveSettlementTaskPayload {
+                        schema_version: 1,
+                        character_id,
+                        user_id,
+                        exp_gained: 0,
+                        silver_gained: 0,
+                        reward_items,
+                    },
+                    Some(session_id),
+                )
+                .await?,
+            )
+        };
+        let total_silver = total_silver.saturating_add(
+            item_settlement
+                .as_ref()
+                .map(|result| result.auto_disassemble_silver_gained)
+                .unwrap_or_default(),
+        );
         if state.redis_available && state.redis.is_some() {
             let redis = RedisRuntime::new(state.redis.clone().expect("redis should exist"));
             let mut resource_fields = Vec::new();
             if total_exp > 0 {
                 resource_fields.push(CharacterResourceDeltaField {
-                    character_id: load_idle_session_by_id(state, session_id)
-                        .await?
-                        .map(|session| session.character_id)
-                        .unwrap_or_default(),
+                    character_id,
                     field: "exp".to_string(),
                     increment: total_exp,
                 });
             }
             if total_silver > 0 {
                 resource_fields.push(CharacterResourceDeltaField {
-                    character_id: load_idle_session_by_id(state, session_id)
-                        .await?
-                        .map(|session| session.character_id)
-                        .unwrap_or_default(),
+                    character_id,
                     field: "silver".to_string(),
                     increment: total_silver,
                 });
@@ -1009,10 +961,10 @@ async fn flush_idle_batch_deltas(
             if !resource_fields.is_empty() {
                 buffer_character_resource_delta_fields(&redis, &resource_fields).await?;
             }
-        } else if let Some(session) = load_idle_session_by_id(state, session_id).await? {
+        } else {
             state.database.execute(
                 "UPDATE characters SET exp = COALESCE(exp, 0) + $2, silver = COALESCE(silver, 0) + $3, updated_at = NOW() WHERE id = $1",
-                |q| q.bind(session.character_id).bind(total_exp).bind(total_silver),
+                |q| q.bind(character_id).bind(total_exp).bind(total_silver),
             ).await?;
         }
         state.database.execute(
@@ -1053,6 +1005,7 @@ async fn buffer_idle_batch_delta(
         round_count: batch.round_count,
         exp_gained: batch.exp_gained,
         silver_gained: batch.silver_gained,
+        planned_item_drops: batch.planned_item_drops.clone(),
     });
     snapshot["bufferedBatchDeltas"] = serde_json::to_value(&buffered)
         .map_err(|error| AppError::config(format!("挂机缓冲快照序列化失败: {error}")))?;
@@ -1067,7 +1020,8 @@ async fn buffer_idle_batch_delta(
 async fn flush_idle_buffer(
     state: &AppState,
     session_id: &str,
-    _character_id: i64,
+    character_id: i64,
+    user_id: i64,
     session: &IdleSessionDto,
     current_batch: &IdleBatchResult,
     now_ms: i64,
@@ -1082,12 +1036,12 @@ async fn flush_idle_buffer(
             silver_gained: delta.silver_gained,
             items_gained: Vec::new(),
             _bag_full_flag: false,
-            planned_item_drops: Vec::new(),
+            planned_item_drops: delta.planned_item_drops.clone(),
         })
         .collect::<Vec<_>>();
     batches.push(current_batch.clone());
     let _ = now_ms;
-    flush_idle_batch_deltas(state, session_id, &batches).await?;
+    flush_idle_batch_deltas(state, session_id, character_id, user_id, &batches).await?;
     Ok(Some(IdleBatchResult {
         result: current_batch.result.clone(),
         round_count: current_batch.round_count,
@@ -1099,7 +1053,10 @@ async fn flush_idle_buffer(
     }))
 }
 
-fn resolve_idle_batch_result(session: &IdleSessionDto) -> Result<IdleBatchResult, AppError> {
+fn resolve_idle_batch_result(
+    session: &IdleSessionDto,
+    user_id: i64,
+) -> Result<IdleBatchResult, AppError> {
     if let Some(snapshot) = parse_idle_execution_snapshot(session) {
         let batch = execute_idle_batch_from_snapshot(
             &session.id,
@@ -1108,18 +1065,47 @@ fn resolve_idle_batch_result(session: &IdleSessionDto) -> Result<IdleBatchResult
             &snapshot,
         )
         .map_err(AppError::config)?;
+        let planned_item_drops = if batch.result == "attacker_win" {
+            resolve_minimal_pve_item_rewards(
+                &snapshot.monster_ids,
+                &MinimalPveItemRewardResolveOptions {
+                    reward_seed: format!("{}:{}", session.id, session.total_battles + 1),
+                    participants: vec![MinimalBattleRewardParticipant {
+                        character_id: session.character_id,
+                        user_id,
+                        fuyuan: 0.0,
+                        realm: snapshot
+                            .initial_battle_state
+                            .teams
+                            .attacker
+                            .units
+                            .first()
+                            .and_then(|unit| unit.current_attrs.realm.clone()),
+                    }],
+                    is_dungeon_battle: false,
+                    dungeon_reward_multiplier: None,
+                },
+            )
+            .map_err(AppError::config)?
+        } else {
+            Vec::new()
+        };
+        let items_gained = planned_item_drops
+            .iter()
+            .map(|item| IdleItemGain {
+                item_def_id: item.item_def_id.clone(),
+                item_name: item.item_name.clone(),
+                quantity: item.qty,
+            })
+            .collect::<Vec<_>>();
         return Ok(IdleBatchResult {
             result: batch.result,
             round_count: batch.round_count,
             exp_gained: batch.exp_gained,
             silver_gained: batch.silver_gained,
-            items_gained: Vec::new(),
+            items_gained,
             _bag_full_flag: false,
-            planned_item_drops: resolve_idle_item_drops(
-                &session.id,
-                session.total_battles + 1,
-                &snapshot.monster_ids,
-            )?,
+            planned_item_drops,
         });
     }
     let target_monster_def_id = session
@@ -1154,6 +1140,31 @@ fn resolve_idle_batch_result(session: &IdleSessionDto) -> Result<IdleBatchResult
     };
     let reward = load_monster_reward_seed(&target_monster_def_id)?;
     let count = monster_count.max(1);
+    let monster_ids =
+        std::iter::repeat_n(target_monster_def_id.clone(), count as usize).collect::<Vec<_>>();
+    let planned_item_drops = resolve_minimal_pve_item_rewards(
+        &monster_ids,
+        &MinimalPveItemRewardResolveOptions {
+            reward_seed: format!("{}:{}", session.id, session.total_battles + 1),
+            participants: vec![MinimalBattleRewardParticipant {
+                character_id: session.character_id,
+                user_id,
+                fuyuan: 0.0,
+                realm: None,
+            }],
+            is_dungeon_battle: false,
+            dungeon_reward_multiplier: None,
+        },
+    )
+    .map_err(AppError::config)?;
+    let items_gained = planned_item_drops
+        .iter()
+        .map(|item| IdleItemGain {
+            item_def_id: item.item_def_id.clone(),
+            item_name: item.item_name.clone(),
+            quantity: item.qty,
+        })
+        .collect::<Vec<_>>();
     Ok(IdleBatchResult {
         result: "attacker_win".to_string(),
         round_count: count,
@@ -1167,14 +1178,60 @@ fn resolve_idle_batch_result(session: &IdleSessionDto) -> Result<IdleBatchResult
             .unwrap_or_default()
             .max(0)
             .saturating_mul(count),
-        items_gained: Vec::new(),
+        items_gained,
         _bag_full_flag: false,
-        planned_item_drops: Vec::new(),
+        planned_item_drops,
     })
 }
 
 fn parse_idle_execution_snapshot(session: &IdleSessionDto) -> Option<IdleExecutionSnapshot> {
     session.execution_snapshot.clone()
+}
+
+async fn ensure_character_not_in_team(state: &AppState, character_id: i64) -> Result<(), AppError> {
+    let in_team = state
+        .database
+        .fetch_optional(
+            "SELECT 1 FROM team_members WHERE character_id = $1 LIMIT 1",
+            |query| query.bind(character_id),
+        )
+        .await?
+        .is_some();
+    if in_team {
+        return Err(AppError::config("组队中无法进行离线挂机，请先退出队伍"));
+    }
+    Ok(())
+}
+
+fn ensure_idle_target_monster_in_room(
+    map_id: &str,
+    room_id: &str,
+    monster_def_id: &str,
+) -> Result<(), AppError> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/map_def.json");
+    let content = fs::read_to_string(&path)
+        .map_err(|error| AppError::config(format!("failed to read map_def.json: {error}")))?;
+    let payload: MapSeedFile = serde_json::from_str(&content)
+        .map_err(|error| AppError::config(format!("failed to parse map_def.json: {error}")))?;
+    let Some(map) = payload
+        .maps
+        .into_iter()
+        .find(|map| map.id == map_id && map.enabled != Some(false))
+    else {
+        return Err(AppError::config("房间不存在"));
+    };
+    let Some(room) = map.rooms.into_iter().find(|room| room.id == room_id) else {
+        return Err(AppError::config("房间不存在"));
+    };
+    let monster_in_room = room
+        .monsters
+        .iter()
+        .any(|monster| monster.monster_def_id == monster_def_id);
+    if !monster_in_room {
+        return Err(AppError::config("所选怪物不属于该房间"));
+    }
+    Ok(())
 }
 
 fn load_room_monster_count(
@@ -1220,411 +1277,6 @@ fn load_monster_reward_seed(monster_def_id: &str) -> Result<MonsterSeed, AppErro
                 && monster.enabled != Some(false)
         })
         .ok_or_else(|| AppError::config(format!("monster seed not found: {monster_def_id}")))
-}
-
-fn resolve_idle_item_drops(
-    session_id: &str,
-    batch_index: i64,
-    monster_ids: &[String],
-) -> Result<Vec<IdlePlannedItemDrop>, AppError> {
-    let monster_map = load_monster_seed_map()?;
-    let item_defs = load_idle_inventory_def_map()?;
-    let drop_pools = load_idle_drop_pool_map()?;
-    let mut merged = BTreeMap::<String, IdlePlannedItemDrop>::new();
-
-    for (monster_index, monster_id) in monster_ids.iter().enumerate() {
-        let Some(monster) = monster_map.get(monster_id.as_str()) else {
-            continue;
-        };
-        let Some(drop_pool_id) = monster
-            .drop_pool_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        let entries = resolve_idle_drop_pool_entries(&drop_pools, drop_pool_id)?;
-        for (entry_index, entry) in entries.iter().enumerate() {
-            let Some(item_def_id) = entry
-                .item_def_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            else {
-                continue;
-            };
-            let chance = as_entry_f64(entry.chance.as_ref())
-                .unwrap_or(0.0)
-                .clamp(0.0, 1.0);
-            if chance <= 0.0 {
-                continue;
-            }
-            let roll = deterministic_roll_unit_interval(
-                session_id,
-                batch_index,
-                monster_index as i64,
-                entry_index as i64,
-                item_def_id,
-            );
-            if roll > chance {
-                continue;
-            }
-            let qty_min = as_entry_i64(entry.qty_min.as_ref(), 1).max(1);
-            let qty_max = as_entry_i64(entry.qty_max.as_ref(), qty_min).max(qty_min);
-            let quantity = deterministic_roll_i64(
-                session_id,
-                batch_index,
-                monster_index as i64,
-                entry_index as i64,
-                qty_min,
-                qty_max,
-            );
-            if quantity <= 0 {
-                continue;
-            }
-            let Some(item_meta) = item_defs.get(item_def_id) else {
-                continue;
-            };
-            merged
-                .entry(item_def_id.to_string())
-                .and_modify(|row| row.quantity += quantity)
-                .or_insert_with(|| IdlePlannedItemDrop {
-                    item_def_id: item_def_id.to_string(),
-                    item_name: item_meta.item_name.clone(),
-                    quantity,
-                    bind_type: item_meta.bind_type.clone(),
-                    stack_max: item_meta.stack_max,
-                });
-        }
-    }
-
-    Ok(merged.into_values().collect())
-}
-
-async fn settle_idle_item_rewards_tx(
-    state: &AppState,
-    session_id: &str,
-    character_id: i64,
-    planned_items: &[IdlePlannedItemDrop],
-) -> Result<(Vec<IdleItemGain>, bool), AppError> {
-    if planned_items.is_empty() {
-        return Ok((Vec::new(), false));
-    }
-    let user_row = state
-        .database
-        .fetch_optional(
-            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1 FOR UPDATE",
-            |query| query.bind(character_id),
-        )
-        .await?;
-    let Some(user_row) = user_row else {
-        return Ok((Vec::new(), false));
-    };
-    let user_id = user_row
-        .try_get::<Option<i32>, _>("user_id")?
-        .map(i64::from)
-        .unwrap_or_default();
-    if user_id <= 0 {
-        return Ok((Vec::new(), false));
-    }
-
-    let bag_capacity = state
-        .database
-        .fetch_optional(
-            "SELECT bag_capacity FROM inventory WHERE character_id = $1 LIMIT 1 FOR UPDATE",
-            |query| query.bind(character_id),
-        )
-        .await?
-        .and_then(|row| {
-            row.try_get::<Option<i32>, _>("bag_capacity")
-                .ok()
-                .flatten()
-                .map(i64::from)
-        })
-        .unwrap_or(100)
-        .max(1);
-
-    let mut bag_rows = state
-        .database
-        .fetch_all(
-            "SELECT id, item_def_id, qty, location_slot, bind_type FROM item_instance WHERE owner_character_id = $1 AND location = 'bag' FOR UPDATE",
-            |query| query.bind(character_id),
-        )
-        .await?
-        .into_iter()
-        .map(|row| {
-            Ok(IdleBagItemRow {
-                id: row.try_get::<i64, _>("id")?,
-                item_def_id: row.try_get::<Option<String>, _>("item_def_id")?.unwrap_or_default(),
-                qty: row.try_get::<Option<i32>, _>("qty")?.map(i64::from).unwrap_or_default(),
-                location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
-                bind_type: row.try_get::<Option<String>, _>("bind_type")?.unwrap_or_else(|| "none".to_string()),
-            })
-        })
-        .collect::<Result<Vec<_>, AppError>>()?;
-
-    let mut granted = Vec::new();
-    let mut bag_full_flag = false;
-
-    for planned in planned_items {
-        let mut remaining = planned.quantity.max(0);
-        if remaining <= 0 {
-            continue;
-        }
-        if planned.stack_max > 1 {
-            for row in bag_rows.iter_mut().filter(|row| {
-                row.item_def_id == planned.item_def_id
-                    && row.bind_type == planned.bind_type
-                    && row.qty < planned.stack_max
-            }) {
-                if remaining <= 0 {
-                    break;
-                }
-                let can_add = (planned.stack_max - row.qty).min(remaining).max(0);
-                if can_add <= 0 {
-                    continue;
-                }
-                row.qty += can_add;
-                remaining -= can_add;
-                state
-                    .database
-                    .execute(
-                        "UPDATE item_instance SET qty = $1, updated_at = NOW() WHERE id = $2",
-                        |query| query.bind(row.qty).bind(row.id),
-                    )
-                    .await?;
-            }
-        }
-
-        while remaining > 0 {
-            let Some(empty_slot) = find_first_empty_idle_bag_slot(&bag_rows, bag_capacity) else {
-                bag_full_flag = true;
-                break;
-            };
-            let insert_qty = remaining.min(planned.stack_max.max(1));
-            let inserted = state
-                .database
-                .fetch_one(
-                    "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', $6, NOW(), NOW(), 'idle_reward', $7) RETURNING id",
-                    |query| query.bind(user_id).bind(character_id).bind(&planned.item_def_id).bind(insert_qty).bind(&planned.bind_type).bind(empty_slot).bind(session_id),
-                )
-                .await?;
-            let item_id = inserted
-                .try_get::<Option<i64>, _>("id")?
-                .unwrap_or_default();
-            bag_rows.push(IdleBagItemRow {
-                id: item_id,
-                item_def_id: planned.item_def_id.clone(),
-                qty: insert_qty,
-                location_slot: Some(empty_slot),
-                bind_type: planned.bind_type.clone(),
-            });
-            remaining -= insert_qty;
-        }
-
-        let granted_qty = planned.quantity - remaining;
-        if granted_qty > 0 {
-            granted.push(IdleItemGain {
-                item_def_id: planned.item_def_id.clone(),
-                item_name: planned.item_name.clone(),
-                quantity: granted_qty,
-            });
-        }
-    }
-
-    Ok((granted, bag_full_flag))
-}
-
-fn find_first_empty_idle_bag_slot(rows: &[IdleBagItemRow], capacity: i64) -> Option<i64> {
-    (0..capacity).find(|slot| !rows.iter().any(|row| row.location_slot == Some(*slot)))
-}
-
-fn load_monster_seed_map() -> Result<BTreeMap<String, MonsterSeed>, AppError> {
-    Ok(load_monster_seed_file()?
-        .monsters
-        .into_iter()
-        .filter(|monster| monster.enabled != Some(false))
-        .filter_map(|monster| {
-            monster
-                .id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|id| (id.to_string(), monster.clone()))
-        })
-        .collect())
-}
-
-fn load_monster_seed_file() -> Result<MonsterSeedFile, AppError> {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/monster_def.json");
-    let content = fs::read_to_string(&path)
-        .map_err(|error| AppError::config(format!("failed to read monster_def.json: {error}")))?;
-    serde_json::from_str(&content)
-        .map_err(|error| AppError::config(format!("failed to parse monster_def.json: {error}")))
-}
-
-fn load_idle_inventory_def_map() -> Result<BTreeMap<String, IdleInventoryDefMeta>, AppError> {
-    let mut map = BTreeMap::new();
-    for filename in ["item_def.json", "equipment_def.json", "gem_def.json"] {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../server/src/data/seeds/{filename}"));
-        let content = fs::read_to_string(&path).map_err(|error| {
-            AppError::config(format!("failed to read {}: {error}", path.display()))
-        })?;
-        let payload: serde_json::Value = serde_json::from_str(&content).map_err(|error| {
-            AppError::config(format!("failed to parse {}: {error}", path.display()))
-        })?;
-        for item in payload
-            .get("items")
-            .and_then(|value| value.as_array())
-            .cloned()
-            .unwrap_or_default()
-        {
-            let Some(item_id) = item
-                .get("id")
-                .and_then(|value| value.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            else {
-                continue;
-            };
-            let item_name = item
-                .get("name")
-                .and_then(|value| value.as_str())
-                .unwrap_or(item_id)
-                .to_string();
-            let bind_type = item
-                .get("bind_type")
-                .and_then(|value| value.as_str())
-                .unwrap_or("none")
-                .to_string();
-            let stack_max = item
-                .get("stack_max")
-                .and_then(|value| value.as_i64())
-                .unwrap_or(1)
-                .max(1);
-            map.insert(
-                item_id.to_string(),
-                IdleInventoryDefMeta {
-                    item_name,
-                    bind_type,
-                    stack_max,
-                },
-            );
-        }
-    }
-    Ok(map)
-}
-
-fn load_idle_drop_pool_map() -> Result<BTreeMap<String, DropPoolSeed>, AppError> {
-    let mut map = BTreeMap::new();
-    for filename in ["drop_pool.json", "drop_pool_common.json"] {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("../server/src/data/seeds/{filename}"));
-        let content = fs::read_to_string(&path).map_err(|error| {
-            AppError::config(format!("failed to read {}: {error}", path.display()))
-        })?;
-        let payload: DropPoolFile = serde_json::from_str(&content).map_err(|error| {
-            AppError::config(format!("failed to parse {}: {error}", path.display()))
-        })?;
-        for pool in payload
-            .pools
-            .into_iter()
-            .filter(|pool| pool.enabled != Some(false))
-        {
-            let Some(pool_id) = pool
-                .id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            else {
-                continue;
-            };
-            map.insert(pool_id.to_string(), pool);
-        }
-    }
-    Ok(map)
-}
-
-fn resolve_idle_drop_pool_entries(
-    pools: &BTreeMap<String, DropPoolSeed>,
-    pool_id: &str,
-) -> Result<Vec<DropPoolEntrySeed>, AppError> {
-    let mut visited = BTreeSet::new();
-    let mut out = Vec::new();
-    collect_idle_drop_pool_entries(pools, pool_id, &mut visited, &mut out)?;
-    Ok(out)
-}
-
-fn collect_idle_drop_pool_entries(
-    pools: &BTreeMap<String, DropPoolSeed>,
-    pool_id: &str,
-    visited: &mut BTreeSet<String>,
-    out: &mut Vec<DropPoolEntrySeed>,
-) -> Result<(), AppError> {
-    let normalized = pool_id.trim();
-    if normalized.is_empty() || !visited.insert(normalized.to_string()) {
-        return Ok(());
-    }
-    let Some(pool) = pools.get(normalized) else {
-        return Ok(());
-    };
-    if pool.mode.as_deref().map(str::trim) != Some("prob") {
-        return Ok(());
-    }
-    for common_pool_id in pool.common_pool_ids.clone().unwrap_or_default() {
-        collect_idle_drop_pool_entries(pools, &common_pool_id, visited, out)?;
-    }
-    out.extend(pool.entries.clone().unwrap_or_default().into_iter());
-    Ok(())
-}
-
-fn deterministic_roll_unit_interval(
-    session_id: &str,
-    batch_index: i64,
-    monster_index: i64,
-    entry_index: i64,
-    item_def_id: &str,
-) -> f64 {
-    let seed = format!("{session_id}:{batch_index}:{monster_index}:{entry_index}:{item_def_id}");
-    let digest = md5::compute(seed.as_bytes());
-    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
-    (value as f64) / (u32::MAX as f64)
-}
-
-fn deterministic_roll_i64(
-    session_id: &str,
-    batch_index: i64,
-    monster_index: i64,
-    entry_index: i64,
-    min: i64,
-    max: i64,
-) -> i64 {
-    if max <= min {
-        return min;
-    }
-    let seed = format!("qty:{session_id}:{batch_index}:{monster_index}:{entry_index}:{min}:{max}");
-    let digest = md5::compute(seed.as_bytes());
-    let value = u32::from_be_bytes([digest[4], digest[5], digest[6], digest[7]]) as i64;
-    min + value.rem_euclid(max - min + 1)
-}
-
-fn as_entry_f64(value: Option<&serde_json::Value>) -> Option<f64> {
-    match value {
-        Some(serde_json::Value::Number(number)) => number.as_f64(),
-        Some(serde_json::Value::String(text)) => text.trim().parse::<f64>().ok(),
-        _ => None,
-    }
-}
-
-fn as_entry_i64(value: Option<&serde_json::Value>, fallback: i64) -> i64 {
-    match value {
-        Some(serde_json::Value::Number(number)) => number.as_i64().unwrap_or(fallback),
-        Some(serde_json::Value::String(text)) => text.trim().parse::<i64>().unwrap_or(fallback),
-        _ => fallback,
-    }
 }
 
 fn load_monster_name_map() -> Result<BTreeMap<String, String>, AppError> {
@@ -1726,57 +1378,6 @@ fn parse_datetime_millis(raw: Option<&str>) -> Option<i64> {
     Some(parsed.unix_timestamp_nanos() as i64 / 1_000_000)
 }
 
-async fn load_idle_partner_execution_snapshot(
-    state: &AppState,
-    character_id: i64,
-) -> Result<Option<IdlePartnerExecutionSnapshot>, AppError> {
-    let row = state
-        .database
-        .fetch_optional(
-            "SELECT id, COALESCE(NULLIF(nickname, ''), CONCAT('伙伴', id::text)) AS name, avatar, growth_max_qixue, growth_wugong, growth_fagong, growth_sudu FROM character_partner WHERE character_id = $1 AND is_active = TRUE ORDER BY updated_at DESC, id DESC LIMIT 1",
-            |query| query.bind(character_id),
-        )
-        .await?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    let partner_id = row
-        .try_get::<Option<i32>, _>("id")?
-        .map(i64::from)
-        .unwrap_or_default();
-    if partner_id <= 0 {
-        return Ok(None);
-    }
-    let max_qixue = row
-        .try_get::<Option<i32>, _>("growth_max_qixue")?
-        .map(i64::from)
-        .unwrap_or(60)
-        .max(1);
-    let wugong = row
-        .try_get::<Option<i32>, _>("growth_wugong")?
-        .map(i64::from)
-        .unwrap_or_default();
-    let fagong = row
-        .try_get::<Option<i32>, _>("growth_fagong")?
-        .map(i64::from)
-        .unwrap_or_default();
-    let speed = row
-        .try_get::<Option<i32>, _>("growth_sudu")?
-        .map(i64::from)
-        .unwrap_or(1)
-        .max(1);
-    Ok(Some(IdlePartnerExecutionSnapshot {
-        partner_id,
-        name: row
-            .try_get::<Option<String>, _>("name")?
-            .unwrap_or_else(|| format!("伙伴{partner_id}")),
-        avatar: row.try_get::<Option<String>, _>("avatar")?,
-        max_qixue,
-        attack_power: wugong.max(fagong).max(1),
-        speed,
-    }))
-}
-
 pub(crate) async fn sync_idle_lock_projection(
     state: &AppState,
     character_id: i64,
@@ -1812,9 +1413,9 @@ async fn try_acquire_idle_start_lock(
     state: &AppState,
     character_id: i64,
     max_duration_ms: i64,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let Some(redis_client) = state.redis.clone() else {
-        return Ok(());
+        return Ok(true);
     };
     let redis = RedisRuntime::new(redis_client);
     let token = format!("idle-lock-{}-{}", character_id, now_millis());
@@ -1824,12 +1425,12 @@ async fn try_acquire_idle_start_lock(
         .acquire_lock(&build_idle_lock_key(character_id), &token, ttl_sec)
         .await?;
     if lease.is_none() {
-        return Err(AppError::config("已有挂机互斥锁存在，请稍后重试"));
+        return Ok(false);
     }
     state
         .idle_execution_registry
         .set_lock_token(character_id, token);
-    Ok(())
+    Ok(true)
 }
 
 async fn release_idle_lock_projection(state: &AppState, character_id: i64) -> Result<(), AppError> {
@@ -1879,18 +1480,24 @@ fn normalize_idle_auto_skill_policy(
                 .to_string();
             let priority = slot
                 .get("priority")
-                .and_then(|value| value.as_i64())
-                .unwrap_or_default();
-            if skill_id.is_empty() || priority <= 0 {
+                .and_then(|value| value.as_f64())
+                .filter(|value| value.is_finite());
+            if skill_id.is_empty() || priority.is_none() {
                 return Err(AppError::config("技能策略非法"));
             }
-            Ok(serde_json::json!({ "skillId": skill_id, "priority": priority }))
+            Ok(serde_json::json!({ "skillId": skill_id, "priority": priority.unwrap() }))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    normalized.sort_by_key(|slot| {
-        slot.get("priority")
-            .and_then(|value| value.as_i64())
-            .unwrap_or_default()
+    normalized.sort_by(|left, right| {
+        let left_priority = left
+            .get("priority")
+            .and_then(|value| value.as_f64())
+            .unwrap_or_default();
+        let right_priority = right
+            .get("priority")
+            .and_then(|value| value.as_f64())
+            .unwrap_or_default();
+        left_priority.total_cmp(&right_priority)
     });
     Ok(serde_json::json!({ "slots": normalized }))
 }
@@ -2056,7 +1663,7 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":1}]}),
+            &serde_json::json!({"slots":[]}),
             None,
         )
         .expect("execution snapshot should build");
@@ -2084,7 +1691,7 @@ mod tests {
             buffered_since_ms: None,
         };
 
-        let batch = super::resolve_idle_batch_result(&session).expect("batch should resolve");
+        let batch = super::resolve_idle_batch_result(&session, 1).expect("batch should resolve");
         assert_eq!(batch.result, "attacker_win");
         assert!(batch.exp_gained > 0);
         assert!(batch.silver_gained > 0);
@@ -2117,7 +1724,7 @@ mod tests {
         };
 
         let batch =
-            super::resolve_idle_batch_result(&session).expect("legacy batch should resolve");
+            super::resolve_idle_batch_result(&session, 1).expect("legacy batch should resolve");
         assert_eq!(batch.result, "draw");
         assert_eq!(batch.round_count, 0);
         assert_eq!(batch.exp_gained, 0);
@@ -2131,7 +1738,7 @@ mod tests {
             "map-qingyun-outskirts",
             "room-forest-clearing",
             "monster-wild-boar",
-            &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":1}]}),
+            &serde_json::json!({"slots":[]}),
             None,
         )
         .expect("execution snapshot should build");
@@ -2159,7 +1766,7 @@ mod tests {
             buffered_since_ms: None,
         };
 
-        let batch = super::resolve_idle_batch_result(&session).expect("batch should resolve");
+        let batch = super::resolve_idle_batch_result(&session, 1).expect("batch should resolve");
         assert!(
             batch
                 .planned_item_drops

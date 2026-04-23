@@ -14955,15 +14955,21 @@ mod tests {
             "attacker_win"
         );
         assert_eq!(second_action_body["data"]["logs"][0]["type"], "action");
-        assert!(second_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
-            .get("damage")
-            .is_some());
-        assert!(second_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
-            .get("isMiss")
-            .is_some());
-        assert!(second_action_body["data"]["debugRealtime"]
-            .get("battleId")
-            .is_some());
+        assert!(
+            second_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
+                .get("damage")
+                .is_some()
+        );
+        assert!(
+            second_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
+                .get("isMiss")
+                .is_some()
+        );
+        assert!(
+            second_action_body["data"]["debugRealtime"]
+                .get("battleId")
+                .is_some()
+        );
         assert_eq!(
             second_action_body["data"]["debugRealtime"]["kind"],
             "battle_finished"

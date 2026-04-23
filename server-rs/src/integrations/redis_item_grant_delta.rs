@@ -75,15 +75,25 @@ pub struct CharacterItemGrantDelta {
     pub bind_type: String,
     pub obtained_from: String,
     pub obtained_ref_id: Option<String>,
+    pub idle_session_id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub quality: Option<String>,
+    pub quality_rank: Option<i64>,
+    pub equip_options: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct DecodedCharacterItemGrantDelta {
     pub user_id: i64,
     pub item_def_id: String,
     pub bind_type: String,
     pub obtained_from: String,
     pub obtained_ref_id: Option<String>,
+    pub idle_session_id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub quality: Option<String>,
+    pub quality_rank: Option<i64>,
+    pub equip_options: Option<serde_json::Value>,
     pub qty: i64,
 }
 
@@ -113,6 +123,11 @@ fn encode_item_grant_payload(delta: &CharacterItemGrantDelta) -> Option<String> 
         "bindType": if bind_type.is_empty() { "none" } else { bind_type },
         "obtainedFrom": obtained_from,
         "obtainedRefId": delta.obtained_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+        "idleSessionId": delta.idle_session_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+        "metadata": delta.metadata.clone(),
+        "quality": delta.quality.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+        "qualityRank": delta.quality_rank.filter(|value| *value > 0),
+        "equipOptions": delta.equip_options.clone(),
     })).ok()
 }
 
@@ -143,6 +158,28 @@ pub fn decode_item_grant_payload(raw: &str, qty: i64) -> Option<DecodedCharacter
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
+    let idle_session_id = parsed
+        .get("idleSessionId")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let metadata = parsed
+        .get("metadata")
+        .filter(|value| !value.is_null())
+        .cloned();
+    let quality = parsed
+        .get("quality")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let quality_rank = parsed
+        .get("qualityRank")
+        .and_then(|value| value.as_i64())
+        .filter(|value| *value > 0);
+    let equip_options = parsed
+        .get("equipOptions")
+        .filter(|value| !value.is_null())
+        .cloned();
     if user_id <= 0 || item_def_id.is_empty() || obtained_from.is_empty() {
         return None;
     }
@@ -156,6 +193,11 @@ pub fn decode_item_grant_payload(raw: &str, qty: i64) -> Option<DecodedCharacter
         },
         obtained_from,
         obtained_ref_id,
+        idle_session_id,
+        metadata,
+        quality,
+        quality_rank,
+        equip_options,
         qty,
     })
 }
@@ -334,6 +376,7 @@ mod tests {
         assert_eq!(decoded.user_id, 7);
         assert_eq!(decoded.item_def_id, "mat-005");
         assert_eq!(decoded.qty, 2);
+        assert_eq!(decoded.idle_session_id, None);
         println!(
             "ITEM_GRANT_DELTA_DECODED={}",
             serde_json::json!({

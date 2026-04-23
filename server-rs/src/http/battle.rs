@@ -12,9 +12,11 @@ use crate::auth;
 use crate::battle_runtime::{
     BattleStateDto, MinimalBattleRewardParticipant, MinimalPveItemRewardResolveOptions,
     apply_minimal_pve_action, apply_minimal_pvp_action, build_minimal_pve_battle_state,
-    resolve_minimal_pve_item_rewards,
+    resolve_minimal_pve_item_rewards, restart_battle_runtime,
 };
-use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
+use crate::integrations::battle_character_profile::{
+    hydrate_pve_battle_state_owner, hydrate_pve_battle_state_participants,
+};
 use crate::integrations::battle_persistence::{
     clear_battle_persistence, persist_battle_projection, persist_battle_session,
     persist_battle_snapshot,
@@ -29,8 +31,8 @@ use crate::realtime::battle::{
     BattleCooldownPayload, BattleFinishedMeta, BattleRealtimePayload, BattleRewardsPayload,
     build_battle_abandoned_payload, build_battle_cooldown_ready_payload,
     build_battle_cooldown_sync_payload, build_battle_finished_payload,
-    build_battle_started_payload, build_battle_state_payload, build_reward_item_values,
-    build_single_player_reward_values,
+    build_battle_started_payload, build_battle_state_payload, build_multi_player_reward_values,
+    build_reward_item_values, build_single_player_reward_values,
 };
 use crate::realtime::public_socket::{
     emit_battle_cooldown_to_participants, emit_battle_update_to_participants,
@@ -160,12 +162,56 @@ pub async fn start_pve_battle(
         return Err(AppError::config("战斗目标不在当前房间"));
     }
 
+    let team_rows = state.database.fetch_all(
+        "SELECT tm.team_id, tm.role, tm.character_id, c.user_id FROM team_members tm JOIN characters c ON c.id = tm.character_id WHERE tm.team_id = (SELECT team_id FROM team_members WHERE character_id = $1 LIMIT 1) ORDER BY CASE WHEN tm.role = 'leader' THEN 0 ELSE 1 END, tm.character_id ASC",
+        |q| q.bind(character_id),
+    ).await?;
+    let (participant_user_ids, participant_character_ids) = if team_rows.is_empty() {
+        (vec![actor.user_id], vec![character_id])
+    } else {
+        let is_leader = team_rows.iter().any(|row| {
+            row.try_get::<Option<i32>, _>("character_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+                == Some(character_id)
+                && row
+                    .try_get::<Option<String>, _>("role")
+                    .ok()
+                    .flatten()
+                    .as_deref()
+                    == Some("leader")
+        });
+        if !is_leader {
+            return Err(AppError::config("组队中只有队长可以发起战斗"));
+        }
+        let participant_user_ids = team_rows
+            .iter()
+            .filter_map(|row| {
+                row.try_get::<Option<i32>, _>("user_id")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+            })
+            .collect::<Vec<_>>();
+        let participant_character_ids = team_rows
+            .iter()
+            .filter_map(|row| {
+                row.try_get::<Option<i32>, _>("character_id")
+                    .ok()
+                    .flatten()
+                    .map(i64::from)
+            })
+            .collect::<Vec<_>>();
+        (participant_user_ids, participant_character_ids)
+    };
+
     let battle_id = format!("pve-battle-{}-{}", actor.user_id, now_millis());
     let session = BattleSessionSnapshotDto {
         session_id: format!("pve-session-{}", battle_id),
         session_type: "pve".to_string(),
         owner_user_id: actor.user_id,
-        participant_user_ids: vec![actor.user_id],
+        participant_user_ids: participant_user_ids.clone(),
         current_battle_id: Some(battle_id.clone()),
         status: "running".to_string(),
         next_action: "none".to_string(),
@@ -182,12 +228,15 @@ pub async fn start_pve_battle(
         },
     );
     hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
+    hydrate_pve_battle_state_participants(&state, &mut battle_state, &participant_character_ids)
+        .await?;
+    let logs = restart_battle_runtime(&mut battle_state);
     state.battle_sessions.register(session);
     state.battle_runtime.register(battle_state.clone());
     let projection = OnlineBattleProjectionRecord {
         battle_id: battle_id.clone(),
         owner_user_id: actor.user_id,
-        participant_user_ids: vec![actor.user_id],
+        participant_user_ids: participant_user_ids.clone(),
         r#type: "pve".to_string(),
         session_id: Some(format!("pve-session-{}", battle_id)),
     };
@@ -197,17 +246,16 @@ pub async fn start_pve_battle(
     }
     persist_battle_snapshot(&state, &battle_state).await?;
     persist_battle_projection(&state, &projection).await?;
-    let logs = vec![serde_json::json!({"type": "round_start", "round": 1})];
     let debug_realtime = build_battle_started_payload(
         &battle_id,
         battle_state.clone(),
         logs.clone(),
         state.battle_sessions.get_by_battle_id(&battle_id),
     );
-    emit_battle_update_to_participants(&state, &[actor.user_id], &debug_realtime);
+    emit_battle_update_to_participants(&state, &participant_user_ids, &debug_realtime);
     let debug_cooldown_realtime =
         build_battle_cooldown_ready_payload(battle_state.current_unit_id.as_deref());
-    emit_battle_cooldown_to_participants(&state, &[actor.user_id], &debug_cooldown_realtime);
+    emit_battle_cooldown_to_participants(&state, &participant_user_ids, &debug_cooldown_realtime);
     Ok(send_result(ServiceResult {
         success: true,
         message: None,
@@ -219,8 +267,8 @@ pub async fn start_pve_battle(
             logs: Some(logs),
             debug_realtime: Some(debug_realtime),
             reason: None,
-            is_team_battle: Some(false),
-            team_member_count: Some(1),
+            is_team_battle: Some(participant_user_ids.len() > 1),
+            team_member_count: Some(participant_user_ids.len() as i64),
         }),
     }))
 }
@@ -313,7 +361,9 @@ pub async fn battle_action(
         .battle_runtime
         .update(battle_id.trim(), |state| {
             action_outcome = Some(match state.battle_type.as_str() {
-                "pvp" => apply_minimal_pvp_action(state, character_id, &target_ids),
+                "pvp" => {
+                    apply_minimal_pvp_action(state, character_id, skill_id.trim(), &target_ids)
+                }
                 _ => apply_minimal_pve_action(state, character_id, skill_id.trim(), &target_ids),
             });
         })
@@ -331,6 +381,8 @@ pub async fn battle_action(
         })
     });
 
+    let reward_participants = resolve_battle_reward_participants(&state, &state_snapshot).await?;
+
     let mut defer_character_full_refresh = false;
     let reward_items = session
         .as_ref()
@@ -343,17 +395,7 @@ pub async fn battle_action(
                     monster_ids,
                     &MinimalPveItemRewardResolveOptions {
                         reward_seed: battle_id.trim().to_string(),
-                        participants: vec![MinimalBattleRewardParticipant {
-                            character_id,
-                            user_id: actor.user_id,
-                            fuyuan: 0.0,
-                            realm: state_snapshot
-                                .teams
-                                .attacker
-                                .units
-                                .first()
-                                .and_then(|unit| unit.current_attrs.realm.clone()),
-                        }],
+                        participants: reward_participants.clone(),
                         is_dungeon_battle: false,
                         dungeon_reward_multiplier: None,
                     },
@@ -457,13 +499,25 @@ pub async fn battle_action(
                     total_silver: None,
                     participant_count: Some(projection.participant_user_ids.len() as i64),
                     items: Some(build_reward_item_values(&reward_items, character_id)),
-                    per_player_rewards: Some(build_single_player_reward_values(
-                        actor.user_id,
-                        character_id,
-                        action_outcome.exp_gained,
-                        action_outcome.silver_gained,
-                        &reward_items,
-                    )),
+                    per_player_rewards: Some(if reward_participants.len() > 1 {
+                        build_multi_player_reward_values(
+                            &reward_participants
+                                .iter()
+                                .map(|participant| (participant.user_id, participant.character_id))
+                                .collect::<Vec<_>>(),
+                            action_outcome.exp_gained,
+                            action_outcome.silver_gained,
+                            &reward_items,
+                        )
+                    } else {
+                        build_single_player_reward_values(
+                            actor.user_id,
+                            character_id,
+                            action_outcome.exp_gained,
+                            action_outcome.silver_gained,
+                            &reward_items,
+                        )
+                    }),
                 }),
                 result: state_snapshot.result.clone(),
                 success: Some(matches!(
@@ -580,6 +634,54 @@ fn should_apply_finished_battle_start_cooldown(session: Option<&BattleSessionSna
             BattleSessionContextDto::Dungeon { .. } | BattleSessionContextDto::Tower { .. }
         )
     })
+}
+
+async fn resolve_battle_reward_participants(
+    state: &AppState,
+    battle_state: &BattleStateDto,
+) -> Result<Vec<MinimalBattleRewardParticipant>, AppError> {
+    let attacker_character_ids = battle_state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .filter(|unit| unit.r#type == "player")
+        .filter_map(|unit| unit.source_id.as_i64())
+        .filter(|character_id| *character_id > 0)
+        .collect::<Vec<_>>();
+    if attacker_character_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = state.database.fetch_all(
+        "SELECT id::bigint AS character_id, user_id::bigint AS user_id FROM characters WHERE id = ANY($1)",
+        |q| q.bind(&attacker_character_ids),
+    ).await?;
+    let user_id_by_character = rows
+        .into_iter()
+        .filter_map(|row| {
+            Some((
+                row.try_get::<i64, _>("character_id").ok()?,
+                row.try_get::<i64, _>("user_id").ok()?,
+            ))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    Ok(battle_state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .filter(|unit| unit.r#type == "player")
+        .filter_map(|unit| {
+            let character_id = unit.source_id.as_i64()?;
+            let user_id = *user_id_by_character.get(&character_id)?;
+            Some(MinimalBattleRewardParticipant {
+                character_id,
+                user_id,
+                fuyuan: 0.0,
+                realm: unit.current_attrs.realm.clone(),
+            })
+        })
+        .collect())
 }
 
 fn schedule_battle_cooldown_ready_push(
@@ -791,12 +893,16 @@ mod tests {
         assert_eq!(payload["data"]["logs"][0]["type"], "action");
         assert_eq!(payload["data"]["logs"][0]["actorName"], "修士1");
         assert_eq!(payload["data"]["logs"][0]["skillName"], "重斩");
-        assert!(payload["data"]["logs"][0]["targets"][0]["hits"][0]
-            .get("damage")
-            .is_some());
-        assert!(payload["data"]["logs"][0]["targets"][0]["hits"][0]
-            .get("isMiss")
-            .is_some());
+        assert!(
+            payload["data"]["logs"][0]["targets"][0]["hits"][0]
+                .get("damage")
+                .is_some()
+        );
+        assert!(
+            payload["data"]["logs"][0]["targets"][0]["hits"][0]
+                .get("isMiss")
+                .is_some()
+        );
         assert_eq!(
             payload["data"]["logs"][0]["targets"][0]["hits"][0]["damage"],
             120

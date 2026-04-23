@@ -676,6 +676,11 @@ pub async fn claim_battle_pass_reward(
                             bind_type: "none".to_string(),
                             obtained_from: "battle_pass".to_string(),
                             obtained_ref_id: Some(format!("{}:{}:{}", season.id, level, track)),
+                            idle_session_id: None,
+                            metadata: None,
+                            quality: None,
+                            quality_rank: None,
+                            equip_options: None,
                         });
                         let meta = item_meta_map.get(item_def_id.trim()).cloned().unwrap_or_else(|| (item_def_id.clone(), None));
                         rewards.push(BattlePassRewardItemDto::Item {

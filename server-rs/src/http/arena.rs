@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::build_minimal_pvp_battle_state;
+use crate::battle_runtime::{build_minimal_pvp_battle_state, restart_battle_runtime};
 use crate::integrations::battle_character_profile::hydrate_pvp_battle_state_players;
 use crate::integrations::battle_persistence::{
     persist_battle_projection, persist_battle_session, persist_battle_snapshot,
@@ -330,6 +330,7 @@ pub async fn start_arena_match(
         "npc",
     )
     .await?;
+    let start_logs = restart_battle_runtime(&mut battle_state);
     state.battle_runtime.register(battle_state.clone());
     if let Some(session_snapshot) = state.battle_sessions.get_by_battle_id(&battle_id) {
         persist_battle_session(&state, &session_snapshot).await?;
@@ -341,7 +342,7 @@ pub async fn start_arena_match(
     let debug_realtime = build_battle_started_payload(
         &battle_id,
         battle_state.clone(),
-        vec![serde_json::json!({"type": "round_start", "round": 1})],
+        start_logs,
         state.battle_sessions.get_by_battle_id(&battle_id),
     );
     emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);
@@ -458,6 +459,7 @@ pub async fn start_arena_challenge(
         "npc",
     )
     .await?;
+    let start_logs = restart_battle_runtime(&mut battle_state);
     state.battle_runtime.register(battle_state.clone());
     if let Some(session_snapshot) = state.battle_sessions.get_by_battle_id(&battle_id) {
         persist_battle_session(&state, &session_snapshot).await?;
@@ -469,7 +471,7 @@ pub async fn start_arena_challenge(
     let debug_realtime = build_battle_started_payload(
         &battle_id,
         battle_state.clone(),
-        vec![serde_json::json!({"type": "round_start", "round": 1})],
+        start_logs,
         state.battle_sessions.get_by_battle_id(&battle_id),
     );
     emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);

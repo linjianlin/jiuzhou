@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::build_minimal_pve_battle_state;
-use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
+use crate::battle_runtime::{build_minimal_pve_battle_state, restart_battle_runtime};
+use crate::integrations::battle_character_profile::{
+    hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
+};
 use crate::jobs::tower_frozen_pool::lookup_frozen_tower_monsters;
 use crate::realtime::battle::{build_battle_cooldown_ready_payload, build_battle_started_payload};
 use crate::realtime::public_socket::{
@@ -253,11 +255,13 @@ pub async fn start_tower_challenge(
             &resolve_tower_floor_monster_ids(session.context.floor),
         );
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
+        hydrate_pve_battle_state_active_partner(&state, &mut battle_state, character_id).await?;
+        let start_logs = restart_battle_runtime(&mut battle_state);
         state.battle_runtime.register(battle_state.clone());
         let debug_realtime = build_battle_started_payload(
             &current_battle_id,
             battle_state.clone(),
-            vec![serde_json::json!({"type": "round_start", "round": 1})],
+            start_logs,
             state.battle_sessions.get_by_battle_id(&current_battle_id),
         );
         emit_battle_update_to_participants(&state, &session.participant_user_ids, &debug_realtime);

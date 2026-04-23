@@ -22,6 +22,10 @@ use crate::state::AppState;
 const ONLINE_BATTLE_SETTLEMENT_TICK_MS: u64 = 1_500;
 const ONLINE_BATTLE_SETTLEMENT_STALE_RUNNING_SEC: i64 = 600;
 
+fn opt_i64_from_i32(row: &sqlx::postgres::PgRow, column: &str) -> Result<Option<i64>, AppError> {
+    Ok(row.try_get::<Option<i32>, _>(column)?.map(i64::from))
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OnlineBattleSettlementTaskKind {
@@ -61,6 +65,21 @@ pub struct GenericPveSettlementTaskPayload {
     pub exp_gained: i64,
     pub silver_gained: i64,
     pub reward_items: Vec<MinimalBattleRewardItemDto>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenericPveRewardItemGain {
+    pub item_def_id: String,
+    pub item_name: String,
+    pub qty: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenericPveRewardItemSettlementResult {
+    pub items_gained: Vec<GenericPveRewardItemGain>,
+    pub auto_disassemble_silver_gained: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -424,7 +443,7 @@ async fn apply_generic_pve_settlement(
         let setting = auto_disassemble_settings
             .get(&receiver_character_id)
             .ok_or_else(|| AppError::config("自动分解配置读取失败"))?;
-        let extra_silver = settle_battle_reward_item(
+        let item_settlement = settle_battle_reward_item(
             state,
             &defs,
             setting,
@@ -432,13 +451,14 @@ async fn apply_generic_pve_settlement(
             receiver_user_id,
             reward_item,
             receiver_fuyuan,
+            None,
             &mut rng,
         )
         .await?;
-        if extra_silver > 0 {
+        if item_settlement.auto_disassemble_silver_gained > 0 {
             *extra_silver_by_character
                 .entry(receiver_character_id)
-                .or_insert(0) += extra_silver;
+                .or_insert(0) += item_settlement.auto_disassemble_silver_gained;
         }
     }
     for (character_id, extra_silver) in extra_silver_by_character {
@@ -450,6 +470,60 @@ async fn apply_generic_pve_settlement(
         let _ = emit_game_character_full_to_user(state, user_id).await;
     }
     Ok(())
+}
+
+pub async fn settle_generic_pve_reward_items(
+    state: &AppState,
+    payload: &GenericPveSettlementTaskPayload,
+    idle_session_id: Option<&str>,
+) -> Result<GenericPveRewardItemSettlementResult, AppError> {
+    if payload.character_id <= 0 || payload.user_id <= 0 {
+        return Err(AppError::config(
+            "generic pve settlement payload missing actor",
+        ));
+    }
+    let defs = load_inventory_def_map()?;
+    let mut rng = StdRng::seed_from_u64(generic_pve_reward_seed(payload));
+    let mut auto_disassemble_settings = BTreeMap::<i64, AutoDisassembleSetting>::new();
+    let mut result = GenericPveRewardItemSettlementResult {
+        items_gained: Vec::new(),
+        auto_disassemble_silver_gained: 0,
+    };
+    for reward_item in &payload.reward_items {
+        let receiver_character_id = reward_item
+            .receiver_character_id
+            .filter(|value| *value > 0)
+            .unwrap_or(payload.character_id);
+        let receiver_user_id = reward_item
+            .receiver_user_id
+            .filter(|value| *value > 0)
+            .unwrap_or(payload.user_id);
+        let receiver_fuyuan = reward_item.receiver_fuyuan.unwrap_or(0.0);
+        if !auto_disassemble_settings.contains_key(&receiver_character_id) {
+            let setting = load_auto_disassemble_setting(state, receiver_character_id).await?;
+            auto_disassemble_settings.insert(receiver_character_id, setting);
+        }
+        let setting = auto_disassemble_settings
+            .get(&receiver_character_id)
+            .ok_or_else(|| AppError::config("自动分解配置读取失败"))?;
+        let item_settlement = settle_battle_reward_item(
+            state,
+            &defs,
+            setting,
+            receiver_character_id,
+            receiver_user_id,
+            reward_item,
+            receiver_fuyuan,
+            idle_session_id,
+            &mut rng,
+        )
+        .await?;
+        result.auto_disassemble_silver_gained = result
+            .auto_disassemble_silver_gained
+            .saturating_add(item_settlement.auto_disassemble_silver_gained);
+        merge_generic_pve_item_gains(&mut result.items_gained, item_settlement.items_gained);
+    }
+    Ok(result)
 }
 
 #[derive(Debug, Clone)]
@@ -476,6 +550,31 @@ struct RewardItemMeta {
     effect_defs: serde_json::Value,
     quality_rank: i64,
     can_disassemble: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct BattleRewardItemSettlementDelta {
+    items_gained: Vec<GenericPveRewardItemGain>,
+    auto_disassemble_silver_gained: i64,
+}
+
+fn merge_generic_pve_item_gains(
+    target: &mut Vec<GenericPveRewardItemGain>,
+    incoming: Vec<GenericPveRewardItemGain>,
+) {
+    for item in incoming {
+        if item.qty <= 0 || item.item_def_id.trim().is_empty() {
+            continue;
+        }
+        if let Some(existing) = target
+            .iter_mut()
+            .find(|row| row.item_def_id == item.item_def_id)
+        {
+            existing.qty = existing.qty.saturating_add(item.qty);
+            continue;
+        }
+        target.push(item);
+    }
 }
 
 async fn load_auto_disassemble_setting(
@@ -509,34 +608,41 @@ async fn settle_battle_reward_item(
     user_id: i64,
     reward_item: &MinimalBattleRewardItemDto,
     receiver_fuyuan: f64,
+    idle_session_id: Option<&str>,
     rng: &mut StdRng,
-) -> Result<i64, AppError> {
+) -> Result<BattleRewardItemSettlementDelta, AppError> {
     let item_def_id = reward_item.item_def_id.trim();
     if item_def_id.is_empty() || reward_item.qty <= 0 {
-        return Ok(0);
+        return Ok(BattleRewardItemSettlementDelta::default());
     }
     let source_meta = reward_item_meta(defs, item_def_id, None)?;
     let bind_type = normalize_bind_type(&reward_item.bind_type);
     if source_meta.category == "equipment" {
-        let mut gained_silver = 0_i64;
+        let mut delta = BattleRewardItemSettlementDelta::default();
         for _ in 0..reward_item.qty {
             let (quality, quality_rank) =
                 roll_equipment_quality(reward_item.quality_weights.as_ref(), receiver_fuyuan, rng);
             let unit_meta = reward_item_meta(defs, item_def_id, Some((quality, quality_rank)))?;
             if should_auto_disassemble(setting, &unit_meta) {
-                gained_silver += grant_auto_disassemble_rewards(
+                let grant_delta = grant_auto_disassemble_rewards(
                     state,
                     defs,
                     user_id,
                     character_id,
                     &unit_meta,
                     1,
+                    idle_session_id,
                     rng,
                 )
                 .await?;
+                delta.auto_disassemble_silver_gained = delta
+                    .auto_disassemble_silver_gained
+                    .saturating_add(grant_delta.auto_disassemble_silver_gained);
+                merge_generic_pve_item_gains(&mut delta.items_gained, grant_delta.items_gained);
             } else {
                 insert_reward_item_instance(
                     state,
+                    defs,
                     user_id,
                     character_id,
                     item_def_id,
@@ -546,12 +652,18 @@ async fn settle_battle_reward_item(
                     Some("generic_pve_v1"),
                     Some(quality),
                     Some(quality_rank),
+                    idle_session_id,
                     rng,
                 )
                 .await?;
+                delta.items_gained.push(GenericPveRewardItemGain {
+                    item_def_id: item_def_id.to_string(),
+                    item_name: unit_meta.item_name,
+                    qty: 1,
+                });
             }
         }
-        return Ok(gained_silver);
+        return Ok(delta);
     }
 
     if should_auto_disassemble(setting, &source_meta) {
@@ -562,12 +674,14 @@ async fn settle_battle_reward_item(
             character_id,
             &source_meta,
             reward_item.qty,
+            idle_session_id,
             rng,
         )
         .await
     } else {
         insert_reward_item_instance(
             state,
+            defs,
             user_id,
             character_id,
             item_def_id,
@@ -577,10 +691,18 @@ async fn settle_battle_reward_item(
             Some("generic_pve_v1"),
             None,
             None,
+            idle_session_id,
             rng,
         )
         .await?;
-        Ok(0)
+        Ok(BattleRewardItemSettlementDelta {
+            items_gained: vec![GenericPveRewardItemGain {
+                item_def_id: item_def_id.to_string(),
+                item_name: source_meta.item_name,
+                qty: reward_item.qty,
+            }],
+            auto_disassemble_silver_gained: 0,
+        })
     }
 }
 
@@ -591,10 +713,11 @@ async fn grant_auto_disassemble_rewards(
     character_id: i64,
     source_meta: &RewardItemMeta,
     qty: i64,
+    idle_session_id: Option<&str>,
     rng: &mut StdRng,
-) -> Result<i64, AppError> {
+) -> Result<BattleRewardItemSettlementDelta, AppError> {
     if qty <= 0 {
-        return Ok(0);
+        return Ok(BattleRewardItemSettlementDelta::default());
     }
     if source_meta.category == "equipment" {
         let reward_item_def_id = if source_meta.quality_rank <= 2 {
@@ -605,6 +728,7 @@ async fn grant_auto_disassemble_rewards(
         ensure_inventory_def(defs, reward_item_def_id)?;
         insert_reward_item_instance(
             state,
+            defs,
             user_id,
             character_id,
             reward_item_def_id,
@@ -614,10 +738,19 @@ async fn grant_auto_disassemble_rewards(
             Some("generic_pve_v1"),
             None,
             None,
+            idle_session_id,
             rng,
         )
         .await?;
-        return Ok(0);
+        let reward_meta = reward_item_meta(defs, reward_item_def_id, None)?;
+        return Ok(BattleRewardItemSettlementDelta {
+            items_gained: vec![GenericPveRewardItemGain {
+                item_def_id: reward_item_def_id.to_string(),
+                item_name: reward_meta.item_name,
+                qty,
+            }],
+            auto_disassemble_silver_gained: 0,
+        });
     }
     if is_technique_book_reward(source_meta) {
         let reward_qty = match source_meta.quality_rank {
@@ -630,6 +763,7 @@ async fn grant_auto_disassemble_rewards(
         ensure_inventory_def(defs, "mat-gongfa-canye")?;
         insert_reward_item_instance(
             state,
+            defs,
             user_id,
             character_id,
             "mat-gongfa-canye",
@@ -639,10 +773,19 @@ async fn grant_auto_disassemble_rewards(
             Some("generic_pve_v1"),
             None,
             None,
+            idle_session_id,
             rng,
         )
         .await?;
-        return Ok(0);
+        let reward_meta = reward_item_meta(defs, "mat-gongfa-canye", None)?;
+        return Ok(BattleRewardItemSettlementDelta {
+            items_gained: vec![GenericPveRewardItemGain {
+                item_def_id: "mat-gongfa-canye".to_string(),
+                item_name: reward_meta.item_name,
+                qty: reward_qty,
+            }],
+            auto_disassemble_silver_gained: 0,
+        });
     }
     let quality_factor = match source_meta.quality_rank {
         1 => 1.0,
@@ -651,10 +794,98 @@ async fn grant_auto_disassemble_rewards(
         _ => 4.8,
     };
     let unit_silver = ((100.0_f64 * quality_factor) / 10.0_f64).floor() as i64;
-    Ok(unit_silver.max(1).saturating_mul(qty))
+    Ok(BattleRewardItemSettlementDelta {
+        items_gained: Vec::new(),
+        auto_disassemble_silver_gained: unit_silver.max(1).saturating_mul(qty),
+    })
 }
 
 async fn insert_reward_item_instance(
+    state: &AppState,
+    defs: &BTreeMap<String, InventoryDefSeed>,
+    user_id: i64,
+    character_id: i64,
+    item_def_id: &str,
+    qty: i64,
+    bind_type: &str,
+    obtained_from: &str,
+    obtained_ref_id: Option<&str>,
+    quality: Option<&str>,
+    quality_rank: Option<i64>,
+    idle_session_id: Option<&str>,
+    rng: &mut StdRng,
+) -> Result<(), AppError> {
+    if item_def_id.trim().is_empty() || qty <= 0 {
+        return Ok(());
+    }
+    ensure_inventory_def(defs, item_def_id)?;
+    let random_seed = quality.map(|_| rng.gen_range(1_i64..=2_147_483_647_i64));
+    let bag_capacity = state
+        .database
+        .fetch_optional(
+            "SELECT bag_capacity FROM inventory WHERE character_id = $1 LIMIT 1 FOR UPDATE",
+            |q| q.bind(character_id),
+        )
+        .await?
+        .and_then(|row| opt_i64_from_i32(&row, "bag_capacity").ok().flatten())
+        .unwrap_or(100)
+        .max(1);
+    let mut bag_rows = state
+        .database
+        .fetch_all(
+            "SELECT location_slot FROM item_instance WHERE owner_character_id = $1 AND location = 'bag' FOR UPDATE",
+            |q| q.bind(character_id),
+        )
+        .await?
+        .into_iter()
+        .map(|row| {
+            row.try_get::<Option<i32>, _>("location_slot")
+                .map(|slot| slot.map(i64::from))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let Some(slot) = find_first_reward_bag_slot(&bag_rows, bag_capacity) else {
+        insert_reward_mail_attachment_instance(
+            state,
+            user_id,
+            character_id,
+            item_def_id,
+            qty,
+            bind_type,
+            obtained_from,
+            obtained_ref_id,
+            quality,
+            quality_rank,
+            random_seed,
+            idle_session_id,
+        )
+        .await?;
+        return Ok(());
+    };
+    state.database.execute(
+        "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, location, location_slot, random_seed, affixes, identified, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, $6, $7, 'bag', $8, $9, $10::jsonb, TRUE, NOW(), NOW(), $11, $12)",
+        |q| q
+            .bind(user_id)
+            .bind(character_id)
+            .bind(item_def_id.trim())
+            .bind(qty.max(1))
+            .bind(quality)
+            .bind(quality_rank)
+            .bind(normalize_bind_type(bind_type))
+            .bind(slot)
+            .bind(random_seed)
+            .bind(serde_json::json!([]))
+            .bind(obtained_from)
+            .bind(obtained_ref_id),
+    ).await?;
+    bag_rows.push(Some(slot));
+    Ok(())
+}
+
+fn find_first_reward_bag_slot(rows: &[Option<i64>], capacity: i64) -> Option<i64> {
+    (0..capacity).find(|slot| !rows.iter().any(|value| *value == Some(*slot)))
+}
+
+async fn insert_reward_mail_attachment_instance(
     state: &AppState,
     user_id: i64,
     character_id: i64,
@@ -665,14 +896,11 @@ async fn insert_reward_item_instance(
     obtained_ref_id: Option<&str>,
     quality: Option<&str>,
     quality_rank: Option<i64>,
-    rng: &mut StdRng,
+    random_seed: Option<i64>,
+    idle_session_id: Option<&str>,
 ) -> Result<(), AppError> {
-    if item_def_id.trim().is_empty() || qty <= 0 {
-        return Ok(());
-    }
-    let random_seed = quality.map(|_| rng.gen_range(1_i64..=2_147_483_647_i64));
-    state.database.execute(
-        "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, location, random_seed, affixes, identified, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, $6, $7, 'bag', $8, $9::jsonb, TRUE, NOW(), NOW(), $10, $11)",
+    let inserted = state.database.fetch_one(
+        "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, location, random_seed, affixes, identified, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, $6, $7, 'mail', $8, $9::jsonb, TRUE, NOW(), NOW(), $10, $11) RETURNING id",
         |q| q
             .bind(user_id)
             .bind(character_id)
@@ -686,6 +914,25 @@ async fn insert_reward_item_instance(
             .bind(obtained_from)
             .bind(obtained_ref_id),
     ).await?;
+    let item_id = inserted.try_get::<i64, _>("id")?;
+    state.database.execute(
+        "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_instance_ids, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '奖励补发', '由于背包空间不足，部分奖励已通过邮件补发，请前往邮箱领取。', $3::jsonb, NOW() + INTERVAL '30 days', 'battle_drop', $4, $5::jsonb, NOW(), NOW())",
+        |q| q
+            .bind(user_id)
+            .bind(character_id)
+            .bind(serde_json::json!([item_id]))
+            .bind(obtained_ref_id)
+            .bind(serde_json::json!({
+                "idleSessionId": idle_session_id,
+                "obtainedFrom": obtained_from,
+            })),
+    ).await?;
+    if let Some(idle_session_id) = idle_session_id {
+        state.database.execute(
+            "UPDATE idle_sessions SET bag_full_flag = true, updated_at = NOW() WHERE id::text = $1",
+            |q| q.bind(idle_session_id.trim()),
+        ).await?;
+    }
     Ok(())
 }
 

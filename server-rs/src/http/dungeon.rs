@@ -9,8 +9,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::build_minimal_pve_battle_state;
-use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
+use crate::battle_runtime::{build_minimal_pve_battle_state, restart_battle_runtime};
+use crate::integrations::battle_character_profile::{
+    hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
+    hydrate_pve_battle_state_participants,
+};
 use crate::jobs::online_battle_settlement::{
     DungeonClearSettlementTaskPayload, enqueue_dungeon_clear_settlement_task,
 };
@@ -1340,6 +1343,14 @@ async fn start_dungeon_instance_tx(
     let mut battle_state =
         build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
     hydrate_pve_battle_state_owner(state, &mut battle_state, owner_character_id).await?;
+    let participant_character_ids = snapshot
+        .participants
+        .iter()
+        .map(|participant| participant.character_id)
+        .collect::<Vec<_>>();
+    hydrate_pve_battle_state_participants(state, &mut battle_state, &participant_character_ids)
+        .await?;
+    let start_logs = restart_battle_runtime(&mut battle_state);
     state.battle_runtime.register(battle_state.clone());
     state.database.execute(
         "UPDATE dungeon_instance SET status = 'running', start_time = COALESCE(start_time, NOW()), instance_data = COALESCE(instance_data, '{}'::jsonb) || jsonb_build_object('currentBattleId', $2, 'difficultyRank', COALESCE((instance_data ->> 'difficultyRank')::int, 1)), created_at = created_at WHERE id = $1",
@@ -1366,7 +1377,7 @@ async fn start_dungeon_instance_tx(
     let debug_realtime = build_battle_started_payload(
         &battle_id,
         battle_state.clone(),
-        vec![serde_json::json!({"type": "round_start", "round": 1})],
+        start_logs,
         state.battle_sessions.get_by_battle_id(&battle_id),
     );
     emit_battle_update_to_participants(state, &participant_user_ids, &debug_realtime);
@@ -1598,6 +1609,14 @@ pub(crate) async fn next_dungeon_instance_tx(
         let mut battle_state =
             build_minimal_pve_battle_state(&next_battle_id, owner_character_id, &monster_ids);
         hydrate_pve_battle_state_owner(state, &mut battle_state, owner_character_id).await?;
+        let participant_character_ids = snapshot
+            .participants
+            .iter()
+            .map(|participant| participant.character_id)
+            .collect::<Vec<_>>();
+        hydrate_pve_battle_state_participants(state, &mut battle_state, &participant_character_ids)
+            .await?;
+        let start_logs = restart_battle_runtime(&mut battle_state);
         state.battle_runtime.register(battle_state.clone());
         state
             .online_battle_projections
@@ -1634,7 +1653,7 @@ pub(crate) async fn next_dungeon_instance_tx(
         let debug_realtime = build_battle_started_payload(
             &next_battle_id,
             battle_state.clone(),
-            vec![serde_json::json!({"type": "round_start", "round": 1})],
+            start_logs,
             state.battle_sessions.get_by_battle_id(&next_battle_id),
         );
         emit_battle_update_to_participants(state, &participant_user_ids, &debug_realtime);

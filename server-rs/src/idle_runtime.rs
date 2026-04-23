@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::battle_runtime::{
-    BattleStateDto, apply_minimal_pve_action, build_minimal_partner_battle_unit,
+    BattleStateDto, BattleUnitCurrentAttrsDto, BattleUnitDto, build_minimal_partner_battle_unit,
     build_minimal_pve_battle_state,
 };
 
@@ -43,9 +43,11 @@ pub struct IdlePartnerExecutionSnapshot {
     pub partner_id: i64,
     pub name: String,
     pub avatar: Option<String>,
-    pub max_qixue: i64,
-    pub attack_power: i64,
-    pub speed: i64,
+    pub attrs: BattleUnitCurrentAttrsDto,
+    pub qixue: i64,
+    pub lingqi: i64,
+    pub skills: Vec<serde_json::Value>,
+    pub skill_policy: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,20 +238,22 @@ pub fn build_idle_execution_snapshot(
         &monster_ids,
     );
     if let Some(partner) = partner_member.as_ref() {
-        initial_battle_state.teams.attacker.total_speed += partner.speed.max(1);
-        initial_battle_state
-            .teams
-            .attacker
-            .units
-            .push(build_minimal_partner_battle_unit(
+        initial_battle_state.teams.attacker.total_speed += partner.attrs.sudu.max(1);
+        initial_battle_state.teams.attacker.units.insert(
+            0,
+            build_minimal_partner_battle_unit(
                 partner.partner_id,
                 partner.name.clone(),
                 partner.avatar.clone(),
                 format!("player-{character_id}"),
-                partner.max_qixue,
-                partner.speed,
-                2,
-            ));
+                partner.attrs.clone(),
+                partner.qixue,
+                partner.lingqi,
+                partner.skills.clone(),
+                partner.skill_policy.clone(),
+                0,
+            ),
+        );
     }
     Ok(IdleExecutionSnapshot {
         version: 1,
@@ -263,83 +267,65 @@ pub fn build_idle_execution_snapshot(
 
 pub fn execute_idle_batch_from_snapshot(
     session_id: &str,
-    character_id: i64,
+    _character_id: i64,
     batch_index: i64,
     snapshot: &IdleExecutionSnapshot,
 ) -> Result<IdleBatchExecutionResult, String> {
     let mut state = snapshot.initial_battle_state.clone();
     state.battle_id = format!("{session_id}-batch-{batch_index}");
-    let mut cooldowns = BTreeMap::<String, i64>::new();
-    let mut last_outcome = IdleBatchExecutionResult {
-        result: "draw".to_string(),
-        round_count: 0,
-        exp_gained: 0,
-        silver_gained: 0,
-    };
-    for _ in 0..32 {
-        for value in cooldowns.values_mut() {
-            *value = value.saturating_sub(1);
+    start_idle_battle(&mut state);
+    let mut last_result = "draw".to_string();
+    for _ in 0..256 {
+        if let Some(result) = finish_idle_battle_if_needed(&mut state) {
+            return Ok(build_idle_batch_result_from_state(&state, result.as_str()));
         }
-        let Some(target_id) = state
-            .teams
-            .defender
-            .units
-            .iter()
-            .find(|unit| unit.is_alive)
-            .map(|unit| unit.id.clone())
-        else {
-            break;
+        let Some(actor_unit_id) = state.current_unit_id.clone() else {
+            advance_idle_round(&mut state);
+            continue;
         };
-        let selected_skill_id = select_idle_skill_id_for_action(snapshot, &state, &cooldowns);
-        consume_idle_skill_cost(&mut state, character_id, selected_skill_id.as_str())?;
-        let outcome = apply_minimal_pve_action(
-            &mut state,
-            character_id,
-            selected_skill_id.as_str(),
-            &[target_id],
-        )?;
-        if let Some(config) = idle_skill_runtime_config(selected_skill_id.as_str()) {
-            if config.cooldown_turns > 0 {
-                cooldowns.insert(selected_skill_id, config.cooldown_turns + 1);
-            }
+        let skill_id = select_idle_unit_skill_id(snapshot, &state, actor_unit_id.as_str());
+        apply_idle_unit_action(&mut state, actor_unit_id.as_str(), skill_id.as_str())?;
+        if let Some(result) = finish_idle_battle_if_needed(&mut state) {
+            return Ok(build_idle_batch_result_from_state(&state, result.as_str()));
         }
-        last_outcome = IdleBatchExecutionResult {
-            result: outcome
-                .result
-                .clone()
-                .unwrap_or_else(|| state.result.clone().unwrap_or_else(|| "draw".to_string())),
-            round_count: state.round_count.max(1),
-            exp_gained: outcome.exp_gained,
-            silver_gained: outcome.silver_gained,
-        };
-        if outcome.finished {
-            return Ok(last_outcome);
-        }
-        if let Some(partner) = snapshot.partner_member.as_ref() {
-            if let Some(outcome) = apply_idle_partner_follow_up(&mut state, partner) {
-                return Ok(outcome);
-            }
-        }
+        last_result = state.result.clone().unwrap_or_else(|| "draw".to_string());
+        advance_idle_action(&mut state, actor_unit_id.as_str());
     }
-    Ok(last_outcome)
+    Ok(build_idle_batch_result_from_state(
+        &state,
+        last_result.as_str(),
+    ))
 }
 
-fn select_idle_skill_id_for_action(
+fn select_idle_unit_skill_id(
     snapshot: &IdleExecutionSnapshot,
     state: &BattleStateDto,
-    cooldowns: &BTreeMap<String, i64>,
+    actor_unit_id: &str,
 ) -> String {
-    let player_id = state.current_unit_id.as_deref().unwrap_or_default();
-    let player = state
+    let Some(actor) = state
         .teams
         .attacker
         .units
         .iter()
-        .find(|unit| unit.id == player_id && unit.is_alive);
-    let Some(player) = player else {
-        return snapshot.resolved_skill_id.clone();
+        .chain(state.teams.defender.units.iter())
+        .find(|unit| unit.id == actor_unit_id && unit.is_alive)
+    else {
+        return "skill-normal-attack".to_string();
     };
+    if actor.r#type == "player" {
+        return select_idle_player_skill_id(snapshot, state, actor);
+    }
+    if actor.r#type == "partner" {
+        return select_idle_partner_skill_id(state, actor);
+    }
+    select_idle_ai_skill_id(state, actor)
+}
 
+fn select_idle_player_skill_id(
+    snapshot: &IdleExecutionSnapshot,
+    state: &BattleStateDto,
+    actor: &BattleUnitDto,
+) -> String {
     let mut ordered_policy_skills = snapshot
         .auto_skill_policy
         .get("slots")
@@ -354,70 +340,643 @@ fn select_idle_skill_id_for_action(
             }
             let priority = slot
                 .get("priority")
-                .and_then(|value| value.as_i64())
-                .unwrap_or(i64::MAX);
+                .and_then(|value| value.as_f64())
+                .filter(|value| value.is_finite())
+                .unwrap_or(f64::MAX);
             Some((priority, skill_id))
         })
         .collect::<Vec<_>>();
-    ordered_policy_skills
-        .sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    ordered_policy_skills.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
 
     for (_, skill_id) in ordered_policy_skills {
-        let Some(config) = idle_skill_runtime_config(skill_id.as_str()) else {
-            continue;
-        };
-        if cooldowns
-            .get(skill_id.as_str())
-            .copied()
-            .unwrap_or_default()
-            > 0
-        {
-            continue;
+        if idle_unit_can_use_skill(state, actor, skill_id.as_str()) {
+            return skill_id;
         }
-        if player.lingqi < config.cost_lingqi.max(0) {
-            continue;
-        }
-        if player.qixue <= config.cost_qixue.max(0) {
-            continue;
-        }
-        return skill_id;
     }
 
-    snapshot.resolved_skill_id.clone()
+    "skill-normal-attack".to_string()
 }
 
-fn consume_idle_skill_cost(
-    state: &mut BattleStateDto,
-    actor_character_id: i64,
-    skill_id: &str,
-) -> Result<(), String> {
-    let Some(config) = idle_skill_runtime_config(skill_id) else {
-        return Ok(());
+fn select_idle_partner_skill_id(state: &BattleStateDto, actor: &BattleUnitDto) -> String {
+    let mut slots = actor
+        .partner_skill_policy
+        .as_ref()
+        .and_then(|policy| policy.get("slots"))
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|slot| slot.get("enabled").and_then(|value| value.as_bool()) == Some(true))
+        .filter_map(|slot| {
+            let skill_id = slot.get("skillId")?.as_str()?.trim().to_string();
+            if skill_id.is_empty() {
+                return None;
+            }
+            let priority = slot
+                .get("priority")
+                .and_then(|value| value.as_f64())
+                .filter(|value| value.is_finite())
+                .unwrap_or(f64::MAX);
+            Some((priority, skill_id))
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    for (_, skill_id) in slots {
+        if idle_unit_can_use_skill(state, actor, skill_id.as_str()) {
+            return skill_id;
+        }
+    }
+    select_idle_ai_skill_id(state, actor)
+}
+
+fn select_idle_ai_skill_id(state: &BattleStateDto, actor: &BattleUnitDto) -> String {
+    for skill in &actor.skills {
+        let Some(skill_id) = skill.get("id").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if skill_id == "skill-normal-attack" {
+            continue;
+        }
+        if idle_unit_can_use_skill(state, actor, skill_id) {
+            return skill_id.to_string();
+        }
+    }
+    "skill-normal-attack".to_string()
+}
+
+fn idle_unit_can_use_skill(state: &BattleStateDto, actor: &BattleUnitDto, skill_id: &str) -> bool {
+    if state
+        .runtime_skill_cooldowns
+        .get(format!("{}:{skill_id}", actor.id).as_str())
+        .copied()
+        .unwrap_or_default()
+        > 0
+    {
+        return false;
+    }
+    let Some(config) = idle_skill_runtime_config_for_unit(actor, skill_id) else {
+        return false;
     };
-    let player_id = format!("player-{actor_character_id}");
-    let Some(player) = state
+    actor.lingqi >= config.cost_lingqi.max(0) && actor.qixue > config.cost_qixue.max(0)
+}
+
+fn idle_skill_runtime_config_for_unit(
+    actor: &BattleUnitDto,
+    skill_id: &str,
+) -> Option<IdleSkillRuntimeConfig> {
+    if let Some(config) = idle_skill_runtime_config(skill_id) {
+        return Some(config);
+    }
+    let skill = actor
+        .skills
+        .iter()
+        .find(|skill| skill.get("id").and_then(|value| value.as_str()) == Some(skill_id.trim()))?;
+    Some(IdleSkillRuntimeConfig {
+        cost_lingqi: read_skill_i64(skill, "cost_lingqi", "costLingqi")
+            .or_else(|| {
+                skill
+                    .get("cost")
+                    .and_then(|cost| read_json_i64(cost.get("lingqi")))
+            })
+            .unwrap_or_default(),
+        cost_qixue: read_skill_i64(skill, "cost_qixue", "costQixue")
+            .or_else(|| {
+                skill
+                    .get("cost")
+                    .and_then(|cost| read_json_i64(cost.get("qixue")))
+            })
+            .unwrap_or_default(),
+        cooldown_turns: read_skill_i64(skill, "cooldown", "cooldown").unwrap_or_default(),
+    })
+}
+
+fn read_skill_i64(skill: &serde_json::Value, snake_key: &str, camel_key: &str) -> Option<i64> {
+    read_json_i64(skill.get(snake_key)).or_else(|| read_json_i64(skill.get(camel_key)))
+}
+
+fn read_json_i64(value: Option<&serde_json::Value>) -> Option<i64> {
+    value.and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_f64().map(|number| number.floor() as i64))
+            .or_else(|| value.as_str()?.trim().parse::<i64>().ok())
+    })
+}
+
+fn read_json_f64(value: Option<&serde_json::Value>) -> Option<f64> {
+    value.and_then(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_i64().map(|number| number as f64))
+            .or_else(|| value.as_str()?.trim().parse::<f64>().ok())
+            .filter(|number| number.is_finite())
+    })
+}
+
+fn read_json_str<'a>(
+    value: &'a serde_json::Value,
+    snake_key: &str,
+    camel_key: &str,
+) -> Option<&'a str> {
+    value
+        .get(snake_key)
+        .and_then(|value| value.as_str())
+        .or_else(|| value.get(camel_key).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn start_idle_battle(state: &mut BattleStateDto) {
+    state.round_count = 1;
+    state.result = None;
+    state.phase = "action".to_string();
+    reset_idle_units_for_round(state);
+    refresh_idle_round_action_order(state);
+    state.current_unit_id = first_idle_actable_unit_id(state, state.current_team.as_str());
+}
+
+fn reset_idle_units_for_round(state: &mut BattleStateDto) {
+    for unit in state
         .teams
         .attacker
         .units
         .iter_mut()
-        .find(|unit| unit.id == player_id && unit.is_alive)
-    else {
-        return Err("当前不可行动".to_string());
+        .chain(state.teams.defender.units.iter_mut())
+    {
+        unit.can_act = unit.is_alive;
+        if unit.is_alive {
+            unit.qixue = unit.qixue.clamp(0, unit.current_attrs.max_qixue.max(1));
+            unit.lingqi = unit.lingqi.clamp(0, unit.current_attrs.max_lingqi.max(0));
+        }
+    }
+}
+
+fn refresh_idle_round_action_order(state: &mut BattleStateDto) {
+    state.teams.attacker.total_speed = state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .filter(|unit| unit.is_alive)
+        .map(|unit| unit.current_attrs.sudu.max(0))
+        .sum();
+    state.teams.defender.total_speed = state
+        .teams
+        .defender
+        .units
+        .iter()
+        .filter(|unit| unit.is_alive)
+        .map(|unit| unit.current_attrs.sudu.max(0))
+        .sum();
+    state
+        .teams
+        .attacker
+        .units
+        .sort_by(|left, right| right.current_attrs.sudu.cmp(&left.current_attrs.sudu));
+    state
+        .teams
+        .defender
+        .units
+        .sort_by(|left, right| right.current_attrs.sudu.cmp(&left.current_attrs.sudu));
+    state.first_mover = if state.teams.defender.total_speed > state.teams.attacker.total_speed {
+        "defender".to_string()
+    } else {
+        "attacker".to_string()
     };
-    if player.lingqi < config.cost_lingqi.max(0) {
-        return Err("灵气不足".to_string());
+    state.current_team = state.first_mover.clone();
+}
+
+fn apply_idle_unit_action(
+    state: &mut BattleStateDto,
+    actor_unit_id: &str,
+    skill_id: &str,
+) -> Result<(), String> {
+    let actor_team = idle_unit_team(state, actor_unit_id)
+        .ok_or_else(|| format!("行动单位不存在: {actor_unit_id}"))?;
+    let target_team = if actor_team == "attacker" {
+        "defender"
+    } else {
+        "attacker"
+    };
+    let config = {
+        let actor = idle_find_unit(state, actor_unit_id)
+            .ok_or_else(|| format!("行动单位不存在: {actor_unit_id}"))?;
+        idle_skill_runtime_config_for_unit(actor, skill_id)
+            .ok_or_else(|| format!("战斗技能不存在: {skill_id}"))?
+    };
+    {
+        let actor = idle_find_unit_mut(state, actor_unit_id)
+            .ok_or_else(|| format!("行动单位不存在: {actor_unit_id}"))?;
+        if actor.lingqi < config.cost_lingqi.max(0) {
+            return Err("灵气不足".to_string());
+        }
+        if actor.qixue <= config.cost_qixue.max(0) {
+            return Err("气血不足".to_string());
+        }
+        actor.lingqi = (actor.lingqi - config.cost_lingqi.max(0)).max(0);
+        actor.qixue = (actor.qixue - config.cost_qixue.max(0)).max(1);
     }
-    if player.qixue <= config.cost_qixue.max(0) {
-        return Err("气血不足".to_string());
+    let target_unit_ids = select_idle_target_unit_ids(state, target_team, actor_unit_id, skill_id)?;
+    let mut total_damage = 0_i64;
+    let mut kill_count = 0_i64;
+    for target_unit_id in target_unit_ids {
+        let damage =
+            resolve_idle_unit_skill_damage(state, actor_unit_id, skill_id, &target_unit_id)?;
+        let actual_damage = {
+            let target = idle_find_unit_mut(state, &target_unit_id)
+                .ok_or_else(|| format!("目标不存在: {target_unit_id}"))?;
+            let before = target.qixue.max(0);
+            target.qixue = (target.qixue - damage.max(0)).max(0);
+            target.is_alive = target.qixue > 0;
+            target.can_act = target.can_act && target.is_alive;
+            before - target.qixue
+        };
+        total_damage = total_damage.saturating_add(actual_damage.max(0));
+        if actual_damage > 0 && !idle_unit_is_alive(state, &target_unit_id) {
+            kill_count = kill_count.saturating_add(1);
+        }
     }
-    player.lingqi = (player.lingqi - config.cost_lingqi.max(0)).max(0);
-    player.qixue = (player.qixue - config.cost_qixue.max(0)).max(1);
+    if let Some(actor) = idle_find_unit_mut(state, actor_unit_id) {
+        actor.stats.damage_dealt = actor.stats.damage_dealt.saturating_add(total_damage.max(0));
+        actor.stats.kill_count = actor.stats.kill_count.saturating_add(kill_count.max(0));
+    }
+    if config.cooldown_turns > 0 {
+        state.runtime_skill_cooldowns.insert(
+            format!("{actor_unit_id}:{skill_id}"),
+            config.cooldown_turns + 1,
+        );
+    }
+    sync_idle_unit_cooldowns(state);
     Ok(())
+}
+
+fn select_idle_target_unit_ids(
+    state: &BattleStateDto,
+    target_team: &str,
+    actor_unit_id: &str,
+    skill_id: &str,
+) -> Result<Vec<String>, String> {
+    let actor = idle_find_unit(state, actor_unit_id)
+        .ok_or_else(|| format!("行动单位不存在: {actor_unit_id}"))?;
+    let skill = actor
+        .skills
+        .iter()
+        .find(|skill| skill.get("id").and_then(|value| value.as_str()) == Some(skill_id.trim()));
+    let target_type = skill
+        .and_then(|skill| read_json_str(skill, "target_type", "targetType"))
+        .unwrap_or("single_enemy");
+    let target_count = skill
+        .and_then(|skill| read_skill_i64(skill, "target_count", "targetCount"))
+        .unwrap_or(1)
+        .max(1) as usize;
+    let alive_targets = idle_team_units(state, target_team)
+        .ok_or_else(|| "目标队伍不存在".to_string())?
+        .iter()
+        .filter(|unit| unit.is_alive)
+        .map(|unit| unit.id.clone())
+        .collect::<Vec<_>>();
+    if alive_targets.is_empty() {
+        return Err("没有有效目标".to_string());
+    }
+    if target_type == "all_enemy" {
+        return Ok(alive_targets);
+    }
+    Ok(alive_targets.into_iter().take(target_count).collect())
+}
+
+fn resolve_idle_unit_skill_damage(
+    state: &BattleStateDto,
+    actor_unit_id: &str,
+    skill_id: &str,
+    target_unit_id: &str,
+) -> Result<i64, String> {
+    let actor = idle_find_unit(state, actor_unit_id)
+        .ok_or_else(|| format!("行动单位不存在: {actor_unit_id}"))?;
+    let target = idle_find_unit(state, target_unit_id)
+        .ok_or_else(|| format!("目标不存在: {target_unit_id}"))?;
+    let skill = actor
+        .skills
+        .iter()
+        .find(|skill| skill.get("id").and_then(|value| value.as_str()) == Some(skill_id.trim()));
+    let raw_damage = skill
+        .and_then(|skill| resolve_idle_skill_effect_damage(actor, target, skill))
+        .unwrap_or_else(|| resolve_idle_default_skill_damage(actor, skill_id));
+    let damage_type = skill
+        .and_then(|skill| read_json_str(skill, "damage_type", "damageType"))
+        .unwrap_or("physical");
+    Ok(apply_idle_defense_reduction(raw_damage.max(1), target, damage_type).max(1))
+}
+
+fn resolve_idle_skill_effect_damage(
+    actor: &BattleUnitDto,
+    target: &BattleUnitDto,
+    skill: &serde_json::Value,
+) -> Option<i64> {
+    let damage_type = read_json_str(skill, "damage_type", "damageType").unwrap_or("physical");
+    let fallback_scale_attr = if damage_type == "magic" {
+        "fagong"
+    } else {
+        "wugong"
+    };
+    let effects = skill.get("effects")?.as_array()?;
+    let mut total = 0_i64;
+    for effect in effects {
+        if effect.get("type").and_then(|value| value.as_str()) != Some("damage") {
+            continue;
+        }
+        let value_type = read_json_str(effect, "value_type", "valueType").unwrap_or("scale");
+        let value = read_json_f64(effect.get("value")).unwrap_or_default();
+        let scale_attr =
+            read_json_str(effect, "scale_attr", "scaleAttr").unwrap_or(fallback_scale_attr);
+        let scale_rate = read_json_f64(effect.get("scaleRate"))
+            .or_else(|| read_json_f64(effect.get("scale_rate")))
+            .unwrap_or(value);
+        let base = match value_type {
+            "flat" => value.floor() as i64,
+            "percent" => (target.current_attrs.max_qixue as f64 * value).floor() as i64,
+            "combined" => {
+                let base_value = read_json_f64(effect.get("baseValue"))
+                    .or_else(|| read_json_f64(effect.get("base_value")))
+                    .unwrap_or_default();
+                (base_value + idle_attr_value(actor, scale_attr) as f64 * scale_rate).floor() as i64
+            }
+            "scale" => (idle_attr_value(actor, scale_attr) as f64 * scale_rate).floor() as i64,
+            _ => value.floor() as i64,
+        };
+        let hit_count = read_json_i64(effect.get("hit_count"))
+            .or_else(|| read_json_i64(effect.get("hitCount")))
+            .unwrap_or(1)
+            .max(1);
+        total = total.saturating_add(base.max(0).saturating_mul(hit_count));
+    }
+    (total > 0).then_some(total)
+}
+
+fn idle_attr_value(unit: &BattleUnitDto, attr: &str) -> i64 {
+    match attr {
+        "max_qixue" => unit.current_attrs.max_qixue,
+        "max_lingqi" => unit.current_attrs.max_lingqi,
+        "wugong" => unit.current_attrs.wugong,
+        "fagong" => unit.current_attrs.fagong,
+        "wufang" => unit.current_attrs.wufang,
+        "fafang" => unit.current_attrs.fafang,
+        "sudu" => unit.current_attrs.sudu,
+        _ => 0,
+    }
+}
+
+fn resolve_idle_default_skill_damage(actor: &BattleUnitDto, skill_id: &str) -> i64 {
+    match skill_id.trim() {
+        "sk-heavy-slash" => (actor.current_attrs.wugong as f64 * 1.3).floor() as i64,
+        "sk-bite" => actor.current_attrs.wugong.max(1),
+        "skill-normal-attack" => actor
+            .current_attrs
+            .wugong
+            .max(actor.current_attrs.fagong)
+            .max(1),
+        _ => actor
+            .current_attrs
+            .wugong
+            .max(actor.current_attrs.fagong)
+            .max(1),
+    }
+}
+
+fn apply_idle_defense_reduction(raw_damage: i64, target: &BattleUnitDto, damage_type: &str) -> i64 {
+    if damage_type == "true" {
+        return raw_damage.max(0);
+    }
+    let defense = if damage_type == "magic" {
+        target.current_attrs.fafang
+    } else {
+        target.current_attrs.wufang
+    }
+    .max(0) as f64;
+    let reduced = raw_damage as f64 * (1200.0 / (defense + 1200.0));
+    reduced.floor() as i64
+}
+
+fn advance_idle_action(state: &mut BattleStateDto, actor_unit_id: &str) {
+    if let Some(actor) = idle_find_unit_mut(state, actor_unit_id) {
+        if actor.is_alive {
+            actor.can_act = false;
+        }
+    }
+    tick_idle_runtime_cooldowns(state);
+    let current_team = state.current_team.clone();
+    let current_idx = idle_team_units(state, current_team.as_str())
+        .and_then(|units| units.iter().position(|unit| unit.id == actor_unit_id))
+        .map(|idx| idx as isize)
+        .unwrap_or(-1);
+    if let Some(next_id) =
+        next_idle_actable_unit_id_after(state, current_team.as_str(), current_idx)
+    {
+        state.current_unit_id = Some(next_id);
+        return;
+    }
+    let second_mover = if state.first_mover == "attacker" {
+        "defender"
+    } else {
+        "attacker"
+    };
+    if state.current_team == state.first_mover {
+        state.current_team = second_mover.to_string();
+        state.current_unit_id = first_idle_actable_unit_id(state, second_mover);
+        if state.current_unit_id.is_some() {
+            return;
+        }
+    }
+    advance_idle_round(state);
+}
+
+fn advance_idle_round(state: &mut BattleStateDto) {
+    if finish_idle_battle_if_needed(state).is_some() {
+        return;
+    }
+    if state.round_count >= 32 {
+        state.phase = "finished".to_string();
+        state.result = Some("draw".to_string());
+        state.current_unit_id = None;
+        return;
+    }
+    state.round_count += 1;
+    reset_idle_units_for_round(state);
+    refresh_idle_round_action_order(state);
+    state.current_unit_id = first_idle_actable_unit_id(state, state.current_team.as_str());
+}
+
+fn tick_idle_runtime_cooldowns(state: &mut BattleStateDto) {
+    for value in state.runtime_skill_cooldowns.values_mut() {
+        *value = value.saturating_sub(1);
+    }
+    state.runtime_skill_cooldowns.retain(|_, value| *value > 0);
+    sync_idle_unit_cooldowns(state);
+}
+
+fn sync_idle_unit_cooldowns(state: &mut BattleStateDto) {
+    for unit in state
+        .teams
+        .attacker
+        .units
+        .iter_mut()
+        .chain(state.teams.defender.units.iter_mut())
+    {
+        unit.skill_cooldowns.clear();
+    }
+    for (key, remaining) in state.runtime_skill_cooldowns.clone() {
+        let Some((unit_id, skill_id)) = key.split_once(':') else {
+            continue;
+        };
+        if let Some(unit) = idle_find_unit_mut(state, unit_id) {
+            unit.skill_cooldowns.insert(skill_id.to_string(), remaining);
+        }
+    }
+}
+
+fn finish_idle_battle_if_needed(state: &mut BattleStateDto) -> Option<String> {
+    let attacker_alive = state.teams.attacker.units.iter().any(|unit| unit.is_alive);
+    let defender_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
+    let result = if attacker_alive && !defender_alive {
+        Some("attacker_win")
+    } else if !attacker_alive && defender_alive {
+        Some("defender_win")
+    } else if !attacker_alive && !defender_alive {
+        Some("draw")
+    } else {
+        None
+    }?;
+    state.phase = "finished".to_string();
+    state.result = Some(result.to_string());
+    state.current_unit_id = None;
+    Some(result.to_string())
+}
+
+fn build_idle_batch_result_from_state(
+    state: &BattleStateDto,
+    result: &str,
+) -> IdleBatchExecutionResult {
+    let (exp_gained, silver_gained) = if result == "attacker_win" {
+        state
+            .teams
+            .defender
+            .units
+            .iter()
+            .fold((0_i64, 0_i64), |(exp, silver), unit| {
+                (
+                    exp.saturating_add(unit.reward_exp.unwrap_or_default().max(0)),
+                    silver.saturating_add(unit.reward_silver.unwrap_or_default().max(0)),
+                )
+            })
+    } else {
+        (0, 0)
+    };
+    IdleBatchExecutionResult {
+        result: result.to_string(),
+        round_count: state.round_count.max(1),
+        exp_gained,
+        silver_gained,
+    }
+}
+
+fn idle_unit_team(state: &BattleStateDto, unit_id: &str) -> Option<&'static str> {
+    if state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .any(|unit| unit.id == unit_id)
+    {
+        Some("attacker")
+    } else if state
+        .teams
+        .defender
+        .units
+        .iter()
+        .any(|unit| unit.id == unit_id)
+    {
+        Some("defender")
+    } else {
+        None
+    }
+}
+
+fn idle_team_units<'a>(state: &'a BattleStateDto, team: &str) -> Option<&'a [BattleUnitDto]> {
+    match team {
+        "attacker" => Some(&state.teams.attacker.units),
+        "defender" => Some(&state.teams.defender.units),
+        _ => None,
+    }
+}
+
+fn idle_find_unit<'a>(state: &'a BattleStateDto, unit_id: &str) -> Option<&'a BattleUnitDto> {
+    state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .chain(state.teams.defender.units.iter())
+        .find(|unit| unit.id == unit_id)
+}
+
+fn idle_find_unit_mut<'a>(
+    state: &'a mut BattleStateDto,
+    unit_id: &str,
+) -> Option<&'a mut BattleUnitDto> {
+    if let Some(index) = state
+        .teams
+        .attacker
+        .units
+        .iter()
+        .position(|unit| unit.id == unit_id)
+    {
+        return state.teams.attacker.units.get_mut(index);
+    }
+    let index = state
+        .teams
+        .defender
+        .units
+        .iter()
+        .position(|unit| unit.id == unit_id)?;
+    state.teams.defender.units.get_mut(index)
+}
+
+fn idle_unit_is_alive(state: &BattleStateDto, unit_id: &str) -> bool {
+    idle_find_unit(state, unit_id)
+        .map(|unit| unit.is_alive)
+        .unwrap_or(false)
+}
+
+fn first_idle_actable_unit_id(state: &BattleStateDto, team: &str) -> Option<String> {
+    idle_team_units(state, team)?
+        .iter()
+        .find(|unit| unit.is_alive && unit.can_act)
+        .map(|unit| unit.id.clone())
+}
+
+fn next_idle_actable_unit_id_after(
+    state: &BattleStateDto,
+    team: &str,
+    current_idx: isize,
+) -> Option<String> {
+    idle_team_units(state, team)?
+        .iter()
+        .enumerate()
+        .skip((current_idx + 1).max(0) as usize)
+        .find(|(_, unit)| unit.is_alive && unit.can_act)
+        .map(|(_, unit)| unit.id.clone())
 }
 
 fn idle_skill_runtime_config(skill_id: &str) -> Option<IdleSkillRuntimeConfig> {
     match skill_id.trim() {
-        "sk-basic-slash" => Some(IdleSkillRuntimeConfig {
+        "skill-normal-attack" => Some(IdleSkillRuntimeConfig {
             cost_lingqi: 0,
             cost_qixue: 0,
             cooldown_turns: 0,
@@ -451,17 +1010,22 @@ pub fn resolve_idle_skill_id(auto_skill_policy: &serde_json::Value) -> String {
             }
             let priority = slot
                 .get("priority")
-                .and_then(|value| value.as_i64())
-                .unwrap_or(i64::MAX);
+                .and_then(|value| value.as_f64())
+                .filter(|value| value.is_finite())
+                .unwrap_or(f64::MAX);
             Some((priority, skill_id))
         })
         .collect::<Vec<_>>();
-    resolved.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    resolved.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
     resolved
         .into_iter()
         .map(|(_, skill_id)| skill_id)
         .next()
-        .unwrap_or_else(|| "sk-basic-slash".to_string())
+        .unwrap_or_else(|| "skill-normal-attack".to_string())
 }
 
 fn load_room_monster_ids(
@@ -502,64 +1066,89 @@ fn load_room_monster_ids(
     Ok(monster_ids)
 }
 
-fn apply_idle_partner_follow_up(
-    state: &mut BattleStateDto,
-    partner: &IdlePartnerExecutionSnapshot,
-) -> Option<IdleBatchExecutionResult> {
-    let partner_unit_id = format!("partner-{}", partner.partner_id);
-    if !state
-        .teams
-        .attacker
-        .units
-        .iter()
-        .any(|unit| unit.id == partner_unit_id && unit.is_alive)
-    {
-        return None;
-    }
-    let target = state
-        .teams
-        .defender
-        .units
-        .iter_mut()
-        .find(|unit| unit.is_alive)?;
-    target.qixue = (target.qixue - partner.attack_power.max(1)).max(0);
-    target.is_alive = target.qixue > 0;
-    let enemy_alive = state.teams.defender.units.iter().any(|unit| unit.is_alive);
-    if enemy_alive {
-        return None;
-    }
-    let (exp_gained, silver_gained) =
-        state
-            .teams
-            .defender
-            .units
-            .iter()
-            .fold((0_i64, 0_i64), |(exp, silver), unit| {
-                (
-                    exp.saturating_add(unit.reward_exp.unwrap_or_default().max(0)),
-                    silver.saturating_add(unit.reward_silver.unwrap_or_default().max(0)),
-                )
-            });
-    state.phase = "finished".to_string();
-    state.result = Some("attacker_win".to_string());
-    state.current_unit_id = None;
-    Some(IdleBatchExecutionResult {
-        result: "attacker_win".to_string(),
-        round_count: state.round_count.max(1),
-        exp_gained,
-        silver_gained,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+
+    use crate::battle_runtime::BattleUnitCurrentAttrsDto;
 
     use super::{
         IdleExecutionRegistry, IdlePartnerExecutionSnapshot, IdleSessionActivitySnapshot,
         build_idle_execution_snapshot, build_idle_reconcile_plan, execute_idle_batch_from_snapshot,
         resolve_idle_skill_id,
     };
+
+    fn test_partner_snapshot() -> IdlePartnerExecutionSnapshot {
+        IdlePartnerExecutionSnapshot {
+            partner_id: 9,
+            name: "青木小偶".to_string(),
+            avatar: None,
+            qixue: 60,
+            lingqi: 0,
+            attrs: BattleUnitCurrentAttrsDto {
+                max_qixue: 60,
+                max_lingqi: 0,
+                wugong: 20,
+                fagong: 0,
+                wufang: 0,
+                fafang: 0,
+                sudu: 3,
+                mingzhong: 0,
+                shanbi: 0,
+                zhaojia: 0,
+                baoji: 0,
+                baoshang: 0,
+                jianbaoshang: 0,
+                jianfantan: 0,
+                kangbao: 0,
+                zengshang: 0,
+                zhiliao: 0,
+                jianliao: 0,
+                xixue: 0,
+                lengque: 0,
+                kongzhi_kangxing: 0,
+                jin_kangxing: 0,
+                mu_kangxing: 0,
+                shui_kangxing: 0,
+                huo_kangxing: 0,
+                tu_kangxing: 0,
+                qixue_huifu: 0,
+                lingqi_huifu: 0,
+                realm: None,
+                element: Some("wood".to_string()),
+            },
+            skills: Vec::new(),
+            skill_policy: serde_json::json!({ "slots": [] }),
+        }
+    }
+
+    fn test_partner_snapshot_with_policy_skill() -> IdlePartnerExecutionSnapshot {
+        let mut partner = test_partner_snapshot();
+        partner.attrs.wugong = 1;
+        partner.attrs.fagong = 240;
+        partner.attrs.sudu = 100;
+        partner.skills = vec![serde_json::json!({
+            "id": "partner-burst",
+            "name": "灵伴术击",
+            "cost_lingqi": 0,
+            "cost_qixue": 0,
+            "cooldown": 0,
+            "target_type": "all_enemy",
+            "target_count": 3,
+            "damage_type": "magic",
+            "element": "wood",
+            "effects": [{
+                "type": "damage",
+                "valueType": "scale",
+                "scaleAttr": "fagong",
+                "scaleRate": 1.0
+            }]
+        })];
+        partner.skill_policy = serde_json::json!({
+            "slots": [{"skillId": "partner-burst", "priority": 1, "enabled": true}]
+        });
+        partner
+    }
 
     #[test]
     fn stopping_without_heartbeat_is_interrupted() {
@@ -719,7 +1308,7 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-basic-slash","priority":1}]}),
+            &serde_json::json!({"slots":[{"skillId":"skill-normal-attack","priority":1}]}),
             None,
         )
         .expect("basic snapshot should build");
@@ -746,7 +1335,7 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":1},{"skillId":"sk-basic-slash","priority":2}]}),
+            &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":1},{"skillId":"skill-normal-attack","priority":2}]}),
             None,
         )
         .expect("snapshot should build");
@@ -764,7 +1353,7 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":1},{"skillId":"sk-basic-slash","priority":2}]}),
+            &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":1},{"skillId":"skill-normal-attack","priority":2}]}),
             None,
         )
         .expect("snapshot should build");
@@ -790,13 +1379,13 @@ mod tests {
     fn resolve_idle_skill_id_uses_priority_then_falls_back() {
         assert_eq!(
             resolve_idle_skill_id(
-                &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":2},{"skillId":"sk-basic-slash","priority":1}]})
+                &serde_json::json!({"slots":[{"skillId":"sk-heavy-slash","priority":2},{"skillId":"skill-normal-attack","priority":1}]})
             ),
-            "sk-basic-slash"
+            "skill-normal-attack"
         );
         assert_eq!(
             resolve_idle_skill_id(&serde_json::json!({"slots":[]})),
-            "sk-basic-slash"
+            "skill-normal-attack"
         );
     }
 
@@ -807,15 +1396,8 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-basic-slash","priority":1}]}),
-            Some(IdlePartnerExecutionSnapshot {
-                partner_id: 9,
-                name: "青木小偶".to_string(),
-                avatar: None,
-                max_qixue: 60,
-                attack_power: 20,
-                speed: 3,
-            }),
+            &serde_json::json!({"slots":[{"skillId":"skill-normal-attack","priority":1}]}),
+            Some(test_partner_snapshot()),
         )
         .expect("snapshot should build");
         assert!(snapshot.partner_member.is_some());
@@ -837,7 +1419,7 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-basic-slash","priority":1}]}),
+            &serde_json::json!({"slots":[{"skillId":"skill-normal-attack","priority":1}]}),
             None,
         )
         .expect("snapshot should build");
@@ -846,15 +1428,8 @@ mod tests {
             "map-qingyun-outskirts",
             "room-south-forest",
             "monster-wild-rabbit",
-            &serde_json::json!({"slots":[{"skillId":"sk-basic-slash","priority":1}]}),
-            Some(IdlePartnerExecutionSnapshot {
-                partner_id: 9,
-                name: "青木小偶".to_string(),
-                avatar: None,
-                max_qixue: 60,
-                attack_power: 20,
-                speed: 3,
-            }),
+            &serde_json::json!({"slots":[{"skillId":"skill-normal-attack","priority":1}]}),
+            Some(test_partner_snapshot()),
         )
         .expect("snapshot should build");
         let basic_result = execute_idle_batch_from_snapshot("idle-1", 1, 1, &without_partner)
@@ -862,5 +1437,22 @@ mod tests {
         let partner_result = execute_idle_batch_from_snapshot("idle-1", 1, 1, &with_partner)
             .expect("batch should execute");
         assert!(partner_result.round_count <= basic_result.round_count);
+    }
+
+    #[test]
+    fn execute_idle_batch_from_snapshot_partner_uses_skill_policy_turn() {
+        let snapshot = build_idle_execution_snapshot(
+            1,
+            "map-qingyun-outskirts",
+            "room-south-forest",
+            "monster-wild-rabbit",
+            &serde_json::json!({"slots":[{"skillId":"skill-normal-attack","priority":1}]}),
+            Some(test_partner_snapshot_with_policy_skill()),
+        )
+        .expect("snapshot should build");
+        let result = execute_idle_batch_from_snapshot("idle-1", 1, 1, &snapshot)
+            .expect("batch should execute");
+        assert_eq!(result.result, "attacker_win");
+        assert_eq!(result.round_count, 1);
     }
 }

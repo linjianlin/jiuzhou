@@ -19,6 +19,7 @@ use crate::http::afdian;
 use crate::http::character_technique;
 use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::idle;
+use crate::http::inventory::{InventoryDefSeed, load_inventory_def_map};
 use crate::http::partner;
 use crate::http::tower::resolve_tower_floor_monster_ids;
 use crate::http::wander;
@@ -662,27 +663,181 @@ async fn apply_character_item_grant_delta_batch(
     if character_id <= 0 || grants.is_empty() {
         return Ok(());
     }
-    for grant in grants {
-        if grant.user_id <= 0
-            || grant.qty <= 0
-            || grant.item_def_id.trim().is_empty()
-            || grant.obtained_from.trim().is_empty()
-        {
-            continue;
+    let defs = load_inventory_def_map()?;
+    state
+        .database
+        .with_transaction(|| async {
+            for grant in grants {
+                if grant.user_id <= 0
+                    || grant.qty <= 0
+                    || grant.item_def_id.trim().is_empty()
+                    || grant.obtained_from.trim().is_empty()
+                {
+                    continue;
+                }
+                apply_single_item_grant_delta_tx(state, character_id, &defs, &grant).await?;
+            }
+            Ok::<(), AppError>(())
+        })
+        .await
+}
+
+#[derive(Debug, Clone)]
+struct GrantBagItemRow {
+    location_slot: Option<i64>,
+}
+
+async fn apply_single_item_grant_delta_tx(
+    state: &AppState,
+    character_id: i64,
+    defs: &BTreeMap<String, InventoryDefSeed>,
+    grant: &DecodedCharacterItemGrantDelta,
+) -> Result<(), AppError> {
+    let item_def_id = grant.item_def_id.trim();
+    let bind_type = normalize_grant_bind_type(&grant.bind_type);
+    let stack_max = defs
+        .get(item_def_id)
+        .and_then(|seed| seed.row.get("stack_max"))
+        .and_then(|value| value.as_i64())
+        .unwrap_or(1)
+        .max(1);
+    let bag_capacity = state
+        .database
+        .fetch_optional(
+            "SELECT bag_capacity FROM inventory WHERE character_id = $1 LIMIT 1 FOR UPDATE",
+            |query| query.bind(character_id),
+        )
+        .await?
+        .and_then(|row| opt_i64_from_i32(&row, "bag_capacity").ok().flatten())
+        .unwrap_or(100)
+        .max(1);
+    let mut bag_rows = load_grant_bag_rows_tx(state, character_id).await?;
+    let mut remaining = grant.qty.max(0);
+    while remaining > 0 {
+        let chunk_qty = remaining.min(stack_max);
+        if let Some(slot) = find_first_grant_bag_slot(&bag_rows, bag_capacity) {
+            state.database.execute(
+                "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, location, location_slot, metadata, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, $6, $7, 'bag', $8, $9::jsonb, NOW(), NOW(), $10, $11)",
+                |query| query
+                    .bind(grant.user_id)
+                    .bind(character_id)
+                    .bind(item_def_id)
+                    .bind(chunk_qty)
+                    .bind(grant.quality.as_deref())
+                    .bind(grant.quality_rank)
+                    .bind(bind_type.as_str())
+                    .bind(slot)
+                    .bind(grant.metadata.as_ref())
+                    .bind(grant.obtained_from.as_str())
+                    .bind(grant.obtained_ref_id.as_deref()),
+            ).await?;
+            bag_rows.push(GrantBagItemRow {
+                location_slot: Some(slot),
+            });
+        } else {
+            insert_item_grant_mail_attachment_tx(
+                state,
+                character_id,
+                grant,
+                item_def_id,
+                bind_type.as_str(),
+                remaining,
+            )
+            .await?;
+            if let Some(idle_session_id) = grant.idle_session_id.as_deref() {
+                mark_idle_session_bag_full_tx(state, idle_session_id).await?;
+            }
+            break;
         }
-        state.database.execute(
-            "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, 'bag', NOW(), NOW(), $6, $7)",
-            |query| query
-                .bind(grant.user_id)
-                .bind(character_id)
-                .bind(grant.item_def_id.as_str())
-                .bind(grant.qty)
-                .bind(grant.bind_type.as_str())
-                .bind(grant.obtained_from.as_str())
-                .bind(grant.obtained_ref_id.as_deref()),
-        ).await?;
+        remaining -= chunk_qty;
     }
     Ok(())
+}
+
+async fn load_grant_bag_rows_tx(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Vec<GrantBagItemRow>, AppError> {
+    state.database.fetch_all(
+        "SELECT location_slot FROM item_instance WHERE owner_character_id = $1 AND location = 'bag' FOR UPDATE",
+        |query| query.bind(character_id),
+    ).await?
+    .into_iter()
+    .map(|row| {
+        Ok(GrantBagItemRow {
+            location_slot: row.try_get::<Option<i32>, _>("location_slot")?.map(i64::from),
+        })
+    })
+    .collect::<Result<Vec<_>, AppError>>()
+}
+
+fn find_first_grant_bag_slot(rows: &[GrantBagItemRow], capacity: i64) -> Option<i64> {
+    (0..capacity).find(|slot| !rows.iter().any(|row| row.location_slot == Some(*slot)))
+}
+
+async fn insert_item_grant_mail_attachment_tx(
+    state: &AppState,
+    character_id: i64,
+    grant: &DecodedCharacterItemGrantDelta,
+    item_def_id: &str,
+    bind_type: &str,
+    qty: i64,
+) -> Result<(), AppError> {
+    let inserted = state.database.fetch_one(
+        "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, quality, quality_rank, bind_type, location, metadata, created_at, updated_at, obtained_from, obtained_ref_id) VALUES ($1, $2, $3, $4, $5, $6, $7, 'mail', $8::jsonb, NOW(), NOW(), $9, $10) RETURNING id",
+        |query| query
+            .bind(grant.user_id)
+            .bind(character_id)
+            .bind(item_def_id)
+            .bind(qty.max(1))
+            .bind(grant.quality.as_deref())
+            .bind(grant.quality_rank)
+            .bind(bind_type)
+            .bind(grant.metadata.as_ref())
+            .bind(grant.obtained_from.as_str())
+            .bind(grant.obtained_ref_id.as_deref()),
+    ).await?;
+    let item_id = inserted.try_get::<i64, _>("id")?;
+    state.database.execute(
+        "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_instance_ids, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', '奖励补发', '由于背包空间不足，部分奖励已通过邮件补发，请前往邮箱领取。', $3::jsonb, NOW() + INTERVAL '30 days', 'character_item_grant_delta', $4, $5::jsonb, NOW(), NOW())",
+        |query| query
+            .bind(grant.user_id)
+            .bind(character_id)
+            .bind(serde_json::json!([item_id]))
+            .bind(grant.obtained_ref_id.as_deref())
+            .bind(serde_json::json!({
+                "idleSessionId": grant.idle_session_id,
+                "obtainedFrom": grant.obtained_from,
+            })),
+    ).await?;
+    Ok(())
+}
+
+async fn mark_idle_session_bag_full_tx(
+    state: &AppState,
+    idle_session_id: &str,
+) -> Result<(), AppError> {
+    let normalized = idle_session_id.trim();
+    if normalized.is_empty() {
+        return Ok(());
+    }
+    state
+        .database
+        .execute(
+            "UPDATE idle_sessions SET bag_full_flag = true, updated_at = NOW() WHERE id::text = $1",
+            |query| query.bind(normalized),
+        )
+        .await?;
+    Ok(())
+}
+
+fn normalize_grant_bind_type(raw: &str) -> String {
+    let value = raw.trim();
+    if value.is_empty() {
+        "none".to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 async fn apply_character_resource_delta_batch(
