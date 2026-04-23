@@ -136,6 +136,59 @@ pub fn lookup_frozen_tower_monsters(
         .unwrap_or_default()
 }
 
+const TOWER_REALM_ORDER: &[&str] = &[
+    "凡人",
+    "炼精化炁·养气期",
+    "炼精化炁·通脉期",
+    "炼精化炁·凝炁期",
+    "炼炁化神·炼己期",
+    "炼炁化神·采药期",
+    "炼炁化神·结胎期",
+    "炼神返虚·养神期",
+    "炼神返虚·还虚期",
+    "炼神返虚·合道期",
+    "炼虚合道·证道期",
+    "炼虚合道·历劫期",
+    "炼虚合道·成圣期",
+    "大乘",
+];
+
+pub fn resolve_frozen_tower_monsters_for_floor(
+    floor: i64,
+    kind: &str,
+) -> Option<(String, Vec<FrozenTowerMonsterEntry>)> {
+    let normalized_floor = floor.max(1);
+    let cache = frozen_tower_pool_cache()
+        .read()
+        .expect("frozen tower cache read lock should acquire")
+        .clone();
+    if normalized_floor > cache.frozen_floor_max.max(0) {
+        return None;
+    }
+
+    let realms = TOWER_REALM_ORDER
+        .iter()
+        .copied()
+        .filter(|realm| {
+            cache
+                .pools
+                .contains_key(&(kind.trim().to_string(), (*realm).to_string()))
+        })
+        .collect::<Vec<_>>();
+    if realms.is_empty() {
+        return Some((String::new(), Vec::new()));
+    }
+
+    let cycle_index = ((normalized_floor - 1) / 10).max(0) as usize;
+    let realm = realms[cycle_index.min(realms.len() - 1)].to_string();
+    let monsters = cache
+        .pools
+        .get(&(kind.trim().to_string(), realm.clone()))
+        .cloned()
+        .unwrap_or_default();
+    Some((realm, monsters))
+}
+
 #[cfg(test)]
 pub fn replace_frozen_tower_pool_cache_for_tests(
     frozen_floor_max: i64,

@@ -440,24 +440,6 @@ mod tests {
         }
     }
 
-    async fn insert_test_team(
-        pool: &sqlx::PgPool,
-        team_id: &str,
-        leader_character_id: i64,
-        suffix: &str,
-    ) {
-        let team_name = format!("测试队伍-{suffix}");
-        sqlx::query(
-        "INSERT INTO teams (id, leader_id, name, current_map_id, is_public, max_members, auto_join_enabled, created_at, updated_at) VALUES ($1, $2, $3, 'map-qingyun-village', true, 4, false, NOW(), NOW())",
-    )
-    .bind(team_id)
-    .bind(leader_character_id)
-    .bind(team_name)
-    .execute(pool)
-    .await
-    .expect("team should insert");
-    }
-
     async fn insert_test_sect(
         pool: &sqlx::PgPool,
         sect_id: &str,
@@ -13989,7 +13971,6 @@ mod tests {
             .expect("body should be json");
 
         let mut final_status = String::new();
-        let mut attempt_count = 0_i64;
         let mut next_retry_at = None::<String>;
         let mut last_error = String::new();
         for _ in 0..20 {
@@ -14000,10 +13981,6 @@ mod tests {
                 .expect("delivery should exist");
             final_status = delivery_row
                 .try_get::<Option<String>, _>("status")
-                .unwrap_or(None)
-                .unwrap_or_default();
-            attempt_count = delivery_row
-                .try_get::<Option<i64>, _>("attempt_count")
                 .unwrap_or(None)
                 .unwrap_or_default();
             next_retry_at = delivery_row
@@ -15451,6 +15428,11 @@ mod tests {
             insert_auth_fixture(&state, &pool, "socket", &format!("challenger-{suffix}"), 0).await;
         let opponent =
             insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
+        sqlx::query("UPDATE characters SET qi = 100 WHERE id = $1")
+            .bind(challenger.character_id)
+            .execute(&pool)
+            .await
+            .expect("challenger lingqi should update");
 
         sqlx::query("INSERT INTO arena_rating (character_id, rating, win_count, lose_count, created_at, updated_at) VALUES ($1, 1000, 0, 0, NOW(), NOW()), ($2, 1000, 0, 0, NOW(), NOW()) ON CONFLICT (character_id) DO NOTHING")
             .bind(challenger.character_id)
@@ -15491,7 +15473,10 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", challenger.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"opponent-{}\"]}}", battle_id, opponent.character_id))
+            .body(format!(
+                "{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"npc-{}\"]}}",
+                battle_id, opponent.character_id
+            ))
             .send()
             .await
             .expect("arena action request should succeed");
@@ -15679,6 +15664,11 @@ mod tests {
             insert_auth_fixture(&state, &pool, "socket", &format!("challenger-{suffix}"), 0).await;
         let opponent =
             insert_auth_fixture(&state, &pool, "socket", &format!("opponent-{suffix}"), 0).await;
+        sqlx::query("UPDATE characters SET qi = 100 WHERE id = $1")
+            .bind(challenger.character_id)
+            .execute(&pool)
+            .await
+            .expect("challenger lingqi should update");
 
         sqlx::query("INSERT INTO arena_rating (character_id, rating, win_count, lose_count, created_at, updated_at) VALUES ($1, 1000, 0, 0, NOW(), NOW()), ($2, 1000, 0, 0, NOW(), NOW()) ON CONFLICT (character_id) DO NOTHING")
             .bind(challenger.character_id)
@@ -15719,7 +15709,10 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", challenger.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"opponent-{}\"]}}", battle_id, opponent.character_id))
+            .body(format!(
+                "{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"npc-{}\"]}}",
+                battle_id, opponent.character_id
+            ))
             .send()
             .await
             .expect("arena action request should succeed");

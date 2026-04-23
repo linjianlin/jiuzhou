@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
+
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
@@ -9,7 +13,7 @@ use crate::battle_runtime::{restart_battle_runtime, try_build_minimal_pve_battle
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
 };
-use crate::jobs::tower_frozen_pool::lookup_frozen_tower_monsters;
+use crate::jobs::tower_frozen_pool::resolve_frozen_tower_monsters_for_floor;
 use crate::realtime::battle::{build_battle_cooldown_ready_payload, build_battle_started_payload};
 use crate::realtime::public_socket::{
     emit_battle_cooldown_to_participants, emit_battle_update_to_participants,
@@ -101,6 +105,20 @@ pub struct TowerSessionContextDto {
 #[serde(rename_all = "camelCase")]
 pub struct TowerStartDataDto {
     pub session: TowerBattleSessionSnapshotDto,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct TowerMonsterSeedFile {
+    monsters: Vec<TowerMonsterSeed>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct TowerMonsterSeed {
+    id: Option<String>,
+    name: Option<String>,
+    realm: Option<String>,
+    kind: Option<String>,
+    enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -344,28 +362,255 @@ async fn start_tower_challenge_tx(
     })
 }
 
-fn build_tower_floor_preview(floor: i64) -> TowerFloorPreviewDto {
+const TOWER_REALM_ORDER: &[&str] = &[
+    "凡人",
+    "炼精化炁·养气期",
+    "炼精化炁·通脉期",
+    "炼精化炁·凝炁期",
+    "炼炁化神·炼己期",
+    "炼炁化神·采药期",
+    "炼炁化神·结胎期",
+    "炼神返虚·养神期",
+    "炼神返虚·还虚期",
+    "炼神返虚·合道期",
+    "炼虚合道·证道期",
+    "炼虚合道·历劫期",
+    "炼虚合道·成圣期",
+    "大乘",
+];
+
+const TOWER_NORMAL_MONSTER_COUNT_MIN: i64 = 2;
+const TOWER_NORMAL_MONSTER_COUNT_VARIANCE: usize = 2;
+const TOWER_NORMAL_MONSTER_COUNT_INTERVAL: i64 = 50;
+const TOWER_NORMAL_MONSTER_COUNT_CAP: i64 = 5;
+const TOWER_ELITE_MONSTER_COUNT_BASE: i64 = 2;
+const TOWER_ELITE_MONSTER_COUNT_INTERVAL: i64 = 75;
+const TOWER_ELITE_MONSTER_COUNT_CAP: i64 = 4;
+const TOWER_BOSS_MONSTER_COUNT_BASE: i64 = 1;
+const TOWER_BOSS_MONSTER_COUNT_INTERVAL: i64 = 100;
+const TOWER_BOSS_MONSTER_COUNT_CAP: i64 = 3;
+
+fn tower_floor_kind(floor: i64) -> &'static str {
     let normalized_floor = floor.max(1);
-    let kind = if normalized_floor % 10 == 0 {
+    if normalized_floor % 10 == 0 {
         "boss"
     } else if normalized_floor % 5 == 0 {
         "elite"
     } else {
         "normal"
-    };
-    let realm = if normalized_floor < 10 {
-        "炼精化炁·养气期"
-    } else if normalized_floor < 20 {
-        "炼精化炁·通脉期"
+    }
+}
+
+fn tower_normalize_monster_kind(value: Option<&str>) -> &'static str {
+    match value {
+        Some("boss") => "boss",
+        Some("elite") => "elite",
+        _ => "normal",
+    }
+}
+
+fn tower_normalize_realm(value: Option<&str>) -> String {
+    let text = value.unwrap_or("凡人").trim();
+    if TOWER_REALM_ORDER.contains(&text) {
+        text.to_string()
     } else {
-        "炼精化炁·凝炁期"
-    };
-    let frozen_monsters = lookup_frozen_tower_monsters(normalized_floor, kind, realm);
+        "凡人".to_string()
+    }
+}
+
+fn tower_hash_text_u32(value: &str) -> u32 {
+    let mut hash = 0x811c9dc5_u32;
+    for byte in value.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
+}
+
+fn tower_pick_deterministic_index(seed: &str, length: usize, offset: usize) -> usize {
+    let scoped_seed = format!("pick-index::{seed}::{}", offset.max(0));
+    (tower_hash_text_u32(&scoped_seed) as usize) % length
+}
+
+fn tower_pick_deterministic_monsters(
+    seed: &str,
+    items: &[TowerMonsterSeed],
+    count: i64,
+) -> Vec<TowerMonsterSeed> {
+    let target_count = count.max(0) as usize;
+    if target_count == 0 || items.is_empty() {
+        return Vec::new();
+    }
+
+    let mut remaining = items.to_vec();
+    let mut picked = Vec::new();
+    while !remaining.is_empty() && picked.len() < target_count {
+        let index = tower_pick_deterministic_index(seed, remaining.len(), picked.len());
+        picked.push(remaining.remove(index));
+    }
+    while picked.len() < target_count {
+        let index = tower_pick_deterministic_index(seed, items.len(), picked.len());
+        picked.push(items[index].clone());
+    }
+    picked
+}
+
+fn load_tower_monster_seed_map() -> Result<BTreeMap<String, Vec<TowerMonsterSeed>>, AppError> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/monster_def.json");
+    let content = fs::read_to_string(&path)
+        .map_err(|error| AppError::config(format!("failed to read monster_def.json: {error}")))?;
+    let payload: TowerMonsterSeedFile = serde_json::from_str(&content)
+        .map_err(|error| AppError::config(format!("failed to parse monster_def.json: {error}")))?;
+    let mut map = BTreeMap::<String, Vec<TowerMonsterSeed>>::new();
+    for monster in payload
+        .monsters
+        .into_iter()
+        .filter(|monster| monster.enabled != Some(false))
+    {
+        let Some(monster_id) = monster
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let kind = tower_normalize_monster_kind(monster.kind.as_deref());
+        let realm = tower_normalize_realm(monster.realm.as_deref());
+        map.entry(format!("{kind}::{realm}"))
+            .or_default()
+            .push(TowerMonsterSeed {
+                id: Some(monster_id.to_string()),
+                ..monster
+            });
+    }
+    for monsters in map.values_mut() {
+        monsters.sort_by(|left, right| {
+            left.id
+                .as_deref()
+                .unwrap_or_default()
+                .cmp(right.id.as_deref().unwrap_or_default())
+        });
+    }
+    Ok(map)
+}
+
+fn tower_monster_count_for_floor(kind: &str, floor: i64, seed: &str) -> i64 {
+    let normalized_floor = floor.max(1);
+    match kind {
+        "boss" => TOWER_BOSS_MONSTER_COUNT_CAP.min(
+            TOWER_BOSS_MONSTER_COUNT_BASE + normalized_floor / TOWER_BOSS_MONSTER_COUNT_INTERVAL,
+        ),
+        "elite" => TOWER_ELITE_MONSTER_COUNT_CAP.min(
+            TOWER_ELITE_MONSTER_COUNT_BASE + normalized_floor / TOWER_ELITE_MONSTER_COUNT_INTERVAL,
+        ),
+        _ => {
+            let extra_count = tower_pick_deterministic_index(
+                &format!("{seed}::monster-count"),
+                TOWER_NORMAL_MONSTER_COUNT_VARIANCE,
+                0,
+            ) as i64;
+            TOWER_NORMAL_MONSTER_COUNT_CAP.min(
+                TOWER_NORMAL_MONSTER_COUNT_MIN
+                    + extra_count
+                    + normalized_floor / TOWER_NORMAL_MONSTER_COUNT_INTERVAL,
+            )
+        }
+    }
+}
+
+fn build_latest_tower_floor_preview(
+    floor: i64,
+    kind: &str,
+) -> Result<TowerFloorPreviewDto, AppError> {
+    let normalized_floor = floor.max(1);
+    let seed = format!("tower:{normalized_floor}");
+    let monster_map = load_tower_monster_seed_map()?;
+    let realms = TOWER_REALM_ORDER
+        .iter()
+        .copied()
+        .filter(|realm| monster_map.contains_key(&format!("{kind}::{realm}")))
+        .collect::<Vec<_>>();
+    if realms.is_empty() {
+        return Err(AppError::config(format!("千层塔缺少可用怪物池: {kind}")));
+    }
+    let cycle_index = ((normalized_floor - 1) / 10).max(0) as usize;
+    let realm = realms[cycle_index.min(realms.len() - 1)];
+    let candidates = monster_map
+        .get(&format!("{kind}::{realm}"))
+        .cloned()
+        .unwrap_or_default();
+    if candidates.is_empty() {
+        return Err(AppError::config(format!(
+            "千层塔楼层缺少怪物候选: floor={normalized_floor}, kind={kind}, realm={realm}"
+        )));
+    }
+    let monster_count = tower_monster_count_for_floor(kind, normalized_floor, &seed);
+    let monsters =
+        tower_pick_deterministic_monsters(&format!("{seed}::monster"), &candidates, monster_count);
+    Ok(TowerFloorPreviewDto {
+        floor: normalized_floor,
+        kind: kind.to_string(),
+        seed,
+        realm: realm.to_string(),
+        monster_ids: monsters
+            .iter()
+            .filter_map(|monster| monster.id.clone())
+            .collect(),
+        monster_names: monsters
+            .iter()
+            .map(|monster| monster.name.clone().unwrap_or_default())
+            .collect(),
+    })
+}
+
+fn try_build_tower_floor_preview(floor: i64) -> Result<TowerFloorPreviewDto, AppError> {
+    let normalized_floor = floor.max(1);
+    let kind = tower_floor_kind(normalized_floor);
+    if let Some((realm, frozen_monsters)) =
+        resolve_frozen_tower_monsters_for_floor(normalized_floor, kind)
+    {
+        return Ok(build_tower_floor_preview_from_frozen(
+            normalized_floor,
+            kind,
+            realm,
+            frozen_monsters,
+        ));
+    }
+    build_latest_tower_floor_preview(normalized_floor, kind)
+}
+
+fn build_tower_floor_preview(floor: i64) -> TowerFloorPreviewDto {
+    try_build_tower_floor_preview(floor).expect("tower floor preview should resolve")
+}
+
+pub(crate) fn try_resolve_tower_floor_monster_ids(floor: i64) -> Result<Vec<String>, AppError> {
+    let preview = try_build_tower_floor_preview(floor)?;
+    if preview.monster_ids.is_empty() {
+        return Err(AppError::config(format!(
+            "千层塔楼层缺少怪物候选: floor={}",
+            floor.max(1)
+        )));
+    }
+    Ok(preview.monster_ids)
+}
+
+pub(crate) fn resolve_tower_floor_monster_ids(floor: i64) -> Vec<String> {
+    try_resolve_tower_floor_monster_ids(floor).expect("tower floor monsters should resolve")
+}
+
+fn build_tower_floor_preview_from_frozen(
+    normalized_floor: i64,
+    kind: &str,
+    realm: String,
+    frozen_monsters: Vec<crate::jobs::tower_frozen_pool::FrozenTowerMonsterEntry>,
+) -> TowerFloorPreviewDto {
     TowerFloorPreviewDto {
         floor: normalized_floor,
         kind: kind.to_string(),
-        seed: format!("tower-floor-{}", normalized_floor),
-        realm: realm.to_string(),
+        seed: format!("tower:{normalized_floor}"),
+        realm,
         monster_ids: frozen_monsters
             .iter()
             .map(|monster| monster.monster_def_id.clone())
@@ -374,15 +619,6 @@ fn build_tower_floor_preview(floor: i64) -> TowerFloorPreviewDto {
             .iter()
             .map(|monster| monster.monster_name.clone())
             .collect(),
-    }
-}
-
-pub(crate) fn resolve_tower_floor_monster_ids(floor: i64) -> Vec<String> {
-    let preview = build_tower_floor_preview(floor);
-    if preview.monster_ids.is_empty() {
-        vec![format!("tower-monster-floor-{}", floor.max(1))]
-    } else {
-        preview.monster_ids
     }
 }
 

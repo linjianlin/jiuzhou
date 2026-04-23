@@ -21,7 +21,6 @@ const DEFAULT_BATTLE_FAFANG: i64 = 16;
 const DEFAULT_BATTLE_SUDU: i64 = 6;
 
 struct ItemSetSeed {
-    id: String,
     name: String,
     bonuses: Vec<ItemSetBonusSeed>,
 }
@@ -95,14 +94,7 @@ fn load_item_set_seed_map() -> Result<BTreeMap<String, ItemSetSeed>, AppError> {
                 })
             })
             .collect::<Vec<_>>();
-        map.insert(
-            set_id.to_string(),
-            ItemSetSeed {
-                id: set_id.to_string(),
-                name,
-                bonuses,
-            },
-        );
+        map.insert(set_id.to_string(), ItemSetSeed { name, bonuses });
     }
     Ok(map)
 }
