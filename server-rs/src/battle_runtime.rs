@@ -20,6 +20,9 @@ const DEFENSE_DAMAGE_K: f64 = 1200.0;
 const VOID_EROSION_MARK_ID: &str = "void_erosion";
 const VOID_EROSION_DAMAGE_PER_STACK: f64 = 0.02;
 const VOID_EROSION_DAMAGE_BONUS_CAP: f64 = 0.1;
+const SOUL_SHACKLE_MARK_ID: &str = "soul_shackle";
+const SOUL_SHACKLE_RECOVERY_BLOCK_PER_STACK: f64 = 0.08;
+const SOUL_SHACKLE_RECOVERY_BLOCK_CAP: f64 = 0.4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -525,6 +528,37 @@ fn is_runtime_heal_forbidden(unit: &BattleUnitDto) -> bool {
     })
 }
 
+fn runtime_soul_shackle_recovery_block_rate(unit: &BattleUnitDto) -> f64 {
+    let stacks = unit
+        .marks
+        .iter()
+        .filter(|mark| {
+            mark.get("id").and_then(serde_json::Value::as_str) == Some(SOUL_SHACKLE_MARK_ID)
+                && json_number_to_i64_floor(mark.get("remainingDuration")).unwrap_or(1) > 0
+        })
+        .map(|mark| {
+            json_number_to_f64(mark.get("stacks"))
+                .unwrap_or_default()
+                .max(0.0)
+        })
+        .sum::<f64>();
+    if stacks <= 0.0 {
+        return 0.0;
+    }
+    (stacks * SOUL_SHACKLE_RECOVERY_BLOCK_PER_STACK).min(SOUL_SHACKLE_RECOVERY_BLOCK_CAP)
+}
+
+fn apply_runtime_recovery_reduction(value: i64, target: &BattleUnitDto) -> i64 {
+    if value <= 0 {
+        return value;
+    }
+    let block_rate = runtime_soul_shackle_recovery_block_rate(target);
+    if block_rate <= 0.0 {
+        return value;
+    }
+    ((value as f64) * (1.0 - block_rate)).floor().max(0.0) as i64
+}
+
 fn apply_runtime_healing(target: &mut BattleUnitDto, heal_amount: i64) -> i64 {
     if heal_amount <= 0 {
         return 0;
@@ -532,8 +566,12 @@ fn apply_runtime_healing(target: &mut BattleUnitDto, heal_amount: i64) -> i64 {
     if is_runtime_heal_forbidden(target) {
         return 0;
     }
+    let effective_heal = apply_runtime_recovery_reduction(heal_amount, target);
+    if effective_heal <= 0 {
+        return 0;
+    }
     let missing_qixue = (target.current_attrs.max_qixue.max(1) - target.qixue).max(0);
-    let actual_heal = heal_amount.min(missing_qixue);
+    let actual_heal = effective_heal.min(missing_qixue);
     if actual_heal <= 0 {
         return 0;
     }
@@ -2962,9 +3000,7 @@ fn process_runtime_set_bonus_turn_start_effects(
                     .unwrap_or_default()
                     .max(0);
                 if heal > 0 && unit.is_alive {
-                    let before = unit.qixue;
-                    unit.qixue = (unit.qixue + heal).min(unit.current_attrs.max_qixue.max(1));
-                    let actual = (unit.qixue - before).max(0);
+                    let actual = apply_runtime_healing(unit, heal);
                     if actual > 0 {
                         logs.push(build_hot_log(
                             round,
@@ -2989,13 +3025,24 @@ fn process_runtime_set_bonus_turn_start_effects(
                     .unwrap_or_default();
                 let resource_type = params
                     .get("resource_type")
+                    .or_else(|| params.get("resourceType"))
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or("lingqi");
                 if resource_type == "qixue" {
-                    unit.qixue = (unit.qixue + value).clamp(0, unit.current_attrs.max_qixue.max(1));
+                    if value > 0 {
+                        apply_runtime_healing(unit, value);
+                    } else {
+                        unit.qixue =
+                            (unit.qixue + value).clamp(0, unit.current_attrs.max_qixue.max(1));
+                    }
                 } else {
-                    unit.lingqi =
-                        (unit.lingqi + value).clamp(0, unit.current_attrs.max_lingqi.max(0));
+                    let adjusted_value = if value > 0 {
+                        apply_runtime_recovery_reduction(value, unit)
+                    } else {
+                        value
+                    };
+                    unit.lingqi = (unit.lingqi + adjusted_value)
+                        .clamp(0, unit.current_attrs.max_lingqi.max(0));
                 }
             }
             "buff" => {
@@ -4970,13 +5017,31 @@ fn execute_runtime_skill_action(
                             .max(0),
                         effect_context.heal_bonus_rate,
                     );
+                    let heal_value =
+                        ((heal_value as f64) * (1.0 + actor.current_attrs.zhiliao)).floor() as i64;
+                    let heal_value = ((heal_value as f64)
+                        * (1.0 - target_snapshot.current_attrs.jianliao))
+                        .floor() as i64;
                     if heal_value > 0 {
                         let healed = {
                             let target = unit_by_id_mut(state, effect_target_id.as_str())
                                 .ok_or_else(|| "没有有效目标".to_string())?;
                             apply_runtime_healing(target, heal_value)
                         };
-                        log_entry.heal += healed;
+                        if healed > 0 {
+                            if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                                actor_unit.stats.healing_done += healed;
+                            }
+                            log_entry.heal += healed;
+                            process_runtime_set_bonus_trigger(
+                                state,
+                                "on_heal",
+                                actor_id,
+                                Some(effect_target_id.as_str()),
+                                healed,
+                                &mut logs,
+                            );
+                        }
                     }
                 }
                 "restore_lingqi" => {
@@ -4989,13 +5054,16 @@ fn execute_runtime_skill_action(
                     if restore_value > 0 {
                         let target = unit_by_id_mut(state, effect_target_id.as_str())
                             .ok_or_else(|| "没有有效目标".to_string())?;
-                        target.lingqi = (target.lingqi + restore_value)
+                        let effective_restore =
+                            apply_runtime_recovery_reduction(restore_value, target);
+                        target.lingqi = (target.lingqi + effective_restore)
                             .min(target.current_attrs.max_lingqi.max(0));
                     }
                 }
                 "resource" => {
                     let resource_type = effect
                         .get("resourceType")
+                        .or_else(|| effect.get("resource_type"))
                         .and_then(serde_json::Value::as_str)
                         .unwrap_or("lingqi");
                     let delta = effect
@@ -5010,10 +5078,19 @@ fn execute_runtime_skill_action(
                     let target = unit_by_id_mut(state, effect_target_id.as_str())
                         .ok_or_else(|| "没有有效目标".to_string())?;
                     if resource_type == "qixue" {
-                        target.qixue = (target.qixue + adjusted_delta)
-                            .clamp(0, target.current_attrs.max_qixue.max(1));
+                        if adjusted_delta > 0 {
+                            apply_runtime_healing(target, adjusted_delta);
+                        } else {
+                            target.qixue = (target.qixue + adjusted_delta)
+                                .clamp(0, target.current_attrs.max_qixue.max(1));
+                        }
                     } else {
-                        target.lingqi = (target.lingqi + adjusted_delta)
+                        let effective_delta = if adjusted_delta > 0 {
+                            apply_runtime_recovery_reduction(adjusted_delta, target)
+                        } else {
+                            adjusted_delta
+                        };
+                        target.lingqi = (target.lingqi + effective_delta)
                             .clamp(0, target.current_attrs.max_lingqi.max(0));
                     }
                 }
@@ -6973,6 +7050,93 @@ mod tests {
         assert_eq!(state.teams.attacker.units[0].qixue, 50);
         assert_eq!(state.teams.attacker.units[0].stats.healing_done, 0);
         assert_eq!(state.teams.attacker.units[0].stats.healing_received, 0);
+    }
+
+    #[test]
+    fn runtime_heal_effect_uses_zhiliao_jianliao_and_stats() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-heal-modifiers",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let caster = &mut state.teams.attacker.units[0];
+        caster.qixue = 40;
+        caster.current_attrs.max_qixue = 300;
+        caster.current_attrs.zhiliao = 0.2;
+        caster.current_attrs.jianliao = 0.25;
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-self-heal-modifiers",
+            "name": "调息回春",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "heal", "value": 100, "valueType": "flat"}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-self-heal-modifiers",
+            &[],
+        )
+        .expect("heal action should succeed");
+
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.qixue, 130);
+        assert_eq!(caster.stats.healing_done, 90);
+        assert_eq!(caster.stats.healing_received, 90);
+        assert_eq!(logs[0]["targets"][0]["heal"], serde_json::json!(90));
+    }
+
+    #[test]
+    fn runtime_recovery_effects_apply_soul_shackle_reduction() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-soul-shackle-recovery",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let caster = &mut state.teams.attacker.units[0];
+        caster.qixue = 10;
+        caster.lingqi = 0;
+        caster.current_attrs.max_qixue = 200;
+        caster.current_attrs.max_lingqi = 100;
+        caster.marks.push(serde_json::json!({
+            "id": "soul_shackle",
+            "sourceUnitId": "monster-1-monster-gray-wolf",
+            "stacks": 2,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-soul-shackle-recovery",
+            "name": "锁下回元",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "heal", "value": 100, "valueType": "flat"},
+                {"type": "restore_lingqi", "value": 50, "valueType": "flat"}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-soul-shackle-recovery",
+            &[],
+        )
+        .expect("recovery action should succeed");
+
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.qixue, 94);
+        assert_eq!(caster.lingqi, 42);
+        assert_eq!(caster.stats.healing_done, 84);
+        assert_eq!(caster.stats.healing_received, 84);
+        assert_eq!(logs[0]["targets"][0]["heal"], serde_json::json!(84));
     }
 
     #[test]
