@@ -5169,8 +5169,11 @@ fn execute_runtime_skill_action(
 
     let mut target_logs = Vec::new();
     let mut logs = Vec::new();
-    let actor_next_skill_damage_bonus = runtime_next_skill_bonus_rate(&actor, "damage");
     process_runtime_set_bonus_trigger(state, "on_skill", actor_id, None, 0, &mut logs);
+    let actor = unit_by_id(state, actor_id)
+        .cloned()
+        .ok_or_else(|| "当前不可行动".to_string())?;
+    let actor_next_skill_damage_bonus = runtime_next_skill_bonus_rate(&actor, "damage");
     let should_resolve_damage_targets = !damage_effects.is_empty()
         || matches!(
             skill_id.trim(),
@@ -5449,9 +5452,14 @@ fn execute_runtime_skill_action(
                             .ok_or_else(|| "没有有效目标".to_string())?;
                         let effective_restore =
                             apply_runtime_recovery_reduction(restore_value, target);
+                        let before = target.lingqi;
                         target.lingqi = (target.lingqi + effective_restore)
                             .min(target.current_attrs.max_lingqi.max(0));
-                        push_runtime_resource_log(log_entry, "lingqi", effective_restore);
+                        push_runtime_resource_log(
+                            log_entry,
+                            "lingqi",
+                            (target.lingqi - before).abs(),
+                        );
                     }
                 }
                 "resource" => {
@@ -5472,6 +5480,7 @@ fn execute_runtime_skill_action(
                     let target = unit_by_id_mut(state, effect_target_id.as_str())
                         .ok_or_else(|| "没有有效目标".to_string())?;
                     if resource_type == "qixue" {
+                        let before = target.qixue;
                         if adjusted_delta > 0 {
                             target.qixue = (target.qixue + adjusted_delta)
                                 .min(target.current_attrs.max_qixue.max(1));
@@ -5479,16 +5488,25 @@ fn execute_runtime_skill_action(
                             target.qixue = (target.qixue + adjusted_delta)
                                 .clamp(0, target.current_attrs.max_qixue.max(1));
                         }
-                        push_runtime_resource_log(log_entry, "qixue", adjusted_delta.abs());
+                        push_runtime_resource_log(
+                            log_entry,
+                            "qixue",
+                            (target.qixue - before).abs(),
+                        );
                     } else {
                         let effective_delta = if adjusted_delta > 0 {
                             apply_runtime_recovery_reduction(adjusted_delta, target)
                         } else {
                             adjusted_delta
                         };
+                        let before = target.lingqi;
                         target.lingqi = (target.lingqi + effective_delta)
                             .clamp(0, target.current_attrs.max_lingqi.max(0));
-                        push_runtime_resource_log(log_entry, "lingqi", effective_delta.abs());
+                        push_runtime_resource_log(
+                            log_entry,
+                            "lingqi",
+                            (target.lingqi - before).abs(),
+                        );
                     }
                 }
                 "shield" => {
@@ -7636,6 +7654,79 @@ mod tests {
     }
 
     #[test]
+    fn runtime_restore_lingqi_logs_actual_gain_at_cap() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-restore-lingqi-cap-log",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let caster = &mut state.teams.attacker.units[0];
+        caster.lingqi = 95;
+        caster.current_attrs.max_lingqi = 100;
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-restore-lingqi-cap",
+            "name": "满盈回灵",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "restore_lingqi", "value": 50, "valueType": "flat"}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-restore-lingqi-cap",
+            &[],
+        )
+        .expect("restore lingqi action should succeed");
+
+        assert_eq!(state.teams.attacker.units[0].lingqi, 100);
+        assert_eq!(
+            logs[0]["targets"][0]["resources"],
+            serde_json::json!([{"type": "lingqi", "amount": 5}])
+        );
+    }
+
+    #[test]
+    fn runtime_negative_resource_lingqi_logs_actual_loss_at_floor() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-resource-lingqi-floor-log",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let caster = &mut state.teams.attacker.units[0];
+        caster.lingqi = 5;
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-resource-lingqi-floor",
+            "name": "竭灵",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "resource", "resourceType": "lingqi", "value": -12}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-resource-lingqi-floor",
+            &[],
+        )
+        .expect("resource lingqi action should succeed");
+
+        assert_eq!(state.teams.attacker.units[0].lingqi, 0);
+        assert_eq!(
+            logs[0]["targets"][0]["resources"],
+            serde_json::json!([{"type": "lingqi", "amount": 5}])
+        );
+    }
+
+    #[test]
     fn runtime_positive_resource_in_enemy_facing_skill_defaults_to_self() {
         let mut state = build_minimal_pve_battle_state(
             "pve-battle-positive-resource-default-self",
@@ -7714,6 +7805,61 @@ mod tests {
             logs[0]["targets"][0]["resources"],
             serde_json::json!([{"type": "lingqi", "amount": 12}])
         );
+    }
+
+    #[test]
+    fn runtime_on_skill_buff_refreshes_actor_snapshot_before_explicit_heal() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-on-skill-refresh-actor",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let caster = &mut state.teams.attacker.units[0];
+        caster.qixue = 10;
+        caster.current_attrs.max_qixue = 200;
+        caster.base_attrs.max_qixue = 200;
+        caster.current_attrs.fagong = 10;
+        caster.base_attrs.fagong = 10;
+        caster.set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-on-skill-fagong",
+            "setName": "临阵法攻",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "self",
+            "effectType": "buff",
+            "durationRound": 1,
+            "params": {
+                "attr_key": "fagong",
+                "value": 30,
+                "apply_type": "flat"
+            }
+        })];
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-heal-after-on-skill-buff",
+            "name": "借势回春",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "heal", "value": 1.0, "valueType": "scale", "scaleAttr": "fagong"}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-heal-after-on-skill-buff",
+            &[],
+        )
+        .expect("heal action should use refreshed actor attrs");
+
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.current_attrs.fagong, 40);
+        assert_eq!(caster.qixue, 50);
+        assert_eq!(caster.stats.healing_done, 40);
+        assert_eq!(caster.stats.healing_received, 40);
+        assert_eq!(logs[0]["targets"][0]["heal"], serde_json::json!(40));
     }
 
     #[test]
