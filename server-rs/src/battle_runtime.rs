@@ -107,25 +107,25 @@ pub struct BattleUnitCurrentAttrsDto {
     pub wufang: i64,
     pub fafang: i64,
     pub sudu: i64,
-    pub mingzhong: i64,
-    pub shanbi: i64,
-    pub zhaojia: i64,
-    pub baoji: i64,
-    pub baoshang: i64,
-    pub jianbaoshang: i64,
-    pub jianfantan: i64,
-    pub kangbao: i64,
-    pub zengshang: i64,
-    pub zhiliao: i64,
-    pub jianliao: i64,
-    pub xixue: i64,
-    pub lengque: i64,
-    pub kongzhi_kangxing: i64,
-    pub jin_kangxing: i64,
-    pub mu_kangxing: i64,
-    pub shui_kangxing: i64,
-    pub huo_kangxing: i64,
-    pub tu_kangxing: i64,
+    pub mingzhong: f64,
+    pub shanbi: f64,
+    pub zhaojia: f64,
+    pub baoji: f64,
+    pub baoshang: f64,
+    pub jianbaoshang: f64,
+    pub jianfantan: f64,
+    pub kangbao: f64,
+    pub zengshang: f64,
+    pub zhiliao: f64,
+    pub jianliao: f64,
+    pub xixue: f64,
+    pub lengque: f64,
+    pub kongzhi_kangxing: f64,
+    pub jin_kangxing: f64,
+    pub mu_kangxing: f64,
+    pub shui_kangxing: f64,
+    pub huo_kangxing: f64,
+    pub tu_kangxing: f64,
     pub qixue_huifu: i64,
     pub lingqi_huifu: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -459,25 +459,25 @@ fn build_battle_attrs(
         wufang: 0,
         fafang: 0,
         sudu: sudu.max(0),
-        mingzhong: 100,
-        shanbi: 0,
-        zhaojia: 0,
-        baoji: 0,
-        baoshang: 0,
-        jianbaoshang: 0,
-        jianfantan: 0,
-        kangbao: 0,
-        zengshang: 0,
-        zhiliao: 0,
-        jianliao: 0,
-        xixue: 0,
-        lengque: 0,
-        kongzhi_kangxing: 0,
-        jin_kangxing: 0,
-        mu_kangxing: 0,
-        shui_kangxing: 0,
-        huo_kangxing: 0,
-        tu_kangxing: 0,
+        mingzhong: 1.0,
+        shanbi: 0.0,
+        zhaojia: 0.0,
+        baoji: 0.0,
+        baoshang: 0.0,
+        jianbaoshang: 0.0,
+        jianfantan: 0.0,
+        kangbao: 0.0,
+        zengshang: 0.0,
+        zhiliao: 0.0,
+        jianliao: 0.0,
+        xixue: 0.0,
+        lengque: 0.0,
+        kongzhi_kangxing: 0.0,
+        jin_kangxing: 0.0,
+        mu_kangxing: 0.0,
+        shui_kangxing: 0.0,
+        huo_kangxing: 0.0,
+        tu_kangxing: 0.0,
         qixue_huifu: 0,
         lingqi_huifu: 0,
         realm,
@@ -504,6 +504,10 @@ fn json_number_to_f64(value: Option<&serde_json::Value>) -> Option<f64> {
         serde_json::Value::Number(number) => number.as_f64(),
         _ => None,
     })
+}
+
+fn json_number_to_f64_or_zero(value: Option<&serde_json::Value>) -> f64 {
+    json_number_to_f64(value).unwrap_or_default().max(0.0)
 }
 
 fn json_number_to_i64_round_or_zero(value: Option<&serde_json::Value>) -> i64 {
@@ -589,25 +593,25 @@ fn battle_attrs_from_json(base_attrs: &serde_json::Value) -> Option<BattleUnitCu
         wufang: wufang.max(0),
         fafang: fafang.max(0),
         sudu: sudu.max(1),
-        mingzhong: json_number_to_i64_round_or_zero(object.get("mingzhong")).max(0),
-        shanbi: json_number_to_i64_round_or_zero(object.get("shanbi")).max(0),
-        zhaojia: json_number_to_i64_round_or_zero(object.get("zhaojia")).max(0),
-        baoji: json_number_to_i64_round_or_zero(object.get("baoji")).max(0),
-        baoshang: json_number_to_i64_round_or_zero(object.get("baoshang")).max(0),
-        jianbaoshang: json_number_to_i64_round_or_zero(object.get("jianbaoshang")).max(0),
-        jianfantan: json_number_to_i64_round_or_zero(object.get("jianfantan")).max(0),
-        kangbao: json_number_to_i64_round_or_zero(object.get("kangbao")).max(0),
-        zengshang: json_number_to_i64_round_or_zero(object.get("zengshang")).max(0),
-        zhiliao: json_number_to_i64_round_or_zero(object.get("zhiliao")).max(0),
-        jianliao: json_number_to_i64_round_or_zero(object.get("jianliao")).max(0),
-        xixue: json_number_to_i64_round_or_zero(object.get("xixue")).max(0),
-        lengque: json_number_to_i64_round_or_zero(object.get("lengque")).max(0),
-        kongzhi_kangxing: json_number_to_i64_round_or_zero(object.get("kongzhi_kangxing")).max(0),
-        jin_kangxing: json_number_to_i64_round_or_zero(object.get("jin_kangxing")).max(0),
-        mu_kangxing: json_number_to_i64_round_or_zero(object.get("mu_kangxing")).max(0),
-        shui_kangxing: json_number_to_i64_round_or_zero(object.get("shui_kangxing")).max(0),
-        huo_kangxing: json_number_to_i64_round_or_zero(object.get("huo_kangxing")).max(0),
-        tu_kangxing: json_number_to_i64_round_or_zero(object.get("tu_kangxing")).max(0),
+        mingzhong: json_number_to_f64_or_zero(object.get("mingzhong")),
+        shanbi: json_number_to_f64_or_zero(object.get("shanbi")),
+        zhaojia: json_number_to_f64_or_zero(object.get("zhaojia")),
+        baoji: json_number_to_f64_or_zero(object.get("baoji")),
+        baoshang: json_number_to_f64_or_zero(object.get("baoshang")),
+        jianbaoshang: json_number_to_f64_or_zero(object.get("jianbaoshang")),
+        jianfantan: json_number_to_f64_or_zero(object.get("jianfantan")),
+        kangbao: json_number_to_f64_or_zero(object.get("kangbao")),
+        zengshang: json_number_to_f64_or_zero(object.get("zengshang")),
+        zhiliao: json_number_to_f64_or_zero(object.get("zhiliao")),
+        jianliao: json_number_to_f64_or_zero(object.get("jianliao")),
+        xixue: json_number_to_f64_or_zero(object.get("xixue")),
+        lengque: json_number_to_f64_or_zero(object.get("lengque")),
+        kongzhi_kangxing: json_number_to_f64_or_zero(object.get("kongzhi_kangxing")),
+        jin_kangxing: json_number_to_f64_or_zero(object.get("jin_kangxing")),
+        mu_kangxing: json_number_to_f64_or_zero(object.get("mu_kangxing")),
+        shui_kangxing: json_number_to_f64_or_zero(object.get("shui_kangxing")),
+        huo_kangxing: json_number_to_f64_or_zero(object.get("huo_kangxing")),
+        tu_kangxing: json_number_to_f64_or_zero(object.get("tu_kangxing")),
         qixue_huifu: json_number_to_i64_round_or_zero(object.get("qixue_huifu")).max(0),
         lingqi_huifu: json_number_to_i64_round_or_zero(object.get("lingqi_huifu")).max(0),
         realm: object
@@ -719,6 +723,13 @@ fn value_to_i64(raw: Option<serde_json::Value>, default_value: i64) -> i64 {
     }
 }
 
+fn value_to_f64(raw: Option<serde_json::Value>, default_value: f64) -> f64 {
+    match raw {
+        Some(serde_json::Value::Number(number)) => number.as_f64().unwrap_or(default_value),
+        _ => default_value,
+    }
+}
+
 fn build_monster_battle_attrs(seed: &MonsterSeed) -> BattleUnitCurrentAttrsDto {
     let base_attrs = seed.base_attrs.clone().unwrap_or(MonsterBaseAttrs {
         qixue: None,
@@ -768,25 +779,25 @@ fn build_monster_battle_attrs(seed: &MonsterSeed) -> BattleUnitCurrentAttrsDto {
         wufang: base_attrs.wufang.unwrap_or_default().max(0),
         fafang: base_attrs.fafang.unwrap_or_default().max(0),
         sudu: base_attrs.sudu.unwrap_or(1).max(1),
-        mingzhong: value_to_i64(base_attrs.mingzhong, 100),
-        shanbi: value_to_i64(base_attrs.shanbi, 0),
-        zhaojia: value_to_i64(base_attrs.zhaojia, 0),
-        baoji: value_to_i64(base_attrs.baoji, 0),
-        baoshang: value_to_i64(base_attrs.baoshang, 0),
-        jianbaoshang: value_to_i64(base_attrs.jianbaoshang, 0),
-        jianfantan: value_to_i64(base_attrs.jianfantan, 0),
-        kangbao: value_to_i64(base_attrs.kangbao, 0),
-        zengshang: value_to_i64(base_attrs.zengshang, 0),
-        zhiliao: value_to_i64(base_attrs.zhiliao, 0),
-        jianliao: value_to_i64(base_attrs.jianliao, 0),
-        xixue: value_to_i64(base_attrs.xixue, 0),
-        lengque: value_to_i64(base_attrs.lengque, 0),
-        kongzhi_kangxing: value_to_i64(base_attrs.kongzhi_kangxing, 0),
-        jin_kangxing: value_to_i64(base_attrs.jin_kangxing, 0),
-        mu_kangxing: value_to_i64(base_attrs.mu_kangxing, 0),
-        shui_kangxing: value_to_i64(base_attrs.shui_kangxing, 0),
-        huo_kangxing: value_to_i64(base_attrs.huo_kangxing, 0),
-        tu_kangxing: value_to_i64(base_attrs.tu_kangxing, 0),
+        mingzhong: value_to_f64(base_attrs.mingzhong, 1.0),
+        shanbi: value_to_f64(base_attrs.shanbi, 0.0),
+        zhaojia: value_to_f64(base_attrs.zhaojia, 0.0),
+        baoji: value_to_f64(base_attrs.baoji, 0.0),
+        baoshang: value_to_f64(base_attrs.baoshang, 0.0),
+        jianbaoshang: value_to_f64(base_attrs.jianbaoshang, 0.0),
+        jianfantan: value_to_f64(base_attrs.jianfantan, 0.0),
+        kangbao: value_to_f64(base_attrs.kangbao, 0.0),
+        zengshang: value_to_f64(base_attrs.zengshang, 0.0),
+        zhiliao: value_to_f64(base_attrs.zhiliao, 0.0),
+        jianliao: value_to_f64(base_attrs.jianliao, 0.0),
+        xixue: value_to_f64(base_attrs.xixue, 0.0),
+        lengque: value_to_f64(base_attrs.lengque, 0.0),
+        kongzhi_kangxing: value_to_f64(base_attrs.kongzhi_kangxing, 0.0),
+        jin_kangxing: value_to_f64(base_attrs.jin_kangxing, 0.0),
+        mu_kangxing: value_to_f64(base_attrs.mu_kangxing, 0.0),
+        shui_kangxing: value_to_f64(base_attrs.shui_kangxing, 0.0),
+        huo_kangxing: value_to_f64(base_attrs.huo_kangxing, 0.0),
+        tu_kangxing: value_to_f64(base_attrs.tu_kangxing, 0.0),
         qixue_huifu: value_to_i64(base_attrs.qixue_huifu, 0),
         lingqi_huifu: value_to_i64(base_attrs.lingqi_huifu, 0),
         realm: seed.level.map(|level| format!("Lv.{level}")),
@@ -2346,7 +2357,7 @@ fn resolve_effect_base_value(
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(default_scale_attr);
-    let actor_attr_value = battle_attr_value(actor.current_attrs.clone(), scale_attr);
+    let actor_attr_value = battle_attr_value_i64(&actor.current_attrs, scale_attr);
     match value_type {
         "flat" => value.floor() as i64,
         "percent" => ((target.current_attrs.max_qixue as f64) * value).floor() as i64,
@@ -2371,8 +2382,8 @@ fn resolve_effect_base_value(
     }
 }
 
-fn battle_attr_value(attrs: BattleUnitCurrentAttrsDto, attr_key: &str) -> i64 {
-    match attr_key.trim() {
+fn battle_attr_value_i64(attrs: &BattleUnitCurrentAttrsDto, attr: &str) -> i64 {
+    match attr.trim() {
         "max_qixue" => attrs.max_qixue,
         "max_lingqi" => attrs.max_lingqi,
         "wugong" => attrs.wugong,
@@ -2380,6 +2391,21 @@ fn battle_attr_value(attrs: BattleUnitCurrentAttrsDto, attr_key: &str) -> i64 {
         "wufang" => attrs.wufang,
         "fafang" => attrs.fafang,
         "sudu" => attrs.sudu,
+        "qixue_huifu" => attrs.qixue_huifu,
+        "lingqi_huifu" => attrs.lingqi_huifu,
+        _ => battle_attr_value_f64(attrs, attr).round() as i64,
+    }
+}
+
+fn battle_attr_value_f64(attrs: &BattleUnitCurrentAttrsDto, attr: &str) -> f64 {
+    match attr.trim() {
+        "max_qixue" => attrs.max_qixue as f64,
+        "max_lingqi" => attrs.max_lingqi as f64,
+        "wugong" => attrs.wugong as f64,
+        "fagong" => attrs.fagong as f64,
+        "wufang" => attrs.wufang as f64,
+        "fafang" => attrs.fafang as f64,
+        "sudu" => attrs.sudu as f64,
         "mingzhong" => attrs.mingzhong,
         "shanbi" => attrs.shanbi,
         "zhaojia" => attrs.zhaojia,
@@ -2399,9 +2425,9 @@ fn battle_attr_value(attrs: BattleUnitCurrentAttrsDto, attr_key: &str) -> i64 {
         "shui_kangxing" => attrs.shui_kangxing,
         "huo_kangxing" => attrs.huo_kangxing,
         "tu_kangxing" => attrs.tu_kangxing,
-        "qixue_huifu" => attrs.qixue_huifu,
-        "lingqi_huifu" => attrs.lingqi_huifu,
-        _ => 0,
+        "qixue_huifu" => attrs.qixue_huifu as f64,
+        "lingqi_huifu" => attrs.lingqi_huifu as f64,
+        _ => 0.0,
     }
 }
 
@@ -2804,13 +2830,13 @@ fn apply_runtime_attr_buffs(unit: &mut BattleUnitDto) {
                 .get("value")
                 .and_then(serde_json::Value::as_f64)
                 .unwrap_or(0.0);
-            let base_value = battle_attr_value(unit.current_attrs.clone(), attr) as f64;
+            let base_value = battle_attr_value_f64(&unit.current_attrs, attr);
             let next_value = if mode == "percent" {
                 base_value * (1.0 + value)
             } else {
                 base_value + value
             };
-            apply_attr_value(&mut unit.current_attrs, attr, next_value.round() as i64);
+            apply_attr_value(&mut unit.current_attrs, attr, next_value);
         }
     }
 }
@@ -2825,13 +2851,13 @@ fn apply_runtime_attr_modifier_to_unit(
     apply_type: &str,
     value: f64,
 ) {
-    let current = battle_attr_value(unit.current_attrs.clone(), attr_key) as f64;
+    let current = battle_attr_value_f64(&unit.current_attrs, attr_key);
     let next = if apply_type == "percent" {
         current * (1.0 + value)
     } else {
         current + value
     };
-    apply_attr_value(&mut unit.current_attrs, attr_key, next.round() as i64);
+    apply_attr_value(&mut unit.current_attrs, attr_key, next);
 }
 
 fn apply_runtime_set_bonus_equip_effects(state: &mut BattleStateDto) {
@@ -3629,15 +3655,17 @@ fn runtime_void_erosion_damage_bonus(attacker: &BattleUnitDto, defender: &Battle
     ((total_stacks as f64) * VOID_EROSION_DAMAGE_PER_STACK).min(VOID_EROSION_DAMAGE_BONUS_CAP)
 }
 
-fn apply_attr_value(attrs: &mut BattleUnitCurrentAttrsDto, attr: &str, value: i64) {
+fn apply_attr_value(attrs: &mut BattleUnitCurrentAttrsDto, attr: &str, value: f64) {
     match attr.trim() {
-        "max_qixue" => attrs.max_qixue = value.max(1),
-        "max_lingqi" => attrs.max_lingqi = value.max(0),
-        "wugong" => attrs.wugong = value,
-        "fagong" => attrs.fagong = value,
-        "wufang" => attrs.wufang = value,
-        "fafang" => attrs.fafang = value,
-        "sudu" => attrs.sudu = value.max(0),
+        "max_qixue" => attrs.max_qixue = (value.round() as i64).max(1),
+        "max_lingqi" => attrs.max_lingqi = (value.round() as i64).max(0),
+        "wugong" => attrs.wugong = value.round() as i64,
+        "fagong" => attrs.fagong = value.round() as i64,
+        "wufang" => attrs.wufang = value.round() as i64,
+        "fafang" => attrs.fafang = value.round() as i64,
+        "sudu" => attrs.sudu = (value.round() as i64).max(0),
+        "qixue_huifu" => attrs.qixue_huifu = (value.round() as i64).max(0),
+        "lingqi_huifu" => attrs.lingqi_huifu = (value.round() as i64).max(0),
         "mingzhong" => attrs.mingzhong = value,
         "shanbi" => attrs.shanbi = value,
         "zhaojia" => attrs.zhaojia = value,
@@ -3657,30 +3685,16 @@ fn apply_attr_value(attrs: &mut BattleUnitCurrentAttrsDto, attr: &str, value: i6
         "shui_kangxing" => attrs.shui_kangxing = value,
         "huo_kangxing" => attrs.huo_kangxing = value,
         "tu_kangxing" => attrs.tu_kangxing = value,
-        "qixue_huifu" => attrs.qixue_huifu = value,
-        "lingqi_huifu" => attrs.lingqi_huifu = value,
         _ => {}
     }
 }
 
-fn normalized_rate(value: i64) -> f64 {
-    if value <= 0 {
-        0.0
-    } else if value > 1 {
-        (value as f64) / 100.0
-    } else {
-        value as f64
-    }
+fn normalized_rate(value: f64) -> f64 {
+    value.max(0.0)
 }
 
-fn normalized_multiplier(value: i64) -> f64 {
-    if value <= 0 {
-        0.0
-    } else if value >= 10 {
-        (value as f64) / 100.0
-    } else {
-        value as f64
-    }
+fn normalized_multiplier(value: f64) -> f64 {
+    value.max(0.0)
 }
 
 fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
@@ -6394,6 +6408,71 @@ mod tests {
             .collect()
     }
 
+    fn assert_rate_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 0.000_001,
+            "expected {actual} to equal {expected}"
+        );
+    }
+
+    #[test]
+    fn monster_seed_fractional_rates_survive_runtime_attrs() {
+        let seed = super::MonsterSeed {
+            id: Some("monster-fractional-rates".to_string()),
+            name: Some("小数率怪".to_string()),
+            realm: Some("凡人".to_string()),
+            kind: Some("normal".to_string()),
+            element: Some("mu".to_string()),
+            level: None,
+            exp_reward: None,
+            silver_reward_min: None,
+            base_attrs: Some(super::MonsterBaseAttrs {
+                qixue: Some(100),
+                max_qixue: None,
+                lingqi: Some(30),
+                max_lingqi: None,
+                wugong: Some(10),
+                fagong: Some(8),
+                wufang: Some(4),
+                fafang: Some(3),
+                sudu: Some(5),
+                mingzhong: Some(serde_json::json!(0.85)),
+                shanbi: Some(serde_json::json!(0.12)),
+                zhaojia: Some(serde_json::json!(0.07)),
+                baoji: Some(serde_json::json!(0.08)),
+                baoshang: Some(serde_json::json!(1.5)),
+                jianbaoshang: Some(serde_json::json!(0.04)),
+                jianfantan: Some(serde_json::json!(0.03)),
+                kangbao: Some(serde_json::json!(0.02)),
+                zengshang: Some(serde_json::json!(0.11)),
+                zhiliao: Some(serde_json::json!(0.09)),
+                jianliao: Some(serde_json::json!(0.06)),
+                xixue: Some(serde_json::json!(0.05)),
+                lengque: Some(serde_json::json!(0.04)),
+                kongzhi_kangxing: Some(serde_json::json!(0.13)),
+                jin_kangxing: Some(serde_json::json!(0.01)),
+                mu_kangxing: Some(serde_json::json!(0.02)),
+                shui_kangxing: Some(serde_json::json!(0.03)),
+                huo_kangxing: Some(serde_json::json!(0.04)),
+                tu_kangxing: Some(serde_json::json!(0.05)),
+                qixue_huifu: Some(serde_json::json!(2)),
+                lingqi_huifu: Some(serde_json::json!(3)),
+            }),
+            ai_profile: None,
+            drop_pool_id: None,
+            enabled: Some(true),
+        };
+
+        let attrs = super::build_monster_battle_attrs(&seed);
+
+        assert_rate_close(attrs.mingzhong as f64, 0.85);
+        assert_rate_close(attrs.shanbi as f64, 0.12);
+        assert_rate_close(attrs.baoji as f64, 0.08);
+        assert_rate_close(attrs.baoshang as f64, 1.5);
+        assert_rate_close(attrs.zengshang as f64, 0.11);
+        assert_rate_close(attrs.kongzhi_kangxing as f64, 0.13);
+    }
+
     #[test]
     fn rust_runtime_declares_all_node_skill_effect_types_supported() {
         let expected = [
@@ -7633,25 +7712,25 @@ mod tests {
             wufang: 30,
             fafang: 30,
             sudu: 10,
-            mingzhong: 100,
-            shanbi: 0,
-            zhaojia: 0,
-            baoji: 0,
-            baoshang: 0,
-            jianbaoshang: 0,
-            jianfantan: 0,
-            kangbao: 0,
-            zengshang: 0,
-            zhiliao: 0,
-            jianliao: 0,
-            xixue: 0,
-            lengque: 0,
-            kongzhi_kangxing: 0,
-            jin_kangxing: 0,
-            mu_kangxing: 0,
-            shui_kangxing: 0,
-            huo_kangxing: 0,
-            tu_kangxing: 0,
+            mingzhong: 1.0,
+            shanbi: 0.0,
+            zhaojia: 0.0,
+            baoji: 0.0,
+            baoshang: 0.0,
+            jianbaoshang: 0.0,
+            jianfantan: 0.0,
+            kangbao: 0.0,
+            zengshang: 0.0,
+            zhiliao: 0.0,
+            jianliao: 0.0,
+            xixue: 0.0,
+            lengque: 0.0,
+            kongzhi_kangxing: 0.0,
+            jin_kangxing: 0.0,
+            mu_kangxing: 0.0,
+            shui_kangxing: 0.0,
+            huo_kangxing: 0.0,
+            tu_kangxing: 0.0,
             qixue_huifu: 0,
             lingqi_huifu: 0,
             realm: Some("凡人".to_string()),
@@ -7866,25 +7945,25 @@ mod tests {
                 wufang: 0,
                 fafang: 0,
                 sudu: 10,
-                mingzhong: 100,
-                shanbi: 0,
-                zhaojia: 0,
-                baoji: 0,
-                baoshang: 2,
-                jianbaoshang: 0,
-                jianfantan: 0,
-                kangbao: 0,
-                zengshang: 0,
-                zhiliao: 0,
-                jianliao: 0,
-                xixue: 0,
-                lengque: 0,
-                kongzhi_kangxing: 0,
-                jin_kangxing: 0,
-                mu_kangxing: 0,
-                shui_kangxing: 0,
-                huo_kangxing: 0,
-                tu_kangxing: 0,
+                mingzhong: 1.0,
+                shanbi: 0.0,
+                zhaojia: 0.0,
+                baoji: 0.0,
+                baoshang: 2.0,
+                jianbaoshang: 0.0,
+                jianfantan: 0.0,
+                kangbao: 0.0,
+                zengshang: 0.0,
+                zhiliao: 0.0,
+                jianliao: 0.0,
+                xixue: 0.0,
+                lengque: 0.0,
+                kongzhi_kangxing: 0.0,
+                jin_kangxing: 0.0,
+                mu_kangxing: 0.0,
+                shui_kangxing: 0.0,
+                huo_kangxing: 0.0,
+                tu_kangxing: 0.0,
                 qixue_huifu: 0,
                 lingqi_huifu: 0,
                 realm: None,
@@ -7896,9 +7975,9 @@ mod tests {
             current_attrs: BattleUnitCurrentAttrsDto {
                 wufang: 180,
                 fafang: 100,
-                shanbi: 0,
-                zhaojia: 0,
-                kangbao: 0,
+                shanbi: 0.0,
+                zhaojia: 0.0,
+                kangbao: 0.0,
                 ..state.teams.defender.units[0].current_attrs.clone()
             },
             ..state.teams.defender.units[0].clone()
@@ -9480,25 +9559,25 @@ mod tests {
                 wufang: 3,
                 fafang: 4,
                 sudu,
-                mingzhong: 100,
-                shanbi: 0,
-                zhaojia: 0,
-                baoji: 0,
-                baoshang: 0,
-                jianbaoshang: 0,
-                jianfantan: 0,
-                kangbao: 0,
-                zengshang: 0,
-                zhiliao: 0,
-                jianliao: 0,
-                xixue: 0,
-                lengque: 0,
-                kongzhi_kangxing: 0,
-                jin_kangxing: 0,
-                mu_kangxing: 0,
-                shui_kangxing: 0,
-                huo_kangxing: 0,
-                tu_kangxing: 0,
+                mingzhong: 1.0,
+                shanbi: 0.0,
+                zhaojia: 0.0,
+                baoji: 0.0,
+                baoshang: 0.0,
+                jianbaoshang: 0.0,
+                jianfantan: 0.0,
+                kangbao: 0.0,
+                zengshang: 0.0,
+                zhiliao: 0.0,
+                jianliao: 0.0,
+                xixue: 0.0,
+                lengque: 0.0,
+                kongzhi_kangxing: 0.0,
+                jin_kangxing: 0.0,
+                mu_kangxing: 0.0,
+                shui_kangxing: 0.0,
+                huo_kangxing: 0.0,
+                tu_kangxing: 0.0,
                 qixue_huifu: 0,
                 lingqi_huifu: 0,
                 realm: Some("炼精化炁·养气期".to_string()),
