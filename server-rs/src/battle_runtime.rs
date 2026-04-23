@@ -5516,7 +5516,14 @@ fn execute_runtime_skill_action(
 
     let mut target_logs = Vec::new();
     let mut logs = Vec::new();
-    process_runtime_set_bonus_trigger(state, "on_skill", actor_id, None, 0, &mut logs);
+    process_runtime_set_bonus_trigger(
+        state,
+        "on_skill",
+        actor_id,
+        target_ids.first().map(String::as_str),
+        0,
+        &mut logs,
+    );
     let actor = unit_by_id(state, actor_id)
         .cloned()
         .ok_or_else(|| "当前不可行动".to_string())?;
@@ -8497,6 +8504,91 @@ mod tests {
         assert_eq!(logs[0]["targets"][0]["hits"][0]["damage"], 40);
         assert_eq!(
             logs[0]["targets"][0]["marksConsumed"][0],
+            "虚蚀印记消耗3层（剩余0层，引爆）"
+        );
+    }
+
+    #[test]
+    fn runtime_set_bonus_mark_consume_damage_works_through_skill_on_skill_path() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-mark-skill-path",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].qixue = 1000;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-mark-skill-path",
+            "setName": "虚蚀套",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "enemy",
+            "effectType": "mark",
+            "params": {
+                "operation": "consume",
+                "markId": "void_erosion",
+                "consumeMode": "all",
+                "value": 40,
+                "perStackRate": 0.34,
+                "resultType": "damage"
+            }
+        })];
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-trigger-set-mark",
+                "name": "引套诀",
+                "description": "触发 on_skill 套装印记",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "mark",
+                    "operation": "apply",
+                    "markId": "ember_brand",
+                    "applyStacks": 1,
+                    "maxStacks": 5,
+                    "duration": 2
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-trigger-set-mark",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("skill should trigger on_skill set mark consume");
+
+        let target = &state.teams.defender.units[0];
+        assert_eq!(target.qixue, 960);
+        assert!(
+            target
+                .marks
+                .iter()
+                .all(|mark| mark.get("id").and_then(serde_json::Value::as_str)
+                    != Some("void_erosion"))
+        );
+        assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 40);
+        let proc_log = logs
+            .iter()
+            .find(|log| log["skillId"] == "proc-set-mark-skill-path-on_skill")
+            .expect("on_skill set bonus log should be emitted");
+        assert_eq!(proc_log["targets"][0]["targetId"], target_id);
+        assert_eq!(proc_log["targets"][0]["damage"], 40);
+        assert_eq!(proc_log["targets"][0]["hits"][0]["damage"], 40);
+        assert_eq!(
+            proc_log["targets"][0]["marksConsumed"][0],
             "虚蚀印记消耗3层（剩余0层，引爆）"
         );
     }
