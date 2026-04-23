@@ -4938,10 +4938,6 @@ fn build_partner_computed_attrs(
     }
 }
 
-fn ratio_attr_to_i64(value: f64) -> i64 {
-    if value.is_finite() { value as i64 } else { 0 }
-}
-
 fn partner_computed_attrs_to_battle_attrs(
     attrs: &PartnerComputedAttrsDto,
     element: String,
@@ -4973,8 +4969,8 @@ fn partner_computed_attrs_to_battle_attrs(
         shui_kangxing: attrs.shui_kangxing,
         huo_kangxing: attrs.huo_kangxing,
         tu_kangxing: attrs.tu_kangxing,
-        qixue_huifu: ratio_attr_to_i64(attrs.qixue_huifu),
-        lingqi_huifu: ratio_attr_to_i64(attrs.lingqi_huifu),
+        qixue_huifu: attrs.qixue_huifu,
+        lingqi_huifu: attrs.lingqi_huifu,
         realm: None,
         element: Some(if element.trim().is_empty() {
             "none".to_string()

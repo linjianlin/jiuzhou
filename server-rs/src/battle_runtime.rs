@@ -126,8 +126,8 @@ pub struct BattleUnitCurrentAttrsDto {
     pub shui_kangxing: f64,
     pub huo_kangxing: f64,
     pub tu_kangxing: f64,
-    pub qixue_huifu: i64,
-    pub lingqi_huifu: i64,
+    pub qixue_huifu: f64,
+    pub lingqi_huifu: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub realm: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -478,8 +478,8 @@ fn build_battle_attrs(
         shui_kangxing: 0.0,
         huo_kangxing: 0.0,
         tu_kangxing: 0.0,
-        qixue_huifu: 0,
-        lingqi_huifu: 0,
+        qixue_huifu: 0.0,
+        lingqi_huifu: 0.0,
         realm,
         element: Some("none".to_string()),
     }
@@ -508,10 +508,6 @@ fn json_number_to_f64(value: Option<&serde_json::Value>) -> Option<f64> {
 
 fn json_number_to_f64_or_zero(value: Option<&serde_json::Value>) -> f64 {
     json_number_to_f64(value).unwrap_or_default().max(0.0)
-}
-
-fn json_number_to_i64_round_or_zero(value: Option<&serde_json::Value>) -> i64 {
-    json_number_to_i64_round(value).unwrap_or_default()
 }
 
 fn apply_runtime_rate_bonus(base_value: i64, bonus_rate: f64) -> i64 {
@@ -614,8 +610,8 @@ fn battle_attrs_from_json(base_attrs: &serde_json::Value) -> Option<BattleUnitCu
         shui_kangxing: json_number_to_f64_or_zero(object.get("shui_kangxing")),
         huo_kangxing: json_number_to_f64_or_zero(object.get("huo_kangxing")),
         tu_kangxing: json_number_to_f64_or_zero(object.get("tu_kangxing")),
-        qixue_huifu: json_number_to_i64_round_or_zero(object.get("qixue_huifu")).max(0),
-        lingqi_huifu: json_number_to_i64_round_or_zero(object.get("lingqi_huifu")).max(0),
+        qixue_huifu: json_number_to_f64_or_zero(object.get("qixue_huifu")),
+        lingqi_huifu: json_number_to_f64_or_zero(object.get("lingqi_huifu")),
         realm: object
             .get("realm")
             .and_then(serde_json::Value::as_str)
@@ -704,27 +700,6 @@ fn build_runtime_summon_unit(
     }
 }
 
-fn value_to_i64(raw: Option<serde_json::Value>, default_value: i64) -> i64 {
-    match raw {
-        Some(serde_json::Value::Number(number)) => {
-            if let Some(value) = number.as_i64() {
-                value
-            } else if let Some(value) = number.as_f64() {
-                value.round() as i64
-            } else {
-                default_value
-            }
-        }
-        Some(serde_json::Value::String(text)) => text
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .map(|v| v.round() as i64)
-            .unwrap_or(default_value),
-        _ => default_value,
-    }
-}
-
 fn value_to_f64(raw: Option<serde_json::Value>, default_value: f64) -> f64 {
     match raw {
         Some(serde_json::Value::Number(number)) => number.as_f64().unwrap_or(default_value),
@@ -800,8 +775,8 @@ fn build_monster_battle_attrs(seed: &MonsterSeed) -> BattleUnitCurrentAttrsDto {
         shui_kangxing: value_to_f64(base_attrs.shui_kangxing, 0.0),
         huo_kangxing: value_to_f64(base_attrs.huo_kangxing, 0.0),
         tu_kangxing: value_to_f64(base_attrs.tu_kangxing, 0.0),
-        qixue_huifu: value_to_i64(base_attrs.qixue_huifu, 0),
-        lingqi_huifu: value_to_i64(base_attrs.lingqi_huifu, 0),
+        qixue_huifu: value_to_f64(base_attrs.qixue_huifu, 0.0),
+        lingqi_huifu: value_to_f64(base_attrs.lingqi_huifu, 0.0),
         realm: seed.level.map(|level| format!("Lv.{level}")),
         element: Some(seed.element.clone().unwrap_or_else(|| "none".to_string())),
     }
@@ -1882,13 +1857,15 @@ pub fn restart_battle_runtime(state: &mut BattleStateDto) -> Vec<serde_json::Val
 }
 
 fn recover_unit_resources_for_round_start(unit: &mut BattleUnitDto) {
-    let qixue_regen = unit.current_attrs.qixue_huifu.max(0);
-    if qixue_regen > 0 {
-        unit.qixue = (unit.qixue + qixue_regen).min(unit.current_attrs.max_qixue.max(1));
+    let qixue_regen = unit.current_attrs.qixue_huifu.max(0.0);
+    if qixue_regen > 0.0 {
+        let next_qixue = ((unit.qixue as f64) + qixue_regen).floor() as i64;
+        unit.qixue = next_qixue.min(unit.current_attrs.max_qixue.max(1));
     }
-    let lingqi_regen = unit.current_attrs.lingqi_huifu.max(0);
-    if lingqi_regen > 0 {
-        unit.lingqi = (unit.lingqi + lingqi_regen).min(unit.current_attrs.max_lingqi.max(0));
+    let lingqi_regen = unit.current_attrs.lingqi_huifu.max(0.0);
+    if lingqi_regen > 0.0 {
+        let next_lingqi = ((unit.lingqi as f64) + lingqi_regen).floor() as i64;
+        unit.lingqi = next_lingqi.min(unit.current_attrs.max_lingqi.max(0));
     }
 }
 
@@ -2393,8 +2370,8 @@ fn battle_attr_value_i64(attrs: &BattleUnitCurrentAttrsDto, attr: &str) -> i64 {
         "wufang" => attrs.wufang,
         "fafang" => attrs.fafang,
         "sudu" => attrs.sudu,
-        "qixue_huifu" => attrs.qixue_huifu,
-        "lingqi_huifu" => attrs.lingqi_huifu,
+        "qixue_huifu" => attrs.qixue_huifu.round() as i64,
+        "lingqi_huifu" => attrs.lingqi_huifu.round() as i64,
         _ => battle_attr_value_f64(attrs, attr).round() as i64,
     }
 }
@@ -2427,8 +2404,8 @@ fn battle_attr_value_f64(attrs: &BattleUnitCurrentAttrsDto, attr: &str) -> f64 {
         "shui_kangxing" => attrs.shui_kangxing,
         "huo_kangxing" => attrs.huo_kangxing,
         "tu_kangxing" => attrs.tu_kangxing,
-        "qixue_huifu" => attrs.qixue_huifu as f64,
-        "lingqi_huifu" => attrs.lingqi_huifu as f64,
+        "qixue_huifu" => attrs.qixue_huifu,
+        "lingqi_huifu" => attrs.lingqi_huifu,
         _ => 0.0,
     }
 }
@@ -3666,8 +3643,8 @@ fn apply_attr_value(attrs: &mut BattleUnitCurrentAttrsDto, attr: &str, value: f6
         "wufang" => attrs.wufang = value.round() as i64,
         "fafang" => attrs.fafang = value.round() as i64,
         "sudu" => attrs.sudu = (value.round() as i64).max(0),
-        "qixue_huifu" => attrs.qixue_huifu = (value.round() as i64).max(0),
-        "lingqi_huifu" => attrs.lingqi_huifu = (value.round() as i64).max(0),
+        "qixue_huifu" => attrs.qixue_huifu = value.max(0.0),
+        "lingqi_huifu" => attrs.lingqi_huifu = value.max(0.0),
         "mingzhong" => attrs.mingzhong = value,
         "shanbi" => attrs.shanbi = value,
         "zhaojia" => attrs.zhaojia = value,
@@ -6457,8 +6434,8 @@ mod tests {
                 shui_kangxing: Some(serde_json::json!(0.03)),
                 huo_kangxing: Some(serde_json::json!(0.04)),
                 tu_kangxing: Some(serde_json::json!(0.05)),
-                qixue_huifu: Some(serde_json::json!(2)),
-                lingqi_huifu: Some(serde_json::json!(3)),
+                qixue_huifu: Some(serde_json::json!(2.25)),
+                lingqi_huifu: Some(serde_json::json!(3.15)),
             }),
             ai_profile: None,
             drop_pool_id: None,
@@ -6473,6 +6450,8 @@ mod tests {
         assert_rate_close(attrs.baoshang as f64, 1.5);
         assert_rate_close(attrs.zengshang as f64, 0.11);
         assert_rate_close(attrs.kongzhi_kangxing as f64, 0.13);
+        assert_rate_close(attrs.qixue_huifu as f64, 2.25);
+        assert_rate_close(attrs.lingqi_huifu as f64, 3.15);
     }
 
     #[test]
@@ -6500,6 +6479,28 @@ mod tests {
         assert_rate_close(attrs.kongzhi_kangxing, 0.0);
         assert_rate_close(attrs.jin_kangxing, 0.0);
         assert_rate_close(attrs.tu_kangxing, 0.0);
+        assert_rate_close(attrs.qixue_huifu, 0.0);
+        assert_rate_close(attrs.lingqi_huifu, 0.0);
+    }
+
+    #[test]
+    fn battle_attrs_from_json_preserves_fractional_recovery_attrs() {
+        let base_attrs = serde_json::json!({
+            "max_qixue": 180,
+            "max_lingqi": 100,
+            "wugong": 32,
+            "fagong": 0,
+            "wufang": 12,
+            "fafang": 8,
+            "sudu": 10,
+            "qixue_huifu": 0.2,
+            "lingqi_huifu": 0.15
+        });
+
+        let attrs = super::battle_attrs_from_json(&base_attrs).expect("attrs should parse");
+
+        assert_rate_close(attrs.qixue_huifu, 0.2);
+        assert_rate_close(attrs.lingqi_huifu, 0.15);
     }
 
     #[test]
@@ -7760,8 +7761,8 @@ mod tests {
             shui_kangxing: 0.0,
             huo_kangxing: 0.0,
             tu_kangxing: 0.0,
-            qixue_huifu: 0,
-            lingqi_huifu: 0,
+            qixue_huifu: 0.0,
+            lingqi_huifu: 0.0,
             realm: Some("凡人".to_string()),
             element: Some("none".to_string()),
         };
@@ -7993,8 +7994,8 @@ mod tests {
                 shui_kangxing: 0.0,
                 huo_kangxing: 0.0,
                 tu_kangxing: 0.0,
-                qixue_huifu: 0,
-                lingqi_huifu: 0,
+                qixue_huifu: 0.0,
+                lingqi_huifu: 0.0,
                 realm: None,
                 element: Some("none".to_string()),
             },
@@ -9607,8 +9608,8 @@ mod tests {
                 shui_kangxing: 0.0,
                 huo_kangxing: 0.0,
                 tu_kangxing: 0.0,
-                qixue_huifu: 0,
-                lingqi_huifu: 0,
+                qixue_huifu: 0.0,
+                lingqi_huifu: 0.0,
                 realm: Some("炼精化炁·养气期".to_string()),
                 element: Some("wood".to_string()),
             },
