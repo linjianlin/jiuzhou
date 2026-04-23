@@ -182,6 +182,7 @@ struct RuntimeResolvedTargetLog {
     damage: i64,
     heal: i64,
     shield: i64,
+    resources: Vec<serde_json::Value>,
     buffs_applied: Vec<String>,
     is_miss: bool,
     is_crit: bool,
@@ -2480,11 +2481,24 @@ fn effect_target_mode(
                 }
             }
             "debuff" => "enemy",
-            "heal" | "shield" | "restore_lingqi" | "resource" => {
+            "heal" | "shield" | "restore_lingqi" => {
                 if matches!(
                     skill_target_type,
                     "single_enemy" | "all_enemy" | "random_enemy"
                 ) {
+                    "self"
+                } else {
+                    "target"
+                }
+            }
+            "resource" => {
+                let value = json_number_to_f64(effect.get("value")).unwrap_or_default();
+                if value > 0.0
+                    && matches!(
+                        skill_target_type,
+                        "single_enemy" | "all_enemy" | "random_enemy"
+                    )
+                {
                     "self"
                 } else {
                     "target"
@@ -2635,6 +2649,7 @@ fn get_or_create_target_log<'a>(
         damage: 0,
         heal: 0,
         shield: 0,
+        resources: Vec::new(),
         buffs_applied: Vec::new(),
         is_miss: false,
         is_crit: false,
@@ -2645,6 +2660,20 @@ fn get_or_create_target_log<'a>(
         momentum_consumed: Vec::new(),
     });
     target_logs.last_mut().expect("target log just pushed")
+}
+
+fn push_runtime_resource_log(
+    target_log: &mut RuntimeResolvedTargetLog,
+    resource_type: &str,
+    amount: i64,
+) {
+    if amount <= 0 {
+        return;
+    }
+    target_log.resources.push(serde_json::json!({
+        "type": resource_type,
+        "amount": amount,
+    }));
 }
 
 fn runtime_momentum_state(
@@ -3002,6 +3031,7 @@ fn process_runtime_set_bonus_turn_start_effects(
                 if heal > 0 && unit.is_alive {
                     let actual = apply_runtime_healing(unit, heal);
                     if actual > 0 {
+                        unit.stats.healing_done += actual;
                         logs.push(build_hot_log(
                             round,
                             unit_id,
@@ -3030,7 +3060,20 @@ fn process_runtime_set_bonus_turn_start_effects(
                     .unwrap_or("lingqi");
                 if resource_type == "qixue" {
                     if value > 0 {
-                        apply_runtime_healing(unit, value);
+                        let actual = apply_runtime_healing(unit, value);
+                        if actual > 0 {
+                            unit.stats.healing_done += actual;
+                            logs.push(build_hot_log(
+                                round,
+                                unit_id,
+                                unit_name.as_str(),
+                                effect
+                                    .get("setName")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("套装效果"),
+                                actual,
+                            ));
+                        }
                     } else {
                         unit.qixue =
                             (unit.qixue + value).clamp(0, unit.current_attrs.max_qixue.max(1));
@@ -3041,8 +3084,47 @@ fn process_runtime_set_bonus_turn_start_effects(
                     } else {
                         value
                     };
+                    let before = unit.lingqi;
                     unit.lingqi = (unit.lingqi + adjusted_value)
                         .clamp(0, unit.current_attrs.max_lingqi.max(0));
+                    let gain = (unit.lingqi - before).max(0);
+                    if gain > 0 {
+                        logs.push(build_runtime_action_log(
+                            round,
+                            unit_id,
+                            unit_name.as_str(),
+                            &format!(
+                                "proc-{}-on_turn_start",
+                                effect
+                                    .get("setId")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or("set")
+                            ),
+                            effect
+                                .get("setName")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("套装效果"),
+                            &[RuntimeResolvedTargetLog {
+                                target_id: unit_id.to_string(),
+                                target_name: unit_name.clone(),
+                                damage: 0,
+                                heal: 0,
+                                shield: 0,
+                                resources: vec![serde_json::json!({
+                                    "type": "lingqi",
+                                    "amount": gain,
+                                })],
+                                buffs_applied: Vec::new(),
+                                is_miss: false,
+                                is_crit: false,
+                                is_parry: false,
+                                is_element_bonus: false,
+                                shield_absorbed: 0,
+                                momentum_gained: Vec::new(),
+                                momentum_consumed: Vec::new(),
+                            }],
+                        ));
+                    }
                 }
             }
             "buff" => {
@@ -3084,6 +3166,69 @@ fn process_runtime_set_bonus_turn_start_effects(
             _ => {}
         }
     }
+}
+
+fn apply_runtime_set_bonus_buff_or_debuff(
+    target: &mut BattleUnitDto,
+    owner_id: &str,
+    effect: &serde_json::Value,
+    effect_type: &str,
+    params: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    let attr_key = params
+        .get("attr_key")
+        .or_else(|| params.get("attrKey"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let apply_type = params
+        .get("apply_type")
+        .or_else(|| params.get("applyType"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("flat");
+    let value = params
+        .get("value")
+        .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|v| v as f64)))
+        .unwrap_or_default();
+    if attr_key.is_empty() || value == 0.0 {
+        return None;
+    }
+    let set_id = effect
+        .get("setId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("set");
+    let set_name = effect
+        .get("setName")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("套装效果");
+    let duration = effect
+        .get("durationRound")
+        .or_else(|| params.get("duration_round"))
+        .and_then(|value| json_number_to_i64_floor(Some(value)))
+        .unwrap_or(1)
+        .max(1);
+    let is_debuff = effect_type == "debuff";
+    let modifier_value = if is_debuff { -value.abs() } else { value };
+    target.buffs.push(serde_json::json!({
+        "id": format!("set-buff-{}-{}-{}", target.id, set_id, attr_key),
+        "buffDefId": format!("set-buff-{}", attr_key),
+        "name": set_name,
+        "type": if is_debuff { "debuff" } else { "buff" },
+        "category": "set_bonus",
+        "sourceUnitId": owner_id,
+        "remainingDuration": duration,
+        "stacks": 1,
+        "maxStacks": 1,
+        "attrModifiers": [{
+            "attr": attr_key,
+            "value": modifier_value,
+            "mode": apply_type,
+        }],
+        "tags": ["set_bonus"],
+        "dispellable": true,
+    }));
+    apply_runtime_attr_buffs(target);
+    Some(set_name.to_string())
 }
 
 fn process_runtime_set_bonus_trigger(
@@ -3173,6 +3318,7 @@ fn process_runtime_set_bonus_trigger(
                         damage: actual_damage,
                         heal: 0,
                         shield: 0,
+                        resources: Vec::new(),
                         buffs_applied: Vec::new(),
                         is_miss: false,
                         is_crit: false,
@@ -3208,6 +3354,56 @@ fn process_runtime_set_bonus_trigger(
                         "priority": 0,
                     }));
                 }
+            }
+            "buff" | "debuff" => {
+                let applied_name = {
+                    let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
+                        continue;
+                    };
+                    apply_runtime_set_bonus_buff_or_debuff(
+                        target,
+                        owner_id,
+                        &effect,
+                        effect_type,
+                        &params,
+                    )
+                };
+                let Some(applied_name) = applied_name else {
+                    continue;
+                };
+                logs.push(build_runtime_action_log(
+                    round,
+                    owner_id,
+                    owner.name.as_str(),
+                    &format!(
+                        "proc-{}-{}",
+                        effect
+                            .get("setId")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("set"),
+                        trigger
+                    ),
+                    effect
+                        .get("setName")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("套装效果"),
+                    &[RuntimeResolvedTargetLog {
+                        target_id: resolved_target_id.to_string(),
+                        target_name: target_snapshot.name,
+                        damage: 0,
+                        heal: 0,
+                        shield: 0,
+                        resources: Vec::new(),
+                        buffs_applied: vec![applied_name],
+                        is_miss: false,
+                        is_crit: false,
+                        is_parry: false,
+                        is_element_bonus: false,
+                        shield_absorbed: 0,
+                        momentum_gained: Vec::new(),
+                        momentum_consumed: Vec::new(),
+                    }],
+                ));
             }
             _ => {}
         }
@@ -4387,6 +4583,7 @@ fn process_runtime_phase_triggers_before_action(
                     damage: 0,
                     heal: 0,
                     shield: 0,
+                    resources: Vec::new(),
                     buffs_applied,
                     is_miss: false,
                     is_crit: false,
@@ -4450,6 +4647,7 @@ fn process_runtime_phase_triggers_before_action(
                     damage: 0,
                     heal: 0,
                     shield: 0,
+                    resources: Vec::new(),
                     buffs_applied: Vec::new(),
                     is_miss: false,
                     is_crit: false,
@@ -4674,6 +4872,12 @@ fn build_runtime_action_log(
                 }
                 if target.shield > 0 {
                     object.insert("shield".to_string(), serde_json::json!(target.shield));
+                }
+                if !target.resources.is_empty() {
+                    object.insert(
+                        "resources".to_string(),
+                        serde_json::json!(target.resources),
+                    );
                 }
                 if !target.buffs_applied.is_empty() {
                     object.insert(
@@ -4934,6 +5138,7 @@ fn execute_runtime_skill_action(
             damage: actual_damage,
             heal: 0,
             shield: 0,
+            resources: Vec::new(),
             buffs_applied: Vec::new(),
             is_miss: damage_outcome.is_miss,
             is_crit: damage_outcome.is_crit,
@@ -5058,6 +5263,7 @@ fn execute_runtime_skill_action(
                             apply_runtime_recovery_reduction(restore_value, target);
                         target.lingqi = (target.lingqi + effective_restore)
                             .min(target.current_attrs.max_lingqi.max(0));
+                        push_runtime_resource_log(log_entry, "lingqi", effective_restore);
                     }
                 }
                 "resource" => {
@@ -5079,11 +5285,13 @@ fn execute_runtime_skill_action(
                         .ok_or_else(|| "没有有效目标".to_string())?;
                     if resource_type == "qixue" {
                         if adjusted_delta > 0 {
-                            apply_runtime_healing(target, adjusted_delta);
+                            target.qixue = (target.qixue + adjusted_delta)
+                                .min(target.current_attrs.max_qixue.max(1));
                         } else {
                             target.qixue = (target.qixue + adjusted_delta)
                                 .clamp(0, target.current_attrs.max_qixue.max(1));
                         }
+                        push_runtime_resource_log(log_entry, "qixue", adjusted_delta.abs());
                     } else {
                         let effective_delta = if adjusted_delta > 0 {
                             apply_runtime_recovery_reduction(adjusted_delta, target)
@@ -5092,6 +5300,7 @@ fn execute_runtime_skill_action(
                         };
                         target.lingqi = (target.lingqi + effective_delta)
                             .clamp(0, target.current_attrs.max_lingqi.max(0));
+                        push_runtime_resource_log(log_entry, "lingqi", effective_delta.abs());
                     }
                 }
                 "shield" => {
@@ -7140,6 +7349,155 @@ mod tests {
     }
 
     #[test]
+    fn runtime_resource_qixue_does_not_use_healing_modifiers_or_soul_shackle() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-resource-qixue-not-heal",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let caster = &mut state.teams.attacker.units[0];
+        caster.qixue = 10;
+        caster.current_attrs.max_qixue = 200;
+        caster.current_attrs.jianliao = 0.5;
+        caster.buffs.push(serde_json::json!({
+            "id": "forbidden-heal",
+            "healForbidden": true
+        }));
+        caster.marks.push(serde_json::json!({
+            "id": "soul_shackle",
+            "sourceUnitId": "monster-1-monster-gray-wolf",
+            "stacks": 2,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-resource-qixue",
+            "name": "血元归复",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "resource", "resourceType": "qixue", "value": 100}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-resource-qixue",
+            &[],
+        )
+        .expect("resource qixue action should succeed");
+
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.qixue, 110);
+        assert_eq!(caster.stats.healing_done, 0);
+        assert_eq!(caster.stats.healing_received, 0);
+        assert!(logs[0]["targets"][0].get("heal").is_none());
+        assert_eq!(
+            logs[0]["targets"][0]["resources"],
+            serde_json::json!([{"type": "qixue", "amount": 100}])
+        );
+    }
+
+    #[test]
+    fn runtime_negative_resource_defaults_to_current_target() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-negative-resource-target",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.attacker.units[0].lingqi = 50;
+        state.teams.attacker.units[0].skills = vec![serde_json::json!({
+            "id": "skill-drain-lingqi",
+            "name": "断灵指",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "single_enemy",
+            "damageType": "magic",
+            "effects": [
+                {"type": "resource", "resourceType": "lingqi", "value": -12}
+            ]
+        })];
+        state.teams.defender.units[0].lingqi = 30;
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-drain-lingqi",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("negative resource action should succeed");
+
+        assert_eq!(state.teams.attacker.units[0].lingqi, 50);
+        assert_eq!(state.teams.defender.units[0].lingqi, 18);
+        assert_eq!(logs[0]["targets"][0]["targetId"], target_id);
+        assert_eq!(
+            logs[0]["targets"][0]["resources"],
+            serde_json::json!([{"type": "lingqi", "amount": 12}])
+        );
+    }
+
+    #[test]
+    fn set_bonus_on_heal_applies_buff() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-on-heal-buff",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let base_wugong = state.teams.attacker.units[0].base_attrs.wugong;
+        let caster = &mut state.teams.attacker.units[0];
+        caster.qixue = 40;
+        caster.current_attrs.max_qixue = 300;
+        caster.set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-heal-buff",
+            "setName": "回春战意",
+            "pieceCount": 2,
+            "trigger": "on_heal",
+            "target": "self",
+            "effectType": "buff",
+            "durationRound": 2,
+            "params": {
+                "attr_key": "wugong",
+                "value": 5,
+                "apply_type": "flat"
+            }
+        })];
+        caster.skills = vec![serde_json::json!({
+            "id": "skill-heal-proc-buff",
+            "name": "回春引",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "self",
+            "damageType": "magic",
+            "effects": [
+                {"type": "heal", "value": 50, "valueType": "flat"}
+            ]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-heal-proc-buff",
+            &[],
+        )
+        .expect("heal should trigger set bonus buff");
+
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.current_attrs.wugong, base_wugong + 5);
+        assert!(caster.buffs.iter().any(|buff| {
+            buff.get("category").and_then(serde_json::Value::as_str) == Some("set_bonus")
+                && buff.get("name").and_then(serde_json::Value::as_str) == Some("回春战意")
+        }));
+        assert!(logs.iter().any(|log| {
+            log["skillId"] == "proc-set-heal-buff-on_heal"
+                && log["targets"][0]["buffsApplied"][0] == "回春战意"
+        }));
+    }
+
+    #[test]
     fn minimal_pve_delayed_burst_effect_applies_and_explodes() {
         let mut state = build_minimal_pve_battle_state(
             "pve-battle-delayed-burst",
@@ -8369,6 +8727,8 @@ mod tests {
         process_round_start(&mut state, &mut logs);
 
         assert_eq!(state.teams.attacker.units[0].qixue, 80);
+        assert_eq!(state.teams.attacker.units[0].stats.healing_done, 20);
+        assert_eq!(state.teams.attacker.units[0].stats.healing_received, 20);
         assert!(logs.iter().any(|log| log["type"] == "hot"));
     }
 
@@ -9357,6 +9717,7 @@ mod tests {
                 damage: 12,
                 heal: 0,
                 shield: 0,
+                resources: Vec::new(),
                 buffs_applied: Vec::new(),
                 is_miss: false,
                 is_crit: true,
@@ -9380,6 +9741,7 @@ mod tests {
         assert_eq!(target["momentumGained"][0], "moon_trace");
         assert!(target.get("heal").is_none());
         assert!(target.get("shield").is_none());
+        assert!(target.get("resources").is_none());
         assert!(target.get("buffsApplied").is_none());
         assert!(target.get("momentumConsumed").is_none());
     }
