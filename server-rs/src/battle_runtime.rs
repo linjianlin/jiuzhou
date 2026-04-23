@@ -3693,13 +3693,8 @@ fn next_runtime_random(state: &mut BattleStateDto) -> f64 {
 }
 
 fn roll_runtime_chance(state: &mut BattleStateDto, chance: f64) -> bool {
-    if chance <= 0.0 {
-        return false;
-    }
-    if chance >= 1.0 {
-        return true;
-    }
-    next_runtime_random(state) < chance
+    let clamped_chance = chance.clamp(0.0, 1.0);
+    next_runtime_random(state) < clamped_chance
 }
 
 fn is_supported_runtime_control(control_type: &str) -> bool {
@@ -6474,6 +6469,22 @@ mod tests {
             ]
         );
         assert_eq!(state.random_index, 7);
+    }
+
+    #[test]
+    fn runtime_roll_chance_consumes_random_at_clamped_bounds() {
+        let mut state = build_minimal_pve_battle_state(
+            "roll-chance-bounds",
+            1,
+            &["monster-wild-rabbit".to_string()],
+        );
+        state.random_seed = 123456;
+        state.random_index = 0;
+
+        assert!(!super::roll_runtime_chance(&mut state, -0.5));
+        assert_eq!(state.random_index, 1);
+        assert!(super::roll_runtime_chance(&mut state, 1.5));
+        assert_eq!(state.random_index, 2);
     }
 
     #[test]
