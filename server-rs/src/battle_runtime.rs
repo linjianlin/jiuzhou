@@ -1892,12 +1892,16 @@ fn process_round_start(state: &mut BattleStateDto, logs: &mut Vec<serde_json::Va
         decay_runtime_marks_at_round_start(unit);
         let unit_id = unit.id.clone();
         process_unit_round_start_effects(state, unit_id.as_str(), logs);
+        if !unit_by_id(state, unit_id.as_str())
+            .map(|unit| unit.is_alive)
+            .unwrap_or(false)
+        {
+            continue;
+        }
         process_runtime_aura_effects_at_round_start(state, unit_id.as_str(), logs);
         process_runtime_set_bonus_turn_start_effects(state, unit_id.as_str(), logs);
         if let Some(unit) = unit_by_id_mut(state, unit_id.as_str()) {
-            if unit.is_alive {
-                recover_unit_resources_for_round_start(unit);
-            }
+            recover_unit_resources_for_round_start(unit);
         }
     }
     refresh_battle_team_total_speed(state);
@@ -8255,6 +8259,144 @@ mod tests {
             "Node order kills the unit before qixue_huifu can recover"
         );
         assert_eq!(attacker.qixue, 0);
+    }
+
+    #[test]
+    fn round_start_skips_aura_set_bonus_and_recovery_after_dot_death() {
+        let mut state = build_minimal_pve_battle_state(
+            "round-order-dot-death-skip-followups",
+            1,
+            &["monster-wild-rabbit".to_string()],
+        );
+        let mut ally = state.teams.attacker.units[0].clone();
+        ally.id = "player-2".to_string();
+        ally.name = "队友".to_string();
+        ally.qixue = 100;
+        ally.shields.clear();
+        ally.buffs.clear();
+        ally.marks.clear();
+        ally.momentum = None;
+        ally.skills.clear();
+        ally.skill_cooldowns.clear();
+        ally.skill_cooldown_discount_bank.clear();
+        ally.control_diminishing.clear();
+        ally.triggered_phase_ids.clear();
+        ally.stats = super::BattleUnitStatsDto {
+            damage_dealt: 0,
+            damage_taken: 0,
+            healing_done: 0,
+            healing_received: 0,
+            kill_count: 0,
+        };
+        state.teams.attacker.units.push(ally);
+
+        let attacker = state
+            .teams
+            .attacker
+            .units
+            .first_mut()
+            .expect("attacker exists");
+        attacker.qixue = 5;
+        attacker.current_attrs.max_qixue = 100;
+        attacker.base_attrs.max_qixue = 100;
+        attacker.current_attrs.qixue_huifu = 10.0;
+        attacker.base_attrs.qixue_huifu = 10.0;
+        attacker.buffs.push(serde_json::json!({
+            "id": "dot-test",
+            "buffDefId": "dot-test",
+            "name": "流血",
+            "type": "debuff",
+            "category": "runtime",
+            "sourceUnitId": "monster-1-monster-wild-rabbit",
+            "remainingDuration": 2,
+            "stacks": 1,
+            "maxStacks": 1,
+            "dot": {
+                "damage": 8,
+                "damageType": "true"
+            },
+            "tags": ["dot"],
+            "dispellable": true
+        }));
+        attacker.buffs.push(serde_json::json!({
+            "id": "aura-host",
+            "buffDefId": "aura-host",
+            "name": "灵压光环",
+            "type": "buff",
+            "category": "skill",
+            "sourceUnitId": "player-1",
+            "remainingDuration": -1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "aura": {
+                "auraTarget": "all_ally",
+                "effects": [{
+                    "type": "buff",
+                    "buffDefId": "aura-sub-wugong",
+                    "attrModifiers": [{"attr": "wugong", "value": 10, "mode": "flat"}],
+                    "duration": 1
+                }],
+                "damageType": "physical",
+                "element": "none"
+            },
+            "tags": [],
+            "dispellable": false
+        }));
+        attacker.set_bonus_effects = vec![
+            serde_json::json!({
+                "setId": "set-resource-test",
+                "setName": "资源套装",
+                "pieceCount": 2,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "resource",
+                "params": {
+                    "resource_type": "qixue",
+                    "value": 30
+                }
+            }),
+            serde_json::json!({
+                "setId": "set-buff-test",
+                "setName": "增益套装",
+                "pieceCount": 2,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "buff",
+                "params": {
+                    "attr_key": "wugong",
+                    "value": 6,
+                    "apply_type": "flat"
+                }
+            }),
+        ];
+        state.round_count = 2;
+
+        let mut logs = Vec::new();
+        process_round_start(&mut state, &mut logs);
+
+        let attacker = state
+            .teams
+            .attacker
+            .units
+            .iter()
+            .find(|unit| unit.id == "player-1")
+            .expect("attacker exists");
+        assert!(!attacker.is_alive);
+        assert_eq!(attacker.qixue, 0);
+        assert!(!attacker.buffs.iter().any(|buff| {
+            buff.get("category").and_then(serde_json::Value::as_str) == Some("set_bonus")
+        }));
+
+        let ally = state
+            .teams
+            .attacker
+            .units
+            .iter()
+            .find(|unit| unit.id == "player-2")
+            .expect("ally exists");
+        assert!(!ally.buffs.iter().any(|buff| {
+            buff.get("category").and_then(serde_json::Value::as_str) == Some("aura")
+        }));
     }
 
     #[test]
