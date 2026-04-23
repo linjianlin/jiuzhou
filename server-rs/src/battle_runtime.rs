@@ -2215,13 +2215,15 @@ fn alive_unit_ids(state: &BattleStateDto, team: &str) -> Vec<String> {
 
 fn random_alive_unit_ids(state: &mut BattleStateDto, team: &str, count: usize) -> Vec<String> {
     let mut candidates = alive_unit_ids(state, team);
-    let mut selected = Vec::new();
-    while !candidates.is_empty() && selected.len() < count {
-        let roll = next_runtime_random(state);
-        let index = ((roll * candidates.len() as f64).floor() as usize).min(candidates.len() - 1);
-        selected.push(candidates.remove(index));
+    if candidates.len() <= count {
+        return candidates;
     }
-    selected
+    for i in (1..candidates.len()).rev() {
+        let roll = next_runtime_random(state);
+        let j = ((roll * ((i + 1) as f64)).floor() as usize).min(i);
+        candidates.swap(i, j);
+    }
+    candidates.into_iter().take(count).collect()
 }
 
 fn taunt_locked_target_id(
@@ -3681,13 +3683,13 @@ fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
 }
 
 fn next_runtime_random(state: &mut BattleStateDto) -> f64 {
-    let mut seed = (state.random_seed as u64)
-        .wrapping_add((state.random_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let seed = state.random_seed.wrapping_add(state.random_index) as u32;
     state.random_index += 1;
-    seed = (seed ^ (seed >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    seed = (seed ^ (seed >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    seed ^= seed >> 31;
-    ((seed >> 11) as f64) / ((u64::MAX >> 11) as f64)
+
+    let mut t = seed.wrapping_add(0x6D2B_79F5);
+    t = (t ^ (t >> 15)).wrapping_mul(t | 1);
+    t ^= t.wrapping_add((t ^ (t >> 7)).wrapping_mul(t | 61));
+    ((t ^ (t >> 14)) as f64) / 4_294_967_296.0
 }
 
 fn roll_runtime_chance(state: &mut BattleStateDto, chance: f64) -> bool {
@@ -6392,6 +6394,64 @@ mod tests {
             (actual - expected).abs() < 0.000_001,
             "expected {actual} to equal {expected}"
         );
+    }
+
+    #[test]
+    fn runtime_random_matches_node_mulberry32_sequence() {
+        let mut state = build_minimal_pve_battle_state(
+            "rng-sequence",
+            1,
+            &["monster-wild-rabbit".to_string()],
+        );
+        state.random_seed = 123456;
+        state.random_index = 0;
+
+        let rolls = vec![
+            super::next_runtime_random(&mut state),
+            super::next_runtime_random(&mut state),
+            super::next_runtime_random(&mut state),
+            super::next_runtime_random(&mut state),
+        ];
+
+        let expected = vec![
+            0.38233304349705577,
+            0.39825971820391715,
+            0.8622671910561621,
+            0.9009416962508112,
+        ];
+        for (actual, expected) in rolls.into_iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() < 0.000_000_000_001,
+                "expected {actual} to equal {expected}"
+            );
+        }
+        assert_eq!(state.random_index, 4);
+    }
+
+    #[test]
+    fn runtime_random_alive_unit_ids_uses_node_shuffle_order() {
+        let mut state = build_minimal_pve_battle_state(
+            "random-targets",
+            1,
+            &[
+                "monster-wild-rabbit".to_string(),
+                "monster-wild-boar".to_string(),
+                "monster-gray-wolf".to_string(),
+            ],
+        );
+        state.random_seed = 123456;
+        state.random_index = 0;
+
+        let selected = super::random_alive_unit_ids(&mut state, "defender", 2);
+
+        assert_eq!(
+            selected,
+            vec![
+                "monster-2-monster-wild-boar".to_string(),
+                "monster-3-monster-gray-wolf".to_string(),
+            ]
+        );
+        assert_eq!(state.random_index, 2);
     }
 
     #[test]
