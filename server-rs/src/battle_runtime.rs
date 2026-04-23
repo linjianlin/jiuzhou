@@ -1890,11 +1890,15 @@ fn process_round_start(state: &mut BattleStateDto, logs: &mut Vec<serde_json::Va
         }
         unit.can_act = true;
         decay_runtime_marks_at_round_start(unit);
-        recover_unit_resources_for_round_start(unit);
         let unit_id = unit.id.clone();
         process_unit_round_start_effects(state, unit_id.as_str(), logs);
         process_runtime_aura_effects_at_round_start(state, unit_id.as_str(), logs);
         process_runtime_set_bonus_turn_start_effects(state, unit_id.as_str(), logs);
+        if let Some(unit) = unit_by_id_mut(state, unit_id.as_str()) {
+            if unit.is_alive {
+                recover_unit_resources_for_round_start(unit);
+            }
+        }
     }
     refresh_battle_team_total_speed(state);
     state.first_mover = determine_first_mover(state).to_string();
@@ -8198,6 +8202,59 @@ mod tests {
 
         assert_eq!(state.teams.attacker.units[0].qixue, 80);
         assert!(logs.iter().any(|log| log["type"] == "hot"));
+    }
+
+    #[test]
+    fn round_start_settles_dot_before_natural_recovery() {
+        let mut state = build_minimal_pve_battle_state(
+            "round-order-dot-recovery",
+            1,
+            &["monster-wild-rabbit".to_string()],
+        );
+        let attacker = state
+            .teams
+            .attacker
+            .units
+            .first_mut()
+            .expect("attacker exists");
+        attacker.qixue = 5;
+        attacker.current_attrs.max_qixue = 100;
+        attacker.base_attrs.max_qixue = 100;
+        attacker.current_attrs.qixue_huifu = 10.0;
+        attacker.base_attrs.qixue_huifu = 10.0;
+        attacker.buffs.push(serde_json::json!({
+            "id": "dot-test",
+            "buffDefId": "dot-test",
+            "name": "流血",
+            "type": "debuff",
+            "category": "runtime",
+            "sourceUnitId": "monster-1-monster-wild-rabbit",
+            "remainingDuration": 2,
+            "stacks": 1,
+            "maxStacks": 1,
+            "dot": {
+                "damage": 8,
+                "damageType": "true"
+            },
+            "tags": ["dot"],
+            "dispellable": true
+        }));
+        state.round_count = 2;
+
+        let mut logs = Vec::new();
+        process_round_start(&mut state, &mut logs);
+
+        let attacker = state
+            .teams
+            .attacker
+            .units
+            .first()
+            .expect("attacker exists");
+        assert!(
+            !attacker.is_alive,
+            "Node order kills the unit before qixue_huifu can recover"
+        );
+        assert_eq!(attacker.qixue, 0);
     }
 
     #[test]
