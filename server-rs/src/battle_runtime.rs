@@ -593,7 +593,9 @@ fn battle_attrs_from_json(base_attrs: &serde_json::Value) -> Option<BattleUnitCu
         wufang: wufang.max(0),
         fafang: fafang.max(0),
         sudu: sudu.max(1),
-        mingzhong: json_number_to_f64_or_zero(object.get("mingzhong")),
+        mingzhong: json_number_to_f64(object.get("mingzhong"))
+            .unwrap_or(1.0)
+            .max(0.0),
         shanbi: json_number_to_f64_or_zero(object.get("shanbi")),
         zhaojia: json_number_to_f64_or_zero(object.get("zhaojia")),
         baoji: json_number_to_f64_or_zero(object.get("baoji")),
@@ -6471,6 +6473,33 @@ mod tests {
         assert_rate_close(attrs.baoshang as f64, 1.5);
         assert_rate_close(attrs.zengshang as f64, 0.11);
         assert_rate_close(attrs.kongzhi_kangxing as f64, 0.13);
+    }
+
+    #[test]
+    fn battle_attrs_from_json_defaults_mingzhong_and_other_rates() {
+        let base_attrs = serde_json::json!({
+            "max_qixue": 180,
+            "max_lingqi": 100,
+            "wugong": 32,
+            "fagong": 0,
+            "wufang": 12,
+            "fafang": 8,
+            "sudu": 10
+        });
+
+        let attrs = super::battle_attrs_from_json(&base_attrs).expect("attrs should parse");
+
+        assert_rate_close(attrs.mingzhong, 1.0);
+        assert_rate_close(attrs.shanbi, 0.0);
+        assert_rate_close(attrs.zhaojia, 0.0);
+        assert_rate_close(attrs.baoji, 0.0);
+        assert_rate_close(attrs.baoshang, 0.0);
+        assert_rate_close(attrs.jianbaoshang, 0.0);
+        assert_rate_close(attrs.kangbao, 0.0);
+        assert_rate_close(attrs.zengshang, 0.0);
+        assert_rate_close(attrs.kongzhi_kangxing, 0.0);
+        assert_rate_close(attrs.jin_kangxing, 0.0);
+        assert_rate_close(attrs.tu_kangxing, 0.0);
     }
 
     #[test]
