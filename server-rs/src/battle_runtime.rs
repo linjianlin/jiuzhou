@@ -6398,11 +6398,8 @@ mod tests {
 
     #[test]
     fn runtime_random_matches_node_mulberry32_sequence() {
-        let mut state = build_minimal_pve_battle_state(
-            "rng-sequence",
-            1,
-            &["monster-wild-rabbit".to_string()],
-        );
+        let mut state =
+            build_minimal_pve_battle_state("rng-sequence", 1, &["monster-wild-rabbit".to_string()]);
         state.random_seed = 123456;
         state.random_index = 0;
 
@@ -6452,6 +6449,31 @@ mod tests {
             ]
         );
         assert_eq!(state.random_index, 2);
+    }
+
+    #[test]
+    fn runtime_random_alive_unit_ids_returns_all_without_random_when_count_covers_candidates() {
+        let mut state = build_minimal_pve_battle_state(
+            "random-targets-all",
+            1,
+            &[
+                "monster-wild-rabbit".to_string(),
+                "monster-wild-boar".to_string(),
+            ],
+        );
+        state.random_seed = 123456;
+        state.random_index = 7;
+
+        let selected = super::random_alive_unit_ids(&mut state, "defender", 2);
+
+        assert_eq!(
+            selected,
+            vec![
+                "monster-1-monster-wild-rabbit".to_string(),
+                "monster-2-monster-wild-boar".to_string(),
+            ]
+        );
+        assert_eq!(state.random_index, 7);
     }
 
     #[test]
