@@ -257,10 +257,6 @@ pub fn router() -> Router<AppState> {
             get(dungeon::get_dungeon_instance_by_battle_id),
         )
         .route(
-            "/api/dungeon/instance/abandon",
-            post(dungeon::abandon_dungeon_instance),
-        )
-        .route(
             "/api/dungeon/instance/join",
             post(dungeon::join_dungeon_instance),
         )
@@ -573,10 +569,6 @@ pub fn router() -> Router<AppState> {
             get(partner::get_partner_rebone_status),
         )
         .route(
-            "/api/partner/rebone/start",
-            post(partner::start_partner_rebone),
-        )
-        .route(
             "/api/partner/rebone/mark-result-viewed",
             post(partner::mark_partner_rebone_result_viewed),
         )
@@ -761,4 +753,23 @@ pub fn router() -> Router<AppState> {
             post(wander::choose_wander_episode_option),
         )
         .layer(middleware::from_fn(slow_request::log_slow_request))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rust_http_router_does_not_expose_routes_that_node_backend_does_not_have() {
+        let routes_source = include_str!("mod.rs");
+        let dungeon_abandon_route = ["/api/dungeon/instance", "/abandon"].concat();
+        let partner_rebone_start_route = ["/api/partner/rebone", "/start"].concat();
+
+        assert!(
+            !routes_source.contains(&format!("\"{dungeon_abandon_route}\"")),
+            "Rust router must not expose dungeon abandon route without a Node backend counterpart"
+        );
+        assert!(
+            !routes_source.contains(&format!("\"{partner_rebone_start_route}\"")),
+            "Rust router must not expose partner rebone start route without a Node backend counterpart"
+        );
+    }
 }

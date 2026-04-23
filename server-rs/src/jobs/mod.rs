@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use sqlx::Row;
 use tokio::time::{Duration, sleep};
 
-use crate::battle_runtime::build_minimal_pve_battle_state;
+use crate::battle_runtime::try_build_minimal_pve_battle_state;
 use crate::http::afdian;
 use crate::http::character_technique;
 use crate::http::dungeon::load_dungeon_wave_monster_ids;
@@ -1216,11 +1216,12 @@ async fn recover_tower_battles(state: AppState) -> anyhow::Result<usize> {
                 floor,
             },
         };
-        let mut battle_state = build_minimal_pve_battle_state(
+        let mut battle_state = try_build_minimal_pve_battle_state(
             &battle_id,
             character_id,
             &resolve_tower_floor_monster_ids(floor),
-        );
+        )
+        .map_err(AppError::config)?;
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         state.battle_sessions.register(session.clone());
         state.battle_runtime.register(battle_state.clone());
@@ -1322,7 +1323,8 @@ async fn recover_dungeon_battles(state: AppState) -> anyhow::Result<usize> {
             current_wave,
         )?;
         let mut battle_state =
-            build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
+            try_build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids)
+                .map_err(AppError::config)?;
         hydrate_pve_battle_state_owner(&state, &mut battle_state, owner_character_id).await?;
         state.battle_sessions.register(session.clone());
         state.battle_runtime.register(battle_state.clone());

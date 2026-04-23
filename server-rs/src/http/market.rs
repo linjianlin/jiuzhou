@@ -23,7 +23,9 @@ use crate::integrations::redis_item_instance_mutation::{
 };
 use crate::integrations::tencent_captcha;
 use crate::realtime::market::{MarketUpdatePayload, build_market_update_payload};
-use crate::realtime::public_socket::{emit_market_update_to_user, emit_rank_update_to_user};
+use crate::realtime::public_socket::{
+    emit_game_character_full_to_user, emit_market_update_to_user, emit_rank_update_to_user,
+};
 use crate::realtime::rank::{RankUpdatePayload, build_rank_update_payload};
 use crate::shared::error::AppError;
 use crate::shared::mail_counter::{apply_mail_counter_deltas, build_new_mail_counter_deltas};
@@ -595,6 +597,7 @@ pub async fn cancel_partner_market_listing(
                 emit_market_update_to_user(&state, actor.user_id, &payload);
             }
         }
+        let _ = emit_game_character_full_to_user(&state, actor.user_id).await;
     }
     Ok(send_result(result))
 }
@@ -641,6 +644,7 @@ pub async fn create_partner_market_listing(
                 emit_market_update_to_user(&state, actor.user_id, payload);
             }
         }
+        let _ = emit_game_character_full_to_user(&state, actor.user_id).await;
     }
     Ok(send_result(result))
 }
@@ -683,6 +687,7 @@ pub async fn cancel_market_listing(
                 emit_market_update_to_user(&state, actor.user_id, &payload);
             }
         }
+        let _ = emit_game_character_full_to_user(&state, actor.user_id).await;
     }
     Ok(send_result(result))
 }
@@ -738,6 +743,7 @@ pub async fn create_market_listing(
                 emit_market_update_to_user(&state, actor.user_id, payload);
             }
         }
+        let _ = emit_game_character_full_to_user(&state, actor.user_id).await;
     }
     Ok(send_result(result))
 }
@@ -787,6 +793,8 @@ pub async fn buy_partner_market_listing(
                 emit_rank_update_to_user(&state, actor.user_id, rank_payload);
                 emit_rank_update_to_user(&state, data.seller_user_id, rank_payload);
             }
+            let _ = emit_game_character_full_to_user(&state, actor.user_id).await;
+            let _ = emit_game_character_full_to_user(&state, data.seller_user_id).await;
         }
     }
     Ok(send_result(result))
@@ -840,6 +848,8 @@ pub async fn buy_market_listing(
                 emit_market_update_to_user(&state, actor.user_id, payload);
                 emit_market_update_to_user(&state, data.seller_user_id, payload);
             }
+            let _ = emit_game_character_full_to_user(&state, actor.user_id).await;
+            let _ = emit_game_character_full_to_user(&state, data.seller_user_id).await;
         }
     }
     Ok(send_result(result))

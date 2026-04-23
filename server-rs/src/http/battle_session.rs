@@ -10,8 +10,8 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::battle_runtime::{
-    BattleStateDto, build_minimal_pve_battle_state, build_minimal_pvp_battle_state,
-    restart_battle_runtime,
+    BattleStateDto, build_minimal_pvp_battle_state, restart_battle_runtime,
+    try_build_minimal_pve_battle_state,
 };
 use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::tower::resolve_tower_floor_monster_ids;
@@ -205,14 +205,15 @@ pub async fn start_battle_session(
             .current_battle_id
             .clone()
             .ok_or_else(|| AppError::config("战斗ID不存在"))?;
-        let mut battle_state = build_minimal_pve_battle_state(
+        let mut battle_state = try_build_minimal_pve_battle_state(
             &battle_id,
             character_id,
             match &session.context {
                 BattleSessionContextDto::Pve { monster_ids } => monster_ids,
                 _ => unreachable!(),
             },
-        );
+        )
+        .map_err(AppError::config)?;
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         hydrate_pve_battle_state_participants(
             &state,
@@ -447,7 +448,8 @@ pub async fn start_battle_session(
     let monster_ids =
         load_dungeon_wave_monster_ids(&dungeon_id, &difficulty_id, current_stage, current_wave)?;
     let mut battle_state =
-        build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
+        try_build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids)
+            .map_err(AppError::config)?;
     hydrate_pve_battle_state_owner(&state, &mut battle_state, owner_character_id).await?;
     let participant_character_ids = participants
         .iter()
@@ -623,7 +625,8 @@ pub async fn advance_battle_session(
                     )
                 };
                 let mut next_battle_state =
-                    build_minimal_pve_battle_state(&next_battle_id, character_id, &monster_ids);
+                    try_build_minimal_pve_battle_state(&next_battle_id, character_id, &monster_ids)
+                        .map_err(AppError::config)?;
                 hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id)
                     .await?;
                 hydrate_pve_battle_state_participants(&state, &mut next_battle_state, &participant_character_ids)
@@ -709,11 +712,12 @@ pub async fn advance_battle_session(
                     state.online_battle_projections.clear(&current_battle_id);
                     clear_battle_persistence(&state, &current_battle_id, Some(&session_id)).await?;
                 }
-                let mut next_battle_state = crate::battle_runtime::build_minimal_pve_battle_state(
+                let mut next_battle_state = crate::battle_runtime::try_build_minimal_pve_battle_state(
                     &next_battle_id,
                     character_id,
                     &resolve_tower_floor_monster_ids(next_floor),
-                );
+                )
+                .map_err(AppError::config)?;
                 hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id).await?;
                 hydrate_pve_battle_state_active_partner(&state, &mut next_battle_state, character_id)
                     .await?;

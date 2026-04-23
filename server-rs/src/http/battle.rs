@@ -11,8 +11,8 @@ use sqlx::Row;
 use crate::auth;
 use crate::battle_runtime::{
     BattleStateDto, MinimalBattleRewardParticipant, MinimalPveItemRewardResolveOptions,
-    apply_minimal_pve_action, apply_minimal_pvp_action, build_minimal_pve_battle_state,
-    resolve_minimal_pve_item_rewards, restart_battle_runtime,
+    apply_minimal_pve_action, apply_minimal_pvp_action, resolve_minimal_pve_item_rewards,
+    restart_battle_runtime, try_build_minimal_pve_battle_state,
 };
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_owner, hydrate_pve_battle_state_participants,
@@ -219,14 +219,15 @@ pub async fn start_pve_battle(
         last_result: None,
         context: BattleSessionContextDto::Pve { monster_ids },
     };
-    let mut battle_state = build_minimal_pve_battle_state(
+    let mut battle_state = try_build_minimal_pve_battle_state(
         &battle_id,
         character_id,
         match &session.context {
             BattleSessionContextDto::Pve { monster_ids } => monster_ids,
             _ => unreachable!(),
         },
-    );
+    )
+    .map_err(AppError::config)?;
     hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
     hydrate_pve_battle_state_participants(&state, &mut battle_state, &participant_character_ids)
         .await?;

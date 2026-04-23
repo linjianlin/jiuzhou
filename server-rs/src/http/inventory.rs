@@ -13,7 +13,7 @@ use sqlx::Row;
 use tracing::warn;
 
 use crate::auth;
-use crate::http::partner::load_partner_books;
+use crate::http::partner::{load_partner_books, load_partner_rebone_status_data};
 use crate::integrations::redis::RedisRuntime;
 use crate::integrations::redis_item_grant_delta::{
     CharacterItemGrantDelta, buffer_character_item_grant_deltas, claim_character_item_grant_delta,
@@ -32,7 +32,11 @@ use crate::integrations::redis_resource_delta::{
     load_claimed_character_resource_delta_hash, parse_resource_delta_hash,
     restore_claimed_character_resource_delta,
 };
-use crate::realtime::public_socket::emit_game_character_full_to_user;
+use crate::jobs;
+use crate::realtime::partner_rebone::build_partner_rebone_status_payload;
+use crate::realtime::public_socket::{
+    emit_game_character_full_to_user, emit_partner_rebone_status_to_user,
+};
 use crate::shared::error::AppError;
 use crate::shared::response::{ServiceResult, SuccessResponse, send_result, send_success};
 use crate::state::AppState;
@@ -1865,6 +1869,32 @@ pub async fn use_inventory_item(
             .await
         })
         .await?;
+    if result.success {
+        if let Some(rebone_id) = result
+            .data
+            .partner_rebone_job
+            .as_ref()
+            .and_then(|job| job.get("reboneId").and_then(serde_json::Value::as_str))
+            .map(str::to_string)
+        {
+            let state_for_enqueue = state.clone();
+            let character_id = actor.character_id;
+            state
+                .database
+                .after_transaction_commit(async move {
+                    jobs::enqueue_partner_rebone_job(state_for_enqueue, character_id, rebone_id)
+                        .await
+                })
+                .await?;
+            if let Ok(status) = load_partner_rebone_status_data(&state, actor.character_id).await {
+                emit_partner_rebone_status_to_user(
+                    &state,
+                    actor.user_id,
+                    &build_partner_rebone_status_payload(actor.character_id, status),
+                );
+            }
+        }
+    }
     emit_inventory_character_refresh_after_success(
         &state,
         actor.user_id,

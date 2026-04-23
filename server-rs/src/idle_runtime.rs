@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::battle_runtime::{
     BattleStateDto, BattleUnitCurrentAttrsDto, BattleUnitDto, build_minimal_partner_battle_unit,
-    build_minimal_pve_battle_state,
+    try_build_minimal_pve_battle_state,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -232,11 +232,11 @@ pub fn build_idle_execution_snapshot(
 ) -> Result<IdleExecutionSnapshot, String> {
     let monster_ids = load_room_monster_ids(map_id, room_id, target_monster_def_id)?;
     let resolved_skill_id = resolve_idle_skill_id(auto_skill_policy);
-    let mut initial_battle_state = build_minimal_pve_battle_state(
+    let mut initial_battle_state = try_build_minimal_pve_battle_state(
         &format!("idle-preview-{character_id}"),
         character_id,
         &monster_ids,
-    );
+    )?;
     if let Some(partner) = partner_member.as_ref() {
         initial_battle_state.teams.attacker.total_speed += partner.attrs.sudu.max(1);
         initial_battle_state.teams.attacker.units.insert(

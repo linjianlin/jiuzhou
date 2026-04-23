@@ -9,10 +9,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::{build_minimal_pve_battle_state, restart_battle_runtime};
+use crate::battle_runtime::{restart_battle_runtime, try_build_minimal_pve_battle_state};
 use crate::integrations::battle_character_profile::{
-    hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
-    hydrate_pve_battle_state_participants,
+    hydrate_pve_battle_state_owner, hydrate_pve_battle_state_participants,
 };
 use crate::jobs::online_battle_settlement::{
     DungeonClearSettlementTaskPayload, enqueue_dungeon_clear_settlement_task,
@@ -1341,7 +1340,8 @@ async fn start_dungeon_instance_tx(
         snapshot.current_wave,
     )?;
     let mut battle_state =
-        build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids);
+        try_build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids)
+            .map_err(AppError::config)?;
     hydrate_pve_battle_state_owner(state, &mut battle_state, owner_character_id).await?;
     let participant_character_ids = snapshot
         .participants
@@ -1426,10 +1426,7 @@ async fn abandon_dungeon_instance_tx(
             data: None,
         });
     }
-    if matches!(
-        snapshot.status.as_str(),
-        "completed" | "failed" | "abandoned"
-    ) {
+    if matches!(snapshot.status.as_str(), "cleared" | "failed" | "abandoned") {
         return Ok(ServiceResult {
             success: false,
             message: Some("该秘境已结束".to_string()),
@@ -1607,7 +1604,8 @@ pub(crate) async fn next_dungeon_instance_tx(
             .map(|participant| participant.character_id)
             .ok_or_else(|| AppError::config("秘境参与角色不存在"))?;
         let mut battle_state =
-            build_minimal_pve_battle_state(&next_battle_id, owner_character_id, &monster_ids);
+            try_build_minimal_pve_battle_state(&next_battle_id, owner_character_id, &monster_ids)
+                .map_err(AppError::config)?;
         hydrate_pve_battle_state_owner(state, &mut battle_state, owner_character_id).await?;
         let participant_character_ids = snapshot
             .participants
@@ -1680,7 +1678,7 @@ pub(crate) async fn next_dungeon_instance_tx(
     }
 
     state.database.execute(
-        "UPDATE dungeon_instance SET status = 'completed', end_time = COALESCE(end_time, NOW()), instance_data = COALESCE(instance_data, '{}'::jsonb) - 'currentBattleId' WHERE id = $1",
+        "UPDATE dungeon_instance SET status = 'cleared', end_time = COALESCE(end_time, NOW()), instance_data = COALESCE(instance_data, '{}'::jsonb) - 'currentBattleId' WHERE id = $1",
         |q| q.bind(instance_id),
     ).await?;
     let updated_session =
@@ -1688,7 +1686,7 @@ pub(crate) async fn next_dungeon_instance_tx(
             .battle_sessions
             .update(&format!("dungeon-session-{}", instance_id), |record| {
                 record.current_battle_id = None;
-                record.status = "completed".to_string();
+                record.status = "cleared".to_string();
                 record.next_action = "none".to_string();
                 record.can_advance = false;
                 record.last_result = Some("attacker_win".to_string());
@@ -1739,7 +1737,7 @@ pub(crate) async fn next_dungeon_instance_tx(
         message: Some("秘境已通关".to_string()),
         data: Some(DungeonInstanceNextDataDto {
             instance_id: instance_id.to_string(),
-            status: "completed".to_string(),
+            status: "cleared".to_string(),
             battle_id: None,
             state: None,
             finished: true,
@@ -1887,6 +1885,27 @@ fn now_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dungeon_clear_terminal_status_matches_node_contract() {
+        let source = include_str!("dungeon.rs");
+        let sql_completed_status = ["status = '", "completed", "'"].concat();
+        let dto_completed_status = ["status: \"", "completed", "\""].concat();
+        let session_completed_status = ["record.status = \"", "completed", "\""].concat();
+
+        assert!(
+            !source.contains(&sql_completed_status),
+            "Rust dungeon clear must write Node-compatible cleared status"
+        );
+        assert!(
+            !source.contains(&dto_completed_status),
+            "Rust dungeon clear response must expose Node-compatible cleared status"
+        );
+        assert!(
+            !source.contains(&session_completed_status),
+            "Rust dungeon session terminal status must use cleared"
+        );
+    }
+
     #[test]
     fn dungeon_wave_monster_loader_reads_real_seed_monsters() {
         let monster_ids = super::load_dungeon_wave_monster_ids(

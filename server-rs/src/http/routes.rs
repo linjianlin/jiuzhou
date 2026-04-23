@@ -1607,7 +1607,10 @@ mod tests {
 
         socket_emit_raw(&client, address, &sid, "42[\"game:onlinePlayers:request\"]").await;
 
-        let poll_text = poll_text(&client, address, &sid).await;
+        let market_poll_text = poll_until_contains(&client, address, &sid, "market:update").await;
+        let character_poll_text =
+            poll_until_contains(&client, address, &sid, "game:character").await;
+        let poll_text = format!("{market_poll_text}{character_poll_text}");
 
         println!("GAME_SOCKET_ONLINE_PLAYERS_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_UNAUTH_POLL={poll_text}");
@@ -1664,7 +1667,10 @@ mod tests {
 
         socket_emit_raw(&client, address, &sid, "42[\"game:onlinePlayers:request\"]").await;
 
-        let poll_text = poll_text(&client, address, &sid).await;
+        let rank_poll_text = poll_until_contains(&client, address, &sid, "rank:update").await;
+        let character_poll_text =
+            poll_until_contains(&client, address, &sid, "game:character").await;
+        let poll_text = format!("{rank_poll_text}{character_poll_text}");
 
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTHLESS_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTHLESS_SUCCESS_POLL={poll_text}");
@@ -7006,7 +7012,7 @@ mod tests {
                 .try_get::<Option<String>, _>("status")
                 .unwrap_or(None)
                 .unwrap_or_default(),
-            "pending"
+            "succeeded"
         );
         assert_eq!(
             job_row
@@ -11720,6 +11726,7 @@ mod tests {
 
         assert!(poll_text.contains("market:update"));
         assert!(poll_text.contains("create_market_listing"));
+        assert!(poll_text.contains("game:character"));
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
@@ -11803,6 +11810,7 @@ mod tests {
 
         assert!(poll_text.contains("rank:update"));
         assert!(poll_text.contains("buy_partner_listing"));
+        assert!(poll_text.contains("game:character"));
 
         cleanup_auth_fixture(&pool, seller.character_id, seller.user_id).await;
         cleanup_auth_fixture(&pool, buyer.character_id, buyer.user_id).await;
@@ -15140,7 +15148,7 @@ mod tests {
 
         server.abort();
 
-        assert_eq!(body["data"]["status"], "completed");
+        assert_eq!(body["data"]["status"], "cleared");
         assert_eq!(
             task_row
                 .try_get::<Option<String>, _>("kind")
@@ -19885,28 +19893,30 @@ mod tests {
             .execute(&pool)
             .await
             .expect("partner growth should seed");
-        sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-partner-rebone-001', 1, 'none', 'bag', NOW(), NOW(), 'test')")
+        let item_instance_id = sqlx::query("INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, created_at, updated_at, obtained_from) VALUES ($1, $2, 'cons-partner-rebone-001', 1, 'none', 'bag', NOW(), NOW(), 'test') RETURNING id")
             .bind(fixture.user_id)
             .bind(fixture.character_id)
-            .execute(&pool)
+            .fetch_one(&pool)
             .await
-            .expect("rebone item should insert");
+            .expect("rebone item should insert")
+            .try_get::<i64, _>("id")
+            .expect("rebone item id should exist");
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
 
         let start_response = client
-            .post(format!("http://{address}/api/partner/rebone/start"))
+            .post(format!("http://{address}/api/inventory/use"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
             .body(format!(
-                "{{\"partnerId\":{},\"itemDefId\":\"cons-partner-rebone-001\",\"itemQty\":1}}",
-                partner_id
+                "{{\"itemId\":{},\"qty\":1,\"partnerId\":{}}}",
+                item_instance_id, partner_id
             ))
             .send()
             .await
-            .expect("partner rebone start should succeed");
+            .expect("inventory rebone use should succeed");
         let start_status = start_response.status();
         let start_text = start_response.text().await.expect("start body should read");
         if start_status != StatusCode::OK {
@@ -19914,7 +19924,7 @@ mod tests {
         }
         let start_body: Value =
             serde_json::from_str(&start_text).expect("start body should be json");
-        let rebone_id = start_body["data"]["reboneId"]
+        let rebone_id = start_body["data"]["partnerReboneJob"]["reboneId"]
             .as_str()
             .expect("rebone id should exist")
             .to_string();

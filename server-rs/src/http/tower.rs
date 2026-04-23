@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::{build_minimal_pve_battle_state, restart_battle_runtime};
+use crate::battle_runtime::{restart_battle_runtime, try_build_minimal_pve_battle_state};
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
 };
@@ -249,11 +249,12 @@ pub async fn start_tower_challenge(
             });
     }
     if let Some(current_battle_id) = session.current_battle_id.clone() {
-        let mut battle_state = build_minimal_pve_battle_state(
+        let mut battle_state = try_build_minimal_pve_battle_state(
             &current_battle_id,
             character_id,
             &resolve_tower_floor_monster_ids(session.context.floor),
-        );
+        )
+        .map_err(AppError::config)?;
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         hydrate_pve_battle_state_active_partner(&state, &mut battle_state, character_id).await?;
         let start_logs = restart_battle_runtime(&mut battle_state);
