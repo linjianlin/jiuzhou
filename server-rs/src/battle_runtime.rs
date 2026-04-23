@@ -184,6 +184,7 @@ struct RuntimeResolvedTargetLog {
     shield: i64,
     resources: Vec<serde_json::Value>,
     buffs_applied: Vec<String>,
+    marks_consumed: Vec<String>,
     is_miss: bool,
     is_crit: bool,
     is_parry: bool,
@@ -2651,6 +2652,7 @@ fn get_or_create_target_log<'a>(
         shield: 0,
         resources: Vec::new(),
         buffs_applied: Vec::new(),
+        marks_consumed: Vec::new(),
         is_miss: false,
         is_crit: false,
         is_parry: false,
@@ -3115,6 +3117,7 @@ fn process_runtime_set_bonus_turn_start_effects(
                                     "amount": gain,
                                 })],
                                 buffs_applied: Vec::new(),
+                                marks_consumed: Vec::new(),
                                 is_miss: false,
                                 is_crit: false,
                                 is_parry: false,
@@ -3314,6 +3317,7 @@ fn process_runtime_set_bonus_trigger(
                         shield: 0,
                         resources: Vec::new(),
                         buffs_applied: Vec::new(),
+                        marks_consumed: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3390,6 +3394,7 @@ fn process_runtime_set_bonus_trigger(
                         shield: 0,
                         resources: Vec::new(),
                         buffs_applied: Vec::new(),
+                        marks_consumed: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3448,6 +3453,7 @@ fn process_runtime_set_bonus_trigger(
                             shield: 0,
                             resources: Vec::new(),
                             buffs_applied: Vec::new(),
+                            marks_consumed: Vec::new(),
                             is_miss: false,
                             is_crit: false,
                             is_parry: false,
@@ -3502,6 +3508,7 @@ fn process_runtime_set_bonus_trigger(
                                 "amount": gain,
                             })],
                             buffs_applied: Vec::new(),
+                            marks_consumed: Vec::new(),
                             is_miss: false,
                             is_crit: false,
                             is_parry: false,
@@ -3553,6 +3560,7 @@ fn process_runtime_set_bonus_trigger(
                         shield: 0,
                         resources: Vec::new(),
                         buffs_applied: vec![applied_name],
+                        marks_consumed: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3826,34 +3834,91 @@ where
     removed
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RuntimeMarkConsumeResult {
+    final_value: i64,
+    was_capped: bool,
+    result_type: String,
+    text: String,
+}
+
+fn runtime_effect_field<'a>(
+    effect: &'a serde_json::Value,
+    camel_key: &str,
+    snake_key: &str,
+) -> Option<&'a serde_json::Value> {
+    effect.get(camel_key).or_else(|| effect.get(snake_key))
+}
+
+fn runtime_effect_string(effect: &serde_json::Value, camel_key: &str, snake_key: &str) -> String {
+    runtime_effect_field(effect, camel_key, snake_key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn runtime_effect_f64(effect: &serde_json::Value, camel_key: &str, snake_key: &str) -> Option<f64> {
+    runtime_effect_field(effect, camel_key, snake_key).and_then(|value| match value {
+        serde_json::Value::Number(number) => number.as_f64(),
+        serde_json::Value::String(text) => text.trim().parse::<f64>().ok(),
+        _ => None,
+    })
+}
+
+fn runtime_effect_positive_i64(
+    effect: &serde_json::Value,
+    camel_key: &str,
+    snake_key: &str,
+    fallback: i64,
+) -> i64 {
+    let parsed = runtime_effect_f64(effect, camel_key, snake_key)
+        .map(|value| value.floor() as i64)
+        .unwrap_or(fallback);
+    if parsed <= 0 { fallback } else { parsed }
+}
+
+fn runtime_mark_id(effect: &serde_json::Value) -> String {
+    let mark_id = runtime_effect_string(effect, "markId", "mark_id");
+    if mark_id.is_empty() {
+        VOID_EROSION_MARK_ID.to_string()
+    } else {
+        mark_id
+    }
+}
+
+fn runtime_mark_name(mark_id: &str) -> &str {
+    match mark_id {
+        VOID_EROSION_MARK_ID => "虚蚀印记",
+        "ember_brand" => "灼痕",
+        SOUL_SHACKLE_MARK_ID => "蚀心锁",
+        "moon_echo" => "月痕印记",
+        _ => mark_id,
+    }
+}
+
+fn runtime_mark_operation(effect: &serde_json::Value) -> String {
+    let operation = runtime_effect_string(effect, "operation", "operation").to_lowercase();
+    if operation == "consume" {
+        "consume".to_string()
+    } else {
+        "apply".to_string()
+    }
+}
+
 fn apply_runtime_mark_effect(
     target: &mut BattleUnitDto,
     source_unit_id: &str,
     effect: &serde_json::Value,
 ) -> Option<String> {
-    let mark_id = effect
-        .get("markId")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(VOID_EROSION_MARK_ID)
-        .to_string();
-    let stacks = effect
-        .get("applyStacks")
-        .or_else(|| effect.get("stacks"))
-        .and_then(serde_json::Value::as_i64)
+    let mark_id = runtime_mark_id(effect);
+    let stacks = runtime_effect_f64(effect, "applyStacks", "apply_stacks")
+        .or_else(|| runtime_effect_f64(effect, "stacks", "stacks"))
+        .map(|value| value.floor() as i64)
         .unwrap_or(1)
         .max(1);
-    let max_stacks = effect
-        .get("maxStacks")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(5)
-        .max(1);
-    let duration = effect
-        .get("duration")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(2)
-        .max(1);
+    let max_stacks = runtime_effect_positive_i64(effect, "maxStacks", "max_stacks", 5);
+    let duration = runtime_effect_positive_i64(effect, "duration", "duration_round", 2);
     let marks = &mut target.marks;
     if let Some(existing) = marks.iter_mut().find(|mark| {
         mark.get("id").and_then(serde_json::Value::as_str) == Some(mark_id.as_str())
@@ -3881,6 +3946,81 @@ fn apply_runtime_mark_effect(
         }));
     }
     Some(mark_id)
+}
+
+fn consume_runtime_mark_effect(
+    target: &mut BattleUnitDto,
+    source_unit_id: &str,
+    effect: &serde_json::Value,
+    base_value: i64,
+    target_max_qixue: i64,
+) -> Option<RuntimeMarkConsumeResult> {
+    let mark_id = runtime_mark_id(effect);
+    let mark_index = target.marks.iter().position(|mark| {
+        mark.get("id").and_then(serde_json::Value::as_str) == Some(mark_id.as_str())
+            && mark.get("sourceUnitId").and_then(serde_json::Value::as_str) == Some(source_unit_id)
+            && json_number_to_i64_floor(mark.get("stacks")).unwrap_or_default() > 0
+            && json_number_to_i64_floor(mark.get("remainingDuration")).unwrap_or(1) > 0
+    })?;
+    let available = json_number_to_i64_floor(target.marks[mark_index].get("stacks"))
+        .unwrap_or_default()
+        .max(0);
+    if available <= 0 {
+        return None;
+    }
+
+    let consume_mode = runtime_effect_string(effect, "consumeMode", "consume_mode").to_lowercase();
+    let consume_wanted = if consume_mode == "fixed" {
+        runtime_effect_positive_i64(effect, "consumeStacks", "consume_stacks", 1)
+    } else {
+        available
+    };
+    let consumed_stacks = available.min(consume_wanted).max(0);
+    if consumed_stacks <= 0 {
+        return None;
+    }
+    let remaining_stacks = (available - consumed_stacks).max(0);
+    if remaining_stacks <= 0 {
+        target.marks.remove(mark_index);
+    } else if let Some(object) = target.marks[mark_index].as_object_mut() {
+        object.insert("stacks".to_string(), serde_json::json!(remaining_stacks));
+    }
+
+    let per_stack_rate = runtime_effect_f64(effect, "perStackRate", "per_stack_rate")
+        .unwrap_or_default()
+        .max(0.0);
+    let raw_final = (base_value.max(0) as f64) * (consumed_stacks as f64) * per_stack_rate;
+    let cap_value = (target_max_qixue.max(0) as f64) * 0.35;
+    let capped_final = raw_final.min(cap_value).max(0.0);
+    let final_value = capped_final.floor() as i64;
+    let result_type = match runtime_effect_string(effect, "resultType", "result_type")
+        .to_lowercase()
+        .as_str()
+    {
+        "shield_self" => "shield_self",
+        "heal_self" => "heal_self",
+        _ => "damage",
+    }
+    .to_string();
+    let suffix = match result_type.as_str() {
+        "shield_self" => "转化护盾",
+        "heal_self" => "转化治疗",
+        _ => "引爆",
+    };
+    let text = format!(
+        "{}消耗{}层（剩余{}层，{}）",
+        runtime_mark_name(mark_id.as_str()),
+        consumed_stacks,
+        remaining_stacks,
+        suffix
+    );
+
+    Some(RuntimeMarkConsumeResult {
+        final_value,
+        was_capped: raw_final > capped_final,
+        result_type,
+        text,
+    })
 }
 
 fn apply_runtime_delayed_burst_effect(
@@ -4743,6 +4883,7 @@ fn process_runtime_phase_triggers_before_action(
                     shield: 0,
                     resources: Vec::new(),
                     buffs_applied,
+                    marks_consumed: Vec::new(),
                     is_miss: false,
                     is_crit: false,
                     is_parry: false,
@@ -4807,6 +4948,7 @@ fn process_runtime_phase_triggers_before_action(
                     shield: 0,
                     resources: Vec::new(),
                     buffs_applied: Vec::new(),
+                    marks_consumed: Vec::new(),
                     is_miss: false,
                     is_crit: false,
                     is_parry: false,
@@ -5058,6 +5200,12 @@ fn build_runtime_action_log(
                         serde_json::json!(target.buffs_applied),
                     );
                 }
+                if !target.marks_consumed.is_empty() {
+                    object.insert(
+                        "marksConsumed".to_string(),
+                        serde_json::json!(target.marks_consumed),
+                    );
+                }
                 if !target.momentum_gained.is_empty() {
                     object.insert(
                         "momentumGained".to_string(),
@@ -5102,6 +5250,12 @@ fn build_runtime_phase_action_log(
                     object.insert(
                         "buffsApplied".to_string(),
                         serde_json::json!(target.buffs_applied),
+                    );
+                }
+                if !target.marks_consumed.is_empty() {
+                    object.insert(
+                        "marksConsumed".to_string(),
+                        serde_json::json!(target.marks_consumed),
                     );
                 }
             }
@@ -5330,6 +5484,7 @@ fn execute_runtime_skill_action(
                 shield: 0,
                 resources: Vec::new(),
                 buffs_applied: Vec::new(),
+                marks_consumed: Vec::new(),
                 is_miss: damage_outcome.is_miss,
                 is_crit: damage_outcome.is_crit,
                 is_parry: damage_outcome.is_parry,
@@ -5631,15 +5786,125 @@ fn execute_runtime_skill_action(
                     }
                 }
                 "mark" => {
-                    let target = unit_by_id_mut(state, effect_target_id.as_str())
-                        .ok_or_else(|| "没有有效目标".to_string())?;
-                    if let Some(mark_id) = apply_runtime_mark_effect(target, actor_id, effect) {
-                        if !log_entry
-                            .buffs_applied
-                            .iter()
-                            .any(|entry| entry == &mark_id)
-                        {
-                            log_entry.buffs_applied.push(mark_id);
+                    if runtime_mark_operation(effect) == "consume" {
+                        let fallback_scale_attr =
+                            if skill.get("damageType").and_then(serde_json::Value::as_str)
+                                == Some("magic")
+                            {
+                                "fagong"
+                            } else {
+                                "wugong"
+                            };
+                        let base_value = resolve_effect_base_value(
+                            &actor,
+                            &target_snapshot,
+                            effect,
+                            fallback_scale_attr,
+                        )
+                        .max(0);
+                        let consumed = {
+                            let target = unit_by_id_mut(state, effect_target_id.as_str())
+                                .ok_or_else(|| "没有有效目标".to_string())?;
+                            consume_runtime_mark_effect(
+                                target,
+                                actor_id,
+                                effect,
+                                base_value,
+                                target_snapshot.current_attrs.max_qixue,
+                            )
+                        };
+                        let Some(consumed) = consumed else {
+                            continue;
+                        };
+                        let consume_text = if consumed.was_capped {
+                            format!("{}（触发35%上限）", consumed.text)
+                        } else {
+                            consumed.text.clone()
+                        };
+                        log_entry.marks_consumed.push(consume_text);
+                        if consumed.final_value <= 0 {
+                            continue;
+                        }
+
+                        match consumed.result_type.as_str() {
+                            "shield_self" => {
+                                if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                                    actor_unit.shields.push(serde_json::json!({
+                                        "id": format!("shield-{}-{}", actor_id, action_round),
+                                        "sourceSkillId": skill_id,
+                                        "value": consumed.final_value,
+                                        "maxValue": consumed.final_value,
+                                        "duration": runtime_effect_positive_i64(effect, "duration", "duration_round", 2),
+                                        "absorbType": "all",
+                                        "priority": 1,
+                                    }));
+                                }
+                                log_entry.shield += consumed.final_value;
+                                if !log_entry.buffs_applied.iter().any(|entry| entry == "护盾") {
+                                    log_entry.buffs_applied.push("护盾".to_string());
+                                }
+                            }
+                            "heal_self" => {
+                                let healed = {
+                                    let actor_unit = unit_by_id_mut(state, actor_id)
+                                        .ok_or_else(|| "当前不可行动".to_string())?;
+                                    apply_runtime_healing(actor_unit, consumed.final_value)
+                                };
+                                if healed > 0 {
+                                    if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                                        actor_unit.stats.healing_done += healed;
+                                    }
+                                    log_entry.heal += healed;
+                                }
+                            }
+                            _ => {
+                                let (actual_damage, shield_absorbed, target_dead, target_name) = {
+                                    let target = unit_by_id_mut(state, effect_target_id.as_str())
+                                        .ok_or_else(|| "没有有效目标".to_string())?;
+                                    let target_name = target.name.clone();
+                                    let (actual_damage, shield_absorbed) =
+                                        apply_runtime_damage_to_target(
+                                            target,
+                                            consumed.final_value,
+                                            "true",
+                                        );
+                                    (
+                                        actual_damage,
+                                        shield_absorbed,
+                                        !target.is_alive,
+                                        target_name,
+                                    )
+                                };
+                                log_entry.damage += actual_damage;
+                                log_entry.shield_absorbed += shield_absorbed;
+                                if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                                    actor_unit.stats.damage_dealt += actual_damage;
+                                    if target_dead {
+                                        actor_unit.stats.kill_count += 1;
+                                    }
+                                }
+                                if target_dead {
+                                    logs.push(build_minimal_death_log(
+                                        action_round,
+                                        effect_target_id.as_str(),
+                                        target_name.as_str(),
+                                        Some(actor_id),
+                                        Some(actor_name.as_str()),
+                                    ));
+                                }
+                            }
+                        }
+                    } else {
+                        let target = unit_by_id_mut(state, effect_target_id.as_str())
+                            .ok_or_else(|| "没有有效目标".to_string())?;
+                        if let Some(mark_id) = apply_runtime_mark_effect(target, actor_id, effect) {
+                            if !log_entry
+                                .buffs_applied
+                                .iter()
+                                .any(|entry| entry == &mark_id)
+                            {
+                                log_entry.buffs_applied.push(mark_id);
+                            }
                         }
                     }
                 }
@@ -10180,6 +10445,124 @@ mod tests {
     }
 
     #[test]
+    fn runtime_mark_consume_all_converts_stacks_to_true_damage() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].qixue = 1000;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-consume-void-damage",
+                "name": "虚蚀引爆",
+                "description": "消耗虚蚀印记造成真实伤害",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "mark",
+                    "operation": "consume",
+                    "markId": "void_erosion",
+                    "consumeMode": "all",
+                    "valueType": "flat",
+                    "value": 40,
+                    "perStackRate": 0.34,
+                    "resultType": "damage"
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-consume-void-damage",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("mark consume should succeed");
+
+        let target = &state.teams.defender.units[0];
+        assert_eq!(target.qixue, 960);
+        assert!(target.marks.is_empty());
+        assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 40);
+        assert_eq!(logs[0]["targets"][0]["damage"], 40);
+        assert_eq!(logs[0]["targets"][0]["hits"][0]["damage"], 40);
+        assert_eq!(
+            logs[0]["targets"][0]["marksConsumed"][0],
+            "虚蚀印记消耗3层（剩余0层，引爆）"
+        );
+    }
+
+    #[test]
+    fn runtime_mark_consume_fixed_converts_stacks_to_self_shield() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-consume-void-shield",
+                "name": "虚蚀护体",
+                "description": "消耗虚蚀印记转化护盾",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{
+                    "type": "mark",
+                    "operation": "consume",
+                    "markId": "void_erosion",
+                    "consumeMode": "fixed",
+                    "consumeStacks": 2,
+                    "valueType": "flat",
+                    "value": 52,
+                    "perStackRate": 0.92,
+                    "resultType": "shield_self"
+                }]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-consume-void-shield",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("mark consume shield should succeed");
+
+        let target = &state.teams.defender.units[0];
+        assert_eq!(target.marks.len(), 1);
+        assert_eq!(target.marks[0]["stacks"], 1);
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.shields.len(), 1);
+        assert_eq!(caster.shields[0]["value"], 95);
+        assert_eq!(caster.shields[0]["maxValue"], 95);
+        assert_eq!(caster.shields[0]["duration"], 2);
+        assert_eq!(logs[0]["targets"][0]["shield"], 95);
+        assert_eq!(logs[0]["targets"][0]["buffsApplied"][0], "护盾");
+        assert_eq!(
+            logs[0]["targets"][0]["marksConsumed"][0],
+            "虚蚀印记消耗2层（剩余1层，转化护盾）"
+        );
+    }
+
+    #[test]
     fn minimal_pve_round_start_decays_marks() {
         let mut unit =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()])
@@ -10237,6 +10620,7 @@ mod tests {
                 shield: 0,
                 resources: Vec::new(),
                 buffs_applied: Vec::new(),
+                marks_consumed: Vec::new(),
                 is_miss: false,
                 is_crit: true,
                 is_parry: false,
