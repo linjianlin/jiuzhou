@@ -3571,6 +3571,198 @@ fn process_runtime_set_bonus_trigger(
                     }],
                 ));
             }
+            "mark" => {
+                let params_value = serde_json::Value::Object(params.clone());
+                if runtime_mark_operation(&params_value) == "consume" {
+                    let base_value = runtime_set_bonus_amount(&owner, &params).max(0);
+                    let consumed = {
+                        let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
+                            continue;
+                        };
+                        consume_runtime_mark_effect(
+                            target,
+                            owner_id,
+                            &params_value,
+                            base_value,
+                            target_snapshot.current_attrs.max_qixue,
+                        )
+                    };
+                    let Some(consumed) = consumed else {
+                        continue;
+                    };
+                    let consume_text = if consumed.was_capped {
+                        format!("{}（触发35%上限）", consumed.text)
+                    } else {
+                        consumed.text.clone()
+                    };
+                    let mut target_log = RuntimeResolvedTargetLog {
+                        target_id: resolved_target_id.to_string(),
+                        target_name: target_snapshot.name.clone(),
+                        damage: 0,
+                        heal: 0,
+                        shield: 0,
+                        resources: Vec::new(),
+                        buffs_applied: Vec::new(),
+                        marks_consumed: vec![consume_text],
+                        is_miss: false,
+                        is_crit: false,
+                        is_parry: false,
+                        is_element_bonus: false,
+                        shield_absorbed: 0,
+                        momentum_gained: Vec::new(),
+                        momentum_consumed: Vec::new(),
+                    };
+
+                    let mut death_log = None;
+                    if consumed.final_value > 0 {
+                        match consumed.result_type.as_str() {
+                            "shield_self" => {
+                                if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                                    owner_unit.shields.push(serde_json::json!({
+                                        "id": format!("set-shield-{}-{}", owner_id, round),
+                                        "sourceSkillId": effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set-bonus"),
+                                        "value": consumed.final_value,
+                                        "maxValue": consumed.final_value,
+                                        "duration": json_number_to_i64_floor(effect.get("durationRound").or_else(|| effect.get("duration_round"))).unwrap_or(1).max(1),
+                                        "absorbType": "all",
+                                        "priority": 1,
+                                    }));
+                                }
+                                if resolved_target_id == owner_id {
+                                    target_log.shield += consumed.final_value;
+                                    target_log.buffs_applied.push(format!(
+                                        "{}·护盾",
+                                        effect
+                                            .get("setName")
+                                            .and_then(serde_json::Value::as_str)
+                                            .unwrap_or("套装效果")
+                                    ));
+                                }
+                            }
+                            "heal_self" => {
+                                let actual = {
+                                    let Some(owner_unit) = unit_by_id_mut(state, owner_id) else {
+                                        continue;
+                                    };
+                                    apply_runtime_healing(owner_unit, consumed.final_value)
+                                };
+                                if actual > 0 {
+                                    if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                                        owner_unit.stats.healing_done += actual;
+                                    }
+                                    if resolved_target_id == owner_id {
+                                        target_log.heal += actual;
+                                    }
+                                }
+                            }
+                            _ => {
+                                let (actual_damage, shield_absorbed, target_dead, target_name) = {
+                                    let Some(target) = unit_by_id_mut(state, resolved_target_id)
+                                    else {
+                                        continue;
+                                    };
+                                    let target_name = target.name.clone();
+                                    let (actual_damage, shield_absorbed) =
+                                        apply_runtime_damage_to_target(
+                                            target,
+                                            consumed.final_value,
+                                            "true",
+                                        );
+                                    (
+                                        actual_damage,
+                                        shield_absorbed,
+                                        !target.is_alive,
+                                        target_name,
+                                    )
+                                };
+                                target_log.damage += actual_damage;
+                                target_log.shield_absorbed += shield_absorbed;
+                                if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                                    owner_unit.stats.damage_dealt += actual_damage;
+                                    if target_dead {
+                                        owner_unit.stats.kill_count += 1;
+                                    }
+                                }
+                                if target_dead {
+                                    death_log = Some(build_minimal_death_log(
+                                        round,
+                                        resolved_target_id,
+                                        target_name.as_str(),
+                                        Some(owner_id),
+                                        Some(owner.name.as_str()),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    logs.push(build_runtime_action_log(
+                        round,
+                        owner_id,
+                        owner.name.as_str(),
+                        &format!(
+                            "proc-{}-{}",
+                            effect
+                                .get("setId")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("set"),
+                            trigger
+                        ),
+                        effect
+                            .get("setName")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("套装效果"),
+                        &[target_log],
+                    ));
+                    if let Some(death_log) = death_log {
+                        logs.push(death_log);
+                    }
+                } else {
+                    let applied_name = {
+                        let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
+                            continue;
+                        };
+                        apply_runtime_mark_effect(target, owner_id, &params_value)
+                    };
+                    let Some(applied_name) = applied_name else {
+                        continue;
+                    };
+                    logs.push(build_runtime_action_log(
+                        round,
+                        owner_id,
+                        owner.name.as_str(),
+                        &format!(
+                            "proc-{}-{}",
+                            effect
+                                .get("setId")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("set"),
+                            trigger
+                        ),
+                        effect
+                            .get("setName")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("套装效果"),
+                        &[RuntimeResolvedTargetLog {
+                            target_id: resolved_target_id.to_string(),
+                            target_name: target_snapshot.name,
+                            damage: 0,
+                            heal: 0,
+                            shield: 0,
+                            resources: Vec::new(),
+                            buffs_applied: vec![applied_name],
+                            marks_consumed: Vec::new(),
+                            is_miss: false,
+                            is_crit: false,
+                            is_parry: false,
+                            is_element_bonus: false,
+                            shield_absorbed: 0,
+                            momentum_gained: Vec::new(),
+                            momentum_consumed: Vec::new(),
+                        }],
+                    ));
+                }
+            }
             _ => {}
         }
     }
@@ -3893,6 +4085,7 @@ fn runtime_mark_name(mark_id: &str) -> &str {
         "ember_brand" => "灼痕",
         SOUL_SHACKLE_MARK_ID => "蚀心锁",
         "moon_echo" => "月痕印记",
+        "mirror_crack" => "镜裂印",
         _ => mark_id,
     }
 }
@@ -5839,9 +6032,12 @@ fn execute_runtime_skill_action(
                                         "priority": 1,
                                     }));
                                 }
-                                log_entry.shield += consumed.final_value;
-                                if !log_entry.buffs_applied.iter().any(|entry| entry == "护盾") {
-                                    log_entry.buffs_applied.push("护盾".to_string());
+                                if effect_target_id == actor_id {
+                                    log_entry.shield += consumed.final_value;
+                                    if !log_entry.buffs_applied.iter().any(|entry| entry == "护盾")
+                                    {
+                                        log_entry.buffs_applied.push("护盾".to_string());
+                                    }
                                 }
                             }
                             "heal_self" => {
@@ -5854,7 +6050,9 @@ fn execute_runtime_skill_action(
                                     if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
                                         actor_unit.stats.healing_done += healed;
                                     }
-                                    log_entry.heal += healed;
+                                    if effect_target_id == actor_id {
+                                        log_entry.heal += healed;
+                                    }
                                 }
                             }
                             _ => {
@@ -8247,6 +8445,124 @@ mod tests {
     }
 
     #[test]
+    fn runtime_set_bonus_mark_consume_damage_converts_stacks_to_true_damage() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-mark-damage",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let target_id = "monster-1-monster-gray-wolf";
+        state.teams.defender.units[0].qixue = 1000;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "void_erosion",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-mark-damage",
+            "setName": "虚蚀套",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "enemy",
+            "effectType": "mark",
+            "params": {
+                "operation": "consume",
+                "markId": "void_erosion",
+                "consumeMode": "all",
+                "value": 40,
+                "perStackRate": 0.34,
+                "resultType": "damage"
+            }
+        })];
+
+        let mut logs = Vec::new();
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_skill",
+            "player-1",
+            Some(target_id),
+            0,
+            &mut logs,
+        );
+
+        let target = &state.teams.defender.units[0];
+        assert_eq!(target.qixue, 960);
+        assert!(target.marks.is_empty());
+        assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 40);
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["damage"], 40);
+        assert_eq!(logs[0]["targets"][0]["hits"][0]["damage"], 40);
+        assert_eq!(
+            logs[0]["targets"][0]["marksConsumed"][0],
+            "虚蚀印记消耗3层（剩余0层，引爆）"
+        );
+    }
+
+    #[test]
+    fn runtime_set_bonus_mark_consume_shield_self_does_not_log_enemy_shield() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-mark-shield",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let target_id = "monster-1-monster-gray-wolf";
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].marks.push(serde_json::json!({
+            "id": "mirror_crack",
+            "sourceUnitId": "player-1",
+            "stacks": 3,
+            "maxStacks": 5,
+            "remainingDuration": 2
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-mark-shield",
+            "setName": "镜裂套",
+            "pieceCount": 2,
+            "trigger": "on_skill",
+            "target": "enemy",
+            "effectType": "mark",
+            "params": {
+                "operation": "consume",
+                "markId": "mirror_crack",
+                "consumeMode": "fixed",
+                "consumeStacks": 2,
+                "value": 52,
+                "perStackRate": 0.92,
+                "resultType": "shield_self"
+            }
+        })];
+
+        let mut logs = Vec::new();
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_skill",
+            "player-1",
+            Some(target_id),
+            0,
+            &mut logs,
+        );
+
+        let target = &state.teams.defender.units[0];
+        assert_eq!(target.marks.len(), 1);
+        assert_eq!(target.marks[0]["stacks"], 1);
+        let caster = &state.teams.attacker.units[0];
+        assert_eq!(caster.shields.len(), 1);
+        assert_eq!(caster.shields[0]["value"], 95);
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["targetId"], target_id);
+        assert_eq!(
+            logs[0]["targets"][0]["marksConsumed"][0],
+            "镜裂印消耗2层（剩余1层，转化护盾）"
+        );
+        assert!(logs[0]["targets"][0].get("shield").is_none());
+        assert!(logs[0]["targets"][0].get("heal").is_none());
+        assert!(logs[0]["targets"][0].get("buffsApplied").is_none());
+    }
+
+    #[test]
     fn minimal_pve_delayed_burst_effect_applies_and_explodes() {
         let mut state = build_minimal_pve_battle_state(
             "pve-battle-delayed-burst",
@@ -10554,12 +10870,14 @@ mod tests {
         assert_eq!(caster.shields[0]["value"], 95);
         assert_eq!(caster.shields[0]["maxValue"], 95);
         assert_eq!(caster.shields[0]["duration"], 2);
-        assert_eq!(logs[0]["targets"][0]["shield"], 95);
-        assert_eq!(logs[0]["targets"][0]["buffsApplied"][0], "护盾");
         assert_eq!(
             logs[0]["targets"][0]["marksConsumed"][0],
             "虚蚀印记消耗2层（剩余1层，转化护盾）"
         );
+        assert_eq!(logs[0]["targets"][0]["targetId"], target_id);
+        assert!(logs[0]["targets"][0].get("shield").is_none());
+        assert!(logs[0]["targets"][0].get("heal").is_none());
+        assert!(logs[0]["targets"][0].get("buffsApplied").is_none());
     }
 
     #[test]
