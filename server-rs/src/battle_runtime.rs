@@ -176,6 +176,16 @@ struct BattleSkillRuntimeConfig {
 }
 
 #[derive(Debug, Clone)]
+struct RuntimeResolvedHitLog {
+    damage: i64,
+    is_miss: bool,
+    is_crit: bool,
+    is_parry: bool,
+    is_element_bonus: bool,
+    shield_absorbed: i64,
+}
+
+#[derive(Debug, Clone)]
 struct RuntimeResolvedTargetLog {
     target_id: String,
     target_name: String,
@@ -185,6 +195,7 @@ struct RuntimeResolvedTargetLog {
     resources: Vec<serde_json::Value>,
     buffs_applied: Vec<String>,
     marks_consumed: Vec<String>,
+    hits: Vec<RuntimeResolvedHitLog>,
     is_miss: bool,
     is_crit: bool,
     is_parry: bool,
@@ -747,6 +758,59 @@ fn value_to_f64(raw: Option<serde_json::Value>, default_value: f64) -> f64 {
     }
 }
 
+fn scale_tower_ratio_attr(value: f64, multiplier: f64) -> f64 {
+    (value * (1.0 + (multiplier - 1.0) * 0.5) * 1_000_000.0).round() / 1_000_000.0
+}
+
+fn scale_tower_flat_i64_attr(value: i64, multiplier: f64, minimum: i64) -> i64 {
+    ((value as f64) * multiplier).round().max(minimum as f64) as i64
+}
+
+fn scale_tower_flat_f64_attr(value: f64, multiplier: f64) -> f64 {
+    (value * multiplier).round().max(0.0)
+}
+
+fn scale_tower_monster_battle_attrs(
+    attrs: BattleUnitCurrentAttrsDto,
+    multiplier: f64,
+) -> BattleUnitCurrentAttrsDto {
+    if (multiplier - 1.0).abs() < f64::EPSILON {
+        return attrs;
+    }
+    BattleUnitCurrentAttrsDto {
+        max_qixue: scale_tower_flat_i64_attr(attrs.max_qixue, multiplier, 1),
+        max_lingqi: scale_tower_flat_i64_attr(attrs.max_lingqi, multiplier, 0),
+        wugong: scale_tower_flat_i64_attr(attrs.wugong, multiplier, 0),
+        fagong: scale_tower_flat_i64_attr(attrs.fagong, multiplier, 0),
+        wufang: scale_tower_flat_i64_attr(attrs.wufang, multiplier, 0),
+        fafang: scale_tower_flat_i64_attr(attrs.fafang, multiplier, 0),
+        sudu: scale_tower_flat_i64_attr(attrs.sudu, multiplier, 1),
+        mingzhong: scale_tower_ratio_attr(attrs.mingzhong, multiplier).max(0.0),
+        shanbi: scale_tower_ratio_attr(attrs.shanbi, multiplier).max(0.0),
+        zhaojia: scale_tower_ratio_attr(attrs.zhaojia, multiplier).max(0.0),
+        baoji: scale_tower_ratio_attr(attrs.baoji, multiplier).max(0.0),
+        baoshang: scale_tower_ratio_attr(attrs.baoshang, multiplier).max(0.0),
+        jianbaoshang: scale_tower_ratio_attr(attrs.jianbaoshang, multiplier).max(0.0),
+        jianfantan: scale_tower_ratio_attr(attrs.jianfantan, multiplier).max(0.0),
+        kangbao: scale_tower_ratio_attr(attrs.kangbao, multiplier).max(0.0),
+        zengshang: scale_tower_ratio_attr(attrs.zengshang, multiplier).max(0.0),
+        zhiliao: scale_tower_ratio_attr(attrs.zhiliao, multiplier).max(0.0),
+        jianliao: scale_tower_ratio_attr(attrs.jianliao, multiplier).max(0.0),
+        xixue: scale_tower_ratio_attr(attrs.xixue, multiplier).max(0.0),
+        lengque: scale_tower_ratio_attr(attrs.lengque, multiplier).max(0.0),
+        kongzhi_kangxing: scale_tower_ratio_attr(attrs.kongzhi_kangxing, multiplier).max(0.0),
+        jin_kangxing: scale_tower_ratio_attr(attrs.jin_kangxing, multiplier).max(0.0),
+        mu_kangxing: scale_tower_ratio_attr(attrs.mu_kangxing, multiplier).max(0.0),
+        shui_kangxing: scale_tower_ratio_attr(attrs.shui_kangxing, multiplier).max(0.0),
+        huo_kangxing: scale_tower_ratio_attr(attrs.huo_kangxing, multiplier).max(0.0),
+        tu_kangxing: scale_tower_ratio_attr(attrs.tu_kangxing, multiplier).max(0.0),
+        qixue_huifu: scale_tower_flat_f64_attr(attrs.qixue_huifu, multiplier),
+        lingqi_huifu: scale_tower_flat_f64_attr(attrs.lingqi_huifu, multiplier),
+        realm: attrs.realm,
+        element: attrs.element,
+    }
+}
+
 fn build_monster_battle_attrs(seed: &MonsterSeed) -> BattleUnitCurrentAttrsDto {
     let base_attrs = seed.base_attrs.clone().unwrap_or(MonsterBaseAttrs {
         qixue: None,
@@ -1186,6 +1250,25 @@ pub fn try_build_minimal_pve_battle_state(
     player_character_id: i64,
     monster_ids: &[String],
 ) -> Result<BattleStateDto, String> {
+    try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+        battle_id,
+        player_character_id,
+        monster_ids,
+        1.0,
+    )
+}
+
+pub fn try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+    battle_id: &str,
+    player_character_id: i64,
+    monster_ids: &[String],
+    monster_attr_multiplier: f64,
+) -> Result<BattleStateDto, String> {
+    if !monster_attr_multiplier.is_finite() || monster_attr_multiplier <= 0.0 {
+        return Err(format!(
+            "invalid monster attr multiplier: {monster_attr_multiplier}"
+        ));
+    }
     let attacker_attrs = build_battle_attrs(180, 100, 32, 10, Some("凡人".to_string()));
     let attacker = BattleUnitDto {
         id: format!("player-{}", player_character_id),
@@ -1223,7 +1306,10 @@ pub fn try_build_minimal_pve_battle_state(
         .enumerate()
         .map(|(index, monster_id)| {
             let seed = load_monster_seed(monster_id)?;
-            let attrs = build_monster_battle_attrs(&seed);
+            let attrs = scale_tower_monster_battle_attrs(
+                build_monster_battle_attrs(&seed),
+                monster_attr_multiplier,
+            );
             let qixue = attrs.max_qixue.max(1);
             let lingqi = attrs.max_lingqi.max(0);
             Ok(BattleUnitDto {
@@ -2132,6 +2218,33 @@ fn first_alive_unit_id(state: &BattleStateDto, team: &str) -> Option<String> {
         .map(|unit| unit.id.clone())
 }
 
+fn ai_single_enemy_target_id(state: &BattleStateDto, team: &str) -> Option<String> {
+    let alive = team_units(state, team)
+        .iter()
+        .filter(|unit| unit.is_alive)
+        .collect::<Vec<_>>();
+    if alive.is_empty() {
+        return None;
+    }
+    if let Some(low_hp_target) = alive
+        .iter()
+        .filter(|unit| (unit.qixue as f64) / (unit.current_attrs.max_qixue.max(1) as f64) < 0.3)
+        .min_by(|left, right| {
+            let left_rate = (left.qixue as f64) / (left.current_attrs.max_qixue.max(1) as f64);
+            let right_rate = (right.qixue as f64) / (right.current_attrs.max_qixue.max(1) as f64);
+            left_rate
+                .partial_cmp(&right_rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    {
+        return Some(low_hp_target.id.clone());
+    }
+    alive
+        .into_iter()
+        .max_by_key(|unit| unit.stats.damage_dealt)
+        .map(|unit| unit.id.clone())
+}
+
 fn resolve_selected_alive_target(
     state: &BattleStateDto,
     team: &str,
@@ -2346,9 +2459,19 @@ fn resolve_runtime_skill_targets(
             } else {
                 match resolve_selected_alive_target(state, enemy_team, selected_target_ids)? {
                     Some(target_id) => vec![target_id],
-                    None => first_alive_unit_id(state, enemy_team)
-                        .map(|id| vec![id])
-                        .unwrap_or_default(),
+                    None => {
+                        let actor_is_player =
+                            unit_by_id(state, actor_id).is_some_and(|unit| unit.r#type == "player");
+                        if actor_is_player {
+                            first_alive_unit_id(state, enemy_team)
+                                .map(|id| vec![id])
+                                .unwrap_or_default()
+                        } else {
+                            ai_single_enemy_target_id(state, enemy_team)
+                                .map(|id| vec![id])
+                                .unwrap_or_default()
+                        }
+                    }
                 }
             }
         }
@@ -2411,6 +2534,15 @@ fn resolve_effect_base_value(
     }
 }
 
+fn runtime_damage_hit_count(effect: &serde_json::Value) -> usize {
+    effect
+        .get("hit_count")
+        .or_else(|| effect.get("hitCount"))
+        .and_then(|value| json_number_to_i64_floor(Some(value)))
+        .unwrap_or(1)
+        .max(1) as usize
+}
+
 fn battle_attr_value_i64(attrs: &BattleUnitCurrentAttrsDto, attr: &str) -> i64 {
     match attr.trim() {
         "max_qixue" => attrs.max_qixue,
@@ -2471,18 +2603,9 @@ fn effect_target_mode(
         Some("enemy") => "enemy",
         Some("ally") => "ally",
         _ => match effect_type {
-            "buff" => {
-                if matches!(
-                    skill_target_type,
-                    "single_enemy" | "all_enemy" | "random_enemy"
-                ) {
-                    "self"
-                } else {
-                    "target"
-                }
-            }
+            "buff" => "self",
             "debuff" => "enemy",
-            "heal" | "shield" | "restore_lingqi" => {
+            "heal" | "shield" | "restore_lingqi" | "cleanse" | "cleanse_control" => {
                 if matches!(
                     skill_target_type,
                     "single_enemy" | "all_enemy" | "random_enemy"
@@ -2545,36 +2668,16 @@ fn resolve_effect_target_ids(
         .unwrap_or(skill_target_count);
     let resolved = match mode {
         "self" => vec![actor_id.to_string()],
-        "ally" => match resolve_selected_alive_target(state, ally_team, selected_target_ids)? {
-            Some(target_id) => vec![target_id],
-            None => {
-                if target_count > 1 {
-                    random_alive_unit_ids(state, ally_team, target_count)
-                } else {
-                    first_alive_unit_id(state, ally_team)
-                        .map(|id| vec![id])
-                        .unwrap_or_default()
-                }
-            }
-        },
-        "enemy" => {
-            if let Some(target_id) = taunt_locked_target_id(state, actor_id, enemy_team) {
-                vec![target_id]
-            } else {
-                match resolve_selected_alive_target(state, enemy_team, selected_target_ids)? {
-                    Some(target_id) => vec![target_id],
-                    None => {
-                        if target_count > 1 {
-                            random_alive_unit_ids(state, enemy_team, target_count)
-                        } else {
-                            first_alive_unit_id(state, enemy_team)
-                                .map(|id| vec![id])
-                                .unwrap_or_default()
-                        }
-                    }
-                }
-            }
-        }
+        "ally" => primary_target_ids
+            .iter()
+            .filter(|target_id| unit_team_key(state, target_id.as_str()) == Some(ally_team))
+            .cloned()
+            .collect::<Vec<_>>(),
+        "enemy" => primary_target_ids
+            .iter()
+            .filter(|target_id| unit_team_key(state, target_id.as_str()) == Some(enemy_team))
+            .cloned()
+            .collect::<Vec<_>>(),
         _ => match skill_target_type {
             "self" | "single_ally" | "all_ally" | "random_ally" | "all_enemy" | "single_enemy"
             | "random_enemy"
@@ -2629,7 +2732,7 @@ fn resolve_effect_target_ids(
     };
     let resolved = resolved
         .into_iter()
-        .filter(|target_id| unit_by_id(state, target_id.as_str()).is_some_and(|unit| unit.is_alive))
+        .filter(|target_id| unit_by_id(state, target_id.as_str()).is_some())
         .collect::<Vec<_>>();
     if resolved.is_empty() {
         return Err("没有有效目标".to_string());
@@ -2657,6 +2760,7 @@ fn get_or_create_target_log<'a>(
         resources: Vec::new(),
         buffs_applied: Vec::new(),
         marks_consumed: Vec::new(),
+        hits: Vec::new(),
         is_miss: false,
         is_crit: false,
         is_parry: false,
@@ -3122,6 +3226,7 @@ fn process_runtime_set_bonus_turn_start_effects(
                                 })],
                                 buffs_applied: Vec::new(),
                                 marks_consumed: Vec::new(),
+                                hits: Vec::new(),
                                 is_miss: false,
                                 is_crit: false,
                                 is_parry: false,
@@ -3334,6 +3439,7 @@ fn process_runtime_set_bonus_trigger(
                         resources: Vec::new(),
                         buffs_applied: Vec::new(),
                         marks_consumed: Vec::new(),
+                        hits: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3411,6 +3517,7 @@ fn process_runtime_set_bonus_trigger(
                         resources: Vec::new(),
                         buffs_applied: Vec::new(),
                         marks_consumed: Vec::new(),
+                        hits: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3470,6 +3577,7 @@ fn process_runtime_set_bonus_trigger(
                             resources: Vec::new(),
                             buffs_applied: Vec::new(),
                             marks_consumed: Vec::new(),
+                            hits: Vec::new(),
                             is_miss: false,
                             is_crit: false,
                             is_parry: false,
@@ -3525,6 +3633,7 @@ fn process_runtime_set_bonus_trigger(
                             })],
                             buffs_applied: Vec::new(),
                             marks_consumed: Vec::new(),
+                            hits: Vec::new(),
                             is_miss: false,
                             is_crit: false,
                             is_parry: false,
@@ -3577,6 +3686,7 @@ fn process_runtime_set_bonus_trigger(
                         resources: Vec::new(),
                         buffs_applied: vec![applied_name],
                         marks_consumed: Vec::new(),
+                        hits: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3624,6 +3734,7 @@ fn process_runtime_set_bonus_trigger(
                         resources: Vec::new(),
                         buffs_applied: Vec::new(),
                         marks_consumed: vec![consume_text],
+                        hits: Vec::new(),
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3780,6 +3891,7 @@ fn process_runtime_set_bonus_trigger(
                             resources: Vec::new(),
                             buffs_applied: vec![applied_name],
                             marks_consumed: Vec::new(),
+                            hits: Vec::new(),
                             is_miss: false,
                             is_crit: false,
                             is_parry: false,
@@ -5248,6 +5360,7 @@ fn process_runtime_phase_triggers_before_action(
                     resources: Vec::new(),
                     buffs_applied,
                     marks_consumed: Vec::new(),
+                    hits: Vec::new(),
                     is_miss: false,
                     is_crit: false,
                     is_parry: false,
@@ -5313,6 +5426,7 @@ fn process_runtime_phase_triggers_before_action(
                     resources: Vec::new(),
                     buffs_applied: Vec::new(),
                     marks_consumed: Vec::new(),
+                    hits: Vec::new(),
                     is_miss: false,
                     is_crit: false,
                     is_parry: false,
@@ -5369,30 +5483,95 @@ fn can_use_runtime_skill_now(state: &BattleStateDto, actor_id: &str, skill_id: &
         && actor.qixue > config.cost_qixue.max(0)
 }
 
-fn resolve_ai_skill_id(state: &BattleStateDto, actor_id: &str) -> Result<String, String> {
-    let Some(unit) = unit_by_id(state, actor_id) else {
-        return Err("当前不可行动".to_string());
-    };
-    if runtime_is_stunned(unit) || runtime_is_feared(unit) {
-        return Ok("skill-normal-attack".to_string());
-    }
-    for preferred_skill_id in ["sk-bite", "skill-normal-attack"] {
-        if unit.skills.iter().any(|skill| {
-            skill.get("id").and_then(serde_json::Value::as_str) == Some(preferred_skill_id)
-        }) && can_use_runtime_skill_now(state, actor_id, preferred_skill_id)
-        {
-            return Ok(preferred_skill_id.to_string());
-        }
-    }
-    unit.skills
-        .iter()
-        .filter_map(|skill| skill.get("id").and_then(serde_json::Value::as_str))
-        .find(|skill_id| can_use_runtime_skill_now(state, actor_id, skill_id))
-        .map(str::to_string)
-        .ok_or_else(|| "当前不可行动".to_string())
+fn runtime_skill_has_heal_effect(skill: &serde_json::Value) -> bool {
+    skill
+        .get("effects")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|effects| {
+            effects.iter().any(|effect| {
+                effect.get("type").and_then(serde_json::Value::as_str) == Some("heal")
+            })
+        })
 }
 
-fn resolve_partner_skill_id(state: &BattleStateDto, actor_id: &str) -> Result<String, String> {
+fn runtime_team_has_injured_alive_unit(state: &BattleStateDto, team: &str) -> bool {
+    team_units(state, team)
+        .iter()
+        .any(|unit| unit.is_alive && unit.qixue < unit.current_attrs.max_qixue.max(1))
+}
+
+fn runtime_ai_skill_weight(unit: &BattleUnitDto, skill_id: &str) -> f64 {
+    unit.ai_profile
+        .as_ref()
+        .and_then(|profile| profile.get("skillWeights"))
+        .and_then(|weights| weights.get(skill_id))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0)
+        .max(0.0)
+}
+
+fn resolve_ai_skill_id(state: &mut BattleStateDto, actor_id: &str) -> Result<String, String> {
+    let Some(unit) = unit_by_id(state, actor_id).cloned() else {
+        return Err("当前不可行动".to_string());
+    };
+    if runtime_is_stunned(&unit) {
+        return Ok("skill-normal-attack".to_string());
+    }
+    if runtime_is_feared(&unit) {
+        return Ok("skill-normal-attack".to_string());
+    }
+    let actor_team = unit_team_key(state, actor_id).unwrap_or("defender");
+    let can_heal_any_ally = runtime_team_has_injured_alive_unit(state, actor_team);
+    let available_skills = unit
+        .skills
+        .iter()
+        .filter_map(|skill| {
+            let skill_id = skill.get("id").and_then(serde_json::Value::as_str)?;
+            if can_use_runtime_skill_now(state, actor_id, skill_id) {
+                Some((skill_id.to_string(), runtime_skill_has_heal_effect(skill)))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let filtered_skills = if can_heal_any_ally {
+        available_skills.clone()
+    } else {
+        let non_heal = available_skills
+            .iter()
+            .filter(|(_, has_heal)| !*has_heal)
+            .cloned()
+            .collect::<Vec<_>>();
+        if non_heal.is_empty() {
+            available_skills.clone()
+        } else {
+            non_heal
+        }
+    };
+    if filtered_skills.is_empty() {
+        return Err("当前不可行动".to_string());
+    }
+    let weighted = filtered_skills
+        .iter()
+        .map(|(skill_id, _)| (skill_id, runtime_ai_skill_weight(&unit, skill_id)))
+        .filter(|(_, weight)| *weight > 0.0)
+        .collect::<Vec<_>>();
+    if !weighted.is_empty() {
+        let total_weight = weighted.iter().map(|(_, weight)| *weight).sum::<f64>();
+        let mut cursor = next_runtime_random(state) * total_weight;
+        for (skill_id, weight) in weighted {
+            cursor -= weight;
+            if cursor <= 0.0 {
+                return Ok(skill_id.clone());
+            }
+        }
+    }
+    let index = ((next_runtime_random(state) * filtered_skills.len() as f64).floor() as usize)
+        .min(filtered_skills.len() - 1);
+    Ok(filtered_skills[index].0.clone())
+}
+
+fn resolve_partner_skill_id(state: &mut BattleStateDto, actor_id: &str) -> Result<String, String> {
     let Some(unit) = unit_by_id(state, actor_id) else {
         return Err("当前不可行动".to_string());
     };
@@ -5446,7 +5625,7 @@ fn execute_runtime_auto_turn(
     let actor = unit_by_id(state, actor_id)
         .cloned()
         .ok_or_else(|| "当前不可行动".to_string())?;
-    if runtime_is_stunned(&actor) || runtime_is_feared(&actor) {
+    if runtime_is_stunned(&actor) {
         logs.push(build_runtime_action_log(
             state.round_count.max(1),
             actor.id.as_str(),
@@ -5520,7 +5699,8 @@ fn build_runtime_action_log(
                 || target.is_miss
                 || target.is_crit
                 || target.is_parry
-                || target.is_element_bonus;
+                || target.is_element_bonus
+                || !target.hits.is_empty();
             let mut target_value = serde_json::json!({
                 "targetId": target.target_id,
                 "targetName": target.target_name,
@@ -5528,9 +5708,8 @@ fn build_runtime_action_log(
             });
             if let Some(object) = target_value.as_object_mut() {
                 if has_damage_hit {
-                    object.insert(
-                        "hits".to_string(),
-                        serde_json::json!([{
+                    let hits = if target.hits.is_empty() {
+                        vec![serde_json::json!({
                             "index": 1,
                             "damage": target.damage.max(0),
                             "isMiss": target.is_miss,
@@ -5538,7 +5717,28 @@ fn build_runtime_action_log(
                             "isParry": target.is_parry,
                             "isElementBonus": target.is_element_bonus,
                             "shieldAbsorbed": target.shield_absorbed.max(0),
-                        }]),
+                        })]
+                    } else {
+                        target
+                            .hits
+                            .iter()
+                            .enumerate()
+                            .map(|(index, hit)| {
+                                serde_json::json!({
+                                    "index": index + 1,
+                                    "damage": hit.damage.max(0),
+                                    "isMiss": hit.is_miss,
+                                    "isCrit": hit.is_crit,
+                                    "isParry": hit.is_parry,
+                                    "isElementBonus": hit.is_element_bonus,
+                                    "shieldAbsorbed": hit.shield_absorbed.max(0),
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    object.insert(
+                        "hits".to_string(),
+                        serde_json::json!(hits),
                     );
                     object.insert("damage".to_string(), serde_json::json!(target.damage.max(0)));
                     object.insert(
@@ -5728,16 +5928,36 @@ fn execute_runtime_skill_action(
             if !target_snapshot.is_alive {
                 continue;
             }
-            let mut total_damage = 0;
+            let mut target_name = target_snapshot.name.clone();
+            let mut total_actual_damage = 0;
+            let mut total_shield_absorbed = 0;
+            let mut target_dead = false;
+            let mut target_hits = Vec::new();
+            let mut aggregate_is_miss = false;
+            let mut aggregate_is_crit = false;
+            let mut aggregate_is_parry = false;
+            let mut aggregate_is_element_bonus = false;
+            let mut damage_applications: Vec<(&serde_json::Value, i64, &str, Option<&str>, usize)> =
+                Vec::new();
             if damage_effects.is_empty() {
                 if matches!(
                     skill_id.trim(),
                     "skill-normal-attack" | "sk-heavy-slash" | "sk-bite"
                 ) {
-                    total_damage = apply_runtime_rate_bonus(
+                    let base_damage = apply_runtime_rate_bonus(
                         resolve_runtime_skill_damage(state, actor_id, skill_id).max(0),
                         effect_context.damage_bonus_rate + actor_next_skill_damage_bonus,
                     );
+                    damage_applications.push((
+                        &skill,
+                        base_damage,
+                        skill
+                            .get("damageType")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("physical"),
+                        skill.get("element").and_then(serde_json::Value::as_str),
+                        1,
+                    ));
                 }
             } else {
                 for effect in &damage_effects {
@@ -5758,137 +5978,186 @@ fn execute_runtime_skill_action(
                         default_scale_attr,
                     )
                     .max(0);
-                    total_damage += apply_runtime_rate_bonus(
+                    let base_damage = apply_runtime_rate_bonus(
                         effect_base_damage,
                         effect_context.damage_bonus_rate + actor_next_skill_damage_bonus,
                     );
-                }
-            }
-
-            let mut damage_outcome = calculate_runtime_damage(
-                state,
-                &actor,
-                &target_snapshot,
-                skill
-                    .get("damageType")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("physical"),
-                skill.get("element").and_then(serde_json::Value::as_str),
-                total_damage,
-            );
-
-            let (actual_damage, target_dead, target_name, shield_absorbed) = {
-                let target = unit_by_id_mut(state, target_id.as_str())
-                    .ok_or_else(|| "目标不存在或已死亡".to_string())?;
-                let target_name = target.name.clone();
-                if !damage_outcome.is_miss {
-                    let (actual_damage, shield_absorbed) = apply_runtime_damage_to_target(
-                        target,
-                        damage_outcome.damage,
-                        skill
-                            .get("damageType")
+                    damage_applications.push((
+                        effect,
+                        base_damage,
+                        damage_type,
+                        effect
+                            .get("element")
                             .and_then(serde_json::Value::as_str)
-                            .unwrap_or("physical"),
-                    );
-                    damage_outcome.actual_damage = actual_damage;
-                    damage_outcome.shield_absorbed = shield_absorbed;
-                    (
-                        actual_damage,
-                        !target.is_alive,
-                        target_name,
-                        shield_absorbed,
-                    )
-                } else {
-                    (0, false, target_name, 0)
-                }
-            };
-            if damage_outcome.is_miss {
-                if let Some(target) = unit_by_id_mut(state, target_id.as_str()) {
-                    consume_runtime_dodge_next_buff(target);
+                            .or_else(|| skill.get("element").and_then(serde_json::Value::as_str)),
+                        runtime_damage_hit_count(effect),
+                    ));
                 }
             }
-            if actual_damage > 0 {
-                process_runtime_set_bonus_trigger(
-                    state,
-                    "on_hit",
-                    actor_id,
-                    Some(target_id.as_str()),
-                    actual_damage,
-                    &mut logs,
-                );
-                process_runtime_set_bonus_trigger(
-                    state,
-                    "on_be_hit",
-                    target_id.as_str(),
-                    Some(actor_id),
-                    actual_damage,
-                    &mut logs,
-                );
-                if damage_outcome.is_crit {
-                    process_runtime_set_bonus_trigger(
+
+            for (_, base_damage, damage_type, element, hit_count) in damage_applications {
+                for _ in 0..hit_count {
+                    let Some(current_target_snapshot) =
+                        unit_by_id(state, target_id.as_str()).cloned()
+                    else {
+                        break;
+                    };
+                    if !current_target_snapshot.is_alive {
+                        target_dead = true;
+                        break;
+                    }
+                    target_name = current_target_snapshot.name.clone();
+                    let mut damage_outcome = calculate_runtime_damage(
                         state,
-                        "on_crit",
-                        actor_id,
-                        Some(target_id.as_str()),
-                        actual_damage,
-                        &mut logs,
+                        &actor,
+                        &current_target_snapshot,
+                        damage_type,
+                        element,
+                        base_damage,
                     );
-                }
-                let defender_snapshot = unit_by_id(state, target_id.as_str()).cloned();
-                if let Some(defender_snapshot) = defender_snapshot {
-                    let reflect_rate = runtime_reflect_damage_rate(&defender_snapshot);
-                    if reflect_rate > 0.0 {
-                        let reflect_damage =
-                            ((actual_damage as f64) * reflect_rate).floor().max(0.0) as i64;
-                        if reflect_damage > 0 {
-                            let (reflected, reflected_shield_absorbed, attacker_snapshot) = {
-                                let attacker = unit_by_id_mut(state, actor_id)
-                                    .ok_or_else(|| "当前不可行动".to_string())?;
-                                let (reflected, reflected_shield_absorbed) =
-                                    apply_runtime_damage_to_target(
-                                        attacker,
-                                        reflect_damage,
-                                        "true",
-                                    );
-                                (reflected, reflected_shield_absorbed, attacker.clone())
-                            };
-                            logs.push(build_runtime_reflect_damage_log(
-                                action_round,
-                                &defender_snapshot,
-                                &attacker_snapshot,
-                                reflected,
-                                reflected_shield_absorbed,
-                            ));
+                    let mut actual_damage = 0;
+                    let mut shield_absorbed = 0;
+                    if damage_outcome.is_miss {
+                        if let Some(target) = unit_by_id_mut(state, target_id.as_str()) {
+                            consume_runtime_dodge_next_buff(target);
                         }
+                    } else {
+                        let target = unit_by_id_mut(state, target_id.as_str())
+                            .ok_or_else(|| "目标不存在或已死亡".to_string())?;
+                        let applied = apply_runtime_damage_to_target(
+                            target,
+                            damage_outcome.damage,
+                            damage_type,
+                        );
+                        actual_damage = applied.0;
+                        shield_absorbed = applied.1;
+                        damage_outcome.actual_damage = actual_damage;
+                        damage_outcome.shield_absorbed = shield_absorbed;
+                        target_dead = !target.is_alive;
+                    }
+                    total_actual_damage += actual_damage;
+                    total_shield_absorbed += shield_absorbed;
+                    aggregate_is_miss |= damage_outcome.is_miss;
+                    aggregate_is_crit |= damage_outcome.is_crit;
+                    aggregate_is_parry |= damage_outcome.is_parry;
+                    aggregate_is_element_bonus |= damage_outcome.is_element_bonus;
+                    target_hits.push(RuntimeResolvedHitLog {
+                        damage: actual_damage,
+                        is_miss: damage_outcome.is_miss,
+                        is_crit: damage_outcome.is_crit,
+                        is_parry: damage_outcome.is_parry,
+                        is_element_bonus: damage_outcome.is_element_bonus,
+                        shield_absorbed,
+                    });
+                    if actual_damage > 0 {
+                        if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                            actor_unit.stats.damage_dealt += actual_damage;
+                        }
+                        process_runtime_set_bonus_trigger(
+                            state,
+                            "on_hit",
+                            actor_id,
+                            Some(target_id.as_str()),
+                            actual_damage,
+                            &mut logs,
+                        );
+                        process_runtime_set_bonus_trigger(
+                            state,
+                            "on_be_hit",
+                            target_id.as_str(),
+                            Some(actor_id),
+                            actual_damage,
+                            &mut logs,
+                        );
+                        if damage_outcome.is_crit {
+                            process_runtime_set_bonus_trigger(
+                                state,
+                                "on_crit",
+                                actor_id,
+                                Some(target_id.as_str()),
+                                actual_damage,
+                                &mut logs,
+                            );
+                        }
+                        if let Some(actor_team) = unit_team_key(state, actor_id) {
+                            let ally_ids = team_units(state, actor_team)
+                                .iter()
+                                .filter(|unit| unit.is_alive)
+                                .map(|unit| unit.id.clone())
+                                .collect::<Vec<_>>();
+                            for ally_id in ally_ids {
+                                process_runtime_set_bonus_trigger(
+                                    state,
+                                    "on_ally_hit",
+                                    ally_id.as_str(),
+                                    Some(target_id.as_str()),
+                                    actual_damage,
+                                    &mut logs,
+                                );
+                            }
+                        }
+                        let defender_snapshot = unit_by_id(state, target_id.as_str()).cloned();
+                        if let Some(defender_snapshot) = defender_snapshot {
+                            let reflect_rate = runtime_reflect_damage_rate(&defender_snapshot);
+                            if reflect_rate > 0.0 {
+                                let reflect_damage =
+                                    ((actual_damage as f64) * reflect_rate).floor().max(0.0) as i64;
+                                if reflect_damage > 0 {
+                                    let (reflected, reflected_shield_absorbed, attacker_snapshot) = {
+                                        let attacker = unit_by_id_mut(state, actor_id)
+                                            .ok_or_else(|| "当前不可行动".to_string())?;
+                                        let (reflected, reflected_shield_absorbed) =
+                                            apply_runtime_damage_to_target(
+                                                attacker,
+                                                reflect_damage,
+                                                "true",
+                                            );
+                                        (reflected, reflected_shield_absorbed, attacker.clone())
+                                    };
+                                    logs.push(build_runtime_reflect_damage_log(
+                                        action_round,
+                                        &defender_snapshot,
+                                        &attacker_snapshot,
+                                        reflected,
+                                        reflected_shield_absorbed,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    if target_dead {
+                        if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
+                            actor_unit.stats.kill_count += 1;
+                        }
+                        logs.push(build_minimal_death_log(
+                            action_round,
+                            target_id.as_str(),
+                            target_name.as_str(),
+                            Some(actor_id),
+                            Some(actor_name.as_str()),
+                        ));
+                        break;
                     }
                 }
             }
             target_logs.push(RuntimeResolvedTargetLog {
                 target_id: target_id.to_string(),
                 target_name: target_name.clone(),
-                damage: actual_damage,
+                damage: total_actual_damage,
                 heal: 0,
                 shield: 0,
                 resources: Vec::new(),
                 buffs_applied: Vec::new(),
                 marks_consumed: Vec::new(),
-                is_miss: damage_outcome.is_miss,
-                is_crit: damage_outcome.is_crit,
-                is_parry: damage_outcome.is_parry,
-                is_element_bonus: damage_outcome.is_element_bonus,
-                shield_absorbed,
+                hits: target_hits,
+                is_miss: aggregate_is_miss,
+                is_crit: aggregate_is_crit,
+                is_parry: aggregate_is_parry,
+                is_element_bonus: aggregate_is_element_bonus,
+                shield_absorbed: total_shield_absorbed,
                 momentum_gained: Vec::new(),
                 momentum_consumed: Vec::new(),
             });
-            if target_dead {
-                logs.push(build_minimal_death_log(
-                    action_round,
-                    target_id.as_str(),
-                    target_name.as_str(),
-                    Some(actor_id),
-                    Some(actor_name.as_str()),
-                ));
-            }
         }
     }
     if actor_next_skill_damage_bonus > 0.0 {
@@ -5896,14 +6165,15 @@ fn execute_runtime_skill_action(
             consume_runtime_next_skill_bonus(actor_unit);
         }
     }
-    let lifesteal_rate = effects
-        .iter()
-        .filter(|effect| {
-            effect.get("type").and_then(serde_json::Value::as_str) == Some("lifesteal")
-        })
-        .map(|effect| json_number_to_f64(effect.get("value")).unwrap_or(0.0))
-        .sum::<f64>()
-        .max(0.0);
+    let lifesteal_rate = actor.current_attrs.xixue.max(0.0)
+        + effects
+            .iter()
+            .filter(|effect| {
+                effect.get("type").and_then(serde_json::Value::as_str) == Some("lifesteal")
+            })
+            .map(|effect| json_number_to_f64(effect.get("value")).unwrap_or(0.0))
+            .sum::<f64>()
+            .max(0.0);
     if lifesteal_rate > 0.0 {
         for target_log in &target_logs {
             let heal_value = ((target_log.damage.max(0) as f64) * lifesteal_rate)
@@ -5930,7 +6200,7 @@ fn execute_runtime_skill_action(
             .get("type")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let effect_target_ids = resolve_effect_target_ids(
+        let effect_target_ids = match resolve_effect_target_ids(
             state,
             actor_id,
             &active_target_ids,
@@ -5938,7 +6208,14 @@ fn execute_runtime_skill_action(
             skill_target_type.as_str(),
             skill_target_count,
             effect,
-        )?;
+        ) {
+            Ok(target_ids) => target_ids,
+            Err(error) if error == "没有有效目标" || error == "目标不存在或已死亡" =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         for effect_target_id in effect_target_ids {
             let target_snapshot = unit_by_id(state, effect_target_id.as_str())
                 .cloned()
@@ -7809,6 +8086,41 @@ mod tests {
     }
 
     #[test]
+    fn skill_seed_effect_types_are_supported_by_rust_runtime() {
+        let seed = include_str!("../../server/src/data/seeds/skill_def.json");
+        let data: serde_json::Value =
+            serde_json::from_str(seed).expect("skill seed should parse as json");
+        let skills = data["skills"]
+            .as_array()
+            .expect("skill seed should contain skills array");
+        let supported = runtime_supported_skill_effect_types();
+        let unsupported = skills
+            .iter()
+            .flat_map(|skill| {
+                let skill_id = skill["id"].as_str().unwrap_or("<unknown>").to_string();
+                let supported = supported.clone();
+                skill["effects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(move |effect| {
+                        let effect_type = effect["type"].as_str()?;
+                        if supported.contains(effect_type) {
+                            None
+                        } else {
+                            Some(format!("{skill_id}:{effect_type}"))
+                        }
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            unsupported.is_empty(),
+            "unsupported skill seed effects: {unsupported:?}"
+        );
+    }
+
+    #[test]
     fn minimal_pve_battle_state_matches_frontend_required_shape() {
         let state = build_minimal_pve_battle_state(
             "pve-battle-1",
@@ -7959,7 +8271,7 @@ mod tests {
         assert_eq!(outcome.logs[0]["skillName"], "普通攻击");
         assert_eq!(outcome.logs[1]["type"], "action");
         assert_eq!(outcome.logs[1]["actorName"], "灰狼");
-        assert_eq!(outcome.logs[1]["skillName"], "撕咬");
+        assert_eq!(outcome.logs[1]["skillName"], "普通攻击");
         assert_eq!(outcome.logs[1]["targets"][0]["targetName"], "修士1");
         println!(
             "BATTLE_RUNTIME_PVE_PROGRESS_STATE={{\"finished\":{},\"attackerQixue\":{},\"defenderQixue\":{},\"roundCount\":{}}}",
@@ -8065,6 +8377,8 @@ mod tests {
         state.teams.attacker.units[0].current_attrs.max_qixue = 300;
         state.teams.defender.units[0].qixue = 100;
         state.teams.defender.units[0].current_attrs.max_qixue = 100;
+        state.random_seed = 123456;
+        state.random_index = 0;
         state.teams.attacker.units[0].skills = vec![serde_json::json!({
             "id": "skill-life-cut",
             "name": "饮血斩",
@@ -8133,6 +8447,89 @@ mod tests {
         assert_eq!(state.teams.attacker.units[0].qixue, 50);
         assert_eq!(state.teams.attacker.units[0].stats.healing_done, 0);
         assert_eq!(state.teams.attacker.units[0].stats.healing_received, 0);
+    }
+
+    #[test]
+    fn runtime_attr_xixue_lifesteals_after_damage_without_lifesteal_effect() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-xixue",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.attacker.units[0].qixue = 50;
+        state.teams.attacker.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].current_attrs.xixue = 0.5;
+        state.teams.defender.units[0].qixue = 100;
+        state.teams.defender.units[0].current_attrs.max_qixue = 100;
+        state.teams.attacker.units[0].skills = vec![serde_json::json!({
+            "id": "skill-xixue-cut",
+            "name": "血煞斩",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "single_enemy",
+            "targetCount": 1,
+            "damageType": "true",
+            "effects": [
+                {"type": "damage", "value": 100, "valueType": "flat", "damageType": "true"}
+            ]
+        })];
+
+        let target_id = state.teams.defender.units[0].id.clone();
+        super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-xixue-cut",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("xixue action should succeed");
+
+        assert_eq!(state.teams.attacker.units[0].qixue, 100);
+        assert_eq!(state.teams.attacker.units[0].stats.healing_done, 50);
+        assert_eq!(state.teams.attacker.units[0].stats.healing_received, 50);
+    }
+
+    #[test]
+    fn runtime_damage_effect_hit_count_emits_multiple_hits_and_damage_total() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-hit-count",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.defender.units[0].qixue = 100;
+        state.teams.defender.units[0].current_attrs.max_qixue = 100;
+        state.random_seed = 123456;
+        state.random_index = 0;
+        state.teams.attacker.units[0].skills = vec![serde_json::json!({
+            "id": "skill-three-hit",
+            "name": "三叠斩",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "single_enemy",
+            "targetCount": 1,
+            "damageType": "true",
+            "effects": [
+                {"type": "damage", "value": 10, "valueType": "flat", "damageType": "true", "hit_count": 3}
+            ]
+        })];
+
+        let target_id = state.teams.defender.units[0].id.clone();
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-three-hit",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("multi hit action should succeed");
+
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(30));
+        assert_eq!(
+            logs[0]["targets"][0]["hits"]
+                .as_array()
+                .expect("hits should be an array")
+                .len(),
+            3
+        );
+        assert_eq!(state.teams.defender.units[0].qixue, 70);
     }
 
     #[test]
@@ -9537,6 +9934,107 @@ mod tests {
     }
 
     #[test]
+    fn minimal_pve_set_bonus_on_ally_hit_triggers_for_alive_ally() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-set-on-ally-hit",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let mut ally = state.teams.attacker.units[0].clone();
+        ally.id = "player-2".to_string();
+        ally.name = "队友".to_string();
+        ally.set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-ally",
+            "setName": "协击套装",
+            "trigger": "on_ally_hit",
+            "effectType": "damage",
+            "target": "enemy",
+            "chance": 1.0,
+            "params": {"value": 15, "damage_type": "true"}
+        })];
+        state.teams.attacker.units.push(ally);
+        state.teams.defender.units[0].qixue = 300;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].skills = vec![serde_json::json!({
+            "id": "skill-hit",
+            "name": "直击",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "single_enemy",
+            "targetCount": 1,
+            "damageType": "true",
+            "effects": [{"type": "damage", "value": 10, "valueType": "flat", "damageType": "true"}]
+        })];
+
+        let target_id = state.teams.defender.units[0].id.clone();
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-hit",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("set on ally hit action should succeed");
+
+        assert!(logs.iter().any(|log| {
+            log["skillId"] == "proc-set-ally-on_ally_hit"
+                && log["actorId"] == "player-2"
+                && log["targets"][0]["damage"] == serde_json::json!(15)
+        }));
+    }
+
+    #[test]
+    fn runtime_single_ally_buff_without_explicit_target_defaults_to_self_like_node() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-single-ally-buff-default",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let mut ally = state.teams.attacker.units[0].clone();
+        ally.id = "player-2".to_string();
+        ally.name = "队友".to_string();
+        state.teams.attacker.units.push(ally);
+        state.teams.attacker.units[0].skills = vec![serde_json::json!({
+            "id": "skill-single-ally-buff",
+            "name": "纯阳增益",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "single_ally",
+            "targetCount": 1,
+            "damageType": "none",
+            "effects": [{
+                "type": "buff",
+                "buffKind": "attr",
+                "attrKey": "wugong",
+                "value": 5,
+                "applyType": "flat",
+                "duration": 2
+            }]
+        })];
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-single-ally-buff",
+            &["player-2".to_string()],
+        )
+        .expect("single ally buff should succeed");
+
+        assert_eq!(logs[0]["targets"][0]["targetId"], "player-1");
+        assert!(
+            state.teams.attacker.units[0]
+                .buffs
+                .iter()
+                .any(|buff| buff["buffDefId"] == "buff-wugong")
+        );
+        assert!(
+            state.teams.attacker.units[1]
+                .buffs
+                .iter()
+                .all(|buff| buff["buffDefId"] != "buff-wugong")
+        );
+    }
+
+    #[test]
     fn minimal_pve_momentum_gain_and_consume_updates_state_and_log() {
         let mut state = build_minimal_pve_battle_state(
             "pve-battle-momentum",
@@ -10027,7 +10525,7 @@ mod tests {
             "cost": {"lingqi": 0, "qixue": 0},
             "effects": [
                 {"type": "heal", "value": 180, "valueType": "flat"},
-                {"type": "buff", "buffKind": "attr", "attrKey": "wugong", "applyType": "percent", "value": 0.25, "duration": 2}
+                {"type": "buff", "target": "target", "buffKind": "attr", "attrKey": "wugong", "applyType": "percent", "value": 0.25, "duration": 2}
             ]
         }));
         refresh_battle_team_total_speed(&mut state);
@@ -10390,12 +10888,7 @@ mod tests {
         let mut logs = Vec::new();
         process_round_start(&mut state, &mut logs);
 
-        let attacker = state
-            .teams
-            .attacker
-            .units
-            .first()
-            .expect("attacker exists");
+        let attacker = state.teams.attacker.units.first().expect("attacker exists");
         assert!(
             !attacker.is_alive,
             "Node order kills the unit before qixue_huifu can recover"
@@ -10818,6 +11311,27 @@ mod tests {
         .expect_err("unknown monster seed should fail");
 
         assert!(error.contains("monster-does-not-exist"));
+    }
+
+    #[test]
+    fn minimal_pve_tower_attr_multiplier_scales_monster_base_attrs_like_node() {
+        let seed = super::load_monster_seed("monster-gray-wolf").expect("monster seed should load");
+        let base_attrs = super::build_monster_battle_attrs(&seed);
+        let state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "tower-battle-test",
+            1,
+            &["monster-gray-wolf".to_string()],
+            2.0,
+        )
+        .expect("scaled tower state should build");
+
+        let monster = &state.teams.defender.units[0];
+        assert_eq!(monster.base_attrs.max_qixue, base_attrs.max_qixue * 2);
+        assert_eq!(monster.qixue, monster.base_attrs.max_qixue);
+        assert_eq!(
+            monster.base_attrs.mingzhong,
+            ((base_attrs.mingzhong * 1.5) * 1_000_000.0).round() / 1_000_000.0
+        );
     }
 
     #[test]
@@ -11280,6 +11794,76 @@ mod tests {
     }
 
     #[test]
+    fn runtime_damage_kill_keeps_followup_mark_and_debuff_on_dead_target_like_node() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = "monster-1-monster-gray-wolf".to_string();
+        state.teams.defender.units[0].qixue = 30;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-kill-then-mark-debuff",
+                "name": "斩后追印",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "true",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [
+                    {
+                        "type": "damage",
+                        "valueType": "flat",
+                        "value": 100,
+                        "damageType": "true"
+                    },
+                    {
+                        "type": "mark",
+                        "operation": "apply",
+                        "markId": "ember_brand",
+                        "applyStacks": 1,
+                        "maxStacks": 5,
+                        "duration": 2
+                    },
+                    {
+                        "type": "debuff",
+                        "buffKind": "attr",
+                        "attrKey": "wufang",
+                        "value": 5,
+                        "applyType": "flat",
+                        "duration": 2
+                    }
+                ]
+            }));
+
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-kill-then-mark-debuff",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("damage kill should not make follow-up effects fail action");
+
+        let target = &state.teams.defender.units[0];
+        assert!(!target.is_alive);
+        assert_eq!(target.qixue, 0);
+        assert_eq!(target.marks.len(), 1);
+        assert_eq!(target.marks[0]["id"], "ember_brand");
+        assert_eq!(target.buffs.len(), 1);
+        assert_eq!(target.buffs[0]["buffDefId"], "debuff-wufang");
+        assert_eq!(logs[0]["skillId"], "skill-kill-then-mark-debuff");
+        assert_eq!(logs[0]["targets"][0]["damage"], 30);
+        assert_eq!(
+            logs[0]["targets"][0]["buffsApplied"],
+            serde_json::json!(["ember_brand", "debuff-wufang"])
+        );
+        assert!(
+            logs.iter()
+                .any(|log| log["type"] == "death" && log["unitId"] == target_id)
+        );
+    }
+
+    #[test]
     fn runtime_mark_consume_all_converts_stacks_to_true_damage() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
@@ -11633,6 +12217,7 @@ mod tests {
                 resources: Vec::new(),
                 buffs_applied: Vec::new(),
                 marks_consumed: Vec::new(),
+                hits: Vec::new(),
                 is_miss: false,
                 is_crit: true,
                 is_parry: false,
@@ -11977,6 +12562,161 @@ mod tests {
                 .iter()
                 .any(|value| value == "low-hp-empty-enrage")
         );
+    }
+
+    #[test]
+    fn monster_ai_uses_skill_weights_from_ai_profile() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-ai-weights",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let defender = &mut state.teams.defender.units[0];
+        defender.skills = vec![
+            serde_json::json!({
+                "id": "skill-low-weight",
+                "name": "低权重",
+                "cost": {"lingqi": 0, "qixue": 0},
+                "cooldown": 0,
+                "targetType": "single_enemy",
+                "damageType": "true",
+                "effects": [{"type": "damage", "value": 1, "valueType": "flat", "damageType": "true"}]
+            }),
+            serde_json::json!({
+                "id": "skill-high-weight",
+                "name": "高权重",
+                "cost": {"lingqi": 0, "qixue": 0},
+                "cooldown": 0,
+                "targetType": "single_enemy",
+                "damageType": "true",
+                "effects": [{"type": "damage", "value": 1, "valueType": "flat", "damageType": "true"}]
+            }),
+        ];
+        defender.ai_profile = Some(serde_json::json!({
+            "skillWeights": {
+                "skill-low-weight": 1,
+                "skill-high-weight": 100
+            }
+        }));
+        state.random_seed = 123456;
+        state.random_index = 0;
+
+        let skill_id = super::resolve_ai_skill_id(&mut state, "monster-1-monster-gray-wolf")
+            .expect("ai skill should resolve");
+
+        assert_eq!(skill_id, "skill-high-weight");
+        assert_eq!(state.random_index, 1);
+    }
+
+    #[test]
+    fn monster_ai_skips_heal_skill_when_no_ally_needs_healing() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-ai-heal-filter",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let defender = &mut state.teams.defender.units[0];
+        defender.qixue = defender.current_attrs.max_qixue;
+        defender.skills = vec![
+            serde_json::json!({
+                "id": "skill-ai-heal",
+                "name": "自愈",
+                "cost": {"lingqi": 0, "qixue": 0},
+                "cooldown": 0,
+                "targetType": "single_ally",
+                "damageType": "none",
+                "effects": [{"type": "heal", "value": 10, "valueType": "flat"}]
+            }),
+            serde_json::json!({
+                "id": "skill-ai-strike",
+                "name": "攻击",
+                "cost": {"lingqi": 0, "qixue": 0},
+                "cooldown": 0,
+                "targetType": "single_enemy",
+                "damageType": "true",
+                "effects": [{"type": "damage", "value": 1, "valueType": "flat", "damageType": "true"}]
+            }),
+        ];
+        defender.ai_profile = Some(serde_json::json!({
+            "skillWeights": {
+                "skill-ai-heal": 100,
+                "skill-ai-strike": 1
+            }
+        }));
+        state.random_seed = 123456;
+        state.random_index = 0;
+
+        let skill_id = super::resolve_ai_skill_id(&mut state, "monster-1-monster-gray-wolf")
+            .expect("ai skill should resolve");
+
+        assert_eq!(skill_id, "skill-ai-strike");
+    }
+
+    #[test]
+    fn monster_ai_single_enemy_targets_low_hp_enemy_like_node() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-ai-target",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let mut ally = state.teams.attacker.units[0].clone();
+        ally.id = "player-2".to_string();
+        ally.name = "残血队友".to_string();
+        ally.qixue = 20;
+        ally.current_attrs.max_qixue = 200;
+        state.teams.attacker.units[0].qixue = 180;
+        state.teams.attacker.units[0].current_attrs.max_qixue = 200;
+        state.teams.attacker.units.push(ally);
+        state.teams.defender.units[0].skills = vec![serde_json::json!({
+            "id": "skill-ai-strike",
+            "name": "攻击",
+            "cost": {"lingqi": 0, "qixue": 0},
+            "cooldown": 0,
+            "targetType": "single_enemy",
+            "damageType": "true",
+            "effects": [{"type": "damage", "value": 1, "valueType": "flat", "damageType": "true"}]
+        })];
+
+        let target_ids = super::resolve_runtime_skill_targets(
+            &mut state,
+            "monster-1-monster-gray-wolf",
+            "skill-ai-strike",
+            &[],
+        )
+        .expect("target should resolve");
+
+        assert_eq!(target_ids, vec!["player-2".to_string()]);
+    }
+
+    #[test]
+    fn feared_monster_uses_normal_attack_instead_of_skipping_turn() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-ai-fear",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.current_team = "defender".to_string();
+        state.current_unit_id = Some("monster-1-monster-gray-wolf".to_string());
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "fear",
+            "buffDefId": "control-fear",
+            "name": "恐惧",
+            "type": "debuff",
+            "category": "control",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "control": "fear"
+        }));
+        let mut logs = Vec::new();
+
+        super::execute_runtime_auto_turn(&mut state, "monster-1-monster-gray-wolf", &mut logs)
+            .expect("fear turn should execute");
+
+        assert_eq!(logs[0]["skillId"], "skill-normal-attack");
+        assert_ne!(logs[0]["skillId"], "skip");
+        assert_eq!(logs[0]["targets"][0]["targetId"], "player-1");
     }
 
     #[test]

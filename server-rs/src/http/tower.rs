@@ -9,11 +9,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::{restart_battle_runtime, try_build_minimal_pve_battle_state};
+use crate::battle_runtime::{
+    restart_battle_runtime, try_build_minimal_pve_battle_state_with_monster_attr_multiplier,
+};
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
 };
-use crate::jobs::tower_frozen_pool::resolve_frozen_tower_monsters_for_floor;
+use crate::jobs::tower_frozen_pool::{
+    resolve_frozen_tower_monsters_for_floor, resolve_frozen_tower_overflow_tier_count_for_floor,
+};
 use crate::realtime::battle::{build_battle_cooldown_ready_payload, build_battle_started_payload};
 use crate::realtime::public_socket::{
     emit_battle_cooldown_to_participants, emit_battle_update_to_participants,
@@ -267,12 +271,11 @@ pub async fn start_tower_challenge(
             });
     }
     if let Some(current_battle_id) = session.current_battle_id.clone() {
-        let mut battle_state = try_build_minimal_pve_battle_state(
+        let mut battle_state = try_build_minimal_tower_pve_battle_state(
             &current_battle_id,
             character_id,
-            &resolve_tower_floor_monster_ids(session.context.floor),
-        )
-        .map_err(AppError::config)?;
+            session.context.floor,
+        )?;
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         hydrate_pve_battle_state_active_partner(&state, &mut battle_state, character_id).await?;
         let start_logs = restart_battle_runtime(&mut battle_state);
@@ -389,6 +392,13 @@ const TOWER_ELITE_MONSTER_COUNT_CAP: i64 = 4;
 const TOWER_BOSS_MONSTER_COUNT_BASE: i64 = 1;
 const TOWER_BOSS_MONSTER_COUNT_INTERVAL: i64 = 100;
 const TOWER_BOSS_MONSTER_COUNT_CAP: i64 = 3;
+const TOWER_CYCLE_FLOORS: i64 = 10;
+const TOWER_LINEAR_GROWTH_PER_FLOOR: f64 = 0.013;
+const TOWER_CURVE_GROWTH_FACTOR: f64 = 0.0012;
+const TOWER_CURVE_GROWTH_EXPONENT: f64 = 1.35;
+const TOWER_ELITE_MULTIPLIER: f64 = 1.07;
+const TOWER_BOSS_MULTIPLIER: f64 = 1.135;
+const TOWER_OVERFLOW_LOG_GROWTH: f64 = 0.03;
 
 fn tower_floor_kind(floor: i64) -> &'static str {
     let normalized_floor = floor.max(1);
@@ -399,6 +409,26 @@ fn tower_floor_kind(floor: i64) -> &'static str {
     } else {
         "normal"
     }
+}
+
+fn tower_kind_multiplier(kind: &str) -> f64 {
+    match kind {
+        "boss" => TOWER_BOSS_MULTIPLIER,
+        "elite" => TOWER_ELITE_MULTIPLIER,
+        _ => 1.0,
+    }
+}
+
+fn tower_attr_multiplier(floor: i64, kind: &str, overflow_tier_count: i64) -> f64 {
+    let normalized_floor = floor.max(1);
+    let progress = (normalized_floor - 1) as f64;
+    let base_curve = 1.0
+        + progress * TOWER_LINEAR_GROWTH_PER_FLOOR
+        + progress.powf(TOWER_CURVE_GROWTH_EXPONENT) * TOWER_CURVE_GROWTH_FACTOR;
+    let overflow_multiplier =
+        1.0 + ((overflow_tier_count.max(0) as f64) + 1.0).ln() * TOWER_OVERFLOW_LOG_GROWTH;
+    (base_curve * tower_kind_multiplier(kind) * overflow_multiplier * 1_000_000.0).round()
+        / 1_000_000.0
 }
 
 fn tower_normalize_monster_kind(value: Option<&str>) -> &'static str {
@@ -535,12 +565,29 @@ fn build_latest_tower_floor_preview(
     if realms.is_empty() {
         return Err(AppError::config(format!("千层塔缺少可用怪物池: {kind}")));
     }
-    let cycle_index = ((normalized_floor - 1) / 10).max(0) as usize;
+    let cycle_index = ((normalized_floor - 1) / TOWER_CYCLE_FLOORS).max(0) as usize;
     let realm = realms[cycle_index.min(realms.len() - 1)];
-    let candidates = monster_map
-        .get(&format!("{kind}::{realm}"))
-        .cloned()
-        .unwrap_or_default();
+    let overflow_tier_count = cycle_index.saturating_sub(realms.len().saturating_sub(1));
+    let (preview_realm, candidates) = if overflow_tier_count > 0 {
+        let mut candidates = Vec::new();
+        for realm in &realms {
+            candidates.extend(
+                monster_map
+                    .get(&format!("{kind}::{realm}"))
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+        (format!("{realm}·混池"), candidates)
+    } else {
+        (
+            realm.to_string(),
+            monster_map
+                .get(&format!("{kind}::{realm}"))
+                .cloned()
+                .unwrap_or_default(),
+        )
+    };
     if candidates.is_empty() {
         return Err(AppError::config(format!(
             "千层塔楼层缺少怪物候选: floor={normalized_floor}, kind={kind}, realm={realm}"
@@ -553,7 +600,7 @@ fn build_latest_tower_floor_preview(
         floor: normalized_floor,
         kind: kind.to_string(),
         seed,
-        realm: realm.to_string(),
+        realm: preview_realm,
         monster_ids: monsters
             .iter()
             .filter_map(|monster| monster.id.clone())
@@ -596,8 +643,52 @@ pub(crate) fn try_resolve_tower_floor_monster_ids(floor: i64) -> Result<Vec<Stri
     Ok(preview.monster_ids)
 }
 
-pub(crate) fn resolve_tower_floor_monster_ids(floor: i64) -> Vec<String> {
-    try_resolve_tower_floor_monster_ids(floor).expect("tower floor monsters should resolve")
+fn try_resolve_tower_floor_overflow_tier_count(floor: i64) -> Result<i64, AppError> {
+    let normalized_floor = floor.max(1);
+    let kind = tower_floor_kind(normalized_floor);
+    if let Some(overflow_tier_count) =
+        resolve_frozen_tower_overflow_tier_count_for_floor(normalized_floor, kind)
+    {
+        return Ok(overflow_tier_count);
+    }
+    let monster_map = load_tower_monster_seed_map()?;
+    let realm_count = TOWER_REALM_ORDER
+        .iter()
+        .copied()
+        .filter(|realm| monster_map.contains_key(&format!("{kind}::{realm}")))
+        .count();
+    if realm_count == 0 {
+        return Err(AppError::config(format!("千层塔缺少可用怪物池: {kind}")));
+    }
+    let cycle_index = ((normalized_floor - 1) / TOWER_CYCLE_FLOORS).max(0);
+    Ok((cycle_index - (realm_count as i64 - 1)).max(0))
+}
+
+pub(crate) fn try_resolve_tower_floor_attr_multiplier(floor: i64) -> Result<f64, AppError> {
+    let normalized_floor = floor.max(1);
+    let kind = tower_floor_kind(normalized_floor);
+    let overflow_tier_count = try_resolve_tower_floor_overflow_tier_count(normalized_floor)?;
+    Ok(tower_attr_multiplier(
+        normalized_floor,
+        kind,
+        overflow_tier_count,
+    ))
+}
+
+pub(crate) fn try_build_minimal_tower_pve_battle_state(
+    battle_id: &str,
+    character_id: i64,
+    floor: i64,
+) -> Result<crate::battle_runtime::BattleStateDto, AppError> {
+    let monster_ids = try_resolve_tower_floor_monster_ids(floor)?;
+    let attr_multiplier = try_resolve_tower_floor_attr_multiplier(floor)?;
+    try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+        battle_id,
+        character_id,
+        &monster_ids,
+        attr_multiplier,
+    )
+    .map_err(AppError::config)
 }
 
 fn build_tower_floor_preview_from_frozen(
@@ -713,8 +804,63 @@ mod tests {
                 }],
             )]),
         );
-        let monster_ids = super::resolve_tower_floor_monster_ids(1);
+        let monster_ids = super::try_resolve_tower_floor_monster_ids(1).unwrap();
         assert_eq!(monster_ids, vec!["monster-wild-boar".to_string()]);
         println!("TOWER_FLOOR_MONSTER_IDS={}", serde_json::json!(monster_ids));
+    }
+
+    #[test]
+    fn tower_floor_attr_multiplier_uses_node_curve() {
+        crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
+            0,
+            std::collections::BTreeMap::new(),
+        );
+
+        assert_eq!(
+            super::try_resolve_tower_floor_attr_multiplier(1).unwrap(),
+            1.0
+        );
+        assert!(
+            super::try_resolve_tower_floor_attr_multiplier(5).unwrap()
+                > super::try_resolve_tower_floor_attr_multiplier(1).unwrap()
+        );
+    }
+
+    #[test]
+    fn tower_overflow_floor_uses_mixed_pool_preview_source() {
+        crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
+            100,
+            std::collections::BTreeMap::from([
+                (
+                    ("normal".to_string(), "凡人".to_string()),
+                    vec![crate::jobs::tower_frozen_pool::FrozenTowerMonsterEntry {
+                        monster_def_id: "monster-gray-wolf".to_string(),
+                        monster_name: "灰狼".to_string(),
+                    }],
+                ),
+                (
+                    ("normal".to_string(), "炼精化炁·养气期".to_string()),
+                    vec![crate::jobs::tower_frozen_pool::FrozenTowerMonsterEntry {
+                        monster_def_id: "monster-wild-boar".to_string(),
+                        monster_name: "野猪".to_string(),
+                    }],
+                ),
+            ]),
+        );
+
+        let preview = super::try_build_tower_floor_preview(31).unwrap();
+
+        assert_eq!(preview.realm, "炼精化炁·养气期·混池");
+        assert!(
+            preview
+                .monster_ids
+                .contains(&"monster-gray-wolf".to_string())
+        );
+        assert!(
+            preview
+                .monster_ids
+                .contains(&"monster-wild-boar".to_string())
+        );
+        assert!(super::try_resolve_tower_floor_attr_multiplier(31).unwrap() > 1.0);
     }
 }

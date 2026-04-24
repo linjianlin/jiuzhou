@@ -61,7 +61,7 @@ mod tests {
         LoggingConfig, MarketPhoneBindingConfig, OutboundHttpConfig, RedisConfig, ServiceConfig,
         StorageConfig, WanderConfig,
     };
-    use crate::http::tower::resolve_tower_floor_monster_ids;
+    use crate::http::tower::try_resolve_tower_floor_monster_ids;
     use crate::integrations::database::DatabaseRuntime;
     use crate::state::{
         AppState, BattleSessionContextDto, BattleSessionSnapshotDto, OnlineBattleProjectionRecord,
@@ -16284,7 +16284,7 @@ mod tests {
         let previous_battle_state = build_minimal_pve_battle_state(
             &previous_battle_id,
             fixture.character_id,
-            &resolve_tower_floor_monster_ids(13),
+            &try_resolve_tower_floor_monster_ids(13).unwrap(),
         );
         let previous_projection = OnlineBattleProjectionRecord {
             battle_id: previous_battle_id.clone(),

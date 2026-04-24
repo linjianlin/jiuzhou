@@ -3320,7 +3320,15 @@
           "scaleRate": 1.15
         },
         {
-          "type": "drain_lingqi",
+          "type": "resource",
+          "target": "enemy",
+          "resourceType": "lingqi",
+          "value": -12
+        },
+        {
+          "type": "resource",
+          "target": "self",
+          "resourceType": "lingqi",
           "value": 12
         }
       ],

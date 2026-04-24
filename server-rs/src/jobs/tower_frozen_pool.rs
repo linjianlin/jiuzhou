@@ -181,12 +181,53 @@ pub fn resolve_frozen_tower_monsters_for_floor(
 
     let cycle_index = ((normalized_floor - 1) / 10).max(0) as usize;
     let realm = realms[cycle_index.min(realms.len() - 1)].to_string();
-    let monsters = cache
-        .pools
-        .get(&(kind.trim().to_string(), realm.clone()))
-        .cloned()
-        .unwrap_or_default();
-    Some((realm, monsters))
+    let overflow_tier_count = cycle_index.saturating_sub(realms.len().saturating_sub(1));
+    if overflow_tier_count > 0 {
+        let mut monsters = Vec::new();
+        for realm in realms {
+            monsters.extend(
+                cache
+                    .pools
+                    .get(&(kind.trim().to_string(), realm.to_string()))
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+        return Some((format!("{realm}·混池"), monsters));
+    }
+    Some((
+        realm.clone(),
+        cache
+            .pools
+            .get(&(kind.trim().to_string(), realm))
+            .cloned()
+            .unwrap_or_default(),
+    ))
+}
+
+pub fn resolve_frozen_tower_overflow_tier_count_for_floor(floor: i64, kind: &str) -> Option<i64> {
+    let normalized_floor = floor.max(1);
+    let cache = frozen_tower_pool_cache()
+        .read()
+        .expect("frozen tower cache read lock should acquire")
+        .clone();
+    if normalized_floor > cache.frozen_floor_max.max(0) {
+        return None;
+    }
+    let realm_count = TOWER_REALM_ORDER
+        .iter()
+        .copied()
+        .filter(|realm| {
+            cache
+                .pools
+                .contains_key(&(kind.trim().to_string(), (*realm).to_string()))
+        })
+        .count();
+    if realm_count == 0 {
+        return Some(0);
+    }
+    let cycle_index = ((normalized_floor - 1) / 10).max(0);
+    Some((cycle_index - (realm_count as i64 - 1)).max(0))
 }
 
 #[cfg(test)]

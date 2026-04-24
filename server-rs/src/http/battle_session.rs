@@ -14,7 +14,7 @@ use crate::battle_runtime::{
     try_build_minimal_pve_battle_state,
 };
 use crate::http::dungeon::load_dungeon_wave_monster_ids;
-use crate::http::tower::resolve_tower_floor_monster_ids;
+use crate::http::tower::try_build_minimal_tower_pve_battle_state;
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
     hydrate_pve_battle_state_participants, hydrate_pvp_battle_state_players,
@@ -712,12 +712,11 @@ pub async fn advance_battle_session(
                     state.online_battle_projections.clear(&current_battle_id);
                     clear_battle_persistence(&state, &current_battle_id, Some(&session_id)).await?;
                 }
-                let mut next_battle_state = crate::battle_runtime::try_build_minimal_pve_battle_state(
+                let mut next_battle_state = try_build_minimal_tower_pve_battle_state(
                     &next_battle_id,
                     character_id,
-                    &resolve_tower_floor_monster_ids(next_floor),
-                )
-                .map_err(AppError::config)?;
+                    next_floor,
+                )?;
                 hydrate_pve_battle_state_owner(&state, &mut next_battle_state, character_id).await?;
                 hydrate_pve_battle_state_active_partner(&state, &mut next_battle_state, character_id)
                     .await?;

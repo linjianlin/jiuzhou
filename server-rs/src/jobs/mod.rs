@@ -21,7 +21,7 @@ use crate::http::dungeon::load_dungeon_wave_monster_ids;
 use crate::http::idle;
 use crate::http::inventory::{InventoryDefSeed, load_inventory_def_map};
 use crate::http::partner;
-use crate::http::tower::resolve_tower_floor_monster_ids;
+use crate::http::tower::try_build_minimal_tower_pve_battle_state;
 use crate::http::wander;
 use crate::integrations::battle_character_profile::hydrate_pve_battle_state_owner;
 use crate::integrations::battle_persistence::{
@@ -1216,12 +1216,9 @@ async fn recover_tower_battles(state: AppState) -> anyhow::Result<usize> {
                 floor,
             },
         };
-        let mut battle_state = try_build_minimal_pve_battle_state(
-            &battle_id,
-            character_id,
-            &resolve_tower_floor_monster_ids(floor),
-        )
-        .map_err(AppError::config)?;
+        let mut battle_state =
+            try_build_minimal_tower_pve_battle_state(&battle_id, character_id, floor)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
         hydrate_pve_battle_state_owner(&state, &mut battle_state, character_id).await?;
         state.battle_sessions.register(session.clone());
         state.battle_runtime.register(battle_state.clone());
