@@ -858,7 +858,7 @@ mod tests {
                     "skillId": "sk-heavy-slash",
                     "skillName": "重斩",
                     "targets": [{
-                        "targetId": "monster-1-monster-gray-wolf",
+                        "targetId": "monster-monster-gray-wolf-0",
                         "targetName": "灰狼",
                         "hits": [{
                             "index": 1,

@@ -84,6 +84,8 @@ pub struct BattleUnitDto {
     pub marks: Vec<serde_json::Value>,
     pub momentum: Option<serde_json::Value>,
     pub set_bonus_effects: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_action_state: Option<serde_json::Value>,
     pub skills: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggered_phase_ids: Vec<String>,
@@ -316,6 +318,9 @@ struct MonsterSeed {
     level: Option<i64>,
     exp_reward: Option<i64>,
     silver_reward_min: Option<i64>,
+    attr_variance: Option<serde_json::Value>,
+    attr_multiplier_min: Option<serde_json::Value>,
+    attr_multiplier_max: Option<serde_json::Value>,
     base_attrs: Option<MonsterBaseAttrs>,
     ai_profile: Option<MonsterAiProfileSeed>,
     drop_pool_id: Option<String>,
@@ -388,6 +393,12 @@ struct BattleDropPoolEntrySeed {
 enum BattleDropSourceType {
     Common,
     Exclusive,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RuntimeMonsterAttrScalingMode {
+    Encounter { base_multiplier: f64 },
+    FixedTower { base_multiplier: f64 },
 }
 
 #[derive(Debug, Clone)]
@@ -738,6 +749,7 @@ fn build_runtime_summon_unit(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
+        extra_action_state: None,
         skills: template.skills.clone(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -806,6 +818,126 @@ fn scale_tower_monster_battle_attrs(
         tu_kangxing: scale_tower_ratio_attr(attrs.tu_kangxing, multiplier).max(0.0),
         qixue_huifu: scale_tower_flat_f64_attr(attrs.qixue_huifu, multiplier),
         lingqi_huifu: scale_tower_flat_f64_attr(attrs.lingqi_huifu, multiplier),
+        realm: attrs.realm,
+        element: attrs.element,
+    }
+}
+
+fn scale_monster_encounter_flat_i64_attr(value: i64, factor: f64, minimum: i64) -> i64 {
+    ((value as f64) * factor).round().max(minimum as f64) as i64
+}
+
+fn scale_monster_encounter_ratio_attr(value: f64, factor: f64) -> f64 {
+    (value * factor * 1_000_000.0).round() / 1_000_000.0
+}
+
+fn scale_monster_encounter_flat_f64_attr(value: f64, factor: f64) -> f64 {
+    (value * factor).round().max(0.0)
+}
+
+fn monster_encounter_attr_factor(
+    state: &mut BattleStateDto,
+    variance: f64,
+    overall_multiplier: f64,
+) -> f64 {
+    let wave = if variance > 0.0 {
+        (next_runtime_random(state) * 2.0 - 1.0) * variance
+    } else {
+        0.0
+    };
+    (1.0 + wave) * overall_multiplier
+}
+
+fn scale_monster_encounter_battle_attrs(
+    state: &mut BattleStateDto,
+    seed: &MonsterSeed,
+    attrs: BattleUnitCurrentAttrsDto,
+) -> BattleUnitCurrentAttrsDto {
+    let variance = json_number_to_f64(seed.attr_variance.as_ref())
+        .unwrap_or(0.05)
+        .clamp(0.0, 1.0);
+    let min_multiplier = json_number_to_f64(seed.attr_multiplier_min.as_ref()).unwrap_or(0.9);
+    let max_multiplier = json_number_to_f64(seed.attr_multiplier_max.as_ref()).unwrap_or(1.1);
+    let low = min_multiplier.min(max_multiplier);
+    let high = min_multiplier.max(max_multiplier);
+    let overall_multiplier = low + next_runtime_random(state) * (high - low);
+
+    let max_qixue_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let max_lingqi_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let wugong_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let fagong_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let wufang_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let fafang_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let sudu_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let mingzhong_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let shanbi_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let zhaojia_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let baoji_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let baoshang_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let jianbaoshang_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let jianfantan_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let kangbao_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let zengshang_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let zhiliao_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let jianliao_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let xixue_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let lengque_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let kongzhi_kangxing_factor =
+        monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let jin_kangxing_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let mu_kangxing_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let shui_kangxing_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let huo_kangxing_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let tu_kangxing_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let qixue_huifu_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+    let lingqi_huifu_factor = monster_encounter_attr_factor(state, variance, overall_multiplier);
+
+    BattleUnitCurrentAttrsDto {
+        max_qixue: scale_monster_encounter_flat_i64_attr(attrs.max_qixue, max_qixue_factor, 1),
+        max_lingqi: scale_monster_encounter_flat_i64_attr(attrs.max_lingqi, max_lingqi_factor, 0),
+        wugong: scale_monster_encounter_flat_i64_attr(attrs.wugong, wugong_factor, 0),
+        fagong: scale_monster_encounter_flat_i64_attr(attrs.fagong, fagong_factor, 0),
+        wufang: scale_monster_encounter_flat_i64_attr(attrs.wufang, wufang_factor, 0),
+        fafang: scale_monster_encounter_flat_i64_attr(attrs.fafang, fafang_factor, 0),
+        sudu: scale_monster_encounter_flat_i64_attr(attrs.sudu, sudu_factor, 1),
+        mingzhong: scale_monster_encounter_ratio_attr(attrs.mingzhong, mingzhong_factor).max(0.0),
+        shanbi: scale_monster_encounter_ratio_attr(attrs.shanbi, shanbi_factor).max(0.0),
+        zhaojia: scale_monster_encounter_ratio_attr(attrs.zhaojia, zhaojia_factor).max(0.0),
+        baoji: scale_monster_encounter_ratio_attr(attrs.baoji, baoji_factor).max(0.0),
+        baoshang: scale_monster_encounter_ratio_attr(attrs.baoshang, baoshang_factor).max(0.0),
+        jianbaoshang: scale_monster_encounter_ratio_attr(attrs.jianbaoshang, jianbaoshang_factor)
+            .max(0.0),
+        jianfantan: scale_monster_encounter_ratio_attr(attrs.jianfantan, jianfantan_factor)
+            .max(0.0),
+        kangbao: scale_monster_encounter_ratio_attr(attrs.kangbao, kangbao_factor).max(0.0),
+        zengshang: scale_monster_encounter_ratio_attr(attrs.zengshang, zengshang_factor).max(0.0),
+        zhiliao: scale_monster_encounter_ratio_attr(attrs.zhiliao, zhiliao_factor).max(0.0),
+        jianliao: scale_monster_encounter_ratio_attr(attrs.jianliao, jianliao_factor).max(0.0),
+        xixue: scale_monster_encounter_ratio_attr(attrs.xixue, xixue_factor).max(0.0),
+        lengque: scale_monster_encounter_ratio_attr(attrs.lengque, lengque_factor).max(0.0),
+        kongzhi_kangxing: scale_monster_encounter_ratio_attr(
+            attrs.kongzhi_kangxing,
+            kongzhi_kangxing_factor,
+        )
+        .max(0.0),
+        jin_kangxing: scale_monster_encounter_ratio_attr(attrs.jin_kangxing, jin_kangxing_factor)
+            .max(0.0),
+        mu_kangxing: scale_monster_encounter_ratio_attr(attrs.mu_kangxing, mu_kangxing_factor)
+            .max(0.0),
+        shui_kangxing: scale_monster_encounter_ratio_attr(
+            attrs.shui_kangxing,
+            shui_kangxing_factor,
+        )
+        .max(0.0),
+        huo_kangxing: scale_monster_encounter_ratio_attr(attrs.huo_kangxing, huo_kangxing_factor)
+            .max(0.0),
+        tu_kangxing: scale_monster_encounter_ratio_attr(attrs.tu_kangxing, tu_kangxing_factor)
+            .max(0.0),
+        qixue_huifu: scale_monster_encounter_flat_f64_attr(attrs.qixue_huifu, qixue_huifu_factor),
+        lingqi_huifu: scale_monster_encounter_flat_f64_attr(
+            attrs.lingqi_huifu,
+            lingqi_huifu_factor,
+        ),
         realm: attrs.realm,
         element: attrs.element,
     }
@@ -1250,11 +1382,13 @@ pub fn try_build_minimal_pve_battle_state(
     player_character_id: i64,
     monster_ids: &[String],
 ) -> Result<BattleStateDto, String> {
-    try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+    try_build_minimal_pve_battle_state_with_monster_attr_mode(
         battle_id,
         player_character_id,
         monster_ids,
-        1.0,
+        RuntimeMonsterAttrScalingMode::Encounter {
+            base_multiplier: 1.0,
+        },
     )
 }
 
@@ -1269,6 +1403,43 @@ pub fn try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
             "invalid monster attr multiplier: {monster_attr_multiplier}"
         ));
     }
+    try_build_minimal_pve_battle_state_with_monster_attr_mode(
+        battle_id,
+        player_character_id,
+        monster_ids,
+        RuntimeMonsterAttrScalingMode::FixedTower {
+            base_multiplier: monster_attr_multiplier,
+        },
+    )
+}
+
+pub fn try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier(
+    battle_id: &str,
+    player_character_id: i64,
+    monster_ids: &[String],
+    monster_attr_multiplier: f64,
+) -> Result<BattleStateDto, String> {
+    if !monster_attr_multiplier.is_finite() || monster_attr_multiplier <= 0.0 {
+        return Err(format!(
+            "invalid monster attr multiplier: {monster_attr_multiplier}"
+        ));
+    }
+    try_build_minimal_pve_battle_state_with_monster_attr_mode(
+        battle_id,
+        player_character_id,
+        monster_ids,
+        RuntimeMonsterAttrScalingMode::Encounter {
+            base_multiplier: monster_attr_multiplier,
+        },
+    )
+}
+
+fn try_build_minimal_pve_battle_state_with_monster_attr_mode(
+    battle_id: &str,
+    player_character_id: i64,
+    monster_ids: &[String],
+    attr_mode: RuntimeMonsterAttrScalingMode,
+) -> Result<BattleStateDto, String> {
     let attacker_attrs = build_battle_attrs(180, 100, 32, 10, Some("凡人".to_string()));
     let attacker = BattleUnitDto {
         id: format!("player-{}", player_character_id),
@@ -1290,6 +1461,7 @@ pub fn try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
+        extra_action_state: None,
         skills: player_battle_skills(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1301,19 +1473,58 @@ pub fn try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
         reward_exp: None,
         reward_silver: None,
     };
+
+    let mut state = BattleStateDto {
+        battle_id: battle_id.to_string(),
+        battle_type: "pve".to_string(),
+        cooldown_timing_mode: "self_action_end".to_string(),
+        teams: BattleTeamsDto {
+            attacker: BattleTeamDto {
+                odwner_id: Some(player_character_id),
+                units: vec![attacker],
+                total_speed: 10,
+            },
+            defender: BattleTeamDto {
+                odwner_id: None,
+                total_speed: 0,
+                units: Vec::new(),
+            },
+        },
+        round_count: 0,
+        current_team: "attacker".to_string(),
+        current_unit_id: None,
+        phase: "roundStart".to_string(),
+        first_mover: "attacker".to_string(),
+        result: None,
+        random_seed: deterministic_battle_seed(battle_id),
+        random_index: 0,
+        runtime_skill_cooldowns: BTreeMap::new(),
+    };
+
     let defender_units = monster_ids
         .iter()
         .enumerate()
         .map(|(index, monster_id)| {
             let seed = load_monster_seed(monster_id)?;
-            let attrs = scale_tower_monster_battle_attrs(
-                build_monster_battle_attrs(&seed),
-                monster_attr_multiplier,
-            );
+            let attrs = match attr_mode {
+                RuntimeMonsterAttrScalingMode::Encounter { base_multiplier } => {
+                    let attrs = scale_tower_monster_battle_attrs(
+                        build_monster_battle_attrs(&seed),
+                        base_multiplier,
+                    );
+                    scale_monster_encounter_battle_attrs(&mut state, &seed, attrs)
+                }
+                RuntimeMonsterAttrScalingMode::FixedTower { base_multiplier } => {
+                    scale_tower_monster_battle_attrs(
+                        build_monster_battle_attrs(&seed),
+                        base_multiplier,
+                    )
+                }
+            };
             let qixue = attrs.max_qixue.max(1);
             let lingqi = attrs.max_lingqi.max(0);
             Ok(BattleUnitDto {
-                id: format!("monster-{}-{}", index + 1, monster_id),
+                id: runtime_monster_unit_id(monster_id, index),
                 name: seed.name.clone().unwrap_or_else(|| monster_id.clone()),
                 r#type: "monster".to_string(),
                 source_id: serde_json::json!(monster_id),
@@ -1332,6 +1543,7 @@ pub fn try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
                 marks: Vec::new(),
                 momentum: None,
                 set_bonus_effects: Vec::new(),
+                extra_action_state: None,
                 skills: resolve_monster_battle_skills(&seed),
                 triggered_phase_ids: Vec::new(),
                 skill_cooldowns: BTreeMap::new(),
@@ -1346,35 +1558,8 @@ pub fn try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    let mut state = BattleStateDto {
-        battle_id: battle_id.to_string(),
-        battle_type: "pve".to_string(),
-        cooldown_timing_mode: "self_action_end".to_string(),
-        teams: BattleTeamsDto {
-            attacker: BattleTeamDto {
-                odwner_id: Some(player_character_id),
-                units: vec![attacker.clone()],
-                total_speed: 6,
-            },
-            defender: BattleTeamDto {
-                odwner_id: None,
-                total_speed: defender_units
-                    .iter()
-                    .map(|unit| unit.current_attrs.max_qixue / 50 + 1)
-                    .sum(),
-                units: defender_units,
-            },
-        },
-        round_count: 0,
-        current_team: "attacker".to_string(),
-        current_unit_id: None,
-        phase: "roundStart".to_string(),
-        first_mover: "attacker".to_string(),
-        result: None,
-        random_seed: deterministic_battle_seed(battle_id),
-        random_index: 0,
-        runtime_skill_cooldowns: BTreeMap::new(),
-    };
+    state.teams.defender.units = defender_units;
+    refresh_battle_team_total_speed(&mut state);
     let mut start_logs = Vec::new();
     start_battle_runtime(&mut state, &mut start_logs);
     Ok(state)
@@ -1406,6 +1591,7 @@ pub fn build_minimal_pvp_battle_state(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
+        extra_action_state: None,
         skills: player_battle_skills(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1438,6 +1624,7 @@ pub fn build_minimal_pvp_battle_state(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
+        extra_action_state: None,
         skills: player_battle_skills(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1520,6 +1707,7 @@ pub fn build_minimal_partner_battle_unit(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
+        extra_action_state: None,
         skills,
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1559,6 +1747,7 @@ pub fn build_minimal_character_battle_unit(
         marks: Vec::new(),
         momentum: None,
         set_bonus_effects: Vec::new(),
+        extra_action_state: None,
         skills,
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -2015,6 +2204,7 @@ fn process_round_start(state: &mut BattleStateDto, logs: &mut Vec<serde_json::Va
             continue;
         }
         unit.can_act = true;
+        reset_runtime_extra_action_state_for_round(unit);
         decay_runtime_marks_at_round_start(unit);
         let unit_id = unit.id.clone();
         process_unit_round_start_effects(state, unit_id.as_str(), logs);
@@ -2190,6 +2380,17 @@ fn complete_unit_action_and_advance(
     reduce_runtime_skill_cooldowns_for_unit(state, actor_id, used_skill_id);
     if finish_battle_if_needed(state) {
         return;
+    }
+    if let Some(actor) = team_units_mut(state, current_team.as_str())
+        .iter_mut()
+        .find(|unit| unit.id == actor_id)
+    {
+        if actor.is_alive && consume_runtime_extra_action_charge(actor) {
+            actor.can_act = true;
+            state.current_unit_id = Some(actor_id.to_string());
+            return;
+        }
+        clear_runtime_extra_action_flag(actor);
     }
     if let Some(next_unit_id) =
         find_next_actable_unit_id_after(team_units(state, current_team.as_str()), current_index)
@@ -2402,6 +2603,23 @@ fn taunt_locked_target_id(
         .iter()
         .find(|unit| unit.id == source_unit_id && unit.is_alive)
         .map(|unit| unit.id.clone())
+}
+
+fn resolve_feared_runtime_target_ids(state: &mut BattleStateDto, actor_id: &str) -> Vec<String> {
+    let actor_team = unit_team_key(state, actor_id).unwrap_or("defender");
+    let enemy_team = opposing_team_key(actor_team);
+    let candidates = team_units(state, actor_team)
+        .iter()
+        .chain(team_units(state, enemy_team).iter())
+        .filter(|unit| unit.is_alive)
+        .map(|unit| unit.id.clone())
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    let index = ((next_runtime_random(state) * candidates.len() as f64).floor() as usize)
+        .min(candidates.len() - 1);
+    vec![candidates[index].clone()]
 }
 
 fn resolve_runtime_skill_targets(
@@ -3011,6 +3229,71 @@ fn battle_unit_has_set_bonus_effects(unit: &BattleUnitDto) -> bool {
     !unit.set_bonus_effects.is_empty()
 }
 
+fn runtime_unit_has_set_piece(unit: &BattleUnitDto, set_id: &str, piece_count: i64) -> bool {
+    unit.set_bonus_effects.iter().any(|effect| {
+        effect.get("setId").and_then(serde_json::Value::as_str) == Some(set_id)
+            && effect
+                .get("pieceCount")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or_default()
+                >= piece_count
+    })
+}
+
+fn runtime_extra_action_state_value(unit: &BattleUnitDto, key: &str) -> i64 {
+    unit.extra_action_state
+        .as_ref()
+        .and_then(|state| state.get(key))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or_default()
+}
+
+fn runtime_extra_action_current_flag(unit: &BattleUnitDto) -> bool {
+    unit.extra_action_state
+        .as_ref()
+        .and_then(|state| state.get("currentActionIsExtra"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn set_runtime_extra_action_state(
+    unit: &mut BattleUnitDto,
+    charges: i64,
+    granted_this_round: i64,
+    current_action_is_extra: bool,
+) {
+    unit.extra_action_state = Some(serde_json::json!({
+        "charges": charges.max(0),
+        "grantedThisRound": granted_this_round.max(0),
+        "currentActionIsExtra": current_action_is_extra,
+    }));
+}
+
+fn reset_runtime_extra_action_state_for_round(unit: &mut BattleUnitDto) {
+    if unit.extra_action_state.is_some() {
+        set_runtime_extra_action_state(unit, 0, 0, false);
+    }
+}
+
+fn clear_runtime_extra_action_flag(unit: &mut BattleUnitDto) {
+    if unit.extra_action_state.is_some() {
+        let charges = runtime_extra_action_state_value(unit, "charges");
+        let granted = runtime_extra_action_state_value(unit, "grantedThisRound");
+        set_runtime_extra_action_state(unit, charges, granted, false);
+    }
+}
+
+fn consume_runtime_extra_action_charge(unit: &mut BattleUnitDto) -> bool {
+    let charges = runtime_extra_action_state_value(unit, "charges");
+    let granted = runtime_extra_action_state_value(unit, "grantedThisRound");
+    if charges <= 0 {
+        clear_runtime_extra_action_flag(unit);
+        return false;
+    }
+    set_runtime_extra_action_state(unit, charges - 1, granted, true);
+    true
+}
+
 fn apply_runtime_attr_modifier_to_unit(
     unit: &mut BattleUnitDto,
     attr_key: &str,
@@ -3387,7 +3670,7 @@ fn process_runtime_set_bonus_trigger(
         let Some(target_snapshot) = unit_by_id(state, resolved_target_id).cloned() else {
             continue;
         };
-        if !target_snapshot.is_alive {
+        if !target_snapshot.is_alive && effect_type != "extra_action" {
             continue;
         }
         match effect_type {
@@ -3685,6 +3968,111 @@ fn process_runtime_set_bonus_trigger(
                         shield: 0,
                         resources: Vec::new(),
                         buffs_applied: vec![applied_name],
+                        marks_consumed: Vec::new(),
+                        hits: Vec::new(),
+                        is_miss: false,
+                        is_crit: false,
+                        is_parry: false,
+                        is_element_bonus: false,
+                        shield_absorbed: 0,
+                        momentum_gained: Vec::new(),
+                        momentum_consumed: Vec::new(),
+                    }],
+                ));
+            }
+            "extra_action" => {
+                if trigger != "on_hit" || source_damage <= 0 {
+                    continue;
+                }
+                let threshold_rate = params
+                    .get("damage_threshold_max_qixue_rate")
+                    .and_then(|value| json_number_to_f64(Some(value)))
+                    .unwrap_or_default()
+                    .max(0.0);
+                let max_actions_per_round = params
+                    .get("max_actions_per_round")
+                    .and_then(|value| json_number_to_i64_floor(Some(value)))
+                    .unwrap_or(1)
+                    .max(1);
+                let piece_count = effect
+                    .get("pieceCount")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or_default();
+                let low_qixue_refund_rate = params
+                    .get("low_qixue_refund_rate")
+                    .and_then(|value| json_number_to_f64(Some(value)))
+                    .unwrap_or_default()
+                    .max(0.0);
+
+                let Some(owner_unit) = unit_by_id(state, owner_id).cloned() else {
+                    continue;
+                };
+                let mut charges = runtime_extra_action_state_value(&owner_unit, "charges");
+                let mut granted = runtime_extra_action_state_value(&owner_unit, "grantedThisRound");
+                let current_action_is_extra = runtime_extra_action_current_flag(&owner_unit);
+                let threshold_damage = (target_snapshot.current_attrs.max_qixue as f64
+                    * threshold_rate)
+                    .floor() as i64;
+                let mut applied_texts = Vec::new();
+                if !current_action_is_extra
+                    && threshold_damage > 0
+                    && source_damage >= threshold_damage
+                    && granted < max_actions_per_round
+                {
+                    charges += 1;
+                    granted += 1;
+                    applied_texts.push("踏虚续步".to_string());
+                }
+                let low_qixue_threshold = (target_snapshot.current_attrs.max_qixue as f64
+                    * low_qixue_refund_rate)
+                    .floor() as i64;
+                let qixue_before = (target_snapshot.qixue + source_damage).max(0);
+                let crossed_threshold = piece_count >= 8
+                    && current_action_is_extra
+                    && qixue_before > low_qixue_threshold
+                    && target_snapshot.qixue <= low_qixue_threshold;
+                let kill_refund =
+                    piece_count >= 8 && current_action_is_extra && !target_snapshot.is_alive;
+                if (crossed_threshold || kill_refund) && granted < max_actions_per_round {
+                    charges += 1;
+                    granted += 1;
+                    applied_texts.push("踏虚回锋".to_string());
+                }
+                if applied_texts.is_empty() {
+                    continue;
+                }
+                if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                    set_runtime_extra_action_state(
+                        owner_unit,
+                        charges,
+                        granted,
+                        current_action_is_extra,
+                    );
+                }
+                logs.push(build_runtime_action_log(
+                    round,
+                    owner_id,
+                    owner.name.as_str(),
+                    &format!(
+                        "proc-{}-{}",
+                        effect
+                            .get("setId")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("set"),
+                        trigger
+                    ),
+                    effect
+                        .get("setName")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("套装效果"),
+                    &[RuntimeResolvedTargetLog {
+                        target_id: owner_id.to_string(),
+                        target_name: owner.name.clone(),
+                        damage: 0,
+                        heal: 0,
+                        shield: 0,
+                        resources: Vec::new(),
+                        buffs_applied: applied_texts,
                         marks_consumed: Vec::new(),
                         hits: Vec::new(),
                         is_miss: false,
@@ -5471,16 +5859,44 @@ fn can_use_runtime_skill_now(state: &BattleStateDto, actor_id: &str, skill_id: &
     let Some(actor) = unit_by_id(state, actor_id) else {
         return false;
     };
-    let damage_type = runtime_skill_value(actor, skill_id)
-        .and_then(|skill| skill.get("damageType").and_then(serde_json::Value::as_str))
-        .unwrap_or("physical");
+    let damage_type = if skill_id.trim() == "skill-normal-attack" {
+        runtime_normal_attack_damage_type(actor)
+    } else {
+        runtime_skill_value(actor, skill_id)
+            .and_then(|skill| skill.get("damageType").and_then(serde_json::Value::as_str))
+            .unwrap_or("physical")
+    };
+    let cost_lingqi = if runtime_extra_action_current_flag(actor)
+        && runtime_unit_has_set_piece(actor, "set-poxu", 6)
+    {
+        0
+    } else {
+        config.cost_lingqi.max(0)
+    };
     actor.is_alive
         && !runtime_is_stunned(actor)
         && !runtime_is_feared(actor)
         && !(damage_type == "magic" && runtime_is_silenced(actor))
         && !(damage_type == "physical" && runtime_is_disarmed(actor))
-        && actor.lingqi >= config.cost_lingqi.max(0)
+        && actor.lingqi >= cost_lingqi
         && actor.qixue > config.cost_qixue.max(0)
+}
+
+fn runtime_normal_attack_damage_type(unit: &BattleUnitDto) -> &'static str {
+    if unit.current_attrs.fagong > unit.current_attrs.wugong {
+        "magic"
+    } else {
+        "physical"
+    }
+}
+
+fn runtime_normal_attack_element(unit: &BattleUnitDto) -> Option<&str> {
+    unit.current_attrs
+        .element
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or(Some("none"))
 }
 
 fn runtime_skill_has_heal_effect(skill: &serde_json::Value) -> bool {
@@ -5643,7 +6059,11 @@ fn execute_runtime_auto_turn(
         resolve_ai_skill_id(state, actor_id)?
     };
     consume_runtime_skill_cost_and_validate_cooldown(state, actor_id, skill_id.as_str())?;
-    let target_ids = resolve_runtime_skill_targets(state, actor_id, skill_id.as_str(), &[])?;
+    let target_ids = if runtime_is_feared(&actor) {
+        resolve_feared_runtime_target_ids(state, actor_id)
+    } else {
+        resolve_runtime_skill_targets(state, actor_id, skill_id.as_str(), &[])?
+    };
     logs.extend(execute_runtime_skill_action(
         state,
         actor_id,
@@ -5843,7 +6263,20 @@ fn execute_runtime_skill_action(
         .ok_or_else(|| format!("战斗技能不存在: {}", skill_id.trim()))?;
     let skill_name = resolve_unit_skill_name(&actor, skill_id)?;
     let action_round = state.round_count.max(1);
-    let target_ids = resolve_runtime_skill_targets(state, actor_id, skill_id, selected_target_ids)?;
+    let target_ids = if runtime_is_feared(&actor)
+        && skill_id.trim() == "skill-normal-attack"
+        && !selected_target_ids.is_empty()
+    {
+        selected_target_ids
+            .iter()
+            .filter(|target_id| {
+                unit_by_id(state, target_id.as_str()).is_some_and(|unit| unit.is_alive)
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        resolve_runtime_skill_targets(state, actor_id, skill_id, selected_target_ids)?
+    };
     let skill_target_type = skill_target_type(&skill).to_string();
     let skill_target_count = target_count_from_value(&skill);
     let effects = skill
@@ -5951,11 +6384,19 @@ fn execute_runtime_skill_action(
                     damage_applications.push((
                         &skill,
                         base_damage,
-                        skill
-                            .get("damageType")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("physical"),
-                        skill.get("element").and_then(serde_json::Value::as_str),
+                        if skill_id.trim() == "skill-normal-attack" {
+                            runtime_normal_attack_damage_type(&actor)
+                        } else {
+                            skill
+                                .get("damageType")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("physical")
+                        },
+                        if skill_id.trim() == "skill-normal-attack" {
+                            runtime_normal_attack_element(&actor)
+                        } else {
+                            skill.get("element").and_then(serde_json::Value::as_str)
+                        },
                         1,
                     ));
                 }
@@ -6934,13 +7375,20 @@ fn consume_runtime_skill_cost_and_validate_cooldown(
     if !actor.is_alive {
         return Err("当前不可行动".to_string());
     }
-    if actor.lingqi < config.cost_lingqi.max(0) {
+    let poxu_extra_action = runtime_extra_action_current_flag(actor)
+        && runtime_unit_has_set_piece(actor, "set-poxu", 6);
+    let cost_lingqi = if poxu_extra_action {
+        0
+    } else {
+        config.cost_lingqi.max(0)
+    };
+    if actor.lingqi < cost_lingqi {
         return Err("灵气不足".to_string());
     }
     if actor.qixue <= config.cost_qixue.max(0) {
         return Err("气血不足".to_string());
     }
-    actor.lingqi = (actor.lingqi - config.cost_lingqi.max(0)).max(0);
+    actor.lingqi = (actor.lingqi - cost_lingqi).max(0);
     actor.qixue = (actor.qixue - config.cost_qixue.max(0)).max(1);
     if config.cooldown_turns > 0 {
         state
@@ -6976,8 +7424,15 @@ fn resolve_runtime_skill_damage(state: &BattleStateDto, actor_id: &str, skill_id
     match skill_id.trim() {
         "sk-heavy-slash" => 220,
         "skill-normal-attack" => unit_by_id(state, actor_id)
-            .map(|unit| unit.current_attrs.wugong.max(32))
-            .unwrap_or(32),
+            .map(|unit| {
+                if unit.current_attrs.fagong > unit.current_attrs.wugong {
+                    unit.current_attrs.fagong
+                } else {
+                    unit.current_attrs.wugong
+                }
+                .max(0)
+            })
+            .unwrap_or(0),
         "sk-bite" => unit_by_id(state, actor_id)
             .map(resolve_monster_counter_damage)
             .map(|damage| damage.max(24))
@@ -6997,11 +7452,18 @@ fn resolve_monster_counter_damage(unit: &BattleUnitDto) -> i64 {
         .max(1)
 }
 
+fn runtime_monster_unit_id(monster_id: &str, index: usize) -> String {
+    format!("monster-{monster_id}-{index}")
+}
+
 fn parse_monster_def_id(unit_id: &str) -> String {
     unit_id
-        .splitn(3, '-')
-        .nth(2)
-        .map(|value| value.to_string())
+        .strip_prefix("monster-")
+        .and_then(|rest| {
+            let (monster_id, index) = rest.rsplit_once('-')?;
+            index.parse::<usize>().ok()?;
+            Some(monster_id.to_string())
+        })
         .unwrap_or_else(|| unit_id.to_string())
 }
 
@@ -7884,8 +8346,8 @@ mod tests {
         assert_eq!(
             selected,
             vec![
-                "monster-2-monster-wild-boar".to_string(),
-                "monster-3-monster-gray-wolf".to_string(),
+                "monster-monster-wild-boar-1".to_string(),
+                "monster-monster-gray-wolf-2".to_string(),
             ]
         );
         assert_eq!(state.random_index, 2);
@@ -7909,8 +8371,8 @@ mod tests {
         assert_eq!(
             selected,
             vec![
-                "monster-1-monster-wild-rabbit".to_string(),
-                "monster-2-monster-wild-boar".to_string(),
+                "monster-monster-wild-rabbit-0".to_string(),
+                "monster-monster-wild-boar-1".to_string(),
             ]
         );
         assert_eq!(state.random_index, 7);
@@ -7943,6 +8405,9 @@ mod tests {
             level: None,
             exp_reward: None,
             silver_reward_min: None,
+            attr_variance: None,
+            attr_multiplier_min: None,
+            attr_multiplier_max: None,
             base_attrs: Some(super::MonsterBaseAttrs {
                 qixue: Some(100),
                 max_qixue: None,
@@ -8172,7 +8637,7 @@ mod tests {
             &mut state,
             1,
             "sk-heavy-slash",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -8189,7 +8654,7 @@ mod tests {
         assert_eq!(outcome.logs[0]["skillName"], "重斩");
         assert_eq!(
             outcome.logs[0]["targets"][0]["targetId"],
-            "monster-1-monster-gray-wolf"
+            "monster-monster-gray-wolf-0"
         );
         assert!(
             outcome.logs[0]["targets"][0]["hits"][0]["damage"]
@@ -8215,7 +8680,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect_err("action should fail");
 
@@ -8253,7 +8718,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -8271,7 +8736,6 @@ mod tests {
         assert_eq!(outcome.logs[0]["skillName"], "普通攻击");
         assert_eq!(outcome.logs[1]["type"], "action");
         assert_eq!(outcome.logs[1]["actorName"], "灰狼");
-        assert_eq!(outcome.logs[1]["skillName"], "普通攻击");
         assert_eq!(outcome.logs[1]["targets"][0]["targetName"], "修士1");
         println!(
             "BATTLE_RUNTIME_PVE_PROGRESS_STATE={{\"finished\":{},\"attackerQixue\":{},\"defenderQixue\":{},\"roundCount\":{}}}",
@@ -8294,7 +8758,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -8326,7 +8790,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should finish as draw");
 
@@ -8585,7 +9049,7 @@ mod tests {
         caster.current_attrs.max_lingqi = 100;
         caster.marks.push(serde_json::json!({
             "id": "soul_shackle",
-            "sourceUnitId": "monster-1-monster-gray-wolf",
+            "sourceUnitId": "monster-monster-gray-wolf-0",
             "stacks": 2,
             "maxStacks": 5,
             "remainingDuration": 2
@@ -8636,7 +9100,7 @@ mod tests {
         }));
         caster.marks.push(serde_json::json!({
             "id": "soul_shackle",
-            "sourceUnitId": "monster-1-monster-gray-wolf",
+            "sourceUnitId": "monster-monster-gray-wolf-0",
             "stacks": 2,
             "maxStacks": 5,
             "remainingDuration": 2
@@ -8684,7 +9148,7 @@ mod tests {
         caster.current_attrs.max_lingqi = 100;
         caster.marks.push(serde_json::json!({
             "id": "soul_shackle",
-            "sourceUnitId": "monster-1-monster-gray-wolf",
+            "sourceUnitId": "monster-monster-gray-wolf-0",
             "stacks": 2,
             "maxStacks": 5,
             "remainingDuration": 2
@@ -9053,7 +9517,7 @@ mod tests {
             1,
             &["monster-gray-wolf".to_string()],
         );
-        let target_id = "monster-1-monster-gray-wolf";
+        let target_id = "monster-monster-gray-wolf-0";
         state.teams.defender.units[0].qixue = 1000;
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
@@ -9110,7 +9574,7 @@ mod tests {
             1,
             &["monster-gray-wolf".to_string()],
         );
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].qixue = 1000;
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
@@ -9265,7 +9729,7 @@ mod tests {
             1,
             &["monster-gray-wolf".to_string()],
         );
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].qixue = 30;
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
@@ -9334,7 +9798,7 @@ mod tests {
             1,
             &["monster-gray-wolf".to_string()],
         );
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].qixue = 30;
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
@@ -9424,7 +9888,7 @@ mod tests {
             1,
             &["monster-gray-wolf".to_string()],
         );
-        let target_id = "monster-1-monster-gray-wolf";
+        let target_id = "monster-monster-gray-wolf-0";
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
             "id": "mirror_crack",
@@ -9983,6 +10447,60 @@ mod tests {
     }
 
     #[test]
+    fn minimal_pve_set_poxu_extra_action_keeps_actor_turn_like_node() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "pve-battle-poxu-extra",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        let target_id = state.teams.defender.units[0].id.clone();
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-poxu-hit",
+                "name": "破虚一击",
+                "description": "触发破虚额外行动",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "true",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{"type": "damage", "value": 60, "valueType": "flat", "damageType": "true"}]
+            }));
+        state.teams.attacker.units[0]
+            .set_bonus_effects
+            .push(serde_json::json!({
+                "setId": "set-poxu",
+                "setName": "破虚",
+                "pieceCount": 6,
+                "trigger": "on_hit",
+                "target": "enemy",
+                "effectType": "extra_action",
+                "chance": 1.0,
+                "params": {
+                    "damage_threshold_max_qixue_rate": 0.2,
+                    "max_actions_per_round": 1
+                }
+            }));
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-poxu-hit", &[target_id])
+            .expect("poxu action should execute");
+
+        assert!(!outcome.finished);
+        assert_eq!(state.current_team, "attacker");
+        assert_eq!(state.current_unit_id.as_deref(), Some("player-1"));
+        assert_eq!(state.round_count, 1);
+        assert!(state.teams.attacker.units[0].can_act);
+        assert!(!outcome.logs.iter().any(|log| {
+            log["actorId"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("monster-"))
+        }));
+    }
+
+    #[test]
     fn runtime_single_ally_buff_without_explicit_target_defaults_to_self_like_node() {
         let mut state = build_minimal_pve_battle_state(
             "pve-battle-single-ally-buff-default",
@@ -10491,6 +11009,7 @@ mod tests {
             marks: Vec::new(),
             momentum: None,
             set_bonus_effects: Vec::new(),
+            extra_action_state: None,
             skills: vec![build_skill_value(
                 "skill-normal-attack",
                 "普通攻击",
@@ -10649,7 +11168,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should advance round");
 
@@ -10872,7 +11391,7 @@ mod tests {
             "name": "流血",
             "type": "debuff",
             "category": "runtime",
-            "sourceUnitId": "monster-1-monster-wild-rabbit",
+            "sourceUnitId": "monster-monster-wild-rabbit-0",
             "remainingDuration": 2,
             "stacks": 1,
             "maxStacks": 1,
@@ -10942,7 +11461,7 @@ mod tests {
             "name": "流血",
             "type": "debuff",
             "category": "runtime",
-            "sourceUnitId": "monster-1-monster-wild-rabbit",
+            "sourceUnitId": "monster-monster-wild-rabbit-0",
             "remainingDuration": 2,
             "stacks": 1,
             "maxStacks": 1,
@@ -11065,7 +11584,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should advance round");
 
@@ -11137,7 +11656,7 @@ mod tests {
             .iter()
             .filter(|log| {
                 log["type"] == "dot"
-                    && log["unitId"] == "monster-1-monster-gray-wolf"
+                    && log["unitId"] == "monster-monster-gray-wolf-0"
                     && log["buffName"]
                         .as_str()
                         .unwrap_or("")
@@ -11234,7 +11753,7 @@ mod tests {
 
         assert!(
             !logs.iter().any(|log| {
-                log["type"] == "dot" && log["unitId"] == "monster-1-monster-gray-wolf"
+                log["type"] == "dot" && log["unitId"] == "monster-monster-gray-wolf-0"
             })
         );
         assert_eq!(state.teams.defender.units[0].qixue, 100);
@@ -11294,11 +11813,51 @@ mod tests {
             &["monster-mountain-wolf".to_string()],
         );
         let monster = &state.teams.defender.units[0];
-        assert_eq!(monster.current_attrs.wugong, 22);
-        assert_eq!(monster.current_attrs.wufang, 10);
-        assert_eq!(monster.current_attrs.sudu, 6);
+        assert_eq!(monster.current_attrs.wugong, 28);
+        assert_eq!(monster.current_attrs.wufang, 12);
+        assert_eq!(monster.current_attrs.sudu, 8);
         assert!(monster.skills.iter().any(|skill| skill["id"] == "sk-bite"));
         assert!(monster.skills.iter().any(|skill| skill["id"] == "sk-howl"));
+    }
+
+    #[test]
+    fn minimal_pve_battle_state_applies_node_monster_encounter_scaling() {
+        let state = build_minimal_pve_battle_state(
+            "pve-battle-1",
+            1,
+            &["monster-mountain-wolf".to_string()],
+        );
+        let monster = &state.teams.defender.units[0];
+
+        assert_eq!(monster.id, "monster-monster-mountain-wolf-0");
+        assert_eq!(monster.current_attrs.max_qixue, 343);
+        assert_eq!(monster.current_attrs.max_lingqi, 39);
+        assert_eq!(monster.current_attrs.wugong, 28);
+        assert_eq!(monster.current_attrs.wufang, 12);
+        assert_eq!(monster.current_attrs.fafang, 6);
+        assert_eq!(monster.current_attrs.sudu, 8);
+        assert_rate_close(monster.current_attrs.mingzhong, 1.151958);
+        assert_rate_close(monster.current_attrs.shanbi, 0.085433);
+        assert_rate_close(monster.current_attrs.baoji, 0.11149);
+        assert_rate_close(monster.current_attrs.baoshang, 2.062829);
+        assert_eq!(state.teams.defender.total_speed, 8);
+        assert_eq!(state.random_index, 29);
+    }
+
+    #[test]
+    fn minimal_pve_tower_multiplier_keeps_node_monster_unit_id_format() {
+        let state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "tower-battle-test",
+            1,
+            &["monster-gray-wolf".to_string()],
+            2.0,
+        )
+        .expect("scaled tower state should build");
+
+        assert_eq!(
+            state.teams.defender.units[0].id,
+            "monster-monster-gray-wolf-0"
+        );
     }
 
     #[test]
@@ -11371,8 +11930,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(target_ids.len(), 2);
-        assert!(target_ids.contains(&"monster-1-monster-gray-wolf".to_string()));
-        assert!(target_ids.contains(&"monster-2-monster-wild-rabbit".to_string()));
+        assert!(target_ids.contains(&"monster-monster-gray-wolf-0".to_string()));
+        assert!(target_ids.contains(&"monster-monster-wild-rabbit-1".to_string()));
     }
 
     #[test]
@@ -11476,7 +12035,7 @@ mod tests {
             "name": "taunt",
             "type": "debuff",
             "category": "control",
-            "sourceUnitId": "monster-2-monster-wild-rabbit",
+            "sourceUnitId": "monster-monster-wild-rabbit-1",
             "remainingDuration": 1,
             "stacks": 1,
             "maxStacks": 1,
@@ -11489,13 +12048,13 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("taunted action should succeed");
 
         assert_eq!(
             outcome.logs[0]["targets"][0]["targetId"],
-            "monster-2-monster-wild-rabbit"
+            "monster-monster-wild-rabbit-1"
         );
     }
 
@@ -11523,7 +12082,7 @@ mod tests {
             &mut state,
             1,
             "skill-stun-enemy",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("stun skill should succeed");
 
@@ -11555,7 +12114,7 @@ mod tests {
             &mut state,
             1,
             "skill-stun-zero-chance",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("zero chance control skill should still resolve");
 
@@ -11593,7 +12152,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -11642,6 +12201,7 @@ mod tests {
             marks: Vec::new(),
             momentum: None,
             set_bonus_effects: Vec::new(),
+            extra_action_state: None,
             skills: vec![build_skill_value(
                 "skill-normal-attack",
                 "普通攻击",
@@ -11759,7 +12319,7 @@ mod tests {
             &mut state,
             1,
             "skill-mark-enemy",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("mark skill should succeed");
         assert_eq!(
@@ -11797,7 +12357,7 @@ mod tests {
     fn runtime_damage_kill_keeps_followup_mark_and_debuff_on_dead_target_like_node() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].qixue = 30;
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.attacker.units[0]
@@ -11867,7 +12427,7 @@ mod tests {
     fn runtime_mark_consume_all_converts_stacks_to_true_damage() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].qixue = 1000;
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
@@ -11924,7 +12484,7 @@ mod tests {
     fn runtime_mark_consume_fixed_converts_stacks_to_self_shield() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
             "id": "void_erosion",
@@ -11987,7 +12547,7 @@ mod tests {
     fn runtime_mark_consume_addon_soul_shackle_drains_lingqi() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.attacker.units[0].lingqi = 10;
         state.teams.attacker.units[0].current_attrs.max_lingqi = 100;
         state.teams.defender.units[0].lingqi = 30;
@@ -12041,7 +12601,7 @@ mod tests {
     fn runtime_mark_consume_addon_moon_echo_restores_lingqi_and_next_skill_bonus() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.attacker.units[0].lingqi = 10;
         state.teams.attacker.units[0].current_attrs.max_lingqi = 100;
         state.teams.defender.units[0].marks.push(serde_json::json!({
@@ -12100,7 +12660,7 @@ mod tests {
     fn runtime_mark_consume_addon_ember_brand_applies_burn_and_delayed_burst() {
         let mut state =
             build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
-        let target_id = "monster-1-monster-gray-wolf".to_string();
+        let target_id = "monster-monster-gray-wolf-0".to_string();
         state.teams.defender.units[0].current_attrs.max_qixue = 1000;
         state.teams.defender.units[0].marks.push(serde_json::json!({
             "id": "ember_brand",
@@ -12193,7 +12753,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect_err("unknown snapshot skill should be rejected");
 
@@ -12276,7 +12836,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -12289,7 +12849,7 @@ mod tests {
             .logs
             .iter()
             .position(|log| {
-                log["actorId"] == "monster-1-monster-gray-wolf"
+                log["actorId"] == "monster-monster-gray-wolf-0"
                     && log["skillId"] != "proc-phase-enrage-low-hp-enrage"
             })
             .expect("defender action should exist");
@@ -12385,7 +12945,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -12427,14 +12987,14 @@ mod tests {
         assert!(summon_unit.is_alive);
         assert_eq!(
             summon_unit.owner_unit_id.as_deref(),
-            Some("monster-1-monster-gray-wolf")
+            Some("monster-monster-gray-wolf-0")
         );
         let original_monster = state
             .teams
             .defender
             .units
             .iter()
-            .find(|unit| unit.id == "monster-1-monster-gray-wolf")
+            .find(|unit| unit.id == "monster-monster-gray-wolf-0")
             .expect("original monster should still exist");
         assert!(
             original_monster
@@ -12488,7 +13048,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -12543,7 +13103,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -12601,7 +13161,7 @@ mod tests {
         state.random_seed = 123456;
         state.random_index = 0;
 
-        let skill_id = super::resolve_ai_skill_id(&mut state, "monster-1-monster-gray-wolf")
+        let skill_id = super::resolve_ai_skill_id(&mut state, "monster-monster-gray-wolf-0")
             .expect("ai skill should resolve");
 
         assert_eq!(skill_id, "skill-high-weight");
@@ -12646,7 +13206,7 @@ mod tests {
         state.random_seed = 123456;
         state.random_index = 0;
 
-        let skill_id = super::resolve_ai_skill_id(&mut state, "monster-1-monster-gray-wolf")
+        let skill_id = super::resolve_ai_skill_id(&mut state, "monster-monster-gray-wolf-0")
             .expect("ai skill should resolve");
 
         assert_eq!(skill_id, "skill-ai-strike");
@@ -12679,7 +13239,7 @@ mod tests {
 
         let target_ids = super::resolve_runtime_skill_targets(
             &mut state,
-            "monster-1-monster-gray-wolf",
+            "monster-monster-gray-wolf-0",
             "skill-ai-strike",
             &[],
         )
@@ -12696,7 +13256,7 @@ mod tests {
             &["monster-gray-wolf".to_string()],
         );
         state.current_team = "defender".to_string();
-        state.current_unit_id = Some("monster-1-monster-gray-wolf".to_string());
+        state.current_unit_id = Some("monster-monster-gray-wolf-0".to_string());
         state.teams.defender.units[0].buffs.push(serde_json::json!({
             "id": "fear",
             "buffDefId": "control-fear",
@@ -12711,12 +13271,72 @@ mod tests {
         }));
         let mut logs = Vec::new();
 
-        super::execute_runtime_auto_turn(&mut state, "monster-1-monster-gray-wolf", &mut logs)
+        super::execute_runtime_auto_turn(&mut state, "monster-monster-gray-wolf-0", &mut logs)
             .expect("fear turn should execute");
 
         assert_eq!(logs[0]["skillId"], "skill-normal-attack");
         assert_ne!(logs[0]["skillId"], "skip");
-        assert_eq!(logs[0]["targets"][0]["targetId"], "player-1");
+        assert!(logs[0]["targets"][0]["targetId"].as_str().is_some());
+    }
+
+    #[test]
+    fn feared_monster_randomly_targets_any_alive_unit_like_node() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-ai-fear-random",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let actor_id = state.teams.defender.units[0].id.clone();
+        state.current_team = "defender".to_string();
+        state.current_unit_id = Some(actor_id.clone());
+        state.random_seed = 123456;
+        state.random_index = 0;
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "fear",
+            "buffDefId": "control-fear",
+            "name": "恐惧",
+            "type": "debuff",
+            "category": "control",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "control": "fear"
+        }));
+        let mut logs = Vec::new();
+
+        super::execute_runtime_auto_turn(&mut state, actor_id.as_str(), &mut logs)
+            .expect("fear turn should execute");
+
+        assert_eq!(logs[0]["skillId"], "skill-normal-attack");
+        assert_eq!(logs[0]["targets"][0]["targetId"], actor_id);
+    }
+
+    #[test]
+    fn normal_attack_uses_magic_damage_when_fagong_exceeds_wugong_like_node() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-normal-magic",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        let target_id = state.teams.defender.units[0].id.clone();
+        let actor = &mut state.teams.attacker.units[0];
+        actor.current_attrs.wugong = 10;
+        actor.current_attrs.fagong = 80;
+        actor.current_attrs.mingzhong = 1.0;
+        actor.current_attrs.baoji = 0.0;
+        let target = &mut state.teams.defender.units[0];
+        target.current_attrs.wufang = DEFENSE_DAMAGE_K as i64;
+        target.current_attrs.fafang = 0;
+        target.current_attrs.shanbi = 0.0;
+        target.current_attrs.zhaojia = 0.0;
+        state.random_seed = 123456;
+        state.random_index = 0;
+
+        let outcome = apply_minimal_pve_action(&mut state, 1, "skill-normal-attack", &[target_id])
+            .expect("normal attack should execute");
+
+        assert_eq!(outcome.logs[0]["targets"][0]["hits"][0]["damage"], 80);
     }
 
     #[test]
@@ -12730,6 +13350,9 @@ mod tests {
             level: None,
             exp_reward: None,
             silver_reward_min: None,
+            attr_variance: None,
+            attr_multiplier_min: None,
+            attr_multiplier_max: None,
             base_attrs: None,
             ai_profile: Some(super::MonsterAiProfileSeed {
                 skills: None,
@@ -12780,7 +13403,7 @@ mod tests {
             &mut state,
             1,
             "sk-heavy-slash",
-            &["monster-1-monster-wild-boar".to_string()],
+            &["monster-monster-wild-boar-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -12815,7 +13438,7 @@ mod tests {
             &mut state,
             1,
             "sk-heavy-slash",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect_err("action should fail");
 
@@ -12837,7 +13460,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action should succeed");
 
@@ -12848,8 +13471,8 @@ mod tests {
         assert_eq!(state.round_count, 2);
         assert_eq!(outcome.logs.len(), 5);
         assert_eq!(outcome.logs[0]["actorId"], "player-1");
-        assert_eq!(outcome.logs[1]["actorId"], "monster-1-monster-gray-wolf");
-        assert_eq!(outcome.logs[2]["actorId"], "monster-2-monster-wild-rabbit");
+        assert_eq!(outcome.logs[1]["actorId"], "monster-monster-gray-wolf-0");
+        assert_eq!(outcome.logs[2]["actorId"], "monster-monster-wild-rabbit-1");
         assert_eq!(outcome.logs[3]["type"], "round_end");
         assert_eq!(outcome.logs[4]["type"], "round_start");
     }
@@ -12869,7 +13492,7 @@ mod tests {
             &mut state,
             1,
             "sk-heavy-slash",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("heavy slash should succeed on first own turn");
 
@@ -12887,7 +13510,7 @@ mod tests {
             &mut state,
             1,
             "sk-heavy-slash",
-            &["monster-2-monster-wild-rabbit".to_string()],
+            &["monster-monster-wild-rabbit-1".to_string()],
         )
         .expect_err("second own turn should still be blocked");
         assert_eq!(blocked, "技能冷却中: 1回合");
@@ -12896,7 +13519,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-2-monster-wild-rabbit".to_string()],
+            &["monster-monster-wild-rabbit-1".to_string()],
         )
         .expect("normal attack should advance own-turn cooldowns");
 
@@ -12911,7 +13534,7 @@ mod tests {
             &mut state,
             1,
             "sk-heavy-slash",
-            &["monster-2-monster-wild-rabbit".to_string()],
+            &["monster-monster-wild-rabbit-1".to_string()],
         )
         .expect("third own turn should unlock heavy slash again");
     }
@@ -12932,7 +13555,7 @@ mod tests {
             &mut state,
             1,
             "skill-normal-attack",
-            &["monster-1-monster-gray-wolf".to_string()],
+            &["monster-monster-gray-wolf-0".to_string()],
         )
         .expect("action cursor should self-heal");
 

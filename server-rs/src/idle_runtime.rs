@@ -1362,9 +1362,9 @@ mod tests {
             snapshot.initial_battle_state.teams.defender.units[0].clone(),
         ];
         snapshot.initial_battle_state.teams.defender.units[0].id =
-            "monster-1-monster-wild-rabbit".to_string();
+            "monster-monster-wild-rabbit-0".to_string();
         snapshot.initial_battle_state.teams.defender.units[1].id =
-            "monster-2-monster-wild-rabbit".to_string();
+            "monster-monster-wild-rabbit-1".to_string();
         snapshot.initial_battle_state.teams.defender.units[1].qixue = 60;
         snapshot.initial_battle_state.teams.defender.units[1]
             .current_attrs

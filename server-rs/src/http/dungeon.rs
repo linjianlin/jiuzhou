@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::battle_runtime::{restart_battle_runtime, try_build_minimal_pve_battle_state};
+use crate::battle_runtime::{
+    restart_battle_runtime,
+    try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier,
+};
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_owner, hydrate_pve_battle_state_participants,
 };
@@ -713,6 +716,32 @@ pub(crate) fn load_dungeon_wave_monster_ids(
     Ok(monster_ids)
 }
 
+pub(crate) fn load_dungeon_monster_attr_multiplier(
+    dungeon_id: &str,
+    difficulty_id: &str,
+) -> Result<f64, AppError> {
+    let Some(entry) = load_dungeon_entry(dungeon_id)? else {
+        return Ok(1.0);
+    };
+    let Some(difficulty) = entry
+        .difficulties
+        .iter()
+        .find(|diff| diff.get("id").and_then(|v| v.as_str()) == Some(difficulty_id))
+    else {
+        return Ok(1.0);
+    };
+    let multiplier = difficulty
+        .get("monster_attr_mult")
+        .and_then(|value| match value {
+            serde_json::Value::Number(number) => number.as_f64(),
+            serde_json::Value::String(text) => text.trim().parse::<f64>().ok(),
+            _ => None,
+        })
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(1.0);
+    Ok(multiplier)
+}
+
 fn glob_dungeon_seed_paths() -> Result<Vec<PathBuf>, AppError> {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds");
     let mut paths = fs::read_dir(&base)
@@ -1339,9 +1368,16 @@ async fn start_dungeon_instance_tx(
         snapshot.current_stage,
         snapshot.current_wave,
     )?;
+    let monster_attr_multiplier =
+        load_dungeon_monster_attr_multiplier(&snapshot.dungeon_id, &snapshot.difficulty_id)?;
     let mut battle_state =
-        try_build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids)
-            .map_err(AppError::config)?;
+        try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier(
+            &battle_id,
+            owner_character_id,
+            &monster_ids,
+            monster_attr_multiplier,
+        )
+        .map_err(AppError::config)?;
     hydrate_pve_battle_state_owner(state, &mut battle_state, owner_character_id).await?;
     let participant_character_ids = snapshot
         .participants
@@ -1603,9 +1639,16 @@ pub(crate) async fn next_dungeon_instance_tx(
             .first()
             .map(|participant| participant.character_id)
             .ok_or_else(|| AppError::config("秘境参与角色不存在"))?;
+        let monster_attr_multiplier =
+            load_dungeon_monster_attr_multiplier(&snapshot.dungeon_id, &snapshot.difficulty_id)?;
         let mut battle_state =
-            try_build_minimal_pve_battle_state(&next_battle_id, owner_character_id, &monster_ids)
-                .map_err(AppError::config)?;
+            try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier(
+                &next_battle_id,
+                owner_character_id,
+                &monster_ids,
+                monster_attr_multiplier,
+            )
+            .map_err(AppError::config)?;
         hydrate_pve_battle_state_owner(state, &mut battle_state, owner_character_id).await?;
         let participant_character_ids = snapshot
             .participants
@@ -1927,6 +1970,17 @@ mod tests {
             "DUNGEON_WAVE_MONSTER_IDS={}",
             serde_json::json!(monster_ids)
         );
+    }
+
+    #[test]
+    fn dungeon_monster_attr_multiplier_reads_difficulty_seed() {
+        let multiplier = super::load_dungeon_monster_attr_multiplier(
+            "dungeon-qiqi-wolf-den",
+            "dd-qiqi-wolf-den-h",
+        )
+        .expect("dungeon difficulty multiplier should load");
+
+        assert!((multiplier - 1.5).abs() < f64::EPSILON);
     }
 
     #[test]

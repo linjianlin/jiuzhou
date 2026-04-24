@@ -14863,7 +14863,7 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-1-monster-wild-rabbit\"]}}", battle_id))
+            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-monster-wild-rabbit-0\"]}}", battle_id))
             .send()
             .await
             .expect("first battle action should succeed");
@@ -14880,7 +14880,7 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-1-monster-wild-rabbit\"]}}", battle_id))
+            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-monster-wild-rabbit-0\"]}}", battle_id))
             .send()
             .await
             .expect("second battle action should succeed");
@@ -16010,13 +16010,15 @@ mod tests {
                 floor: 13,
             },
         });
-        state
-            .battle_runtime
-            .register(build_minimal_pve_battle_state(
+        state.battle_runtime.register(
+            crate::battle_runtime::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
                 &battle_id,
                 fixture.character_id,
                 &["monster-gray-wolf".to_string()],
-            ));
+                1.0,
+            )
+            .expect("tower battle state should build"),
+        );
         state
             .online_battle_projections
             .register(crate::state::OnlineBattleProjectionRecord {
@@ -16035,7 +16037,7 @@ mod tests {
             .post(format!("http://{address}/api/battle/action"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"monster-1-monster-gray-wolf\"]}}", battle_id))
+            .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"sk-heavy-slash\",\"targetIds\":[\"monster-monster-gray-wolf-0\"]}}", battle_id))
             .send()
             .await
             .expect("tower battle action should succeed");

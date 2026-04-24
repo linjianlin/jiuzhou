@@ -12,8 +12,9 @@ use crate::auth;
 use crate::battle_runtime::{
     BattleStateDto, build_minimal_pvp_battle_state, restart_battle_runtime,
     try_build_minimal_pve_battle_state,
+    try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier,
 };
-use crate::http::dungeon::load_dungeon_wave_monster_ids;
+use crate::http::dungeon::{load_dungeon_monster_attr_multiplier, load_dungeon_wave_monster_ids};
 use crate::http::tower::try_build_minimal_tower_pve_battle_state;
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
@@ -447,9 +448,16 @@ pub async fn start_battle_session(
         .unwrap_or_default();
     let monster_ids =
         load_dungeon_wave_monster_ids(&dungeon_id, &difficulty_id, current_stage, current_wave)?;
+    let monster_attr_multiplier =
+        load_dungeon_monster_attr_multiplier(&dungeon_id, &difficulty_id)?;
     let mut battle_state =
-        try_build_minimal_pve_battle_state(&battle_id, owner_character_id, &monster_ids)
-            .map_err(AppError::config)?;
+        try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier(
+            &battle_id,
+            owner_character_id,
+            &monster_ids,
+            monster_attr_multiplier,
+        )
+        .map_err(AppError::config)?;
     hydrate_pve_battle_state_owner(&state, &mut battle_state, owner_character_id).await?;
     let participant_character_ids = participants
         .iter()
