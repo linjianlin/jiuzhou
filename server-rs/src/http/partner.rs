@@ -1700,6 +1700,26 @@ fn build_partner_avatar_prompt(draft: &PartnerAiPreviewDraft, quality: &str) -> 
     .join("\n")
 }
 
+const PARTNER_GENERATION_MAX_ATTEMPTS: i32 = 3;
+
+fn build_partner_generation_final_failure_message(
+    max_attempts: i32,
+    last_failure: &str,
+    last_model_name: Option<&str>,
+) -> String {
+    let reason = last_failure.trim();
+    let base = if reason.is_empty() {
+        format!("伙伴连续生成失败 {max_attempts} 次")
+    } else {
+        format!("伙伴连续生成失败 {max_attempts} 次: {reason}")
+    };
+    last_model_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|model| format!("{base}; model={model}"))
+        .unwrap_or(base)
+}
+
 async fn generate_partner_avatar_url(
     state: &AppState,
     draft: &PartnerAiPreviewDraft,
@@ -1773,6 +1793,54 @@ async fn generate_partner_preview_artifacts(
         technique_id: short_generated_id("tech-partner", source_job_id),
         technique_candidate,
         technique_model_name: technique_result.model_name,
+    })
+}
+
+async fn generate_partner_preview_artifacts_with_attempts(
+    state: &AppState,
+    source_job_id: &str,
+    partner_def_id: &str,
+    quality: &str,
+    base_model: &str,
+) -> Result<GeneratedPartnerPreviewArtifacts, AppError> {
+    let mut last_failure = String::from("伙伴生成失败");
+    let mut last_model_name: Option<String> = None;
+
+    for _attempt in 1..=PARTNER_GENERATION_MAX_ATTEMPTS {
+        match generate_partner_preview_artifacts(
+            state,
+            source_job_id,
+            partner_def_id,
+            quality,
+            base_model,
+        )
+        .await
+        {
+            Ok(artifacts) => return Ok(artifacts),
+            Err(error) => {
+                last_failure = error.to_string();
+                last_model_name = extract_model_name_from_error(&last_failure);
+            }
+        }
+    }
+
+    Err(AppError::config(
+        build_partner_generation_final_failure_message(
+            PARTNER_GENERATION_MAX_ATTEMPTS,
+            &last_failure,
+            last_model_name.as_deref(),
+        ),
+    ))
+}
+
+fn extract_model_name_from_error(error: &str) -> Option<String> {
+    error.split_once("model=").and_then(|(_, after_model)| {
+        let model = after_model.split([';', '\n', '\r']).next()?.trim();
+        if model.is_empty() {
+            None
+        } else {
+            Some(model.to_string())
+        }
     })
 }
 
@@ -2708,7 +2776,7 @@ pub async fn process_pending_partner_recruit_job(
         }
     };
     let preview_partner_def_id = short_generated_id("partner-gen", generation_id);
-    let artifacts = match generate_partner_preview_artifacts(
+    let artifacts = match generate_partner_preview_artifacts_with_attempts(
         state,
         generation_id,
         &preview_partner_def_id,
@@ -2903,7 +2971,7 @@ pub async fn process_pending_partner_fusion_job(
         });
     };
     let fusion_base_model = fusion_references.join("\n");
-    let artifacts = match generate_partner_preview_artifacts(
+    let artifacts = match generate_partner_preview_artifacts_with_attempts(
         state,
         fusion_id,
         &preview_partner_def_id,
@@ -6755,8 +6823,48 @@ fn now_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::build_effective_partner_skill;
+    use super::{
+        build_effective_partner_skill, build_partner_generation_final_failure_message,
+        extract_model_name_from_error,
+    };
     use std::collections::BTreeSet;
+
+    #[test]
+    fn partner_generation_final_failure_message_includes_attempt_count_and_model() {
+        let message = build_partner_generation_final_failure_message(
+            3,
+            "伙伴头像生成失败: timeout",
+            Some("partner-model"),
+        );
+
+        assert!(message.contains("连续生成失败 3 次"));
+        assert!(message.contains("伙伴头像生成失败: timeout"));
+        assert!(message.contains("partner-model"));
+    }
+
+    #[test]
+    fn partner_generation_final_failure_message_handles_empty_model_name() {
+        let message = build_partner_generation_final_failure_message(3, "伙伴生成失败", None);
+
+        assert!(message.contains("连续生成失败 3 次"));
+        assert!(message.contains("伙伴生成失败"));
+        assert!(!message.contains("model="));
+    }
+
+    #[test]
+    fn extract_model_name_from_error_stops_at_metadata_boundary() {
+        assert_eq!(
+            extract_model_name_from_error(
+                "功法 AI candidate 连续生成失败: x; model=tech-model; promptSnapshot={}"
+            ),
+            Some("tech-model".to_string())
+        );
+        assert_eq!(
+            extract_model_name_from_error("x; model=   ; promptSnapshot={}"),
+            None
+        );
+        assert_eq!(extract_model_name_from_error("x"), None);
+    }
 
     #[test]
     fn partner_overview_payload_matches_contract() {
