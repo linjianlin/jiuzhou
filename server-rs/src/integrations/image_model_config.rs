@@ -8,6 +8,7 @@ const DEFAULT_IMAGE_SIZE: &str = "512x512";
 const DEFAULT_IMAGE_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_IMAGE_RESPONSE_FORMAT: &str = "b64_json";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: &str = "png";
+const DEFAULT_IMAGE_MAX_SKILLS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageModelProvider {
@@ -52,6 +53,7 @@ pub struct ImageModelConfigSnapshot {
     pub quality: Option<String>,
     pub style: Option<String>,
     pub output_format: Option<String>,
+    pub max_skills: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +68,7 @@ struct ImageModelEnvKeys {
     quality: &'static str,
     style: &'static str,
     output_format: &'static str,
+    max_skills: &'static str,
 }
 
 const SHARED_IMAGE_MODEL_ENV_KEYS: ImageModelEnvKeys = ImageModelEnvKeys {
@@ -79,6 +82,7 @@ const SHARED_IMAGE_MODEL_ENV_KEYS: ImageModelEnvKeys = ImageModelEnvKeys {
     quality: "AI_IMAGE_MODEL_QUALITY",
     style: "AI_IMAGE_MODEL_STYLE",
     output_format: "AI_IMAGE_MODEL_OUTPUT_FORMAT",
+    max_skills: "AI_IMAGE_MODEL_MAX_SKILLS",
 };
 
 fn scoped_image_model_env_keys(scope: ImageModelScope) -> ImageModelEnvKeys {
@@ -94,6 +98,7 @@ fn scoped_image_model_env_keys(scope: ImageModelScope) -> ImageModelEnvKeys {
             quality: "AI_TECHNIQUE_IMAGE_QUALITY",
             style: "AI_TECHNIQUE_IMAGE_STYLE",
             output_format: "AI_TECHNIQUE_IMAGE_OUTPUT_FORMAT",
+            max_skills: "AI_TECHNIQUE_IMAGE_MAX_SKILLS",
         },
         ImageModelScope::Partner => ImageModelEnvKeys {
             provider: "AI_PARTNER_IMAGE_PROVIDER",
@@ -106,6 +111,7 @@ fn scoped_image_model_env_keys(scope: ImageModelScope) -> ImageModelEnvKeys {
             quality: "AI_PARTNER_IMAGE_QUALITY",
             style: "AI_PARTNER_IMAGE_STYLE",
             output_format: "AI_PARTNER_IMAGE_OUTPUT_FORMAT",
+            max_skills: "AI_PARTNER_IMAGE_MAX_SKILLS",
         },
     }
 }
@@ -181,6 +187,14 @@ fn parse_positive_u64(raw: &str, default_value: u64) -> u64 {
         .unwrap_or(default_value)
 }
 
+fn parse_positive_usize(raw: &str, default_value: usize) -> usize {
+    raw.trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|value| *value > 0)
+        .unwrap_or(default_value)
+}
+
 fn resolve_url(provider: ImageModelProvider, raw: &str) -> (String, String) {
     match provider {
         ImageModelProvider::OpenAi => {
@@ -210,6 +224,7 @@ fn build_image_model_config_from_values(
     quality: String,
     style: String,
     output_format: String,
+    max_skills_raw: String,
 ) -> Option<ImageModelConfigSnapshot> {
     if key.trim().is_empty() {
         return None;
@@ -249,6 +264,7 @@ fn build_image_model_config_from_values(
         } else {
             Some(output_format)
         },
+        max_skills: parse_positive_usize(&max_skills_raw, DEFAULT_IMAGE_MAX_SKILLS),
     })
 }
 
@@ -272,6 +288,7 @@ pub fn read_image_model_config(scope: ImageModelScope) -> Option<ImageModelConfi
             scoped.output_format,
             SHARED_IMAGE_MODEL_ENV_KEYS.output_format,
         ),
+        resolve_env_value(scoped.max_skills, SHARED_IMAGE_MODEL_ENV_KEYS.max_skills),
     )
 }
 
@@ -308,6 +325,11 @@ pub fn read_image_model_config_from_pairs<'a>(
             &pairs,
             scoped.output_format,
             SHARED_IMAGE_MODEL_ENV_KEYS.output_format,
+        ),
+        resolve_pair_value(
+            &pairs,
+            scoped.max_skills,
+            SHARED_IMAGE_MODEL_ENV_KEYS.max_skills,
         ),
     )
 }
@@ -365,6 +387,44 @@ mod tests {
         );
         assert_eq!(partner.key, "partner-key");
         assert_eq!(partner.model_name, "partner-model");
+    }
+
+    #[test]
+    fn image_model_config_reads_technique_max_skills_from_scoped_env() {
+        let config = read_image_model_config_from_pairs(
+            ImageModelScope::Technique,
+            [
+                ("AI_IMAGE_MODEL_KEY", "shared-key"),
+                ("AI_IMAGE_MODEL_MAX_SKILLS", "2"),
+                ("AI_TECHNIQUE_IMAGE_MAX_SKILLS", "7"),
+            ],
+        )
+        .expect("technique image config should load");
+
+        assert_eq!(config.max_skills, 7);
+    }
+
+    #[test]
+    fn image_model_config_reads_shared_max_skills_and_defaults_invalid_values() {
+        let shared = read_image_model_config_from_pairs(
+            ImageModelScope::Technique,
+            [
+                ("AI_IMAGE_MODEL_KEY", "shared-key"),
+                ("AI_IMAGE_MODEL_MAX_SKILLS", "6"),
+            ],
+        )
+        .expect("shared technique image config should load");
+        let invalid = read_image_model_config_from_pairs(
+            ImageModelScope::Technique,
+            [
+                ("AI_IMAGE_MODEL_KEY", "shared-key"),
+                ("AI_TECHNIQUE_IMAGE_MAX_SKILLS", "0"),
+            ],
+        )
+        .expect("invalid max skills still keeps config");
+
+        assert_eq!(shared.max_skills, 6);
+        assert_eq!(invalid.max_skills, 4);
     }
 
     #[test]
