@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use crate::integrations::generated_image_storage::persist_generated_image_result;
 use crate::integrations::image_model_client::{call_image_model, request_from_config};
-use crate::integrations::image_model_config::{ImageModelScope, require_image_model_config};
+use crate::integrations::image_model_config::{
+    ImageModelConfigSnapshot, ImageModelScope, require_image_model_config,
+};
 use crate::integrations::text_model_client::{TextModelCallRequest, call_configured_text_model};
 use crate::integrations::text_model_config::{TextModelScope, require_text_model_config};
 use crate::shared::error::AppError;
@@ -205,16 +207,41 @@ fn build_technique_skill_icon_prompt(
     .join("\n")
 }
 
-async fn generate_technique_skill_icon(
+pub fn should_bypass_technique_skill_image_generation(node_env: Option<&str>) -> bool {
+    matches!(node_env, Some("development"))
+}
+
+fn missing_skill_icon_indexes(
+    candidate: &GeneratedTechniqueCandidate,
+    max_skills: usize,
+) -> Vec<usize> {
+    candidate
+        .skills
+        .iter()
+        .enumerate()
+        .filter_map(|(index, skill)| {
+            let has_icon = skill
+                .icon
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some();
+            (!has_icon).then_some(index)
+        })
+        .take(max_skills)
+        .collect()
+}
+
+async fn generate_technique_skill_icon_with_config(
     state: &AppState,
+    config: &ImageModelConfigSnapshot,
     candidate: &GeneratedTechniqueCandidate,
     skill: &TechniqueCandidateSkill,
 ) -> Result<String, AppError> {
-    let config = require_image_model_config(ImageModelScope::Technique)?;
     let result = call_image_model(
         &state.outbound_http,
-        &config,
-        &request_from_config(build_technique_skill_icon_prompt(candidate, skill), &config),
+        config,
+        &request_from_config(build_technique_skill_icon_prompt(candidate, skill), config),
     )
     .await
     .map_err(|error| AppError::config(format!("技能图标生成失败: {error}")))?;
@@ -227,18 +254,18 @@ pub async fn ensure_generated_candidate_skill_icons(
     state: &AppState,
     candidate: &mut GeneratedTechniqueCandidate,
 ) -> Result<(), AppError> {
+    if should_bypass_technique_skill_image_generation(std::env::var("NODE_ENV").ok().as_deref()) {
+        return Ok(());
+    }
+
+    let config = require_image_model_config(ImageModelScope::Technique)?;
     let snapshot = candidate.clone();
-    for skill in &mut candidate.skills {
-        if skill
-            .icon
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .is_some()
-        {
-            continue;
-        }
-        skill.icon = Some(generate_technique_skill_icon(state, &snapshot, skill).await?);
+    for index in missing_skill_icon_indexes(candidate, config.max_skills) {
+        let skill_snapshot = candidate.skills[index].clone();
+        let icon =
+            generate_technique_skill_icon_with_config(state, &config, &snapshot, &skill_snapshot)
+                .await?;
+        candidate.skills[index].icon = Some(icon);
     }
     Ok(())
 }
@@ -466,7 +493,8 @@ fn extract_bounded_chinese_text(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_and_validate_generated_technique_candidate, parse_and_validate_technique_ai_draft,
+        missing_skill_icon_indexes, parse_and_validate_generated_technique_candidate,
+        parse_and_validate_technique_ai_draft, should_bypass_technique_skill_image_generation,
     };
 
     #[test]
@@ -489,6 +517,20 @@ mod tests {
         )
         .expect_err("draft should reject latin name");
         assert!(error.to_string().contains("纯中文"));
+    }
+
+    #[test]
+    fn should_bypass_skill_icon_generation_only_for_development() {
+        assert!(should_bypass_technique_skill_image_generation(Some(
+            "development"
+        )));
+        assert!(!should_bypass_technique_skill_image_generation(Some(
+            "production"
+        )));
+        assert!(!should_bypass_technique_skill_image_generation(Some(
+            "test"
+        )));
+        assert!(!should_bypass_technique_skill_image_generation(None));
     }
 
     fn valid_candidate_json() -> String {
@@ -577,6 +619,27 @@ mod tests {
         assert_eq!(candidate.technique.name, "青木回风诀");
         assert_eq!(candidate.skills.len(), 1);
         assert_eq!(candidate.layers.len(), 3);
+    }
+
+    #[test]
+    fn missing_skill_icon_indexes_limits_empty_icons_by_config() {
+        let mut candidate = parse_and_validate_generated_technique_candidate(
+            &valid_candidate_json(),
+            "technique-model",
+            "武技",
+            "玄",
+            3,
+        )
+        .expect("candidate should parse");
+        candidate.skills.push(candidate.skills[0].clone());
+        candidate.skills[1].id = "skill-2".to_string();
+        candidate.skills[1].icon = Some("   ".to_string());
+        candidate.skills.push(candidate.skills[0].clone());
+        candidate.skills[2].id = "skill-3".to_string();
+        candidate.skills[2].icon = None;
+
+        assert_eq!(missing_skill_icon_indexes(&candidate, 2), vec![0, 1]);
+        assert_eq!(missing_skill_icon_indexes(&candidate, 1), vec![0]);
     }
 
     #[test]
