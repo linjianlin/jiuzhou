@@ -1,8 +1,14 @@
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+use std::time::Duration;
 
+use crate::integrations::generated_image_storage::persist_generated_image_result;
+use crate::integrations::image_model_client::{call_image_model, request_from_config};
+use crate::integrations::image_model_config::{ImageModelScope, require_image_model_config};
+use crate::integrations::text_model_client::{TextModelCallRequest, call_configured_text_model};
 use crate::integrations::text_model_config::{TextModelScope, require_text_model_config};
 use crate::shared::error::AppError;
 use crate::state::AppState;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TechniqueAiDraft {
@@ -12,33 +18,93 @@ pub struct TechniqueAiDraft {
     pub long_desc: String,
 }
 
-#[derive(Serialize)]
-struct OpenAiChatCompletionRequest<'a> {
-    model: &'a str,
-    messages: Vec<OpenAiChatMessage<'a>>,
-    temperature: f64,
-    response_format: serde_json::Value,
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedTechniqueCandidate {
+    pub model_name: String,
+    pub technique: TechniqueCandidateTechnique,
+    pub skills: Vec<TechniqueCandidateSkill>,
+    pub layers: Vec<TechniqueCandidateLayer>,
 }
 
-#[derive(Serialize)]
-struct OpenAiChatMessage<'a> {
-    role: &'a str,
-    content: &'a str,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TechniqueCandidateTechnique {
+    pub name: String,
+    pub r#type: String,
+    pub quality: String,
+    pub max_layer: i64,
+    pub required_realm: String,
+    pub attribute_type: String,
+    pub attribute_element: String,
+    pub tags: Vec<String>,
+    pub description: String,
+    pub long_desc: String,
 }
 
-#[derive(Deserialize)]
-struct OpenAiChatCompletionResponse {
-    choices: Vec<OpenAiChatChoice>,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TechniqueCandidateSkill {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub icon: Option<String>,
+    pub source_type: String,
+    pub cost_lingqi: i64,
+    pub cost_lingqi_rate: f64,
+    pub cost_qixue: i64,
+    pub cost_qixue_rate: f64,
+    pub cooldown: i64,
+    pub target_type: String,
+    pub target_count: i64,
+    pub damage_type: Option<String>,
+    pub element: String,
+    pub effects: Vec<serde_json::Value>,
+    pub trigger_type: String,
+    pub ai_priority: i64,
+    pub upgrades: Vec<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-struct OpenAiChatChoice {
-    message: OpenAiChatMessageResponse,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TechniqueCandidateCostMaterial {
+    pub item_id: String,
+    pub qty: i64,
 }
 
-#[derive(Deserialize)]
-struct OpenAiChatMessageResponse {
-    content: Option<String>,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TechniqueCandidatePassive {
+    pub key: String,
+    pub value: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TechniqueCandidateLayer {
+    pub layer: i64,
+    pub cost_spirit_stones: i64,
+    pub cost_exp: i64,
+    pub cost_materials: Vec<TechniqueCandidateCostMaterial>,
+    pub passives: Vec<TechniqueCandidatePassive>,
+    pub unlock_skill_ids: Vec<String>,
+    pub upgrade_skill_ids: Vec<String>,
+    pub layer_desc: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratedTechniqueCandidateResult {
+    pub candidate: GeneratedTechniqueCandidate,
+    pub model_name: String,
+    pub prompt_snapshot: String,
+    pub attempt_count: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TechniqueCandidatePayload {
+    technique: TechniqueCandidateTechnique,
+    skills: Vec<TechniqueCandidateSkill>,
+    layers: Vec<TechniqueCandidateLayer>,
 }
 
 pub async fn generate_technique_ai_draft(
@@ -48,61 +114,133 @@ pub async fn generate_technique_ai_draft(
     burning_word_prompt: &str,
 ) -> Result<TechniqueAiDraft, AppError> {
     let config = require_text_model_config(TextModelScope::Technique)?;
-    if config.provider != "openai" {
-        return Err(AppError::config(format!(
-            "暂不支持的功法 AI provider: {}",
-            config.provider
-        )));
-    }
     let system_message = "You generate concise xianxia technique draft metadata. Return JSON with fields suggestedName, description, longDesc. suggestedName must be 2-12 Chinese characters. description max 40 Chinese chars. longDesc max 120 Chinese chars.";
     let user_message = format!(
         "quality={quality}; type={}; burningWord={}. Create one Chinese xianxia technique draft.",
         technique_type.trim(),
         burning_word_prompt.trim()
     );
-    let response = state
-        .outbound_http
-        .post(format!("{}/chat/completions", config.url))
-        .bearer_auth(&config.key)
-        .json(&OpenAiChatCompletionRequest {
-            model: &config.model_name,
-            messages: vec![
-                OpenAiChatMessage {
-                    role: "system",
-                    content: system_message,
-                },
-                OpenAiChatMessage {
-                    role: "user",
-                    content: &user_message,
-                },
-            ],
-            temperature: 0.7,
-            response_format: serde_json::json!({"type": "json_object"}),
-        })
-        .send()
+    let result = call_configured_text_model(
+        state,
+        &config,
+        TextModelCallRequest {
+            system_message: system_message.to_string(),
+            user_message,
+            response_format: Some(serde_json::json!({"type": "json_object"})),
+            seed: None,
+            timeout: None,
+            temperature: Some(0.7),
+        },
+    )
+    .await
+    .map_err(|error| AppError::config(format!("功法 AI 请求失败: {error}")))?;
+    parse_and_validate_technique_ai_draft(&result.content, &result.model_name)
+}
+
+pub async fn generate_technique_candidate(
+    state: &AppState,
+    technique_type: &str,
+    quality: &str,
+    max_layer: i64,
+    burning_word_prompt: Option<&str>,
+    prompt_context: Option<serde_json::Value>,
+) -> Result<GeneratedTechniqueCandidateResult, AppError> {
+    let config = require_text_model_config(TextModelScope::Technique)?;
+    let system_message =
+        "你是修仙游戏的功法生成器。只返回一个合法 JSON 对象，不要 Markdown，不要解释文字。";
+    let user_message = build_technique_candidate_user_prompt(
+        technique_type,
+        quality,
+        max_layer,
+        burning_word_prompt,
+        prompt_context,
+    )?;
+    let result = call_configured_text_model(
+        state,
+        &config,
+        TextModelCallRequest {
+            system_message: system_message.to_string(),
+            user_message,
+            response_format: Some(serde_json::json!({"type": "json_object"})),
+            seed: None,
+            timeout: Some(Duration::from_secs(300)),
+            temperature: Some(0.7),
+        },
+    )
+    .await
+    .map_err(|error| AppError::config(format!("功法 AI candidate 请求失败: {error}")))?;
+    let candidate = parse_and_validate_generated_technique_candidate(
+        &result.content,
+        &result.model_name,
+        technique_type,
+        quality,
+        max_layer,
+    )?;
+    Ok(GeneratedTechniqueCandidateResult {
+        candidate,
+        model_name: result.model_name,
+        prompt_snapshot: result.prompt_snapshot,
+        attempt_count: 1,
+    })
+}
+
+fn build_technique_skill_icon_prompt(
+    candidate: &GeneratedTechniqueCandidate,
+    skill: &TechniqueCandidateSkill,
+) -> String {
+    [
+        format!(
+            "生成修仙游戏功法技能图标，功法「{}」",
+            candidate.technique.name
+        ),
+        format!("功法类型：{}", candidate.technique.r#type),
+        format!("功法品质：{}", candidate.technique.quality),
+        format!("元素：{}", candidate.technique.attribute_element),
+        format!("技能名：{}", skill.name),
+        format!("技能描述：{}", skill.description),
+        format!("技能效果 JSON：{}", serde_json::json!(skill.effects)),
+        "方形技能图标，主体清晰，适合 64x64 到 128x128 使用".to_string(),
+        "不要文字、边框、水印、UI 按钮底板".to_string(),
+    ]
+    .join("\n")
+}
+
+async fn generate_technique_skill_icon(
+    state: &AppState,
+    candidate: &GeneratedTechniqueCandidate,
+    skill: &TechniqueCandidateSkill,
+) -> Result<String, AppError> {
+    let config = require_image_model_config(ImageModelScope::Technique)?;
+    let result = call_image_model(
+        &state.outbound_http,
+        &config,
+        &request_from_config(build_technique_skill_icon_prompt(candidate, skill), &config),
+    )
+    .await
+    .map_err(|error| AppError::config(format!("技能图标生成失败: {error}")))?;
+    persist_generated_image_result(state, &result)
         .await
-        .map_err(|error| AppError::config(format!("功法 AI 请求失败: {error}")))?;
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| AppError::config(format!("功法 AI 响应读取失败: {error}")))?;
-    if !status.is_success() {
-        return Err(AppError::config(format!(
-            "功法 AI 返回错误状态 {}: {}",
-            status, body
-        )));
+        .map_err(|error| AppError::config(format!("技能图标保存失败: {error}")))
+}
+
+pub async fn ensure_generated_candidate_skill_icons(
+    state: &AppState,
+    candidate: &mut GeneratedTechniqueCandidate,
+) -> Result<(), AppError> {
+    let snapshot = candidate.clone();
+    for skill in &mut candidate.skills {
+        if skill
+            .icon
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+        {
+            continue;
+        }
+        skill.icon = Some(generate_technique_skill_icon(state, &snapshot, skill).await?);
     }
-    let parsed: OpenAiChatCompletionResponse = serde_json::from_str(&body)
-        .map_err(|error| AppError::config(format!("功法 AI 响应解析失败: {error}")))?;
-    let content = parsed
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.as_deref())
-        .map(str::trim)
-        .filter(|content| !content.is_empty())
-        .ok_or_else(|| AppError::config("功法 AI 未返回正文"))?;
-    parse_and_validate_technique_ai_draft(content, &config.model_name)
+    Ok(())
 }
 
 pub fn parse_and_validate_technique_ai_draft(
@@ -120,6 +258,176 @@ pub fn parse_and_validate_technique_ai_draft(
         description,
         long_desc,
     })
+}
+
+pub fn parse_and_validate_generated_technique_candidate(
+    raw: &str,
+    model_name: &str,
+    expected_type: &str,
+    expected_quality: &str,
+    expected_max_layer: i64,
+) -> Result<GeneratedTechniqueCandidate, AppError> {
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|error| AppError::config(format!("功法 candidate JSON 解析失败: {error}")))?;
+    validate_candidate_top_level(&value)?;
+    let payload: TechniqueCandidatePayload = serde_json::from_value(value)
+        .map_err(|error| AppError::config(format!("功法 candidate 字段结构非法: {error}")))?;
+    let candidate = GeneratedTechniqueCandidate {
+        model_name: model_name.trim().to_string(),
+        technique: payload.technique,
+        skills: payload.skills,
+        layers: payload.layers,
+    };
+    validate_generated_technique_candidate(
+        &candidate,
+        expected_type,
+        expected_quality,
+        expected_max_layer,
+    )?;
+    Ok(candidate)
+}
+
+fn validate_candidate_top_level(value: &serde_json::Value) -> Result<(), AppError> {
+    let Some(object) = value.as_object() else {
+        return Err(AppError::config("功法 candidate 顶层必须是 JSON 对象"));
+    };
+    if object.contains_key("candidate")
+        || object.contains_key("data")
+        || object.contains_key("result")
+        || object.contains_key("payload")
+    {
+        return Err(AppError::config(
+            "功法 candidate 顶层必须直接包含 technique/skills/layers，不能使用 wrapper",
+        ));
+    }
+    if !object.contains_key("technique")
+        || !object.contains_key("skills")
+        || !object.contains_key("layers")
+    {
+        return Err(AppError::config(
+            "功法 candidate 顶层必须直接包含 technique/skills/layers",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_generated_technique_candidate(
+    candidate: &GeneratedTechniqueCandidate,
+    expected_type: &str,
+    expected_quality: &str,
+    expected_max_layer: i64,
+) -> Result<(), AppError> {
+    let technique = &candidate.technique;
+    ensure_non_empty("technique.name", &technique.name)?;
+    ensure_non_empty("technique.requiredRealm", &technique.required_realm)?;
+    ensure_non_empty("technique.attributeType", &technique.attribute_type)?;
+    ensure_non_empty("technique.attributeElement", &technique.attribute_element)?;
+    ensure_non_empty("technique.description", &technique.description)?;
+    ensure_non_empty("technique.longDesc", &technique.long_desc)?;
+    if technique.r#type.trim() != expected_type.trim() {
+        return Err(AppError::config("AI结果功法类型与目标类型不一致"));
+    }
+    if technique.quality.trim() != expected_quality.trim() {
+        return Err(AppError::config("AI结果品质与目标品质不一致"));
+    }
+    if technique.max_layer != expected_max_layer {
+        return Err(AppError::config("AI结果最大层数非法"));
+    }
+    if candidate.skills.is_empty() {
+        return Err(AppError::config("AI结果未生成技能"));
+    }
+
+    let mut skill_ids = BTreeSet::new();
+    for skill in &candidate.skills {
+        ensure_non_empty("skill.id", &skill.id)?;
+        ensure_non_empty("skill.name", &skill.name)?;
+        ensure_non_empty("skill.description", &skill.description)?;
+        ensure_non_empty("skill.targetType", &skill.target_type)?;
+        ensure_non_empty("skill.element", &skill.element)?;
+        ensure_non_empty("skill.triggerType", &skill.trigger_type)?;
+        if skill.source_type.trim() != "technique" {
+            return Err(AppError::config("AI结果技能来源非法"));
+        }
+        if !matches!(skill.trigger_type.trim(), "active" | "passive") {
+            return Err(AppError::config("AI结果技能触发类型非法"));
+        }
+        if !skill_ids.insert(skill.id.trim().to_string()) {
+            return Err(AppError::config("AI结果技能ID重复"));
+        }
+    }
+
+    if candidate.layers.len() != expected_max_layer as usize {
+        return Err(AppError::config("AI结果层级数量非法"));
+    }
+    let mut layer_numbers = BTreeSet::new();
+    for layer in &candidate.layers {
+        if layer.layer < 1 || layer.layer > expected_max_layer {
+            return Err(AppError::config("AI结果层级序号非法"));
+        }
+        if !layer_numbers.insert(layer.layer) {
+            return Err(AppError::config("AI结果层级序号重复"));
+        }
+        ensure_non_empty("layer.layerDesc", &layer.layer_desc)?;
+        for skill_id in layer
+            .unlock_skill_ids
+            .iter()
+            .chain(layer.upgrade_skill_ids.iter())
+        {
+            if !skill_ids.contains(skill_id.trim()) {
+                return Err(AppError::config("AI结果层级技能ID不存在"));
+            }
+        }
+    }
+    for layer in 1..=expected_max_layer {
+        if !layer_numbers.contains(&layer) {
+            return Err(AppError::config("AI结果层级不完整"));
+        }
+    }
+    Ok(())
+}
+
+fn ensure_non_empty(field: &str, value: &str) -> Result<(), AppError> {
+    if value.trim().is_empty() {
+        return Err(AppError::config(format!(
+            "功法 candidate 缺少字段: {field}"
+        )));
+    }
+    Ok(())
+}
+
+fn build_technique_candidate_user_prompt(
+    technique_type: &str,
+    quality: &str,
+    max_layer: i64,
+    burning_word_prompt: Option<&str>,
+    prompt_context: Option<serde_json::Value>,
+) -> Result<String, AppError> {
+    let payload = serde_json::json!({
+        "task": "generate_complete_technique_candidate",
+        "requiredTopLevelKeys": ["technique", "skills", "layers"],
+        "forbiddenTopLevelWrappers": ["candidate", "data", "result", "payload"],
+        "target": {
+            "type": technique_type.trim(),
+            "quality": quality.trim(),
+            "maxLayer": max_layer,
+            "burningWordPrompt": burning_word_prompt.map(str::trim).filter(|value| !value.is_empty()),
+        },
+        "context": prompt_context,
+        "schemaRules": [
+            "顶层必须直接输出 technique、skills、layers 三个字段，不要多包 candidate/data/result/payload。",
+            "technique 必须包含 name/type/quality/maxLayer/requiredRealm/attributeType/attributeElement/tags/description/longDesc。",
+            "technique.type、technique.quality、technique.maxLayer 必须严格等于 target。",
+            "skills 至少 1 个；每个技能必须包含 id/name/description/icon/sourceType/costLingqi/costLingqiRate/costQixue/costQixueRate/cooldown/targetType/targetCount/damageType/element/effects/triggerType/aiPriority/upgrades。",
+            "skills[].sourceType 必须是 technique；triggerType 只能是 active 或 passive。",
+            "layers 必须完整覆盖 1..maxLayer；每层必须包含 layer/costSpiritStones/costExp/costMaterials/passives/unlockSkillIds/upgradeSkillIds/layerDesc。",
+            "layers[].unlockSkillIds 和 upgradeSkillIds 只能引用本次 skills[].id 中存在的 id。",
+            "costMaterials 输出数组；没有材料时输出空数组。effects、upgrades、passives 也必须输出数组。",
+            "attributeType 使用 physical 或 magic；attributeElement 使用 none/wood/fire/water/metal/earth/lightning/ice/wind 等短英文元素。",
+            "只输出 JSON 对象本体，不要 Markdown 代码块，不要解释。"
+        ]
+    });
+    serde_json::to_string(&payload)
+        .map_err(|error| AppError::config(format!("功法 candidate prompt 序列化失败: {error}")))
 }
 
 fn extract_bounded_text(
@@ -157,7 +465,9 @@ fn extract_bounded_chinese_text(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_and_validate_technique_ai_draft;
+    use super::{
+        parse_and_validate_generated_technique_candidate, parse_and_validate_technique_ai_draft,
+    };
 
     #[test]
     fn technique_ai_draft_validation_accepts_minimal_valid_shape() {
@@ -179,5 +489,137 @@ mod tests {
         )
         .expect_err("draft should reject latin name");
         assert!(error.to_string().contains("纯中文"));
+    }
+
+    fn valid_candidate_json() -> String {
+        serde_json::json!({
+            "technique": {
+                "name": "青木回风诀",
+                "type": "武技",
+                "quality": "玄",
+                "maxLayer": 3,
+                "requiredRealm": "炼炁化神·结胎期",
+                "attributeType": "physical",
+                "attributeElement": "wood",
+                "tags": ["洞府研修", "青木"],
+                "description": "青木回风，攻守兼备。",
+                "longDesc": "以青木生发之意牵引回风劲力，适合洞府研修所得的完整功法候选。"
+            },
+            "skills": [
+                {
+                    "id": "generated-skill-1",
+                    "name": "青木回风斩",
+                    "description": "引青木劲气斩击单体敌人。",
+                    "icon": null,
+                    "sourceType": "technique",
+                    "costLingqi": 12,
+                    "costLingqiRate": 0.0,
+                    "costQixue": 0,
+                    "costQixueRate": 0.0,
+                    "cooldown": 1,
+                    "targetType": "single_enemy",
+                    "targetCount": 1,
+                    "damageType": "physical",
+                    "element": "wood",
+                    "effects": [{"type": "damage", "value": 120}],
+                    "triggerType": "active",
+                    "aiPriority": 60,
+                    "upgrades": []
+                }
+            ],
+            "layers": [
+                {
+                    "layer": 1,
+                    "costSpiritStones": 100,
+                    "costExp": 50,
+                    "costMaterials": [],
+                    "passives": [{"key": "atk", "value": 6}],
+                    "unlockSkillIds": ["generated-skill-1"],
+                    "upgradeSkillIds": [],
+                    "layerDesc": "青木初生，悟得回风斩。"
+                },
+                {
+                    "layer": 2,
+                    "costSpiritStones": 200,
+                    "costExp": 100,
+                    "costMaterials": [],
+                    "passives": [{"key": "def", "value": 4}],
+                    "unlockSkillIds": [],
+                    "upgradeSkillIds": ["generated-skill-1"],
+                    "layerDesc": "回风渐疾，斩势更盛。"
+                },
+                {
+                    "layer": 3,
+                    "costSpiritStones": 300,
+                    "costExp": 150,
+                    "costMaterials": [],
+                    "passives": [{"key": "speed", "value": 3}],
+                    "unlockSkillIds": [],
+                    "upgradeSkillIds": ["generated-skill-1"],
+                    "layerDesc": "青木成荫，风势圆融。"
+                }
+            ]
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn generated_candidate_validation_accepts_complete_candidate() {
+        let candidate = parse_and_validate_generated_technique_candidate(
+            &valid_candidate_json(),
+            "technique-model",
+            "武技",
+            "玄",
+            3,
+        )
+        .expect("candidate should parse");
+        assert_eq!(candidate.model_name, "technique-model");
+        assert_eq!(candidate.technique.name, "青木回风诀");
+        assert_eq!(candidate.skills.len(), 1);
+        assert_eq!(candidate.layers.len(), 3);
+    }
+
+    #[test]
+    fn generated_candidate_validation_rejects_wrapper_object() {
+        let wrapped = serde_json::json!({ "candidate": serde_json::from_str::<serde_json::Value>(&valid_candidate_json()).unwrap() }).to_string();
+        let error = parse_and_validate_generated_technique_candidate(
+            &wrapped,
+            "technique-model",
+            "武技",
+            "玄",
+            3,
+        )
+        .expect_err("wrapper should be rejected");
+        assert!(error.to_string().contains("顶层"));
+    }
+
+    #[test]
+    fn generated_candidate_validation_rejects_unknown_layer_skill_id() {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_candidate_json()).unwrap();
+        value["layers"][0]["unlockSkillIds"] = serde_json::json!(["missing-skill"]);
+        let error = parse_and_validate_generated_technique_candidate(
+            &value.to_string(),
+            "technique-model",
+            "武技",
+            "玄",
+            3,
+        )
+        .expect_err("missing skill id should be rejected");
+        assert!(error.to_string().contains("技能ID不存在"));
+    }
+
+    #[test]
+    fn generated_candidate_validation_rejects_max_layer_mismatch() {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_candidate_json()).unwrap();
+        value["technique"]["maxLayer"] = serde_json::json!(2);
+        let error = parse_and_validate_generated_technique_candidate(
+            &value.to_string(),
+            "technique-model",
+            "武技",
+            "玄",
+            3,
+        )
+        .expect_err("maxLayer mismatch should be rejected");
+        assert!(error.to_string().contains("最大层数"));
     }
 }

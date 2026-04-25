@@ -2,16 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
+use crate::integrations::text_model_client::{TextModelCallRequest, call_configured_text_model};
+use crate::integrations::text_model_config::{
+    TextModelConfigSnapshot, TextModelScope, read_text_model_config,
+};
 use crate::shared::error::AppError;
 use crate::state::AppState;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WanderAiConfigSnapshot {
-    pub provider: String,
-    pub url: String,
-    pub key: String,
-    pub model: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -96,15 +92,6 @@ const TITLE_RATIO_EFFECT_KEYS: &[&str] = &[
     "huo_kangxing",
     "tu_kangxing",
 ];
-
-#[derive(Serialize)]
-struct OpenAiChatCompletionRequest<'a> {
-    model: &'a str,
-    messages: Vec<OpenAiChatMessage<'a>>,
-    seed: i64,
-    temperature: f64,
-    response_format: serde_json::Value,
-}
 
 fn build_wander_ai_setup_response_format() -> serde_json::Value {
     serde_json::json!({
@@ -242,27 +229,6 @@ fn build_wander_ai_resolution_response_format(is_ending: bool) -> serde_json::Va
     })
 }
 
-#[derive(Serialize)]
-struct OpenAiChatMessage<'a> {
-    role: &'a str,
-    content: &'a str,
-}
-
-#[derive(Deserialize)]
-struct OpenAiChatCompletionResponse {
-    choices: Vec<OpenAiChatChoice>,
-}
-
-#[derive(Deserialize)]
-struct OpenAiChatChoice {
-    message: OpenAiChatMessageResponse,
-}
-
-#[derive(Deserialize)]
-struct OpenAiChatMessageResponse {
-    content: Option<String>,
-}
-
 #[derive(Clone, Copy)]
 enum WanderAiDraftKind {
     Setup,
@@ -282,31 +248,11 @@ fn is_unsupported_structured_schema_error(message: &str) -> bool {
         || message.contains("Invalid schema for response_format")
 }
 
-pub fn read_wander_ai_config(state: &AppState) -> Option<WanderAiConfigSnapshot> {
-    let provider = state.config.wander.model_provider.trim().to_string();
-    let url = state
-        .config
-        .wander
-        .model_url
-        .trim()
-        .trim_end_matches('/')
-        .to_string();
-    let key = state.config.wander.model_key.trim().to_string();
-    let model = state.config.wander.model_name.trim().to_string();
-    if !state.config.wander.ai_enabled
-        || provider.is_empty()
-        || url.is_empty()
-        || key.is_empty()
-        || model.is_empty()
-    {
+pub fn read_wander_ai_config(state: &AppState) -> Option<TextModelConfigSnapshot> {
+    if !state.config.wander.ai_enabled {
         return None;
     }
-    Some(WanderAiConfigSnapshot {
-        provider,
-        url,
-        key,
-        model,
-    })
+    read_text_model_config(TextModelScope::Wander)
 }
 
 pub async fn generate_wander_ai_episode_setup_draft(
@@ -455,67 +401,30 @@ async fn request_wander_ai_content(
 ) -> Result<String, AppError> {
     let config = read_wander_ai_config(state)
         .ok_or_else(|| AppError::config("未配置 wander AI 文本模型"))?;
-    if config.provider != "openai" {
-        return Err(AppError::config(format!(
-            "暂不支持的 wander AI provider: {}",
-            config.provider
-        )));
-    }
-
-    let response = state
-        .outbound_http
-        .post(format!("{}/chat/completions", config.url))
-        .timeout(wander_ai_timeout())
-        .bearer_auth(&config.key)
-        .json(&OpenAiChatCompletionRequest {
-            model: &config.model,
-            messages: vec![
-                OpenAiChatMessage {
-                    role: "system",
-                    content: system_message,
-                },
-                OpenAiChatMessage {
-                    role: "user",
-                    content: user_message,
-                },
-            ],
-            seed,
-            temperature: 0.7,
+    let result = call_configured_text_model(
+        state,
+        &config,
+        TextModelCallRequest {
+            system_message: system_message.to_string(),
+            user_message: user_message.to_string(),
             response_format: if use_structured_schema {
-                match draft_kind {
+                Some(match draft_kind {
                     WanderAiDraftKind::Setup => build_wander_ai_setup_response_format(),
                     WanderAiDraftKind::Resolution { is_ending } => {
                         build_wander_ai_resolution_response_format(is_ending)
                     }
-                }
+                })
             } else {
-                serde_json::json!({ "type": "json_object" })
+                Some(serde_json::json!({ "type": "json_object" }))
             },
-        })
-        .send()
-        .await
-        .map_err(|error| AppError::config(format!("wander AI 请求失败: {error}")))?;
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| AppError::config(format!("wander AI 响应读取失败: {error}")))?;
-    if !status.is_success() {
-        return Err(AppError::config(format!(
-            "wander AI 返回错误状态 {}: {}",
-            status, body
-        )));
-    }
-    let parsed: OpenAiChatCompletionResponse = serde_json::from_str(&body)
-        .map_err(|error| AppError::config(format!("wander AI 响应解析失败: {error}")))?;
-    let content = parsed
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.as_deref())
-        .map(str::trim)
-        .filter(|content| !content.is_empty())
-        .ok_or_else(|| AppError::config("wander AI 未返回正文"))?;
-    Ok(content.to_string())
+            seed: Some(seed),
+            temperature: Some(0.7),
+            timeout: Some(wander_ai_timeout()),
+        },
+    )
+    .await
+    .map_err(|error| AppError::config(format!("wander AI 请求失败: {error}")))?;
+    Ok(result.content)
 }
 
 pub fn parse_and_validate_wander_ai_episode_setup_draft(

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use axum::Json;
@@ -10,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 use crate::auth;
-use crate::integrations::technique_ai::generate_technique_ai_draft;
+use crate::integrations::technique_ai::{
+    GeneratedTechniqueCandidate, ensure_generated_candidate_skill_icons,
+    generate_technique_candidate,
+};
 use crate::integrations::text_model_config::{TextModelScope, require_text_model_config};
 use crate::jobs;
 use crate::realtime::public_socket::{
@@ -1720,110 +1724,108 @@ pub async fn process_pending_technique_generation_job(
         .try_get::<Option<String>, _>("quality_rolled")?
         .unwrap_or_else(|| "黄".to_string());
     let burning_word_prompt = row.try_get::<Option<String>, _>("burning_word_prompt")?;
-    let draft_technique_id = format!("generated-technique-{generation_id}");
-    let draft_skill_id = format!("generated-skill-{generation_id}-1");
-    let ai_draft = if let Some(prompt) = burning_word_prompt
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let draft_technique_id = short_generated_id("tech-gen", generation_id);
+    let max_layer = generated_technique_max_layer(&quality);
+    let candidate_result = match generate_technique_candidate(
+        state,
+        &technique_type,
+        &quality,
+        max_layer,
+        burning_word_prompt.as_deref(),
+        None,
+    )
+    .await
     {
-        Some(generate_technique_ai_draft(state, &technique_type, &quality, prompt).await)
-    } else {
-        None
-    };
-    let (suggested_name, description, long_desc, model_name) = match ai_draft {
-        Some(Ok(draft)) => (
-            draft.suggested_name,
-            draft.description,
-            draft.long_desc,
-            draft.model_name,
-        ),
-        Some(Err(error)) => {
-            let reason = error.to_string();
-            refund_technique_generation_job_tx(
+        Ok(result) => result,
+        Err(error) => {
+            fail_technique_generation_job_with_refund(
                 state,
                 character_id,
                 generation_id,
-                &reason,
-                "failed",
-                "AI_PROVIDER_ERROR",
-                TECHNIQUE_RESEARCH_FULL_REFUND_RATE,
+                &error.to_string(),
             )
             .await?;
-            let user_id = state
-                .database
-                .fetch_optional(
-                    "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-                    |q| q.bind(character_id),
-                )
-                .await?
-                .and_then(|row| {
-                    row.try_get::<Option<i32>, _>("user_id")
-                        .ok()
-                        .flatten()
-                        .map(i64::from)
-                });
-            if let Some(user_id) = user_id {
-                emit_technique_research_result_to_user(
-                    state,
-                    user_id,
-                    &build_technique_research_result_payload(
-                        character_id,
-                        generation_id,
-                        "failed",
-                        "洞府推演失败，请前往功法查看",
-                        None,
-                        Some(append_technique_research_refund_hint(&reason)),
-                    ),
-                );
-                if let Ok(status) = load_technique_research_status_data(state, character_id).await {
-                    emit_technique_research_status_to_user(
-                        state,
-                        user_id,
-                        &build_technique_research_status_payload(character_id, status),
-                    );
-                }
-            }
             return Ok(());
         }
-        None => (
-            build_generated_technique_name(&quality, burning_word_prompt.as_deref()),
-            format!("{}品质{}草稿", quality.trim(), technique_type.trim()),
-            format!(
-                "以{}推演而成的{}草稿，可于洞府研修中进一步命名发布。",
-                burning_word_prompt.as_deref().unwrap_or("无字诀"),
-                technique_type.trim()
-            ),
-            "rust-deterministic".to_string(),
-        ),
     };
-    let damage_type = if technique_type.trim() == "身法" {
-        "support"
-    } else {
-        "physical"
-    };
-    let (attribute_type, attribute_element) = if technique_type.trim() == "神通" {
-        ("spell", "wood")
-    } else {
-        ("physical", "none")
-    };
+    let mut candidate = candidate_result.candidate;
+    remap_generated_candidate_skill_ids(&mut candidate, generation_id);
+    ensure_generated_candidate_skill_icons(state, &mut candidate).await?;
+    let prompt_snapshot: serde_json::Value =
+        serde_json::from_str(&candidate_result.prompt_snapshot).map_err(|error| {
+            AppError::config(format!("功法 candidate prompt_snapshot 解析失败: {error}"))
+        })?;
 
     state.database.with_transaction(|| async {
         state.database.execute(
-            "INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, normalized_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, model_name, icon, is_published, published_at, name_locked, enabled, version, custom_name, normalized_custom_name, identity_suffix, created_at, updated_at) VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, 3, '炼炁化神·结胎期', $7, $8, 'character_only', '[]'::jsonb, $9, $10, $11, NULL, FALSE, NULL, FALSE, TRUE, 1, NULL, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-            |q| q.bind(&draft_technique_id).bind(generation_id).bind(character_id).bind(&suggested_name).bind(technique_type.trim()).bind(&quality).bind(attribute_type).bind(attribute_element).bind(&description).bind(&long_desc).bind(&model_name),
+            "INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, normalized_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, model_name, icon, is_published, published_at, name_locked, enabled, version, custom_name, normalized_custom_name, identity_suffix, created_at, updated_at) VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, $7, $8, $9, $10, 'character_only', $11::jsonb, $12, $13, $14, NULL, FALSE, NULL, FALSE, TRUE, 1, NULL, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+            |q| q
+                .bind(&draft_technique_id)
+                .bind(generation_id)
+                .bind(character_id)
+                .bind(&candidate.technique.name)
+                .bind(candidate.technique.r#type.trim())
+                .bind(candidate.technique.quality.trim())
+                .bind(candidate.technique.max_layer)
+                .bind(candidate.technique.required_realm.trim())
+                .bind(candidate.technique.attribute_type.trim())
+                .bind(candidate.technique.attribute_element.trim())
+                .bind(serde_json::json!(candidate.technique.tags))
+                .bind(&candidate.technique.description)
+                .bind(&candidate.technique.long_desc)
+                .bind(&candidate_result.model_name),
         ).await?;
+        for skill in &candidate.skills {
+            state.database.execute(
+                "INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, code, name, description, icon, cost_lingqi, cost_lingqi_rate, cost_qixue, cost_qixue_rate, cooldown, target_type, target_count, damage_type, element, effects, trigger_type, ai_priority, upgrades, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20::jsonb, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+                |q| q
+                    .bind(&skill.id)
+                    .bind(generation_id)
+                    .bind(&draft_technique_id)
+                    .bind(&skill.id)
+                    .bind(&skill.name)
+                    .bind(&skill.description)
+                    .bind(skill.icon.as_deref())
+                    .bind(skill.cost_lingqi)
+                    .bind(skill.cost_lingqi_rate)
+                    .bind(skill.cost_qixue)
+                    .bind(skill.cost_qixue_rate)
+                    .bind(skill.cooldown)
+                    .bind(skill.target_type.trim())
+                    .bind(skill.target_count)
+                    .bind(skill.damage_type.as_deref())
+                    .bind(skill.element.trim())
+                    .bind(serde_json::json!(skill.effects))
+                    .bind(skill.trigger_type.trim())
+                    .bind(skill.ai_priority)
+                    .bind(serde_json::json!(skill.upgrades)),
+            ).await?;
+        }
+        for layer in &candidate.layers {
+            state.database.execute(
+                "INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, required_quest_id, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::text[], $9::text[], $10, NULL, $11, TRUE, NOW(), NOW()) ON CONFLICT (technique_id, layer) DO NOTHING",
+                |q| q
+                    .bind(generation_id)
+                    .bind(&draft_technique_id)
+                    .bind(layer.layer)
+                    .bind(layer.cost_spirit_stones)
+                    .bind(layer.cost_exp)
+                    .bind(serde_json::json!(layer.cost_materials))
+                    .bind(serde_json::json!(layer.passives))
+                    .bind(&layer.unlock_skill_ids)
+                    .bind(&layer.upgrade_skill_ids)
+                    .bind(candidate.technique.required_realm.trim())
+                    .bind(&layer.layer_desc),
+            ).await?;
+        }
         state.database.execute(
-            "INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, code, name, description, icon, cost_lingqi, cost_lingqi_rate, cost_qixue, cost_qixue_rate, cooldown, target_type, target_count, damage_type, element, effects, trigger_type, ai_priority, upgrades, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $1, $4, $5, NULL, 0, 0, 0, 0, 0, 'single_enemy', 1, $6, $7, '[]'::jsonb, 'active', 50, '[]'::jsonb, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-            |q| q.bind(&draft_skill_id).bind(generation_id).bind(&draft_technique_id).bind(format!("{}·一式", suggested_name)).bind(&description).bind(damage_type).bind(attribute_element),
-        ).await?;
-        state.database.execute(
-            "INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, required_quest_id, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, 0, 0, '[]'::jsonb, '[]'::jsonb, ARRAY[$3]::text[], ARRAY[]::text[], '炼炁化神·结胎期', NULL, $4, TRUE, NOW(), NOW()) ON CONFLICT (technique_id, layer) DO NOTHING",
-            |q| q.bind(generation_id).bind(&draft_technique_id).bind(&draft_skill_id).bind(&description),
-        ).await?;
-        state.database.execute(
-            "UPDATE technique_generation_job SET status = 'generated_draft', model_name = $2, draft_technique_id = $3, draft_expire_at = NOW() + ('24 hours')::interval, finished_at = NOW(), error_code = NULL, error_message = NULL, updated_at = NOW() WHERE id = $1",
-            |q| q.bind(generation_id).bind(&model_name).bind(&draft_technique_id),
+            "UPDATE technique_generation_job SET status = 'generated_draft', prompt_snapshot = $2::jsonb, model_name = $3, attempt_count = $4, draft_technique_id = $5, draft_expire_at = NOW() + ('24 hours')::interval, finished_at = NOW(), error_code = NULL, error_message = NULL, updated_at = NOW() WHERE id = $1",
+            |q| q
+                .bind(generation_id)
+                .bind(&prompt_snapshot)
+                .bind(&candidate_result.model_name)
+                .bind(candidate_result.attempt_count)
+                .bind(&draft_technique_id),
         ).await?;
         Ok::<(), AppError>(())
     }).await?;
@@ -2563,21 +2565,114 @@ fn quality_multiplier(quality: Option<&str>) -> i64 {
     }
 }
 
-fn build_generated_technique_name(quality: &str, burning_word_prompt: Option<&str>) -> String {
-    let quality = if quality.trim().is_empty() {
-        "黄"
-    } else {
-        quality.trim()
-    };
-    let prompt = burning_word_prompt
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("无字");
-    format!("{}·{}研法", quality, prompt)
+fn short_hash_hex(value: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn short_generated_id(prefix: &str, source: &str) -> String {
+    format!("{}-{}", prefix.trim(), short_hash_hex(source.trim()))
 }
 
 fn scale_cost(base: i64, quality_multiplier: i64) -> i64 {
     base.max(0).saturating_mul(quality_multiplier.max(1))
+}
+
+fn generated_technique_max_layer(quality: &str) -> i64 {
+    match quality.trim() {
+        "天" => 9,
+        "地" => 7,
+        "玄" => 5,
+        _ => 3,
+    }
+}
+
+fn remap_generated_candidate_skill_ids(
+    candidate: &mut GeneratedTechniqueCandidate,
+    generation_id: &str,
+) {
+    let id_map = candidate
+        .skills
+        .iter()
+        .enumerate()
+        .map(|(index, skill)| {
+            (
+                skill.id.clone(),
+                short_generated_id("skill-gen", &format!("{generation_id}:{}", index + 1)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for skill in &mut candidate.skills {
+        if let Some(next_id) = id_map.get(&skill.id) {
+            skill.id = next_id.clone();
+        }
+    }
+    for layer in &mut candidate.layers {
+        for skill_id in &mut layer.unlock_skill_ids {
+            if let Some(next_id) = id_map.get(skill_id) {
+                *skill_id = next_id.clone();
+            }
+        }
+        for skill_id in &mut layer.upgrade_skill_ids {
+            if let Some(next_id) = id_map.get(skill_id) {
+                *skill_id = next_id.clone();
+            }
+        }
+    }
+}
+
+async fn fail_technique_generation_job_with_refund(
+    state: &AppState,
+    character_id: i64,
+    generation_id: &str,
+    reason: &str,
+) -> Result<(), AppError> {
+    refund_technique_generation_job_tx(
+        state,
+        character_id,
+        generation_id,
+        reason,
+        "failed",
+        "AI_PROVIDER_ERROR",
+        TECHNIQUE_RESEARCH_FULL_REFUND_RATE,
+    )
+    .await?;
+    let user_id = state
+        .database
+        .fetch_optional(
+            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+            |q| q.bind(character_id),
+        )
+        .await?
+        .and_then(|row| {
+            row.try_get::<Option<i32>, _>("user_id")
+                .ok()
+                .flatten()
+                .map(i64::from)
+        });
+    if let Some(user_id) = user_id {
+        emit_technique_research_result_to_user(
+            state,
+            user_id,
+            &build_technique_research_result_payload(
+                character_id,
+                generation_id,
+                "failed",
+                "洞府推演失败，请前往功法查看",
+                None,
+                Some(append_technique_research_refund_hint(reason)),
+            ),
+        );
+        if let Ok(status) = load_technique_research_status_data(state, character_id).await {
+            emit_technique_research_status_to_user(
+                state,
+                user_id,
+                &build_technique_research_status_payload(character_id, status),
+            );
+        }
+    }
+    Ok(())
 }
 
 fn current_week_key() -> String {
@@ -2900,16 +2995,5 @@ mod tests {
         });
         assert_eq!(payload["data"]["bookItemInstanceId"], 501);
         println!("CHARACTER_TECHNIQUE_RESEARCH_PUBLISH_RESPONSE={}", payload);
-    }
-
-    #[test]
-    fn technique_research_generated_draft_name_is_deterministic() {
-        let seeded = super::build_generated_technique_name("玄", Some("青木"));
-        let fallback = super::build_generated_technique_name("黄", None);
-        assert_eq!(seeded, "玄·青木研法");
-        assert_eq!(fallback, "黄·无字研法");
-        println!(
-            "TECHNIQUE_RESEARCH_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}"
-        );
     }
 }

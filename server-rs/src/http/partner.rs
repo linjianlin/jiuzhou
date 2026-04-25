@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use axum::Json;
@@ -14,10 +15,18 @@ use crate::battle_runtime::BattleUnitCurrentAttrsDto;
 use crate::http::inventory::{load_inventory_def_map, resolve_generated_technique_book_display};
 use crate::http::technique::load_technique_detail_data;
 use crate::idle_runtime::IdlePartnerExecutionSnapshot;
-use crate::integrations::partner_ai::generate_partner_ai_preview_draft;
-use crate::integrations::text_model_config::{
-    TextModelScope, read_text_model_config, require_text_model_config,
+use crate::integrations::generated_image_storage::persist_generated_image_result;
+use crate::integrations::image_model_client::{call_image_model, request_from_config};
+use crate::integrations::image_model_config::{ImageModelScope, require_image_model_config};
+use crate::integrations::partner_ai::{
+    PartnerAiPreviewDraft, PartnerRecruitBaseModelReview, generate_partner_ai_preview_draft,
+    review_partner_recruit_custom_base_model,
 };
+use crate::integrations::technique_ai::{
+    GeneratedTechniqueCandidate, ensure_generated_candidate_skill_icons,
+    generate_technique_candidate,
+};
+use crate::integrations::text_model_config::{TextModelScope, require_text_model_config};
 use crate::jobs;
 use crate::realtime::partner::{PartnerUpdatePayload, build_partner_update_payload};
 use crate::realtime::partner_fusion::{
@@ -1539,102 +1548,334 @@ fn quality_name(rank: i64) -> String {
     }
 }
 
-fn build_generated_partner_fusion_name(quality: &str, material_name: Option<&str>) -> String {
-    let quality = if quality.trim().is_empty() {
-        "黄"
-    } else {
-        quality.trim()
-    };
-    let material_name = material_name
+fn json_text_field(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| value.get(*key))
+        .and_then(|field| field.as_str())
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("无相");
-    format!("{}·{}归灵", quality, material_name)
+        .filter(|field| !field.is_empty())
+        .map(ToString::to_string)
 }
 
-fn build_generated_partner_recruit_name(
+fn short_hash_hex(value: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn short_generated_id(prefix: &str, source: &str) -> String {
+    format!("{}-{}", prefix.trim(), short_hash_hex(source.trim()))
+}
+
+fn partner_base_model_seed_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../server/src/data/seeds/partner_base_models.txt")
+}
+
+fn resolve_partner_base_model_for_job(source_job_id: &str) -> Result<String, AppError> {
+    let path = partner_base_model_seed_path();
+    let content = fs::read_to_string(&path).map_err(|error| {
+        AppError::config(format!(
+            "读取伙伴招募底模种子文件失败 {}: {error}",
+            path.display()
+        ))
+    })?;
+    let entries = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return Err(AppError::config("伙伴招募底模种子文件为空"));
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source_job_id.hash(&mut hasher);
+    let index = (hasher.finish() as usize) % entries.len();
+    Ok(entries[index].to_string())
+}
+
+struct GeneratedPartnerPreviewArtifacts {
+    draft: PartnerAiPreviewDraft,
+    avatar_url: String,
+    technique_id: String,
+    technique_candidate: GeneratedTechniqueCandidate,
+    technique_model_name: String,
+}
+
+fn partner_recruit_technique_max_layer(quality: &str) -> i64 {
+    match quality.trim() {
+        "天" => 6,
+        "地" => 5,
+        "玄" => 4,
+        _ => 3,
+    }
+}
+
+fn generated_partner_technique_type(combat_style: &str, kind: &str) -> &'static str {
+    if kind.trim() != "attack" {
+        return "辅修";
+    }
+    if combat_style.trim() == "physical" {
+        "武技"
+    } else {
+        "法诀"
+    }
+}
+
+fn generated_partner_attribute_type(combat_style: &str, technique_type: &str) -> &'static str {
+    match technique_type.trim() {
+        "武技" => "physical",
+        "法诀" => "magic",
+        _ if combat_style.trim() == "physical" => "physical",
+        _ => "magic",
+    }
+}
+
+fn remap_generated_partner_candidate_skill_ids(
+    candidate: &mut GeneratedTechniqueCandidate,
+    source_job_id: &str,
+) {
+    let id_map = candidate
+        .skills
+        .iter()
+        .enumerate()
+        .map(|(index, skill)| {
+            (
+                skill.id.clone(),
+                short_generated_id("skill-partner", &format!("{source_job_id}:{}", index + 1)),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for skill in &mut candidate.skills {
+        if let Some(mapped) = id_map.get(&skill.id) {
+            skill.id = mapped.clone();
+        }
+    }
+    for layer in &mut candidate.layers {
+        layer.unlock_skill_ids = layer
+            .unlock_skill_ids
+            .iter()
+            .filter_map(|id| id_map.get(id).cloned())
+            .collect();
+        layer.upgrade_skill_ids = layer
+            .upgrade_skill_ids
+            .iter()
+            .filter_map(|id| id_map.get(id).cloned())
+            .collect();
+    }
+}
+
+fn adapt_generated_partner_technique_candidate(
+    candidate: &mut GeneratedTechniqueCandidate,
+    draft: &PartnerAiPreviewDraft,
+    technique_type: &str,
+) {
+    candidate.technique.r#type = technique_type.trim().to_string();
+    candidate.technique.required_realm = "凡人".to_string();
+    candidate.technique.attribute_type =
+        generated_partner_attribute_type(&draft.combat_style, technique_type).to_string();
+    candidate.technique.attribute_element = draft.attribute_element.clone();
+    for skill in &mut candidate.skills {
+        skill.element = draft.attribute_element.clone();
+        if technique_type == "武技" && skill.damage_type.is_none() {
+            skill.damage_type = Some("physical".to_string());
+        }
+        if technique_type == "法诀" && skill.damage_type.is_none() {
+            skill.damage_type = Some("magic".to_string());
+        }
+    }
+}
+
+fn build_partner_avatar_prompt(draft: &PartnerAiPreviewDraft, quality: &str) -> String {
+    [
+        format!("生成中国仙侠伙伴头像，角色名「{}」", draft.name),
+        format!("伙伴定位：{}", draft.role),
+        format!("伙伴品质：{}", quality.trim()),
+        format!("元素倾向：{}", draft.attribute_element),
+        format!("伙伴描述：{}", draft.description),
+        "单人半身头像，正面或三分之二视角".to_string(),
+        "画面必须清晰展示面部、服饰、法器或灵息特征".to_string(),
+        "中国仙侠审美，细腻角色设定图风格，不要文字、水印、边框".to_string(),
+    ]
+    .join("\n")
+}
+
+async fn generate_partner_avatar_url(
+    state: &AppState,
+    draft: &PartnerAiPreviewDraft,
     quality: &str,
-    requested_base_model: Option<&str>,
-) -> String {
-    let quality = if quality.trim().is_empty() {
-        "黄"
-    } else {
-        quality.trim()
-    };
-    let base = requested_base_model
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("无相");
-    format!("{}·{}灵伴", quality, base)
+) -> Result<String, AppError> {
+    let config = require_image_model_config(ImageModelScope::Partner)?;
+    let result = call_image_model(
+        &state.outbound_http,
+        &config,
+        &request_from_config(build_partner_avatar_prompt(draft, quality), &config),
+    )
+    .await
+    .map_err(|error| AppError::config(format!("伙伴头像生成失败: {error}")))?;
+    persist_generated_image_result(state, &result)
+        .await
+        .map_err(|error| AppError::config(format!("伙伴头像保存失败: {error}")))
 }
 
-fn build_generated_partner_innate_technique_name(partner_name: &str) -> String {
-    let base = partner_name.trim();
-    if base.is_empty() {
-        "无相灵诀".to_string()
-    } else {
-        format!("{}·天赋功法", base)
-    }
+async fn generate_partner_preview_artifacts(
+    state: &AppState,
+    source_job_id: &str,
+    _partner_def_id: &str,
+    quality: &str,
+    base_model: &str,
+) -> Result<GeneratedPartnerPreviewArtifacts, AppError> {
+    let draft = generate_partner_ai_preview_draft(state, quality, base_model).await?;
+    let innate = draft
+        .innate_techniques
+        .first()
+        .ok_or_else(|| AppError::config("伙伴 AI 未返回天生功法"))?;
+    let technique_type = generated_partner_technique_type(&draft.combat_style, &innate.kind);
+    let max_layer = partner_recruit_technique_max_layer(quality);
+    let prompt_context = serde_json::json!({
+        "partner": {
+            "name": &draft.name,
+            "quality": quality.trim(),
+            "role": &draft.role,
+            "combatStyle": &draft.combat_style,
+            "attributeElement": &draft.attribute_element,
+            "description": &draft.description,
+        },
+        "innateTechnique": {
+            "slot": 1,
+            "totalCount": draft.innate_techniques.len(),
+            "kind": &innate.kind,
+            "preferredTechniqueType": technique_type,
+            "preferredName": &innate.name,
+            "preferredDescription": &innate.description,
+            "preferredPassiveKey": &innate.passive_key,
+            "preferredPassiveValue": innate.passive_value,
+        }
+    });
+    let technique_result = generate_technique_candidate(
+        state,
+        technique_type,
+        quality,
+        max_layer,
+        Some(&innate.name),
+        Some(prompt_context),
+    )
+    .await?;
+    let mut technique_candidate = technique_result.candidate;
+    adapt_generated_partner_technique_candidate(&mut technique_candidate, &draft, technique_type);
+    remap_generated_partner_candidate_skill_ids(&mut technique_candidate, source_job_id);
+    ensure_generated_candidate_skill_icons(state, &mut technique_candidate).await?;
+    let avatar_url = generate_partner_avatar_url(state, &draft, quality).await?;
+
+    Ok(GeneratedPartnerPreviewArtifacts {
+        draft,
+        avatar_url,
+        technique_id: short_generated_id("tech-partner", source_job_id),
+        technique_candidate,
+        technique_model_name: technique_result.model_name,
+    })
 }
 
-fn build_generated_partner_innate_skill_name(partner_name: &str) -> String {
-    let base = partner_name.trim();
-    if base.is_empty() {
-        "无相灵击".to_string()
-    } else {
-        format!("{}·伴生灵击", base)
-    }
-}
-
-async fn persist_generated_partner_innate_technique_preview(
+async fn persist_generated_partner_preview(
     state: &AppState,
     character_id: i64,
     source_job_id: &str,
     partner_def_id: &str,
-    partner_name: &str,
-    quality: &str,
-    element: &str,
-    role: &str,
-) -> Result<String, AppError> {
-    let technique_id = format!("generated-partner-technique-{source_job_id}");
-    let skill_id = format!("generated-partner-skill-{source_job_id}");
-    let technique_type = if role.trim() == "support" {
-        "辅修"
-    } else if element.trim() == "none" {
-        "武技"
-    } else {
-        "法诀"
-    };
-    let attribute_type = if technique_type == "武技" {
-        "physical"
-    } else {
-        "magic"
-    };
-    let technique_name = build_generated_partner_innate_technique_name(partner_name);
-    let skill_name = build_generated_partner_innate_skill_name(partner_name);
-    let aura_effects = if role.trim() == "support" {
-        serde_json::json!([{"type":"buff","buffKind":"aura"}])
-    } else {
-        serde_json::json!([])
-    };
-    let base_cost = quality_multiplier_from_name(quality).max(1) * 50;
+    artifacts: &GeneratedPartnerPreviewArtifacts,
+) -> Result<(), AppError> {
+    let candidate = &artifacts.technique_candidate;
+    let long_desc = format!(
+        "{}（伙伴天生功法）",
+        if candidate.technique.long_desc.trim().is_empty() {
+            candidate.technique.description.trim()
+        } else {
+            candidate.technique.long_desc.trim()
+        }
+    );
+    let technique_icon = candidate
+        .skills
+        .first()
+        .and_then(|skill| skill.icon.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     state.database.execute(
-        "INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, is_published, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $4, $5, $6, 3, '凡人', $7, $8, 'partner_only', '[]'::jsonb, $9, $9, TRUE, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-        |q| q.bind(&technique_id).bind(source_job_id).bind(character_id).bind(&technique_name).bind(technique_type).bind(quality.trim()).bind(attribute_type).bind(element.trim()).bind(format!("{partner_name}的伴生功法")),
+        "INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, normalized_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, model_name, icon, is_published, published_at, name_locked, enabled, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $4, NULL, $5, $6, $7, '凡人', $8, $9, 'partner_only', $10::jsonb, $11, $12, $13, $14, TRUE, NOW(), TRUE, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+        |q| q
+            .bind(&artifacts.technique_id)
+            .bind(source_job_id)
+            .bind(character_id)
+            .bind(&candidate.technique.name)
+            .bind(candidate.technique.r#type.trim())
+            .bind(candidate.technique.quality.trim())
+            .bind(candidate.technique.max_layer)
+            .bind(candidate.technique.attribute_type.trim())
+            .bind(candidate.technique.attribute_element.trim())
+            .bind(serde_json::json!(candidate.technique.tags))
+            .bind(&candidate.technique.description)
+            .bind(&long_desc)
+            .bind(&artifacts.technique_model_name)
+            .bind(technique_icon),
     ).await?;
+    for skill in &candidate.skills {
+        state.database.execute(
+            "INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, code, name, description, icon, cost_lingqi, cost_lingqi_rate, cost_qixue, cost_qixue_rate, cooldown, target_type, target_count, damage_type, element, effects, trigger_type, ai_priority, upgrades, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20::jsonb, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+            |q| q
+                .bind(&skill.id)
+                .bind(source_job_id)
+                .bind(&artifacts.technique_id)
+                .bind(&skill.id)
+                .bind(&skill.name)
+                .bind(&skill.description)
+                .bind(skill.icon.as_deref())
+                .bind(skill.cost_lingqi)
+                .bind(skill.cost_lingqi_rate)
+                .bind(skill.cost_qixue)
+                .bind(skill.cost_qixue_rate)
+                .bind(skill.cooldown)
+                .bind(skill.target_type.trim())
+                .bind(skill.target_count)
+                .bind(skill.damage_type.as_deref())
+                .bind(skill.element.trim())
+                .bind(serde_json::json!(skill.effects))
+                .bind(skill.trigger_type.trim())
+                .bind(skill.ai_priority)
+                .bind(serde_json::json!(skill.upgrades)),
+        ).await?;
+    }
+    for layer in &candidate.layers {
+        state.database.execute(
+            "INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::text[], $9::text[], '凡人', $10, TRUE, NOW(), NOW()) ON CONFLICT DO NOTHING",
+            |q| q
+                .bind(source_job_id)
+                .bind(&artifacts.technique_id)
+                .bind(layer.layer)
+                .bind(layer.cost_spirit_stones)
+                .bind(layer.cost_exp)
+                .bind(serde_json::json!(layer.cost_materials))
+                .bind(serde_json::json!(layer.passives))
+                .bind(&layer.unlock_skill_ids)
+                .bind(&layer.upgrade_skill_ids)
+                .bind(&layer.layer_desc),
+        ).await?;
+    }
     state.database.execute(
-        "INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, name, target_type, target_count, element, effects, trigger_type, cooldown, sort_weight, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, $5, 1, $6, $7::jsonb, $8, $9, 10, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-        |q| q.bind(&skill_id).bind(source_job_id).bind(&technique_id).bind(&skill_name).bind(if role.trim() == "support" { "self" } else { "single_enemy" }).bind(element.trim()).bind(aura_effects).bind(if role.trim() == "support" { "passive" } else { "active" }).bind(if role.trim() == "support" { 0 } else { 1 }),
+        "INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, ARRAY[$11]::text[], TRUE, $12, $13, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+        |q| q
+            .bind(partner_def_id)
+            .bind(&artifacts.draft.name)
+            .bind(&artifacts.draft.description)
+            .bind(&artifacts.avatar_url)
+            .bind(candidate.technique.quality.trim())
+            .bind(&artifacts.draft.attribute_element)
+            .bind(&artifacts.draft.role)
+            .bind(artifacts.draft.max_technique_slots)
+            .bind(&artifacts.draft.base_attrs)
+            .bind(&artifacts.draft.level_attr_gains)
+            .bind(&artifacts.technique_id)
+            .bind(character_id)
+            .bind(source_job_id),
     ).await?;
-    state.database.execute(
-        "INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, '[]'::jsonb, '[]'::jsonb, ARRAY[$5], ARRAY[]::varchar[], '凡人', $6, TRUE, NOW(), NOW()) ON CONFLICT DO NOTHING",
-        |q| q.bind(source_job_id).bind(&technique_id).bind(base_cost).bind(base_cost / 2).bind(&skill_id).bind(format!("{partner_name}的先天功法第一重")),
-    ).await?;
-    state.database.execute(
-        "UPDATE generated_partner_def SET innate_technique_ids = ARRAY[$2]::text[], updated_at = NOW() WHERE id = $1",
-        |q| q.bind(partner_def_id).bind(&technique_id),
-    ).await?;
-    Ok(technique_id)
+    Ok(())
 }
 
 const PARTNER_RECRUIT_REFUND_MAIL_TITLE: &str = "伙伴招募失败退还通知";
@@ -2385,36 +2626,56 @@ pub async fn process_pending_partner_recruit_job(
     character_id: i64,
     generation_id: &str,
 ) -> Result<ServiceResult<serde_json::Value>, AppError> {
-    state.database.with_transaction(|| async {
-        let row = state.database.fetch_optional(
-            "SELECT status, quality_rolled, requested_base_model, used_custom_base_model_token FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
-            |q| q.bind(generation_id).bind(character_id),
-        ).await?;
-        let Some(row) = row else {
-            return Ok(ServiceResult { success: false, message: Some("招募任务不存在".to_string()), data: None });
+    let row = state.database.fetch_optional(
+        "SELECT status, quality_rolled, requested_base_model FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1",
+        |q| q.bind(generation_id).bind(character_id),
+    ).await?;
+    let Some(row) = row else {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("招募任务不存在".to_string()),
+            data: None,
+        });
+    };
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
+    if status != "pending" {
+        return Ok(ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({"status": status})),
+        });
+    }
+    let quality = row
+        .try_get::<Option<String>, _>("quality_rolled")?
+        .unwrap_or_else(|| "黄".to_string());
+    let requested_base_model = row
+        .try_get::<Option<String>, _>("requested_base_model")?
+        .unwrap_or_default();
+    let base_model = if requested_base_model.trim().is_empty() {
+        resolve_partner_base_model_for_job(generation_id)?
+    } else {
+        let review = match review_partner_recruit_custom_base_model(
+            state,
+            requested_base_model.trim(),
+        )
+        .await
+        {
+            Ok(review) => review,
+            Err(error) => PartnerRecruitBaseModelReview::Rejected(error.to_string()),
         };
-        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
-        if status != "pending" {
-            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
-        }
-        let quality = row.try_get::<Option<String>, _>("quality_rolled")?.unwrap_or_else(|| "黄".to_string());
-        let requested_base_model = row.try_get::<Option<String>, _>("requested_base_model")?.unwrap_or_default();
-        let preview_partner_def_id = format!("generated-partner-{generation_id}");
-        let ai_draft = if !requested_base_model.trim().is_empty() {
-            Some(generate_partner_ai_preview_draft(state, &quality, requested_base_model.trim()).await)
-        } else {
-            None
-        };
-        let (partner_name, partner_desc, element, role) = match ai_draft {
-            Some(Ok(draft)) => (
-                draft.name,
-                draft.description,
-                draft.attribute_element,
-                draft.role,
-            ),
-            Some(Err(error)) => {
-                let reason = error.to_string();
-                refund_partner_recruit_job_tx(state, character_id, generation_id, &reason, "refunded").await?;
+        match review {
+            PartnerRecruitBaseModelReview::Allowed => requested_base_model.trim().to_string(),
+            PartnerRecruitBaseModelReview::Rejected(reason) => {
+                refund_partner_recruit_job_tx(
+                    state,
+                    character_id,
+                    generation_id,
+                    &reason,
+                    "refunded",
+                )
+                .await?;
                 if let Some(user_id) = load_character_user_id(state, character_id).await? {
                     emit_partner_recruit_result_to_user(
                         state,
@@ -2427,7 +2688,8 @@ pub async fn process_pending_partner_recruit_job(
                             Some(append_partner_recruit_refund_hint(&reason)),
                         ),
                     );
-                    if let Ok(status) = load_partner_recruit_status_data(state, character_id).await {
+                    if let Ok(status) = load_partner_recruit_status_data(state, character_id).await
+                    {
                         emit_partner_recruit_status_to_user(
                             state,
                             user_id,
@@ -2438,73 +2700,79 @@ pub async fn process_pending_partner_recruit_job(
                 return Ok(ServiceResult {
                     success: true,
                     message: Some("ok".to_string()),
-                    data: Some(serde_json::json!({"generationId": generation_id, "status": "refunded"})),
+                    data: Some(
+                        serde_json::json!({"generationId": generation_id, "status": "refunded"}),
+                    ),
                 });
             }
-            None => {
-                let partner_name = build_generated_partner_recruit_name(&quality, Some(requested_base_model.as_str()));
-                let partner_desc = if requested_base_model.trim().is_empty() {
-                    format!("{}品质的神秘伙伴雏形，尚待确认收下。", quality.trim())
-                } else {
-                    format!("以{}为底模推演出的{}品质伙伴预览。", requested_base_model.trim(), quality.trim())
-                };
-                let element = if requested_base_model.contains('木') { "wood" } else if requested_base_model.contains('火') { "fire" } else { "none" };
-                let role = if quality_rank(quality.as_str()) >= 2 { "attacker" } else { "support" };
-                (partner_name, partner_desc, element.to_string(), role.to_string())
+        }
+    };
+    let preview_partner_def_id = short_generated_id("partner-gen", generation_id);
+    let artifacts = match generate_partner_preview_artifacts(
+        state,
+        generation_id,
+        &preview_partner_def_id,
+        &quality,
+        &base_model,
+    )
+    .await
+    {
+        Ok(artifacts) => artifacts,
+        Err(error) => {
+            let reason = error.to_string();
+            refund_partner_recruit_job_tx(state, character_id, generation_id, &reason, "refunded")
+                .await?;
+            if let Some(user_id) = load_character_user_id(state, character_id).await? {
+                emit_partner_recruit_result_to_user(
+                    state,
+                    user_id,
+                    &build_partner_recruit_result_payload(
+                        character_id,
+                        generation_id,
+                        "refunded",
+                        "伙伴招募失败，相关消耗已通过邮件返还，请前往伙伴界面查看",
+                        Some(append_partner_recruit_refund_hint(&reason)),
+                    ),
+                );
+                if let Ok(status) = load_partner_recruit_status_data(state, character_id).await {
+                    emit_partner_recruit_status_to_user(
+                        state,
+                        user_id,
+                        &build_partner_recruit_status_payload(character_id, status),
+                    );
+                }
             }
-        };
-        let quality_rank = quality_rank(quality.as_str());
-        let base_qixue = 120 + quality_rank * 30;
-        let base_wugong = 18 + quality_rank * 6;
-        let base_fagong = 12 + quality_rank * 4;
-        let base_wufang = 10 + quality_rank * 3;
-        let base_fafang = 10 + quality_rank * 3;
-        let base_sudu = 8 + quality_rank * 2;
-        let avatar_url = format!("/assets/generated/partners/{preview_partner_def_id}.png");
-        state.database.execute(
-            "INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8::jsonb, $9::jsonb, ARRAY[]::text[], TRUE, $10, $11, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-            |q| q
-                .bind(&preview_partner_def_id)
-                .bind(&partner_name)
-                .bind(&partner_desc)
-                .bind(&avatar_url)
-                .bind(quality.trim())
-                .bind(&element)
-                .bind(&role)
-                .bind(serde_json::json!({
-                    "max_qixue": base_qixue,
-                    "max_lingqi": 0,
-                    "wugong": base_wugong,
-                    "fagong": base_fagong,
-                    "wufang": base_wufang,
-                    "fafang": base_fafang,
-                    "sudu": base_sudu,
-                }))
-                .bind(serde_json::json!({
-                    "max_qixue": 8,
-                    "max_lingqi": 0,
-                    "wugong": 2,
-                    "fagong": 2,
-                    "wufang": 1,
-                    "fafang": 1,
-                    "sudu": 1,
-                }))
-                .bind(character_id)
-                .bind(generation_id),
+            return Ok(ServiceResult {
+                success: true,
+                message: Some("ok".to_string()),
+                data: Some(
+                    serde_json::json!({"generationId": generation_id, "status": "refunded"}),
+                ),
+            });
+        }
+    };
+    state.database.with_transaction(|| async {
+        let row = state.database.fetch_optional(
+            "SELECT status FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+            |q| q.bind(generation_id).bind(character_id),
         ).await?;
-        let _ = persist_generated_partner_innate_technique_preview(
+        let Some(row) = row else {
+            return Ok(ServiceResult { success: false, message: Some("招募任务不存在".to_string()), data: None });
+        };
+        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+        if status != "pending" {
+            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
+        }
+        persist_generated_partner_preview(
             state,
             character_id,
             generation_id,
             &preview_partner_def_id,
-            &partner_name,
-            quality.as_str(),
-            &element,
-            &role,
+            &artifacts,
         ).await?;
         state.database.execute(
             "UPDATE partner_recruit_job SET status = 'generated_draft', preview_partner_def_id = $2, preview_avatar_url = $3, finished_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1",
-            |q| q.bind(generation_id).bind(&preview_partner_def_id).bind(&avatar_url),
+            |q| q.bind(generation_id).bind(&preview_partner_def_id).bind(&artifacts.avatar_url),
         ).await?;
         state.database.execute(
             "UPDATE characters SET partner_recruit_generated_non_heaven_count = CASE WHEN $2 = '天' THEN 0 ELSE COALESCE(partner_recruit_generated_non_heaven_count, 0) + 1 END, updated_at = NOW() WHERE id = $1",
@@ -2543,61 +2811,114 @@ pub async fn process_pending_partner_fusion_job(
     character_id: i64,
     fusion_id: &str,
 ) -> Result<ServiceResult<serde_json::Value>, AppError> {
-    state.database.with_transaction(|| async {
-        let row = state.database.fetch_optional(
-            "SELECT status, source_quality, result_quality FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+    let row = state.database.fetch_optional(
+            "SELECT status, source_quality, result_quality FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1",
             |q| q.bind(fusion_id).bind(character_id),
         ).await?;
-        let Some(row) = row else {
-            return Ok(ServiceResult { success: false, message: Some("归契任务不存在".to_string()), data: None });
-        };
-        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
-        if status != "pending" {
-            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
-        }
-        let source_quality = row.try_get::<Option<String>, _>("source_quality")?.unwrap_or_else(|| "黄".to_string());
-        let result_quality = row.try_get::<Option<String>, _>("result_quality")?.unwrap_or_else(|| source_quality.clone());
-        let material_rows = state.database.fetch_all(
-            "SELECT partner_snapshot FROM partner_fusion_job_material WHERE fusion_job_id = $1 ORDER BY material_order ASC FOR UPDATE",
+    let Some(row) = row else {
+        return Ok(ServiceResult {
+            success: false,
+            message: Some("归契任务不存在".to_string()),
+            data: None,
+        });
+    };
+    let status = row
+        .try_get::<Option<String>, _>("status")?
+        .unwrap_or_default();
+    if status != "pending" {
+        return Ok(ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({"status": status})),
+        });
+    }
+    let source_quality = row
+        .try_get::<Option<String>, _>("source_quality")?
+        .unwrap_or_else(|| "黄".to_string());
+    let result_quality = row
+        .try_get::<Option<String>, _>("result_quality")?
+        .unwrap_or_else(|| source_quality.clone());
+    let material_rows = state.database.fetch_all(
+            "SELECT partner_snapshot FROM partner_fusion_job_material WHERE fusion_job_id = $1 ORDER BY material_order ASC",
             |q| q.bind(fusion_id),
         ).await?;
-        let first_name = material_rows
-            .first()
-            .and_then(|row| row.try_get::<Option<serde_json::Value>, _>("partner_snapshot").ok().flatten())
-            .and_then(|snapshot| snapshot.get("nickname").and_then(|value| value.as_str()).map(str::trim).map(|value| value.to_string()))
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "无相".to_string());
-        let preview_partner_def_id = format!("generated-fusion-partner-{fusion_id}");
-        let ai_config_present = read_text_model_config(TextModelScope::Partner).is_some();
-        println!("PARTNER_FUSION_TRACE: ai_config_present={ai_config_present}");
-        let ai_draft = if ai_config_present {
-            Some(generate_partner_ai_preview_draft(state, &result_quality, first_name.as_str()).await)
-        } else {
-            None
-        };
-        let (partner_name, partner_desc, role, element, failure) = match ai_draft {
-            Some(Ok(draft)) => (draft.name, draft.description, draft.role, draft.attribute_element, None),
-            Some(Err(error)) => (
-                String::new(),
-                String::new(),
-                String::new(),
-                String::new(),
-                Some(error.to_string()),
-            ),
-            None => (
-                build_generated_partner_fusion_name(&result_quality, Some(first_name.as_str())),
-                format!("由{}品质素材归契而成的{}品质伙伴预览。", source_quality.trim(), result_quality.trim()),
-                if quality_rank(result_quality.as_str()) >= 2 { "attacker".to_string() } else { "support".to_string() },
-                if first_name.contains('木') { "wood".to_string() } else if first_name.contains('火') { "fire".to_string() } else { "none".to_string() },
-                None,
-            ),
-        };
-        if let Some(error_message) = failure {
-            println!("PARTNER_FUSION_TRACE: ai_failure={error_message}");
-            state.database.execute(
+    let preview_partner_def_id = short_generated_id("partner-gen", fusion_id);
+    let fusion_references = material_rows
+            .iter()
+            .map(|row| row.try_get::<Option<serde_json::Value>, _>("partner_snapshot").ok().flatten())
+            .map(|snapshot| {
+                let snapshot = snapshot?;
+                let name = json_text_field(&snapshot, &["nickname", "name"])?;
+                let quality = json_text_field(&snapshot, &["quality"])?;
+                let role = json_text_field(&snapshot, &["role"])?;
+                let element = json_text_field(&snapshot, &["attributeElement", "attribute_element"])?;
+                let description = snapshot
+                    .get("description")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToString::to_string);
+                if let Some(description) = description {
+                    Some(format!(
+                        "素材伙伴：name={name}; quality={quality}; role={role}; attributeElement={element}; description={description}"
+                    ))
+                } else {
+                    Some(format!(
+                        "素材伙伴：name={name}; quality={quality}; role={role}; attributeElement={element}"
+                    ))
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+    let Some(fusion_references) = fusion_references else {
+        let error_message = "归契素材数据异常".to_string();
+        state.database.execute(
                 "UPDATE partner_fusion_job SET status = 'failed', error_message = $2, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
                 |q| q.bind(fusion_id).bind(&error_message),
             ).await?;
+        if let Some(user_id) = load_character_user_id(state, character_id).await? {
+            emit_partner_fusion_result_to_user(
+                state,
+                user_id,
+                &build_partner_fusion_result_payload(
+                    character_id,
+                    fusion_id,
+                    "failed",
+                    "三魂归契失败，请前往伙伴界面查看",
+                    None,
+                    Some(error_message),
+                ),
+            );
+            if let Ok(status) = load_partner_fusion_status_data(state, character_id).await {
+                emit_partner_fusion_status_to_user(
+                    state,
+                    user_id,
+                    &build_partner_fusion_status_payload(character_id, status),
+                );
+            }
+        }
+        return Ok(ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({"fusionId": fusion_id, "status": "failed"})),
+        });
+    };
+    let fusion_base_model = fusion_references.join("\n");
+    let artifacts = match generate_partner_preview_artifacts(
+        state,
+        fusion_id,
+        &preview_partner_def_id,
+        &result_quality,
+        &fusion_base_model,
+    )
+    .await
+    {
+        Ok(artifacts) => artifacts,
+        Err(error) => {
+            let error_message = error.to_string();
+            state.database.execute(
+                    "UPDATE partner_fusion_job SET status = 'failed', error_message = $2, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
+                    |q| q.bind(fusion_id).bind(&error_message),
+                ).await?;
             if let Some(user_id) = load_character_user_id(state, character_id).await? {
                 emit_partner_fusion_result_to_user(
                     state,
@@ -2625,47 +2946,25 @@ pub async fn process_pending_partner_fusion_job(
                 data: Some(serde_json::json!({"fusionId": fusion_id, "status": "failed"})),
             });
         }
-        let avatar_url = format!("/assets/generated/partners/{preview_partner_def_id}.png");
-        state.database.execute(
-            "INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, base_attrs, level_attr_gains, innate_technique_ids, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8::jsonb, $9::jsonb, ARRAY[]::text[], TRUE, $10, $11, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-            |q| q
-                .bind(&preview_partner_def_id)
-                .bind(&partner_name)
-                .bind(&partner_desc)
-                .bind(&avatar_url)
-                .bind(result_quality.trim())
-                .bind(&element)
-                .bind(&role)
-                .bind(serde_json::json!({
-                    "max_qixue": 150 + quality_rank(result_quality.as_str()) * 30,
-                    "max_lingqi": 0,
-                    "wugong": 20 + quality_rank(result_quality.as_str()) * 6,
-                    "fagong": 12 + quality_rank(result_quality.as_str()) * 4,
-                    "wufang": 12 + quality_rank(result_quality.as_str()) * 3,
-                    "fafang": 12 + quality_rank(result_quality.as_str()) * 3,
-                    "sudu": 9 + quality_rank(result_quality.as_str()) * 2,
-                }))
-                .bind(serde_json::json!({
-                    "max_qixue": 8,
-                    "max_lingqi": 0,
-                    "wugong": 2,
-                    "fagong": 2,
-                    "wufang": 1,
-                    "fafang": 1,
-                    "sudu": 1,
-                }))
-                .bind(character_id)
-                .bind(fusion_id),
+    };
+    state.database.with_transaction(|| async {
+        let row = state.database.fetch_optional(
+            "SELECT status FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+            |q| q.bind(fusion_id).bind(character_id),
         ).await?;
-        let _ = persist_generated_partner_innate_technique_preview(
+        let Some(row) = row else {
+            return Ok(ServiceResult { success: false, message: Some("归契任务不存在".to_string()), data: None });
+        };
+        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+        if status != "pending" {
+            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
+        }
+        persist_generated_partner_preview(
             state,
             character_id,
             fusion_id,
             &preview_partner_def_id,
-            &partner_name,
-            result_quality.as_str(),
-            &element,
-            &role,
+            &artifacts,
         ).await?;
         state.database.execute(
             "UPDATE partner_fusion_job SET status = 'generated_preview', preview_partner_def_id = $2, error_message = NULL, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
@@ -5147,16 +5446,6 @@ fn calc_partner_upgrade_exp_by_target_level(target_level: i64, growth: &PartnerG
     raw.floor().max(1.0) as i64
 }
 
-fn quality_multiplier_from_name(quality: &str) -> i64 {
-    match quality.trim() {
-        "黄" => 1,
-        "玄" => 2,
-        "地" => 3,
-        "天" => 4,
-        _ => 1,
-    }
-}
-
 fn build_partner_skill_policy_entries(
     row: &PartnerRow,
     technique_rows: Vec<PartnerTechniqueRow>,
@@ -6910,27 +7199,5 @@ mod tests {
         });
         assert_eq!(payload["data"]["reboneId"], "partner-rebone-1");
         println!("PARTNER_REBONE_MARK_VIEWED_RESPONSE={}", payload);
-    }
-
-    #[test]
-    fn partner_recruit_generated_name_is_deterministic() {
-        let seeded = super::build_generated_partner_recruit_name("玄", Some("青木"));
-        let fallback = super::build_generated_partner_recruit_name("黄", None);
-        assert_eq!(seeded, "玄·青木灵伴");
-        assert_eq!(fallback, "黄·无相灵伴");
-        println!(
-            "PARTNER_RECRUIT_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}"
-        );
-    }
-
-    #[test]
-    fn partner_fusion_generated_name_is_deterministic() {
-        let seeded = super::build_generated_partner_fusion_name("地", Some("青木灵伴"));
-        let fallback = super::build_generated_partner_fusion_name("黄", None);
-        assert_eq!(seeded, "地·青木灵伴归灵");
-        assert_eq!(fallback, "黄·无相归灵");
-        println!(
-            "PARTNER_FUSION_GENERATED_NAMES={{\"seeded\":\"{seeded}\",\"fallback\":\"{fallback}\"}}"
-        );
     }
 }
