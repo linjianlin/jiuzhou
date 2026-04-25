@@ -36,6 +36,101 @@ const TECHNIQUE_RESEARCH_FULL_REFUND_RATE: f64 = 1.0;
 const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE: f64 = 0.5;
 const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE: &str =
     "草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟";
+const TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_LIMIT: usize = 10;
+
+const TECHNIQUE_BURNING_WORD_PROMPT_SCOPE_RULES: [&str; 3] = [
+    "提示词只用于限定本次功法的主题意象、命名气质、描述文风、元素倾向与局部招式表现，不决定品质、层数、效果数量、目标数量与数值预算。",
+    "若提示词与当前功法类型不完全贴合，应做同主题的合理化转译；可以保留更鲜明的核心套路与招式母题，但不要为了迎合提示词强行拼接多体系、全覆盖或违和机制。",
+    "可以把提示词延展成更鲜明、更偏锋的套路气质与招式表现，但不要生成全能通吃、超大范围、多段超高倍率、超长控制、超高回复或明显超出既有硬约束与预算的功法。",
+];
+
+const TECHNIQUE_RESEARCH_CREATIVE_DIRECTION_RULES: [&str; 1] = [
+    "优先把差异放在技能机制骨架与战斗节奏上，而不是只换元素、名称或描述外皮；若采用相近主题，也要尽量改换触发条件、资源消耗、效果链条或成长曲线。",
+];
+
+const TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_DIVERSITY_RULES: [&str; 3] = [
+    "最近参考只用于避免重复与拉开创意分布，不代表要把多个旧功法拼接在一起；新功法仍应围绕 1~2 个核心机制自洽展开。",
+    "若最近参考已经集中在同类主机制上，本次优先切换至少一个核心机制轴线，例如把直伤连段改为蓄势爆发、把常驻增益改为印记消耗、把纯回复改为反制护体或延迟结算，而不是只换名称与文风。",
+    "禁止直接复用最近参考中的完整名称、完整 description、完整 longDesc，技能机制也不能只是同构换皮；至少在触发条件、资源代价、效果组合、成长曲线中拉开明显差异。",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecentTechniqueDescriptionReference {
+    name: String,
+    quality: String,
+    technique_type: String,
+    description: String,
+    long_desc: String,
+}
+
+fn build_recent_successful_technique_description_prompt_context(
+    entries: Vec<RecentTechniqueDescriptionReference>,
+) -> Option<serde_json::Value> {
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::new();
+
+    for entry in entries {
+        let name = entry.name.trim().to_string();
+        let quality = entry.quality.trim().to_string();
+        let technique_type = entry.technique_type.trim().to_string();
+        let description = entry.description.trim().to_string();
+        let long_desc = entry.long_desc.trim().to_string();
+        if description.is_empty() && long_desc.is_empty() {
+            continue;
+        }
+        let dedupe_key = format!("{name}\n{quality}\n{technique_type}\n{description}\n{long_desc}");
+        if !seen.insert(dedupe_key) {
+            continue;
+        }
+        normalized.push(serde_json::json!({
+            "name": name,
+            "quality": quality,
+            "type": technique_type,
+            "description": description,
+            "longDesc": long_desc,
+        }));
+        if normalized.len() >= TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_LIMIT {
+            break;
+        }
+    }
+
+    (!normalized.is_empty()).then(|| {
+        serde_json::json!({
+            "techniqueRecentSuccessfulDescriptions": normalized,
+            "techniqueRecentSuccessfulDescriptionDiversityRules": TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_DIVERSITY_RULES,
+        })
+    })
+}
+
+fn build_technique_research_prompt_context(
+    burning_word_prompt: Option<&str>,
+    recent_successful_description_prompt_context: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut object = serde_json::Map::new();
+    object.insert(
+        "techniqueResearchCreativeDirectionRules".to_string(),
+        serde_json::json!(TECHNIQUE_RESEARCH_CREATIVE_DIRECTION_RULES),
+    );
+    if let Some(value) = burning_word_prompt
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        object.insert(
+            "techniqueBurningWordPrompt".to_string(),
+            serde_json::json!(value),
+        );
+        object.insert(
+            "techniqueBurningWordPromptScopeRules".to_string(),
+            serde_json::json!(TECHNIQUE_BURNING_WORD_PROMPT_SCOPE_RULES),
+        );
+    }
+    if let Some(serde_json::Value::Object(recent)) = recent_successful_description_prompt_context {
+        for (key, value) in recent {
+            object.insert(key, value);
+        }
+    }
+    serde_json::Value::Object(object)
+}
 
 fn append_technique_research_refund_hint(reason: &str) -> String {
     let normalized = reason.trim();
@@ -1726,13 +1821,32 @@ pub async fn process_pending_technique_generation_job(
     let burning_word_prompt = row.try_get::<Option<String>, _>("burning_word_prompt")?;
     let draft_technique_id = short_generated_id("tech-gen", generation_id);
     let max_layer = generated_technique_max_layer(&quality);
+    let recent_successful_description_prompt_context =
+        match load_recent_successful_technique_description_prompt_context(state, character_id).await
+        {
+            Ok(context) => context,
+            Err(error) => {
+                fail_technique_generation_job_with_refund(
+                    state,
+                    character_id,
+                    generation_id,
+                    &error.to_string(),
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+    let prompt_context = build_technique_research_prompt_context(
+        burning_word_prompt.as_deref(),
+        recent_successful_description_prompt_context,
+    );
     let candidate_result = match generate_technique_candidate(
         state,
         &technique_type,
         &quality,
         max_layer,
         burning_word_prompt.as_deref(),
-        None,
+        Some(prompt_context),
     )
     .await
     {
@@ -1872,6 +1986,44 @@ pub async fn process_pending_technique_generation_job(
         }
     }
     Ok(())
+}
+
+async fn load_recent_successful_technique_description_prompt_context(
+    state: &AppState,
+    character_id: i64,
+) -> Result<Option<serde_json::Value>, AppError> {
+    let rows = state
+        .database
+        .fetch_all(
+            "SELECT d.name AS technique_name, d.quality, d.type, COALESCE(d.description, '') AS description, COALESCE(d.long_desc, '') AS long_desc FROM technique_generation_job j JOIN generated_technique_def d ON d.generation_id = j.id WHERE j.character_id = $1 AND (COALESCE(d.description, '') <> '' OR COALESCE(d.long_desc, '') <> '') ORDER BY COALESCE(j.finished_at, j.created_at) DESC, j.id DESC LIMIT $2",
+            |q| q.bind(character_id).bind(TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_LIMIT as i64),
+        )
+        .await?;
+
+    let entries = rows
+        .into_iter()
+        .map(|row| {
+            Ok(RecentTechniqueDescriptionReference {
+                name: row
+                    .try_get::<Option<String>, _>("technique_name")?
+                    .unwrap_or_default(),
+                quality: row
+                    .try_get::<Option<String>, _>("quality")?
+                    .unwrap_or_default(),
+                technique_type: row
+                    .try_get::<Option<String>, _>("type")?
+                    .unwrap_or_default(),
+                description: row
+                    .try_get::<Option<String>, _>("description")?
+                    .unwrap_or_default(),
+                long_desc: row
+                    .try_get::<Option<String>, _>("long_desc")?
+                    .unwrap_or_default(),
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+
+    Ok(build_recent_successful_technique_description_prompt_context(entries))
 }
 
 async fn discard_technique_research_draft_tx(
@@ -2801,6 +2953,100 @@ fn realm_rank_with_subrealm(realm: &str, sub_realm: Option<&str>) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn technique_research_prompt_context_merges_creative_burning_word_and_recent_descriptions() {
+        let context = build_technique_research_prompt_context(
+            Some("炎心"),
+            Some(serde_json::json!({
+                "techniqueRecentSuccessfulDescriptions": [
+                    {
+                        "name": "青木回风诀",
+                        "quality": "玄",
+                        "type": "武技",
+                        "description": "以回风护体",
+                        "longDesc": "借青木回风延展身法。"
+                    }
+                ],
+                "techniqueRecentSuccessfulDescriptionDiversityRules": ["避开旧功法句式"]
+            })),
+        );
+
+        assert_eq!(context["techniqueBurningWordPrompt"], "炎心");
+        assert!(context["techniqueBurningWordPromptScopeRules"].is_array());
+        assert!(context["techniqueResearchCreativeDirectionRules"].is_array());
+        assert_eq!(
+            context["techniqueRecentSuccessfulDescriptions"][0]["name"],
+            "青木回风诀"
+        );
+    }
+
+    #[test]
+    fn recent_successful_description_context_filters_empty_and_dedupes() {
+        let context = build_recent_successful_technique_description_prompt_context(vec![
+            RecentTechniqueDescriptionReference {
+                name: "青木回风诀".to_string(),
+                quality: "玄".to_string(),
+                technique_type: "武技".to_string(),
+                description: "以回风护体".to_string(),
+                long_desc: "借青木回风延展身法。".to_string(),
+            },
+            RecentTechniqueDescriptionReference {
+                name: "青木回风诀".to_string(),
+                quality: "玄".to_string(),
+                technique_type: "武技".to_string(),
+                description: "以回风护体".to_string(),
+                long_desc: "借青木回风延展身法。".to_string(),
+            },
+            RecentTechniqueDescriptionReference {
+                name: "空白诀".to_string(),
+                quality: "黄".to_string(),
+                technique_type: "武技".to_string(),
+                description: "".to_string(),
+                long_desc: " ".to_string(),
+            },
+        ])
+        .expect("context should keep one valid reference");
+
+        assert_eq!(
+            context["techniqueRecentSuccessfulDescriptions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn recent_successful_description_context_limits_to_recent_successful_description_limit() {
+        let entries = (1..=(TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_LIMIT + 2))
+            .map(|index| RecentTechniqueDescriptionReference {
+                name: format!("功法{index}"),
+                quality: "玄".to_string(),
+                technique_type: "武技".to_string(),
+                description: format!("描述{index}"),
+                long_desc: format!("长描述{index}"),
+            })
+            .collect();
+
+        let context = build_recent_successful_technique_description_prompt_context(entries)
+            .expect("context should keep limited entries");
+        let descriptions = context["techniqueRecentSuccessfulDescriptions"]
+            .as_array()
+            .expect("descriptions should be array");
+
+        assert_eq!(
+            descriptions.len(),
+            TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_LIMIT
+        );
+        assert_eq!(descriptions[0]["name"], "功法1");
+        assert_eq!(
+            descriptions[TECHNIQUE_RECENT_SUCCESSFUL_DESCRIPTION_LIMIT - 1]["name"],
+            "功法10"
+        );
+    }
+
     #[test]
     fn character_technique_status_payload_matches_contract() {
         let payload = serde_json::json!({
