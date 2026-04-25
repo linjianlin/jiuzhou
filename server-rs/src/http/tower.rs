@@ -10,7 +10,8 @@ use sqlx::Row;
 
 use crate::auth;
 use crate::battle_runtime::{
-    restart_battle_runtime, try_build_minimal_pve_battle_state_with_monster_attr_multiplier,
+    restart_battle_runtime, try_build_minimal_pve_battle_state_from_defender_units,
+    try_build_tower_monster_battle_unit,
 };
 use crate::integrations::battle_character_profile::{
     hydrate_pve_battle_state_active_partner, hydrate_pve_battle_state_owner,
@@ -632,6 +633,7 @@ fn build_tower_floor_preview(floor: i64) -> TowerFloorPreviewDto {
     try_build_tower_floor_preview(floor).expect("tower floor preview should resolve")
 }
 
+#[cfg(test)]
 pub(crate) fn try_resolve_tower_floor_monster_ids(floor: i64) -> Result<Vec<String>, AppError> {
     let preview = try_build_tower_floor_preview(floor)?;
     if preview.monster_ids.is_empty() {
@@ -680,15 +682,24 @@ pub(crate) fn try_build_minimal_tower_pve_battle_state(
     character_id: i64,
     floor: i64,
 ) -> Result<crate::battle_runtime::BattleStateDto, AppError> {
-    let monster_ids = try_resolve_tower_floor_monster_ids(floor)?;
+    let preview = try_build_tower_floor_preview(floor)?;
     let attr_multiplier = try_resolve_tower_floor_attr_multiplier(floor)?;
-    try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
-        battle_id,
-        character_id,
-        &monster_ids,
-        attr_multiplier,
-    )
-    .map_err(AppError::config)
+    let defender_units = preview
+        .monster_ids
+        .iter()
+        .enumerate()
+        .map(|(index, monster_id)| {
+            let monster_name = preview
+                .monster_names
+                .get(index)
+                .map(String::as_str)
+                .unwrap_or(monster_id.as_str());
+            try_build_tower_monster_battle_unit(monster_id, monster_name, index, attr_multiplier)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(AppError::config)?;
+    try_build_minimal_pve_battle_state_from_defender_units(battle_id, character_id, defender_units)
+        .map_err(AppError::config)
 }
 
 fn build_tower_floor_preview_from_frozen(
@@ -777,6 +788,7 @@ mod tests {
 
     #[test]
     fn tower_floor_preview_uses_frozen_cache_when_available() {
+        let _guard = crate::jobs::tower_frozen_pool::frozen_tower_pool_test_guard();
         crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
             10,
             std::collections::BTreeMap::from([(
@@ -794,6 +806,7 @@ mod tests {
 
     #[test]
     fn tower_floor_monster_ids_reuse_preview_source() {
+        let _guard = crate::jobs::tower_frozen_pool::frozen_tower_pool_test_guard();
         crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
             10,
             std::collections::BTreeMap::from([(
@@ -810,7 +823,28 @@ mod tests {
     }
 
     #[test]
+    fn tower_battle_state_uses_resolved_frozen_monster_snapshot_name() {
+        let _guard = crate::jobs::tower_frozen_pool::frozen_tower_pool_test_guard();
+        crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
+            10,
+            std::collections::BTreeMap::from([(
+                ("normal".to_string(), "炼精化炁·养气期".to_string()),
+                vec![crate::jobs::tower_frozen_pool::FrozenTowerMonsterEntry {
+                    monster_def_id: "monster-gray-wolf".to_string(),
+                    monster_name: "冻结灰狼".to_string(),
+                }],
+            )]),
+        );
+
+        let state = super::try_build_minimal_tower_pve_battle_state("tower-snapshot", 1, 1)
+            .expect("tower battle should build");
+
+        assert_eq!(state.teams.defender.units[0].name, "冻结灰狼");
+    }
+
+    #[test]
     fn tower_floor_attr_multiplier_uses_node_curve() {
+        let _guard = crate::jobs::tower_frozen_pool::frozen_tower_pool_test_guard();
         crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
             0,
             std::collections::BTreeMap::new(),
@@ -828,6 +862,7 @@ mod tests {
 
     #[test]
     fn tower_overflow_floor_uses_mixed_pool_preview_source() {
+        let _guard = crate::jobs::tower_frozen_pool::frozen_tower_pool_test_guard();
         crate::jobs::tower_frozen_pool::replace_frozen_tower_pool_cache_for_tests(
             100,
             std::collections::BTreeMap::from([

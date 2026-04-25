@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(test)]
+use std::sync::{Mutex, MutexGuard};
 use std::sync::{OnceLock, RwLock};
 
 use anyhow::Result;
@@ -40,9 +42,19 @@ struct MonsterSeed {
 }
 
 static FROZEN_TOWER_POOL_CACHE: OnceLock<RwLock<FrozenTowerPoolCache>> = OnceLock::new();
+#[cfg(test)]
+static FROZEN_TOWER_POOL_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn frozen_tower_pool_cache() -> &'static RwLock<FrozenTowerPoolCache> {
     FROZEN_TOWER_POOL_CACHE.get_or_init(|| RwLock::new(FrozenTowerPoolCache::default()))
+}
+
+#[cfg(test)]
+pub fn frozen_tower_pool_test_guard() -> MutexGuard<'static, ()> {
+    FROZEN_TOWER_POOL_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("frozen tower pool test lock should acquire")
 }
 
 pub async fn warmup_frozen_tower_pool_cache(
@@ -285,6 +297,7 @@ mod tests {
 
     #[test]
     fn lookup_frozen_tower_monsters_respects_frontier_and_pool_key() {
+        let _guard = super::frozen_tower_pool_test_guard();
         let mut pools = BTreeMap::new();
         pools.insert(
             ("normal".to_string(), "炼精化炁·养气期".to_string()),

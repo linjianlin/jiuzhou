@@ -86,6 +86,8 @@ pub struct BattleUnitDto {
     pub set_bonus_effects: Vec<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra_action_state: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub set_bonus_trigger_state: Option<serde_json::Value>,
     pub skills: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggered_phase_ids: Vec<String>,
@@ -205,6 +207,35 @@ struct RuntimeResolvedTargetLog {
     shield_absorbed: i64,
     momentum_gained: Vec<String>,
     momentum_consumed: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeDeferredSettlementDamageResult {
+    actual_damage: i64,
+    shield_absorbed: i64,
+    reflectable_shield_absorbed: i64,
+    reflect_source_unit_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeMagicSkillSnapshot {
+    element: Option<String>,
+    hit_target_ids: Vec<String>,
+    primary_target_id: Option<String>,
+    average_final_damage: f64,
+    hit_count: usize,
+}
+
+#[derive(Debug, Default)]
+struct RuntimeAffixTriggerState {
+    success_count_by_key: BTreeMap<String, i64>,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedRuntimeSetBonusEffect {
+    effect: serde_json::Value,
+    params: serde_json::Map<String, serde_json::Value>,
+    chance: f64,
 }
 
 const RUNTIME_DAMAGE_EFFECT_TYPE: &str = "damage";
@@ -750,6 +781,7 @@ fn build_runtime_summon_unit(
         momentum: None,
         set_bonus_effects: Vec::new(),
         extra_action_state: None,
+        set_bonus_trigger_state: None,
         skills: template.skills.clone(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1434,6 +1466,130 @@ pub fn try_build_minimal_pve_battle_state_with_encounter_monster_attr_multiplier
     )
 }
 
+pub(crate) fn try_build_tower_monster_battle_unit(
+    monster_id: &str,
+    monster_name: &str,
+    index: usize,
+    monster_attr_multiplier: f64,
+) -> Result<BattleUnitDto, String> {
+    if !monster_attr_multiplier.is_finite() || monster_attr_multiplier <= 0.0 {
+        return Err(format!(
+            "invalid monster attr multiplier: {monster_attr_multiplier}"
+        ));
+    }
+    let seed = load_monster_seed(monster_id)?;
+    let attrs = scale_tower_monster_battle_attrs(
+        build_monster_battle_attrs(&seed),
+        monster_attr_multiplier,
+    );
+    let qixue = attrs.max_qixue.max(1);
+    let lingqi = attrs.max_lingqi.max(0);
+    Ok(BattleUnitDto {
+        id: runtime_monster_unit_id(monster_id, index),
+        name: monster_name.to_string(),
+        r#type: "monster".to_string(),
+        source_id: serde_json::json!(monster_id),
+        base_attrs: attrs.clone(),
+        formation_order: Some(index as i64 + 1),
+        owner_unit_id: None,
+        month_card_active: None,
+        avatar: None,
+        qixue,
+        lingqi,
+        current_attrs: attrs,
+        shields: Vec::new(),
+        is_alive: true,
+        can_act: true,
+        buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        extra_action_state: None,
+        set_bonus_trigger_state: None,
+        skills: resolve_monster_battle_skills(&seed),
+        triggered_phase_ids: Vec::new(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        ai_profile: resolve_monster_ai_profile_value(&seed),
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
+        reward_exp: Some(seed.exp_reward.unwrap_or_default().max(0)),
+        reward_silver: Some(seed.silver_reward_min.unwrap_or_default().max(0)),
+    })
+}
+
+pub(crate) fn try_build_minimal_pve_battle_state_from_defender_units(
+    battle_id: &str,
+    player_character_id: i64,
+    defender_units: Vec<BattleUnitDto>,
+) -> Result<BattleStateDto, String> {
+    let attacker_attrs = build_battle_attrs(180, 100, 32, 10, Some("凡人".to_string()));
+    let attacker = BattleUnitDto {
+        id: format!("player-{}", player_character_id),
+        name: format!("修士{}", player_character_id),
+        r#type: "player".to_string(),
+        source_id: serde_json::json!(player_character_id),
+        base_attrs: attacker_attrs.clone(),
+        formation_order: Some(1),
+        owner_unit_id: None,
+        month_card_active: Some(false),
+        avatar: None,
+        qixue: 180,
+        lingqi: 100,
+        current_attrs: attacker_attrs,
+        shields: Vec::new(),
+        is_alive: true,
+        can_act: true,
+        buffs: Vec::new(),
+        marks: Vec::new(),
+        momentum: None,
+        set_bonus_effects: Vec::new(),
+        extra_action_state: None,
+        set_bonus_trigger_state: None,
+        skills: player_battle_skills(),
+        triggered_phase_ids: Vec::new(),
+        skill_cooldowns: BTreeMap::new(),
+        skill_cooldown_discount_bank: BTreeMap::new(),
+        partner_skill_policy: None,
+        ai_profile: None,
+        control_diminishing: BTreeMap::new(),
+        stats: empty_battle_stats(),
+        reward_exp: None,
+        reward_silver: None,
+    };
+    let mut state = BattleStateDto {
+        battle_id: battle_id.to_string(),
+        battle_type: "pve".to_string(),
+        cooldown_timing_mode: "self_action_end".to_string(),
+        teams: BattleTeamsDto {
+            attacker: BattleTeamDto {
+                odwner_id: Some(player_character_id),
+                units: vec![attacker],
+                total_speed: 10,
+            },
+            defender: BattleTeamDto {
+                odwner_id: None,
+                total_speed: 0,
+                units: defender_units,
+            },
+        },
+        round_count: 0,
+        current_team: "attacker".to_string(),
+        current_unit_id: None,
+        phase: "roundStart".to_string(),
+        first_mover: "attacker".to_string(),
+        result: None,
+        random_seed: deterministic_battle_seed(battle_id),
+        random_index: 0,
+        runtime_skill_cooldowns: BTreeMap::new(),
+    };
+    refresh_battle_team_total_speed(&mut state);
+    let mut start_logs = Vec::new();
+    start_battle_runtime(&mut state, &mut start_logs);
+    Ok(state)
+}
+
 fn try_build_minimal_pve_battle_state_with_monster_attr_mode(
     battle_id: &str,
     player_character_id: i64,
@@ -1462,6 +1618,7 @@ fn try_build_minimal_pve_battle_state_with_monster_attr_mode(
         momentum: None,
         set_bonus_effects: Vec::new(),
         extra_action_state: None,
+        set_bonus_trigger_state: None,
         skills: player_battle_skills(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1544,6 +1701,7 @@ fn try_build_minimal_pve_battle_state_with_monster_attr_mode(
                 momentum: None,
                 set_bonus_effects: Vec::new(),
                 extra_action_state: None,
+                set_bonus_trigger_state: None,
                 skills: resolve_monster_battle_skills(&seed),
                 triggered_phase_ids: Vec::new(),
                 skill_cooldowns: BTreeMap::new(),
@@ -1592,6 +1750,7 @@ pub fn build_minimal_pvp_battle_state(
         momentum: None,
         set_bonus_effects: Vec::new(),
         extra_action_state: None,
+        set_bonus_trigger_state: None,
         skills: player_battle_skills(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1625,6 +1784,7 @@ pub fn build_minimal_pvp_battle_state(
         momentum: None,
         set_bonus_effects: Vec::new(),
         extra_action_state: None,
+        set_bonus_trigger_state: None,
         skills: player_battle_skills(),
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1708,6 +1868,7 @@ pub fn build_minimal_partner_battle_unit(
         momentum: None,
         set_bonus_effects: Vec::new(),
         extra_action_state: None,
+        set_bonus_trigger_state: None,
         skills,
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -1748,6 +1909,7 @@ pub fn build_minimal_character_battle_unit(
         momentum: None,
         set_bonus_effects: Vec::new(),
         extra_action_state: None,
+        set_bonus_trigger_state: None,
         skills,
         triggered_phase_ids: Vec::new(),
         skill_cooldowns: BTreeMap::new(),
@@ -3240,6 +3402,262 @@ fn runtime_unit_has_set_piece(unit: &BattleUnitDto, set_id: &str, piece_count: i
     })
 }
 
+fn runtime_set_bonus_effect_str<'a>(effect: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    effect.get(key).and_then(serde_json::Value::as_str)
+}
+
+fn runtime_set_bonus_effect_piece_count(effect: &serde_json::Value) -> i64 {
+    effect
+        .get("pieceCount")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or_default()
+}
+
+fn runtime_is_exclusive_set_bonus_effect_type(effect_type: &str) -> bool {
+    matches!(
+        effect_type,
+        "spell_projection" | "defer_damage" | "extra_action"
+    )
+}
+
+fn runtime_is_superseded_exclusive_set_bonus_effect(
+    effects: &[serde_json::Value],
+    effect: &serde_json::Value,
+) -> bool {
+    let Some(effect_type) = runtime_set_bonus_effect_str(effect, "effectType") else {
+        return false;
+    };
+    if !runtime_is_exclusive_set_bonus_effect_type(effect_type) {
+        return false;
+    }
+    let set_id = runtime_set_bonus_effect_str(effect, "setId");
+    let trigger = runtime_set_bonus_effect_str(effect, "trigger");
+    let piece_count = runtime_set_bonus_effect_piece_count(effect);
+    effects.iter().any(|candidate| {
+        runtime_set_bonus_effect_str(candidate, "setId") == set_id
+            && runtime_set_bonus_effect_str(candidate, "trigger") == trigger
+            && runtime_set_bonus_effect_str(candidate, "effectType") == Some(effect_type)
+            && runtime_set_bonus_effect_piece_count(candidate) > piece_count
+    })
+}
+
+fn runtime_normalize_chance(value: Option<&serde_json::Value>) -> f64 {
+    json_number_to_f64(value).unwrap_or(1.0).clamp(0.0, 1.0)
+}
+
+fn runtime_affix_group_key(
+    effect: &serde_json::Value,
+    params: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    if let Some(key) = params
+        .get("affix_key")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!("affix:{key}"));
+    }
+    let set_id = runtime_set_bonus_effect_str(effect, "setId")?;
+    if !set_id.starts_with("affix-") {
+        return None;
+    }
+    let mut parts = set_id.splitn(3, '-');
+    let _ = parts.next();
+    let _ = parts.next();
+    let key = parts.next()?.trim();
+    if key.is_empty() {
+        None
+    } else {
+        Some(format!("affix:{key}"))
+    }
+}
+
+fn runtime_merge_independent_chances(chances: &[f64]) -> f64 {
+    let mut miss_chance = 1.0;
+    for chance in chances {
+        miss_chance *= 1.0 - chance.clamp(0.0, 1.0);
+    }
+    (1.0_f64 - miss_chance).clamp(0.0, 1.0)
+}
+
+fn runtime_entry_strength_score(params: &serde_json::Map<String, serde_json::Value>) -> f64 {
+    json_number_to_f64(params.get("value")).unwrap_or_default()
+        + json_number_to_f64(params.get("scale_rate")).unwrap_or_default()
+}
+
+fn runtime_affix_success_key(owner_id: &str, affix_group_key: &str) -> String {
+    format!("{owner_id}::{affix_group_key}")
+}
+
+fn runtime_affix_scaled_chance(base_chance: f64, success_count: i64) -> f64 {
+    let normalized_chance = base_chance.clamp(0.0, 1.0);
+    if normalized_chance <= 0.0 || success_count <= 0 {
+        return normalized_chance;
+    }
+    (normalized_chance * (2.0_f64 / 3.0_f64).powi(success_count as i32)).clamp(0.0, 1.0)
+}
+
+fn build_prepared_runtime_set_bonus_effects(
+    effects: &[serde_json::Value],
+    trigger: &str,
+) -> Vec<PreparedRuntimeSetBonusEffect> {
+    let mut singles = Vec::<(usize, PreparedRuntimeSetBonusEffect)>::new();
+    let mut groups = BTreeMap::<String, (usize, Vec<PreparedRuntimeSetBonusEffect>)>::new();
+    let mut order = 0usize;
+    for effect in effects {
+        if runtime_set_bonus_effect_str(effect, "trigger") != Some(trigger) {
+            continue;
+        }
+        if runtime_is_superseded_exclusive_set_bonus_effect(effects, effect) {
+            continue;
+        }
+        let params = effect
+            .get("params")
+            .and_then(serde_json::Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let prepared = PreparedRuntimeSetBonusEffect {
+            chance: runtime_normalize_chance(params.get("chance")),
+            effect: effect.clone(),
+            params: params.clone(),
+        };
+        if let Some(group_key) = runtime_affix_group_key(effect, &params) {
+            groups
+                .entry(group_key)
+                .or_insert_with(|| {
+                    let current_order = order;
+                    order += 1;
+                    (current_order, Vec::new())
+                })
+                .1
+                .push(prepared);
+        } else {
+            singles.push((order, prepared));
+            order += 1;
+        }
+    }
+    let mut merged = singles;
+    for (_key, (group_order, entries)) in groups {
+        let chances = entries.iter().map(|entry| entry.chance).collect::<Vec<_>>();
+        let mut representative = entries[0].clone();
+        let mut representative_score = runtime_entry_strength_score(&representative.params);
+        for entry in entries.into_iter().skip(1) {
+            let score = runtime_entry_strength_score(&entry.params);
+            if score > representative_score {
+                representative = entry;
+                representative_score = score;
+            }
+        }
+        representative.chance = runtime_merge_independent_chances(&chances);
+        merged.push((group_order, representative));
+    }
+    merged.sort_by_key(|(entry_order, _)| *entry_order);
+    merged.into_iter().map(|(_, entry)| entry).collect()
+}
+
+fn runtime_round_limit(params: &serde_json::Map<String, serde_json::Value>) -> Option<i64> {
+    params
+        .get("round_limit")
+        .and_then(|value| json_number_to_i64_floor(Some(value)))
+        .map(|value| value.max(1))
+}
+
+fn runtime_set_bonus_quota_key(
+    effect: &serde_json::Value,
+    params: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    if let Some(group_key) = runtime_affix_group_key(effect, params) {
+        return Some(group_key);
+    }
+    let set_id = runtime_set_bonus_effect_str(effect, "setId")?
+        .trim()
+        .to_string();
+    if set_id.is_empty() {
+        None
+    } else {
+        Some(format!("set:{set_id}"))
+    }
+}
+
+fn runtime_round_limit_reached(
+    unit: &BattleUnitDto,
+    round: i64,
+    quota_key: &str,
+    round_limit: Option<i64>,
+) -> bool {
+    let Some(limit) = round_limit else {
+        return false;
+    };
+    unit.set_bonus_trigger_state
+        .as_ref()
+        .filter(|state| state.get("round").and_then(serde_json::Value::as_i64) == Some(round))
+        .and_then(|state| state.get("counts"))
+        .and_then(|counts| counts.get(quota_key))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or_default()
+        >= limit
+}
+
+fn consume_runtime_round_limit(
+    unit: &mut BattleUnitDto,
+    round: i64,
+    quota_key: &str,
+    round_limit: Option<i64>,
+) {
+    if round_limit.is_none() {
+        return;
+    }
+    let mut counts = unit
+        .set_bonus_trigger_state
+        .as_ref()
+        .filter(|state| state.get("round").and_then(serde_json::Value::as_i64) == Some(round))
+        .and_then(|state| state.get("counts"))
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let next_count = counts
+        .get(quota_key)
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or_default()
+        + 1;
+    counts.insert(quota_key.to_string(), serde_json::json!(next_count));
+    unit.set_bonus_trigger_state = Some(serde_json::json!({
+        "round": round,
+        "counts": counts,
+    }));
+}
+
+fn runtime_poxu_extra_action_ignore_wufang_rate(unit: &BattleUnitDto) -> f64 {
+    if !runtime_extra_action_current_flag(unit) {
+        return 0.0;
+    }
+    unit.set_bonus_effects
+        .iter()
+        .filter(|effect| {
+            !runtime_is_superseded_exclusive_set_bonus_effect(&unit.set_bonus_effects, effect)
+        })
+        .filter(|effect| {
+            effect.get("setId").and_then(serde_json::Value::as_str) == Some("set-poxu")
+                && effect.get("trigger").and_then(serde_json::Value::as_str) == Some("on_hit")
+                && effect.get("effectType").and_then(serde_json::Value::as_str)
+                    == Some("extra_action")
+                && effect
+                    .get("pieceCount")
+                    .and_then(serde_json::Value::as_i64)
+                    .unwrap_or_default()
+                    >= 6
+        })
+        .filter_map(|effect| {
+            effect
+                .get("params")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|params| params.get("ignore_wufang_rate"))
+                .and_then(|value| json_number_to_f64(Some(value)))
+        })
+        .fold(0.0, f64::max)
+        .clamp(0.0, 1.0)
+}
+
 fn runtime_extra_action_state_value(unit: &BattleUnitDto, key: &str) -> i64 {
     unit.extra_action_state
         .as_ref()
@@ -3273,6 +3691,7 @@ fn reset_runtime_extra_action_state_for_round(unit: &mut BattleUnitDto) {
     if unit.extra_action_state.is_some() {
         set_runtime_extra_action_state(unit, 0, 0, false);
     }
+    unit.set_bonus_trigger_state = None;
 }
 
 fn clear_runtime_extra_action_flag(unit: &mut BattleUnitDto) {
@@ -3358,6 +3777,14 @@ fn apply_runtime_set_bonus_equip_effects(state: &mut BattleStateDto) {
                     }
                 }
                 "shield" => {
+                    let Some(set_id) = effect
+                        .get("setId")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                    else {
+                        continue;
+                    };
                     let value = params
                         .get("value")
                         .and_then(|value| {
@@ -3368,8 +3795,8 @@ fn apply_runtime_set_bonus_equip_effects(state: &mut BattleStateDto) {
                         .unwrap_or_default();
                     if value > 0 {
                         unit.shields.push(serde_json::json!({
-                            "id": format!("set-shield-{}-{}", unit.id, effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set")),
-                            "sourceSkillId": effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set-bonus"),
+                            "id": format!("set-shield-{}-{}", unit.id, set_id),
+                            "sourceSkillId": set_id,
                             "value": value,
                             "maxValue": value,
                             "duration": effect.get("durationRound").and_then(serde_json::Value::as_i64).unwrap_or(1),
@@ -3389,149 +3816,640 @@ fn process_runtime_set_bonus_turn_start_effects(
     unit_id: &str,
     logs: &mut Vec<serde_json::Value>,
 ) {
+    process_runtime_set_bonus_trigger(state, "on_turn_start", unit_id, None, 0, logs);
+}
+
+fn upsert_runtime_deferred_damage_buff(
+    target: &mut BattleUnitDto,
+    set_id: &str,
+    attacker_id: &str,
+    converted_damage: i64,
+    settle_rate: f64,
+    remaining_rounds: i64,
+    damage_type: &str,
+    round: i64,
+    reflect_on_absorb: bool,
+) {
+    let existing_index = target.buffs.iter().position(|buff| {
+        let Some(deferred) = buff.get("deferredDamage") else {
+            return false;
+        };
+        deferred
+            .get("sourceSetId")
+            .and_then(serde_json::Value::as_str)
+            == Some(set_id)
+    });
+    if let Some(index) = existing_index {
+        let current_pool = target.buffs[index]
+            .get("deferredDamage")
+            .and_then(|deferred| deferred.get("pool"))
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default()
+            .max(0);
+        if let Some(object) = target.buffs[index].as_object_mut() {
+            object.insert(
+                "remainingDuration".to_string(),
+                serde_json::json!(remaining_rounds),
+            );
+            object.insert(
+                "deferredDamage".to_string(),
+                serde_json::json!({
+                    "pool": current_pool + converted_damage.max(0),
+                    "settleRate": settle_rate,
+                    "damageType": damage_type,
+                    "sourceSetId": set_id,
+                    "lastSourceUnitId": attacker_id,
+                    "consumedRound": round,
+                    "reflectOnAbsorb": reflect_on_absorb,
+                }),
+            );
+        }
+        return;
+    }
+    target.buffs.push(serde_json::json!({
+        "id": format!("set-deferred-{}-{}", set_id, target.buffs.len() + 1),
+        "buffDefId": "set-deferred-damage",
+        "name": "劫痕",
+        "type": "debuff",
+        "category": "set_bonus",
+        "sourceUnitId": attacker_id,
+        "remainingDuration": remaining_rounds,
+        "stacks": 1,
+        "maxStacks": 1,
+        "deferredDamage": {
+            "pool": converted_damage.max(0),
+            "settleRate": settle_rate,
+            "damageType": damage_type,
+            "sourceSetId": set_id,
+            "lastSourceUnitId": attacker_id,
+            "consumedRound": round,
+            "reflectOnAbsorb": reflect_on_absorb,
+        },
+        "tags": ["set_bonus"],
+        "dispellable": false
+    }));
+}
+
+fn apply_runtime_set_deferred_damage_before_hit(
+    state: &mut BattleStateDto,
+    target_id: &str,
+    attacker_id: &str,
+    damage: i64,
+    damage_type: &str,
+    logs: &mut Vec<serde_json::Value>,
+) -> i64 {
+    if damage <= 0 || !matches!(damage_type, "physical" | "magic") {
+        return damage;
+    }
     let round = state.round_count;
-    let Some(unit) = unit_by_id_mut(state, unit_id) else {
+    let Some(target_snapshot) = unit_by_id(state, target_id).cloned() else {
+        return damage;
+    };
+    if !target_snapshot.is_alive {
+        return damage;
+    }
+    let mut next_damage = damage;
+    let set_bonus_effects = target_snapshot.set_bonus_effects.clone();
+    for prepared in build_prepared_runtime_set_bonus_effects(&set_bonus_effects, "on_be_hit") {
+        let effect = prepared.effect;
+        let params = prepared.params;
+        if effect.get("effectType").and_then(serde_json::Value::as_str) != Some("defer_damage") {
+            continue;
+        }
+        let Some(set_id) = effect
+            .get("setId")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let quota_key = format!("set:{set_id}:defer_damage");
+        let round_limit = runtime_round_limit(&params);
+        if unit_by_id(state, target_id).is_some_and(|unit| {
+            runtime_round_limit_reached(unit, round, quota_key.as_str(), round_limit)
+        }) {
+            continue;
+        }
+        if !pass_runtime_chance(state, prepared.chance) {
+            continue;
+        }
+        let threshold_rate = params
+            .get("threshold_max_qixue_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .max(0.0);
+        let convert_rate = params
+            .get("convert_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .clamp(0.0, 1.0);
+        let settle_rate = params
+            .get("settle_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or(0.5)
+            .clamp(0.0, 1.0);
+        let remaining_rounds = params
+            .get("remaining_rounds")
+            .and_then(|value| json_number_to_i64_floor(Some(value)))
+            .unwrap_or(2)
+            .max(1);
+        let threshold_damage =
+            ((target_snapshot.current_attrs.max_qixue as f64) * threshold_rate).floor() as i64;
+        if threshold_damage <= 0 || next_damage < threshold_damage || convert_rate <= 0.0 {
+            continue;
+        }
+        let converted_damage = ((next_damage as f64) * convert_rate).floor().max(1.0) as i64;
+        next_damage = (next_damage - converted_damage).max(1);
+        let reflect_on_absorb = params
+            .get("reflect_on_absorb")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if let Some(target) = unit_by_id_mut(state, target_id) {
+            upsert_runtime_deferred_damage_buff(
+                target,
+                set_id,
+                attacker_id,
+                converted_damage,
+                settle_rate,
+                remaining_rounds,
+                damage_type,
+                round,
+                reflect_on_absorb,
+            );
+            consume_runtime_round_limit(target, round, quota_key.as_str(), round_limit);
+        }
+        logs.push(build_runtime_action_log(
+            round,
+            target_id,
+            target_snapshot.name.as_str(),
+            &format!("proc-{set_id}"),
+            "承劫",
+            &[RuntimeResolvedTargetLog {
+                target_id: target_id.to_string(),
+                target_name: target_snapshot.name.clone(),
+                damage: 0,
+                heal: 0,
+                shield: 0,
+                resources: Vec::new(),
+                buffs_applied: vec![format!("化去{converted_damage}点伤害为劫痕")],
+                marks_consumed: Vec::new(),
+                hits: Vec::new(),
+                is_miss: false,
+                is_crit: false,
+                is_parry: false,
+                is_element_bonus: false,
+                shield_absorbed: 0,
+                momentum_gained: Vec::new(),
+                momentum_consumed: Vec::new(),
+            }],
+        ));
+    }
+    next_damage
+}
+
+fn runtime_skill_has_magic_damage_effect(skill: &serde_json::Value) -> bool {
+    skill
+        .get("effects")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|effects| {
+            effects.iter().any(|effect| {
+                if effect.get("type").and_then(serde_json::Value::as_str)
+                    != Some(RUNTIME_DAMAGE_EFFECT_TYPE)
+                {
+                    return false;
+                }
+                effect
+                    .get("damageType")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| skill.get("damageType").and_then(serde_json::Value::as_str))
+                    == Some("magic")
+            })
+        })
+}
+
+fn build_runtime_magic_skill_snapshot(
+    skill: &serde_json::Value,
+    target_logs: &[RuntimeResolvedTargetLog],
+) -> Option<RuntimeMagicSkillSnapshot> {
+    if skill.get("triggerType").and_then(serde_json::Value::as_str) != Some("active") {
+        return None;
+    }
+    if !runtime_skill_has_magic_damage_effect(skill) {
+        return None;
+    }
+    let landed = target_logs
+        .iter()
+        .filter(|target| target.hits.iter().any(|hit| !hit.is_miss))
+        .collect::<Vec<_>>();
+    if landed.is_empty() {
+        return None;
+    }
+    let total_damage = landed
+        .iter()
+        .map(|target| target.damage.max(0))
+        .sum::<i64>();
+    Some(RuntimeMagicSkillSnapshot {
+        element: skill
+            .get("element")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        hit_target_ids: landed
+            .iter()
+            .map(|target| target.target_id.clone())
+            .collect(),
+        primary_target_id: landed.first().map(|target| target.target_id.clone()),
+        average_final_damage: if total_damage > 0 {
+            total_damage as f64 / landed.len() as f64
+        } else {
+            0.0
+        },
+        hit_count: landed.len(),
+    })
+}
+
+fn runtime_alive_enemy_unit_ids(state: &BattleStateDto, owner_id: &str) -> Vec<String> {
+    let Some(owner_team) = unit_team_key(state, owner_id) else {
+        return Vec::new();
+    };
+    team_units(state, opposing_team_key(owner_team))
+        .iter()
+        .filter(|unit| unit.is_alive)
+        .map(|unit| unit.id.clone())
+        .collect()
+}
+
+fn runtime_lowest_qixue_alive_unit_id(
+    state: &BattleStateDto,
+    unit_ids: &[String],
+) -> Option<String> {
+    unit_ids
+        .iter()
+        .filter_map(|unit_id| unit_by_id(state, unit_id).filter(|unit| unit.is_alive))
+        .min_by_key(|unit| unit.qixue)
+        .map(|unit| unit.id.clone())
+}
+
+fn apply_runtime_spell_projection_wave(
+    state: &mut BattleStateDto,
+    owner_id: &str,
+    owner_name: &str,
+    skill: &serde_json::Value,
+    snapshot: &RuntimeMagicSkillSnapshot,
+    effect: &serde_json::Value,
+    target_ids: &[String],
+    rate: f64,
+    wave_name: &str,
+    ignore_defense_rate: f64,
+    projection_hit_count: &mut i64,
+    logs: &mut Vec<serde_json::Value>,
+) -> bool {
+    let safe_rate = rate.max(0.0);
+    if target_ids.is_empty() || safe_rate <= 0.0 {
+        return false;
+    }
+    let Some(owner) = unit_by_id(state, owner_id).cloned() else {
+        return false;
+    };
+    let base_damage = snapshot.average_final_damage.floor().max(1.0) as i64;
+    let projected_damage = ((base_damage as f64) * safe_rate).floor().max(1.0) as i64;
+    let element = snapshot
+        .element
+        .as_deref()
+        .or_else(|| skill.get("element").and_then(serde_json::Value::as_str))
+        .or_else(|| effect.get("element").and_then(serde_json::Value::as_str));
+    let mut target_logs = Vec::new();
+    let mut death_logs = Vec::new();
+    for target_id in target_ids {
+        let Some(target_snapshot) = unit_by_id(state, target_id).cloned() else {
+            continue;
+        };
+        if !target_snapshot.is_alive {
+            continue;
+        }
+        let outcome = calculate_runtime_damage(
+            state,
+            &owner,
+            &target_snapshot,
+            "magic",
+            element,
+            projected_damage,
+            ignore_defense_rate,
+        );
+        if outcome.is_miss {
+            target_logs.push(RuntimeResolvedTargetLog {
+                target_id: target_id.clone(),
+                target_name: target_snapshot.name,
+                damage: 0,
+                heal: 0,
+                shield: 0,
+                resources: Vec::new(),
+                buffs_applied: Vec::new(),
+                marks_consumed: Vec::new(),
+                hits: vec![RuntimeResolvedHitLog {
+                    damage: 0,
+                    is_miss: true,
+                    is_crit: false,
+                    is_parry: false,
+                    is_element_bonus: false,
+                    shield_absorbed: 0,
+                }],
+                is_miss: true,
+                is_crit: false,
+                is_parry: false,
+                is_element_bonus: false,
+                shield_absorbed: 0,
+                momentum_gained: Vec::new(),
+                momentum_consumed: Vec::new(),
+            });
+            continue;
+        }
+        let (actual_damage, shield_absorbed, was_alive, now_alive) = {
+            let Some(target) = unit_by_id_mut(state, target_id) else {
+                continue;
+            };
+            let was_alive = target.is_alive;
+            let (actual_damage, shield_absorbed) =
+                apply_runtime_damage_to_target(target, outcome.damage, "magic");
+            (actual_damage, shield_absorbed, was_alive, target.is_alive)
+        };
+        if actual_damage > 0 {
+            *projection_hit_count += 1;
+            if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                owner_unit.stats.damage_dealt += actual_damage;
+            }
+        }
+        target_logs.push(RuntimeResolvedTargetLog {
+            target_id: target_id.clone(),
+            target_name: target_snapshot.name.clone(),
+            damage: actual_damage,
+            heal: 0,
+            shield: 0,
+            resources: Vec::new(),
+            buffs_applied: Vec::new(),
+            marks_consumed: Vec::new(),
+            hits: vec![RuntimeResolvedHitLog {
+                damage: actual_damage,
+                is_miss: false,
+                is_crit: outcome.is_crit,
+                is_parry: outcome.is_parry,
+                is_element_bonus: outcome.is_element_bonus,
+                shield_absorbed,
+            }],
+            is_miss: false,
+            is_crit: outcome.is_crit,
+            is_parry: outcome.is_parry,
+            is_element_bonus: outcome.is_element_bonus,
+            shield_absorbed,
+            momentum_gained: Vec::new(),
+            momentum_consumed: Vec::new(),
+        });
+        if was_alive && !now_alive {
+            if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                owner_unit.stats.kill_count += 1;
+            }
+            death_logs.push(build_minimal_death_log(
+                state.round_count,
+                target_id,
+                target_snapshot.name.as_str(),
+                Some(owner_id),
+                Some(owner_name),
+            ));
+        }
+    }
+    if target_logs.is_empty() {
+        return false;
+    }
+    logs.push(build_runtime_action_log(
+        state.round_count,
+        owner_id,
+        owner_name,
+        "proc-set-tianyan-zhouyan",
+        wave_name,
+        &target_logs,
+    ));
+    logs.extend(death_logs);
+    true
+}
+
+fn process_runtime_set_bonus_after_skill_effects(
+    state: &mut BattleStateDto,
+    owner_id: &str,
+    skill: &serde_json::Value,
+    magic_skill_snapshot: Option<&RuntimeMagicSkillSnapshot>,
+    mut affix_trigger_state: Option<&mut RuntimeAffixTriggerState>,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    let Some(snapshot) = magic_skill_snapshot else {
         return;
     };
-    let unit_name = unit.name.clone();
-    for effect in unit.set_bonus_effects.clone() {
-        if effect.get("trigger").and_then(serde_json::Value::as_str) != Some("on_turn_start") {
+    if snapshot.hit_count == 0 || snapshot.average_final_damage <= 0.0 {
+        return;
+    }
+    let Some(owner) = unit_by_id(state, owner_id).cloned() else {
+        return;
+    };
+    let round = state.round_count;
+    for prepared in
+        build_prepared_runtime_set_bonus_effects(&owner.set_bonus_effects, "after_skill")
+    {
+        let effect = prepared.effect;
+        let params = prepared.params;
+        if effect.get("effectType").and_then(serde_json::Value::as_str) != Some("spell_projection")
+        {
             continue;
         }
-        if effect.get("target").and_then(serde_json::Value::as_str) != Some("self") {
+        let affix_group_key = runtime_affix_group_key(&effect, &params);
+        let quota_key = runtime_set_bonus_quota_key(&effect, &params);
+        let round_limit = runtime_round_limit(&params);
+        if let (Some(quota_key), Some(_)) = (quota_key.as_ref(), round_limit) {
+            let Some(owner_for_limit) = unit_by_id(state, owner_id).cloned() else {
+                continue;
+            };
+            if runtime_round_limit_reached(&owner_for_limit, round, quota_key.as_str(), round_limit)
+            {
+                continue;
+            }
+        }
+        let chance = if let (Some(group_key), Some(runtime_state)) =
+            (affix_group_key.as_ref(), affix_trigger_state.as_deref())
+        {
+            let runtime_key = runtime_affix_success_key(owner_id, group_key);
+            let success_count = runtime_state
+                .success_count_by_key
+                .get(runtime_key.as_str())
+                .copied()
+                .unwrap_or_default();
+            runtime_affix_scaled_chance(prepared.chance, success_count)
+        } else {
+            prepared.chance
+        };
+        if !pass_runtime_chance(state, chance) {
             continue;
         }
-        let effect_type = effect
-            .get("effectType")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        let params = effect
-            .get("params")
-            .and_then(serde_json::Value::as_object)
-            .cloned()
+        let piece_count = effect
+            .get("pieceCount")
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or_default();
-        match effect_type {
-            "heal" => {
-                let heal = params
-                    .get("value")
-                    .and_then(|value| {
-                        value
-                            .as_i64()
-                            .or_else(|| value.as_f64().map(|v| v.round() as i64))
-                    })
-                    .unwrap_or_default()
-                    .max(0);
-                if heal > 0 && unit.is_alive {
-                    let actual = apply_runtime_healing(unit, heal);
-                    if actual > 0 {
-                        unit.stats.healing_done += actual;
-                        logs.push(build_hot_log(
-                            round,
-                            unit_id,
-                            unit_name.as_str(),
-                            effect
-                                .get("setName")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("套装效果"),
-                            actual,
-                        ));
-                    }
+        let projection_name = params
+            .get("projection_name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(if piece_count >= 8 {
+                "两仪流照"
+            } else {
+                "周天衍光"
+            });
+        let ignore_defense_rate = params
+            .get("ignore_fafang_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .clamp(0.0, 1.0);
+        let single_split_rate = params
+            .get("single_split_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .max(0.0);
+        let multi_focus_rate = params
+            .get("multi_focus_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .max(0.0);
+        let single_return_rate = params
+            .get("single_return_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .max(0.0);
+        let multi_return_rate = params
+            .get("multi_return_rate")
+            .and_then(|value| json_number_to_f64(Some(value)))
+            .unwrap_or_default()
+            .max(0.0);
+        let lingqi_restore = params
+            .get("lingqi_restore")
+            .and_then(|value| json_number_to_i64_floor(Some(value)))
+            .unwrap_or_default()
+            .max(0);
+        let cooldown_reduce_if_full = params
+            .get("cooldown_reduce_if_full")
+            .and_then(|value| json_number_to_i64_floor(Some(value)))
+            .unwrap_or_default()
+            .max(0);
+        let mut projection_hit_count = 0;
+        let mut projection_applied = false;
+        if snapshot.hit_count == 1 {
+            let split_targets = runtime_alive_enemy_unit_ids(state, owner_id)
+                .into_iter()
+                .filter(|unit_id| {
+                    !snapshot
+                        .hit_target_ids
+                        .iter()
+                        .any(|hit_id| hit_id == unit_id)
+                })
+                .collect::<Vec<_>>();
+            projection_applied |= apply_runtime_spell_projection_wave(
+                state,
+                owner_id,
+                owner.name.as_str(),
+                skill,
+                snapshot,
+                &effect,
+                &split_targets,
+                single_split_rate,
+                projection_name,
+                ignore_defense_rate,
+                &mut projection_hit_count,
+                logs,
+            );
+            if piece_count >= 8 && single_return_rate > 0.0 {
+                if let Some(primary_target_id) = snapshot.primary_target_id.clone() {
+                    projection_applied |= apply_runtime_spell_projection_wave(
+                        state,
+                        owner_id,
+                        owner.name.as_str(),
+                        skill,
+                        snapshot,
+                        &effect,
+                        &[primary_target_id],
+                        single_return_rate,
+                        "回天照",
+                        ignore_defense_rate,
+                        &mut projection_hit_count,
+                        logs,
+                    );
                 }
             }
-            "resource" => {
-                let value = params
-                    .get("value")
-                    .and_then(|val| {
-                        val.as_i64()
-                            .or_else(|| val.as_f64().map(|v| v.round() as i64))
-                    })
-                    .unwrap_or_default();
-                let resource_type = params
-                    .get("resource_type")
-                    .or_else(|| params.get("resourceType"))
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("lingqi");
-                if resource_type == "qixue" {
-                    if value > 0 {
-                        let actual = apply_runtime_healing(unit, value);
-                        if actual > 0 {
-                            unit.stats.healing_done += actual;
-                            logs.push(build_hot_log(
-                                round,
-                                unit_id,
-                                unit_name.as_str(),
-                                effect
-                                    .get("setName")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or("套装效果"),
-                                actual,
-                            ));
-                        }
-                    } else {
-                        unit.qixue =
-                            (unit.qixue + value).clamp(0, unit.current_attrs.max_qixue.max(1));
-                    }
-                } else {
-                    let adjusted_value = if value > 0 {
-                        apply_runtime_recovery_reduction(value, unit)
-                    } else {
-                        value
-                    };
-                    let before = unit.lingqi;
-                    unit.lingqi = (unit.lingqi + adjusted_value)
-                        .clamp(0, unit.current_attrs.max_lingqi.max(0));
-                    let gain = (unit.lingqi - before).max(0);
-                    if gain > 0 {
-                        logs.push(build_runtime_action_log(
-                            round,
-                            unit_id,
-                            unit_name.as_str(),
-                            &format!(
-                                "proc-{}-on_turn_start",
-                                effect
-                                    .get("setId")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or("set")
-                            ),
-                            effect
-                                .get("setName")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("套装效果"),
-                            &[RuntimeResolvedTargetLog {
-                                target_id: unit_id.to_string(),
-                                target_name: unit_name.clone(),
-                                damage: 0,
-                                heal: 0,
-                                shield: 0,
-                                resources: vec![serde_json::json!({
-                                    "type": "lingqi",
-                                    "amount": gain,
-                                })],
-                                buffs_applied: Vec::new(),
-                                marks_consumed: Vec::new(),
-                                hits: Vec::new(),
-                                is_miss: false,
-                                is_crit: false,
-                                is_parry: false,
-                                is_element_bonus: false,
-                                shield_absorbed: 0,
-                                momentum_gained: Vec::new(),
-                                momentum_consumed: Vec::new(),
-                            }],
-                        ));
-                    }
-                }
-            }
-            "buff" | "debuff" => {
-                apply_runtime_set_bonus_buff_or_debuff(
-                    unit,
-                    unit_id,
+        } else {
+            if let Some(focus_target_id) =
+                runtime_lowest_qixue_alive_unit_id(state, &snapshot.hit_target_ids)
+            {
+                projection_applied |= apply_runtime_spell_projection_wave(
+                    state,
+                    owner_id,
+                    owner.name.as_str(),
+                    skill,
+                    snapshot,
                     &effect,
-                    effect_type,
-                    &params,
+                    &[focus_target_id],
+                    multi_focus_rate,
+                    projection_name,
+                    ignore_defense_rate,
+                    &mut projection_hit_count,
+                    logs,
                 );
             }
-            _ => {}
+            if piece_count >= 8 && multi_return_rate > 0.0 {
+                projection_applied |= apply_runtime_spell_projection_wave(
+                    state,
+                    owner_id,
+                    owner.name.as_str(),
+                    skill,
+                    snapshot,
+                    &effect,
+                    &snapshot.hit_target_ids,
+                    multi_return_rate,
+                    "流辉照",
+                    ignore_defense_rate,
+                    &mut projection_hit_count,
+                    logs,
+                );
+            }
+        }
+        if !projection_applied {
+            continue;
+        }
+        if projection_hit_count >= 2 {
+            if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                if owner_unit.lingqi < owner_unit.current_attrs.max_lingqi {
+                    owner_unit.lingqi = (owner_unit.lingqi + lingqi_restore)
+                        .min(owner_unit.current_attrs.max_lingqi);
+                } else if let Some(skill_id) = skill.get("id").and_then(serde_json::Value::as_str) {
+                    if cooldown_reduce_if_full > 0 {
+                        let cooldown_key = format!("{owner_id}:{skill_id}");
+                        if let Some(remaining) =
+                            state.runtime_skill_cooldowns.get_mut(&cooldown_key)
+                        {
+                            *remaining = (*remaining - cooldown_reduce_if_full).max(0);
+                        }
+                    }
+                }
+            }
+        }
+        if let (Some(quota_key), Some(owner_unit)) =
+            (quota_key.as_ref(), unit_by_id_mut(state, owner_id))
+        {
+            consume_runtime_round_limit(owner_unit, round, quota_key.as_str(), round_limit);
+        }
+        if let (Some(group_key), Some(runtime_state)) =
+            (affix_group_key, affix_trigger_state.as_deref_mut())
+        {
+            let runtime_key = runtime_affix_success_key(owner_id, group_key.as_str());
+            let next = runtime_state
+                .success_count_by_key
+                .get(runtime_key.as_str())
+                .copied()
+                .unwrap_or_default()
+                + 1;
+            runtime_state.success_count_by_key.insert(runtime_key, next);
         }
     }
 }
@@ -3555,6 +4473,69 @@ fn runtime_set_bonus_amount(
         }
     }
     amount
+}
+
+fn runtime_set_bonus_damage_amount(
+    owner: &BattleUnitDto,
+    params: &serde_json::Map<String, serde_json::Value>,
+    source_damage: i64,
+    target: &BattleUnitDto,
+) -> i64 {
+    let damage_type_raw = params
+        .get("damage_type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("true");
+    let raw_value = json_number_to_f64(params.get("value")).unwrap_or_default();
+    if matches!(damage_type_raw, "echo" | "reflect") {
+        if source_damage <= 0 || raw_value <= 0.0 {
+            return 0;
+        }
+        let reflect_multiplier = if damage_type_raw == "reflect" {
+            (1.0 - target.current_attrs.jianfantan).max(0.0)
+        } else {
+            1.0
+        };
+        return ((source_damage as f64) * normalized_rate(raw_value) * reflect_multiplier)
+            .floor()
+            .max(0.0) as i64;
+    }
+    runtime_set_bonus_amount(owner, params)
+}
+
+fn normalize_runtime_set_bonus_damage_type(damage_type: &str) -> &'static str {
+    match damage_type {
+        "physical" => "physical",
+        "magic" => "magic",
+        "true" => "true",
+        _ => "true",
+    }
+}
+
+fn runtime_set_bonus_pursuit_scale_value(owner: &BattleUnitDto, scale_key: &str) -> f64 {
+    if scale_key == "main_attack" {
+        return owner
+            .current_attrs
+            .wugong
+            .max(owner.current_attrs.fagong)
+            .max(0) as f64;
+    }
+    battle_attr_value_f64(&owner.current_attrs, scale_key).max(0.0)
+}
+
+fn runtime_set_bonus_pursuit_damage_type(
+    owner: &BattleUnitDto,
+    scale_key: &str,
+    damage_type_raw: Option<&str>,
+) -> &'static str {
+    match damage_type_raw {
+        Some("physical") => "physical",
+        Some("magic") => "magic",
+        Some("true") => "true",
+        _ if scale_key == "wugong" => "physical",
+        _ if scale_key == "fagong" => "magic",
+        _ if owner.current_attrs.wugong >= owner.current_attrs.fagong => "physical",
+        _ => "magic",
+    }
 }
 
 fn apply_runtime_set_bonus_buff_or_debuff(
@@ -3585,11 +4566,13 @@ fn apply_runtime_set_bonus_buff_or_debuff(
     let set_id = effect
         .get("setId")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or("set");
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
     let set_name = effect
         .get("setName")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or("套装效果");
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
     let duration = effect
         .get("durationRound")
         .or_else(|| params.get("duration_round"))
@@ -3620,38 +4603,177 @@ fn apply_runtime_set_bonus_buff_or_debuff(
     Some(set_name.to_string())
 }
 
-fn process_runtime_set_bonus_trigger(
+fn apply_runtime_set_bonus_deferred_shield_at_turn_start(
+    target: &mut BattleUnitDto,
+    target_id: &str,
+    round: i64,
+    effect: &serde_json::Value,
+    params: &serde_json::Map<String, serde_json::Value>,
+) -> Option<i64> {
+    let set_id = effect
+        .get("setId")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    effect
+        .get("setName")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let shield_rate = params
+        .get("shield_rate")
+        .and_then(|value| json_number_to_f64(Some(value)))
+        .unwrap_or_default()
+        .max(0.0);
+    let reflect_on_absorb = params
+        .get("reflect_on_absorb")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let mut reflect_source_unit_id: Option<String> = None;
+    let deferred_pool = target
+        .buffs
+        .iter()
+        .filter_map(|buff| buff.get("deferredDamage"))
+        .filter_map(|deferred| {
+            if reflect_on_absorb && reflect_source_unit_id.is_none() {
+                reflect_source_unit_id = deferred
+                    .get("lastSourceUnitId")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+            }
+            deferred
+                .get("pool")
+                .and_then(serde_json::Value::as_i64)
+                .map(|pool| pool.max(0))
+        })
+        .sum::<i64>();
+    let shield_value = ((deferred_pool as f64) * shield_rate).floor().max(0.0) as i64;
+    if shield_value <= 0 {
+        return None;
+    }
+    target.shields.push(serde_json::json!({
+        "id": format!("set-deferred-shield-{}-{}", target_id, round),
+        "sourceSkillId": set_id,
+        "value": shield_value,
+        "maxValue": shield_value,
+        "duration": 1,
+        "absorbType": "all",
+        "priority": 1,
+        "deferredDamageShield": {
+            "reflectOnAbsorb": reflect_on_absorb,
+            "sourceUnitId": reflect_source_unit_id,
+        },
+    }));
+    Some(shield_value)
+}
+
+fn apply_runtime_direct_set_bonus_damage(
+    state: &mut BattleStateDto,
+    owner_id: &str,
+    owner_name: &str,
+    target_id: &str,
+    target_name: &str,
+    damage: i64,
+    damage_type: &str,
+) -> Option<(i64, i64, RuntimeResolvedHitLog, Option<serde_json::Value>)> {
+    let was_alive = unit_by_id(state, target_id)?.is_alive;
+    let (actual_damage, shield_absorbed, target_dead) = {
+        let target = unit_by_id_mut(state, target_id)?;
+        let (actual_damage, shield_absorbed) =
+            apply_runtime_damage_to_target(target, damage.max(1), damage_type);
+        (
+            actual_damage.max(0),
+            shield_absorbed.max(0),
+            was_alive && !target.is_alive,
+        )
+    };
+    if actual_damage > 0 || target_dead {
+        if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+            owner_unit.stats.damage_dealt += actual_damage;
+            if target_dead {
+                owner_unit.stats.kill_count += 1;
+            }
+        }
+    }
+    let death_log = if target_dead {
+        Some(build_minimal_death_log(
+            state.round_count,
+            target_id,
+            target_name,
+            Some(owner_id),
+            Some(owner_name),
+        ))
+    } else {
+        None
+    };
+    Some((
+        actual_damage,
+        shield_absorbed,
+        RuntimeResolvedHitLog {
+            damage: actual_damage,
+            is_miss: false,
+            is_crit: false,
+            is_parry: false,
+            is_element_bonus: false,
+            shield_absorbed,
+        },
+        death_log,
+    ))
+}
+
+struct RuntimeSetBonusActionIdentity {
+    set_id: String,
+    skill_id: String,
+    skill_name: String,
+}
+
+fn runtime_set_bonus_action_identity(
+    effect: &serde_json::Value,
+) -> Option<RuntimeSetBonusActionIdentity> {
+    let set_id = effect
+        .get("setId")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let skill_name = effect
+        .get("setName")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    Some(RuntimeSetBonusActionIdentity {
+        skill_id: format!("proc-{set_id}"),
+        set_id,
+        skill_name,
+    })
+}
+
+fn process_single_runtime_set_bonus_effect(
     state: &mut BattleStateDto,
     trigger: &str,
     owner_id: &str,
     target_id: Option<&str>,
     source_damage: i64,
+    source_damage_type: &str,
+    effect: &serde_json::Value,
+    params: &serde_json::Map<String, serde_json::Value>,
     logs: &mut Vec<serde_json::Value>,
-) {
+) -> bool {
     let round = state.round_count;
     let Some(owner) = unit_by_id(state, owner_id).cloned() else {
-        return;
+        return false;
     };
     if !owner.is_alive {
-        return;
+        return false;
     }
-    for effect in owner.set_bonus_effects.clone() {
-        if effect.get("trigger").and_then(serde_json::Value::as_str) != Some(trigger) {
-            continue;
-        }
-        let chance = json_number_to_f64(effect.get("chance")).unwrap_or(1.0);
-        if !roll_runtime_chance(state, chance) {
-            continue;
-        }
+    let mut applied = false;
+    for effect in std::iter::once(effect.clone()) {
         let effect_type = effect
             .get("effectType")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let params = effect
-            .get("params")
-            .and_then(serde_json::Value::as_object)
-            .cloned()
-            .unwrap_or_default();
+        let params = params.clone();
         let resolved_target_id =
             if effect.get("target").and_then(serde_json::Value::as_str) == Some("enemy") {
                 let Some(target_id) = target_id else {
@@ -3673,46 +4795,52 @@ fn process_runtime_set_bonus_trigger(
         if !target_snapshot.is_alive && effect_type != "extra_action" {
             continue;
         }
+        let Some(action_identity) = runtime_set_bonus_action_identity(&effect) else {
+            continue;
+        };
         match effect_type {
             "damage" => {
-                let damage = params
-                    .get("value")
-                    .and_then(|value| {
-                        value
-                            .as_i64()
-                            .or_else(|| value.as_f64().map(|value| value.floor() as i64))
-                    })
-                    .unwrap_or_default()
-                    .max(0);
-                if damage <= 0 {
-                    continue;
-                }
-                let damage_type = params
+                let damage_type_raw = params
                     .get("damage_type")
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or("true");
-                let (actual_damage, shield_absorbed) = {
-                    let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
-                        continue;
-                    };
-                    apply_runtime_damage_to_target(target, damage, damage_type)
+                let damage = runtime_set_bonus_damage_amount(
+                    &owner,
+                    &params,
+                    source_damage,
+                    &target_snapshot,
+                )
+                .max(0);
+                if damage <= 0 {
+                    continue;
+                }
+                let damage_type = if damage_type_raw == "reflect" {
+                    normalize_runtime_set_bonus_damage_type(source_damage_type)
+                } else if damage_type_raw == "echo" {
+                    "true"
+                } else {
+                    normalize_runtime_set_bonus_damage_type(damage_type_raw)
                 };
+                let Some((actual_damage, shield_absorbed, hit, death_log)) =
+                    apply_runtime_direct_set_bonus_damage(
+                        state,
+                        owner_id,
+                        owner.name.as_str(),
+                        resolved_target_id,
+                        target_snapshot.name.as_str(),
+                        damage,
+                        damage_type,
+                    )
+                else {
+                    continue;
+                };
+                applied = true;
                 logs.push(build_runtime_action_log(
                     round,
                     owner_id,
                     owner.name.as_str(),
-                    &format!(
-                        "proc-{}-{}",
-                        effect
-                            .get("setId")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("set"),
-                        trigger
-                    ),
-                    effect
-                        .get("setName")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("套装效果"),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
                     &[RuntimeResolvedTargetLog {
                         target_id: resolved_target_id.to_string(),
                         target_name: target_snapshot.name,
@@ -3722,7 +4850,7 @@ fn process_runtime_set_bonus_trigger(
                         resources: Vec::new(),
                         buffs_applied: Vec::new(),
                         marks_consumed: Vec::new(),
-                        hits: Vec::new(),
+                        hits: vec![hit],
                         is_miss: false,
                         is_crit: false,
                         is_parry: false,
@@ -3732,31 +4860,246 @@ fn process_runtime_set_bonus_trigger(
                         momentum_consumed: Vec::new(),
                     }],
                 ));
+                if let Some(death_log) = death_log {
+                    logs.push(death_log);
+                }
             }
-            "shield" => {
-                let value = params
-                    .get("value")
-                    .and_then(|value| {
-                        value
-                            .as_i64()
-                            .or_else(|| value.as_f64().map(|value| value.floor() as i64))
-                    })
-                    .unwrap_or(source_damage)
-                    .max(0);
-                if value <= 0 {
+            "pursuit" => {
+                let raw_rate = json_number_to_f64(params.get("value")).unwrap_or_default();
+                if raw_rate <= 0.0 {
                     continue;
                 }
-                if let Some(target) = unit_by_id_mut(state, resolved_target_id) {
-                    target.shields.push(serde_json::json!({
-                        "id": format!("set-shield-{}-{}", resolved_target_id, round),
-                        "sourceSkillId": effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set-bonus"),
-                        "value": value,
-                        "maxValue": value,
-                        "duration": 1,
-                        "absorbType": "all",
-                        "priority": 0,
-                    }));
+                let scale_key = params
+                    .get("scale_key")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("main_attack");
+                let scale_value = runtime_set_bonus_pursuit_scale_value(&owner, scale_key);
+                if scale_value <= 0.0 {
+                    continue;
                 }
+                let damage = (scale_value * normalized_rate(raw_rate)).floor().max(1.0) as i64;
+                let damage_type = runtime_set_bonus_pursuit_damage_type(
+                    &owner,
+                    scale_key,
+                    params
+                        .get("damage_type")
+                        .and_then(serde_json::Value::as_str),
+                );
+                let outcome = calculate_runtime_damage(
+                    state,
+                    &owner,
+                    &target_snapshot,
+                    damage_type,
+                    None,
+                    damage,
+                    0.0,
+                );
+                let mut actual_damage = 0;
+                let mut shield_absorbed = 0;
+                let mut target_dead = false;
+                let mut death_log = None;
+                if !outcome.is_miss {
+                    let was_alive = target_snapshot.is_alive;
+                    let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
+                        continue;
+                    };
+                    let (applied_damage, applied_shield_absorbed) =
+                        apply_runtime_damage_to_target(target, outcome.damage, damage_type);
+                    actual_damage = applied_damage.max(0);
+                    shield_absorbed = applied_shield_absorbed.max(0);
+                    target_dead = was_alive && !target.is_alive;
+                }
+                if actual_damage > 0 || target_dead {
+                    if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
+                        owner_unit.stats.damage_dealt += actual_damage;
+                        if target_dead {
+                            owner_unit.stats.kill_count += 1;
+                        }
+                    }
+                }
+                if target_dead {
+                    death_log = Some(build_minimal_death_log(
+                        round,
+                        resolved_target_id,
+                        target_snapshot.name.as_str(),
+                        Some(owner_id),
+                        Some(owner.name.as_str()),
+                    ));
+                }
+                applied = true;
+                logs.push(build_runtime_action_log(
+                    round,
+                    owner_id,
+                    owner.name.as_str(),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
+                    &[RuntimeResolvedTargetLog {
+                        target_id: resolved_target_id.to_string(),
+                        target_name: target_snapshot.name,
+                        damage: actual_damage,
+                        heal: 0,
+                        shield: 0,
+                        resources: Vec::new(),
+                        buffs_applied: Vec::new(),
+                        marks_consumed: Vec::new(),
+                        hits: vec![RuntimeResolvedHitLog {
+                            damage: actual_damage,
+                            is_miss: outcome.is_miss,
+                            is_crit: outcome.is_crit,
+                            is_parry: outcome.is_parry,
+                            is_element_bonus: outcome.is_element_bonus,
+                            shield_absorbed,
+                        }],
+                        is_miss: outcome.is_miss,
+                        is_crit: outcome.is_crit,
+                        is_parry: outcome.is_parry,
+                        is_element_bonus: outcome.is_element_bonus,
+                        shield_absorbed,
+                        momentum_gained: Vec::new(),
+                        momentum_consumed: Vec::new(),
+                    }],
+                ));
+                if let Some(death_log) = death_log {
+                    logs.push(death_log);
+                }
+            }
+            "shield" => {
+                let raw_value = json_number_to_f64(params.get("value")).unwrap_or_default();
+                let shield_value = if params
+                    .get("shield_mode")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("damage_echo")
+                {
+                    if source_damage <= 0 {
+                        continue;
+                    }
+                    ((source_damage as f64) * normalized_rate(raw_value))
+                        .floor()
+                        .max(0.0) as i64
+                } else {
+                    let mut amount = raw_value.floor() as i64;
+                    if let Some(scale_key) = params
+                        .get("scale_key")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                    {
+                        if let Some(scale_rate) = json_number_to_f64(params.get("scale_rate")) {
+                            amount += (battle_attr_value_f64(&owner.current_attrs, scale_key)
+                                * scale_rate)
+                                .floor() as i64;
+                        }
+                    }
+                    amount
+                };
+                if shield_value <= 0 {
+                    continue;
+                }
+                let duration = json_number_to_i64_floor(effect.get("durationRound"))
+                    .unwrap_or(1)
+                    .max(1);
+                let absorb_type = match params
+                    .get("absorb_type")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    Some("physical") => "physical",
+                    Some("magic") => "magic",
+                    _ => "all",
+                };
+                let Some(source_skill_id) = effect
+                    .get("setId")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                else {
+                    continue;
+                };
+                let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
+                    continue;
+                };
+                target.shields.push(serde_json::json!({
+                    "id": format!("set-shield-{}-{}", resolved_target_id, round),
+                    "sourceSkillId": source_skill_id,
+                    "value": shield_value,
+                    "maxValue": shield_value,
+                    "duration": duration,
+                    "absorbType": absorb_type,
+                    "priority": 1,
+                }));
+                applied = true;
+                logs.push(build_runtime_action_log(
+                    round,
+                    owner_id,
+                    owner.name.as_str(),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
+                    &[RuntimeResolvedTargetLog {
+                        target_id: resolved_target_id.to_string(),
+                        target_name: target_snapshot.name,
+                        damage: 0,
+                        heal: 0,
+                        shield: shield_value,
+                        resources: Vec::new(),
+                        buffs_applied: vec![format!("{}·护盾", action_identity.skill_name)],
+                        marks_consumed: Vec::new(),
+                        hits: Vec::new(),
+                        is_miss: false,
+                        is_crit: false,
+                        is_parry: false,
+                        is_element_bonus: false,
+                        shield_absorbed: 0,
+                        momentum_gained: Vec::new(),
+                        momentum_consumed: Vec::new(),
+                    }],
+                ));
+            }
+            "defer_damage" => {
+                if trigger != "on_turn_start" {
+                    continue;
+                }
+                let shield_value = {
+                    let Some(target) = unit_by_id_mut(state, resolved_target_id) else {
+                        continue;
+                    };
+                    apply_runtime_set_bonus_deferred_shield_at_turn_start(
+                        target,
+                        resolved_target_id,
+                        round,
+                        &effect,
+                        &params,
+                    )
+                };
+                let Some(shield_value) = shield_value else {
+                    continue;
+                };
+                applied = true;
+                logs.push(build_runtime_action_log(
+                    round,
+                    owner_id,
+                    owner.name.as_str(),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
+                    &[RuntimeResolvedTargetLog {
+                        target_id: resolved_target_id.to_string(),
+                        target_name: target_snapshot.name,
+                        damage: 0,
+                        heal: 0,
+                        shield: shield_value,
+                        resources: Vec::new(),
+                        buffs_applied: vec!["承劫护身".to_string()],
+                        marks_consumed: Vec::new(),
+                        hits: Vec::new(),
+                        is_miss: false,
+                        is_crit: false,
+                        is_parry: false,
+                        is_element_bonus: false,
+                        shield_absorbed: 0,
+                        momentum_gained: Vec::new(),
+                        momentum_consumed: Vec::new(),
+                    }],
+                ));
             }
             "heal" => {
                 let heal = runtime_set_bonus_amount(&owner, &params).max(0);
@@ -3775,22 +5118,13 @@ fn process_runtime_set_bonus_trigger(
                 if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
                     owner_unit.stats.healing_done += actual;
                 }
+                applied = true;
                 logs.push(build_runtime_action_log(
                     round,
                     owner_id,
                     owner.name.as_str(),
-                    &format!(
-                        "proc-{}-{}",
-                        effect
-                            .get("setId")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("set"),
-                        trigger
-                    ),
-                    effect
-                        .get("setName")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("套装效果"),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
                     &[RuntimeResolvedTargetLog {
                         target_id: resolved_target_id.to_string(),
                         target_name: target_snapshot.name,
@@ -3835,22 +5169,13 @@ fn process_runtime_set_bonus_trigger(
                     if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
                         owner_unit.stats.healing_done += actual;
                     }
+                    applied = true;
                     logs.push(build_runtime_action_log(
                         round,
                         owner_id,
                         owner.name.as_str(),
-                        &format!(
-                            "proc-{}-{}",
-                            effect
-                                .get("setId")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("set"),
-                            trigger
-                        ),
-                        effect
-                            .get("setName")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("套装效果"),
+                        action_identity.skill_id.as_str(),
+                        action_identity.skill_name.as_str(),
                         &[RuntimeResolvedTargetLog {
                             target_id: resolved_target_id.to_string(),
                             target_name: target_snapshot.name,
@@ -3888,22 +5213,13 @@ fn process_runtime_set_bonus_trigger(
                     if gain <= 0 {
                         continue;
                     }
+                    applied = true;
                     logs.push(build_runtime_action_log(
                         round,
                         owner_id,
                         owner.name.as_str(),
-                        &format!(
-                            "proc-{}-{}",
-                            effect
-                                .get("setId")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("set"),
-                            trigger
-                        ),
-                        effect
-                            .get("setName")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("套装效果"),
+                        action_identity.skill_id.as_str(),
+                        action_identity.skill_name.as_str(),
                         &[RuntimeResolvedTargetLog {
                             target_id: resolved_target_id.to_string(),
                             target_name: target_snapshot.name,
@@ -3944,22 +5260,13 @@ fn process_runtime_set_bonus_trigger(
                 let Some(applied_name) = applied_name else {
                     continue;
                 };
+                applied = true;
                 logs.push(build_runtime_action_log(
                     round,
                     owner_id,
                     owner.name.as_str(),
-                    &format!(
-                        "proc-{}-{}",
-                        effect
-                            .get("setId")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("set"),
-                        trigger
-                    ),
-                    effect
-                        .get("setName")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("套装效果"),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
                     &[RuntimeResolvedTargetLog {
                         target_id: resolved_target_id.to_string(),
                         target_name: target_snapshot.name,
@@ -4049,22 +5356,13 @@ fn process_runtime_set_bonus_trigger(
                         current_action_is_extra,
                     );
                 }
+                applied = true;
                 logs.push(build_runtime_action_log(
                     round,
                     owner_id,
                     owner.name.as_str(),
-                    &format!(
-                        "proc-{}-{}",
-                        effect
-                            .get("setId")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("set"),
-                        trigger
-                    ),
-                    effect
-                        .get("setName")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("套装效果"),
+                    action_identity.skill_id.as_str(),
+                    action_identity.skill_name.as_str(),
                     &[RuntimeResolvedTargetLog {
                         target_id: owner_id.to_string(),
                         target_name: owner.name.clone(),
@@ -4109,10 +5407,6 @@ fn process_runtime_set_bonus_trigger(
                     } else {
                         consumed.text.clone()
                     };
-                    let set_id = effect
-                        .get("setId")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("set-bonus");
                     let mut target_log = RuntimeResolvedTargetLog {
                         target_id: resolved_target_id.to_string(),
                         target_name: target_snapshot.name.clone(),
@@ -4137,8 +5431,9 @@ fn process_runtime_set_bonus_trigger(
                         resolved_target_id,
                         &consumed,
                         &mut target_log,
-                        set_id,
+                        action_identity.set_id.as_str(),
                     );
+                    applied = true;
 
                     let mut death_log = None;
                     if consumed.final_value > 0 {
@@ -4147,7 +5442,7 @@ fn process_runtime_set_bonus_trigger(
                                 if let Some(owner_unit) = unit_by_id_mut(state, owner_id) {
                                     owner_unit.shields.push(serde_json::json!({
                                         "id": format!("set-shield-{}-{}", owner_id, round),
-                                        "sourceSkillId": effect.get("setId").and_then(serde_json::Value::as_str).unwrap_or("set-bonus"),
+                                        "sourceSkillId": action_identity.set_id.as_str(),
                                         "value": consumed.final_value,
                                         "maxValue": consumed.final_value,
                                         "duration": json_number_to_i64_floor(effect.get("durationRound").or_else(|| effect.get("duration_round"))).unwrap_or(1).max(1),
@@ -4159,10 +5454,7 @@ fn process_runtime_set_bonus_trigger(
                                     target_log.shield += consumed.final_value;
                                     target_log.buffs_applied.push(format!(
                                         "{}·护盾",
-                                        effect
-                                            .get("setName")
-                                            .and_then(serde_json::Value::as_str)
-                                            .unwrap_or("套装效果")
+                                        action_identity.skill_name.as_str()
                                     ));
                                 }
                             }
@@ -4227,18 +5519,8 @@ fn process_runtime_set_bonus_trigger(
                         round,
                         owner_id,
                         owner.name.as_str(),
-                        &format!(
-                            "proc-{}-{}",
-                            effect
-                                .get("setId")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("set"),
-                            trigger
-                        ),
-                        effect
-                            .get("setName")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("套装效果"),
+                        action_identity.skill_id.as_str(),
+                        action_identity.skill_name.as_str(),
                         &[target_log],
                     ));
                     if let Some(death_log) = death_log {
@@ -4254,22 +5536,13 @@ fn process_runtime_set_bonus_trigger(
                     let Some(applied_name) = applied_name else {
                         continue;
                     };
+                    applied = true;
                     logs.push(build_runtime_action_log(
                         round,
                         owner_id,
                         owner.name.as_str(),
-                        &format!(
-                            "proc-{}-{}",
-                            effect
-                                .get("setId")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("set"),
-                            trigger
-                        ),
-                        effect
-                            .get("setName")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("套装效果"),
+                        action_identity.skill_id.as_str(),
+                        action_identity.skill_name.as_str(),
                         &[RuntimeResolvedTargetLog {
                             target_id: resolved_target_id.to_string(),
                             target_name: target_snapshot.name,
@@ -4294,6 +5567,115 @@ fn process_runtime_set_bonus_trigger(
             _ => {}
         }
     }
+    applied
+}
+
+fn process_runtime_set_bonus_trigger_with_affix_state(
+    state: &mut BattleStateDto,
+    trigger: &str,
+    owner_id: &str,
+    target_id: Option<&str>,
+    source_damage: i64,
+    source_damage_type: &str,
+    mut affix_trigger_state: Option<&mut RuntimeAffixTriggerState>,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    let round = state.round_count;
+    let Some(owner) = unit_by_id(state, owner_id).cloned() else {
+        return;
+    };
+    if !owner.is_alive {
+        return;
+    }
+    for prepared in build_prepared_runtime_set_bonus_effects(&owner.set_bonus_effects, trigger) {
+        let effect = prepared.effect;
+        let params = prepared.params;
+        if trigger == "after_skill"
+            && runtime_set_bonus_effect_str(&effect, "effectType") == Some("spell_projection")
+        {
+            continue;
+        }
+        let affix_group_key = runtime_affix_group_key(&effect, &params);
+        let quota_key = runtime_set_bonus_quota_key(&effect, &params);
+        let round_limit = runtime_round_limit(&params);
+        if let (Some(quota_key), Some(_)) = (quota_key.as_ref(), round_limit) {
+            let Some(owner_for_limit) = unit_by_id(state, owner_id).cloned() else {
+                continue;
+            };
+            if runtime_round_limit_reached(&owner_for_limit, round, quota_key.as_str(), round_limit)
+            {
+                continue;
+            }
+        }
+        let chance = if let (Some(group_key), Some(runtime_state)) =
+            (affix_group_key.as_ref(), affix_trigger_state.as_deref())
+        {
+            let runtime_key = runtime_affix_success_key(owner_id, group_key);
+            let success_count = runtime_state
+                .success_count_by_key
+                .get(runtime_key.as_str())
+                .copied()
+                .unwrap_or_default();
+            runtime_affix_scaled_chance(prepared.chance, success_count)
+        } else {
+            prepared.chance
+        };
+        if !pass_runtime_chance(state, chance) {
+            continue;
+        }
+
+        let applied = process_single_runtime_set_bonus_effect(
+            state,
+            trigger,
+            owner_id,
+            target_id,
+            source_damage,
+            source_damage_type,
+            &effect,
+            &params,
+            logs,
+        );
+        if !applied {
+            continue;
+        }
+        if let (Some(quota_key), Some(owner_unit)) =
+            (quota_key.as_ref(), unit_by_id_mut(state, owner_id))
+        {
+            consume_runtime_round_limit(owner_unit, round, quota_key.as_str(), round_limit);
+        }
+        if let (Some(group_key), Some(runtime_state)) =
+            (affix_group_key, affix_trigger_state.as_deref_mut())
+        {
+            let runtime_key = runtime_affix_success_key(owner_id, group_key.as_str());
+            let next = runtime_state
+                .success_count_by_key
+                .get(runtime_key.as_str())
+                .copied()
+                .unwrap_or_default()
+                + 1;
+            runtime_state.success_count_by_key.insert(runtime_key, next);
+        }
+    }
+}
+
+fn process_runtime_set_bonus_trigger(
+    state: &mut BattleStateDto,
+    trigger: &str,
+    owner_id: &str,
+    target_id: Option<&str>,
+    source_damage: i64,
+    logs: &mut Vec<serde_json::Value>,
+) {
+    process_runtime_set_bonus_trigger_with_affix_state(
+        state,
+        trigger,
+        owner_id,
+        target_id,
+        source_damage,
+        "true",
+        None,
+        logs,
+    );
 }
 
 fn process_runtime_aura_effects_at_round_start(
@@ -4411,101 +5793,209 @@ fn settle_runtime_set_deferred_damage_at_round_end(
     logs: &mut Vec<serde_json::Value>,
 ) {
     let round = state.round_count;
-    let Some(unit) = unit_by_id_mut(state, unit_id) else {
+    let Some(unit_snapshot) = unit_by_id(state, unit_id) else {
         return;
     };
-    if !unit.is_alive {
+    if !unit_snapshot.is_alive {
         return;
     }
-    let unit_name = unit.name.clone();
-    let mut next_buffs = Vec::new();
-    for mut buff in unit.buffs.clone() {
-        if !unit.is_alive {
-            break;
-        }
-        let Some(deferred) = buff.get("deferredDamage").cloned() else {
-            next_buffs.push(buff);
-            continue;
+    let unit_name = unit_snapshot.name.clone();
+    let mut reflect_events = Vec::<(String, String, String, i64)>::new();
+    let mut owner_died = false;
+    let mut owner_death_source_unit_id: Option<String> = None;
+
+    {
+        let Some(unit) = unit_by_id_mut(state, unit_id) else {
+            return;
         };
-        let Some(pool) = deferred.get("pool").and_then(serde_json::Value::as_i64) else {
-            next_buffs.push(buff);
-            continue;
-        };
-        let Some(settle_rate) = deferred
-            .get("settleRate")
-            .and_then(serde_json::Value::as_f64)
-        else {
-            next_buffs.push(buff);
-            continue;
-        };
-        let Some(damage_type) = deferred
-            .get("damageType")
-            .and_then(serde_json::Value::as_str)
-        else {
-            next_buffs.push(buff);
-            continue;
-        };
-        let Some(remaining_duration) = buff
-            .get("remainingDuration")
-            .and_then(serde_json::Value::as_i64)
-        else {
-            next_buffs.push(buff);
-            continue;
-        };
-        let pool = pool.max(0);
-        let settle_rate = settle_rate.clamp(0.0, 1.0);
-        let is_permanent = remaining_duration == -1;
-        let settle_damage = if !is_permanent && remaining_duration <= 1 {
-            pool
-        } else {
-            ((pool as f64) * settle_rate).floor().max(1.0) as i64
-        };
-        let (actual_damage, _shield_absorbed) =
-            apply_runtime_damage_to_target(unit, settle_damage, damage_type);
-        if actual_damage > 0 {
-            logs.push(build_dot_log(
+        let mut next_buffs = Vec::new();
+        for mut buff in unit.buffs.clone() {
+            if !unit.is_alive {
+                break;
+            }
+            let Some(deferred) = buff.get("deferredDamage").cloned() else {
+                next_buffs.push(buff);
+                continue;
+            };
+            let Some(pool) = deferred.get("pool").and_then(serde_json::Value::as_i64) else {
+                next_buffs.push(buff);
+                continue;
+            };
+            let Some(settle_rate) = deferred
+                .get("settleRate")
+                .and_then(serde_json::Value::as_f64)
+            else {
+                next_buffs.push(buff);
+                continue;
+            };
+            let Some(damage_type) = deferred
+                .get("damageType")
+                .and_then(serde_json::Value::as_str)
+            else {
+                next_buffs.push(buff);
+                continue;
+            };
+            let Some(remaining_duration) = buff
+                .get("remainingDuration")
+                .and_then(serde_json::Value::as_i64)
+            else {
+                next_buffs.push(buff);
+                continue;
+            };
+            let pool = pool.max(0);
+            let settle_rate = settle_rate.clamp(0.0, 1.0);
+            let is_permanent = remaining_duration == -1;
+            let settle_damage = if !is_permanent && remaining_duration <= 1 {
+                pool
+            } else {
+                ((pool as f64) * settle_rate).floor().max(1.0) as i64
+            };
+            if settle_damage <= 0 {
+                continue;
+            }
+            let last_source_unit_id = deferred
+                .get("lastSourceUnitId")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
+            let was_alive = unit.is_alive;
+            let damage_result = apply_runtime_deferred_settlement_damage_to_target(
+                unit,
+                settle_damage,
+                damage_type,
+            );
+            logs.push(build_runtime_action_log(
                 round,
                 unit_id,
                 unit_name.as_str(),
-                buff.get("name")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("延迟伤害"),
-                actual_damage,
+                "proc-set-xuanheng-jiehen",
+                "劫痕回落",
+                &[RuntimeResolvedTargetLog {
+                    target_id: unit_id.to_string(),
+                    target_name: unit_name.clone(),
+                    damage: damage_result.actual_damage,
+                    heal: 0,
+                    shield: 0,
+                    resources: Vec::new(),
+                    buffs_applied: if damage_result.shield_absorbed > 0 {
+                        vec!["护盾承下劫痕".to_string()]
+                    } else {
+                        Vec::new()
+                    },
+                    marks_consumed: Vec::new(),
+                    hits: Vec::new(),
+                    is_miss: false,
+                    is_crit: false,
+                    is_parry: false,
+                    is_element_bonus: false,
+                    shield_absorbed: damage_result.shield_absorbed,
+                    momentum_gained: Vec::new(),
+                    momentum_consumed: Vec::new(),
+                }],
             ));
-        }
-        let next_pool = (pool - settle_damage).max(0);
-        let next_duration = if is_permanent {
-            -1
-        } else {
-            remaining_duration - 1
-        };
-        if next_pool > 0 && (is_permanent || next_duration > 0) && unit.is_alive {
-            if let Some(object) = buff.as_object_mut() {
-                object.insert(
-                    "remainingDuration".to_string(),
-                    serde_json::json!(next_duration),
-                );
-                object.insert(
-                    "deferredDamage".to_string(),
-                    serde_json::json!({
-                        "pool": next_pool,
-                        "settleRate": settle_rate,
-                        "damageType": damage_type,
-                    }),
-                );
+            if was_alive && !unit.is_alive {
+                owner_died = true;
+                owner_death_source_unit_id = last_source_unit_id.clone();
             }
-            next_buffs.push(buff);
+            if damage_result.reflectable_shield_absorbed > 0 {
+                if let Some(source_unit_id) = damage_result.reflect_source_unit_id {
+                    reflect_events.push((
+                        unit_id.to_string(),
+                        unit_name.clone(),
+                        source_unit_id,
+                        damage_result.reflectable_shield_absorbed,
+                    ));
+                }
+            }
+            let next_pool = (pool - settle_damage).max(0);
+            let next_duration = if is_permanent {
+                -1
+            } else {
+                remaining_duration - 1
+            };
+            if next_pool > 0 && (is_permanent || next_duration > 0) && unit.is_alive {
+                if let Some(object) = buff.as_object_mut() {
+                    object.insert(
+                        "remainingDuration".to_string(),
+                        serde_json::json!(next_duration),
+                    );
+                    if let Some(deferred_object) = deferred.as_object() {
+                        let mut next_deferred = deferred_object.clone();
+                        next_deferred.insert("pool".to_string(), serde_json::json!(next_pool));
+                        next_deferred
+                            .insert("settleRate".to_string(), serde_json::json!(settle_rate));
+                        next_deferred
+                            .insert("damageType".to_string(), serde_json::json!(damage_type));
+                        object.insert(
+                            "deferredDamage".to_string(),
+                            serde_json::Value::Object(next_deferred),
+                        );
+                    }
+                }
+                next_buffs.push(buff);
+            }
         }
+        unit.buffs = next_buffs;
     }
-    unit.buffs = next_buffs;
-    if !unit.is_alive {
+
+    if owner_died {
+        let source_name = owner_death_source_unit_id
+            .as_deref()
+            .and_then(|source_unit_id| unit_by_id(state, source_unit_id))
+            .map(|unit| unit.name.clone());
         logs.push(build_minimal_death_log(
             round,
             unit_id,
             unit_name.as_str(),
-            None,
-            None,
+            owner_death_source_unit_id.as_deref(),
+            source_name.as_deref(),
         ));
+    }
+
+    for (owner_id, owner_name, source_unit_id, reflected_damage) in reflect_events {
+        let Some(source) = unit_by_id_mut(state, source_unit_id.as_str()) else {
+            continue;
+        };
+        if !source.is_alive {
+            continue;
+        }
+        let source_name = source.name.clone();
+        let was_source_alive = source.is_alive;
+        let (actual_damage, shield_absorbed) =
+            apply_runtime_damage_to_target(source, reflected_damage, "true");
+        logs.push(build_runtime_action_log(
+            round,
+            owner_id.as_str(),
+            owner_name.as_str(),
+            "proc-set-xuanheng-huanjie",
+            "还劫",
+            &[RuntimeResolvedTargetLog {
+                target_id: source_unit_id.clone(),
+                target_name: source_name.clone(),
+                damage: actual_damage,
+                heal: 0,
+                shield: 0,
+                resources: Vec::new(),
+                buffs_applied: Vec::new(),
+                marks_consumed: Vec::new(),
+                hits: Vec::new(),
+                is_miss: false,
+                is_crit: false,
+                is_parry: false,
+                is_element_bonus: false,
+                shield_absorbed,
+                momentum_gained: Vec::new(),
+                momentum_consumed: Vec::new(),
+            }],
+        ));
+        if was_source_alive && !source.is_alive {
+            logs.push(build_minimal_death_log(
+                round,
+                source_unit_id.as_str(),
+                source_name.as_str(),
+                Some(owner_id.as_str()),
+                Some(owner_name.as_str()),
+            ));
+        }
     }
 }
 
@@ -5110,6 +6600,16 @@ fn roll_runtime_chance(state: &mut BattleStateDto, chance: f64) -> bool {
     next_runtime_random(state) < clamped_chance
 }
 
+fn pass_runtime_chance(state: &mut BattleStateDto, chance: f64) -> bool {
+    if chance >= 1.0 {
+        return true;
+    }
+    if chance <= 0.0 {
+        return false;
+    }
+    roll_runtime_chance(state, chance)
+}
+
 fn is_supported_runtime_control(control_type: &str) -> bool {
     matches!(
         control_type,
@@ -5328,6 +6828,100 @@ fn apply_runtime_damage_to_target(
     (actual_damage, total_absorbed)
 }
 
+fn apply_runtime_deferred_settlement_damage_to_target(
+    target: &mut BattleUnitDto,
+    damage: i64,
+    damage_type: &str,
+) -> RuntimeDeferredSettlementDamageResult {
+    let mut remaining_damage = damage.max(0);
+    let mut total_absorbed = 0_i64;
+    let mut reflectable_absorbed = 0_i64;
+    let mut reflect_source_unit_id: Option<String> = None;
+    let mut indexed_shields = target
+        .shields
+        .iter()
+        .enumerate()
+        .filter_map(|(index, shield)| {
+            shield.as_object().map(|object| {
+                (
+                    index,
+                    object
+                        .get("priority")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or_default(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    indexed_shields.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut remove_indices = Vec::new();
+    for (index, _) in indexed_shields {
+        if remaining_damage <= 0 {
+            break;
+        }
+        let Some(shield) = target.shields.get_mut(index) else {
+            continue;
+        };
+        let absorb_type = shield
+            .get("absorbType")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("all");
+        if absorb_type != "all" && absorb_type != damage_type {
+            continue;
+        }
+        let current_value = shield
+            .get("value")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default();
+        let absorbed = current_value.min(remaining_damage).max(0);
+        remaining_damage -= absorbed;
+        total_absorbed += absorbed;
+        if absorbed > 0 {
+            if let Some(deferred_shield) = shield.get("deferredDamageShield") {
+                if deferred_shield
+                    .get("reflectOnAbsorb")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                {
+                    reflectable_absorbed += absorbed;
+                    if reflect_source_unit_id.is_none() {
+                        reflect_source_unit_id = deferred_shield
+                            .get("sourceUnitId")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string);
+                    }
+                }
+            }
+        }
+        let next_value = current_value - absorbed;
+        if let Some(object) = shield.as_object_mut() {
+            object.insert("value".to_string(), serde_json::json!(next_value.max(0)));
+        }
+        if next_value <= 0 {
+            remove_indices.push(index);
+        }
+    }
+    remove_indices.sort_unstable();
+    remove_indices.reverse();
+    for index in remove_indices {
+        target.shields.remove(index);
+    }
+    let actual_damage = remaining_damage.min(target.qixue).max(0);
+    target.qixue -= actual_damage;
+    target.stats.damage_taken += actual_damage;
+    target.is_alive = target.qixue > 0;
+    if !target.is_alive {
+        target.qixue = 0;
+        target.can_act = false;
+    }
+    RuntimeDeferredSettlementDamageResult {
+        actual_damage,
+        shield_absorbed: total_absorbed,
+        reflectable_shield_absorbed: reflectable_absorbed,
+        reflect_source_unit_id,
+    }
+}
+
 fn runtime_next_skill_bonus_rate(unit: &BattleUnitDto, bonus_type: &str) -> f64 {
     unit.buffs
         .iter()
@@ -5406,6 +7000,7 @@ fn calculate_runtime_damage(
     damage_type: &str,
     element: Option<&str>,
     base_damage: i64,
+    ignore_defense_rate: f64,
 ) -> RuntimeDamageOutcome {
     let mut outcome = RuntimeDamageOutcome::default();
     let mut damage = (base_damage as f64).max(0.0);
@@ -5427,7 +7022,9 @@ fn calculate_runtime_damage(
         return outcome;
     }
     if damage_type != "true" {
-        let defense = damage_type_defense(defender, damage_type).max(0.0);
+        let defense = (damage_type_defense(defender, damage_type).max(0.0)
+            * (1.0 - ignore_defense_rate.clamp(0.0, 1.0)))
+        .max(0.0);
         damage *= DEFENSE_DAMAGE_K / (defense + DEFENSE_DAMAGE_K);
     }
     let parry_rate = clamp_f64(
@@ -6320,6 +7917,7 @@ fn execute_runtime_skill_action(
 
     let mut target_logs = Vec::new();
     let mut logs = Vec::new();
+    let mut affix_trigger_state = RuntimeAffixTriggerState::default();
     process_runtime_set_bonus_trigger(
         state,
         "on_skill",
@@ -6455,6 +8053,11 @@ fn execute_runtime_skill_action(
                         damage_type,
                         element,
                         base_damage,
+                        if damage_type == "physical" {
+                            runtime_poxu_extra_action_ignore_wufang_rate(&actor)
+                        } else {
+                            0.0
+                        },
                     );
                     let mut actual_damage = 0;
                     let mut shield_absorbed = 0;
@@ -6463,13 +8066,18 @@ fn execute_runtime_skill_action(
                             consume_runtime_dodge_next_buff(target);
                         }
                     } else {
-                        let target = unit_by_id_mut(state, target_id.as_str())
-                            .ok_or_else(|| "目标不存在或已死亡".to_string())?;
-                        let applied = apply_runtime_damage_to_target(
-                            target,
+                        let intercepted_damage = apply_runtime_set_deferred_damage_before_hit(
+                            state,
+                            target_id.as_str(),
+                            actor_id,
                             damage_outcome.damage,
                             damage_type,
+                            &mut logs,
                         );
+                        let target = unit_by_id_mut(state, target_id.as_str())
+                            .ok_or_else(|| "目标不存在或已死亡".to_string())?;
+                        let applied =
+                            apply_runtime_damage_to_target(target, intercepted_damage, damage_type);
                         actual_damage = applied.0;
                         shield_absorbed = applied.1;
                         damage_outcome.actual_damage = actual_damage;
@@ -6494,29 +8102,35 @@ fn execute_runtime_skill_action(
                         if let Some(actor_unit) = unit_by_id_mut(state, actor_id) {
                             actor_unit.stats.damage_dealt += actual_damage;
                         }
-                        process_runtime_set_bonus_trigger(
+                        process_runtime_set_bonus_trigger_with_affix_state(
                             state,
                             "on_hit",
                             actor_id,
                             Some(target_id.as_str()),
                             actual_damage,
+                            damage_type,
+                            Some(&mut affix_trigger_state),
                             &mut logs,
                         );
-                        process_runtime_set_bonus_trigger(
+                        process_runtime_set_bonus_trigger_with_affix_state(
                             state,
                             "on_be_hit",
                             target_id.as_str(),
                             Some(actor_id),
                             actual_damage,
+                            damage_type,
+                            Some(&mut affix_trigger_state),
                             &mut logs,
                         );
                         if damage_outcome.is_crit {
-                            process_runtime_set_bonus_trigger(
+                            process_runtime_set_bonus_trigger_with_affix_state(
                                 state,
                                 "on_crit",
                                 actor_id,
                                 Some(target_id.as_str()),
                                 actual_damage,
+                                damage_type,
+                                Some(&mut affix_trigger_state),
                                 &mut logs,
                             );
                         }
@@ -6527,12 +8141,14 @@ fn execute_runtime_skill_action(
                                 .map(|unit| unit.id.clone())
                                 .collect::<Vec<_>>();
                             for ally_id in ally_ids {
-                                process_runtime_set_bonus_trigger(
+                                process_runtime_set_bonus_trigger_with_affix_state(
                                     state,
                                     "on_ally_hit",
                                     ally_id.as_str(),
                                     Some(target_id.as_str()),
                                     actual_damage,
+                                    damage_type,
+                                    Some(&mut affix_trigger_state),
                                     &mut logs,
                                 );
                             }
@@ -7105,7 +8721,25 @@ fn execute_runtime_skill_action(
             &mut effect_context,
         )?;
     }
-    process_runtime_set_bonus_trigger(state, "after_skill", actor_id, None, 0, &mut logs);
+    let magic_skill_snapshot = build_runtime_magic_skill_snapshot(&skill, &target_logs);
+    process_runtime_set_bonus_after_skill_effects(
+        state,
+        actor_id,
+        &skill,
+        magic_skill_snapshot.as_ref(),
+        Some(&mut affix_trigger_state),
+        &mut logs,
+    );
+    process_runtime_set_bonus_trigger_with_affix_state(
+        state,
+        "after_skill",
+        actor_id,
+        None,
+        0,
+        "true",
+        Some(&mut affix_trigger_state),
+        &mut logs,
+    );
     if !effect_context.momentum_gained.is_empty() || !effect_context.momentum_consumed.is_empty() {
         if let Some(target_log) = target_logs.first_mut() {
             if !effect_context.momentum_gained.is_empty() {
@@ -9443,7 +11077,7 @@ mod tests {
                 && buff.get("name").and_then(serde_json::Value::as_str) == Some("回春战意")
         }));
         assert!(logs.iter().any(|log| {
-            log["skillId"] == "proc-set-heal-buff-on_heal"
+            log["skillId"] == "proc-set-heal-buff"
                 && log["targets"][0]["buffsApplied"][0] == "回春战意"
                 && log["targets"][0]["hits"] == serde_json::json!([])
                 && log["targets"][0].get("damage").is_none()
@@ -9641,7 +11275,7 @@ mod tests {
         assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 40);
         let proc_log = logs
             .iter()
-            .find(|log| log["skillId"] == "proc-set-mark-skill-path-on_skill")
+            .find(|log| log["skillId"] == "proc-set-mark-skill-path")
             .expect("on_skill set bonus log should be emitted");
         assert_eq!(proc_log["targets"][0]["targetId"], target_id);
         assert_eq!(proc_log["targets"][0]["damage"], 40);
@@ -9718,7 +11352,7 @@ mod tests {
         assert_eq!(state.teams.defender.units[0].marks[0]["stacks"], 3);
         assert!(
             logs.iter()
-                .all(|log| log["skillId"] != "proc-set-mark-skip-self-on_skill")
+                .all(|log| log["skillId"] != "proc-set-mark-skip-self")
         );
     }
 
@@ -9780,7 +11414,7 @@ mod tests {
         assert_eq!(state.teams.defender.units[0].qixue, 0);
         assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 30);
         assert!(logs.iter().any(|log| {
-            log["skillId"] == "proc-set-mark-kill-path-on_skill"
+            log["skillId"] == "proc-set-mark-kill-path"
                 && log["targets"][0]["damage"] == serde_json::json!(30)
                 && log["targets"][0]["marksConsumed"][0]
                     == serde_json::json!("虚蚀印记消耗3层（剩余0层，引爆）")
@@ -9868,7 +11502,7 @@ mod tests {
         assert!(target.marks.is_empty());
         assert!(target.buffs.is_empty());
         assert!(logs.iter().any(|log| {
-            log["skillId"] == "proc-set-mark-kill-skip-effects-on_skill"
+            log["skillId"] == "proc-set-mark-kill-skip-effects"
                 && log["targets"][0]["damage"] == serde_json::json!(30)
         }));
         assert!(
@@ -10392,7 +12026,7 @@ mod tests {
         .expect("set on hit action should succeed");
 
         assert!(logs.iter().any(|log| {
-            log["skillId"] == "proc-set-test-on_hit"
+            log["skillId"] == "proc-set-test"
                 && log["targets"][0]["damage"] == serde_json::json!(20)
         }));
     }
@@ -10440,10 +12074,1208 @@ mod tests {
         .expect("set on ally hit action should succeed");
 
         assert!(logs.iter().any(|log| {
-            log["skillId"] == "proc-set-ally-on_ally_hit"
+            log["skillId"] == "proc-set-ally"
                 && log["actorId"] == "player-2"
                 && log["targets"][0]["damage"] == serde_json::json!(15)
         }));
+    }
+
+    #[test]
+    fn affix_group_merges_duplicate_chances_before_roll() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "affix-merge",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_seed = 1;
+        state.random_index = 0;
+        state.teams.attacker.units[0].set_bonus_effects = vec![
+            serde_json::json!({
+                "setId": "affix-10-proc_tianlei",
+                "setName": "甲·天雷",
+                "pieceCount": 1,
+                "trigger": "on_hit",
+                "target": "enemy",
+                "effectType": "damage",
+                "params": {
+                    "affix_key": "proc_tianlei",
+                    "damage_type": "true",
+                    "value": 10,
+                    "chance": 1.0
+                }
+            }),
+            serde_json::json!({
+                "setId": "affix-11-proc_tianlei",
+                "setName": "乙·天雷",
+                "pieceCount": 1,
+                "trigger": "on_hit",
+                "target": "enemy",
+                "effectType": "damage",
+                "params": {
+                    "affix_key": "proc_tianlei",
+                    "damage_type": "true",
+                    "value": 30,
+                    "chance": 1.0
+                }
+            }),
+        ];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(30));
+    }
+
+    #[test]
+    fn set_bonus_turn_start_chance_zero_resource_does_not_roll_or_land() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "turn-start-chance-zero",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_index = 7;
+        state.teams.attacker.units[0].lingqi = 10;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-50-proc_lingchao",
+            "setName": "甲·灵潮",
+            "pieceCount": 1,
+            "trigger": "on_turn_start",
+            "target": "self",
+            "effectType": "resource",
+            "params": {
+                "affix_key": "proc_lingchao",
+                "resource_type": "lingqi",
+                "value": 20,
+                "chance": 0.0
+            }
+        })];
+        let mut logs = Vec::new();
+
+        super::process_runtime_set_bonus_turn_start_effects(&mut state, "player-1", &mut logs);
+
+        assert!(logs.is_empty());
+        assert_eq!(state.teams.attacker.units[0].lingqi, 10);
+        assert_eq!(state.random_index, 7);
+        assert!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn set_bonus_turn_start_affix_group_merges_and_picks_representative_once() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "turn-start-affix-merge",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].lingqi = 0;
+        state.teams.attacker.units[0].set_bonus_effects = vec![
+            serde_json::json!({
+                "setId": "affix-51-proc_lingchao",
+                "setName": "甲·灵潮",
+                "pieceCount": 1,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "resource",
+                "params": {
+                    "affix_key": "proc_lingchao",
+                    "resource_type": "lingqi",
+                    "value": 4,
+                    "chance": 1.0
+                }
+            }),
+            serde_json::json!({
+                "setId": "affix-52-proc_lingchao",
+                "setName": "乙·灵潮",
+                "pieceCount": 1,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "resource",
+                "params": {
+                    "affix_key": "proc_lingchao",
+                    "resource_type": "lingqi",
+                    "value": 9,
+                    "chance": 1.0
+                }
+            }),
+        ];
+        let mut logs = Vec::new();
+
+        super::process_runtime_set_bonus_turn_start_effects(&mut state, "player-1", &mut logs);
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(state.teams.attacker.units[0].lingqi, 9);
+        assert_eq!(
+            logs[0]["targets"][0]["resources"][0]["amount"],
+            serde_json::json!(9)
+        );
+    }
+
+    #[test]
+    fn set_bonus_turn_start_resource_value_uses_floor() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "turn-start-resource-floor",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].lingqi = 0;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-53-proc_lingchao_floor",
+            "setName": "甲·灵潮",
+            "pieceCount": 1,
+            "trigger": "on_turn_start",
+            "target": "self",
+            "effectType": "resource",
+            "params": {
+                "affix_key": "proc_lingchao_floor",
+                "resource_type": "lingqi",
+                "value": 2.9,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+
+        super::process_runtime_set_bonus_turn_start_effects(&mut state, "player-1", &mut logs);
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(state.teams.attacker.units[0].lingqi, 2);
+        assert_eq!(
+            logs[0]["targets"][0]["resources"][0]["amount"],
+            serde_json::json!(2)
+        );
+    }
+
+    #[test]
+    fn set_bonus_damage_echo_uses_source_damage_rate() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-echo",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.defender.units[0].qixue = 300;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-20-proc_huixiang",
+            "setName": "甲·回响",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_huixiang",
+                "damage_type": "echo",
+                "value": 0.25,
+                "scale_key": "wugong",
+                "scale_rate": 1.0,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            80,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(20));
+        assert_eq!(
+            logs[0]["targets"][0]["shieldAbsorbed"],
+            serde_json::json!(0)
+        );
+        assert_eq!(state.teams.defender.units[0].qixue, 280);
+    }
+
+    #[test]
+    fn set_bonus_damage_echo_kill_updates_stats_death_log_and_hit() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-echo-kill",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.defender.units[0].qixue = 20;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.defender.units[0].shields = vec![serde_json::json!({
+            "id": "echo-shield",
+            "value": 5,
+            "absorbType": "all",
+            "priority": 1
+        })];
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-23-proc_huixiang",
+            "setName": "甲·回响",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_huixiang",
+                "damage_type": "echo",
+                "value": 0.25,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(20));
+        assert_eq!(
+            logs[0]["targets"][0]["shieldAbsorbed"],
+            serde_json::json!(5)
+        );
+        assert_eq!(
+            logs[0]["targets"][0]["hits"][0]["damage"],
+            serde_json::json!(20)
+        );
+        assert_eq!(
+            logs[0]["targets"][0]["hits"][0]["shieldAbsorbed"],
+            serde_json::json!(5)
+        );
+        assert_eq!(logs[1]["type"], serde_json::json!("death"));
+        assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 20);
+        assert_eq!(state.teams.attacker.units[0].stats.kill_count, 1);
+    }
+
+    #[test]
+    fn set_bonus_chance_one_does_not_advance_random_index() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-chance-one",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_index = 11;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-60-proc_sure",
+            "setName": "甲·必中",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_sure",
+                "damage_type": "true",
+                "value": 5,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(state.random_index, 11);
+    }
+
+    #[test]
+    fn set_bonus_chance_zero_does_not_advance_random_index() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-chance-zero",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_index = 13;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-61-proc_never",
+            "setName": "甲·不发",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_never",
+                "damage_type": "true",
+                "value": 5,
+                "chance": 0.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            &mut logs,
+        );
+
+        assert!(logs.is_empty());
+        assert_eq!(state.random_index, 13);
+    }
+
+    #[test]
+    fn set_bonus_damage_uses_scale_key_and_scale_rate() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-scale",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].current_attrs.wugong = 120;
+        state.teams.defender.units[0].qixue = 300;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-21-proc_tianlei",
+            "setName": "甲·天雷",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_tianlei",
+                "damage_type": "true",
+                "value": 10,
+                "scale_key": "wugong",
+                "scale_rate": 0.25,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            80,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(40));
+        assert_eq!(state.teams.defender.units[0].qixue, 260);
+    }
+
+    #[test]
+    fn set_bonus_damage_reflect_uses_source_damage_type_and_jianfantan() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-reflect",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].qixue = 300;
+        state.teams.attacker.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].current_attrs.jianfantan = 0.25;
+        state.teams.attacker.units[0].shields = vec![serde_json::json!({
+            "id": "physical-shield",
+            "name": "物理盾",
+            "value": 100,
+            "absorbType": "physical",
+            "priority": 1
+        })];
+        state.teams.defender.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-22-proc_fantan",
+            "setName": "狼·反震",
+            "pieceCount": 1,
+            "trigger": "on_be_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_fantan",
+                "damage_type": "reflect",
+                "value": 0.5,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+        let owner_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_be_hit",
+            owner_id.as_str(),
+            Some("player-1"),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(0));
+        assert_eq!(
+            logs[0]["targets"][0]["shieldAbsorbed"],
+            serde_json::json!(37)
+        );
+        assert_eq!(state.teams.attacker.units[0].qixue, 300);
+        assert_eq!(
+            state.teams.attacker.units[0].shields[0]["value"],
+            serde_json::json!(63)
+        );
+    }
+
+    #[test]
+    fn set_bonus_pursuit_main_attack_true_damage_uses_higher_attack_and_kills() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-pursuit-main-attack",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].current_attrs.wugong = 120;
+        state.teams.attacker.units[0].current_attrs.fagong = 250;
+        state.teams.attacker.units[0].current_attrs.mingzhong = 1.0;
+        state.teams.attacker.units[0].current_attrs.zengshang = 0.0;
+        state.teams.defender.units[0].qixue = 50;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.defender.units[0].current_attrs.shanbi = 0.0;
+        state.teams.defender.units[0].current_attrs.zhaojia = 0.0;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-40-proc_tongqi",
+            "setName": "甲·协锋追击",
+            "pieceCount": 1,
+            "trigger": "on_ally_hit",
+            "target": "enemy",
+            "effectType": "pursuit",
+            "params": {
+                "affix_key": "proc_tongqi",
+                "scale_key": "main_attack",
+                "damage_type": "true",
+                "value": 0.2,
+                "chance": 1.0
+            }
+        })];
+        let target_id = state.teams.defender.units[0].id.clone();
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_ally_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(50));
+        assert_eq!(
+            logs[0]["targets"][0]["hits"][0]["damage"],
+            serde_json::json!(50)
+        );
+        assert_eq!(logs[1]["type"], serde_json::json!("death"));
+        assert_eq!(state.teams.defender.units[0].qixue, 0);
+        assert!(!state.teams.defender.units[0].is_alive);
+        assert_eq!(state.teams.attacker.units[0].stats.damage_dealt, 50);
+        assert_eq!(state.teams.attacker.units[0].stats.kill_count, 1);
+    }
+
+    #[test]
+    fn set_bonus_pursuit_damage_type_explicit_and_inferred_never_uses_invalid_string() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-pursuit-damage-type",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].current_attrs.fagong = 100;
+        state.teams.attacker.units[0].current_attrs.mingzhong = 1.0;
+        state.teams.attacker.units[0].current_attrs.zengshang = 0.0;
+        state.teams.defender.units[0].qixue = 300;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.defender.units[0].current_attrs.fafang = 0;
+        state.teams.defender.units[0].current_attrs.shanbi = 0.0;
+        state.teams.defender.units[0].current_attrs.zhaojia = 0.0;
+        state.teams.defender.units[0].shields = vec![
+            serde_json::json!({
+                "id": "magic-shield-explicit",
+                "value": 500,
+                "absorbType": "magic",
+                "priority": 2
+            }),
+            serde_json::json!({
+                "id": "physical-shield",
+                "value": 500,
+                "absorbType": "physical",
+                "priority": 1
+            }),
+        ];
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-41-proc_mingfa",
+            "setName": "甲·明法追击",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "pursuit",
+            "params": {
+                "affix_key": "proc_mingfa",
+                "scale_key": "fagong",
+                "damage_type": "nonsense",
+                "value": 0.2,
+                "chance": 1.0
+            }
+        })];
+        let target_id = state.teams.defender.units[0].id.clone();
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(0));
+        assert_eq!(
+            logs[0]["targets"][0]["shieldAbsorbed"],
+            serde_json::json!(20)
+        );
+        assert_eq!(
+            state.teams.defender.units[0].shields[0]["value"],
+            serde_json::json!(480)
+        );
+        assert_eq!(
+            state.teams.defender.units[0].shields[1]["value"],
+            serde_json::json!(500)
+        );
+    }
+
+    #[test]
+    fn set_bonus_pursuit_non_positive_value_does_not_land_or_consume_budget() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-pursuit-empty",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].current_attrs.wugong = 120;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-42-proc_empty_pursuit",
+            "setName": "甲·空追击",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "pursuit",
+            "params": {
+                "affix_key": "proc_empty_pursuit",
+                "scale_key": "main_attack",
+                "damage_type": "true",
+                "value": 0,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let target_id = state.teams.defender.units[0].id.clone();
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert!(logs.is_empty());
+        assert!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .is_none()
+        );
+        assert!(affix_state.success_count_by_key.is_empty());
+    }
+
+    #[test]
+    fn set_bonus_shield_damage_echo_uses_source_damage_and_metadata() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-shield-echo",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-30-proc_xuangang",
+            "setName": "甲·玄罡",
+            "pieceCount": 1,
+            "trigger": "on_be_hit",
+            "target": "self",
+            "effectType": "shield",
+            "durationRound": 2,
+            "params": {
+                "affix_key": "proc_xuangang",
+                "shield_mode": "damage_echo",
+                "value": 0.5,
+                "absorb_type": "physical",
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_be_hit",
+            "player-1",
+            None,
+            121,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["shield"], serde_json::json!(60));
+        assert_eq!(state.teams.attacker.units[0].shields.len(), 1);
+        let shield = &state.teams.attacker.units[0].shields[0];
+        assert_eq!(shield["value"], serde_json::json!(60));
+        assert_eq!(shield["maxValue"], serde_json::json!(60));
+        assert_eq!(shield["duration"], serde_json::json!(2));
+        assert_eq!(shield["absorbType"], serde_json::json!("physical"));
+        assert_eq!(shield["priority"], serde_json::json!(1));
+        assert_eq!(
+            shield["sourceSkillId"],
+            serde_json::json!("affix-30-proc_xuangang")
+        );
+    }
+
+    #[test]
+    fn set_bonus_shield_damage_echo_ignores_non_positive_source_damage() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-shield-echo-empty",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-31-proc_xuangang",
+            "setName": "甲·玄罡",
+            "pieceCount": 1,
+            "trigger": "on_be_hit",
+            "target": "self",
+            "effectType": "shield",
+            "durationRound": 2,
+            "params": {
+                "affix_key": "proc_xuangang",
+                "shield_mode": "damage_echo",
+                "value": 0.5,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_be_hit",
+            "player-1",
+            None,
+            0,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert!(logs.is_empty());
+        assert!(state.teams.attacker.units[0].shields.is_empty());
+        assert!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .is_none()
+        );
+        assert!(affix_state.success_count_by_key.is_empty());
+    }
+
+    #[test]
+    fn set_bonus_shield_damage_echo_default_mode_allows_negative_scale_rate() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-shield-default-scale",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].current_attrs.wugong = 80;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-32-proc_hudun",
+            "setName": "甲·护盾",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "self",
+            "effectType": "shield",
+            "durationRound": 0,
+            "params": {
+                "affix_key": "proc_hudun",
+                "value": 100,
+                "scale_key": "wugong",
+                "scale_rate": -0.25,
+                "absorb_type": "invalid",
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            None,
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["shield"], serde_json::json!(80));
+        assert_eq!(state.teams.attacker.units[0].shields.len(), 1);
+        let shield = &state.teams.attacker.units[0].shields[0];
+        assert_eq!(shield["value"], serde_json::json!(80));
+        assert_eq!(shield["maxValue"], serde_json::json!(80));
+        assert_eq!(shield["duration"], serde_json::json!(1));
+        assert_eq!(shield["absorbType"], serde_json::json!("all"));
+        assert_eq!(shield["priority"], serde_json::json!(1));
+        assert_eq!(
+            shield["sourceSkillId"],
+            serde_json::json!("affix-32-proc_hudun")
+        );
+    }
+
+    #[test]
+    fn set_bonus_shield_damage_echo_default_mode_ignores_non_positive_scaled_value() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-shield-default-scale-empty",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].current_attrs.wugong = 80;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-33-proc_hudun",
+            "setName": "甲·护盾",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "self",
+            "effectType": "shield",
+            "params": {
+                "affix_key": "proc_hudun_empty",
+                "value": 10,
+                "scale_key": "wugong",
+                "scale_rate": -0.25,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            None,
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert!(logs.is_empty());
+        assert!(state.teams.attacker.units[0].shields.is_empty());
+        assert!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .is_none()
+        );
+        assert!(affix_state.success_count_by_key.is_empty());
+    }
+
+    #[test]
+    fn set_bonus_shield_damage_echo_blank_set_id_does_not_land_or_consume() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "set-bonus-shield-blank-set-id",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "   ",
+            "setName": "甲·护盾",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "self",
+            "effectType": "shield",
+            "params": {
+                "affix_key": "proc_blank_set_id_shield",
+                "value": 40,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            None,
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert!(logs.is_empty());
+        assert!(state.teams.attacker.units[0].shields.is_empty());
+        assert!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .is_none()
+        );
+        assert!(affix_state.success_count_by_key.is_empty());
+    }
+
+    #[test]
+    fn set_bonus_round_limit_blocks_second_trigger_in_same_round() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "round-limit",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-10-proc_tongqi",
+            "setName": "甲·协锋追击",
+            "pieceCount": 1,
+            "trigger": "on_ally_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_tongqi",
+                "damage_type": "true",
+                "value": 12,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_ally_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_ally_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+    }
+
+    #[test]
+    fn set_bonus_round_limit_consumes_after_shield_lands() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "round-limit-shield",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-12-proc_hudun",
+            "setName": "甲·护盾",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "self",
+            "effectType": "shield",
+            "params": {
+                "affix_key": "proc_hudun",
+                "value": 40,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            None,
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            None,
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(state.teams.attacker.units[0].shields.len(), 1);
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["targets"][0]["shield"], serde_json::json!(40));
+        assert_eq!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .as_ref()
+                .and_then(|state| state.get("counts"))
+                .and_then(|counts| counts.get("affix:proc_hudun"))
+                .and_then(serde_json::Value::as_i64),
+            Some(1)
+        );
+        assert_eq!(
+            affix_state
+                .success_count_by_key
+                .get("player-1::affix:proc_hudun")
+                .copied(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn set_bonus_round_limit_missing_set_id_does_not_land_or_use_empty_quota_key() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "round-limit-missing-set-id",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.defender.units[0].qixue = 300;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setName": "缺失标识",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "damage_type": "true",
+                "value": 9,
+                "chance": 1.0,
+                "round_limit": 1
+            }
+        })];
+        let target_id = state.teams.defender.units[0].id.clone();
+        let mut logs = Vec::new();
+
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            &mut logs,
+        );
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            &mut logs,
+        );
+
+        assert!(logs.is_empty());
+        assert_eq!(state.teams.defender.units[0].qixue, 300);
+        assert!(
+            state.teams.attacker.units[0]
+                .set_bonus_trigger_state
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn affix_trigger_success_decay_scales_next_chance_by_two_thirds() {
+        assert_eq!(super::runtime_affix_scaled_chance(0.9, 0), 0.9);
+        assert!((super::runtime_affix_scaled_chance(0.9, 1) - 0.6).abs() < 1e-9);
+        assert!((super::runtime_affix_scaled_chance(0.9, 2) - 0.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn affix_trigger_state_is_shared_within_skill_and_reset_for_new_skill() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "affix-decay-integration",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_seed = 2;
+        state.random_index = 0;
+        state.teams.defender.units[0].qixue = 300;
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.attacker.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "affix-13-proc_decay",
+            "setName": "甲·衰减",
+            "pieceCount": 1,
+            "trigger": "on_hit",
+            "target": "enemy",
+            "effectType": "damage",
+            "params": {
+                "affix_key": "proc_decay",
+                "damage_type": "true",
+                "value": 7,
+                "chance": 1.0
+            }
+        })];
+        let target_id = state.teams.defender.units[0].id.clone();
+        let mut logs = Vec::new();
+        let mut affix_state = super::RuntimeAffixTriggerState::default();
+
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            affix_state
+                .success_count_by_key
+                .get("player-1::affix:proc_decay")
+                .copied(),
+            Some(1)
+        );
+
+        let mut next_skill_affix_state = super::RuntimeAffixTriggerState::default();
+        super::process_runtime_set_bonus_trigger_with_affix_state(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(target_id.as_str()),
+            100,
+            "physical",
+            Some(&mut next_skill_affix_state),
+            &mut logs,
+        );
+
+        assert_eq!(logs.len(), 2);
+        assert_eq!(
+            next_skill_affix_state
+                .success_count_by_key
+                .get("player-1::affix:proc_decay")
+                .copied(),
+            Some(1)
+        );
     }
 
     #[test]
@@ -10498,6 +13330,498 @@ mod tests {
                 .as_str()
                 .is_some_and(|id| id.starts_with("monster-"))
         }));
+    }
+
+    #[test]
+    fn minimal_pve_set_tianyan_spell_projection_hits_unhit_enemy_like_node() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "pve-battle-tianyan-projection",
+            1,
+            &[
+                "monster-gray-wolf".to_string(),
+                "monster-gray-wolf".to_string(),
+            ],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_seed = 123456;
+        state.teams.attacker.units[0].current_attrs.fagong = 500;
+        state.teams.attacker.units[0].current_attrs.mingzhong = 1.0;
+        state.teams.attacker.units[0].current_attrs.baoji = 0.0;
+        state.teams.defender.units[0].current_attrs.fafang = 0;
+        state.teams.defender.units[0].current_attrs.shanbi = 0.0;
+        state.teams.defender.units[0].current_attrs.zhaojia = 0.0;
+        state.teams.defender.units[1].current_attrs.fafang = 0;
+        state.teams.defender.units[1].current_attrs.shanbi = 0.0;
+        state.teams.defender.units[1].current_attrs.zhaojia = 0.0;
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-tianyan-projection",
+                "name": "太衍流火",
+                "description": "触发天衍分光",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "element": "huo",
+                "triggerType": "active",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{"type": "damage", "value": 100, "valueType": "flat", "damageType": "magic"}]
+            }));
+        state.teams.attacker.units[0]
+            .set_bonus_effects
+            .push(serde_json::json!({
+                "setId": "set-tianyan",
+                "setName": "天衍",
+                "pieceCount": 4,
+                "trigger": "after_skill",
+                "target": "enemy",
+                "effectType": "spell_projection",
+                "chance": 1.0,
+                "params": {
+                    "projection_name": "周天衍光",
+                    "single_split_rate": 0.42,
+                    "multi_focus_rate": 0.78
+                }
+            }));
+
+        let primary_target_id = state.teams.defender.units[0].id.clone();
+        let side_target_id = state.teams.defender.units[1].id.clone();
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-tianyan-projection",
+            std::slice::from_ref(&primary_target_id),
+        )
+        .expect("tianyan action should succeed");
+
+        let projection_log = logs
+            .iter()
+            .find(|log| log["skillId"] == "proc-set-tianyan-zhouyan")
+            .expect("spell projection log should exist");
+        assert_eq!(projection_log["skillName"], serde_json::json!("周天衍光"));
+        assert_eq!(projection_log["targets"][0]["targetId"], side_target_id);
+        assert!(
+            projection_log["targets"][0]["damage"]
+                .as_i64()
+                .unwrap_or_default()
+                > 0
+        );
+    }
+
+    #[test]
+    fn minimal_pve_set_xuanheng_defers_damage_before_hit_like_node() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "pve-battle-xuanheng-defer",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_seed = 123456;
+        state.teams.defender.units[0].qixue = 1000;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].current_attrs.wufang = 0;
+        state.teams.defender.units[0].current_attrs.shanbi = 0.0;
+        state.teams.defender.units[0].current_attrs.zhaojia = 0.0;
+        state.teams.attacker.units[0].current_attrs.mingzhong = 1.0;
+        state.teams.attacker.units[0].current_attrs.baoji = 0.0;
+        state.teams.defender.units[0]
+            .set_bonus_effects
+            .push(serde_json::json!({
+                "setId": "set-xuanheng",
+                "setName": "玄衡",
+                "pieceCount": 4,
+                "trigger": "on_be_hit",
+                "target": "self",
+                "effectType": "defer_damage",
+                "chance": 1.0,
+                "params": {
+                    "threshold_max_qixue_rate": 0.08,
+                    "convert_rate": 0.4,
+                    "settle_rate": 0.5,
+                    "remaining_rounds": 2,
+                    "round_limit": 1
+                }
+            }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-xuanheng-hit",
+                "name": "承劫测试",
+                "description": "触发承劫",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "physical",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{"type": "damage", "value": 200, "valueType": "flat", "damageType": "physical"}]
+            }));
+
+        let target_id = state.teams.defender.units[0].id.clone();
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-xuanheng-hit",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("xuanheng action should succeed");
+
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(120));
+        assert_eq!(state.teams.defender.units[0].qixue, 880);
+        let deferred = state.teams.defender.units[0]
+            .buffs
+            .iter()
+            .find_map(|buff| buff.get("deferredDamage"))
+            .expect("deferred damage state should be stored");
+        assert_eq!(deferred["pool"], serde_json::json!(80));
+        assert!(logs.iter().any(|log| {
+            log["skillId"] == "proc-set-xuanheng"
+                && log["targets"][0]["buffsApplied"][0] == serde_json::json!("化去80点伤害为劫痕")
+        }));
+    }
+
+    #[test]
+    fn xuanheng_round_limit_two_blocks_third_defer_in_same_round() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "xuanheng-round-limit-two",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.teams.defender.units[0].qixue = 1000;
+        state.teams.defender.units[0].current_attrs.max_qixue = 1000;
+        state.teams.defender.units[0].set_bonus_effects = vec![serde_json::json!({
+            "setId": "set-xuanheng",
+            "setName": "玄衡",
+            "pieceCount": 4,
+            "trigger": "on_be_hit",
+            "target": "self",
+            "effectType": "defer_damage",
+            "params": {
+                "threshold_max_qixue_rate": 0.01,
+                "convert_rate": 0.5,
+                "settle_rate": 0.5,
+                "remaining_rounds": 2,
+                "round_limit": 2,
+                "chance": 1.0
+            }
+        })];
+        let mut logs = Vec::new();
+        let target_id = state.teams.defender.units[0].id.clone();
+
+        let first = super::apply_runtime_set_deferred_damage_before_hit(
+            &mut state,
+            target_id.as_str(),
+            "player-1",
+            100,
+            "physical",
+            &mut logs,
+        );
+        let second = super::apply_runtime_set_deferred_damage_before_hit(
+            &mut state,
+            target_id.as_str(),
+            "player-1",
+            100,
+            "physical",
+            &mut logs,
+        );
+        let third = super::apply_runtime_set_deferred_damage_before_hit(
+            &mut state,
+            target_id.as_str(),
+            "player-1",
+            100,
+            "physical",
+            &mut logs,
+        );
+
+        assert_eq!(first, 50);
+        assert_eq!(second, 50);
+        assert_eq!(third, 100);
+        assert_eq!(logs.len(), 2);
+        assert_eq!(
+            state.teams.defender.units[0]
+                .set_bonus_trigger_state
+                .as_ref()
+                .and_then(|state| state.get("counts"))
+                .and_then(|counts| counts.get("set:set-xuanheng:defer_damage"))
+                .and_then(serde_json::Value::as_i64),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn minimal_pve_set_poxu_extra_action_ignores_physical_defense_like_node() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "pve-battle-poxu-ignore-defense",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_seed = 123456;
+        state.teams.attacker.units[0].current_attrs.mingzhong = 1.0;
+        state.teams.attacker.units[0].current_attrs.baoji = 0.0;
+        state.teams.attacker.units[0].extra_action_state = Some(serde_json::json!({
+            "charges": 0,
+            "grantedThisRound": 1,
+            "currentActionIsExtra": true
+        }));
+        state.teams.attacker.units[0]
+            .set_bonus_effects
+            .push(serde_json::json!({
+                "setId": "set-poxu",
+                "setName": "破虚",
+                "pieceCount": 6,
+                "trigger": "on_hit",
+                "target": "self",
+                "effectType": "extra_action",
+                "chance": 1.0,
+                "params": {
+                    "damage_threshold_max_qixue_rate": 0.12,
+                    "max_actions_per_round": 1,
+                    "free_cast": true,
+                    "ignore_wufang_rate": 0.25
+                }
+            }));
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-poxu-defense",
+                "name": "破虚穿防",
+                "description": "额外行动穿防",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "physical",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{"type": "damage", "value": 1000, "valueType": "flat", "damageType": "physical"}]
+            }));
+        state.teams.defender.units[0].current_attrs.wufang = DEFENSE_DAMAGE_K as i64;
+        state.teams.defender.units[0].current_attrs.max_qixue = 2000;
+        state.teams.defender.units[0].qixue = 2000;
+        state.teams.defender.units[0].current_attrs.shanbi = 0.0;
+        state.teams.defender.units[0].current_attrs.zhaojia = 0.0;
+
+        let target_id = state.teams.defender.units[0].id.clone();
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-poxu-defense",
+            std::slice::from_ref(&target_id),
+        )
+        .expect("poxu action should succeed");
+
+        assert_eq!(logs[0]["targets"][0]["damage"], serde_json::json!(571));
+    }
+
+    #[test]
+    fn exclusive_set_bonus_tianyan_uses_highest_piece_projection_only() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "pve-battle-tianyan-exclusive",
+            1,
+            &[
+                "monster-gray-wolf".to_string(),
+                "monster-gray-wolf".to_string(),
+            ],
+            1.0,
+        )
+        .expect("battle should build");
+        state.random_seed = 123456;
+        state.teams.attacker.units[0].current_attrs.fagong = 500;
+        state.teams.attacker.units[0].current_attrs.mingzhong = 1.0;
+        state.teams.attacker.units[0].current_attrs.baoji = 0.0;
+        for defender in &mut state.teams.defender.units {
+            defender.current_attrs.fafang = 0;
+            defender.current_attrs.shanbi = 0.0;
+            defender.current_attrs.zhaojia = 0.0;
+        }
+        state.teams.attacker.units[0]
+            .skills
+            .push(serde_json::json!({
+                "id": "skill-tianyan-exclusive",
+                "name": "太衍流火",
+                "type": "active",
+                "targetType": "single_enemy",
+                "damageType": "magic",
+                "element": "huo",
+                "triggerType": "active",
+                "cooldown": 0,
+                "cost": {"lingqi": 0, "qixue": 0},
+                "effects": [{"type": "damage", "value": 100, "valueType": "flat", "damageType": "magic"}]
+            }));
+        state.teams.attacker.units[0].set_bonus_effects.extend([
+            serde_json::json!({
+                "setId": "set-tianyan",
+                "setName": "天衍",
+                "pieceCount": 4,
+                "trigger": "after_skill",
+                "target": "enemy",
+                "effectType": "spell_projection",
+                "chance": 1.0,
+                "params": {
+                    "projection_name": "周天衍光",
+                    "single_split_rate": 0.42
+                }
+            }),
+            serde_json::json!({
+                "setId": "set-tianyan",
+                "setName": "天衍",
+                "pieceCount": 8,
+                "trigger": "after_skill",
+                "target": "enemy",
+                "effectType": "spell_projection",
+                "chance": 1.0,
+                "params": {
+                    "projection_name": "两仪流照",
+                    "single_split_rate": 0.42,
+                    "single_return_rate": 0.24
+                }
+            }),
+        ]);
+
+        let primary_target_id = state.teams.defender.units[0].id.clone();
+        let logs = super::execute_runtime_skill_action(
+            &mut state,
+            "player-1",
+            "skill-tianyan-exclusive",
+            std::slice::from_ref(&primary_target_id),
+        )
+        .expect("tianyan action should succeed");
+
+        let projection_names = logs
+            .iter()
+            .filter(|log| log["skillId"] == "proc-set-tianyan-zhouyan")
+            .filter_map(|log| log["skillName"].as_str())
+            .collect::<Vec<_>>();
+        assert!(projection_names.contains(&"两仪流照"));
+        assert!(projection_names.contains(&"回天照"));
+        assert!(!projection_names.contains(&"周天衍光"));
+    }
+
+    #[test]
+    fn exclusive_set_bonus_poxu_uses_highest_piece_extra_action_only() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-poxu-exclusive",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.defender.units[0].current_attrs.max_qixue = 300;
+        state.teams.defender.units[0].qixue = 200;
+        state.teams.attacker.units[0].set_bonus_effects = vec![
+            serde_json::json!({
+                "setId": "set-poxu",
+                "setName": "破虚",
+                "pieceCount": 6,
+                "trigger": "on_hit",
+                "target": "enemy",
+                "effectType": "extra_action",
+                "chance": 1.0,
+                "params": {
+                    "damage_threshold_max_qixue_rate": 0.2,
+                    "max_actions_per_round": 2
+                }
+            }),
+            serde_json::json!({
+                "setId": "set-poxu",
+                "setName": "破虚",
+                "pieceCount": 8,
+                "trigger": "on_hit",
+                "target": "enemy",
+                "effectType": "extra_action",
+                "chance": 1.0,
+                "params": {
+                    "damage_threshold_max_qixue_rate": 0.2,
+                    "max_actions_per_round": 2,
+                    "low_qixue_refund_rate": 0.3
+                }
+            }),
+        ];
+
+        let target_id = state.teams.defender.units[0].id.clone();
+        let mut logs = Vec::new();
+        super::process_runtime_set_bonus_trigger(
+            &mut state,
+            "on_hit",
+            "player-1",
+            Some(&target_id),
+            80,
+            &mut logs,
+        );
+
+        assert_eq!(
+            state.teams.attacker.units[0].extra_action_state,
+            Some(serde_json::json!({
+                "charges": 1,
+                "grantedThisRound": 1,
+                "currentActionIsExtra": false
+            }))
+        );
+        assert_eq!(
+            logs.iter()
+                .filter(|log| log["skillId"] == "proc-set-poxu")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn exclusive_set_bonus_poxu_ignore_wufang_uses_highest_piece_only() {
+        let mut state = build_minimal_pve_battle_state(
+            "pve-battle-poxu-exclusive-ignore-defense",
+            1,
+            &["monster-gray-wolf".to_string()],
+        );
+        state.teams.attacker.units[0].extra_action_state = Some(serde_json::json!({
+            "charges": 0,
+            "grantedThisRound": 1,
+            "currentActionIsExtra": true
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![
+            serde_json::json!({
+                "setId": "set-poxu",
+                "setName": "破虚",
+                "pieceCount": 6,
+                "trigger": "on_hit",
+                "target": "self",
+                "effectType": "extra_action",
+                "chance": 1.0,
+                "params": {
+                    "damage_threshold_max_qixue_rate": 0.12,
+                    "max_actions_per_round": 1,
+                    "ignore_wufang_rate": 0.25
+                }
+            }),
+            serde_json::json!({
+                "setId": "set-poxu",
+                "setName": "破虚",
+                "pieceCount": 8,
+                "trigger": "on_hit",
+                "target": "self",
+                "effectType": "extra_action",
+                "chance": 1.0,
+                "params": {
+                    "damage_threshold_max_qixue_rate": 0.12,
+                    "max_actions_per_round": 1,
+                    "low_qixue_refund_rate": 0.3
+                }
+            }),
+        ];
+
+        assert_eq!(
+            super::runtime_poxu_extra_action_ignore_wufang_rate(&state.teams.attacker.units[0]),
+            0.0
+        );
+
+        state.teams.attacker.units[0].set_bonus_effects[1]["params"]["ignore_wufang_rate"] =
+            serde_json::json!(0.4);
+
+        assert_eq!(
+            super::runtime_poxu_extra_action_ignore_wufang_rate(&state.teams.attacker.units[0]),
+            0.4
+        );
     }
 
     #[test]
@@ -11010,6 +14334,7 @@ mod tests {
             momentum: None,
             set_bonus_effects: Vec::new(),
             extra_action_state: None,
+            set_bonus_trigger_state: None,
             skills: vec![build_skill_value(
                 "skill-normal-attack",
                 "普通攻击",
@@ -11244,6 +14569,7 @@ mod tests {
             "physical",
             Some("none"),
             200,
+            0.0,
         );
         let expected =
             ((200.0_f64) * (DEFENSE_DAMAGE_K / (180.0 + DEFENSE_DAMAGE_K))).floor() as i64;
@@ -11330,7 +14656,13 @@ mod tests {
         assert_eq!(state.teams.attacker.units[0].qixue, 80);
         assert_eq!(state.teams.attacker.units[0].stats.healing_done, 20);
         assert_eq!(state.teams.attacker.units[0].stats.healing_received, 20);
-        assert!(logs.iter().any(|log| log["type"] == "hot"));
+        let action_log = logs
+            .iter()
+            .find(|log| log["skillId"] == "proc-set-test")
+            .expect("on_turn_start set bonus heal should emit action log");
+        assert_eq!(action_log["type"], "action");
+        assert_eq!(action_log["skillName"], "测试套装");
+        assert_eq!(action_log["targets"][0]["heal"], serde_json::json!(20));
     }
 
     #[test]
@@ -11588,12 +14920,9 @@ mod tests {
         )
         .expect("action should advance round");
 
-        assert!(
-            outcome
-                .logs
-                .iter()
-                .any(|log| log["type"] == "dot" && log["damage"] == 30)
-        );
+        assert!(outcome.logs.iter().any(|log| log["type"] == "action"
+            && log["skillName"] == "劫痕回落"
+            && log["targets"][0]["damage"] == serde_json::json!(30)));
         assert!(state.teams.defender.units[0].qixue <= 70);
     }
 
@@ -11652,18 +14981,15 @@ mod tests {
         let mut logs = Vec::new();
         process_round_end_and_start_next_round(&mut state, &mut logs);
 
-        let defender_dot_logs = logs
+        let defender_deferred_settle_logs = logs
             .iter()
             .filter(|log| {
-                log["type"] == "dot"
-                    && log["unitId"] == "monster-monster-gray-wolf-0"
-                    && log["buffName"]
-                        .as_str()
-                        .unwrap_or("")
-                        .starts_with("延迟伤害")
+                log["type"] == "action"
+                    && log["actorId"] == "monster-monster-gray-wolf-0"
+                    && log["skillName"] == "劫痕回落"
             })
             .collect::<Vec<_>>();
-        assert_eq!(defender_dot_logs.len(), 1);
+        assert_eq!(defender_deferred_settle_logs.len(), 1);
         assert_eq!(state.teams.defender.units[0].qixue, 0);
         assert!(!state.teams.defender.units[0].is_alive);
     }
@@ -11695,10 +15021,9 @@ mod tests {
         let mut logs = Vec::new();
         process_round_end_and_start_next_round(&mut state, &mut logs);
 
-        assert!(
-            logs.iter()
-                .any(|log| log["type"] == "dot" && log["damage"] == 20)
-        );
+        assert!(logs.iter().any(|log| log["type"] == "action"
+            && log["skillName"] == "劫痕回落"
+            && log["targets"][0]["damage"] == serde_json::json!(20)));
         let buff = state.teams.defender.units[0]
             .buffs
             .iter()
@@ -11803,6 +15128,387 @@ mod tests {
                 .get("damageType")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn round_end_deferred_damage_uses_action_log_shape() {
+        let mut state =
+            build_minimal_pve_battle_state("pve-battle-1", 1, &["monster-gray-wolf".to_string()]);
+        let target_id = state.teams.defender.units[0].id.clone();
+        state.teams.defender.units[0].qixue = 100;
+        state.teams.defender.units[0].buffs.push(serde_json::json!({
+            "id": "set-deferred-action-log",
+            "buffDefId": "set-deferred-damage",
+            "name": "劫痕",
+            "type": "debuff",
+            "category": "set_bonus",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 1,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 30,
+                "settleRate": 1.0,
+                "damageType": "physical",
+                "lastSourceUnitId": "player-1"
+            },
+            "tags": ["set_bonus"],
+            "dispellable": false
+        }));
+        let mut logs = Vec::new();
+
+        super::settle_runtime_set_deferred_damage_at_round_end(
+            &mut state,
+            target_id.as_str(),
+            &mut logs,
+        );
+
+        assert!(logs.iter().any(|log| {
+            log["type"] == "action"
+                && log["skillName"] == "劫痕回落"
+                && log["targets"][0]["damage"] == serde_json::json!(30)
+        }));
+        assert!(
+            !logs.iter().any(|log| {
+                log["type"] == "dot" && log["unitId"] == serde_json::json!(target_id)
+            })
+        );
+    }
+
+    #[test]
+    fn xuanheng_reflect_on_absorb_damages_last_source() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "xuanheng-reflect",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("xuanheng reflect state should build");
+        let source_id = state.teams.defender.units[0].id.clone();
+        state.teams.attacker.units[0].buffs.push(serde_json::json!({
+            "id": "deferred-player-1",
+            "buffDefId": "set-xuanheng-deferred-damage",
+            "name": "承劫",
+            "type": "buff",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 2,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 100,
+                "settleRate": 0.5,
+                "damageType": "true",
+                "lastSourceUnitId": source_id,
+                "reflectOnAbsorb": true
+            }
+        }));
+        state.teams.attacker.units[0]
+            .shields
+            .push(serde_json::json!({
+                "id": "set-xuanheng-guard-player-1",
+                "sourceSkillId": "set-xuanheng",
+                "value": 40,
+                "maxValue": 40,
+                "duration": 1,
+                "absorbType": "all",
+                "priority": 1,
+                "deferredDamageShield": {
+                    "reflectOnAbsorb": true,
+                    "sourceUnitId": source_id
+                }
+            }));
+        state.teams.defender.units[0].qixue = 1000;
+        let mut logs = Vec::new();
+
+        super::settle_runtime_set_deferred_damage_at_round_end(&mut state, "player-1", &mut logs);
+
+        assert!(logs.iter().any(|log| {
+            log["type"] == "action"
+                && log["skillName"] == "还劫"
+                && log["targets"][0]["damage"] == serde_json::json!(40)
+        }));
+        assert_eq!(state.teams.defender.units[0].qixue, 960);
+    }
+
+    #[test]
+    fn xuanheng_reflect_on_absorb_only_reflects_deferred_shield_absorb() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "xuanheng-reflect-shield-split",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("xuanheng reflect state should build");
+        let source_id = state.teams.defender.units[0].id.clone();
+        state.teams.attacker.units[0].buffs.push(serde_json::json!({
+            "id": "deferred-player-1",
+            "buffDefId": "set-xuanheng-deferred-damage",
+            "name": "承劫",
+            "type": "buff",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 2,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 100,
+                "settleRate": 0.5,
+                "damageType": "true",
+                "lastSourceUnitId": source_id,
+                "reflectOnAbsorb": true
+            }
+        }));
+        state.teams.attacker.units[0]
+            .shields
+            .push(serde_json::json!({
+                "id": "ordinary-shield",
+                "sourceSkillId": "skill-shield",
+                "value": 30,
+                "maxValue": 30,
+                "duration": 1,
+                "absorbType": "all",
+                "priority": 10
+            }));
+        state.teams.attacker.units[0]
+            .shields
+            .push(serde_json::json!({
+                "id": "set-xuanheng-guard-player-1",
+                "sourceSkillId": "set-xuanheng",
+                "value": 40,
+                "maxValue": 40,
+                "duration": 1,
+                "absorbType": "all",
+                "priority": 1,
+                "deferredDamageShield": {
+                    "reflectOnAbsorb": true,
+                    "sourceUnitId": source_id
+                }
+            }));
+        state.teams.defender.units[0].qixue = 1000;
+        let mut logs = Vec::new();
+
+        super::settle_runtime_set_deferred_damage_at_round_end(&mut state, "player-1", &mut logs);
+
+        let reflect_log = logs
+            .iter()
+            .find(|log| log["type"] == "action" && log["skillName"] == "还劫")
+            .expect("reflect log should be written");
+        assert_eq!(reflect_log["targets"][0]["damage"], serde_json::json!(20));
+        assert_eq!(state.teams.defender.units[0].qixue, 980);
+    }
+
+    #[test]
+    fn xuanheng_deferred_shield_requires_set_id_and_name() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "xuanheng-shield-required-fields",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("xuanheng shield state should build");
+        state.round_count = 1;
+        state.teams.attacker.units[0].buffs.push(serde_json::json!({
+            "id": "deferred-player-1",
+            "buffDefId": "set-xuanheng-deferred-damage",
+            "name": "承劫",
+            "type": "buff",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 2,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 100,
+                "settleRate": 0.5,
+                "damageType": "physical",
+                "lastSourceUnitId": "monster-monster-gray-wolf-0",
+                "reflectOnAbsorb": true
+            }
+        }));
+        state.teams.attacker.units[0].set_bonus_effects = vec![
+            serde_json::json!({
+                "setName": "玄衡",
+                "pieceCount": 8,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "defer_damage",
+                "chance": 1.0,
+                "params": {"shield_rate": 0.4}
+            }),
+            serde_json::json!({
+                "setId": "set-xuanheng",
+                "pieceCount": 8,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "defer_damage",
+                "chance": 1.0,
+                "params": {"shield_rate": 0.4}
+            }),
+        ];
+        let mut logs = Vec::new();
+
+        super::process_runtime_set_bonus_turn_start_effects(&mut state, "player-1", &mut logs);
+
+        assert!(state.teams.attacker.units[0].shields.is_empty());
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn xuanheng_turn_start_reflect_param_marks_created_deferred_shield() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "xuanheng-real-path-reflect",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("xuanheng reflect state should build");
+        state.round_count = 1;
+        let source_id = state.teams.defender.units[0].id.clone();
+        state.teams.defender.units[0].qixue = 1000;
+        state.teams.attacker.units[0].current_attrs.max_qixue = 1000;
+        state.teams.attacker.units[0].qixue = 1000;
+        state.teams.attacker.units[0].set_bonus_effects = vec![
+            serde_json::json!({
+                "setId": "set-xuanheng",
+                "setName": "玄衡",
+                "pieceCount": 4,
+                "trigger": "on_be_hit",
+                "target": "self",
+                "effectType": "defer_damage",
+                "chance": 1.0,
+                "params": {
+                    "threshold_max_qixue_rate": 0.08,
+                    "convert_rate": 0.4,
+                    "settle_rate": 0.5,
+                    "remaining_rounds": 2,
+                    "round_limit": 1
+                }
+            }),
+            serde_json::json!({
+                "setId": "set-xuanheng",
+                "setName": "玄衡",
+                "pieceCount": 8,
+                "trigger": "on_turn_start",
+                "target": "self",
+                "effectType": "defer_damage",
+                "chance": 1.0,
+                "params": {
+                    "shield_rate": 0.5,
+                    "reflect_on_absorb": true
+                }
+            }),
+        ];
+        let mut logs = Vec::new();
+
+        let next_damage = super::apply_runtime_set_deferred_damage_before_hit(
+            &mut state,
+            "player-1",
+            source_id.as_str(),
+            200,
+            "physical",
+            &mut logs,
+        );
+        assert_eq!(next_damage, 120);
+        let deferred = state.teams.attacker.units[0]
+            .buffs
+            .iter()
+            .find_map(|buff| buff.get("deferredDamage"))
+            .expect("deferred buff should be created");
+        assert_eq!(deferred["pool"], serde_json::json!(80));
+        assert_ne!(deferred["reflectOnAbsorb"], serde_json::json!(true));
+
+        super::process_runtime_set_bonus_turn_start_effects(&mut state, "player-1", &mut logs);
+        let deferred_shield = state.teams.attacker.units[0]
+            .shields
+            .iter()
+            .find(|shield| shield.get("deferredDamageShield").is_some())
+            .expect("turn start should create deferred shield");
+        assert_eq!(deferred_shield["value"], serde_json::json!(40));
+        assert_eq!(
+            deferred_shield["deferredDamageShield"]["reflectOnAbsorb"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            deferred_shield["deferredDamageShield"]["sourceUnitId"],
+            serde_json::json!(source_id)
+        );
+
+        state.teams.attacker.units[0]
+            .shields
+            .push(serde_json::json!({
+                "id": "ordinary-shield",
+                "sourceSkillId": "skill-shield",
+                "value": 30,
+                "maxValue": 30,
+                "duration": 1,
+                "absorbType": "all",
+                "priority": 10
+            }));
+        let mut settle_logs = Vec::new();
+        super::settle_runtime_set_deferred_damage_at_round_end(
+            &mut state,
+            "player-1",
+            &mut settle_logs,
+        );
+
+        let reflect_log = settle_logs
+            .iter()
+            .find(|log| log["type"] == "action" && log["skillName"] == "还劫")
+            .expect("reflect log should be written from turn-start reflect metadata");
+        assert_eq!(reflect_log["targets"][0]["damage"], serde_json::json!(10));
+        assert_eq!(state.teams.defender.units[0].qixue, 990);
+    }
+
+    #[test]
+    fn xuanheng_reflect_on_absorb_without_valid_source_does_not_reflect() {
+        let mut state = super::try_build_minimal_pve_battle_state_with_monster_attr_multiplier(
+            "xuanheng-reflect-missing-source",
+            1,
+            &["monster-gray-wolf".to_string()],
+            1.0,
+        )
+        .expect("xuanheng reflect state should build");
+        state.teams.attacker.units[0].buffs.push(serde_json::json!({
+            "id": "deferred-player-1",
+            "buffDefId": "set-xuanheng-deferred-damage",
+            "name": "承劫",
+            "type": "buff",
+            "sourceUnitId": "player-1",
+            "remainingDuration": 2,
+            "stacks": 1,
+            "maxStacks": 1,
+            "deferredDamage": {
+                "pool": 100,
+                "settleRate": 0.5,
+                "damageType": "true",
+                "lastSourceUnitId": "missing-source",
+                "reflectOnAbsorb": true
+            }
+        }));
+        state.teams.attacker.units[0]
+            .shields
+            .push(serde_json::json!({
+                "id": "set-xuanheng-guard-player-1",
+                "sourceSkillId": "set-xuanheng",
+                "value": 40,
+                "maxValue": 40,
+                "duration": 1,
+                "absorbType": "all",
+                "priority": 1,
+                "deferredDamageShield": {
+                    "reflectOnAbsorb": true,
+                    "sourceUnitId": "missing-source"
+                }
+            }));
+        state.teams.defender.units[0].qixue = 1000;
+        let mut logs = Vec::new();
+
+        super::settle_runtime_set_deferred_damage_at_round_end(&mut state, "player-1", &mut logs);
+
+        assert!(
+            !logs
+                .iter()
+                .any(|log| log["type"] == "action" && log["skillName"] == "还劫")
+        );
+        assert_eq!(state.teams.defender.units[0].qixue, 1000);
     }
 
     #[test]
@@ -12202,6 +15908,7 @@ mod tests {
             momentum: None,
             set_bonus_effects: Vec::new(),
             extra_action_state: None,
+            set_bonus_trigger_state: None,
             skills: vec![build_skill_value(
                 "skill-normal-attack",
                 "普通攻击",
@@ -12339,6 +16046,7 @@ mod tests {
             "physical",
             Some("none"),
             100,
+            0.0,
         )
         .damage;
         let marked_damage = super::calculate_runtime_damage(
@@ -12348,6 +16056,7 @@ mod tests {
             "physical",
             Some("none"),
             100,
+            0.0,
         )
         .damage;
         assert!(marked_damage > no_mark_damage);
