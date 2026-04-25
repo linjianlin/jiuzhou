@@ -1864,7 +1864,16 @@ pub async fn process_pending_technique_generation_job(
     };
     let mut candidate = candidate_result.candidate;
     remap_generated_candidate_skill_ids(&mut candidate, generation_id);
-    ensure_generated_candidate_skill_icons(state, &mut candidate).await?;
+    if let Err(error) = ensure_generated_candidate_skill_icons(state, &mut candidate).await {
+        fail_technique_generation_job_with_refund(
+            state,
+            character_id,
+            generation_id,
+            &error.to_string(),
+        )
+        .await?;
+        return Ok(());
+    }
     let prompt_snapshot: serde_json::Value =
         serde_json::from_str(&candidate_result.prompt_snapshot).map_err(|error| {
             AppError::config(format!("功法 candidate prompt_snapshot 解析失败: {error}"))
