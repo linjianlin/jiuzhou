@@ -7,7 +7,9 @@ use crate::integrations::image_model_config::{
     ImageModelConfigSnapshot, ImageModelScope, require_image_model_config,
 };
 use crate::integrations::text_model_client::{TextModelCallRequest, call_configured_text_model};
-use crate::integrations::text_model_config::{TextModelScope, require_text_model_config};
+use crate::integrations::text_model_config::{
+    TextModelConfigSnapshot, TextModelScope, require_text_model_config,
+};
 use crate::shared::error::AppError;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
@@ -109,6 +111,8 @@ struct TechniqueCandidatePayload {
     layers: Vec<TechniqueCandidateLayer>,
 }
 
+const TECHNIQUE_GENERATION_MAX_ATTEMPTS: i32 = 3;
+
 pub async fn generate_technique_ai_draft(
     state: &AppState,
     technique_type: &str,
@@ -150,40 +154,74 @@ pub async fn generate_technique_candidate(
     let config = require_text_model_config(TextModelScope::Technique)?;
     let system_message =
         "你是修仙游戏的功法生成器。只返回一个合法 JSON 对象，不要 Markdown，不要解释文字。";
-    let user_message = build_technique_candidate_user_prompt(
-        technique_type,
-        quality,
-        max_layer,
-        burning_word_prompt,
-        prompt_context,
-    )?;
-    let result = call_configured_text_model(
-        state,
-        &config,
-        TextModelCallRequest {
-            system_message: system_message.to_string(),
-            user_message,
-            response_format: Some(serde_json::json!({"type": "json_object"})),
-            seed: None,
-            timeout: Some(Duration::from_secs(300)),
-            temperature: Some(0.7),
-        },
-    )
-    .await
-    .map_err(|error| AppError::config(format!("功法 AI candidate 请求失败: {error}")))?;
-    let candidate = parse_and_validate_generated_technique_candidate(
-        &result.content,
-        &result.model_name,
-        technique_type,
-        quality,
-        max_layer,
-    )?;
-    Ok(GeneratedTechniqueCandidateResult {
-        candidate,
-        model_name: result.model_name,
-        prompt_snapshot: result.prompt_snapshot,
-        attempt_count: 1,
-    })
+    let mut last_failure_reason = String::new();
+    let mut last_prompt_snapshot = String::new();
+    let mut last_model_name = config.model_name.clone();
+
+    for attempt in 1..=TECHNIQUE_GENERATION_MAX_ATTEMPTS {
+        let attempt_prompt_context = build_technique_generation_retry_prompt_context(
+            prompt_context.clone(),
+            (!last_failure_reason.trim().is_empty()).then_some(last_failure_reason.clone()),
+        );
+        let user_message = build_technique_candidate_user_prompt(
+            technique_type,
+            quality,
+            max_layer,
+            burning_word_prompt,
+            attempt_prompt_context,
+        )?;
+        last_prompt_snapshot = build_technique_candidate_request_prompt_snapshot(
+            &config,
+            system_message,
+            &user_message,
+        );
+        let result = match call_configured_text_model(
+            state,
+            &config,
+            TextModelCallRequest {
+                system_message: system_message.to_string(),
+                user_message,
+                response_format: Some(serde_json::json!({"type": "json_object"})),
+                seed: None,
+                timeout: Some(Duration::from_secs(300)),
+                temperature: Some(0.7),
+            },
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                last_failure_reason = format!("功法 AI candidate 请求失败: {error}");
+                continue;
+            }
+        };
+
+        last_prompt_snapshot = result.prompt_snapshot.clone();
+        last_model_name = result.model_name.clone();
+        match parse_and_validate_generated_technique_candidate(
+            &result.content,
+            &result.model_name,
+            technique_type,
+            quality,
+            max_layer,
+        ) {
+            Ok(candidate) => {
+                return Ok(GeneratedTechniqueCandidateResult {
+                    candidate,
+                    model_name: result.model_name,
+                    prompt_snapshot: result.prompt_snapshot,
+                    attempt_count: attempt,
+                });
+            }
+            Err(error) => {
+                last_failure_reason = error.to_string();
+            }
+        }
+    }
+
+    Err(AppError::config(format!(
+        "功法 AI candidate 连续生成失败: {last_failure_reason}; model={last_model_name}; promptSnapshot={last_prompt_snapshot}"
+    )))
 }
 
 fn build_technique_skill_icon_prompt(
@@ -457,6 +495,72 @@ fn build_technique_candidate_user_prompt(
         .map_err(|error| AppError::config(format!("功法 candidate prompt 序列化失败: {error}")))
 }
 
+fn build_technique_candidate_request_prompt_snapshot(
+    config: &TextModelConfigSnapshot,
+    system_message: &str,
+    user_message: &str,
+) -> String {
+    serde_json::json!({
+        "provider": config.provider.to_string(),
+        "model": config.model_name.clone(),
+        "systemMessage": system_message,
+        "userMessage": user_message,
+    })
+    .to_string()
+}
+
+fn technique_retry_correction_rules(reason: &str) -> Vec<String> {
+    let reason = reason.trim();
+    let mut rules = vec![
+        "重新输出完整 JSON 对象，顶层仍然只能包含 technique、skills、layers。".to_string(),
+        "修正上一轮失败原因，不要删除必填字段，不要降低技能与层级完整度。".to_string(),
+    ];
+    if reason.contains("技能ID")
+        || reason.contains("unlockSkillIds")
+        || reason.contains("upgradeSkillIds")
+    {
+        rules.push(
+            "layers[].unlockSkillIds 与 layers[].upgradeSkillIds 只能引用本轮 skills[].id 中真实存在的技能ID。"
+                .to_string(),
+        );
+    }
+    if reason.contains("最大层数") || reason.contains("maxLayer") {
+        rules.push(
+            "technique.maxLayer 必须等于 target.maxLayer，layers 必须完整覆盖 1..target.maxLayer。"
+                .to_string(),
+        );
+    }
+    if reason.contains("顶层") {
+        rules.push("不要把结果包在 candidate、data、result、payload 任何外层字段中。".to_string());
+    }
+    rules
+}
+
+pub fn build_technique_generation_retry_prompt_context(
+    prompt_context: Option<serde_json::Value>,
+    previous_failure_reason: Option<String>,
+) -> Option<serde_json::Value> {
+    let Some(reason) = previous_failure_reason
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return prompt_context;
+    };
+
+    let mut object = prompt_context
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let correction_rules = technique_retry_correction_rules(&reason);
+    object.insert(
+        "techniqueRetryGuidance".to_string(),
+        serde_json::json!({
+            "previousFailureReason": reason,
+            "correctionRules": correction_rules,
+        }),
+    );
+    Some(serde_json::Value::Object(object))
+}
+
 fn extract_bounded_text(
     value: &serde_json::Value,
     field: &str,
@@ -493,9 +597,12 @@ fn extract_bounded_chinese_text(
 #[cfg(test)]
 mod tests {
     use super::{
-        missing_skill_icon_indexes, parse_and_validate_generated_technique_candidate,
-        parse_and_validate_technique_ai_draft, should_bypass_technique_skill_image_generation,
+        build_technique_candidate_request_prompt_snapshot,
+        build_technique_generation_retry_prompt_context, missing_skill_icon_indexes,
+        parse_and_validate_generated_technique_candidate, parse_and_validate_technique_ai_draft,
+        should_bypass_technique_skill_image_generation,
     };
+    use crate::integrations::text_model_config::{TextModelConfigSnapshot, TextModelProvider};
 
     #[test]
     fn technique_ai_draft_validation_accepts_minimal_valid_shape() {
@@ -531,6 +638,55 @@ mod tests {
             "test"
         )));
         assert!(!should_bypass_technique_skill_image_generation(None));
+    }
+
+    #[test]
+    fn technique_retry_prompt_context_preserves_source_and_injects_guidance() {
+        let source = serde_json::json!({
+            "partner": { "name": "青岚" },
+            "techniqueBurningWordPrompt": "炎心"
+        });
+
+        let retry = build_technique_generation_retry_prompt_context(
+            Some(source.clone()),
+            Some("layers[].unlockSkillIds 引用了不存在的技能ID".to_string()),
+        )
+        .expect("retry context should exist");
+
+        assert_eq!(retry["partner"], source["partner"]);
+        assert_eq!(retry["techniqueBurningWordPrompt"], "炎心");
+        assert_eq!(
+            retry["techniqueRetryGuidance"]["previousFailureReason"],
+            "layers[].unlockSkillIds 引用了不存在的技能ID"
+        );
+        let rules = retry["techniqueRetryGuidance"]["correctionRules"]
+            .as_array()
+            .expect("correction rules should be an array");
+        assert!(
+            rules
+                .iter()
+                .any(|rule| rule.as_str().unwrap_or_default().contains("技能ID"))
+        );
+    }
+
+    #[test]
+    fn technique_candidate_request_prompt_snapshot_includes_config_model_and_prompt() {
+        let config = TextModelConfigSnapshot {
+            provider: TextModelProvider::Anthropic,
+            url: "https://api.anthropic.com".to_string(),
+            key: "test-key".to_string(),
+            model_name: "claude-test".to_string(),
+        };
+
+        let snapshot =
+            build_technique_candidate_request_prompt_snapshot(&config, "system text", "user text");
+        let value: serde_json::Value =
+            serde_json::from_str(&snapshot).expect("snapshot should be json");
+
+        assert_eq!(value["provider"], "anthropic");
+        assert_eq!(value["model"], "claude-test");
+        assert_eq!(value["systemMessage"], "system text");
+        assert_eq!(value["userMessage"], "user text");
     }
 
     fn valid_candidate_json() -> String {
