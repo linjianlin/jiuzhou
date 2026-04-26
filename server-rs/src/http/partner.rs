@@ -1704,7 +1704,7 @@ const PARTNER_GENERATION_MAX_ATTEMPTS: i32 = 3;
 
 fn partner_generation_attempt_failure_message(
     flow_name: &str,
-    attempt: usize,
+    attempt: i32,
     stage: &str,
     reason: &str,
 ) -> String {
@@ -6880,6 +6880,18 @@ mod tests {
             message,
             "伙伴招募第2次生成尝试失败(persist_generated_draft): insert failed"
         );
+    }
+
+    #[test]
+    fn partner_generation_attempt_failure_message_omits_empty_stage() {
+        let message = partner_generation_attempt_failure_message(
+            "伙伴招募",
+            1,
+            "   ",
+            "insert failed",
+        );
+
+        assert_eq!(message, "伙伴招募第1次生成尝试失败: insert failed");
     }
 
     #[test]
