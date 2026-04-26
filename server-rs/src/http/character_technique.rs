@@ -199,82 +199,92 @@ async fn refund_technique_generation_job_tx(
     next_status: &str,
     error_code: &str,
     refund_rate: f64,
-) -> Result<(), AppError> {
-    let row = state
+) -> Result<bool, AppError> {
+    state
         .database
-        .fetch_optional(
-            "SELECT status, cost_points, used_cooldown_bypass_token FROM technique_generation_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
-            |q| q.bind(generation_id).bind(character_id),
-        )
-        .await?;
-    let Some(row) = row else {
-        return Ok(());
-    };
-    let status = row
-        .try_get::<Option<String>, _>("status")?
-        .unwrap_or_default();
-    if matches!(status.as_str(), "refunded" | "failed" | "published") {
-        return Ok(());
-    }
-    let cost_points = row
-        .try_get::<Option<i32>, _>("cost_points")?
-        .map(i64::from)
-        .unwrap_or_default()
-        .max(0);
-    let used_cooldown_bypass_token = row
-        .try_get::<Option<bool>, _>("used_cooldown_bypass_token")?
-        .unwrap_or(false);
-    let refund_fragments = resolve_technique_research_refund_fragments(cost_points, refund_rate);
-    let refund_cooldown_bypass_token = status == "pending" && used_cooldown_bypass_token;
-    let user_id = state
-        .database
-        .fetch_optional(
-            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-            |q| q.bind(character_id),
-        )
-        .await?
-        .and_then(|row| {
-            row.try_get::<Option<i32>, _>("user_id")
-                .ok()
-                .flatten()
+        .with_transaction(|| async {
+            let row = state
+                .database
+                .fetch_optional(
+                    "SELECT status, cost_points, used_cooldown_bypass_token FROM technique_generation_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+                    |q| q.bind(generation_id).bind(character_id),
+                )
+                .await?;
+            let Some(row) = row else {
+                return Ok(false);
+            };
+            let status = row
+                .try_get::<Option<String>, _>("status")?
+                .unwrap_or_default();
+            if status != "pending" {
+                return Ok(false);
+            }
+            let cost_points = row
+                .try_get::<Option<i32>, _>("cost_points")?
                 .map(i64::from)
+                .unwrap_or_default()
+                .max(0);
+            let used_cooldown_bypass_token = row
+                .try_get::<Option<bool>, _>("used_cooldown_bypass_token")?
+                .unwrap_or(false);
+            let refund_fragments =
+                resolve_technique_research_refund_fragments(cost_points, refund_rate);
+            let refund_cooldown_bypass_token = used_cooldown_bypass_token;
+            let user_id = state
+                .database
+                .fetch_optional(
+                    "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+                    |q| q.bind(character_id),
+                )
+                .await?
+                .and_then(|row| {
+                    row.try_get::<Option<i32>, _>("user_id")
+                        .ok()
+                        .flatten()
+                        .map(i64::from)
+                })
+                .unwrap_or_default();
+            if user_id <= 0 {
+                return Err(AppError::config("退款邮件发送失败：角色不存在"));
+            }
+            if refund_fragments > 0 || refund_cooldown_bypass_token {
+                state.database.execute(
+                    "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_rewards, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', $3, $4, $5::jsonb, NOW() + INTERVAL '30 days', 'technique_research_refund', $6, $7::jsonb, NOW(), NOW())",
+                    |q| q
+                        .bind(user_id)
+                        .bind(character_id)
+                        .bind(TECHNIQUE_RESEARCH_REFUND_MAIL_TITLE)
+                        .bind(build_technique_research_refund_mail_markdown(reason, refund_cooldown_bypass_token))
+                        .bind(build_technique_research_refund_attach_rewards(refund_fragments, refund_cooldown_bypass_token))
+                        .bind(generation_id)
+                        .bind(serde_json::json!({
+                            "generationId": generation_id,
+                            "refundFragments": refund_fragments,
+                            "refundCooldownBypassToken": refund_cooldown_bypass_token,
+                            "reason": reason,
+                        })),
+                ).await?;
+                apply_mail_counter_deltas(
+                    state,
+                    &build_new_mail_counter_deltas(user_id, Some(character_id), true),
+                )
+                .await?;
+            }
+            let updated = state.database.execute(
+                "UPDATE technique_generation_job SET status = $2, error_code = $3, error_message = $4, finished_at = NOW(), failed_viewed_at = NULL, updated_at = NOW() WHERE id = $1 AND character_id = $5 AND status = 'pending'",
+                |q| q
+                    .bind(generation_id)
+                    .bind(next_status)
+                    .bind(error_code)
+                    .bind(append_technique_research_refund_hint(reason))
+                    .bind(character_id),
+            ).await?;
+            if updated.rows_affected() == 0 {
+                return Err(AppError::config("研修任务状态已变化"));
+            }
+            Ok(true)
         })
-        .unwrap_or_default();
-    if user_id <= 0 {
-        return Err(AppError::config("退款邮件发送失败：角色不存在"));
-    }
-    if refund_fragments > 0 || refund_cooldown_bypass_token {
-        state.database.execute(
-            "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_rewards, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', $3, $4, $5::jsonb, NOW() + INTERVAL '30 days', 'technique_research_refund', $6, $7::jsonb, NOW(), NOW())",
-            |q| q
-                .bind(user_id)
-                .bind(character_id)
-                .bind(TECHNIQUE_RESEARCH_REFUND_MAIL_TITLE)
-                .bind(build_technique_research_refund_mail_markdown(reason, refund_cooldown_bypass_token))
-                .bind(build_technique_research_refund_attach_rewards(refund_fragments, refund_cooldown_bypass_token))
-                .bind(generation_id)
-                .bind(serde_json::json!({
-                    "generationId": generation_id,
-                    "refundFragments": refund_fragments,
-                    "refundCooldownBypassToken": refund_cooldown_bypass_token,
-                    "reason": reason,
-                })),
-        ).await?;
-        apply_mail_counter_deltas(
-            state,
-            &build_new_mail_counter_deltas(user_id, Some(character_id), true),
-        )
-        .await?;
-    }
-    state.database.execute(
-        "UPDATE technique_generation_job SET status = $2, error_code = $3, error_message = $4, finished_at = NOW(), failed_viewed_at = NULL, updated_at = NOW() WHERE id = $1",
-        |q| q
-            .bind(generation_id)
-            .bind(next_status)
-            .bind(error_code)
-            .bind(append_technique_research_refund_hint(reason)),
-    ).await?;
-    Ok(())
+        .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1957,8 +1967,8 @@ pub async fn process_pending_technique_generation_job(
                         .bind(&layer.layer_desc),
                 ).await?;
             }
-            state.database.execute(
-                "UPDATE technique_generation_job SET status = 'generated_draft', prompt_snapshot = $2::jsonb, model_name = $3, attempt_count = $4, draft_technique_id = $5, draft_expire_at = NOW() + ('24 hours')::interval, finished_at = NOW(), error_code = NULL, error_message = NULL, updated_at = NOW() WHERE id = $1",
+            let updated = state.database.execute(
+                "UPDATE technique_generation_job SET status = 'generated_draft', prompt_snapshot = $2::jsonb, model_name = $3, attempt_count = $4, draft_technique_id = $5, draft_expire_at = NOW() + ('24 hours')::interval, finished_at = NOW(), error_code = NULL, error_message = NULL, updated_at = NOW() WHERE id = $1 AND status = 'pending'",
                 |q| q
                     .bind(generation_id)
                     .bind(&prompt_snapshot)
@@ -1966,6 +1976,9 @@ pub async fn process_pending_technique_generation_job(
                     .bind(candidate_result.attempt_count)
                     .bind(&draft_technique_id),
             ).await?;
+            if updated.rows_affected() == 0 {
+                return Err(AppError::config("研修任务状态已变化"));
+            }
             Ok::<(), AppError>(())
         })
         .await
@@ -2090,16 +2103,6 @@ async fn discard_technique_research_draft_tx(
             data: None,
         });
     }
-    refund_technique_generation_job_tx(
-        state,
-        character_id,
-        generation_id,
-        TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
-        "refunded",
-        "GENERATION_EXPIRED",
-        TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
-    )
-    .await?;
     let user_id = state
         .database
         .fetch_optional(
@@ -2112,23 +2115,73 @@ async fn discard_technique_research_draft_tx(
                 .ok()
                 .flatten()
                 .map(i64::from)
-        });
-    if let Some(user_id) = user_id {
-        emit_technique_research_result_to_user(
-            state,
-            user_id,
-            &build_technique_research_result_payload(
-                character_id,
-                generation_id,
-                "failed",
-                "洞府推演失败，请前往功法查看",
-                None,
-                Some(append_technique_research_refund_hint(
-                    TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
-                )),
-            ),
-        );
+        })
+        .unwrap_or_default();
+    if user_id <= 0 {
+        return Err(AppError::config("退款邮件发送失败：角色不存在"));
     }
+    let cost_points = row
+        .try_get::<Option<i32>, _>("cost_points")?
+        .map(i64::from)
+        .unwrap_or_default()
+        .max(0);
+    let refund_fragments = resolve_technique_research_refund_fragments(
+        cost_points,
+        TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
+    );
+    let refund_cooldown_bypass_token = row
+        .try_get::<Option<bool>, _>("used_cooldown_bypass_token")?
+        .unwrap_or(false);
+    if refund_fragments > 0 || refund_cooldown_bypass_token {
+        state.database.execute(
+            "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_rewards, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', $3, $4, $5::jsonb, NOW() + INTERVAL '30 days', 'technique_research_refund', $6, $7::jsonb, NOW(), NOW())",
+            |q| q
+                .bind(user_id)
+                .bind(character_id)
+                .bind(TECHNIQUE_RESEARCH_REFUND_MAIL_TITLE)
+                .bind(build_technique_research_refund_mail_markdown(
+                    TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
+                    refund_cooldown_bypass_token,
+                ))
+                .bind(build_technique_research_refund_attach_rewards(
+                    refund_fragments,
+                    refund_cooldown_bypass_token,
+                ))
+                .bind(generation_id)
+                .bind(serde_json::json!({
+                    "generationId": generation_id,
+                    "refundFragments": refund_fragments,
+                    "refundCooldownBypassToken": refund_cooldown_bypass_token,
+                    "reason": TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
+                })),
+        ).await?;
+        apply_mail_counter_deltas(
+            state,
+            &build_new_mail_counter_deltas(user_id, Some(character_id), true),
+        )
+        .await?;
+    }
+    state.database.execute(
+        "UPDATE technique_generation_job SET status = 'refunded', error_code = 'GENERATION_EXPIRED', error_message = $2, finished_at = NOW(), failed_viewed_at = NULL, updated_at = NOW() WHERE id = $1 AND character_id = $3 AND status = 'generated_draft'",
+        |q| q
+            .bind(generation_id)
+            .bind(append_technique_research_refund_hint(TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE))
+            .bind(character_id),
+    ).await?;
+    emit_technique_research_result_to_user(
+        state,
+        user_id,
+        &build_technique_research_result_payload(
+            character_id,
+            generation_id,
+            "failed",
+            "洞府推演失败，请前往功法查看",
+            None,
+            Some(append_technique_research_refund_hint(
+                TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
+            )),
+        ),
+    );
     Ok(ServiceResult {
         success: true,
         message: Some("已放弃本次研修草稿，并按过期规则结算".to_string()),
@@ -2818,7 +2871,7 @@ async fn fail_technique_generation_job_with_refund(
     generation_id: &str,
     reason: &str,
 ) -> Result<(), AppError> {
-    refund_technique_generation_job_tx(
+    let refunded = refund_technique_generation_job_tx(
         state,
         character_id,
         generation_id,
@@ -2828,6 +2881,9 @@ async fn fail_technique_generation_job_with_refund(
         TECHNIQUE_RESEARCH_FULL_REFUND_RATE,
     )
     .await?;
+    if !refunded {
+        return Ok(());
+    }
     let user_id = state
         .database
         .fetch_optional(

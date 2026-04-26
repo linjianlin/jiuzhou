@@ -2743,6 +2743,7 @@ async fn persist_partner_recruit_preview_attempt(
     state: &AppState,
     character_id: i64,
     generation_id: &str,
+    preview_source_job_id: &str,
     quality: &str,
     preview_partner_def_id: &str,
     artifacts: &GeneratedPartnerPreviewArtifacts,
@@ -2762,7 +2763,7 @@ async fn persist_partner_recruit_preview_attempt(
         persist_generated_partner_preview(
             state,
             character_id,
-            generation_id,
+            preview_source_job_id,
             preview_partner_def_id,
             artifacts,
         ).await?;
@@ -2851,6 +2852,7 @@ async fn generate_and_persist_partner_recruit_preview_with_attempts(
             state,
             character_id,
             generation_id,
+            &attempt_source_job_id,
             quality,
             &preview_partner_def_id,
             &artifacts,
@@ -2893,6 +2895,7 @@ async fn persist_partner_fusion_preview_attempt(
     state: &AppState,
     character_id: i64,
     fusion_id: &str,
+    preview_source_job_id: &str,
     preview_partner_def_id: &str,
     artifacts: &GeneratedPartnerPreviewArtifacts,
 ) -> Result<ServiceResult<serde_json::Value>, AppError> {
@@ -2913,7 +2916,7 @@ async fn persist_partner_fusion_preview_attempt(
         persist_generated_partner_preview(
             state,
             character_id,
-            fusion_id,
+            preview_source_job_id,
             preview_partner_def_id,
             artifacts,
         ).await?;
@@ -3022,6 +3025,7 @@ async fn generate_and_persist_partner_fusion_preview_with_attempts(
             state,
             character_id,
             fusion_id,
+            &attempt_source_job_id,
             &preview_partner_def_id,
             &artifacts,
         )
