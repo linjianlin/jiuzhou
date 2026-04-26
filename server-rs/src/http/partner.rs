@@ -1995,73 +1995,94 @@ async fn refund_partner_recruit_job_tx(
     generation_id: &str,
     reason: &str,
     next_status: &str,
-) -> Result<(), AppError> {
-    let row = state.database.fetch_optional(
-        "SELECT status, spirit_stones_cost, used_custom_base_model_token FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
-        |q| q.bind(generation_id).bind(character_id),
-    ).await?;
-    let Some(row) = row else {
-        return Ok(());
-    };
-    let status = row
-        .try_get::<Option<String>, _>("status")?
-        .unwrap_or_default();
-    if matches!(
-        status.as_str(),
-        "accepted" | "discarded" | "failed" | "refunded"
-    ) {
-        return Ok(());
-    }
-    let spirit_stones_cost = row
-        .try_get::<Option<i64>, _>("spirit_stones_cost")?
-        .unwrap_or_default()
-        .max(0);
-    let used_custom_base_model_token = row
-        .try_get::<Option<bool>, _>("used_custom_base_model_token")?
-        .unwrap_or(false);
-    let user_id = state
+) -> Result<bool, AppError> {
+    state
+        .database
+        .with_transaction(|| async {
+            let row = state.database.fetch_optional(
+                "SELECT status, spirit_stones_cost, used_custom_base_model_token FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+                |q| q.bind(generation_id).bind(character_id),
+            ).await?;
+            let Some(row) = row else {
+                return Ok(false);
+            };
+            let status = row
+                .try_get::<Option<String>, _>("status")?
+                .ok_or_else(|| AppError::config("招募任务状态为空"))?;
+            if status != "pending" {
+                return Ok(false);
+            }
+            let spirit_stones_cost = row
+                .try_get::<Option<i64>, _>("spirit_stones_cost")?
+                .unwrap_or_default()
+                .max(0);
+            let used_custom_base_model_token = row
+                .try_get::<Option<bool>, _>("used_custom_base_model_token")?
+                .unwrap_or(false);
+            let user_row = state
+                .database
+                .fetch_optional(
+                    "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
+                    |q| q.bind(character_id),
+                )
+                .await?;
+            let Some(user_row) = user_row else {
+                return Err(AppError::config("退款邮件发送失败：角色不存在"));
+            };
+            let user_id = user_row
+                .try_get::<Option<i32>, _>("user_id")?
+                .map(i64::from)
+                .ok_or_else(|| AppError::config("退款邮件发送失败：角色未绑定用户"))?;
+            if user_id <= 0 {
+                return Err(AppError::config("退款邮件发送失败：角色不存在"));
+            }
+            state.database.execute(
+                "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_spirit_stones, attach_items, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', $3, $4, $5, $6::jsonb, NOW() + INTERVAL '30 days', 'partner_recruit_refund', $7, $8::jsonb, NOW(), NOW())",
+                |q| q
+                    .bind(user_id)
+                    .bind(character_id)
+                    .bind(PARTNER_RECRUIT_REFUND_MAIL_TITLE)
+                    .bind(build_partner_recruit_refund_mail_markdown(reason))
+                    .bind(spirit_stones_cost)
+                    .bind(if used_custom_base_model_token {
+                        serde_json::json!([{ "item_def_id": PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID, "qty": PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST }])
+                    } else {
+                        serde_json::json!([])
+                    })
+                    .bind(generation_id)
+                    .bind(serde_json::json!({"generationId": generation_id, "reason": reason})),
+            ).await?;
+            apply_mail_counter_deltas(
+                state,
+                &build_new_mail_counter_deltas(user_id, Some(character_id), true),
+            )
+            .await?;
+            state.database.execute(
+                "UPDATE partner_recruit_job SET status = $3, error_message = $4, finished_at = COALESCE(finished_at, NOW()), viewed_at = NULL, updated_at = NOW() WHERE id = $1 AND character_id = $2",
+                |q| q.bind(generation_id).bind(character_id).bind(next_status).bind(append_partner_recruit_refund_hint(reason)),
+            ).await?;
+            Ok(true)
+        })
+        .await
+}
+
+async fn load_partner_recruit_job_status(
+    state: &AppState,
+    character_id: i64,
+    generation_id: &str,
+) -> Result<String, AppError> {
+    let row = state
         .database
         .fetch_optional(
-            "SELECT user_id FROM characters WHERE id = $1 LIMIT 1",
-            |q| q.bind(character_id),
+            "SELECT status FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1",
+            |q| q.bind(generation_id).bind(character_id),
         )
-        .await?
-        .and_then(|row| {
-            row.try_get::<Option<i32>, _>("user_id")
-                .ok()
-                .flatten()
-                .map(i64::from)
-        })
-        .unwrap_or_default();
-    if user_id <= 0 {
-        return Err(AppError::config("退款邮件发送失败：角色不存在"));
-    }
-    state.database.execute(
-        "INSERT INTO mail (recipient_user_id, recipient_character_id, sender_type, sender_name, mail_type, title, content, attach_spirit_stones, attach_items, expire_at, source, source_ref_id, metadata, created_at, updated_at) VALUES ($1, $2, 'system', '系统', 'reward', $3, $4, $5, $6::jsonb, NOW() + INTERVAL '30 days', 'partner_recruit_refund', $7, $8::jsonb, NOW(), NOW())",
-        |q| q
-            .bind(user_id)
-            .bind(character_id)
-            .bind(PARTNER_RECRUIT_REFUND_MAIL_TITLE)
-            .bind(build_partner_recruit_refund_mail_markdown(reason))
-            .bind(spirit_stones_cost)
-            .bind(if used_custom_base_model_token {
-                serde_json::json!([{ "item_def_id": PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID, "qty": PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST }])
-            } else {
-                serde_json::json!([])
-            })
-            .bind(generation_id)
-            .bind(serde_json::json!({"generationId": generation_id, "reason": reason})),
-    ).await?;
-    apply_mail_counter_deltas(
-        state,
-        &build_new_mail_counter_deltas(user_id, Some(character_id), true),
-    )
-    .await?;
-    state.database.execute(
-        "UPDATE partner_recruit_job SET status = $3, error_message = $4, finished_at = COALESCE(finished_at, NOW()), viewed_at = NULL, updated_at = NOW() WHERE id = $1 AND character_id = $2",
-        |q| q.bind(generation_id).bind(character_id).bind(next_status).bind(append_partner_recruit_refund_hint(reason)),
-    ).await?;
-    Ok(())
+        .await?;
+    let Some(row) = row else {
+        return Err(AppError::config("招募任务不存在"));
+    };
+    row.try_get::<Option<String>, _>("status")?
+        .ok_or_else(|| AppError::config("招募任务状态为空"))
 }
 
 pub async fn get_partner_rebone_status(
@@ -2713,7 +2734,7 @@ async fn persist_partner_recruit_preview_attempt(
     preview_partner_def_id: &str,
     artifacts: &GeneratedPartnerPreviewArtifacts,
 ) -> Result<ServiceResult<serde_json::Value>, AppError> {
-    state.database.with_transaction(|| async {
+    let result = state.database.with_transaction(|| async {
         let row = state.database.fetch_optional(
             "SELECT status FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
             |q| q.bind(generation_id).bind(character_id),
@@ -2740,6 +2761,20 @@ async fn persist_partner_recruit_preview_attempt(
             "UPDATE characters SET partner_recruit_generated_non_heaven_count = CASE WHEN $2 = '天' THEN 0 ELSE COALESCE(partner_recruit_generated_non_heaven_count, 0) + 1 END, updated_at = NOW() WHERE id = $1",
             |q| q.bind(character_id).bind(quality.trim()),
         ).await?;
+        Ok(ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({"generationId": generation_id, "status": "generated_draft", "previewPartnerDefId": preview_partner_def_id})),
+        })
+    }).await?;
+    let generated_draft = result.success
+        && result
+            .data
+            .as_ref()
+            .and_then(|data| data.get("status"))
+            .and_then(|status| status.as_str())
+            == Some("generated_draft");
+    if generated_draft {
         if let Some(user_id) = load_character_user_id(state, character_id).await? {
             emit_partner_recruit_result_to_user(
                 state,
@@ -2760,12 +2795,8 @@ async fn persist_partner_recruit_preview_attempt(
                 );
             }
         }
-        Ok(ServiceResult {
-            success: true,
-            message: Some("ok".to_string()),
-            data: Some(serde_json::json!({"generationId": generation_id, "status": "generated_draft", "previewPartnerDefId": preview_partner_def_id})),
-        })
-    }).await
+    }
+    Ok(result)
 }
 
 async fn generate_and_persist_partner_recruit_preview_with_attempts(
@@ -2775,14 +2806,15 @@ async fn generate_and_persist_partner_recruit_preview_with_attempts(
     quality: &str,
     base_model: &str,
 ) -> Result<ServiceResult<serde_json::Value>, AppError> {
-    let preview_partner_def_id = short_generated_id("partner-gen", generation_id);
     let mut last_failure = String::from("伙伴生成失败");
     let mut last_model_name: Option<String> = None;
 
     for attempt in 1..=PARTNER_GENERATION_MAX_ATTEMPTS {
+        let attempt_source_job_id = format!("{generation_id}-{attempt}");
+        let preview_partner_def_id = short_generated_id("partner-gen", &attempt_source_job_id);
         let artifacts = match generate_partner_preview_artifacts(
             state,
-            generation_id,
+            &attempt_source_job_id,
             &preview_partner_def_id,
             quality,
             base_model,
@@ -2891,7 +2923,7 @@ pub async fn process_pending_partner_recruit_job(
         match review {
             PartnerRecruitBaseModelReview::Allowed => requested_base_model.trim().to_string(),
             PartnerRecruitBaseModelReview::Rejected(reason) => {
-                refund_partner_recruit_job_tx(
+                let refunded = refund_partner_recruit_job_tx(
                     state,
                     character_id,
                     generation_id,
@@ -2899,6 +2931,70 @@ pub async fn process_pending_partner_recruit_job(
                     "refunded",
                 )
                 .await?;
+                if refunded {
+                    if let Some(user_id) = load_character_user_id(state, character_id).await? {
+                        emit_partner_recruit_result_to_user(
+                            state,
+                            user_id,
+                            &build_partner_recruit_result_payload(
+                                character_id,
+                                generation_id,
+                                "refunded",
+                                "伙伴招募失败，相关消耗已通过邮件返还，请前往伙伴界面查看",
+                                Some(append_partner_recruit_refund_hint(&reason)),
+                            ),
+                        );
+                        if let Ok(status) =
+                            load_partner_recruit_status_data(state, character_id).await
+                        {
+                            emit_partner_recruit_status_to_user(
+                                state,
+                                user_id,
+                                &build_partner_recruit_status_payload(character_id, status),
+                            );
+                        }
+                    }
+                    return Ok(ServiceResult {
+                        success: true,
+                        message: Some("ok".to_string()),
+                        data: Some(
+                            serde_json::json!({"generationId": generation_id, "status": "refunded"}),
+                        ),
+                    });
+                }
+                let status =
+                    load_partner_recruit_job_status(state, character_id, generation_id).await?;
+                return Ok(ServiceResult {
+                    success: true,
+                    message: Some("ok".to_string()),
+                    data: Some(
+                        serde_json::json!({"generationId": generation_id, "status": status}),
+                    ),
+                });
+            }
+        }
+    };
+    match generate_and_persist_partner_recruit_preview_with_attempts(
+        state,
+        character_id,
+        generation_id,
+        &quality,
+        &base_model,
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let reason = error.to_string();
+            let refunded = refund_partner_recruit_job_tx(
+                state,
+                character_id,
+                generation_id,
+                &reason,
+                "refunded",
+            )
+            .await?;
+            if refunded {
                 if let Some(user_id) = load_character_user_id(state, character_id).await? {
                     emit_partner_recruit_result_to_user(
                         state,
@@ -2928,48 +3024,12 @@ pub async fn process_pending_partner_recruit_job(
                     ),
                 });
             }
-        }
-    };
-    match generate_and_persist_partner_recruit_preview_with_attempts(
-        state,
-        character_id,
-        generation_id,
-        &quality,
-        &base_model,
-    )
-    .await
-    {
-        Ok(result) => Ok(result),
-        Err(error) => {
-            let reason = error.to_string();
-            refund_partner_recruit_job_tx(state, character_id, generation_id, &reason, "refunded")
-                .await?;
-            if let Some(user_id) = load_character_user_id(state, character_id).await? {
-                emit_partner_recruit_result_to_user(
-                    state,
-                    user_id,
-                    &build_partner_recruit_result_payload(
-                        character_id,
-                        generation_id,
-                        "refunded",
-                        "伙伴招募失败，相关消耗已通过邮件返还，请前往伙伴界面查看",
-                        Some(append_partner_recruit_refund_hint(&reason)),
-                    ),
-                );
-                if let Ok(status) = load_partner_recruit_status_data(state, character_id).await {
-                    emit_partner_recruit_status_to_user(
-                        state,
-                        user_id,
-                        &build_partner_recruit_status_payload(character_id, status),
-                    );
-                }
-            }
+            let status =
+                load_partner_recruit_job_status(state, character_id, generation_id).await?;
             return Ok(ServiceResult {
                 success: true,
                 message: Some("ok".to_string()),
-                data: Some(
-                    serde_json::json!({"generationId": generation_id, "status": "refunded"}),
-                ),
+                data: Some(serde_json::json!({"generationId": generation_id, "status": status})),
             });
         }
     }
