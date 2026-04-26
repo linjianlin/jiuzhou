@@ -1812,43 +1812,6 @@ async fn generate_partner_preview_artifacts(
     })
 }
 
-async fn generate_partner_preview_artifacts_with_attempts(
-    state: &AppState,
-    source_job_id: &str,
-    partner_def_id: &str,
-    quality: &str,
-    base_model: &str,
-) -> Result<GeneratedPartnerPreviewArtifacts, AppError> {
-    let mut last_failure = String::from("伙伴生成失败");
-    let mut last_model_name: Option<String> = None;
-
-    for _attempt in 1..=PARTNER_GENERATION_MAX_ATTEMPTS {
-        match generate_partner_preview_artifacts(
-            state,
-            source_job_id,
-            partner_def_id,
-            quality,
-            base_model,
-        )
-        .await
-        {
-            Ok(artifacts) => return Ok(artifacts),
-            Err(error) => {
-                last_failure = error.to_string();
-                last_model_name = extract_model_name_from_error(&last_failure);
-            }
-        }
-    }
-
-    Err(AppError::config(
-        build_partner_generation_final_failure_message(
-            PARTNER_GENERATION_MAX_ATTEMPTS,
-            &last_failure,
-            last_model_name.as_deref(),
-        ),
-    ))
-}
-
 fn extract_model_name_from_error(error: &str) -> Option<String> {
     error.split_once("model=").and_then(|(_, after_model)| {
         let model = after_model.split([';', '\n', '\r']).next()?.trim();
@@ -2083,6 +2046,56 @@ async fn load_partner_recruit_job_status(
     };
     row.try_get::<Option<String>, _>("status")?
         .ok_or_else(|| AppError::config("招募任务状态为空"))
+}
+
+async fn load_partner_fusion_job_status(
+    state: &AppState,
+    character_id: i64,
+    fusion_id: &str,
+) -> Result<String, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT status FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1",
+            |q| q.bind(fusion_id).bind(character_id),
+        )
+        .await?;
+    let Some(row) = row else {
+        return Err(AppError::config("归契任务不存在"));
+    };
+    row.try_get::<Option<String>, _>("status")?
+        .ok_or_else(|| AppError::config("归契任务状态为空"))
+}
+
+async fn fail_partner_fusion_job_if_pending_tx(
+    state: &AppState,
+    character_id: i64,
+    fusion_id: &str,
+    error_message: &str,
+) -> Result<bool, AppError> {
+    state
+        .database
+        .with_transaction(|| async {
+            let row = state.database.fetch_optional(
+                "SELECT status FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+                |q| q.bind(fusion_id).bind(character_id),
+            ).await?;
+            let Some(row) = row else {
+                return Ok(false);
+            };
+            let status = row
+                .try_get::<Option<String>, _>("status")?
+                .ok_or_else(|| AppError::config("归契任务状态为空"))?;
+            if status != "pending" {
+                return Ok(false);
+            }
+            state.database.execute(
+                "UPDATE partner_fusion_job SET status = 'failed', error_message = $2, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
+                |q| q.bind(fusion_id).bind(error_message),
+            ).await?;
+            Ok(true)
+        })
+        .await
 }
 
 pub async fn get_partner_rebone_status(
@@ -2876,6 +2889,179 @@ async fn generate_and_persist_partner_recruit_preview_with_attempts(
     ))
 }
 
+async fn persist_partner_fusion_preview_attempt(
+    state: &AppState,
+    character_id: i64,
+    fusion_id: &str,
+    preview_partner_def_id: &str,
+    artifacts: &GeneratedPartnerPreviewArtifacts,
+) -> Result<ServiceResult<serde_json::Value>, AppError> {
+    let result = state.database.with_transaction(|| async {
+        let row = state.database.fetch_optional(
+            "SELECT status FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+            |q| q.bind(fusion_id).bind(character_id),
+        ).await?;
+        let Some(row) = row else {
+            return Ok(ServiceResult { success: false, message: Some("归契任务不存在".to_string()), data: None });
+        };
+        let status = row
+            .try_get::<Option<String>, _>("status")?
+            .ok_or_else(|| AppError::config("归契任务状态为空"))?;
+        if status != "pending" {
+            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
+        }
+        persist_generated_partner_preview(
+            state,
+            character_id,
+            fusion_id,
+            preview_partner_def_id,
+            artifacts,
+        ).await?;
+        state.database.execute(
+            "UPDATE partner_fusion_job SET status = 'generated_preview', preview_partner_def_id = $2, error_message = NULL, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
+            |q| q.bind(fusion_id).bind(preview_partner_def_id),
+        ).await?;
+        println!("PARTNER_FUSION_TRACE: generated_preview preview_partner_def_id={preview_partner_def_id}");
+        Ok(ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({"fusionId": fusion_id, "status": "generated_preview", "previewPartnerDefId": preview_partner_def_id})),
+        })
+    }).await?;
+    let generated_preview = result.success
+        && result
+            .data
+            .as_ref()
+            .and_then(|data| data.get("status"))
+            .and_then(|status| status.as_str())
+            == Some("generated_preview");
+    if generated_preview {
+        let preview_partner_def_id = result
+            .data
+            .as_ref()
+            .and_then(|data| data.get("previewPartnerDefId"))
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| AppError::config("归契预览ID为空"))?;
+        if let Some(user_id) = load_character_user_id(state, character_id).await? {
+            let preview = state
+                .database
+                .fetch_optional(
+                    "SELECT id, name, quality, avatar FROM generated_partner_def WHERE id = $1 LIMIT 1",
+                    |q| q.bind(preview_partner_def_id),
+                )
+                .await?;
+            emit_partner_fusion_result_to_user(
+                state,
+                user_id,
+                &build_partner_fusion_result_payload(
+                    character_id,
+                    fusion_id,
+                    "generated_preview",
+                    "新的三魂归契预览已生成，请前往伙伴界面查看",
+                    preview
+                        .map(|row| {
+                            Ok::<serde_json::Value, AppError>(serde_json::json!({
+                                "id": row.try_get::<String, _>("id")?,
+                                "name": row.try_get::<String, _>("name")?,
+                                "quality": row.try_get::<String, _>("quality")?,
+                                "avatar": row.try_get::<Option<String>, _>("avatar")?,
+                            }))
+                        })
+                        .transpose()?,
+                    None,
+                ),
+            );
+            if let Ok(status) = load_partner_fusion_status_data(state, character_id).await {
+                emit_partner_fusion_status_to_user(
+                    state,
+                    user_id,
+                    &build_partner_fusion_status_payload(character_id, status),
+                );
+            }
+        }
+    }
+    Ok(result)
+}
+
+async fn generate_and_persist_partner_fusion_preview_with_attempts(
+    state: &AppState,
+    character_id: i64,
+    fusion_id: &str,
+    result_quality: &str,
+    fusion_base_model: &str,
+) -> Result<ServiceResult<serde_json::Value>, AppError> {
+    let mut last_failure = String::from("伙伴生成失败");
+    let mut last_model_name: Option<String> = None;
+
+    for attempt in 1..=PARTNER_GENERATION_MAX_ATTEMPTS {
+        let attempt_source_job_id = format!("{fusion_id}-{attempt}");
+        let preview_partner_def_id = short_generated_id("partner-gen", &attempt_source_job_id);
+        let artifacts = match generate_partner_preview_artifacts(
+            state,
+            &attempt_source_job_id,
+            &preview_partner_def_id,
+            result_quality,
+            fusion_base_model,
+        )
+        .await
+        {
+            Ok(artifacts) => artifacts,
+            Err(error) => {
+                last_failure = partner_generation_attempt_failure_message(
+                    "三魂归契",
+                    attempt,
+                    "generate_artifacts",
+                    &error.to_string(),
+                );
+                last_model_name = extract_model_name_from_error(&last_failure);
+                continue;
+            }
+        };
+
+        match persist_partner_fusion_preview_attempt(
+            state,
+            character_id,
+            fusion_id,
+            &preview_partner_def_id,
+            &artifacts,
+        )
+        .await
+        {
+            Ok(result) if result.success => return Ok(result),
+            Ok(result) => {
+                let reason = result
+                    .message
+                    .as_deref()
+                    .ok_or_else(|| AppError::config("归契任务失败原因为空"))?;
+                last_failure = partner_generation_attempt_failure_message(
+                    "三魂归契",
+                    attempt,
+                    "persist_generated_preview",
+                    reason,
+                );
+                last_model_name = extract_model_name_from_error(&last_failure);
+            }
+            Err(error) => {
+                last_failure = partner_generation_attempt_failure_message(
+                    "三魂归契",
+                    attempt,
+                    "persist_generated_preview",
+                    &error.to_string(),
+                );
+                last_model_name = extract_model_name_from_error(&last_failure);
+            }
+        }
+    }
+
+    Err(AppError::config(
+        build_partner_generation_final_failure_message(
+            PARTNER_GENERATION_MAX_ATTEMPTS,
+            &last_failure,
+            last_model_name.as_deref(),
+        ),
+    ))
+}
+
 pub async fn process_pending_partner_recruit_job(
     state: &AppState,
     character_id: i64,
@@ -3071,7 +3257,6 @@ pub async fn process_pending_partner_fusion_job(
             "SELECT partner_snapshot FROM partner_fusion_job_material WHERE fusion_job_id = $1 ORDER BY material_order ASC",
             |q| q.bind(fusion_id),
         ).await?;
-    let preview_partner_def_id = short_generated_id("partner-gen", fusion_id);
     let fusion_references = material_rows
             .iter()
             .map(|row| row.try_get::<Option<serde_json::Value>, _>("partner_snapshot").ok().flatten())
@@ -3100,54 +3285,10 @@ pub async fn process_pending_partner_fusion_job(
             .collect::<Option<Vec<_>>>();
     let Some(fusion_references) = fusion_references else {
         let error_message = "归契素材数据异常".to_string();
-        state.database.execute(
-                "UPDATE partner_fusion_job SET status = 'failed', error_message = $2, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
-                |q| q.bind(fusion_id).bind(&error_message),
-            ).await?;
-        if let Some(user_id) = load_character_user_id(state, character_id).await? {
-            emit_partner_fusion_result_to_user(
-                state,
-                user_id,
-                &build_partner_fusion_result_payload(
-                    character_id,
-                    fusion_id,
-                    "failed",
-                    "三魂归契失败，请前往伙伴界面查看",
-                    None,
-                    Some(error_message),
-                ),
-            );
-            if let Ok(status) = load_partner_fusion_status_data(state, character_id).await {
-                emit_partner_fusion_status_to_user(
-                    state,
-                    user_id,
-                    &build_partner_fusion_status_payload(character_id, status),
-                );
-            }
-        }
-        return Ok(ServiceResult {
-            success: true,
-            message: Some("ok".to_string()),
-            data: Some(serde_json::json!({"fusionId": fusion_id, "status": "failed"})),
-        });
-    };
-    let fusion_base_model = fusion_references.join("\n");
-    let artifacts = match generate_partner_preview_artifacts_with_attempts(
-        state,
-        fusion_id,
-        &preview_partner_def_id,
-        &result_quality,
-        &fusion_base_model,
-    )
-    .await
-    {
-        Ok(artifacts) => artifacts,
-        Err(error) => {
-            let error_message = error.to_string();
-            state.database.execute(
-                    "UPDATE partner_fusion_job SET status = 'failed', error_message = $2, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
-                    |q| q.bind(fusion_id).bind(&error_message),
-                ).await?;
+        let failed =
+            fail_partner_fusion_job_if_pending_tx(state, character_id, fusion_id, &error_message)
+                .await?;
+        if failed {
             if let Some(user_id) = load_character_user_id(state, character_id).await? {
                 emit_partner_fusion_result_to_user(
                     state,
@@ -3175,67 +3316,69 @@ pub async fn process_pending_partner_fusion_job(
                 data: Some(serde_json::json!({"fusionId": fusion_id, "status": "failed"})),
             });
         }
-    };
-    state.database.with_transaction(|| async {
-        let row = state.database.fetch_optional(
-            "SELECT status FROM partner_fusion_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
-            |q| q.bind(fusion_id).bind(character_id),
-        ).await?;
-        let Some(row) = row else {
-            return Ok(ServiceResult { success: false, message: Some("归契任务不存在".to_string()), data: None });
-        };
-        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
-        if status != "pending" {
-            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
-        }
-        persist_generated_partner_preview(
-            state,
-            character_id,
-            fusion_id,
-            &preview_partner_def_id,
-            &artifacts,
-        ).await?;
-        state.database.execute(
-            "UPDATE partner_fusion_job SET status = 'generated_preview', preview_partner_def_id = $2, error_message = NULL, finished_at = NOW(), updated_at = NOW() WHERE id = $1",
-            |q| q.bind(fusion_id).bind(&preview_partner_def_id),
-        ).await?;
-        println!("PARTNER_FUSION_TRACE: generated_preview preview_partner_def_id={preview_partner_def_id}");
-        if let Some(user_id) = load_character_user_id(state, character_id).await? {
-            let preview = state.database.fetch_optional(
-                "SELECT id, name, quality, avatar FROM generated_partner_def WHERE id = $1 LIMIT 1",
-                |q| q.bind(&preview_partner_def_id),
-            ).await?;
-            emit_partner_fusion_result_to_user(
-                state,
-                user_id,
-                &build_partner_fusion_result_payload(
-                    character_id,
-                    fusion_id,
-                    "generated_preview",
-                    "新的三魂归契预览已生成，请前往伙伴界面查看",
-                    preview.map(|row| serde_json::json!({
-                        "id": row.try_get::<Option<String>, _>("id").unwrap_or(None).unwrap_or_default(),
-                        "name": row.try_get::<Option<String>, _>("name").unwrap_or(None).unwrap_or_default(),
-                        "quality": row.try_get::<Option<String>, _>("quality").unwrap_or(None).unwrap_or_default(),
-                        "avatar": row.try_get::<Option<String>, _>("avatar").unwrap_or(None),
-                    })),
-                    None,
-                ),
-            );
-            if let Ok(status) = load_partner_fusion_status_data(state, character_id).await {
-                emit_partner_fusion_status_to_user(
-                    state,
-                    user_id,
-                    &build_partner_fusion_status_payload(character_id, status),
-                );
-            }
-        }
-        Ok(ServiceResult {
+        let status = load_partner_fusion_job_status(state, character_id, fusion_id).await?;
+        return Ok(ServiceResult {
             success: true,
             message: Some("ok".to_string()),
-            data: Some(serde_json::json!({"fusionId": fusion_id, "status": "generated_preview", "previewPartnerDefId": preview_partner_def_id})),
-        })
-    }).await
+            data: Some(serde_json::json!({"fusionId": fusion_id, "status": status})),
+        });
+    };
+    let fusion_base_model = fusion_references.join("\n");
+    match generate_and_persist_partner_fusion_preview_with_attempts(
+        state,
+        character_id,
+        fusion_id,
+        &result_quality,
+        &fusion_base_model,
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let error_message = error.to_string();
+            let failed = fail_partner_fusion_job_if_pending_tx(
+                state,
+                character_id,
+                fusion_id,
+                &error_message,
+            )
+            .await?;
+            if failed {
+                if let Some(user_id) = load_character_user_id(state, character_id).await? {
+                    emit_partner_fusion_result_to_user(
+                        state,
+                        user_id,
+                        &build_partner_fusion_result_payload(
+                            character_id,
+                            fusion_id,
+                            "failed",
+                            "三魂归契失败，请前往伙伴界面查看",
+                            None,
+                            Some(error_message),
+                        ),
+                    );
+                    if let Ok(status) = load_partner_fusion_status_data(state, character_id).await {
+                        emit_partner_fusion_status_to_user(
+                            state,
+                            user_id,
+                            &build_partner_fusion_status_payload(character_id, status),
+                        );
+                    }
+                }
+                return Ok(ServiceResult {
+                    success: true,
+                    message: Some("ok".to_string()),
+                    data: Some(serde_json::json!({"fusionId": fusion_id, "status": "failed"})),
+                });
+            }
+            let status = load_partner_fusion_job_status(state, character_id, fusion_id).await?;
+            return Ok(ServiceResult {
+                success: true,
+                message: Some("ok".to_string()),
+                data: Some(serde_json::json!({"fusionId": fusion_id, "status": status})),
+            });
+        }
+    }
 }
 
 pub async fn process_pending_partner_rebone_job(
