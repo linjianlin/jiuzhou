@@ -1702,6 +1702,22 @@ fn build_partner_avatar_prompt(draft: &PartnerAiPreviewDraft, quality: &str) -> 
 
 const PARTNER_GENERATION_MAX_ATTEMPTS: i32 = 3;
 
+fn partner_generation_attempt_failure_message(
+    flow_name: &str,
+    attempt: usize,
+    stage: &str,
+    reason: &str,
+) -> String {
+    let flow_name = flow_name.trim();
+    let stage = stage.trim();
+    let reason = reason.trim();
+    if stage.is_empty() {
+        format!("{flow_name}第{attempt}次生成尝试失败: {reason}")
+    } else {
+        format!("{flow_name}第{attempt}次生成尝试失败({stage}): {reason}")
+    }
+}
+
 fn build_partner_generation_final_failure_message(
     max_attempts: i32,
     last_failure: &str,
@@ -6825,7 +6841,7 @@ fn now_millis() -> u64 {
 mod tests {
     use super::{
         build_effective_partner_skill, build_partner_generation_final_failure_message,
-        extract_model_name_from_error,
+        extract_model_name_from_error, partner_generation_attempt_failure_message,
     };
     use std::collections::BTreeSet;
 
@@ -6849,6 +6865,36 @@ mod tests {
         assert!(message.contains("连续生成失败 3 次"));
         assert!(message.contains("伙伴生成失败"));
         assert!(!message.contains("model="));
+    }
+
+    #[test]
+    fn partner_generation_attempt_failure_message_includes_attempt_and_source() {
+        let message = partner_generation_attempt_failure_message(
+            "伙伴招募",
+            2,
+            "persist_generated_draft",
+            "insert failed",
+        );
+
+        assert_eq!(
+            message,
+            "伙伴招募第2次生成尝试失败(persist_generated_draft): insert failed"
+        );
+    }
+
+    #[test]
+    fn partner_generation_attempt_failure_message_trims_inputs() {
+        let message = partner_generation_attempt_failure_message(
+            " 三魂归契 ",
+            3,
+            " persist_generated_preview ",
+            " timeout ",
+        );
+
+        assert_eq!(
+            message,
+            "三魂归契第3次生成尝试失败(persist_generated_preview): timeout"
+        );
     }
 
     #[test]
