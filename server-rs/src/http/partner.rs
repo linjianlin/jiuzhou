@@ -2705,6 +2705,145 @@ fn build_partner_recruit_cooldown_state(latest_started_at: Option<&str>) -> (Opt
     )
 }
 
+async fn persist_partner_recruit_preview_attempt(
+    state: &AppState,
+    character_id: i64,
+    generation_id: &str,
+    quality: &str,
+    preview_partner_def_id: &str,
+    artifacts: &GeneratedPartnerPreviewArtifacts,
+) -> Result<ServiceResult<serde_json::Value>, AppError> {
+    state.database.with_transaction(|| async {
+        let row = state.database.fetch_optional(
+            "SELECT status FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
+            |q| q.bind(generation_id).bind(character_id),
+        ).await?;
+        let Some(row) = row else {
+            return Ok(ServiceResult { success: false, message: Some("招募任务不存在".to_string()), data: None });
+        };
+        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
+        if status != "pending" {
+            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
+        }
+        persist_generated_partner_preview(
+            state,
+            character_id,
+            generation_id,
+            preview_partner_def_id,
+            artifacts,
+        ).await?;
+        state.database.execute(
+            "UPDATE partner_recruit_job SET status = 'generated_draft', preview_partner_def_id = $2, preview_avatar_url = $3, finished_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1",
+            |q| q.bind(generation_id).bind(preview_partner_def_id).bind(&artifacts.avatar_url),
+        ).await?;
+        state.database.execute(
+            "UPDATE characters SET partner_recruit_generated_non_heaven_count = CASE WHEN $2 = '天' THEN 0 ELSE COALESCE(partner_recruit_generated_non_heaven_count, 0) + 1 END, updated_at = NOW() WHERE id = $1",
+            |q| q.bind(character_id).bind(quality.trim()),
+        ).await?;
+        if let Some(user_id) = load_character_user_id(state, character_id).await? {
+            emit_partner_recruit_result_to_user(
+                state,
+                user_id,
+                &build_partner_recruit_result_payload(
+                    character_id,
+                    generation_id,
+                    "generated_draft",
+                    "新的伙伴招募预览已生成，请前往伙伴界面查看",
+                    None,
+                ),
+            );
+            if let Ok(status) = load_partner_recruit_status_data(state, character_id).await {
+                emit_partner_recruit_status_to_user(
+                    state,
+                    user_id,
+                    &build_partner_recruit_status_payload(character_id, status),
+                );
+            }
+        }
+        Ok(ServiceResult {
+            success: true,
+            message: Some("ok".to_string()),
+            data: Some(serde_json::json!({"generationId": generation_id, "status": "generated_draft", "previewPartnerDefId": preview_partner_def_id})),
+        })
+    }).await
+}
+
+async fn generate_and_persist_partner_recruit_preview_with_attempts(
+    state: &AppState,
+    character_id: i64,
+    generation_id: &str,
+    quality: &str,
+    base_model: &str,
+) -> Result<ServiceResult<serde_json::Value>, AppError> {
+    let preview_partner_def_id = short_generated_id("partner-gen", generation_id);
+    let mut last_failure = String::from("伙伴生成失败");
+    let mut last_model_name: Option<String> = None;
+
+    for attempt in 1..=PARTNER_GENERATION_MAX_ATTEMPTS {
+        let artifacts = match generate_partner_preview_artifacts(
+            state,
+            generation_id,
+            &preview_partner_def_id,
+            quality,
+            base_model,
+        )
+        .await
+        {
+            Ok(artifacts) => artifacts,
+            Err(error) => {
+                last_failure = partner_generation_attempt_failure_message(
+                    "伙伴招募",
+                    attempt,
+                    "generate_artifacts",
+                    &error.to_string(),
+                );
+                last_model_name = extract_model_name_from_error(&last_failure);
+                continue;
+            }
+        };
+
+        match persist_partner_recruit_preview_attempt(
+            state,
+            character_id,
+            generation_id,
+            quality,
+            &preview_partner_def_id,
+            &artifacts,
+        )
+        .await
+        {
+            Ok(result) if result.success => return Ok(result),
+            Ok(result) => {
+                let reason = result.message.as_deref().unwrap_or("伙伴招募任务状态异常");
+                last_failure = partner_generation_attempt_failure_message(
+                    "伙伴招募",
+                    attempt,
+                    "persist_generated_draft",
+                    reason,
+                );
+                last_model_name = extract_model_name_from_error(&last_failure);
+            }
+            Err(error) => {
+                last_failure = partner_generation_attempt_failure_message(
+                    "伙伴招募",
+                    attempt,
+                    "persist_generated_draft",
+                    &error.to_string(),
+                );
+                last_model_name = extract_model_name_from_error(&last_failure);
+            }
+        }
+    }
+
+    Err(AppError::config(
+        build_partner_generation_final_failure_message(
+            PARTNER_GENERATION_MAX_ATTEMPTS,
+            &last_failure,
+            last_model_name.as_deref(),
+        ),
+    ))
+}
+
 pub async fn process_pending_partner_recruit_job(
     state: &AppState,
     character_id: i64,
@@ -2791,17 +2930,16 @@ pub async fn process_pending_partner_recruit_job(
             }
         }
     };
-    let preview_partner_def_id = short_generated_id("partner-gen", generation_id);
-    let artifacts = match generate_partner_preview_artifacts_with_attempts(
+    match generate_and_persist_partner_recruit_preview_with_attempts(
         state,
+        character_id,
         generation_id,
-        &preview_partner_def_id,
         &quality,
         &base_model,
     )
     .await
     {
-        Ok(artifacts) => artifacts,
+        Ok(result) => Ok(result),
         Err(error) => {
             let reason = error.to_string();
             refund_partner_recruit_job_tx(state, character_id, generation_id, &reason, "refunded")
@@ -2834,60 +2972,7 @@ pub async fn process_pending_partner_recruit_job(
                 ),
             });
         }
-    };
-    state.database.with_transaction(|| async {
-        let row = state.database.fetch_optional(
-            "SELECT status FROM partner_recruit_job WHERE id = $1 AND character_id = $2 LIMIT 1 FOR UPDATE",
-            |q| q.bind(generation_id).bind(character_id),
-        ).await?;
-        let Some(row) = row else {
-            return Ok(ServiceResult { success: false, message: Some("招募任务不存在".to_string()), data: None });
-        };
-        let status = row.try_get::<Option<String>, _>("status")?.unwrap_or_default();
-        if status != "pending" {
-            return Ok(ServiceResult { success: true, message: Some("ok".to_string()), data: Some(serde_json::json!({"status": status})) });
-        }
-        persist_generated_partner_preview(
-            state,
-            character_id,
-            generation_id,
-            &preview_partner_def_id,
-            &artifacts,
-        ).await?;
-        state.database.execute(
-            "UPDATE partner_recruit_job SET status = 'generated_draft', preview_partner_def_id = $2, preview_avatar_url = $3, finished_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1",
-            |q| q.bind(generation_id).bind(&preview_partner_def_id).bind(&artifacts.avatar_url),
-        ).await?;
-        state.database.execute(
-            "UPDATE characters SET partner_recruit_generated_non_heaven_count = CASE WHEN $2 = '天' THEN 0 ELSE COALESCE(partner_recruit_generated_non_heaven_count, 0) + 1 END, updated_at = NOW() WHERE id = $1",
-            |q| q.bind(character_id).bind(quality.trim()),
-        ).await?;
-        if let Some(user_id) = load_character_user_id(state, character_id).await? {
-            emit_partner_recruit_result_to_user(
-                state,
-                user_id,
-                &build_partner_recruit_result_payload(
-                    character_id,
-                    generation_id,
-                    "generated_draft",
-                    "新的伙伴招募预览已生成，请前往伙伴界面查看",
-                    None,
-                ),
-            );
-            if let Ok(status) = load_partner_recruit_status_data(state, character_id).await {
-                emit_partner_recruit_status_to_user(
-                    state,
-                    user_id,
-                    &build_partner_recruit_status_payload(character_id, status),
-                );
-            }
-        }
-        Ok(ServiceResult {
-            success: true,
-            message: Some("ok".to_string()),
-            data: Some(serde_json::json!({"generationId": generation_id, "status": "generated_draft", "previewPartnerDefId": preview_partner_def_id})),
-        })
-    }).await
+    }
 }
 
 pub async fn process_pending_partner_fusion_job(
@@ -6884,12 +6969,8 @@ mod tests {
 
     #[test]
     fn partner_generation_attempt_failure_message_omits_empty_stage() {
-        let message = partner_generation_attempt_failure_message(
-            "伙伴招募",
-            1,
-            "   ",
-            "insert failed",
-        );
+        let message =
+            partner_generation_attempt_failure_message("伙伴招募", 1, "   ", "insert failed");
 
         assert_eq!(message, "伙伴招募第1次生成尝试失败: insert failed");
     }
