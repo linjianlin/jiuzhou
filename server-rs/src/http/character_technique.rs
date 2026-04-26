@@ -1875,83 +1875,112 @@ pub async fn process_pending_technique_generation_job(
         return Ok(());
     }
     let prompt_snapshot: serde_json::Value =
-        serde_json::from_str(&candidate_result.prompt_snapshot).map_err(|error| {
-            AppError::config(format!("功法 candidate prompt_snapshot 解析失败: {error}"))
-        })?;
+        match serde_json::from_str(&candidate_result.prompt_snapshot) {
+            Ok(prompt_snapshot) => prompt_snapshot,
+            Err(error) => {
+                let reason = technique_generation_processing_failure_message(
+                    "prompt_snapshot",
+                    &error.to_string(),
+                );
+                fail_technique_generation_job_with_refund(
+                    state,
+                    character_id,
+                    generation_id,
+                    &reason,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
 
-    state.database.with_transaction(|| async {
-        state.database.execute(
-            "INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, normalized_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, model_name, icon, is_published, published_at, name_locked, enabled, version, custom_name, normalized_custom_name, identity_suffix, created_at, updated_at) VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, $7, $8, $9, $10, 'character_only', $11::jsonb, $12, $13, $14, NULL, FALSE, NULL, FALSE, TRUE, 1, NULL, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
-            |q| q
-                .bind(&draft_technique_id)
-                .bind(generation_id)
-                .bind(character_id)
-                .bind(&candidate.technique.name)
-                .bind(candidate.technique.r#type.trim())
-                .bind(candidate.technique.quality.trim())
-                .bind(candidate.technique.max_layer)
-                .bind(candidate.technique.required_realm.trim())
-                .bind(candidate.technique.attribute_type.trim())
-                .bind(candidate.technique.attribute_element.trim())
-                .bind(serde_json::json!(candidate.technique.tags))
-                .bind(&candidate.technique.description)
-                .bind(&candidate.technique.long_desc)
-                .bind(&candidate_result.model_name),
-        ).await?;
-        for skill in &candidate.skills {
+    match state
+        .database
+        .with_transaction(|| async {
             state.database.execute(
-                "INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, code, name, description, icon, cost_lingqi, cost_lingqi_rate, cost_qixue, cost_qixue_rate, cooldown, target_type, target_count, damage_type, element, effects, trigger_type, ai_priority, upgrades, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20::jsonb, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+                "INSERT INTO generated_technique_def (id, generation_id, created_by_character_id, name, display_name, normalized_name, type, quality, max_layer, required_realm, attribute_type, attribute_element, usage_scope, tags, description, long_desc, model_name, icon, is_published, published_at, name_locked, enabled, version, custom_name, normalized_custom_name, identity_suffix, created_at, updated_at) VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, $7, $8, $9, $10, 'character_only', $11::jsonb, $12, $13, $14, NULL, FALSE, NULL, FALSE, TRUE, 1, NULL, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
                 |q| q
-                    .bind(&skill.id)
-                    .bind(generation_id)
                     .bind(&draft_technique_id)
-                    .bind(&skill.id)
-                    .bind(&skill.name)
-                    .bind(&skill.description)
-                    .bind(skill.icon.as_deref())
-                    .bind(skill.cost_lingqi)
-                    .bind(skill.cost_lingqi_rate)
-                    .bind(skill.cost_qixue)
-                    .bind(skill.cost_qixue_rate)
-                    .bind(skill.cooldown)
-                    .bind(skill.target_type.trim())
-                    .bind(skill.target_count)
-                    .bind(skill.damage_type.as_deref())
-                    .bind(skill.element.trim())
-                    .bind(serde_json::json!(skill.effects))
-                    .bind(skill.trigger_type.trim())
-                    .bind(skill.ai_priority)
-                    .bind(serde_json::json!(skill.upgrades)),
-            ).await?;
-        }
-        for layer in &candidate.layers {
-            state.database.execute(
-                "INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, required_quest_id, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::text[], $9::text[], $10, NULL, $11, TRUE, NOW(), NOW()) ON CONFLICT (technique_id, layer) DO NOTHING",
-                |q| q
                     .bind(generation_id)
-                    .bind(&draft_technique_id)
-                    .bind(layer.layer)
-                    .bind(layer.cost_spirit_stones)
-                    .bind(layer.cost_exp)
-                    .bind(serde_json::json!(layer.cost_materials))
-                    .bind(serde_json::json!(layer.passives))
-                    .bind(&layer.unlock_skill_ids)
-                    .bind(&layer.upgrade_skill_ids)
+                    .bind(character_id)
+                    .bind(&candidate.technique.name)
+                    .bind(candidate.technique.r#type.trim())
+                    .bind(candidate.technique.quality.trim())
+                    .bind(candidate.technique.max_layer)
                     .bind(candidate.technique.required_realm.trim())
-                    .bind(&layer.layer_desc),
+                    .bind(candidate.technique.attribute_type.trim())
+                    .bind(candidate.technique.attribute_element.trim())
+                    .bind(serde_json::json!(candidate.technique.tags))
+                    .bind(&candidate.technique.description)
+                    .bind(&candidate.technique.long_desc)
+                    .bind(&candidate_result.model_name),
             ).await?;
+            for skill in &candidate.skills {
+                state.database.execute(
+                    "INSERT INTO generated_skill_def (id, generation_id, source_type, source_id, code, name, description, icon, cost_lingqi, cost_lingqi_rate, cost_qixue, cost_qixue_rate, cooldown, target_type, target_count, damage_type, element, effects, trigger_type, ai_priority, upgrades, enabled, version, created_at, updated_at) VALUES ($1, $2, 'technique', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, $20::jsonb, TRUE, 1, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+                    |q| q
+                        .bind(&skill.id)
+                        .bind(generation_id)
+                        .bind(&draft_technique_id)
+                        .bind(&skill.id)
+                        .bind(&skill.name)
+                        .bind(&skill.description)
+                        .bind(skill.icon.as_deref())
+                        .bind(skill.cost_lingqi)
+                        .bind(skill.cost_lingqi_rate)
+                        .bind(skill.cost_qixue)
+                        .bind(skill.cost_qixue_rate)
+                        .bind(skill.cooldown)
+                        .bind(skill.target_type.trim())
+                        .bind(skill.target_count)
+                        .bind(skill.damage_type.as_deref())
+                        .bind(skill.element.trim())
+                        .bind(serde_json::json!(skill.effects))
+                        .bind(skill.trigger_type.trim())
+                        .bind(skill.ai_priority)
+                        .bind(serde_json::json!(skill.upgrades)),
+                ).await?;
+            }
+            for layer in &candidate.layers {
+                state.database.execute(
+                    "INSERT INTO generated_technique_layer (generation_id, technique_id, layer, cost_spirit_stones, cost_exp, cost_materials, passives, unlock_skill_ids, upgrade_skill_ids, required_realm, required_quest_id, layer_desc, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::text[], $9::text[], $10, NULL, $11, TRUE, NOW(), NOW()) ON CONFLICT (technique_id, layer) DO NOTHING",
+                    |q| q
+                        .bind(generation_id)
+                        .bind(&draft_technique_id)
+                        .bind(layer.layer)
+                        .bind(layer.cost_spirit_stones)
+                        .bind(layer.cost_exp)
+                        .bind(serde_json::json!(layer.cost_materials))
+                        .bind(serde_json::json!(layer.passives))
+                        .bind(&layer.unlock_skill_ids)
+                        .bind(&layer.upgrade_skill_ids)
+                        .bind(candidate.technique.required_realm.trim())
+                        .bind(&layer.layer_desc),
+                ).await?;
+            }
+            state.database.execute(
+                "UPDATE technique_generation_job SET status = 'generated_draft', prompt_snapshot = $2::jsonb, model_name = $3, attempt_count = $4, draft_technique_id = $5, draft_expire_at = NOW() + ('24 hours')::interval, finished_at = NOW(), error_code = NULL, error_message = NULL, updated_at = NOW() WHERE id = $1",
+                |q| q
+                    .bind(generation_id)
+                    .bind(&prompt_snapshot)
+                    .bind(&candidate_result.model_name)
+                    .bind(candidate_result.attempt_count)
+                    .bind(&draft_technique_id),
+            ).await?;
+            Ok::<(), AppError>(())
+        })
+        .await
+    {
+        Ok(()) => {}
+        Err(error) => {
+            let reason = technique_generation_processing_failure_message(
+                "persist_generated_draft",
+                &error.to_string(),
+            );
+            fail_technique_generation_job_with_refund(state, character_id, generation_id, &reason)
+                .await?;
+            return Ok(());
         }
-        state.database.execute(
-            "UPDATE technique_generation_job SET status = 'generated_draft', prompt_snapshot = $2::jsonb, model_name = $3, attempt_count = $4, draft_technique_id = $5, draft_expire_at = NOW() + ('24 hours')::interval, finished_at = NOW(), error_code = NULL, error_message = NULL, updated_at = NOW() WHERE id = $1",
-            |q| q
-                .bind(generation_id)
-                .bind(&prompt_snapshot)
-                .bind(&candidate_result.model_name)
-                .bind(candidate_result.attempt_count)
-                .bind(&draft_technique_id),
-        ).await?;
-        Ok::<(), AppError>(())
-    }).await?;
+    }
 
     let user_id = state
         .database
@@ -2836,6 +2865,16 @@ async fn fail_technique_generation_job_with_refund(
     Ok(())
 }
 
+fn technique_generation_processing_failure_message(stage: &str, reason: &str) -> String {
+    let stage = stage.trim();
+    let reason = reason.trim();
+    if stage.is_empty() {
+        format!("洞府研修生成后处理失败: {reason}")
+    } else {
+        format!("洞府研修生成后处理失败({stage}): {reason}")
+    }
+}
+
 fn current_week_key() -> String {
     let now = time::OffsetDateTime::now_utc();
     let (year, week, _) = now.to_iso_week_date();
@@ -2963,6 +3002,19 @@ fn realm_rank_with_subrealm(realm: &str, sub_realm: Option<&str>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn technique_generation_processing_failure_message_keeps_stage_and_reason() {
+        let message = technique_generation_processing_failure_message(
+            "persist_generated_draft",
+            "duplicate key value violates unique constraint",
+        );
+
+        assert_eq!(
+            message,
+            "洞府研修生成后处理失败(persist_generated_draft): duplicate key value violates unique constraint"
+        );
+    }
 
     #[test]
     fn technique_research_prompt_context_merges_creative_burning_word_and_recent_descriptions() {
