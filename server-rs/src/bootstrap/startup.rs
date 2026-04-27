@@ -117,16 +117,6 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
     let realtime_runtime = RealtimeRuntime::new();
     realtime_runtime.initialize().await?;
 
-    tracing::info!("→ item data cleanup");
-    let item_data_cleanup_summary = cleanup_undefined_item_data_on_startup(&state).await?;
-    tracing::info!(
-        valid_item_def_count = item_data_cleanup_summary.valid_item_def_count,
-        removed_item_instance_count = item_data_cleanup_summary.removed_item_instance_count,
-        removed_item_use_cooldown_count = item_data_cleanup_summary.removed_item_use_cooldown_count,
-        removed_item_use_count_count = item_data_cleanup_summary.removed_item_use_count_count,
-        "✓ item data cleanup complete"
-    );
-
     tracing::info!("→ generated content refresh");
     let generated_content_refresh_summary = refresh_generated_content_on_startup(&state).await?;
     tracing::info!(
@@ -139,6 +129,16 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
         enabled_generated_partner_count =
             generated_content_refresh_summary.enabled_generated_partner_count,
         "✓ generated content refresh complete"
+    );
+
+    tracing::info!("→ item data cleanup");
+    let item_data_cleanup_summary = cleanup_undefined_item_data_on_startup(&state).await?;
+    tracing::info!(
+        valid_item_def_count = item_data_cleanup_summary.valid_item_def_count,
+        removed_item_instance_count = item_data_cleanup_summary.removed_item_instance_count,
+        removed_item_use_cooldown_count = item_data_cleanup_summary.removed_item_use_cooldown_count,
+        removed_item_use_count_count = item_data_cleanup_summary.removed_item_use_count_count,
+        "✓ item data cleanup complete"
     );
 
     tracing::info!("→ avatar cleanup check");
@@ -231,6 +231,23 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
         "✓ orphan battle session recovery complete"
     );
 
+    let online_battle_warmup_summary = warmup_online_battle_projection_runtime(&state).await?;
+    tracing::info!(
+        battle_projection_count = online_battle_warmup_summary.battle_projection_count,
+        session_count = online_battle_warmup_summary.session_count,
+        arena_count = online_battle_warmup_summary.arena_count,
+        arena_projection_count = online_battle_warmup_summary.arena_projection_count,
+        character_snapshot_count = online_battle_warmup_summary.character_snapshot_count,
+        dungeon_count = online_battle_warmup_summary.dungeon_count,
+        dungeon_projection_count = online_battle_warmup_summary.dungeon_projection_count,
+        tower_count = online_battle_warmup_summary.tower_count,
+        team_projection_count = online_battle_warmup_summary.team_projection_count,
+        dungeon_entry_projection_count =
+            online_battle_warmup_summary.dungeon_entry_projection_count,
+        orphan_projection_count = online_battle_warmup_summary.orphan_projection_count,
+        "✓ online battle projection warmup summary"
+    );
+
     let job_runtime = JobRuntime::new();
     let job_summary = job_runtime.initialize(state.clone()).await?;
     tracing::info!(
@@ -249,23 +266,6 @@ pub async fn bootstrap_application() -> anyhow::Result<BootstrappedApplication> 
         "✓ job recovery summary"
     );
     backfill_mail_counter_if_empty(&state).await?;
-
-    let online_battle_warmup_summary = warmup_online_battle_projection_runtime(&state).await?;
-    tracing::info!(
-        battle_projection_count = online_battle_warmup_summary.battle_projection_count,
-        session_count = online_battle_warmup_summary.session_count,
-        arena_count = online_battle_warmup_summary.arena_count,
-        arena_projection_count = online_battle_warmup_summary.arena_projection_count,
-        character_snapshot_count = online_battle_warmup_summary.character_snapshot_count,
-        dungeon_count = online_battle_warmup_summary.dungeon_count,
-        dungeon_projection_count = online_battle_warmup_summary.dungeon_projection_count,
-        tower_count = online_battle_warmup_summary.tower_count,
-        team_projection_count = online_battle_warmup_summary.team_projection_count,
-        dungeon_entry_projection_count =
-            online_battle_warmup_summary.dungeon_entry_projection_count,
-        orphan_projection_count = online_battle_warmup_summary.orphan_projection_count,
-        "✓ online battle projection warmup summary"
-    );
 
     tracing::info!("→ game time runtime init");
     let game_time_summary = initialize_game_time_runtime(state.clone()).await?;
@@ -611,6 +611,37 @@ mod tests {
                 team_projection_count: 0,
                 dungeon_entry_projection_count: 0,
             }
+        );
+    }
+
+    fn assert_source_order(source: &str, earlier: &str, later: &str) {
+        let earlier_index = source
+            .find(earlier)
+            .unwrap_or_else(|| panic!("startup source missing earlier marker: {earlier}"));
+        let later_index = source
+            .find(later)
+            .unwrap_or_else(|| panic!("startup source missing later marker: {later}"));
+        assert!(
+            earlier_index < later_index,
+            "expected `{earlier}` to appear before `{later}`"
+        );
+    }
+
+    #[test]
+    fn startup_source_orders_generated_content_before_item_cleanup() {
+        let source = include_str!("startup.rs");
+
+        assert_source_order(source, "→ generated content refresh", "→ item data cleanup");
+    }
+
+    #[test]
+    fn startup_source_orders_online_projection_warmup_before_job_runtime_initialize() {
+        let source = include_str!("startup.rs");
+
+        assert_source_order(
+            source,
+            "warmup_online_battle_projection_runtime(&state)",
+            "job_runtime.initialize(state.clone())",
         );
     }
 }
