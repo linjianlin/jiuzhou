@@ -133,3 +133,14 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 3. `server-rs/src/bootstrap/item_data_cleanup.rs` 的有效物品定义集合必须对齐 Node `server/src/services/staticConfigLoader.ts` 的 `ensureItemDefinitionSnapshot()`，即合并 `item_def.json`、`gem_def.json`、`equipment_def.json`，过滤空 id，保留禁用定义 id，去重后用于启动脏数据清理。
 
 本批不扩大到 BattleEngine；战斗运行时仍由 `docs/superpowers/plans/2026-04-22-rust-battle-engine-node-parity.md` 覆盖。
+
+## Deep Scan Batch 2 结果
+
+- Route surface 复验仍为 Node 264 / Rust 264，缺失与额外均为 0。
+- 塔胜利 route 测试改为等待当前 `tower-win:<battleId>` settlement task 完成，避免共享 fixture DB 中旧 pending task 让单次 tick 命中别的任务；Rust 最终进度断言锁定 `best_floor=13`、`next_floor=14`、`last_settled_floor=13`、`current_battle_id=NULL`。
+- 实时体力恢复新增 `now_ms` 注入测试，锁定 Node `resolveStaminaRecoveryState` 的有效恢复时长公式：月卡恢复速度只增加有效 elapsed，不直接增加单 tick 恢复量。
+- 物品清理新增纯 merge 测试，锁定 Node `ensureItemDefinitionSnapshot()` 语义：合并 item/gem/equipment 三份 seed、trim id、过滤空 id、去重后用于三张物品运行时表清理。
+
+## Deep Scan Batch 2 待单独处理锚点
+
+- `server-rs/src/http/inventory.rs` 仍存在与本批实时体力修复同类的风险：体力恢复 elapsed 计算使用 `round()`，时间解析也仍只覆盖 RFC3339。该路径需要按 Node `resolveStaminaRecoveryState` 语义单独补测与收敛。
