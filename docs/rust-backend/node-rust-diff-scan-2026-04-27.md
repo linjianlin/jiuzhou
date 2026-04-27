@@ -123,3 +123,13 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 - `server-rs/src/bootstrap/item_data_cleanup.rs` 读取 item/equipment/gem seed，必须和 Node `server/src/services/staticConfigLoader.ts` 的 enabled 与分类规则一致。
 - `server-rs/src/battle_runtime.rs` 读取 monster/skill seed，仍由旧 battle parity 计划覆盖，不在本计划重复修补。
 - `server-rs/src/jobs/tower_frozen_pool.rs` 本轮已严格化冻结池 snapshot/frontier/monster seed 读取，后续扫描只需回归确认没有重新引入静默默认或跳过。
+
+## Deep Scan Batch 2（tower / realtime stamina / item cleanup）
+
+本批继续以 NodeJS 为业务权威，聚焦上一轮留下的三个高风险锚点：
+
+1. `server-rs/src/http/routes.rs` 中 `battle_route_tower_win_sets_waiting_transition_and_persists_progress` 曾在变更前基线复现失败，必须确认 Rust 塔胜利结算最终写入 `best_floor=13`、`next_floor=14`、`last_settled_floor=13`。
+2. `server-rs/src/realtime/public_socket.rs` 中实时角色快照体力计算必须对齐 Node `server/src/services/shared/staminaRules.ts` 中 `resolveStaminaRecoveryState` 的有效恢复时长公式，以及 `server/src/services/shared/monthCardBenefits.ts` 的月卡恢复速度裁剪规则。
+3. `server-rs/src/bootstrap/item_data_cleanup.rs` 的有效物品定义集合必须对齐 Node `server/src/services/staticConfigLoader.ts` 的 `ensureItemDefinitionSnapshot()`，即合并 `item_def.json`、`gem_def.json`、`equipment_def.json`，过滤空 id，保留禁用定义 id，去重后用于启动脏数据清理。
+
+本批不扩大到 BattleEngine；战斗运行时仍由 `docs/superpowers/plans/2026-04-22-rust-battle-engine-node-parity.md` 覆盖。
