@@ -49,6 +49,14 @@ const loadNodeRoutes = async () => {
   }
 
   const routes = [];
+  for (const match of registerRoutes.matchAll(/app\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gums)) {
+    routes.push({
+      method: match[1].toUpperCase(),
+      path: normalizePath(match[2]),
+      file: 'server/src/bootstrap/registerRoutes.ts',
+    });
+  }
+
   for (const mount of mounts) {
     const source = await readText(mount.file);
     for (const match of source.matchAll(/router\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gums)) {

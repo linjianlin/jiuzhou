@@ -3,7 +3,7 @@
 ## 结论
 
 - NodeJS 仍是业务逻辑权威。
-- HTTP method/path surface 已对齐：Node 262 条业务路由，Rust 264 条，Rust 额外为 `GET /` 与 `GET /api/health`。
+- HTTP method/path surface 已对齐：Node 264 条路由，Rust 264 条，缺失与额外均为 0。
 - 旧计划 `docs/superpowers/plans/2026-04-22-rust-battle-engine-node-parity.md` 继续覆盖 BattleEngine；本轮记录只覆盖非战斗扫描。
 
 ## Route Surface
@@ -19,21 +19,15 @@ node scripts/compare-node-rust-routes.mjs
 ```json
 {
   "totals": {
-    "node": 262,
+    "node": 264,
     "rust": 264,
     "missingInRust": 0,
-    "extraInRust": 2
+    "extraInRust": 0
   },
   "missingByPrefix": {},
-  "extraByPrefix": {
-    "/": 1,
-    "/api/health": 1
-  },
+  "extraByPrefix": {},
   "missingInRust": [],
-  "extraInRust": [
-    "GET /",
-    "GET /api/health"
-  ]
+  "extraInRust": []
 }
 ```
 
@@ -102,6 +96,7 @@ Rust 当前实现：
 - 本轮发现 Rust 曾在 `frozenFloorMax > 0` 且 snapshot 为空时缓存空池；当前已改为对齐 Node 报错：`千层塔冻结怪物池缺失: frozen_floor_max=<n>`。
 - 本轮发现 Rust 曾对 snapshot `kind/realm/monster_def_id` 空字段静默跳过；当前已改为报错。
 - 本轮发现 Rust 曾在 snapshot 指向不存在 monster 定义时用 monster id 作为名称继续运行；当前已改为报错。
+- 本轮确认 Node 的冻结池怪物定义索引会跳过 `monster_def.json` 中的 `_comment` 元数据行；Rust 当前已对齐跳过这类非怪物条目，真实怪物定义仍严格校验空 id/name。
 - Node 会对冻结池结果做深拷贝；Rust 读缓存时 clone 结构体，语义可接受。
 
 ## Seed / Config 严格性扫描入口

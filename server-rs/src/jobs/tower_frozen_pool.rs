@@ -39,6 +39,8 @@ struct MonsterSeed {
     id: Option<String>,
     name: Option<String>,
     enabled: Option<bool>,
+    #[serde(rename = "_comment")]
+    comment: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,15 +96,17 @@ fn build_frozen_tower_pool_cache_from_rows(
     rows: Vec<FrozenTowerSnapshotSeedRow>,
     monster_name_map: &BTreeMap<String, String>,
 ) -> Result<FrozenTowerPoolCache> {
-    let normalized_frozen_floor_max = frozen_floor_max.max(0);
+    if frozen_floor_max < 0 {
+        anyhow::bail!("千层塔冻结数据字段非法: frozen_floor_max");
+    }
     if rows.is_empty() {
-        if normalized_frozen_floor_max == 0 {
+        if frozen_floor_max == 0 {
             return Ok(FrozenTowerPoolCache {
                 frozen_floor_max: 0,
                 pools: BTreeMap::new(),
             });
         }
-        anyhow::bail!("千层塔冻结怪物池缺失: frozen_floor_max={normalized_frozen_floor_max}");
+        anyhow::bail!("千层塔冻结怪物池缺失: frozen_floor_max={frozen_floor_max}");
     }
 
     let mut pools = BTreeMap::<(String, String), Vec<FrozenTowerMonsterEntry>>::new();
@@ -136,7 +140,7 @@ fn build_frozen_tower_pool_cache_from_rows(
     }
 
     Ok(FrozenTowerPoolCache {
-        frozen_floor_max: normalized_frozen_floor_max,
+        frozen_floor_max,
         pools,
     })
 }
@@ -356,16 +360,18 @@ fn build_monster_name_map_from_seeds(
 ) -> Result<BTreeMap<String, String>> {
     let mut monster_name_map = BTreeMap::new();
     for monster in monsters {
-        if monster.enabled != Some(false) {
-            let id = match monster.id.as_deref().map(str::trim) {
-                Some(id) if !id.is_empty() => id,
-                _ => anyhow::bail!("怪物定义 id 不能为空"),
-            };
-            let name = match monster.name.as_deref().map(str::trim) {
-                Some(name) if !name.is_empty() => name,
-                _ => anyhow::bail!("怪物定义 name 不能为空: {id}"),
-            };
-            monster_name_map.insert(id.to_string(), name.to_string());
+        match monster.id.as_deref().map(str::trim) {
+            Some(id) if !id.is_empty() => {
+                let name = match monster.name.as_deref().map(str::trim) {
+                    Some(name) if !name.is_empty() => name,
+                    _ => anyhow::bail!("怪物定义 name 不能为空: {id}"),
+                };
+                monster_name_map.insert(id.to_string(), name.to_string());
+            }
+            _ if monster.comment.is_some()
+                && monster.name.is_none()
+                && monster.enabled.is_none() => {}
+            _ => anyhow::bail!("怪物定义 id 不能为空"),
         }
     }
     Ok(monster_name_map)
@@ -495,11 +501,64 @@ mod tests {
     }
 
     #[test]
-    fn frozen_tower_pool_monster_name_map_rejects_enabled_monster_with_blank_id_or_name() {
+    fn frozen_tower_pool_cache_builder_rejects_negative_frontier() {
+        let monster_name_map =
+            BTreeMap::from([("monster-gray-wolf".to_string(), "灰狼".to_string())]);
+
+        let error =
+            super::build_frozen_tower_pool_cache_from_rows(-1, Vec::new(), &monster_name_map)
+                .expect_err("negative frozen frontier must fail");
+
+        assert_eq!(
+            error.to_string(),
+            "千层塔冻结数据字段非法: frozen_floor_max"
+        );
+    }
+
+    #[test]
+    fn frozen_tower_pool_monster_name_map_skips_comment_rows_and_keeps_disabled_defs() {
+        let monster_name_map = super::build_monster_name_map_from_seeds(vec![
+            super::MonsterSeed {
+                id: None,
+                name: None,
+                enabled: None,
+                comment: Some("========== 炼虚合道·证道期怪物 ==========".to_string()),
+            },
+            super::MonsterSeed {
+                id: Some("monster-disabled".to_string()),
+                name: Some("禁用怪物".to_string()),
+                enabled: Some(false),
+                comment: None,
+            },
+        ])
+        .expect("comment rows must not block monster index loading");
+
+        assert_eq!(
+            monster_name_map.get("monster-disabled").map(String::as_str),
+            Some("禁用怪物")
+        );
+    }
+
+    #[test]
+    fn frozen_tower_pool_monster_name_map_loads_current_seed_comments() {
+        let monster_name_map =
+            super::load_monster_name_map().expect("current monster seed must load");
+
+        assert_eq!(
+            monster_name_map
+                .get("monster-zhengdao-tianque-xunshou")
+                .map(String::as_str),
+            Some("天阙巡狩")
+        );
+    }
+
+    #[test]
+    fn frozen_tower_pool_monster_name_map_rejects_monster_with_blank_id_or_name() {
         let blank_id_error = super::build_monster_name_map_from_seeds(vec![super::MonsterSeed {
             id: Some(" ".to_string()),
             name: Some("灰狼".to_string()),
             enabled: None,
+            comment: None,
         }])
         .expect_err("blank id must fail");
 
@@ -509,6 +568,7 @@ mod tests {
             id: Some("monster-gray-wolf".to_string()),
             name: Some(" ".to_string()),
             enabled: None,
+            comment: None,
         }])
         .expect_err("blank name must fail");
 
