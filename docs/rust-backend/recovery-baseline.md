@@ -9,12 +9,12 @@ Rust 当前 startup 总线位于：`server-rs/src/bootstrap/startup.rs`
 关键恢复/预热顺序：
 
 1. 数据库与 Redis 探活
-2. item data cleanup / generated content refresh / avatar cleanup / index sync
+2. generated content refresh / item data cleanup / avatar cleanup / index sync
 3. dungeon / idle / battle / mail 等 cleanup
 4. frozen tower pool warmup
 5. persisted battle recovery / orphan battle session recovery
-6. JobRuntime 初始化（idle / battle / afdian / settlement / snapshot / AI jobs）
-7. online battle projection warmup
+6. online battle projection warmup
+7. JobRuntime 初始化（idle / battle / afdian / settlement / snapshot / AI jobs）
 8. game time runtime 初始化
 
 ## 2. 关键恢复状态字段样本

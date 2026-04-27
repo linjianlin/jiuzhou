@@ -59,23 +59,23 @@ Rust startup 当前入口来自 `server-rs/src/bootstrap/startup.rs` 与 `server
 3. Redis 探活。
 4. outbound HTTP client 与 uploads 目录。
 5. RealtimeRuntime 初始化。
-6. item data cleanup。
-7. generated content refresh。
+6. generated content refresh。
+7. item data cleanup。
 8. avatar cleanup。
 9. performance index sync。
 10. dungeon / idle / battle / partner recruit draft / technique draft / mail cleanup。
 11. frozen tower pool warmup。
 12. persisted battle recovery 与 orphan battle session recovery。
-13. JobRuntime 初始化：idle、battle、Afdian、arena weekly settlement、rank snapshot、cleanup loops、AI job recovery、online battle settlement、Delta flush loops。
-14. mail counter backfill。
-15. online battle projection warmup。
+13. online battle projection warmup。
+14. JobRuntime 初始化：idle、battle、Afdian、arena weekly settlement、rank snapshot、cleanup loops、AI job recovery、online battle settlement、Delta flush loops。
+15. mail counter backfill。
 16. game time runtime init。
 17. build router。
 
 高风险差异：
 
-- Rust 的 `item data cleanup` 早于 `generated content refresh`，Node 是动态快照刷新与数据准备之后才清理异常物品。
-- Rust 的 online battle projection warmup 晚于 JobRuntime 初始化，Node 是先投影预热再启动 online battle settlement runner。
+- Rust 的 `item data cleanup` 曾早于 `generated content refresh`；Batch 4 已调整为先刷新 generated content，再清理异常物品。
+- Rust 的 online battle projection warmup 曾晚于 JobRuntime 初始化；Batch 4 已调整为先投影预热，再启动 JobRuntime 中的 online battle settlement runner。
 - Rust `JobRuntime::shutdown` 当前只记录日志，Node shutdown 会停止各 runner、等待 drain、flush idle buffers 与四类 Delta 聚合器。
 
 ## 千层塔冻结池差异
@@ -173,3 +173,10 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 2. Rust `bootstrap_application()` 仍先执行 `JobRuntime::initialize()`，其中会启动 online battle settlement loop，再执行 `warmup_online_battle_projection_runtime()`；Node 是先执行 `warmupOnlineBattleProjectionService()`，再初始化 `initializeOnlineBattleSettlementRunner()`。
 
 本批只调整启动顺序，不改变各 startup step 的内部业务逻辑。
+
+## Deep Scan Batch 4 结果
+
+- Rust startup 顺序已对齐 Node：`refresh_generated_content_on_startup()` 先于 `cleanup_undefined_item_data_on_startup()`。
+- Rust online battle projection warmup 已调整到 `JobRuntime::initialize()` 之前，避免 online battle settlement runner 先于投影预热启动。
+- 新增 `startup_source_orders_generated_content_before_item_cleanup` 与 `startup_source_orders_online_projection_warmup_before_job_runtime_initialize`，用 source-order 回归测试锁定两个顺序约束。
+- 验证命令已执行：`cargo test startup_source_orders -- --nocapture` 为 2 passed，`cargo test startup -- --nocapture` 为 7 passed，`cargo fmt --check` 通过。
