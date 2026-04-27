@@ -164,3 +164,12 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 - Inventory 对非法 `recoverAt` 按 Node 规则视为 `nowMs`，写回合法 `next_recover_at_text`，不保留非法输入字符串。
 - Inventory 逆推 `next_recover_at_text` 已覆盖 `month_card_start_at` 缺失但 `expire_at` 有效的窗口，保持 Node `startAtMs === null` 的向前无限加速窗口语义。
 - 验证命令已执行：`node scripts/compare-node-rust-routes.mjs` 通过，`cargo test inventory_stamina_recovery -- --nocapture` 为 7 passed，`cargo test inventory_ -- --nocapture` 为 114 passed，`cargo fmt --check` 通过，占位词扫描无输出。
+
+## Deep Scan Batch 4（startup / job order）
+
+本批继续以 NodeJS 为业务权威，聚焦启动链中仍记录为高风险的两个顺序差异：
+
+1. Rust `bootstrap_application()` 仍先执行 `cleanup_undefined_item_data_on_startup()`，再执行 `refresh_generated_content_on_startup()`；Node `startServerWithPipeline()` 是先刷新 generated technique / partner snapshots 与数据准备，再做 `itemDataCleanupService.cleanupUndefinedItemDataOnStartup()`。
+2. Rust `bootstrap_application()` 仍先执行 `JobRuntime::initialize()`，其中会启动 online battle settlement loop，再执行 `warmup_online_battle_projection_runtime()`；Node 是先执行 `warmupOnlineBattleProjectionService()`，再初始化 `initializeOnlineBattleSettlementRunner()`。
+
+本批只调整启动顺序，不改变各 startup step 的内部业务逻辑。
