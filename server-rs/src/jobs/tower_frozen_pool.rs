@@ -360,7 +360,8 @@ fn build_monster_name_map_from_seeds(
 ) -> Result<BTreeMap<String, String>> {
     let mut monster_name_map = BTreeMap::new();
     for monster in monsters {
-        match monster.id.as_deref().map(str::trim) {
+        let raw_id = monster.id.as_deref();
+        match raw_id.map(str::trim) {
             Some(id) if !id.is_empty() => {
                 let name = match monster.name.as_deref().map(str::trim) {
                     Some(name) if !name.is_empty() => name,
@@ -368,7 +369,8 @@ fn build_monster_name_map_from_seeds(
                 };
                 monster_name_map.insert(id.to_string(), name.to_string());
             }
-            _ if monster.comment.is_some()
+            _ if raw_id.is_none()
+                && monster.comment.is_some()
                 && monster.name.is_none()
                 && monster.enabled.is_none() => {}
             _ => anyhow::bail!("怪物定义 id 不能为空"),
@@ -537,6 +539,19 @@ mod tests {
             monster_name_map.get("monster-disabled").map(String::as_str),
             Some("禁用怪物")
         );
+    }
+
+    #[test]
+    fn frozen_tower_pool_monster_name_map_rejects_comment_row_with_blank_id() {
+        let error = super::build_monster_name_map_from_seeds(vec![super::MonsterSeed {
+            id: Some(" ".to_string()),
+            name: None,
+            enabled: None,
+            comment: Some("========== 炼虚合道·证道期怪物 ==========".to_string()),
+        }])
+        .expect_err("comment rows with blank id must fail");
+
+        assert_eq!(error.to_string(), "怪物定义 id 不能为空");
     }
 
     #[test]
