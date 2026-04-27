@@ -119,7 +119,7 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 扫描命令：
 
 ```bash
-rg -n "unwrap_or_default|unwrap_or_else|read_to_string|serde_json::from_str|enabled != Some\\(false\\)" server-rs/src -g '*.rs'
+rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_to_string|serde_json::from_str" server-rs/src -g '*.rs'
 ```
 
 首批人工核对锚点：
@@ -127,4 +127,4 @@ rg -n "unwrap_or_default|unwrap_or_else|read_to_string|serde_json::from_str|enab
 - `server-rs/src/realtime/public_socket.rs` 读取 `month_card.json` 时使用 `unwrap_or_default`，需要对照 Node `server/src/services/shared/staminaRules.ts` 与 `server/src/services/shared/monthCardBenefits.ts` 判断哪些字段允许缺省。
 - `server-rs/src/bootstrap/item_data_cleanup.rs` 读取 item/equipment/gem seed，必须和 Node `server/src/services/staticConfigLoader.ts` 的 enabled 与分类规则一致。
 - `server-rs/src/battle_runtime.rs` 读取 monster/skill seed，仍由旧 battle parity 计划覆盖，不在本计划重复修补。
-- `server-rs/src/jobs/tower_frozen_pool.rs` 已确认需要严格化，见本计划 Task 3 与 Task 4。
+- `server-rs/src/jobs/tower_frozen_pool.rs` 本轮已严格化冻结池 snapshot/frontier/monster seed 读取，后续扫描只需回归确认没有重新引入静默默认或跳过。
