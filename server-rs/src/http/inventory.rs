@@ -10338,18 +10338,35 @@ fn resolve_stamina_recovery_state(
     month_card_expire_at_text: Option<&str>,
     recovery_speed_rate: f64,
 ) -> ResolvedStaminaState {
-    let now_ms = current_timestamp_ms();
+    resolve_stamina_recovery_state_at(
+        stamina,
+        max_stamina,
+        recover_at_text,
+        month_card_start_at_text,
+        month_card_expire_at_text,
+        recovery_speed_rate,
+        current_timestamp_ms(),
+    )
+}
+
+fn resolve_stamina_recovery_state_at(
+    stamina: i64,
+    max_stamina: i64,
+    recover_at_text: Option<&str>,
+    month_card_start_at_text: Option<&str>,
+    month_card_expire_at_text: Option<&str>,
+    recovery_speed_rate: f64,
+    now_ms: i64,
+) -> ResolvedStaminaState {
     let safe_max_stamina = max_stamina.max(1);
     let safe_stamina = stamina.clamp(0, safe_max_stamina);
     let recover_at_ms = parse_datetime_millis(recover_at_text).unwrap_or(now_ms);
-    let fallback_recover_at = recover_at_text
-        .map(str::to_string)
-        .unwrap_or_else(current_timestamp_rfc3339);
+    let recover_at_anchor_text = millis_to_rfc3339(recover_at_ms);
     if safe_stamina >= safe_max_stamina || now_ms <= recover_at_ms {
         return ResolvedStaminaState {
             stamina: safe_stamina,
             max_stamina: safe_max_stamina,
-            next_recover_at_text: fallback_recover_at,
+            next_recover_at_text: recover_at_anchor_text,
         };
     }
 
@@ -10363,13 +10380,13 @@ fn resolve_stamina_recovery_state(
         window_expire_ms,
         recovery_speed_rate,
     );
-    let tick_ms = STAMINA_RECOVER_INTERVAL_SEC * 1000;
-    let ticks = effective_elapsed_ms / tick_ms;
+    let tick_ms = (STAMINA_RECOVER_INTERVAL_SEC * 1000) as f64;
+    let ticks = (effective_elapsed_ms / tick_ms).floor() as i64;
     if ticks <= 0 {
         return ResolvedStaminaState {
             stamina: safe_stamina,
             max_stamina: safe_max_stamina,
-            next_recover_at_text: fallback_recover_at,
+            next_recover_at_text: recover_at_anchor_text,
         };
     }
 
@@ -10379,11 +10396,11 @@ fn resolve_stamina_recovery_state(
         return ResolvedStaminaState {
             stamina: next_stamina,
             max_stamina: safe_max_stamina,
-            next_recover_at_text: current_timestamp_rfc3339(),
+            next_recover_at_text: millis_to_rfc3339(now_ms),
         };
     }
 
-    let leftover_effective_elapsed_ms = effective_elapsed_ms - ticks * tick_ms;
+    let leftover_effective_elapsed_ms = effective_elapsed_ms - ticks as f64 * tick_ms;
     ResolvedStaminaState {
         stamina: next_stamina,
         max_stamina: safe_max_stamina,
@@ -10403,11 +10420,11 @@ fn calc_effective_stamina_elapsed_ms(
     window_start_ms: Option<i64>,
     window_expire_ms: Option<i64>,
     recovery_speed_rate: f64,
-) -> i64 {
+) -> f64 {
     if end_ms <= start_ms {
-        return 0;
+        return 0.0;
     }
-    let real_elapsed_ms = end_ms - start_ms;
+    let real_elapsed_ms = (end_ms - start_ms) as f64;
     if recovery_speed_rate <= 0.0 {
         return real_elapsed_ms;
     }
@@ -10418,21 +10435,24 @@ fn calc_effective_stamina_elapsed_ms(
     let overlap_start_ms = start_ms.max(active_start_ms);
     let overlap_end_ms = end_ms.min(expire_ms);
     let overlap_ms = (overlap_end_ms - overlap_start_ms).max(0);
-    real_elapsed_ms + ((overlap_ms as f64) * recovery_speed_rate).round() as i64
+    real_elapsed_ms + (overlap_ms as f64) * recovery_speed_rate
 }
 
 fn rewind_recover_at_ms(
     now_ms: i64,
-    effective_elapsed_ms: i64,
+    effective_elapsed_ms: f64,
     window_start_ms: Option<i64>,
     window_expire_ms: Option<i64>,
     recovery_speed_rate: f64,
 ) -> i64 {
-    if effective_elapsed_ms <= 0 || recovery_speed_rate <= 0.0 || window_expire_ms.is_none() {
-        return now_ms - effective_elapsed_ms.max(0);
+    let safe_effective_elapsed_ms = effective_elapsed_ms.max(0.0);
+    if safe_effective_elapsed_ms <= 0.0 || recovery_speed_rate <= 0.0 {
+        return (now_ms as f64 - safe_effective_elapsed_ms).round() as i64;
     }
-    let expire_ms = window_expire_ms.unwrap_or(now_ms);
-    let mut remaining_effective_elapsed_ms = effective_elapsed_ms as f64;
+    let Some(expire_ms) = window_expire_ms else {
+        return (now_ms as f64 - safe_effective_elapsed_ms).round() as i64;
+    };
+    let mut remaining_effective_elapsed_ms = safe_effective_elapsed_ms;
     let mut cursor_ms = now_ms;
     if cursor_ms > expire_ms {
         let inactive_after_window_ms = (cursor_ms - expire_ms) as f64;
@@ -10442,7 +10462,12 @@ fn rewind_recover_at_ms(
         remaining_effective_elapsed_ms -= inactive_after_window_ms;
         cursor_ms = expire_ms;
     }
-    let active_start_ms = window_start_ms.unwrap_or(cursor_ms);
+    if window_start_ms.is_none() {
+        let active_multiplier = 1.0 + recovery_speed_rate;
+        return (cursor_ms as f64 - remaining_effective_elapsed_ms / active_multiplier).round()
+            as i64;
+    }
+    let active_start_ms = window_start_ms.expect("checked above");
     if cursor_ms > active_start_ms {
         let active_multiplier = 1.0 + recovery_speed_rate;
         let active_real_duration_ms = (cursor_ms - active_start_ms) as f64;
@@ -10462,8 +10487,62 @@ fn parse_datetime_millis(raw: Option<&str>) -> Option<i64> {
     if text.is_empty() {
         return None;
     }
-    let parsed =
-        time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
+    let parsed = time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
+        .ok()
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second][offset_hour sign:mandatory]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory]:[offset_minute]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second][offset_hour sign:mandatory]:[offset_minute]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory]:[offset_minute]:[offset_second]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second][offset_hour sign:mandatory]:[offset_minute]:[offset_second]"
+                ),
+            )
+            .ok()
+        })?;
     Some(parsed.unix_timestamp_nanos() as i64 / 1_000_000)
 }
 
@@ -10740,6 +10819,9 @@ mod tests {
 
     use super::*;
 
+    const NOW_2026_04_27_00_10_00_UTC_MS: i64 = 1_777_248_600_000;
+    const NOW_2026_04_27_00_10_00_UTC_TEXT: &str = "2026-04-27T00:10:00Z";
+
     #[test]
     fn inventory_info_payload_matches_contract() {
         let payload = serde_json::json!({
@@ -10841,6 +10923,131 @@ mod tests {
         });
         assert_eq!(payload["data"]["character"]["stamina"], 95);
         assert_eq!(payload["data"]["character"]["stamina_max"], 100);
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_counts_month_card_speed_window() {
+        let result = super::resolve_stamina_recovery_state_at(
+            10,
+            100,
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:10:00Z"),
+            0.5,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result.stamina, 13);
+        assert_eq!(result.max_stamina, 100);
+        assert_eq!(
+            result.next_recover_at_text,
+            NOW_2026_04_27_00_10_00_UTC_TEXT
+        );
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_clamps_month_card_rate_to_one() {
+        let result = super::resolve_stamina_recovery_state_at(
+            10,
+            100,
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:10:00Z"),
+            9.0,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result.stamina, 14);
+        assert_eq!(result.max_stamina, 100);
+        assert_eq!(
+            result.next_recover_at_text,
+            NOW_2026_04_27_00_10_00_UTC_TEXT
+        );
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_uses_now_for_invalid_recover_at() {
+        let result = super::resolve_stamina_recovery_state_at(
+            10,
+            100,
+            Some("not-a-date"),
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:10:00Z"),
+            0.5,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result.stamina, 10);
+        assert_eq!(result.max_stamina, 100);
+        assert_eq!(
+            result.next_recover_at_text,
+            NOW_2026_04_27_00_10_00_UTC_TEXT
+        );
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_parses_postgresql_datetime_text() {
+        let result = super::resolve_stamina_recovery_state_at(
+            10,
+            100,
+            Some("2026-04-27 00:00:00+00"),
+            Some("2026-04-27 00:00:00+00"),
+            Some("2026-04-27 00:10:00+00"),
+            0.5,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result.stamina, 13);
+        assert_eq!(result.max_stamina, 100);
+        assert_eq!(
+            result.next_recover_at_text,
+            NOW_2026_04_27_00_10_00_UTC_TEXT
+        );
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_parses_postgresql_offset_variants() {
+        assert_eq!(
+            super::parse_datetime_millis(Some("2026-04-27 00:00:00-07")),
+            super::parse_datetime_millis(Some("2026-04-27T07:00:00Z"))
+        );
+        assert_eq!(
+            super::parse_datetime_millis(Some("2026-04-27 05:45:00+05:45")),
+            super::parse_datetime_millis(Some("2026-04-27T00:00:00Z"))
+        );
+        assert_eq!(
+            super::parse_datetime_millis(Some("2026-04-27 05:45:30+05:45:30")),
+            super::parse_datetime_millis(Some("2026-04-27T00:00:00Z"))
+        );
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_keeps_fractional_elapsed_until_tick_floor() {
+        let effective =
+            super::calc_effective_stamina_elapsed_ms(0, 299_999, Some(299_994), Some(299_999), 0.1);
+
+        assert!((effective - 299_999.5).abs() < 1e-9);
+        assert_eq!((effective / 300_000.0).floor() as i64, 0);
+    }
+
+    #[test]
+    fn inventory_stamina_recovery_rewinds_open_started_speed_window_leftover() {
+        let result = super::resolve_stamina_recovery_state_at(
+            10,
+            100,
+            Some("1970-01-01T00:00:00Z"),
+            None,
+            Some("1970-01-01T01:00:00Z"),
+            0.1,
+            300_000,
+        );
+
+        assert_eq!(result.stamina, 11);
+        assert_eq!(result.max_stamina, 100);
+        assert_eq!(
+            result.next_recover_at_text,
+            super::millis_to_rfc3339(272_727)
+        );
     }
 
     #[test]
