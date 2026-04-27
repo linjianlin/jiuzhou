@@ -144,3 +144,13 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 ## Deep Scan Batch 2 待单独处理锚点
 
 - `server-rs/src/http/inventory.rs` 仍存在与本批实时体力修复同类的风险：体力恢复 elapsed 计算使用 `round()`，时间解析也仍只覆盖 RFC3339。该路径需要按 Node `resolveStaminaRecoveryState` 语义单独补测与收敛。
+
+## Deep Scan Batch 3（inventory stamina recovery）
+
+本批继续以 NodeJS 为业务权威，聚焦 `server-rs/src/http/inventory.rs` 中三处使用 `resolve_stamina_recovery_state()` 的物品使用路径：
+
+1. `use_inventory_item_tx()` 使用体力恢复状态后叠加单 effect 物品效果。
+2. `use_inventory_multi_effect_item_tx()` 使用体力恢复状态后叠加多 effect 物品效果。
+3. `load_inventory_use_character_snapshot()` 使用体力恢复状态构造物品使用后的角色快照。
+
+上一批已修复 `server-rs/src/realtime/public_socket.rs` 的实时快照体力计算；本批要求 inventory 路径复用同一 Node 语义：有效恢复时长保留浮点直到 tick floor，PostgreSQL `timestamptz::text` 可解析，非法 `recoverAt` 按 Node 规则视为 `nowMs`。
