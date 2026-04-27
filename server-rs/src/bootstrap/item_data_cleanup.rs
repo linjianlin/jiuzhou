@@ -57,8 +57,8 @@ pub async fn cleanup_undefined_item_data_on_startup(
 }
 
 fn load_valid_item_def_ids() -> Result<Vec<String>, AppError> {
-    let mut ids = BTreeSet::new();
-    for filename in ["item_def.json", "equipment_def.json", "gem_def.json"] {
+    let mut seed_files = Vec::new();
+    for filename in ["item_def.json", "gem_def.json", "equipment_def.json"] {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../server/src/data/seeds/{filename}"));
         let content = fs::read_to_string(&path).map_err(|error| {
@@ -67,6 +67,14 @@ fn load_valid_item_def_ids() -> Result<Vec<String>, AppError> {
         let payload: ItemDataSeedFile = serde_json::from_str(&content).map_err(|error| {
             AppError::config(format!("failed to parse {}: {error}", path.display()))
         })?;
+        seed_files.push(payload);
+    }
+    Ok(collect_valid_item_def_ids(seed_files))
+}
+
+fn collect_valid_item_def_ids(seed_files: Vec<ItemDataSeedFile>) -> Vec<String> {
+    let mut ids = BTreeSet::new();
+    for payload in seed_files {
         for item in payload.items {
             let Some(id) = item
                 .id
@@ -79,7 +87,7 @@ fn load_valid_item_def_ids() -> Result<Vec<String>, AppError> {
             ids.insert(id.to_string());
         }
     }
-    Ok(ids.into_iter().collect())
+    ids.into_iter().collect()
 }
 
 async fn delete_undefined_item_def_rows(
@@ -99,7 +107,9 @@ async fn delete_undefined_item_def_rows(
 
 #[cfg(test)]
 mod tests {
-    use super::load_valid_item_def_ids;
+    use super::{
+        ItemDataSeed, ItemDataSeedFile, collect_valid_item_def_ids, load_valid_item_def_ids,
+    };
 
     #[test]
     fn valid_item_def_ids_load_from_all_seed_files() {
@@ -109,5 +119,48 @@ mod tests {
         assert!(ids.iter().any(|id| id == "equip-weapon-001"));
         assert!(ids.iter().any(|id| id == "gem-atk-wg-1"));
         println!("ITEM_DATA_CLEANUP_VALID_IDS_COUNT={}", ids.len());
+    }
+
+    #[test]
+    fn valid_item_def_ids_trim_filter_dedupe_and_merge_all_seed_files() {
+        let ids = collect_valid_item_def_ids(vec![
+            ItemDataSeedFile {
+                items: vec![
+                    ItemDataSeed {
+                        id: Some(" cons-001 ".to_string()),
+                    },
+                    ItemDataSeed { id: None },
+                ],
+            },
+            ItemDataSeedFile {
+                items: vec![
+                    ItemDataSeed {
+                        id: Some("gem-atk-wg-1".to_string()),
+                    },
+                    ItemDataSeed {
+                        id: Some("".to_string()),
+                    },
+                ],
+            },
+            ItemDataSeedFile {
+                items: vec![
+                    ItemDataSeed {
+                        id: Some("equip-weapon-001".to_string()),
+                    },
+                    ItemDataSeed {
+                        id: Some("cons-001".to_string()),
+                    },
+                ],
+            },
+        ]);
+
+        assert_eq!(
+            ids,
+            vec![
+                "cons-001".to_string(),
+                "equip-weapon-001".to_string(),
+                "gem-atk-wg-1".to_string(),
+            ]
+        );
     }
 }
