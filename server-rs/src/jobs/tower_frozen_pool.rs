@@ -322,18 +322,43 @@ mod tests {
             "灰狼".to_string(),
         )]);
 
-        let error = super::build_frozen_tower_pool_cache_from_rows(
-            10,
-            vec![FrozenTowerSnapshotSeedRow {
-                kind: "normal".to_string(),
-                realm: " ".to_string(),
-                monster_def_id: "monster-gray-wolf".to_string(),
-            }],
-            &monster_name_map,
-        )
-        .expect_err("blank realm must fail");
+        let cases = [
+            (
+                FrozenTowerSnapshotSeedRow {
+                    kind: " ".to_string(),
+                    realm: "炼精化炁·养气期".to_string(),
+                    monster_def_id: "monster-gray-wolf".to_string(),
+                },
+                "千层塔冻结怪物快照 kind 非法",
+            ),
+            (
+                FrozenTowerSnapshotSeedRow {
+                    kind: "normal".to_string(),
+                    realm: " ".to_string(),
+                    monster_def_id: "monster-gray-wolf".to_string(),
+                },
+                "千层塔冻结怪物快照 realm 非法",
+            ),
+            (
+                FrozenTowerSnapshotSeedRow {
+                    kind: "normal".to_string(),
+                    realm: "炼精化炁·养气期".to_string(),
+                    monster_def_id: " ".to_string(),
+                },
+                "千层塔冻结怪物快照 monster_def_id 非法",
+            ),
+        ];
 
-        assert_eq!(error.to_string(), "千层塔冻结怪物快照 realm 非法");
+        for (row, expected_error) in cases {
+            let error = super::build_frozen_tower_pool_cache_from_rows(
+                10,
+                vec![row],
+                &monster_name_map,
+            )
+            .expect_err("blank snapshot field must fail");
+
+            assert_eq!(error.to_string(), expected_error);
+        }
     }
 
     #[test]
