@@ -154,3 +154,13 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 3. `load_inventory_use_character_snapshot()` 使用体力恢复状态构造物品使用后的角色快照。
 
 上一批已修复 `server-rs/src/realtime/public_socket.rs` 的实时快照体力计算；本批要求 inventory 路径复用同一 Node 语义：有效恢复时长保留浮点直到 tick floor，PostgreSQL `timestamptz::text` 可解析，非法 `recoverAt` 按 Node 规则视为 `nowMs`。
+
+## Deep Scan Batch 3 结果
+
+- Route surface 复验仍为 Node 264 / Rust 264，缺失与额外均为 0。
+- `server-rs/src/http/inventory.rs` 新增 `now_ms` 注入的 helper 级测试，锁定 `use_inventory_item_tx()`、`use_inventory_multi_effect_item_tx()`、`load_inventory_use_character_snapshot()` 共同调用的 `resolve_stamina_recovery_state()` 语义。
+- Inventory 体力恢复已对齐 Node `resolveStaminaRecoveryState` 的有效恢复时长公式：月卡恢复速度只增加有效 elapsed，浮点结果保留到 tick floor，避免边界多恢复 1 tick。
+- Inventory 时间解析已覆盖 PostgreSQL `timestamptz::text` 的 `+00`、`-07`、`+05:45`、`+05:45:30` 形态，避免 DB 查询文本无法恢复体力。
+- Inventory 对非法 `recoverAt` 按 Node 规则视为 `nowMs`，写回合法 `next_recover_at_text`，不保留非法输入字符串。
+- Inventory 逆推 `next_recover_at_text` 已覆盖 `month_card_start_at` 缺失但 `expire_at` 有效的窗口，保持 Node `startAtMs === null` 的向前无限加速窗口语义。
+- 验证命令已执行：`node scripts/compare-node-rust-routes.mjs` 通过，`cargo test inventory_stamina_recovery -- --nocapture` 为 7 passed，`cargo test inventory_ -- --nocapture` 为 114 passed，`cargo fmt --check` 通过，占位词扫描无输出。
