@@ -16052,9 +16052,13 @@ mod tests {
                 .await
                 .expect("tower settlement task should exist");
 
-        crate::jobs::online_battle_settlement::run_online_battle_settlement_tick(&state)
-            .await
-            .expect("tower settlement tick should succeed");
+        crate::jobs::online_battle_settlement::run_online_battle_settlement_task_until_completed_for_tests(
+            &state,
+            &format!("tower-win:{battle_id}"),
+            20,
+        )
+        .await
+        .expect("tower settlement task should complete");
 
         let progress_row = sqlx::query("SELECT best_floor, next_floor, current_run_id, current_floor, current_battle_id, last_settled_floor, reached_at::text AS reached_at_text FROM character_tower_progress WHERE character_id = $1")
             .bind(fixture.character_id)

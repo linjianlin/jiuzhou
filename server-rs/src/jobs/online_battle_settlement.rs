@@ -266,6 +266,120 @@ pub async fn run_online_battle_settlement_tick(state: &AppState) -> Result<(), A
     }
 }
 
+#[cfg(test)]
+pub async fn run_online_battle_settlement_task_until_completed_for_tests(
+    state: &AppState,
+    task_id: &str,
+    max_ticks: usize,
+) -> Result<(), AppError> {
+    for _ in 0..max_ticks {
+        let snapshot = fetch_online_battle_settlement_task_status_for_tests(state, task_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::config(format!("online battle settlement task missing: {task_id}"))
+            })?;
+        if snapshot.status == "completed" {
+            return Ok(());
+        }
+
+        let Some(task) =
+            claim_online_battle_settlement_task_by_id_for_tests(state, task_id).await?
+        else {
+            continue;
+        };
+
+        match process_online_battle_settlement_task(state, &task).await {
+            Ok(()) => mark_online_battle_settlement_task_completed(state, &task.id).await?,
+            Err(error) => {
+                mark_online_battle_settlement_task_failed(
+                    state,
+                    &task.id,
+                    task.attempt_count + 1,
+                    &error.to_string(),
+                )
+                .await?;
+            }
+        }
+    }
+
+    let Some(snapshot) =
+        fetch_online_battle_settlement_task_status_for_tests(state, task_id).await?
+    else {
+        return Err(AppError::config(format!(
+            "online battle settlement task missing after {max_ticks} ticks: {task_id}"
+        )));
+    };
+
+    Err(AppError::config(format!(
+        "online battle settlement task did not complete after {max_ticks} ticks: task_id={task_id}, status={}, attempt_count={}, max_attempts={}, error_message={:?}",
+        snapshot.status, snapshot.attempt_count, snapshot.max_attempts, snapshot.error_message
+    )))
+}
+
+#[cfg(test)]
+struct OnlineBattleSettlementTaskStatusForTests {
+    status: String,
+    attempt_count: i64,
+    max_attempts: i64,
+    error_message: Option<String>,
+}
+
+#[cfg(test)]
+async fn fetch_online_battle_settlement_task_status_for_tests(
+    state: &AppState,
+    task_id: &str,
+) -> Result<Option<OnlineBattleSettlementTaskStatusForTests>, AppError> {
+    let row = state
+        .database
+        .fetch_optional(
+            "SELECT status, attempt_count, max_attempts, error_message FROM online_battle_settlement_task WHERE id = $1",
+            |query| query.bind(task_id),
+        )
+        .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    Ok(Some(OnlineBattleSettlementTaskStatusForTests {
+        status: row.try_get::<String, _>("status")?,
+        attempt_count: i64::from(row.try_get::<i32, _>("attempt_count")?),
+        max_attempts: i64::from(row.try_get::<i32, _>("max_attempts")?),
+        error_message: row.try_get::<Option<String>, _>("error_message")?,
+    }))
+}
+
+#[cfg(test)]
+async fn claim_online_battle_settlement_task_by_id_for_tests(
+    state: &AppState,
+    task_id: &str,
+) -> Result<Option<OnlineBattleSettlementTaskRow>, AppError> {
+    let row = state.database.fetch_optional(
+        "UPDATE online_battle_settlement_task SET status = 'running', attempt_count = attempt_count + 1, error_message = NULL, updated_at = NOW() WHERE id = $1 AND status IN ('pending', 'failed') AND attempt_count < max_attempts RETURNING id, battle_id, kind, status, attempt_count, max_attempts, payload",
+        |q| q.bind(task_id),
+    ).await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    online_battle_settlement_task_row_from_pg_row(row)
+}
+
+fn online_battle_settlement_task_row_from_pg_row(
+    row: sqlx::postgres::PgRow,
+) -> Result<Option<OnlineBattleSettlementTaskRow>, AppError> {
+    let kind_raw = row.try_get::<String, _>("kind")?;
+    let Some(kind) = OnlineBattleSettlementTaskKind::from_str(&kind_raw) else {
+        return Ok(None);
+    };
+    Ok(Some(OnlineBattleSettlementTaskRow {
+        id: row.try_get::<String, _>("id")?,
+        battle_id: row.try_get::<String, _>("battle_id")?,
+        kind,
+        status: row.try_get::<String, _>("status")?,
+        attempt_count: i64::from(row.try_get::<i32, _>("attempt_count")?),
+        max_attempts: i64::from(row.try_get::<i32, _>("max_attempts")?),
+        payload: row.try_get::<serde_json::Value, _>("payload")?,
+    }))
+}
+
 async fn claim_next_online_battle_settlement_task(
     state: &AppState,
 ) -> Result<Option<OnlineBattleSettlementTaskRow>, AppError> {
@@ -276,34 +390,7 @@ async fn claim_next_online_battle_settlement_task(
     let Some(row) = row else {
         return Ok(None);
     };
-    let kind_raw = row
-        .try_get::<Option<String>, _>("kind")?
-        .unwrap_or_default();
-    let Some(kind) = OnlineBattleSettlementTaskKind::from_str(&kind_raw) else {
-        return Ok(None);
-    };
-    let payload_value = row
-        .try_get::<Option<serde_json::Value>, _>("payload")?
-        .unwrap_or_default();
-    Ok(Some(OnlineBattleSettlementTaskRow {
-        id: row.try_get::<Option<String>, _>("id")?.unwrap_or_default(),
-        battle_id: row
-            .try_get::<Option<String>, _>("battle_id")?
-            .unwrap_or_default(),
-        kind,
-        status: row
-            .try_get::<Option<String>, _>("status")?
-            .unwrap_or_default(),
-        attempt_count: row
-            .try_get::<Option<i32>, _>("attempt_count")?
-            .map(i64::from)
-            .unwrap_or_default(),
-        max_attempts: row
-            .try_get::<Option<i32>, _>("max_attempts")?
-            .map(i64::from)
-            .unwrap_or(5),
-        payload: payload_value,
-    }))
+    online_battle_settlement_task_row_from_pg_row(row)
 }
 
 async fn process_online_battle_settlement_task(
