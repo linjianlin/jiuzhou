@@ -56,6 +56,63 @@ fn frozen_tower_pool_cache() -> &'static RwLock<FrozenTowerPoolCache> {
     FROZEN_TOWER_POOL_CACHE.get_or_init(|| RwLock::new(FrozenTowerPoolCache::default()))
 }
 
+fn parse_required_frozen_tower_text(value: &str, field_name: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("千层塔冻结怪物快照 {field_name} 非法");
+    }
+    Ok(trimmed.to_string())
+}
+
+fn build_frozen_tower_pool_cache_from_rows(
+    frozen_floor_max: i64,
+    rows: Vec<FrozenTowerSnapshotSeedRow>,
+    monster_name_map: &BTreeMap<String, String>,
+) -> Result<FrozenTowerPoolCache> {
+    let normalized_frozen_floor_max = frozen_floor_max.max(0);
+    if rows.is_empty() {
+        if normalized_frozen_floor_max == 0 {
+            return Ok(FrozenTowerPoolCache {
+                frozen_floor_max: 0,
+                pools: BTreeMap::new(),
+            });
+        }
+        anyhow::bail!("千层塔冻结怪物池缺失: frozen_floor_max={normalized_frozen_floor_max}");
+    }
+
+    let mut pools = BTreeMap::<(String, String), Vec<FrozenTowerMonsterEntry>>::new();
+    for row in rows {
+        let kind = parse_required_frozen_tower_text(&row.kind, "kind")?;
+        if kind != "normal" && kind != "elite" && kind != "boss" {
+            anyhow::bail!("千层塔冻结怪物快照 kind 非法: {kind}");
+        }
+        let realm = parse_required_frozen_tower_text(&row.realm, "realm")?;
+        let monster_def_id =
+            parse_required_frozen_tower_text(&row.monster_def_id, "monster_def_id")?;
+        let monster_name = monster_name_map
+            .get(monster_def_id.as_str())
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("千层塔冻结怪物定义不存在: {monster_def_id}"))?;
+
+        pools
+            .entry((kind, realm))
+            .or_default()
+            .push(FrozenTowerMonsterEntry {
+                monster_def_id,
+                monster_name,
+            });
+    }
+
+    for monsters in pools.values_mut() {
+        monsters.sort_by(|left, right| left.monster_def_id.cmp(&right.monster_def_id));
+    }
+
+    Ok(FrozenTowerPoolCache {
+        frozen_floor_max: normalized_frozen_floor_max,
+        pools,
+    })
+}
+
 #[cfg(test)]
 pub fn frozen_tower_pool_test_guard() -> MutexGuard<'static, ()> {
     FROZEN_TOWER_POOL_TEST_LOCK
@@ -96,43 +153,36 @@ pub async fn warmup_frozen_tower_pool_cache(
     };
 
     let monster_name_map = load_monster_name_map()?;
-    let mut pools = BTreeMap::<(String, String), Vec<FrozenTowerMonsterEntry>>::new();
-    for row in &snapshot_rows {
-        let kind = row
-            .try_get::<Option<String>, _>("kind")?
-            .unwrap_or_default();
-        let realm = row
-            .try_get::<Option<String>, _>("realm")?
-            .unwrap_or_default();
-        let monster_def_id = row
-            .try_get::<Option<String>, _>("monster_def_id")?
-            .unwrap_or_default();
-        if kind.trim().is_empty() || realm.trim().is_empty() || monster_def_id.trim().is_empty() {
-            continue;
-        }
-        let monster_name = monster_name_map
-            .get(monster_def_id.as_str())
-            .cloned()
-            .unwrap_or_else(|| monster_def_id.clone());
-        pools
-            .entry((kind, realm))
-            .or_default()
-            .push(FrozenTowerMonsterEntry {
-                monster_def_id,
-                monster_name,
-            });
-    }
+    let snapshot_seed_rows = snapshot_rows
+        .iter()
+        .map(|row| {
+            Ok(FrozenTowerSnapshotSeedRow {
+                kind: row
+                    .try_get::<Option<String>, _>("kind")?
+                    .unwrap_or_default(),
+                realm: row
+                    .try_get::<Option<String>, _>("realm")?
+                    .unwrap_or_default(),
+                monster_def_id: row
+                    .try_get::<Option<String>, _>("monster_def_id")?
+                    .unwrap_or_default(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let next_cache = build_frozen_tower_pool_cache_from_rows(
+        frozen_floor_max,
+        snapshot_seed_rows,
+        &monster_name_map,
+    )?;
+    let snapshot_count = next_cache.pools.values().map(Vec::len).sum();
 
     *frozen_tower_pool_cache()
         .write()
-        .expect("frozen tower cache write lock should acquire") = FrozenTowerPoolCache {
-        frozen_floor_max,
-        pools,
-    };
+        .expect("frozen tower cache write lock should acquire") = next_cache;
 
     Ok(FrozenTowerPoolWarmupSummary {
         frozen_floor_max,
-        snapshot_count: snapshot_rows.len(),
+        snapshot_count,
     })
 }
 
@@ -304,23 +354,23 @@ mod tests {
 
     #[test]
     fn frozen_tower_pool_rejects_missing_snapshot_rows_when_frontier_is_positive() {
-        let monster_name_map = BTreeMap::from([(
-            "monster-gray-wolf".to_string(),
-            "灰狼".to_string(),
-        )]);
+        let monster_name_map =
+            BTreeMap::from([("monster-gray-wolf".to_string(), "灰狼".to_string())]);
 
-        let error = super::build_frozen_tower_pool_cache_from_rows(10, Vec::new(), &monster_name_map)
-            .expect_err("positive frontier without snapshot rows must fail");
+        let error =
+            super::build_frozen_tower_pool_cache_from_rows(10, Vec::new(), &monster_name_map)
+                .expect_err("positive frontier without snapshot rows must fail");
 
-        assert_eq!(error.to_string(), "千层塔冻结怪物池缺失: frozen_floor_max=10");
+        assert_eq!(
+            error.to_string(),
+            "千层塔冻结怪物池缺失: frozen_floor_max=10"
+        );
     }
 
     #[test]
     fn frozen_tower_pool_rejects_blank_snapshot_fields() {
-        let monster_name_map = BTreeMap::from([(
-            "monster-gray-wolf".to_string(),
-            "灰狼".to_string(),
-        )]);
+        let monster_name_map =
+            BTreeMap::from([("monster-gray-wolf".to_string(), "灰狼".to_string())]);
 
         let cases = [
             (
@@ -350,12 +400,9 @@ mod tests {
         ];
 
         for (row, expected_error) in cases {
-            let error = super::build_frozen_tower_pool_cache_from_rows(
-                10,
-                vec![row],
-                &monster_name_map,
-            )
-            .expect_err("blank snapshot field must fail");
+            let error =
+                super::build_frozen_tower_pool_cache_from_rows(10, vec![row], &monster_name_map)
+                    .expect_err("blank snapshot field must fail");
 
             assert_eq!(error.to_string(), expected_error);
         }
@@ -363,10 +410,8 @@ mod tests {
 
     #[test]
     fn frozen_tower_pool_rejects_unknown_monster_definition() {
-        let monster_name_map = BTreeMap::from([(
-            "monster-gray-wolf".to_string(),
-            "灰狼".to_string(),
-        )]);
+        let monster_name_map =
+            BTreeMap::from([("monster-gray-wolf".to_string(), "灰狼".to_string())]);
 
         let error = super::build_frozen_tower_pool_cache_from_rows(
             10,
@@ -379,7 +424,10 @@ mod tests {
         )
         .expect_err("unknown monster definition must fail");
 
-        assert_eq!(error.to_string(), "千层塔冻结怪物定义不存在: monster-missing");
+        assert_eq!(
+            error.to_string(),
+            "千层塔冻结怪物定义不存在: monster-missing"
+        );
     }
 
     #[test]
