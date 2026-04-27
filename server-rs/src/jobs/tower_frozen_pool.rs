@@ -41,6 +41,13 @@ struct MonsterSeed {
     enabled: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FrozenTowerSnapshotSeedRow {
+    kind: String,
+    realm: String,
+    monster_def_id: String,
+}
+
 static FROZEN_TOWER_POOL_CACHE: OnceLock<RwLock<FrozenTowerPoolCache>> = OnceLock::new();
 #[cfg(test)]
 static FROZEN_TOWER_POOL_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -284,7 +291,7 @@ fn load_monster_name_map() -> Result<BTreeMap<String, String>> {
 mod tests {
     use super::{
         FrozenTowerMonsterEntry, FrozenTowerPoolCache, FrozenTowerPoolWarmupSummary,
-        lookup_frozen_tower_monsters,
+        FrozenTowerSnapshotSeedRow, lookup_frozen_tower_monsters,
     };
     use std::collections::BTreeMap;
 
@@ -293,6 +300,61 @@ mod tests {
         let summary = FrozenTowerPoolWarmupSummary::default();
         assert_eq!(summary.frozen_floor_max, 0);
         assert_eq!(summary.snapshot_count, 0);
+    }
+
+    #[test]
+    fn frozen_tower_pool_rejects_missing_snapshot_rows_when_frontier_is_positive() {
+        let monster_name_map = BTreeMap::from([(
+            "monster-gray-wolf".to_string(),
+            "灰狼".to_string(),
+        )]);
+
+        let error = super::build_frozen_tower_pool_cache_from_rows(10, Vec::new(), &monster_name_map)
+            .expect_err("positive frontier without snapshot rows must fail");
+
+        assert_eq!(error.to_string(), "千层塔冻结怪物池缺失: frozen_floor_max=10");
+    }
+
+    #[test]
+    fn frozen_tower_pool_rejects_blank_snapshot_fields() {
+        let monster_name_map = BTreeMap::from([(
+            "monster-gray-wolf".to_string(),
+            "灰狼".to_string(),
+        )]);
+
+        let error = super::build_frozen_tower_pool_cache_from_rows(
+            10,
+            vec![FrozenTowerSnapshotSeedRow {
+                kind: "normal".to_string(),
+                realm: " ".to_string(),
+                monster_def_id: "monster-gray-wolf".to_string(),
+            }],
+            &monster_name_map,
+        )
+        .expect_err("blank realm must fail");
+
+        assert_eq!(error.to_string(), "千层塔冻结怪物快照 realm 非法");
+    }
+
+    #[test]
+    fn frozen_tower_pool_rejects_unknown_monster_definition() {
+        let monster_name_map = BTreeMap::from([(
+            "monster-gray-wolf".to_string(),
+            "灰狼".to_string(),
+        )]);
+
+        let error = super::build_frozen_tower_pool_cache_from_rows(
+            10,
+            vec![FrozenTowerSnapshotSeedRow {
+                kind: "normal".to_string(),
+                realm: "炼精化炁·养气期".to_string(),
+                monster_def_id: "monster-missing".to_string(),
+            }],
+            &monster_name_map,
+        )
+        .expect_err("unknown monster definition must fail");
+
+        assert_eq!(error.to_string(), "千层塔冻结怪物定义不存在: monster-missing");
     }
 
     #[test]
