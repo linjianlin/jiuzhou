@@ -1586,7 +1586,26 @@ fn resolve_realtime_stamina_state(
     month_card_expire_at_text: Option<&str>,
     recovery_speed_rate: f64,
 ) -> (i64, i64) {
-    let now_ms = current_timestamp_ms();
+    resolve_realtime_stamina_state_at(
+        stamina,
+        max_stamina,
+        recover_at_text,
+        month_card_start_at_text,
+        month_card_expire_at_text,
+        recovery_speed_rate,
+        current_timestamp_ms(),
+    )
+}
+
+fn resolve_realtime_stamina_state_at(
+    stamina: i64,
+    max_stamina: i64,
+    recover_at_text: Option<&str>,
+    month_card_start_at_text: Option<&str>,
+    month_card_expire_at_text: Option<&str>,
+    recovery_speed_rate: f64,
+    now_ms: i64,
+) -> (i64, i64) {
     let safe_max_stamina = max_stamina.max(1);
     let safe_stamina = stamina.clamp(0, safe_max_stamina);
     let recover_at_ms = parse_datetime_millis(recover_at_text).unwrap_or(now_ms);
@@ -1601,8 +1620,7 @@ fn resolve_realtime_stamina_state(
         parse_datetime_millis(month_card_expire_at_text),
         recovery_speed_rate.clamp(0.0, 1.0),
     );
-    let tick_ms = 300_000;
-    let ticks = effective_elapsed_ms / tick_ms;
+    let ticks = (effective_elapsed_ms / 300_000.0).floor() as i64;
     if ticks <= 0 {
         return (safe_stamina, safe_max_stamina);
     }
@@ -1620,11 +1638,11 @@ fn calc_effective_stamina_elapsed_ms(
     window_start_ms: Option<i64>,
     window_expire_ms: Option<i64>,
     recovery_speed_rate: f64,
-) -> i64 {
+) -> f64 {
     if end_ms <= start_ms {
-        return 0;
+        return 0.0;
     }
-    let real_elapsed_ms = end_ms - start_ms;
+    let real_elapsed_ms = (end_ms - start_ms) as f64;
     if recovery_speed_rate <= 0.0 {
         return real_elapsed_ms;
     }
@@ -1635,7 +1653,7 @@ fn calc_effective_stamina_elapsed_ms(
     let overlap_start_ms = start_ms.max(active_start_ms);
     let overlap_end_ms = end_ms.min(expire_ms);
     let overlap_ms = (overlap_end_ms - overlap_start_ms).max(0);
-    real_elapsed_ms + ((overlap_ms as f64) * recovery_speed_rate).round() as i64
+    real_elapsed_ms + (overlap_ms as f64) * recovery_speed_rate
 }
 
 fn parse_datetime_millis(raw: Option<&str>) -> Option<i64> {
@@ -1643,8 +1661,62 @@ fn parse_datetime_millis(raw: Option<&str>) -> Option<i64> {
     if text.is_empty() {
         return None;
     }
-    let parsed =
-        time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()?;
+    let parsed = time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
+        .ok()
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second][offset_hour sign:mandatory]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory]:[offset_minute]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second][offset_hour sign:mandatory]:[offset_minute]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond][offset_hour sign:mandatory]:[offset_minute]:[offset_second]"
+                ),
+            )
+            .ok()
+        })
+        .or_else(|| {
+            time::OffsetDateTime::parse(
+                text,
+                &time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second][offset_hour sign:mandatory]:[offset_minute]:[offset_second]"
+                ),
+            )
+            .ok()
+        })?;
     Some(parsed.unix_timestamp_nanos() as i64 / 1_000_000)
 }
 
@@ -2263,6 +2335,8 @@ mod tests {
     };
     use std::sync::Arc;
 
+    const NOW_2026_04_27_00_10_00_UTC_MS: i64 = 1_777_248_600_000;
+
     #[test]
     fn duplicate_login_does_not_disconnect_same_socket_id() {
         assert!(!should_disconnect_replaced_socket(
@@ -2274,6 +2348,91 @@ mod tests {
             "new-socket-5678"
         ));
         assert!(!should_disconnect_replaced_socket("", "new-socket-5678"));
+    }
+
+    #[test]
+    fn realtime_stamina_recovery_counts_month_card_speed_window() {
+        let result = super::resolve_realtime_stamina_state_at(
+            10,
+            100,
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:10:00Z"),
+            0.5,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result, (13, 100));
+    }
+
+    #[test]
+    fn realtime_stamina_recovery_clamps_month_card_rate_to_one() {
+        let result = super::resolve_realtime_stamina_state_at(
+            10,
+            100,
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:10:00Z"),
+            9.0,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result, (14, 100));
+    }
+
+    #[test]
+    fn realtime_stamina_recovery_uses_now_for_invalid_recover_at() {
+        let result = super::resolve_realtime_stamina_state_at(
+            10,
+            100,
+            Some("not-a-date"),
+            Some("2026-04-27T00:00:00Z"),
+            Some("2026-04-27T00:10:00Z"),
+            0.5,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result, (10, 100));
+    }
+
+    #[test]
+    fn realtime_stamina_recovery_parses_postgresql_datetime_text() {
+        let result = super::resolve_realtime_stamina_state_at(
+            10,
+            100,
+            Some("2026-04-27 00:00:00+00"),
+            Some("2026-04-27 00:00:00+00"),
+            Some("2026-04-27 00:10:00+00"),
+            0.5,
+            NOW_2026_04_27_00_10_00_UTC_MS,
+        );
+
+        assert_eq!(result, (13, 100));
+    }
+
+    #[test]
+    fn realtime_stamina_recovery_parses_postgresql_offset_variants() {
+        assert_eq!(
+            super::parse_datetime_millis(Some("2026-04-27 00:00:00-07")),
+            super::parse_datetime_millis(Some("2026-04-27T07:00:00Z"))
+        );
+        assert_eq!(
+            super::parse_datetime_millis(Some("2026-04-27 05:45:00+05:45")),
+            super::parse_datetime_millis(Some("2026-04-27T00:00:00Z"))
+        );
+        assert_eq!(
+            super::parse_datetime_millis(Some("2026-04-27 05:45:30+05:45:30")),
+            super::parse_datetime_millis(Some("2026-04-27T00:00:00Z"))
+        );
+    }
+
+    #[test]
+    fn realtime_stamina_recovery_keeps_fractional_elapsed_until_tick_floor() {
+        let effective =
+            super::calc_effective_stamina_elapsed_ms(0, 299_999, Some(299_994), Some(299_999), 0.1);
+
+        assert!((effective - 299_999.5).abs() < 1e-9);
+        assert_eq!((effective / 300_000.0).floor() as i64, 0);
     }
 
     #[test]
