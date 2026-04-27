@@ -56,6 +56,31 @@ fn frozen_tower_pool_cache() -> &'static RwLock<FrozenTowerPoolCache> {
     FROZEN_TOWER_POOL_CACHE.get_or_init(|| RwLock::new(FrozenTowerPoolCache::default()))
 }
 
+const FROZEN_TOWER_REALM_ORDER: &[&str] = &[
+    "凡人",
+    "炼精化炁·养气期",
+    "炼精化炁·通脉期",
+    "炼精化炁·凝炁期",
+    "炼炁化神·炼己期",
+    "炼炁化神·采药期",
+    "炼炁化神·结胎期",
+    "炼神返虚·养神期",
+    "炼神返虚·还虚期",
+    "炼神返虚·合道期",
+    "炼虚合道·证道期",
+    "炼虚合道·历劫期",
+    "炼虚合道·成圣期",
+];
+
+fn parse_frozen_tower_frontier_floor(value: Option<i64>) -> Result<i64> {
+    let frozen_floor_max =
+        value.ok_or_else(|| anyhow::anyhow!("千层塔冻结数据字段非法: frozen_floor_max"))?;
+    if frozen_floor_max < 0 {
+        anyhow::bail!("千层塔冻结数据字段非法: frozen_floor_max");
+    }
+    Ok(frozen_floor_max)
+}
+
 fn parse_required_frozen_tower_text(value: &str, field_name: &str) -> Result<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -87,6 +112,9 @@ fn build_frozen_tower_pool_cache_from_rows(
             anyhow::bail!("千层塔冻结怪物快照 kind 非法: {kind}");
         }
         let realm = parse_required_frozen_tower_text(&row.realm, "realm")?;
+        if !FROZEN_TOWER_REALM_ORDER.contains(&realm.as_str()) {
+            anyhow::bail!("千层塔冻结怪物快照 realm 非法: {realm}");
+        }
         let monster_def_id =
             parse_required_frozen_tower_text(&row.monster_def_id, "monster_def_id")?;
         let monster_name = monster_name_map
@@ -131,14 +159,12 @@ pub async fn warmup_frozen_tower_pool_cache(
             |q| q,
         )
         .await?;
-    let frozen_floor_max = frontier_row
-        .and_then(|row| {
-            row.try_get::<Option<i64>, _>("frozen_floor_max")
-                .ok()
-                .flatten()
-        })
-        .unwrap_or_default()
-        .max(0);
+    let frozen_floor_max = match frontier_row {
+        Some(row) => {
+            parse_frozen_tower_frontier_floor(row.try_get::<Option<i64>, _>("frozen_floor_max")?)?
+        }
+        None => 0,
+    };
 
     let snapshot_rows = if frozen_floor_max > 0 {
         state
@@ -157,15 +183,18 @@ pub async fn warmup_frozen_tower_pool_cache(
         .iter()
         .map(|row| {
             Ok(FrozenTowerSnapshotSeedRow {
-                kind: row
-                    .try_get::<Option<String>, _>("kind")?
-                    .unwrap_or_default(),
-                realm: row
-                    .try_get::<Option<String>, _>("realm")?
-                    .unwrap_or_default(),
-                monster_def_id: row
-                    .try_get::<Option<String>, _>("monster_def_id")?
-                    .unwrap_or_default(),
+                kind: match row.try_get::<Option<String>, _>("kind")? {
+                    Some(value) => value,
+                    None => String::new(),
+                },
+                realm: match row.try_get::<Option<String>, _>("realm")? {
+                    Some(value) => value,
+                    None => String::new(),
+                },
+                monster_def_id: match row.try_get::<Option<String>, _>("monster_def_id")? {
+                    Some(value) => value,
+                    None => String::new(),
+                },
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -198,11 +227,13 @@ pub fn lookup_frozen_tower_monsters(
     if floor > cache.frozen_floor_max.max(0) {
         return Vec::new();
     }
-    cache
+    match cache
         .pools
         .get(&(kind.trim().to_string(), realm.trim().to_string()))
-        .cloned()
-        .unwrap_or_default()
+    {
+        Some(monsters) => monsters.clone(),
+        None => Vec::new(),
+    }
 }
 
 const TOWER_REALM_ORDER: &[&str] = &[
@@ -259,7 +290,7 @@ pub fn resolve_frozen_tower_monsters_for_floor(
                     .pools
                     .get(&(kind.trim().to_string(), realm.to_string()))
                     .cloned()
-                    .unwrap_or_default(),
+                    .unwrap_or(Vec::new()),
             );
         }
         return Some((format!("{realm}·混池"), monsters));
@@ -270,7 +301,7 @@ pub fn resolve_frozen_tower_monsters_for_floor(
             .pools
             .get(&(kind.trim().to_string(), realm))
             .cloned()
-            .unwrap_or_default(),
+            .unwrap_or(Vec::new()),
     ))
 }
 
@@ -317,24 +348,27 @@ fn load_monster_name_map() -> Result<BTreeMap<String, String>> {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src/data/seeds/monster_def.json");
     let content = fs::read_to_string(&path)?;
     let payload: MonsterSeedFile = serde_json::from_str(&content)?;
-    Ok(payload
-        .monsters
-        .into_iter()
-        .filter(|monster| monster.enabled != Some(false))
-        .filter_map(|monster| {
-            monster
-                .id
-                .as_deref()
-                .map(str::trim)
-                .filter(|id| !id.is_empty())
-                .map(|id| {
-                    (
-                        id.to_string(),
-                        monster.name.unwrap_or_else(|| id.to_string()),
-                    )
-                })
-        })
-        .collect())
+    build_monster_name_map_from_seeds(payload.monsters)
+}
+
+fn build_monster_name_map_from_seeds(
+    monsters: Vec<MonsterSeed>,
+) -> Result<BTreeMap<String, String>> {
+    let mut monster_name_map = BTreeMap::new();
+    for monster in monsters {
+        if monster.enabled != Some(false) {
+            let id = match monster.id.as_deref().map(str::trim) {
+                Some(id) if !id.is_empty() => id,
+                _ => anyhow::bail!("怪物定义 id 不能为空"),
+            };
+            let name = match monster.name.as_deref().map(str::trim) {
+                Some(name) if !name.is_empty() => name,
+                _ => anyhow::bail!("怪物定义 name 不能为空: {id}"),
+            };
+            monster_name_map.insert(id.to_string(), name.to_string());
+        }
+    }
+    Ok(monster_name_map)
 }
 
 #[cfg(test)]
@@ -409,6 +443,25 @@ mod tests {
     }
 
     #[test]
+    fn frozen_tower_pool_rejects_unknown_realm() {
+        let monster_name_map =
+            BTreeMap::from([("monster-gray-wolf".to_string(), "灰狼".to_string())]);
+
+        let error = super::build_frozen_tower_pool_cache_from_rows(
+            10,
+            vec![FrozenTowerSnapshotSeedRow {
+                kind: "normal".to_string(),
+                realm: "大乘".to_string(),
+                monster_def_id: "monster-gray-wolf".to_string(),
+            }],
+            &monster_name_map,
+        )
+        .expect_err("unknown realm must fail");
+
+        assert_eq!(error.to_string(), "千层塔冻结怪物快照 realm 非法: 大乘");
+    }
+
+    #[test]
     fn frozen_tower_pool_rejects_unknown_monster_definition() {
         let monster_name_map =
             BTreeMap::from([("monster-gray-wolf".to_string(), "灰狼".to_string())]);
@@ -427,6 +480,41 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "千层塔冻结怪物定义不存在: monster-missing"
+        );
+    }
+
+    #[test]
+    fn frozen_tower_pool_frontier_floor_rejects_negative_value() {
+        let error = super::parse_frozen_tower_frontier_floor(Some(-1))
+            .expect_err("negative frozen frontier must fail");
+
+        assert_eq!(
+            error.to_string(),
+            "千层塔冻结数据字段非法: frozen_floor_max"
+        );
+    }
+
+    #[test]
+    fn frozen_tower_pool_monster_name_map_rejects_enabled_monster_with_blank_id_or_name() {
+        let blank_id_error = super::build_monster_name_map_from_seeds(vec![super::MonsterSeed {
+            id: Some(" ".to_string()),
+            name: Some("灰狼".to_string()),
+            enabled: None,
+        }])
+        .expect_err("blank id must fail");
+
+        assert_eq!(blank_id_error.to_string(), "怪物定义 id 不能为空");
+
+        let blank_name_error = super::build_monster_name_map_from_seeds(vec![super::MonsterSeed {
+            id: Some("monster-gray-wolf".to_string()),
+            name: Some(" ".to_string()),
+            enabled: None,
+        }])
+        .expect_err("blank name must fail");
+
+        assert_eq!(
+            blank_name_error.to_string(),
+            "怪物定义 name 不能为空: monster-gray-wolf"
         );
     }
 
