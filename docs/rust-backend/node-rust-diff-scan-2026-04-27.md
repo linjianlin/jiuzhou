@@ -97,11 +97,11 @@ Rust 当前实现：
 - `server-rs/src/jobs/tower_frozen_pool.rs`
 - `server-rs/src/http/tower.rs`
 
-已确认差异：
+本轮发现并已收敛的历史差异：
 
-- Node 在 `frozenFloorMax > 0` 且 snapshot 为空时报错：`千层塔冻结怪物池缺失: frozen_floor_max=<n>`；Rust 当前缓存空池。
-- Node 在 snapshot `kind/realm/monster_def_id` 非法时报错；Rust 当前对空字段 `continue`。
-- Node 在 snapshot 指向不存在的 monster 定义时报错；Rust 当前用 monster id 作为名称继续运行。
+- 本轮发现 Rust 曾在 `frozenFloorMax > 0` 且 snapshot 为空时缓存空池；当前已改为对齐 Node 报错：`千层塔冻结怪物池缺失: frozen_floor_max=<n>`。
+- 本轮发现 Rust 曾对 snapshot `kind/realm/monster_def_id` 空字段静默跳过；当前已改为报错。
+- 本轮发现 Rust 曾在 snapshot 指向不存在 monster 定义时用 monster id 作为名称继续运行；当前已改为报错。
 - Node 会对冻结池结果做深拷贝；Rust 读缓存时 clone 结构体，语义可接受。
 
 ## Seed / Config 严格性扫描入口
