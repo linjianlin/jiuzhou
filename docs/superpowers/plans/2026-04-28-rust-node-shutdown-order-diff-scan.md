@@ -111,9 +111,20 @@ mod tests {
             .next()
             .expect("shutdown source should include implementation before tests");
 
-        assert!(
-            implementation_source.contains("std::time::Duration::from_millis(2_000)"),
-            "shutdown drain window should match Node graceful shutdown 2000 ms wait"
+        assert_source_order(
+            implementation_source,
+            "job_runtime.shutdown().await",
+            "std::time::Duration::from_millis(2_000)",
+        );
+        assert_source_order(
+            implementation_source,
+            "std::time::Duration::from_millis(2_000)",
+            "flush_pending_runtime_deltas(&state)",
+        );
+        assert_source_order(
+            implementation_source,
+            "flush_pending_runtime_deltas(&state)",
+            "state.database.close().await",
         );
     }
 }
@@ -272,7 +283,7 @@ In `docs/rust-backend/recovery-baseline.md`, update the shutdown sequence so it 
 1. Axum graceful shutdown 停止接受新 HTTP 请求。
 2. `RealtimeRuntime::shutdown()` 关闭实时 runtime。
 3. `shutdown_game_time_runtime(&state)` 停止并持久化游戏时间 runtime。
-4. `JobRuntime::shutdown()` 停止后台任务 runtime。
+4. 调用 `JobRuntime::shutdown()`；当前仅记录日志，runner 停止与等待退出仍需单独扫描。
 5. 等待 2000 ms drain window。
 6. `flush_pending_runtime_deltas(&state)` flush progress / item grant / item instance mutation / resource delta。
 7. `state.database.close().await` 关闭数据库 runtime。
