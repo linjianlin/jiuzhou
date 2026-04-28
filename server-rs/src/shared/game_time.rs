@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
 use serde::Serialize;
 use sqlx::Row;
@@ -46,22 +46,27 @@ pub struct GameTimeInitSummary {
     pub persisted_default_row: bool,
 }
 
-static GAME_TIME_STATE: OnceLock<Mutex<GameTimeState>> = OnceLock::new();
-static GAME_TIME_TICK_HANDLE: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
+static GAME_TIME_STATE: LazyLock<Mutex<Option<GameTimeState>>> = LazyLock::new(|| Mutex::new(None));
+static GAME_TIME_TICK_HANDLE: LazyLock<Mutex<Option<JoinHandle<()>>>> =
+    LazyLock::new(|| Mutex::new(None));
 static GAME_TIME_STOPPING: AtomicBool = AtomicBool::new(false);
 
-fn game_time_state() -> Option<&'static Mutex<GameTimeState>> {
-    GAME_TIME_STATE.get()
+fn game_time_state() -> &'static Mutex<Option<GameTimeState>> {
+    &GAME_TIME_STATE
 }
 
 fn game_time_tick_handle() -> &'static Mutex<Option<JoinHandle<()>>> {
-    GAME_TIME_TICK_HANDLE.get_or_init(|| Mutex::new(None))
+    &GAME_TIME_TICK_HANDLE
 }
 
 pub async fn initialize_game_time_runtime(
     state: AppState,
 ) -> Result<GameTimeInitSummary, AppError> {
-    if game_time_state().is_some() {
+    if game_time_state()
+        .lock()
+        .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?
+        .is_some()
+    {
         return Ok(GameTimeInitSummary {
             initialized: true,
             loaded_from_db: true,
@@ -118,9 +123,19 @@ pub async fn initialize_game_time_runtime(
         (false, true, initial)
     };
 
-    GAME_TIME_STATE
-        .set(Mutex::new(runtime_state))
-        .map_err(|_| AppError::config("游戏时间已初始化"))?;
+    {
+        let mut state_guard = game_time_state()
+            .lock()
+            .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?;
+        if state_guard.is_some() {
+            return Ok(GameTimeInitSummary {
+                initialized: true,
+                loaded_from_db: true,
+                persisted_default_row: false,
+            });
+        }
+        *state_guard = Some(runtime_state);
+    }
 
     GAME_TIME_STOPPING.store(false, Ordering::SeqCst);
     let state_for_loop = state.clone();
@@ -158,11 +173,11 @@ pub async fn shutdown_game_time_runtime(state: &AppState) -> Result<(), AppError
     {
         let _ = handle.await;
     }
-    if let Some(state_mutex) = game_time_state() {
-        let runtime_state = state_mutex
-            .lock()
-            .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?
-            .clone();
+    let runtime_state = game_time_state()
+        .lock()
+        .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?
+        .take();
+    if let Some(runtime_state) = runtime_state {
         persist_game_time_state(state, &runtime_state).await?;
     }
     Ok(())
@@ -170,9 +185,10 @@ pub async fn shutdown_game_time_runtime(state: &AppState) -> Result<(), AppError
 
 pub fn get_game_time_snapshot() -> Result<GameTimeSnapshot, AppError> {
     let state = game_time_state()
-        .ok_or_else(|| AppError::service_unavailable("游戏时间未初始化"))?
         .lock()
         .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?
+        .as_ref()
+        .ok_or_else(|| AppError::service_unavailable("游戏时间未初始化"))?
         .clone();
 
     let server_now_ms = now_ms();
@@ -183,13 +199,13 @@ pub fn get_game_time_snapshot() -> Result<GameTimeSnapshot, AppError> {
 }
 
 async fn tick_and_persist(state: &AppState) -> Result<(), AppError> {
-    let Some(state_mutex) = game_time_state() else {
-        return Ok(());
-    };
     let persisted_state = {
-        let mut runtime_state = state_mutex
+        let mut state_guard = game_time_state()
             .lock()
             .map_err(|_| AppError::service_unavailable("游戏时间未初始化"))?;
+        let Some(runtime_state) = state_guard.as_mut() else {
+            return Ok(());
+        };
         let server_now_ms = now_ms();
         let real_elapsed_ms = (server_now_ms - runtime_state.last_real_ms).clamp(0, 60_000);
         let effective_real_elapsed_ms = if real_elapsed_ms == 0 {

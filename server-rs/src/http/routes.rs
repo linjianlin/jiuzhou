@@ -83,6 +83,23 @@ mod tests {
         }
     }
 
+    fn acquire_http_route_test_slot() -> Arc<tokio::sync::OwnedSemaphorePermit> {
+        static SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+        let semaphore =
+            Arc::clone(SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(8))));
+        loop {
+            match Arc::clone(&semaphore).try_acquire_owned() {
+                Ok(permit) => return Arc::new(permit),
+                Err(tokio::sync::TryAcquireError::NoPermits) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(tokio::sync::TryAcquireError::Closed) => {
+                    panic!("http route test semaphore should stay open");
+                }
+            }
+        }
+    }
+
     fn afdian_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         match LOCK.get_or_init(|| Mutex::new(())).lock() {
@@ -164,6 +181,8 @@ mod tests {
         });
 
         let database = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .acquire_timeout(std::time::Duration::from_secs(60))
             .connect_lazy(&config.database.url)
             .expect("lazy postgres pool should build for tests");
         let redis = Some(
@@ -171,13 +190,15 @@ mod tests {
         );
         let http_client = reqwest::Client::new();
 
-        AppState::new(
+        let mut state = AppState::new(
             config,
             DatabaseRuntime::new(database),
             redis,
             http_client,
             true,
-        )
+        );
+        state.test_runtime_slot = Some(acquire_http_route_test_slot());
+        state
     }
 
     fn test_state_with_wander_ai(ai_enabled: bool) -> AppState {
@@ -340,22 +361,37 @@ mod tests {
         last
     }
 
-    async fn spawn_test_server(
-        app: axum::Router,
-    ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    struct TestServerHandle {
+        handle: tokio::task::JoinHandle<()>,
+    }
+
+    impl TestServerHandle {
+        fn abort(&self) {
+            self.handle.abort();
+        }
+    }
+
+    impl Drop for TestServerHandle {
+        fn drop(&mut self) {
+            self.handle.abort();
+        }
+    }
+
+    async fn spawn_test_server(app: axum::Router) -> (std::net::SocketAddr, TestServerHandle) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
         let address = listener.local_addr().expect("local addr should exist");
-        let server = tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("server should run");
         });
-        (address, server)
+        (address, TestServerHandle { handle })
     }
 
     async fn connect_fixture_db_or_skip(state: &AppState, skip_tag: &str) -> Option<sqlx::PgPool> {
-        match sqlx::PgPool::connect(&state.config.database.url).await {
-            Ok(pool) => Some(pool),
+        let pool = state.database.clone_pool_for_test();
+        match sqlx::query("SELECT 1").execute(&pool).await {
+            Ok(_) => Some(pool),
             Err(error) => {
                 println!("{skip_tag}={error}");
                 None
@@ -461,6 +497,11 @@ mod tests {
     }
 
     async fn cleanup_auth_fixture(pool: &sqlx::PgPool, character_id: i64, user_id: i64) {
+        sqlx::query("DELETE FROM character_rank_snapshot WHERE character_id = $1")
+            .bind(character_id)
+            .execute(pool)
+            .await
+            .ok();
         sqlx::query("DELETE FROM characters WHERE id = $1")
             .bind(character_id)
             .execute(pool)
@@ -471,6 +512,16 @@ mod tests {
             .execute(pool)
             .await
             .ok();
+    }
+
+    async fn upsert_idle_attacker_rank_snapshot(pool: &sqlx::PgPool, character_id: i64) {
+        sqlx::query(
+            "INSERT INTO character_rank_snapshot (character_id, nickname, realm, realm_rank, power, wugong, fagong, wufang, fafang, max_qixue, max_lingqi, sudu, updated_at, created_at) VALUES ($1, '挂机测试', '凡人', 0, 240, 120, 0, 30, 20, 800, 200, 8, NOW(), NOW()) ON CONFLICT (character_id) DO UPDATE SET wugong = EXCLUDED.wugong, fagong = EXCLUDED.fagong, wufang = EXCLUDED.wufang, fafang = EXCLUDED.fafang, max_qixue = EXCLUDED.max_qixue, max_lingqi = EXCLUDED.max_lingqi, sudu = EXCLUDED.sudu, updated_at = NOW()",
+        )
+        .bind(character_id)
+        .execute(pool)
+        .await
+        .expect("idle attacker rank snapshot should upsert");
     }
 
     async fn insert_partner_fixture(
@@ -1589,10 +1640,7 @@ mod tests {
 
         socket_emit_raw(&client, address, &sid, "42[\"game:onlinePlayers:request\"]").await;
 
-        let market_poll_text = poll_until_contains(&client, address, &sid, "market:update").await;
-        let character_poll_text =
-            poll_until_contains(&client, address, &sid, "game:character").await;
-        let poll_text = format!("{market_poll_text}{character_poll_text}");
+        let poll_text = poll_text(&client, address, &sid).await;
 
         println!("GAME_SOCKET_ONLINE_PLAYERS_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_UNAUTH_POLL={poll_text}");
@@ -1649,10 +1697,7 @@ mod tests {
 
         socket_emit_raw(&client, address, &sid, "42[\"game:onlinePlayers:request\"]").await;
 
-        let rank_poll_text = poll_until_contains(&client, address, &sid, "rank:update").await;
-        let character_poll_text =
-            poll_until_contains(&client, address, &sid, "game:character").await;
-        let poll_text = format!("{rank_poll_text}{character_poll_text}");
+        let poll_text = poll_text(&client, address, &sid).await;
 
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTHLESS_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTHLESS_SUCCESS_POLL={poll_text}");
@@ -3606,6 +3651,7 @@ mod tests {
 
         let suffix = format!("idle-start-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        upsert_idle_attacker_rank_snapshot(&pool, fixture.character_id).await;
         let outsider =
             insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
@@ -3674,6 +3720,7 @@ mod tests {
 
         let suffix = format!("idle-resource-delta-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        upsert_idle_attacker_rank_snapshot(&pool, fixture.character_id).await;
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -3740,6 +3787,7 @@ mod tests {
 
         let suffix = format!("idle-bag-full-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
+        upsert_idle_attacker_rank_snapshot(&pool, fixture.character_id).await;
         sqlx::query(
             "INSERT INTO item_instance (owner_user_id, owner_character_id, item_def_id, qty, bind_type, location, location_slot, created_at, updated_at, obtained_from) SELECT $1, $2, 'mat-002', 1, 'none', 'bag', slot, NOW(), NOW(), 'test' FROM generate_series(0, 99) AS slot",
         )
@@ -3762,6 +3810,12 @@ mod tests {
             .await
             .expect("idle start request should succeed");
         assert_eq!(response.status(), StatusCode::OK);
+
+        sqlx::query("UPDATE idle_sessions SET session_snapshot = jsonb_set(COALESCE(session_snapshot, '{}'::jsonb), '{bufferedSinceMs}', '0'::jsonb, true), updated_at = NOW() WHERE character_id = $1 AND status = 'active'")
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .expect("idle session flush timestamp should update");
 
         tokio::time::sleep(std::time::Duration::from_millis(3500)).await;
 
@@ -3805,7 +3859,15 @@ mod tests {
             insert_auth_fixture(&state, &pool, "socket", &format!("other-{suffix}"), 0).await;
 
         sqlx::query(
-            "INSERT INTO character_partner (character_id, partner_def_id, nickname, description, avatar, level, progress_exp, growth_max_qixue, growth_wugong, growth_fagong, growth_wufang, growth_fafang, growth_sudu, is_active, obtained_from, obtained_ref_id, created_at, updated_at) VALUES ($1, 'partner-qingmu-xiaoou', '青木小偶', '', NULL, 1, 0, 120, 120, 0, 0, 0, 12, TRUE, 'test', NULL, NOW(), NOW())",
+            "INSERT INTO character_rank_snapshot (character_id, nickname, realm, realm_rank, power, wugong, fagong, wufang, fafang, max_qixue, max_lingqi, sudu, updated_at, created_at) VALUES ($1, '挂机测试', '凡人', 0, 80, 40, 0, 10, 5, 600, 100, 5, NOW(), NOW()) ON CONFLICT (character_id) DO UPDATE SET wugong = EXCLUDED.wugong, wufang = EXCLUDED.wufang, fafang = EXCLUDED.fafang, max_qixue = EXCLUDED.max_qixue, max_lingqi = EXCLUDED.max_lingqi, sudu = EXCLUDED.sudu, updated_at = NOW()",
+        )
+        .bind(fixture.character_id)
+        .execute(&pool)
+        .await
+        .expect("rank snapshot should insert");
+
+        sqlx::query(
+            "INSERT INTO character_partner (character_id, partner_def_id, nickname, description, avatar, level, progress_exp, growth_max_qixue, growth_wugong, growth_fagong, growth_wufang, growth_fafang, growth_sudu, is_active, obtained_from, obtained_ref_id, created_at, updated_at) VALUES ($1, 'partner-qingmu-xiaoou', '青木小偶', '', NULL, 1, 0, 1200, 1200, 0, 0, 0, 12, TRUE, 'test', NULL, NOW(), NOW())",
         )
         .bind(fixture.character_id)
         .execute(&pool)
@@ -3831,7 +3893,7 @@ mod tests {
                 .post(format!("http://{address}/api/idle/start"))
                 .header("authorization", format!("Bearer {}", token))
                 .header("content-type", "application/json")
-                .body(format!("{{\"mapId\":\"map-qingyun-outskirts\",\"roomId\":\"room-deep-forest\",\"maxDurationMs\":60000,\"autoSkillPolicy\":{{\"slots\":[{{\"skillId\":\"sk-basic-slash\",\"priority\":1}}]}},\"targetMonsterDefId\":\"monster-gray-wolf\",\"includePartnerInBattle\":{}}}", include_partner))
+                .body(format!("{{\"mapId\":\"map-qingyun-outskirts\",\"roomId\":\"room-deep-forest\",\"maxDurationMs\":60000,\"autoSkillPolicy\":{{\"slots\":[{{\"skillId\":\"sk-basic-slash\",\"priority\":1}}]}},\"targetMonsterDefId\":\"monster-mountain-wolf\",\"includePartnerInBattle\":{}}}", include_partner))
                 .send()
                 .await
                 .expect("idle start request should succeed");
@@ -3895,6 +3957,11 @@ mod tests {
 
         assert!(with_partner < without_partner);
 
+        sqlx::query("DELETE FROM character_rank_snapshot WHERE character_id = $1")
+            .bind(fixture.character_id)
+            .execute(&pool)
+            .await
+            .ok();
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
         cleanup_auth_fixture(&pool, outsider.character_id, outsider.user_id).await;
     }
@@ -7594,7 +7661,7 @@ mod tests {
         .try_get::<i64, _>("id")
         .expect("item id should exist");
 
-        let app = build_router(state).expect("router should build");
+        let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
 
@@ -10728,7 +10795,7 @@ mod tests {
             .await
             .expect("poison buff should insert");
 
-        let app = build_router(state).expect("router should build");
+        let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
 
@@ -11829,13 +11896,22 @@ mod tests {
         .await
         .expect("global buff should insert");
 
+        crate::shared::game_time::shutdown_game_time_runtime(&state)
+            .await
+            .ok();
+        sqlx::query(
+            "INSERT INTO game_time (id, era_name, base_year, game_elapsed_ms, weather, scale, last_real_ms, last_sect_maintenance_day_serial, updated_at) VALUES (1, '末法纪元', 1000, 25200000, '晴', 60, 0, 0, NOW()) ON CONFLICT (id) DO UPDATE SET era_name = EXCLUDED.era_name, base_year = EXCLUDED.base_year, game_elapsed_ms = EXCLUDED.game_elapsed_ms, weather = EXCLUDED.weather, scale = EXCLUDED.scale, last_real_ms = EXCLUDED.last_real_ms, last_sect_maintenance_day_serial = EXCLUDED.last_sect_maintenance_day_serial, updated_at = NOW()",
+        )
+        .execute(&pool)
+        .await
+        .expect("game time fixture should upsert");
         crate::shared::game_time::initialize_game_time_runtime(state.clone())
             .await
             .expect("game time runtime should initialize");
 
         let token = fixture.token.clone();
 
-        let app = build_router(state).expect("router should build");
+        let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
 
         let client = reqwest::Client::new();
@@ -11872,6 +11948,9 @@ mod tests {
         assert!(poll_text.contains("\"weather\":\"晴\""));
 
         server.abort();
+        crate::shared::game_time::shutdown_game_time_runtime(&state)
+            .await
+            .ok();
 
         sqlx::query("DELETE FROM character_global_buff WHERE character_id = $1")
             .bind(character_id)

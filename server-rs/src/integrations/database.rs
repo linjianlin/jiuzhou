@@ -82,6 +82,11 @@ impl DatabaseRuntime {
         Self { pool }
     }
 
+    #[cfg(test)]
+    pub fn clone_pool_for_test(&self) -> PgPool {
+        self.pool.clone()
+    }
+
     pub async fn close(&self) {
         self.pool.close().await;
     }

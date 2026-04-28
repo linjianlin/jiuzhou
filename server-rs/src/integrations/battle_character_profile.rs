@@ -19,6 +19,8 @@ const DEFAULT_BATTLE_FAGONG: i64 = 24;
 const DEFAULT_BATTLE_WUFANG: i64 = 16;
 const DEFAULT_BATTLE_FAFANG: i64 = 16;
 const DEFAULT_BATTLE_SUDU: i64 = 6;
+const DEFAULT_BATTLE_MAX_QIXUE: i64 = 100;
+const DEFAULT_BATTLE_MAX_LINGQI: i64 = 100;
 
 struct ItemSetSeed {
     name: String,
@@ -402,8 +404,13 @@ pub async fn load_required_battle_character_profile(
     let row = state
         .database
         .fetch_optional(
-            "SELECT c.id::bigint AS character_id, c.user_id::bigint AS user_id, COALESCE(NULLIF(TRIM(c.nickname), ''), CONCAT('修士', c.id::text)) AS nickname, c.avatar, COALESCE(NULLIF(TRIM(c.realm), ''), '凡人') AS realm, NULLIF(TRIM(c.sub_realm), '') AS sub_realm, COALESCE(NULLIF(TRIM(c.attribute_element), ''), 'none') AS attribute_element, GREATEST(COALESCE(crs.max_qixue, c.jing::bigint, 0), 1)::bigint AS max_qixue, GREATEST(COALESCE(crs.max_lingqi, c.qi::bigint, 0), 0)::bigint AS max_lingqi, COALESCE(crs.wugong, 0)::bigint AS wugong, COALESCE(crs.fagong, 0)::bigint AS fagong, COALESCE(crs.wufang, 0)::bigint AS wufang, COALESCE(crs.fafang, 0)::bigint AS fafang, GREATEST(COALESCE(crs.sudu, 0), 0)::bigint AS sudu, COALESCE(c.jing, 0)::bigint AS current_qixue, COALESCE(c.qi, 0)::bigint AS current_lingqi, (mco.expire_at IS NOT NULL) AS month_card_active FROM characters c LEFT JOIN character_rank_snapshot crs ON crs.character_id = c.id LEFT JOIN month_card_ownership mco ON mco.character_id = c.id AND mco.month_card_id = 'monthcard-001' AND mco.expire_at > NOW() WHERE c.id = $1 LIMIT 1",
-            |query| query.bind(character_id),
+            "SELECT c.id::bigint AS character_id, c.user_id::bigint AS user_id, COALESCE(NULLIF(TRIM(c.nickname), ''), CONCAT('修士', c.id::text)) AS nickname, c.avatar, COALESCE(NULLIF(TRIM(c.realm), ''), '凡人') AS realm, NULLIF(TRIM(c.sub_realm), '') AS sub_realm, COALESCE(NULLIF(TRIM(c.attribute_element), ''), 'none') AS attribute_element, COALESCE(crs.max_qixue, NULLIF(c.jing, 0)::bigint, $2)::bigint AS max_qixue, COALESCE(crs.max_lingqi, NULLIF(c.qi, 0)::bigint, $3)::bigint AS max_lingqi, COALESCE(crs.wugong, 0)::bigint AS wugong, COALESCE(crs.fagong, 0)::bigint AS fagong, COALESCE(crs.wufang, 0)::bigint AS wufang, COALESCE(crs.fafang, 0)::bigint AS fafang, GREATEST(COALESCE(crs.sudu, 0), 0)::bigint AS sudu, COALESCE(c.jing, 0)::bigint AS current_qixue, COALESCE(c.qi, 0)::bigint AS current_lingqi, (mco.expire_at IS NOT NULL) AS month_card_active FROM characters c LEFT JOIN character_rank_snapshot crs ON crs.character_id = c.id LEFT JOIN month_card_ownership mco ON mco.character_id = c.id AND mco.month_card_id = 'monthcard-001' AND mco.expire_at > NOW() WHERE c.id = $1 LIMIT 1",
+            |query| {
+                query
+                    .bind(character_id)
+                    .bind(DEFAULT_BATTLE_MAX_QIXUE)
+                    .bind(DEFAULT_BATTLE_MAX_LINGQI)
+            },
         )
         .await?;
     let Some(row) = row else {
