@@ -39,6 +39,7 @@ import {
   shouldReplayLatestBattleCooldown,
 } from './battleCooldownReplay';
 import { buildBattleActionKey } from './battleActionKey';
+import { isNewerBattleState } from './battleStateFreshness';
 import { BattleTeamPanel } from './BattleTeamPanel';
 import type { BattleFloatText, BattleUnit } from './types';
 export type { BattleUnit } from './types';
@@ -162,47 +163,6 @@ const getCurrentUnitId = (state: BattleStateDto | null): string | null => {
   if (!state) return null;
   // 直接读服务端维护的 currentUnitId，不再用下标推算，避免客户端与服务端状态不一致
   return state.currentUnitId ?? null;
-};
-
-const getPhaseRank = (phase: BattleStateDto['phase']): number => {
-  if (phase === 'roundStart') return 1;
-  if (phase === 'action') return 2;
-  if (phase === 'roundEnd') return 3;
-  if (phase === 'finished') return 4;
-  return 0;
-};
-
-const isNewerBattleState = (
-  next: BattleStateDto,
-  current: BattleStateDto | null,
-  nextLogCount: number,
-  currentLogCount: number,
-): boolean => {
-  if (!current) return true;
-  if (next.battleId !== current.battleId) return true;
-
-  if (current.phase === 'finished' && next.phase !== 'finished') return false;
-
-  if (nextLogCount !== currentLogCount) return nextLogCount > currentLogCount;
-
-  if (next.phase === 'finished' && current.phase !== 'finished') return true;
-
-  const nextRound = Number(next.roundCount) || 0;
-  const currentRound = Number(current.roundCount) || 0;
-  if (nextRound !== currentRound) return nextRound > currentRound;
-
-  const nextRank = getPhaseRank(next.phase);
-  const currentRank = getPhaseRank(current.phase);
-  if (nextRank !== currentRank) return nextRank > currentRank;
-
-  const nextIndex = next.currentUnitId ?? '';
-  const currentIndex = current.currentUnitId ?? '';
-  if (nextIndex !== currentIndex) return true;
-
-  const nextTeam = String(next.currentTeam || '');
-  const currentTeam = String(current.currentTeam || '');
-  if (nextTeam !== currentTeam) return true;
-  return false;
 };
 
 const isBattleMissingError = (msg: unknown): boolean => {

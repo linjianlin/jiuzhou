@@ -62,3 +62,4 @@ coverage/
 local_cache/
 .worktrees/
 scripts/*.png
+server-rs/target/
