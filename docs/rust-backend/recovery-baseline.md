@@ -64,7 +64,22 @@ Rust 当前 startup 总线位于：`server-rs/src/bootstrap/startup.rs`
 - wander generation jobs
 - progress / item grant / item mutation / resource delta flush
 
-## 4. 样本来源
+## 4. shutdown 顺序样本
+
+Rust 当前 shutdown 总线位于：`server-rs/src/bootstrap/shutdown.rs`
+
+关键停止/flush 顺序：
+
+1. Axum graceful shutdown 停止接受新 HTTP 请求。
+2. `RealtimeRuntime::shutdown()` 关闭实时 runtime。
+3. `shutdown_game_time_runtime(&state)` 停止并持久化游戏时间 runtime。
+4. `JobRuntime::shutdown()` 停止后台任务 runtime。
+5. 等待 2000 ms drain window。
+6. `flush_pending_runtime_deltas(&state)` flush progress / item grant / item instance mutation / resource delta。
+7. `state.database.close().await` 关闭数据库 runtime。
+8. Redis client 随 `AppState` drop；Redis 不可用时记录 no-op shutdown。
+
+## 5. 样本来源
 
 - `server-rs/src/bootstrap/startup.rs`
 - `server-rs/src/bootstrap/shutdown.rs`

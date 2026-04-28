@@ -76,7 +76,7 @@ Rust startup 当前入口来自 `server-rs/src/bootstrap/startup.rs` 与 `server
 
 - Rust 的 `item data cleanup` 曾早于 `generated content refresh`；Batch 4 已调整为先刷新 generated content，再清理异常物品。
 - Rust 的 online battle projection warmup 曾晚于 JobRuntime 初始化；Batch 4 已调整为先投影预热，再启动 JobRuntime 中的 online battle settlement runner。
-- Rust `JobRuntime::shutdown` 当前只记录日志，Node shutdown 会停止各 runner、等待 drain、flush idle buffers 与四类 Delta 聚合器。
+- Rust shutdown 顺序与 drain window 曾和 Node 不一致；Batch 5 已调整为先 flush game time runtime，再停止 JobRuntime，并把 drain window 对齐为 2000 ms。`JobRuntime::shutdown()` 当前仍只记录日志，Node shutdown 会停止各 runner；runner 停止与等待退出需单独扫描。
 
 ## 千层塔冻结池差异
 
@@ -188,3 +188,10 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 1. Node `registerGracefulShutdown()` 在关闭 Socket 后先执行 `stopGameTimeService()`，再停止 arena / cleanup / battle / idle / worker runners；Rust `shutdown_application()` 当前先执行 `job_runtime.shutdown()`，再执行 `shutdown_game_time_runtime(&state)`。
 2. Node 在停止 runner 与 worker pool 后等待 2000 ms，再 flush idle buffers 与四类 Delta 聚合器；Rust 当前 drain window 为 250 ms。
 3. 本批只调整 shutdown 顺序与 drain window，不把 JobRuntime loop 句柄化混入同一批。`JobRuntime::shutdown()` 仍需在下一批单独扫描为“停止后台 loop、等待退出、再 flush”的实现任务。
+
+## Deep Scan Batch 5 结果
+
+- Rust `shutdown_application()` 已按 Node shutdown 语义调整为：RealtimeRuntime shutdown 后先执行 `shutdown_game_time_runtime(&state)`，再执行 `job_runtime.shutdown().await`。
+- Rust drain window 已从 250 ms 对齐为 2000 ms，随后再执行 `flush_pending_runtime_deltas(&state)` 与数据库 runtime close。
+- 新增 `shutdown_source_orders_game_time_before_job_runtime` 与 `shutdown_source_uses_node_drain_window`，用 source-order 回归测试锁定 shutdown 顺序与等待窗口。
+- 验证命令已执行：`cargo test shutdown_source_ -- --nocapture` 为 2 passed，`cargo test shutdown -- --nocapture` 通过，`cargo fmt --check` 通过。
