@@ -180,3 +180,11 @@ rg -n "unwrap_or_default|unwrap_or_else|Option<|enabled != Some\\(false\\)|read_
 - Rust online battle projection warmup 已调整到 `JobRuntime::initialize()` 之前，避免 online battle settlement runner 先于投影预热启动。
 - 新增 `startup_source_orders_generated_content_before_item_cleanup` 与 `startup_source_orders_online_projection_warmup_before_job_runtime_initialize`，用 source-order 回归测试锁定两个顺序约束。
 - 验证命令已执行：`cargo test startup_source_orders -- --nocapture` 为 2 passed，`cargo test startup -- --nocapture` 为 7 passed，`cargo fmt --check` 通过。
+
+## Deep Scan Batch 5（shutdown order / drain window）
+
+本批继续以 NodeJS 为业务权威，聚焦 shutdown 路径中可独立验证的顺序差异：
+
+1. Node `registerGracefulShutdown()` 在关闭 Socket 后先执行 `stopGameTimeService()`，再停止 arena / cleanup / battle / idle / worker runners；Rust `shutdown_application()` 当前先执行 `job_runtime.shutdown()`，再执行 `shutdown_game_time_runtime(&state)`。
+2. Node 在停止 runner 与 worker pool 后等待 2000 ms，再 flush idle buffers 与四类 Delta 聚合器；Rust 当前 drain window 为 250 ms。
+3. 本批只调整 shutdown 顺序与 drain window，不把 JobRuntime loop 句柄化混入同一批。`JobRuntime::shutdown()` 仍需在下一批单独扫描为“停止后台 loop、等待退出、再 flush”的实现任务。
