@@ -91,9 +91,13 @@ mod tests {
     #[test]
     fn shutdown_source_orders_game_time_before_job_runtime() {
         let source = include_str!("shutdown.rs");
+        let implementation_source = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("shutdown source should include implementation before tests");
 
         assert_source_order(
-            source,
+            implementation_source,
             "shutdown_game_time_runtime(&state)",
             "job_runtime.shutdown().await",
         );
