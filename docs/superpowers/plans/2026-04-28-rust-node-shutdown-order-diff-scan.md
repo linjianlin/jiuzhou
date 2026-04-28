@@ -102,9 +102,13 @@ mod tests {
     #[test]
     fn shutdown_source_uses_node_drain_window() {
         let source = include_str!("shutdown.rs");
+        let implementation_source = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("shutdown source should include implementation before tests");
 
         assert!(
-            source.contains("std::time::Duration::from_millis(2_000)"),
+            implementation_source.contains("std::time::Duration::from_millis(2_000)"),
             "shutdown drain window should match Node graceful shutdown 2000 ms wait"
         );
     }
