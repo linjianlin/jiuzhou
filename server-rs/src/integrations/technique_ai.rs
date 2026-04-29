@@ -296,9 +296,14 @@ pub async fn ensure_generated_candidate_skill_icons(
         return Ok(());
     }
 
+    let missing_indexes = missing_skill_icon_indexes(candidate, candidate.skills.len());
+    if missing_indexes.is_empty() {
+        return Ok(());
+    }
+
     let config = require_image_model_config(ImageModelScope::Technique)?;
     let snapshot = candidate.clone();
-    for index in missing_skill_icon_indexes(candidate, config.max_skills) {
+    for index in missing_indexes.into_iter().take(config.max_skills) {
         let skill_snapshot = candidate.skills[index].clone();
         let icon =
             generate_technique_skill_icon_with_config(state, &config, &snapshot, &skill_snapshot)

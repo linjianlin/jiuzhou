@@ -3269,7 +3269,7 @@ pub async fn process_pending_partner_fusion_job(
                 let name = json_text_field(&snapshot, &["nickname", "name"])?;
                 let quality = json_text_field(&snapshot, &["quality"])?;
                 let role = json_text_field(&snapshot, &["role"])?;
-                let element = json_text_field(&snapshot, &["attributeElement", "attribute_element"])?;
+                let element = json_text_field(&snapshot, &["element"])?;
                 let description = snapshot
                     .get("description")
                     .and_then(|value| value.as_str())

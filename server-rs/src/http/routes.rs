@@ -83,21 +83,79 @@ mod tests {
         }
     }
 
-    fn acquire_http_route_test_slot() -> Arc<tokio::sync::OwnedSemaphorePermit> {
+    fn wander_ai_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        match LOCK.get_or_init(|| Mutex::new(())).lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn mock_technique_research_ai_app() -> axum::Router {
+        axum::Router::new().route(
+            "/v1/chat/completions",
+            axum::routing::post(|| async move {
+                let content = serde_json::json!({
+                    "technique": {
+                        "name": "青木回风诀",
+                        "type": "武技",
+                        "quality": "玄",
+                        "maxLayer": 5,
+                        "requiredRealm": "炼炁化神·结胎期",
+                        "attributeType": "physical",
+                        "attributeElement": "wood",
+                        "tags": ["洞府研修", "青木"],
+                        "description": "青木回风，攻守兼备。",
+                        "longDesc": "以青木生发之意牵引回风劲力，适合洞府研修所得的完整功法候选。"
+                    },
+                    "skills": [{
+                        "id": "generated-skill-1",
+                        "name": "青木回风斩",
+                        "description": "引青木劲气斩击单体敌人。",
+                        "icon": "/uploads/generated/generated-skill-1.webp",
+                        "sourceType": "technique",
+                        "costLingqi": 12,
+                        "costLingqiRate": 0.0,
+                        "costQixue": 0,
+                        "costQixueRate": 0.0,
+                        "cooldown": 1,
+                        "targetType": "single_enemy",
+                        "targetCount": 1,
+                        "damageType": "physical",
+                        "element": "wood",
+                        "effects": [{"type": "damage", "value": 120}],
+                        "triggerType": "active",
+                        "aiPriority": 60,
+                        "upgrades": []
+                    }],
+                    "layers": [
+                        {"layer": 1, "costSpiritStones": 100, "costExp": 50, "costMaterials": [], "passives": [{"key": "atk", "value": 6.0}], "unlockSkillIds": ["generated-skill-1"], "upgradeSkillIds": [], "layerDesc": "青木初生，悟得回风斩。"},
+                        {"layer": 2, "costSpiritStones": 200, "costExp": 100, "costMaterials": [], "passives": [{"key": "def", "value": 4.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "回风渐疾，斩势更盛。"},
+                        {"layer": 3, "costSpiritStones": 300, "costExp": 150, "costMaterials": [], "passives": [{"key": "speed", "value": 3.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "青木成荫，风势圆融。"},
+                        {"layer": 4, "costSpiritStones": 400, "costExp": 200, "costMaterials": [], "passives": [{"key": "atk", "value": 8.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "回风入刃，攻势再涨。"},
+                        {"layer": 5, "costSpiritStones": 500, "costExp": 250, "costMaterials": [], "passives": [{"key": "max_qixue", "value": 60.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "青木圆满，气血绵长。"}
+                    ]
+                })
+                .to_string();
+                axum::Json(serde_json::json!({
+                    "choices": [{
+                        "message": {
+                            "content": content
+                        }
+                    }]
+                }))
+            }),
+        )
+    }
+
+    async fn acquire_http_route_test_slot() -> tokio::sync::OwnedSemaphorePermit {
         static SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
         let semaphore =
             Arc::clone(SEMAPHORE.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(8))));
-        loop {
-            match Arc::clone(&semaphore).try_acquire_owned() {
-                Ok(permit) => return Arc::new(permit),
-                Err(tokio::sync::TryAcquireError::NoPermits) => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                Err(tokio::sync::TryAcquireError::Closed) => {
-                    panic!("http route test semaphore should stay open");
-                }
-            }
-        }
+        Arc::clone(&semaphore)
+            .acquire_owned()
+            .await
+            .expect("http route test semaphore should stay open")
     }
 
     fn afdian_test_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -181,7 +239,7 @@ mod tests {
         });
 
         let database = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(2)
+            .max_connections(1)
             .acquire_timeout(std::time::Duration::from_secs(60))
             .connect_lazy(&config.database.url)
             .expect("lazy postgres pool should build for tests");
@@ -190,15 +248,13 @@ mod tests {
         );
         let http_client = reqwest::Client::new();
 
-        let mut state = AppState::new(
+        AppState::new(
             config,
             DatabaseRuntime::new(database),
             redis,
             http_client,
             true,
-        );
-        state.test_runtime_slot = Some(acquire_http_route_test_slot());
-        state
+        )
     }
 
     fn test_state_with_wander_ai(ai_enabled: bool) -> AppState {
@@ -344,6 +400,20 @@ mod tests {
         poll_text_for_path(client, address, "/game-socket/", sid).await
     }
 
+    async fn poll_text_with_timeout(
+        client: &reqwest::Client,
+        address: std::net::SocketAddr,
+        sid: &str,
+        timeout_ms: u64,
+    ) -> String {
+        tokio::time::timeout(
+            std::time::Duration::from_millis(timeout_ms),
+            poll_text(client, address, sid),
+        )
+        .await
+        .unwrap_or_default()
+    }
+
     async fn poll_until_contains(
         client: &reqwest::Client,
         address: std::net::SocketAddr,
@@ -361,23 +431,58 @@ mod tests {
         last
     }
 
+    async fn poll_until_contains_all(
+        client: &reqwest::Client,
+        address: std::net::SocketAddr,
+        sid: &str,
+        needles: &[&str],
+    ) -> String {
+        let mut last = String::new();
+        for _ in 0..100 {
+            last = poll_text(client, address, sid).await;
+            if needles.iter().all(|needle| last.contains(needle)) {
+                return last;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        last
+    }
+
     struct TestServerHandle {
-        handle: tokio::task::JoinHandle<()>,
+        handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+        _slot: tokio::sync::OwnedSemaphorePermit,
     }
 
     impl TestServerHandle {
-        fn abort(&self) {
-            self.handle.abort();
+        fn take_handle(&self) -> Option<tokio::task::JoinHandle<()>> {
+            match self.handle.lock() {
+                Ok(mut guard) => guard.take(),
+                Err(poisoned) => poisoned.into_inner().take(),
+            }
+        }
+
+        async fn abort(&self) {
+            if let Some(handle) = self.take_handle() {
+                handle.abort();
+                let _ = handle.await;
+            }
+        }
+
+        fn abort_now(&self) {
+            if let Some(handle) = self.take_handle() {
+                handle.abort();
+            }
         }
     }
 
     impl Drop for TestServerHandle {
         fn drop(&mut self) {
-            self.handle.abort();
+            self.abort_now();
         }
     }
 
     async fn spawn_test_server(app: axum::Router) -> (std::net::SocketAddr, TestServerHandle) {
+        let slot = acquire_http_route_test_slot().await;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
@@ -385,7 +490,13 @@ mod tests {
         let handle = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("server should run");
         });
-        (address, TestServerHandle { handle })
+        (
+            address,
+            TestServerHandle {
+                handle: Mutex::new(Some(handle)),
+                _slot: slot,
+            },
+        )
     }
 
     async fn connect_fixture_db_or_skip(state: &AppState, skip_tag: &str) -> Option<sqlx::PgPool> {
@@ -654,7 +765,7 @@ mod tests {
         println!("SOCKET_IO_INVALID_AUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_INVALID_AUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error") || poll_text.contains("Session ID unknown"));
         if poll_text.contains("game:error") {
@@ -724,7 +835,7 @@ mod tests {
         println!("SOCKET_IO_ROOM_JOINED={:?}", joined);
         println!("SOCKET_IO_ROOM_LEFT={:?}", left);
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(joined.as_deref(), Some("room-fallback"));
         assert_eq!(left, None);
@@ -753,7 +864,7 @@ mod tests {
         println!("SOCKET_IO_JOIN_ROOM_UNAUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_JOIN_ROOM_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -782,7 +893,7 @@ mod tests {
         println!("SOCKET_IO_JOIN_ROOM_BLANK_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_JOIN_ROOM_BLANK_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("房间ID不能为空"));
@@ -821,7 +932,7 @@ mod tests {
         println!("SOCKET_IO_BATTLE_SYNC_MISSING_ID_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_BATTLE_SYNC_MISSING_ID_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("缺少战斗ID"));
@@ -850,7 +961,7 @@ mod tests {
         println!("SOCKET_IO_BATTLE_SYNC_UNAUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_BATTLE_SYNC_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -889,7 +1000,7 @@ mod tests {
         println!("SOCKET_IO_ADD_POINT_INVALID_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_ADD_POINT_INVALID_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("无效的属性"));
@@ -918,7 +1029,7 @@ mod tests {
         println!("SOCKET_IO_ADD_POINT_UNAUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_ADD_POINT_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未找到角色"));
@@ -982,7 +1093,7 @@ mod tests {
         println!("SOCKET_IO_ONLINE_PLAYERS_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_ONLINE_PLAYERS_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:onlinePlayers"));
         assert!(poll_text.contains("\"type\":\"full\""));
@@ -1015,7 +1126,7 @@ mod tests {
         println!("SOCKET_IO_ONLINE_PLAYERS_UNAUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_ONLINE_PLAYERS_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -1044,7 +1155,7 @@ mod tests {
         println!("SOCKET_IO_REFRESH_UNAUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_REFRESH_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -1073,7 +1184,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_UNAUTH_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("未认证"));
@@ -1112,7 +1223,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_SYSTEM_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_SYSTEM_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("系统频道不允许发言"));
@@ -1151,7 +1262,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_BATTLE_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_BATTLE_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("战况频道不允许发言"));
@@ -1190,7 +1301,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_UNSUPPORTED_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_UNSUPPORTED_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("无效频道"));
@@ -1229,7 +1340,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_PRIVATE_MISSING_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_PRIVATE_MISSING_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("缺少私聊对象"));
@@ -1279,7 +1390,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_PRIVATE_OFFLINE_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_PRIVATE_OFFLINE_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("对方不在线"));
@@ -1329,7 +1440,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_PRIVATE_INVALID_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_PRIVATE_INVALID_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("私聊对象无效"));
@@ -1368,7 +1479,7 @@ mod tests {
         println!("SOCKET_IO_CHAT_EMPTY_HANDSHAKE={handshake_text}");
         println!("SOCKET_IO_CHAT_EMPTY_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("消息内容不能为空"));
@@ -1443,7 +1554,7 @@ mod tests {
             None
         );
 
-        server.abort();
+        server.abort().await;
     }
 
     #[tokio::test]
@@ -1459,7 +1570,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"join:room\",\"\"]").await;
         let poll_text = poll_until_contains(&client, address, &sid, "game:error").await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("房间ID不能为空"));
@@ -1478,7 +1589,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"join:room\",\"room-alpha\"]").await;
         let poll_text = poll_until_contains(&client, address, &sid, "game:error").await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -1535,7 +1646,7 @@ mod tests {
         let joined_poll = poll_text(&client, address, &sid_joined).await;
         let other_poll = poll_text(&client, address, &sid_other).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(joined_poll.contains("room:test"));
         assert!(joined_poll.contains("\"ok\":true"));
@@ -1588,7 +1699,7 @@ mod tests {
 
         println!("ROOM_LEAVE_BROADCAST_POLL={poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(!poll.contains("room:test"));
         assert_eq!(
@@ -1621,7 +1732,7 @@ mod tests {
         println!("GAME_SOCKET_AUTH_INVALID_POLL_STATUS=200 OK");
         println!("GAME_SOCKET_AUTH_INVALID_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error") || poll_text.contains("Session ID unknown"));
         if poll_text.contains("game:error") {
@@ -1645,7 +1756,7 @@ mod tests {
         println!("GAME_SOCKET_ONLINE_PLAYERS_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -1702,7 +1813,7 @@ mod tests {
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTHLESS_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTHLESS_SUCCESS_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:onlinePlayers"));
         assert!(poll_text.contains("\"type\":\"full\""));
@@ -1728,7 +1839,7 @@ mod tests {
         println!("GAME_SOCKET_REFRESH_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_REFRESH_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -1756,7 +1867,7 @@ mod tests {
         println!("GAME_SOCKET_ADD_POINT_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ADD_POINT_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未找到角色"));
@@ -1794,7 +1905,7 @@ mod tests {
         println!("GAME_SOCKET_ADD_POINT_INVALID_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ADD_POINT_INVALID_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("无效的属性"));
@@ -1832,7 +1943,7 @@ mod tests {
         println!("GAME_SOCKET_ADD_POINT_RANGE_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ADD_POINT_RANGE_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("无效的属性"));
@@ -1860,7 +1971,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_SYNC_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_BATTLE_SYNC_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("未认证"));
@@ -1892,7 +2003,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_SYNC_MISSING_ID_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_BATTLE_SYNC_MISSING_ID_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("game:error"));
         assert!(poll_text.contains("缺少战斗ID"));
@@ -1914,7 +2025,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_SEND_UNAUTH_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_CHAT_SEND_UNAUTH_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("未认证"));
@@ -1953,7 +2064,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_TOO_LONG_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_CHAT_TOO_LONG_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("消息过长"));
@@ -1991,7 +2102,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_SENSITIVE_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_CHAT_SENSITIVE_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("消息包含敏感词，请重新发送"));
@@ -2073,7 +2184,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_WORLD_SENDER_POLL={sender_poll}");
         println!("GAME_SOCKET_CHAT_WORLD_RECEIVER_POLL={receiver_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(sender_poll.contains("chat:message"));
         assert!(sender_poll.contains("\"clientId\":\"client-1\""));
@@ -2104,7 +2215,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"system\",\"content\":\"系统你好\",\"clientId\":\"client-system\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("系统频道不允许发言"));
@@ -2132,7 +2243,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"battle\",\"content\":\"战况你好\",\"clientId\":\"client-battle\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("战况频道不允许发言"));
@@ -2160,7 +2271,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"world\",\"content\":\"   \",\"clientId\":\"client-empty\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("消息内容不能为空"));
@@ -2188,7 +2299,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"all\",\"content\":\"hello\",\"clientId\":\"client-unsupported\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("无效频道"));
@@ -2269,7 +2380,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_PRIVATE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_CHAT_PRIVATE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(sender_poll.contains("chat:message"));
         assert!(sender_poll.contains("\"pmTargetCharacterId\":404"));
@@ -2312,7 +2423,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"private\",\"content\":\"hello\",\"clientId\":\"client-private-missing\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("缺少私聊对象"));
@@ -2352,7 +2463,7 @@ mod tests {
         socket_emit_raw(&client, address, &sid, "42[\"chat:send\",{\"channel\":\"private\",\"content\":\"hello\",\"pmTargetCharacterId\":0,\"clientId\":\"client-private-invalid\"}]").await;
         let poll_text = poll_text(&client, address, &sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("私聊对象无效"));
@@ -2387,7 +2498,7 @@ mod tests {
         socket_emit_raw(&client, address, &sender_sid, "42[\"chat:send\",{\"channel\":\"private\",\"content\":\"悄悄话\",\"clientId\":\"client-private-offline\",\"pmTargetCharacterId\":9999}]").await;
         let poll_text = poll_text(&client, address, &sender_sid).await;
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("对方不在线"));
@@ -2420,7 +2531,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_TEAM_UNAUTHORIZED_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_CHAT_TEAM_UNAUTHORIZED_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("当前不在队伍中"));
@@ -2489,7 +2600,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_TEAM_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_CHAT_TEAM_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(sender_poll.contains("chat:message"));
         assert!(sender_poll.contains("\"channel\":\"team\""));
@@ -2539,7 +2650,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_SECT_UNAUTHORIZED_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_CHAT_SECT_UNAUTHORIZED_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("chat:error"));
         assert!(poll_text.contains("当前不在宗门中"));
@@ -2609,7 +2720,7 @@ mod tests {
         println!("GAME_SOCKET_CHAT_SECT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_CHAT_SECT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(sender_poll.contains("chat:message"));
         assert!(sender_poll.contains("\"channel\":\"sect\""));
@@ -2710,7 +2821,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_HELPER_POLL={participant_poll}");
         println!("GAME_SOCKET_BATTLE_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(participant_poll.contains("battle:update"));
         assert!(participant_poll.contains("battle_started"));
@@ -2778,7 +2889,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_COOLDOWN_SECOND_POLL={second_poll}");
         println!("GAME_SOCKET_BATTLE_COOLDOWN_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(first_poll.contains("battle:cooldown-sync"));
         assert!(first_poll.contains("\"characterId\":1101"));
@@ -2854,7 +2965,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_FINISHED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_BATTLE_FINISHED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("battle:update"));
         assert!(target_poll.contains("battle_finished"));
@@ -2909,7 +3020,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_ABANDONED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_BATTLE_ABANDONED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("battle:update"));
         assert!(target_poll.contains("battle_abandoned"));
@@ -2967,7 +3078,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_STATE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_BATTLE_STATE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("battle:update"));
         assert!(target_poll.contains("battle_state"));
@@ -3013,7 +3124,7 @@ mod tests {
         println!("GAME_SOCKET_ARENA_HELPER_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_ARENA_HELPER_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("arena:update"));
         assert!(poll_text.contains("\"kind\":\"arena_status\""));
@@ -3060,7 +3171,7 @@ mod tests {
         println!("GAME_SOCKET_ARENA_REFRESH_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_ARENA_REFRESH_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("arena:update"));
         assert!(target_poll.contains("\"kind\":\"arena_refresh\""));
@@ -3111,7 +3222,7 @@ mod tests {
         println!("GAME_SOCKET_MARKET_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_MARKET_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("market:update"));
         assert!(target_poll.contains("\"source\":\"buy_market_listing\""));
@@ -3162,7 +3273,7 @@ mod tests {
         println!("GAME_SOCKET_RANK_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_RANK_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("rank:update"));
         assert!(target_poll.contains("\"source\":\"buy_partner_listing\""));
@@ -3232,7 +3343,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_HELPER_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_TEAM_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"teamId\":\"team-1\""));
@@ -3281,7 +3392,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_SECT_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("sect:update"));
         assert!(target_poll.contains("\"joined\":true"));
@@ -3329,7 +3440,7 @@ mod tests {
         println!("GAME_SOCKET_MAIL_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_MAIL_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("mail:update"));
         assert!(target_poll.contains("\"unreadCount\":3"));
@@ -3385,7 +3496,7 @@ mod tests {
         println!("GAME_SOCKET_CHARACTER_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_CHARACTER_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:character"));
         assert!(target_poll.contains("\"type\":\"delta\""));
@@ -3503,7 +3614,7 @@ mod tests {
         println!("GAME_SOCKET_CHARACTER_FULL_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_CHARACTER_FULL_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:character"));
         assert!(target_poll.contains("\"type\":\"full\""));
@@ -3560,7 +3671,7 @@ mod tests {
         println!("GAME_SOCKET_IDLE_UPDATE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_IDLE_UPDATE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("idle:update"));
         assert!(target_poll.contains("\"sessionId\":\"idle-1\""));
@@ -3630,7 +3741,7 @@ mod tests {
         println!("GAME_SOCKET_IDLE_FINISHED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_IDLE_FINISHED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("idle:finished"));
         assert!(target_poll.contains("\"sessionId\":\"idle-2\""));
@@ -3692,7 +3803,7 @@ mod tests {
         println!("GAME_SOCKET_IDLE_START_EXECUTION_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_IDLE_START_EXECUTION_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("idle:update"));
         assert!(target_poll.contains("\"result\":\"attacker_win\""));
@@ -3770,7 +3881,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
     }
@@ -3811,19 +3922,52 @@ mod tests {
             .expect("idle start request should succeed");
         assert_eq!(response.status(), StatusCode::OK);
 
+        let mut buffered_count = 0_i64;
+        for _ in 0..20 {
+            let row = sqlx::query("SELECT COALESCE(jsonb_array_length(COALESCE(session_snapshot->'bufferedBatchDeltas', '[]'::jsonb)), 0)::bigint AS buffered_count FROM idle_sessions WHERE character_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1")
+                .bind(fixture.character_id)
+                .fetch_one(&pool)
+                .await
+                .expect("idle session should exist while waiting for buffered delta");
+            buffered_count = row
+                .try_get::<i64, _>("buffered_count")
+                .expect("buffered count should exist");
+            if buffered_count > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+        assert!(
+            buffered_count > 0,
+            "idle loop should persist a buffered reward delta before forced flush"
+        );
+
         sqlx::query("UPDATE idle_sessions SET session_snapshot = jsonb_set(COALESCE(session_snapshot, '{}'::jsonb), '{bufferedSinceMs}', '0'::jsonb, true), updated_at = NOW() WHERE character_id = $1 AND status = 'active'")
             .bind(fixture.character_id)
             .execute(&pool)
             .await
             .expect("idle session flush timestamp should update");
 
-        tokio::time::sleep(std::time::Duration::from_millis(3500)).await;
-
-        let row = sqlx::query("SELECT bag_full_flag FROM idle_sessions WHERE character_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1")
+        let mut row = sqlx::query("SELECT bag_full_flag FROM idle_sessions WHERE character_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1")
             .bind(fixture.character_id)
             .fetch_one(&pool)
             .await
             .expect("idle session should exist");
+        for _ in 0..20 {
+            if row
+                .try_get::<Option<bool>, _>("bag_full_flag")
+                .unwrap_or(None)
+                == Some(true)
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            row = sqlx::query("SELECT bag_full_flag FROM idle_sessions WHERE character_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1")
+                .bind(fixture.character_id)
+                .fetch_one(&pool)
+                .await
+                .expect("idle session should exist");
+        }
 
         println!(
             "GAME_SOCKET_IDLE_BAG_FULL_FLAG={}",
@@ -3832,7 +3976,7 @@ mod tests {
                 .unwrap_or(false)
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             row.try_get::<Option<bool>, _>("bag_full_flag")
@@ -3953,7 +4097,7 @@ mod tests {
             without_partner, with_partner
         );
 
-        server.abort();
+        server.abort().await;
 
         assert!(with_partner < without_partner);
 
@@ -4037,7 +4181,7 @@ mod tests {
         println!("GAME_SOCKET_IDLE_STOP_EXECUTION_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_IDLE_STOP_EXECUTION_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("idle:finished"));
         assert!(target_poll.contains("\"reason\":\"interrupted\""));
@@ -4108,7 +4252,7 @@ mod tests {
         println!("GAME_SOCKET_TIME_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TIME_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:time-sync"));
         assert!(target_poll.contains("\"era_name\":\"末法纪元\""));
@@ -4171,7 +4315,7 @@ mod tests {
         println!("GAME_SOCKET_WANDER_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_WANDER_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("wander:update"));
         assert!(target_poll.contains("\"today\":\"2026-04-13\""));
@@ -4252,7 +4396,7 @@ mod tests {
         println!("GAME_SOCKET_TECHNIQUE_STATUS_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TECHNIQUE_STATUS_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("techniqueResearch:update"));
         assert!(target_poll.contains("\"characterId\":9101"));
@@ -4334,7 +4478,7 @@ mod tests {
         println!("GAME_SOCKET_TECHNIQUE_STATUS_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TECHNIQUE_STATUS_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("techniqueResearch:update"));
         assert!(target_poll.contains("\"characterId\":9101"));
@@ -4390,7 +4534,7 @@ mod tests {
         println!("GAME_SOCKET_TECHNIQUE_RESULT_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TECHNIQUE_RESULT_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("techniqueResearchResult"));
         assert!(target_poll.contains("\"characterId\":9301"));
@@ -4459,7 +4603,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_RECRUIT_STATUS_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_RECRUIT_STATUS_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerRecruit:update"));
         assert!(target_poll.contains("\"characterId\":10101"));
@@ -4515,7 +4659,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_FUSION_STATUS_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_FUSION_STATUS_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerFusion:update"));
         assert!(target_poll.contains("\"characterId\":11101"));
@@ -4571,7 +4715,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_REBONE_STATUS_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_REBONE_STATUS_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerRebone:update"));
         assert!(target_poll.contains("\"characterId\":12101"));
@@ -4624,7 +4768,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_RECRUIT_RESULT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_RECRUIT_RESULT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerRecruitResult"));
         assert!(target_poll.contains("\"characterId\":13101"));
@@ -4679,7 +4823,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_FUSION_RESULT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_FUSION_RESULT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerFusionResult"));
         assert!(target_poll.contains("\"characterId\":14101"));
@@ -4734,7 +4878,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_REBONE_RESULT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_REBONE_RESULT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerReboneResult"));
         assert!(target_poll.contains("\"characterId\":15101"));
@@ -4782,7 +4926,7 @@ mod tests {
         println!("GAME_SOCKET_ACHIEVEMENT_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_ACHIEVEMENT_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("achievement:update"));
         assert!(target_poll.contains("\"characterId\":7101"));
@@ -4830,7 +4974,7 @@ mod tests {
         println!("GAME_SOCKET_TASK_HELPER_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TASK_HELPER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("task:update"));
         assert!(target_poll.contains("\"characterId\":8101"));
@@ -4923,7 +5067,7 @@ mod tests {
         println!("GAME_SOCKET_ONLINE_PLAYERS_HELPER_FULL={full_poll}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_HELPER_DELTA={delta_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(full_poll.contains("game:onlinePlayers"));
         assert!(full_poll.contains("\"type\":\"full\""));
@@ -4938,19 +5082,8 @@ mod tests {
 
     #[tokio::test]
     async fn wander_generate_route_emits_wander_update_to_target_user() {
+        let _guard = wander_ai_test_lock();
         let state = test_state_with_wander_ai(true);
-        let mut config = (*state.config).clone();
-        config.wander.model_provider = "openai".to_string();
-        config.wander.model_url = "http://127.0.0.1:1/v1".to_string();
-        config.wander.model_key = "mock-wander-key".to_string();
-        config.wander.model_name = "mock-wander-model".to_string();
-        let state = AppState::new(
-            Arc::new(config),
-            state.database.clone(),
-            state.redis.clone(),
-            state.outbound_http.clone(),
-            true,
-        );
         let Some(pool) = connect_fixture_db_or_skip(
             &state,
             "GAME_SOCKET_WANDER_GENERATE_SKIPPED_DB_UNAVAILABLE",
@@ -4959,6 +5092,16 @@ mod tests {
         else {
             return;
         };
+        let original_provider = std::env::var("AI_WANDER_MODEL_PROVIDER").ok();
+        let original_url = std::env::var("AI_WANDER_MODEL_URL").ok();
+        let original_key = std::env::var("AI_WANDER_MODEL_KEY").ok();
+        let original_name = std::env::var("AI_WANDER_MODEL_NAME").ok();
+        unsafe {
+            std::env::set_var("AI_WANDER_MODEL_PROVIDER", "openai");
+            std::env::set_var("AI_WANDER_MODEL_URL", "http://127.0.0.1:1/v1");
+            std::env::set_var("AI_WANDER_MODEL_KEY", "mock-wander-key");
+            std::env::set_var("AI_WANDER_MODEL_NAME", "mock-wander-model");
+        }
 
         let suffix = format!("wander-{}", super::chrono_like_timestamp_ms());
         let fixture = insert_auth_fixture(&state, &pool, "socket", &suffix, 0).await;
@@ -5013,7 +5156,26 @@ mod tests {
         println!("GAME_SOCKET_WANDER_GENERATE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_WANDER_GENERATE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
+
+        unsafe {
+            match original_provider {
+                Some(v) => std::env::set_var("AI_WANDER_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_WANDER_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_WANDER_MODEL_URL", v),
+                None => std::env::remove_var("AI_WANDER_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_WANDER_MODEL_KEY", v),
+                None => std::env::remove_var("AI_WANDER_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_WANDER_MODEL_NAME", v),
+                None => std::env::remove_var("AI_WANDER_MODEL_NAME"),
+            };
+        }
 
         assert!(target_poll.contains("wander:update"));
         assert!(target_poll.contains("\"currentGenerationJob\":{"));
@@ -5093,7 +5255,7 @@ mod tests {
                 .unwrap_or_default()
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             job_row
@@ -5188,7 +5350,7 @@ mod tests {
 
         println!("WANDER_OTHER_PLAYER_SNAPSHOT={snapshot}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(snapshot["characterId"], other.character_id);
         assert_eq!(snapshot["nickname"], format!("socket-{suffix}"));
@@ -5327,7 +5489,7 @@ mod tests {
         );
         println!("WANDER_AI_RESOLUTION_OVERVIEW={overview_body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             job_row
@@ -5480,7 +5642,7 @@ mod tests {
         println!("GAME_SOCKET_MAIL_READ_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_MAIL_READ_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("mail:update"));
         assert!(target_poll.contains("\"source\":\"read_mail\""));
@@ -5567,7 +5729,7 @@ mod tests {
         println!("GAME_SOCKET_MAIL_DELETE_ALL_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_MAIL_DELETE_ALL_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("mail:update"));
         assert!(target_poll.contains("\"source\":\"delete_all_mail\""));
@@ -5651,7 +5813,7 @@ mod tests {
         println!("GAME_SOCKET_MAIL_CLAIM_ALL_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_MAIL_CLAIM_ALL_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("mail:update"));
         assert!(target_poll.contains("\"source\":\"claim_all_mail\""));
@@ -5736,7 +5898,7 @@ mod tests {
         println!("GAME_SOCKET_MAIL_CLAIM_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_MAIL_CLAIM_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("mail:update"));
         assert!(target_poll.contains("\"source\":\"claim_mail\""));
@@ -5840,7 +6002,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "领取成功");
@@ -5894,7 +6056,7 @@ mod tests {
 
         println!("MAIL_ATTACH_REWARDS_CLAIM_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -5968,7 +6130,7 @@ mod tests {
 
         println!("MAIL_ATTACH_REWARDS_CLAIM_ALL_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -6053,7 +6215,7 @@ mod tests {
         println!("GAME_SOCKET_UPLOAD_AVATAR_LOCAL_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_UPLOAD_AVATAR_LOCAL_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:character"));
         assert!(target_poll.contains("\"type\":\"delta\""));
@@ -6128,7 +6290,7 @@ mod tests {
         println!("GAME_SOCKET_DELETE_AVATAR_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_DELETE_AVATAR_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:character"));
         assert!(target_poll.contains("\"type\":\"delta\""));
@@ -6212,7 +6374,7 @@ mod tests {
         println!("GAME_SOCKET_INVENTORY_EQUIP_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_INVENTORY_EQUIP_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:character"));
         assert!(target_poll.contains("\"type\":\"full\""));
@@ -6302,7 +6464,7 @@ mod tests {
         println!("GAME_SOCKET_INVENTORY_UNEQUIP_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_INVENTORY_UNEQUIP_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("game:character"));
         assert!(target_poll.contains("\"type\":\"full\""));
@@ -6368,7 +6530,7 @@ mod tests {
 
         println!("INVENTORY_REROLL_COST_PREVIEW_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["rerollScrollItemDefId"], "scroll-003");
@@ -6431,7 +6593,7 @@ mod tests {
 
         println!("INVENTORY_REROLL_POOL_PREVIEW_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["poolName"], "装备总词条池");
@@ -6522,7 +6684,7 @@ mod tests {
 
         println!("INVENTORY_REROLL_EXECUTE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["lockIndexes"][0], 0);
@@ -6629,7 +6791,7 @@ mod tests {
 
         println!("INVENTORY_REROLL_EQUIPPED_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -6736,7 +6898,7 @@ mod tests {
             serde_json::json!(mutation_hash)
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["recipeId"], "recipe-xin-shou-jian");
@@ -6919,7 +7081,7 @@ mod tests {
 
         println!("INVENTORY_CRAFT_MAIN_QUEST_ROUTE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["recipeId"], "recipe-hui-qi-dan");
@@ -7052,7 +7214,7 @@ mod tests {
 
         println!("INVENTORY_USE_PARTNER_REBONE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["partnerReboneJob"]["partnerId"], partner_id);
@@ -7162,7 +7324,7 @@ mod tests {
             serde_json::json!(mutation_hash)
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(
@@ -7272,7 +7434,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "ok");
@@ -7373,7 +7535,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "ok");
@@ -7463,7 +7625,7 @@ mod tests {
             assert!(!reward_items.is_empty());
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "ok");
@@ -7545,7 +7707,7 @@ mod tests {
 
         println!("INVENTORY_USE_MONTH_CARD_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(
@@ -7630,7 +7792,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "领取成功");
@@ -7704,7 +7866,7 @@ mod tests {
 
         println!("INVENTORY_USE_BUFF_PILL_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(
@@ -7818,7 +7980,7 @@ mod tests {
 
         println!("INVENTORY_USE_LOOT_BOX_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(
@@ -7939,7 +8101,7 @@ mod tests {
 
         println!("INVENTORY_USE_MORTAL_GEM_BAG_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(!rewarded_gem_id.is_empty());
@@ -8059,7 +8221,7 @@ mod tests {
 
         println!("GENERATED_TECHNIQUE_DETAIL_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(preview_body["success"], true);
         assert_eq!(preview_body["data"]["layers"][0]["cost_spirit_stones"], 0);
@@ -8211,7 +8373,7 @@ mod tests {
             .await
             .expect("partner-only generated technique detail should respond");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(use_status, StatusCode::BAD_REQUEST);
         assert_eq!(use_body["success"], false);
@@ -8295,7 +8457,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("overview body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let partner = body["data"]["partners"]
             .as_array()
@@ -8425,7 +8587,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("market detail body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["technique"]["id"], technique_id);
@@ -8510,7 +8672,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("preview body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["techniques"][0]["techniqueId"], technique_id);
@@ -8598,7 +8760,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("detail body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["technique"]["id"], technique_id);
@@ -8645,7 +8807,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("list body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -8698,7 +8860,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("snapshot body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let item = body["data"]["bagItems"]
             .as_array()
@@ -8778,7 +8940,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("market body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let item = body["data"]["listings"]
             .as_array()
@@ -8853,7 +9015,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("market body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let item = body["data"]["listings"]
             .as_array()
@@ -8926,7 +9088,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("market body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let item = body["data"]["listings"]
             .as_array()
@@ -8992,7 +9154,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("overview body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let books = body["data"]["books"]
             .as_array()
@@ -9040,7 +9202,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("snapshot body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let item = body["data"]["bagItems"]
             .as_array()
@@ -9091,7 +9253,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("snapshot body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let item = body["data"]["bagItems"]
             .as_array()
@@ -9153,7 +9315,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("partner overview body should be json");
 
-        server.abort();
+        server.abort().await;
 
         let book = body["data"]["books"]
             .as_array()
@@ -9261,7 +9423,7 @@ mod tests {
         )
         .expect("fusion body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(recruit_body["success"], true);
         assert!(
@@ -9366,7 +9528,7 @@ mod tests {
             .expect("preview existence query should succeed")
             .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(body["data"]["pendingTechniqueLearnPreview"].is_null());
@@ -9439,7 +9601,7 @@ mod tests {
         .expect("listing existence query should succeed")
         .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -9571,7 +9733,7 @@ mod tests {
             .expect("invalid preview existence query should succeed")
             .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -9641,7 +9803,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("confirm body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -9691,7 +9853,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("discard body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -9752,7 +9914,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("confirm body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -9802,7 +9964,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("discard body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -9871,7 +10033,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("confirm body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -9952,7 +10114,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("discard body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -10065,7 +10227,7 @@ mod tests {
             .expect("preview existence query should succeed")
             .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -10153,7 +10315,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("confirm body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -10250,6 +10412,18 @@ mod tests {
             .await
             .expect("partner fusion start should succeed");
         assert_eq!(start_response.status(), StatusCode::OK);
+        let start_body: Value =
+            serde_json::from_str(&start_response.text().await.expect("body should read"))
+                .expect("fusion start body should be json");
+        assert_eq!(start_body["success"], true);
+        let fusion_id = start_body["data"]["fusionId"]
+            .as_str()
+            .expect("fusion id should exist");
+        sqlx::query("UPDATE partner_fusion_job SET status = 'pending', error_message = NULL, finished_at = NULL, updated_at = NOW() WHERE id = $1")
+            .bind(fusion_id)
+            .execute(&pool)
+            .await
+            .expect("fusion job should stay material-locked for discard validation");
         let response = client
             .post(format!(
                 "http://{address}/api/partner/learn-technique/discard"
@@ -10264,7 +10438,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("discard body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -10328,7 +10502,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("confirm body should be json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
@@ -10401,7 +10575,7 @@ mod tests {
             .expect("preview existence query should succeed")
             .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -10487,8 +10661,20 @@ mod tests {
             .as_str()
             .expect("fusion id should exist")
             .to_string();
-
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        let preview_partner_def_id = format!("fusion-preview-{}", fixture.character_id);
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, innate_technique_ids, base_attrs, level_attr_gains, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·归契灵伴', '测试归契预览伙伴', NULL, '玄', 'wood', 'support', 1, ARRAY[]::text[], '{\"max_qixue\":120}'::jsonb, '{\"max_qixue\":8}'::jsonb, TRUE, $2, $3, NOW(), NOW())")
+            .bind(&preview_partner_def_id)
+            .bind(fixture.character_id)
+            .bind(&fusion_id)
+            .execute(&pool)
+            .await
+            .expect("fusion preview partner def should insert");
+        sqlx::query("UPDATE partner_fusion_job SET status = 'generated_preview', preview_partner_def_id = $2, error_message = NULL, updated_at = NOW() WHERE id = $1")
+            .bind(&fusion_id)
+            .bind(&preview_partner_def_id)
+            .execute(&pool)
+            .await
+            .expect("fusion job should be made confirmable");
 
         let confirm_response = client
             .post(format!(
@@ -10513,7 +10699,7 @@ mod tests {
             .expect("preview existence query should succeed")
             .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -10603,7 +10789,7 @@ mod tests {
             .expect("preview existence query should succeed")
             .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -10668,7 +10854,7 @@ mod tests {
         .expect("learned query should succeed")
         .is_some();
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["success"], true);
@@ -10752,7 +10938,7 @@ mod tests {
         let body: Value = serde_json::from_str(&response.text().await.expect("body should read"))
             .expect("body should json");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["data"]["nextLayer"], 2);
@@ -10819,7 +11005,7 @@ mod tests {
 
         println!("INVENTORY_USE_DISPEL_PILL_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(poison_exists.is_none());
@@ -10894,7 +11080,7 @@ mod tests {
 
         println!("INVENTORY_USE_POISON_HEAL_PILL_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["effects"].as_array().map(|items| items.len()), Some(2));
@@ -11005,7 +11191,7 @@ mod tests {
                 .unwrap_or_default(),
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["effects"].as_array().map(|items| items.len()), Some(2));
@@ -11095,7 +11281,7 @@ mod tests {
 
         println!("INVENTORY_USE_RENAME_CARD_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(
@@ -11191,7 +11377,7 @@ mod tests {
             serde_json::json!(mutation_hash)
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "洗炼成功");
@@ -11293,7 +11479,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -11385,7 +11571,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -11480,7 +11666,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -11592,7 +11778,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -11699,7 +11885,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert!(
@@ -11771,7 +11957,7 @@ mod tests {
 
         println!("MARKET_SOCKET_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("market:update"));
         assert!(poll_text.contains("create_market_listing"));
@@ -11855,7 +12041,7 @@ mod tests {
 
         println!("PARTNER_MARKET_RANK_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("rank:update"));
         assert!(poll_text.contains("buy_partner_listing"));
@@ -11947,7 +12133,7 @@ mod tests {
         assert!(poll_text.contains("\"era_name\":\"末法纪元\""));
         assert!(poll_text.contains("\"weather\":\"晴\""));
 
-        server.abort();
+        server.abort().await;
         crate::shared::game_time::shutdown_game_time_runtime(&state)
             .await
             .ok();
@@ -12014,7 +12200,7 @@ mod tests {
                 || second_after_replace.contains("Session ID unknown")
         );
 
-        server.abort();
+        server.abort().await;
 
         cleanup_auth_fixture(&pool, character_id, user_id).await;
     }
@@ -12059,7 +12245,7 @@ mod tests {
         assert!(online_players_poll_text.contains("\"players\":[{"));
         assert!(online_players_poll_text.contains("\"nickname\":\"角色-"));
 
-        server.abort();
+        server.abort().await;
 
         cleanup_auth_fixture(&pool, character_id, user_id).await;
     }
@@ -12112,7 +12298,7 @@ mod tests {
         println!("GAME_SOCKET_ONLINE_PLAYERS_MULTI_FIRST_POLL_TWO={first_poll_two}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_MULTI_REFRESH_POLL_TWO={refresh_poll_two}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(first_poll_one.contains("game:auth-ready"));
         assert!(second_poll_one.contains("game:onlinePlayers"));
@@ -12152,7 +12338,7 @@ mod tests {
 
         let (authed_sid, _) = handshake_sid(&client, address).await;
         socket_auth(&client, address, &authed_sid, &fixture.token).await;
-        let _ = poll_text(&client, address, &authed_sid).await;
+        let _ = poll_until_contains(&client, address, &authed_sid, "game:auth-ready").await;
 
         let (unauth_sid, _) = handshake_sid(&client, address).await;
         socket_connect(&client, address, &unauth_sid).await;
@@ -12165,13 +12351,19 @@ mod tests {
         socket_emit_raw(&client, address, &authed_sid, "42[\"game:refresh\"]").await;
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
-        let authed_poll = poll_text(&client, address, &authed_sid).await;
-        let unauth_poll = poll_text(&client, address, &unauth_sid).await;
+        let authed_poll = poll_until_contains_all(
+            &client,
+            address,
+            &authed_sid,
+            &["game:onlinePlayers", "\"realm\":\"筑基期\""],
+        )
+        .await;
+        let unauth_poll = poll_text_with_timeout(&client, address, &unauth_sid, 300).await;
 
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTH_ROOM_AUTHED={authed_poll}");
         println!("GAME_SOCKET_ONLINE_PLAYERS_AUTH_ROOM_UNAUTH={unauth_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(authed_poll.contains("game:onlinePlayers"));
         assert!(authed_poll.contains("\"realm\":\"筑基期\""));
@@ -12218,7 +12410,7 @@ mod tests {
         assert!(refresh_poll_text.contains(&format!("\"id\":{character_id}")));
         assert!(refresh_poll_text.contains(&format!("\"nickname\":\"角色-{suffix}\"")));
 
-        server.abort();
+        server.abort().await;
 
         cleanup_auth_fixture(&pool, character_id, user_id).await;
     }
@@ -12268,7 +12460,7 @@ mod tests {
         assert!(add_point_poll_text.contains("\"jing\":1"));
         assert!(add_point_poll_text.contains("\"attributePoints\":4"));
 
-        server.abort();
+        server.abort().await;
 
         cleanup_auth_fixture(&pool, character_id, user_id).await;
     }
@@ -12346,7 +12538,7 @@ mod tests {
                 || battle_poll_text.contains("battle_state")
         );
 
-        server.abort();
+        server.abort().await;
 
         cleanup_auth_fixture(&pool, character_id, user_id).await;
     }
@@ -12428,7 +12620,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_SYNC_RECOVERY_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_BATTLE_SYNC_RECOVERY_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("battle:update"));
         assert!(!poll_text.contains("battle_abandoned"));
@@ -12511,7 +12703,7 @@ mod tests {
             summary.tower_count,
         );
 
-        server.abort();
+        server.abort().await;
 
         assert!(summary.recovered_battle_count >= 1);
         assert!(summary.pve_count >= 1);
@@ -12967,7 +13159,7 @@ mod tests {
 
         println!("MAIL_UNREAD_EXPIRED_FILTER_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["data"]["unreadCount"], 1);
         assert_eq!(body["data"]["unclaimedCount"], 1);
@@ -13812,8 +14004,8 @@ mod tests {
         println!("AFDIAN_WEBHOOK_E2E_RESPONSE={body}");
         println!("AFDIAN_WEBHOOK_E2E_SEND_MSG_BODY={sent_message_payload}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ec"], 200);
@@ -13952,8 +14144,8 @@ mod tests {
 
         println!("AFDIAN_WEBHOOK_FAILURE_RESPONSE={body}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ec"], 200);
@@ -14077,8 +14269,8 @@ mod tests {
 
         println!("AFDIAN_SEND_EC_RESPONSE={body}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(body["ec"], 200);
         assert_eq!(final_status, "failed");
@@ -14202,8 +14394,8 @@ mod tests {
             order_count, redeem_count, delivery_count
         );
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(order_count, 1);
         assert_eq!(redeem_count, 1);
@@ -14304,8 +14496,8 @@ mod tests {
             order_count, redeem_count, delivery_count
         );
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(order_count, 1);
@@ -14405,8 +14597,8 @@ mod tests {
 
         println!("AFDIAN_MISMATCH_RESPONSE={body}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(
@@ -14491,8 +14683,8 @@ mod tests {
 
         println!("AFDIAN_QUERY_MISS_RESPONSE={body}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["ec"], 400);
@@ -14576,8 +14768,8 @@ mod tests {
 
         println!("AFDIAN_QUERY_EC_RESPONSE={body}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["ec"], 400);
@@ -14658,8 +14850,8 @@ mod tests {
 
         println!("AFDIAN_QUERY_HTTP_RESPONSE={body}");
 
-        server.abort();
-        api_server.abort();
+        server.abort().await;
+        api_server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["ec"], 400);
@@ -14784,7 +14976,7 @@ mod tests {
                 None => std::env::remove_var("AFDIAN_OPEN_TOKEN"),
             };
         }
-        api_server.abort();
+        api_server.abort().await;
     }
 
     #[tokio::test]
@@ -14885,7 +15077,7 @@ mod tests {
         println!("GAME_SOCKET_BATTLE_SYNC_MISSING_HANDSHAKE={handshake_text}");
         println!("GAME_SOCKET_BATTLE_SYNC_MISSING_POLL={poll_text}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(poll_text.contains("battle:update"));
         assert!(poll_text.contains("battle_abandoned"));
@@ -14976,7 +15168,31 @@ mod tests {
         println!("BATTLE_ROUTE_GENERIC_PVE_FIRST_ACTION_RESPONSE={first_action_body}");
         println!("BATTLE_ROUTE_GENERIC_PVE_SECOND_ACTION_RESPONSE={second_action_body}");
 
-        server.abort();
+        let mut finish_action_body = second_action_body;
+        for _ in 0..5 {
+            if finish_action_body["data"]["state"]["phase"] == "finished" {
+                break;
+            }
+            let finish_action_response = client
+                .post(format!("http://{address}/api/battle/action"))
+                .header("authorization", format!("Bearer {}", fixture.token))
+                .header("content-type", "application/json")
+                .body(format!("{{\"battleId\":\"{}\",\"skillId\":\"skill-normal-attack\",\"targetIds\":[\"monster-monster-wild-rabbit-0\"]}}", battle_id))
+                .send()
+                .await
+                .expect("finishing battle action should succeed");
+            assert_eq!(finish_action_response.status(), StatusCode::OK);
+            finish_action_body = serde_json::from_str(
+                &finish_action_response
+                    .text()
+                    .await
+                    .expect("finishing body should read"),
+            )
+            .expect("finishing body should be json");
+            println!("BATTLE_ROUTE_GENERIC_PVE_FINISH_ACTION_RESPONSE={finish_action_body}");
+        }
+
+        server.abort().await;
 
         let task_row =
             sqlx::query("SELECT kind, status FROM online_battle_settlement_task WHERE id = $1")
@@ -15012,61 +15228,61 @@ mod tests {
             first_action_body["data"]["debugRealtime"]["kind"],
             "battle_state"
         );
-        assert_eq!(second_action_body["success"], true);
-        assert_eq!(second_action_body["data"]["state"]["phase"], "finished");
+        assert_eq!(finish_action_body["success"], true);
+        assert_eq!(finish_action_body["data"]["state"]["phase"], "finished");
         assert_eq!(
-            second_action_body["data"]["state"]["result"],
+            finish_action_body["data"]["state"]["result"],
             "attacker_win"
         );
-        assert_eq!(second_action_body["data"]["logs"][0]["type"], "action");
+        assert_eq!(finish_action_body["data"]["logs"][0]["type"], "action");
         assert!(
-            second_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
+            finish_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
                 .get("damage")
                 .is_some()
         );
         assert!(
-            second_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
+            finish_action_body["data"]["logs"][0]["targets"][0]["hits"][0]
                 .get("isMiss")
                 .is_some()
         );
         assert!(
-            second_action_body["data"]["debugRealtime"]
+            finish_action_body["data"]["debugRealtime"]
                 .get("battleId")
                 .is_some()
         );
         assert_eq!(
-            second_action_body["data"]["debugRealtime"]["kind"],
+            finish_action_body["data"]["debugRealtime"]["kind"],
             "battle_finished"
         );
         assert_eq!(
-            second_action_body["data"]["session"]["status"],
+            finish_action_body["data"]["session"]["status"],
             "waiting_transition"
         );
         assert_eq!(
-            second_action_body["data"]["session"]["nextAction"],
+            finish_action_body["data"]["session"]["nextAction"],
             "advance"
         );
-        assert_eq!(second_action_body["data"]["session"]["canAdvance"], true);
-        assert_eq!(second_action_body["data"]["battleStartCooldownMs"], 3000);
+        assert_eq!(finish_action_body["data"]["session"]["canAdvance"], true);
+        assert_eq!(finish_action_body["data"]["battleStartCooldownMs"], 3000);
         assert!(
-            second_action_body["data"]["nextBattleAvailableAt"]
+            finish_action_body["data"]["nextBattleAvailableAt"]
                 .as_i64()
                 .is_some()
         );
         assert!(
-            second_action_body["data"]["debugRealtime"]["rewards"]["exp"]
+            finish_action_body["data"]["debugRealtime"]["rewards"]["exp"]
                 .as_i64()
                 .unwrap_or_default()
                 > 0
         );
         assert!(
-            second_action_body["data"]["debugRealtime"]["rewards"]["silver"]
+            finish_action_body["data"]["debugRealtime"]["rewards"]["silver"]
                 .as_i64()
                 .unwrap_or_default()
                 > 0
         );
         assert!(
-            second_action_body["data"]["debugRealtime"]["rewards"]["perPlayerRewards"]
+            finish_action_body["data"]["debugRealtime"]["rewards"]["perPlayerRewards"]
                 .as_array()
                 .is_some_and(|items| !items.is_empty())
         );
@@ -15202,7 +15418,7 @@ mod tests {
 
         println!("DUNGEON_NEXT_SETTLEMENT_TASK_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["data"]["status"], "cleared");
         assert_eq!(
@@ -15334,7 +15550,7 @@ mod tests {
             record_row.is_some()
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             task_row
@@ -15484,7 +15700,7 @@ mod tests {
             serde_json::json!(progress_hash)
         );
 
-        server.abort();
+        server.abort().await;
 
         assert!(!progress_hash.is_empty());
 
@@ -15624,7 +15840,7 @@ mod tests {
         println!("ARENA_SETTLEMENT_STATUS={status_body}");
         println!("ARENA_SETTLEMENT_RECORDS={records_body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             task_row
@@ -15848,7 +16064,7 @@ mod tests {
                 .unwrap_or_default()
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             battle_count_row
@@ -16147,7 +16363,7 @@ mod tests {
 
         println!("BATTLE_ROUTE_TOWER_WIN_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["data"]["session"]["status"], "waiting_transition");
         assert_eq!(body["data"]["session"]["nextAction"], "advance");
@@ -16286,7 +16502,7 @@ mod tests {
 
         println!("BATTLE_SESSION_ADVANCE_TOWER_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["data"]["session"]["status"], "running");
         assert_eq!(body["data"]["session"]["context"]["floor"], 14);
@@ -16441,7 +16657,7 @@ mod tests {
 
         println!("TOWER_ADVANCE_PERSISTENCE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(previous_snapshot.is_none());
         assert!(previous_projection_raw.is_none());
@@ -16490,7 +16706,7 @@ mod tests {
 
         println!("TOWER_START_NEXT_FLOOR_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["data"]["session"]["context"]["floor"], 14);
         assert_eq!(
@@ -16583,7 +16799,7 @@ mod tests {
 
         println!("BATTLE_SESSION_TOWER_RETURN_TO_MAP_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["data"]["session"]["status"], "completed");
         assert!(body["data"]["session"]["currentBattleId"].is_null());
@@ -16643,7 +16859,7 @@ mod tests {
 
         println!("BATTLE_SESSION_START_PVE_EMPTY_ROOM_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(body.contains("当前房间不存在可战斗目标"));
 
@@ -16689,7 +16905,7 @@ mod tests {
 
         println!("BATTLE_SESSION_START_PVE_OUTSIDE_ROOM_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(body.contains("战斗目标不在当前房间"));
 
@@ -16777,7 +16993,7 @@ mod tests {
 
         println!("BATTLE_SESSION_DUNGEON_PERSISTENCE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(snapshot.is_some());
         assert!(projection.is_some());
@@ -16889,7 +17105,7 @@ mod tests {
             .await
             .expect("session should read");
 
-        server.abort();
+        server.abort().await;
 
         assert!(snapshot.is_none());
         assert!(projection_raw.is_none());
@@ -16986,7 +17202,7 @@ mod tests {
             .await
             .expect("session should read");
 
-        server.abort();
+        server.abort().await;
 
         assert!(snapshot.is_none());
         assert!(projection_raw.is_none());
@@ -17082,7 +17298,7 @@ mod tests {
         println!("GAME_SOCKET_ARENA_ADVANCE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_ARENA_ADVANCE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("battle:update"));
         assert!(target_poll.contains("battle_abandoned"));
@@ -17154,7 +17370,7 @@ mod tests {
         println!("GAME_SOCKET_TASK_TRACK_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TASK_TRACK_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("task:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -17238,7 +17454,7 @@ mod tests {
         println!("GAME_SOCKET_TASK_CLAIM_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TASK_CLAIM_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("task:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -17328,7 +17544,7 @@ mod tests {
             );
         }
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(body["success"], true);
         assert_eq!(body["message"], "ok");
@@ -17397,7 +17613,7 @@ mod tests {
         println!("GAME_SOCKET_TASK_NPC_ACCEPT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TASK_NPC_ACCEPT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("task:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -17489,7 +17705,7 @@ mod tests {
         println!("GAME_SOCKET_TASK_NPC_SUBMIT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TASK_NPC_SUBMIT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("task:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -17574,7 +17790,7 @@ mod tests {
             .expect("achievement points claim body should read");
         println!("ACHIEVEMENT_POINTS_CLAIM_ROUTE_RESPONSE={response_text}");
         assert_eq!(response_status, StatusCode::BAD_REQUEST);
-        server.abort();
+        server.abort().await;
         let body: Value = serde_json::from_str(&response_text)
             .expect("achievement points claim body should be json");
         assert_eq!(body["success"], false);
@@ -17664,7 +17880,7 @@ mod tests {
         println!("GAME_SOCKET_ACHIEVEMENT_CLAIM_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_ACHIEVEMENT_CLAIM_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("achievement:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -17752,7 +17968,7 @@ mod tests {
         println!("GAME_SOCKET_TECHNIQUE_MARK_VIEWED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TECHNIQUE_MARK_VIEWED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("techniqueResearch:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -17788,6 +18004,73 @@ mod tests {
             .execute(&pool)
             .await
             .expect("fragment item should insert");
+
+        let ai_app = axum::Router::new().route(
+            "/v1/chat/completions",
+            axum::routing::post(|| async move {
+                let content = serde_json::json!({
+                    "technique": {
+                        "name": "青木回风诀",
+                        "type": "武技",
+                        "quality": "玄",
+                        "maxLayer": 5,
+                        "requiredRealm": "炼炁化神·结胎期",
+                        "attributeType": "physical",
+                        "attributeElement": "wood",
+                        "tags": ["洞府研修", "青木"],
+                        "description": "青木回风，攻守兼备。",
+                        "longDesc": "以青木生发之意牵引回风劲力，适合洞府研修所得的完整功法候选。"
+                    },
+                    "skills": [{
+                        "id": "generated-skill-1",
+                        "name": "青木回风斩",
+                        "description": "引青木劲气斩击单体敌人。",
+                        "icon": "/uploads/generated/generated-skill-1.webp",
+                        "sourceType": "technique",
+                        "costLingqi": 12,
+                        "costLingqiRate": 0.0,
+                        "costQixue": 0,
+                        "costQixueRate": 0.0,
+                        "cooldown": 1,
+                        "targetType": "single_enemy",
+                        "targetCount": 1,
+                        "damageType": "physical",
+                        "element": "wood",
+                        "effects": [{"type": "damage", "value": 120}],
+                        "triggerType": "active",
+                        "aiPriority": 60,
+                        "upgrades": []
+                    }],
+                    "layers": [
+                        {"layer": 1, "costSpiritStones": 100, "costExp": 50, "costMaterials": [], "passives": [{"key": "atk", "value": 6.0}], "unlockSkillIds": ["generated-skill-1"], "upgradeSkillIds": [], "layerDesc": "青木初生，悟得回风斩。"},
+                        {"layer": 2, "costSpiritStones": 200, "costExp": 100, "costMaterials": [], "passives": [{"key": "def", "value": 4.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "回风渐疾，斩势更盛。"},
+                        {"layer": 3, "costSpiritStones": 300, "costExp": 150, "costMaterials": [], "passives": [{"key": "speed", "value": 3.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "青木成荫，风势圆融。"},
+                        {"layer": 4, "costSpiritStones": 400, "costExp": 200, "costMaterials": [], "passives": [{"key": "atk", "value": 8.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "回风入刃，攻势再涨。"},
+                        {"layer": 5, "costSpiritStones": 500, "costExp": 250, "costMaterials": [], "passives": [{"key": "max_qixue", "value": 60.0}], "unlockSkillIds": [], "upgradeSkillIds": ["generated-skill-1"], "layerDesc": "青木圆满，气血绵长。"}
+                    ]
+                })
+                .to_string();
+                axum::Json(serde_json::json!({
+                    "choices": [{
+                        "message": {
+                            "content": content
+                        }
+                    }]
+                }))
+            }),
+        );
+        let (ai_address, ai_server) = spawn_test_server(ai_app).await;
+
+        let original_provider = std::env::var("AI_TECHNIQUE_MODEL_PROVIDER").ok();
+        let original_url = std::env::var("AI_TECHNIQUE_MODEL_URL").ok();
+        let original_key = std::env::var("AI_TECHNIQUE_MODEL_KEY").ok();
+        let original_name = std::env::var("AI_TECHNIQUE_MODEL_NAME").ok();
+        unsafe {
+            std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", "openai");
+            std::env::set_var("AI_TECHNIQUE_MODEL_URL", format!("http://{ai_address}/v1"));
+            std::env::set_var("AI_TECHNIQUE_MODEL_KEY", "mock-technique-key");
+            std::env::set_var("AI_TECHNIQUE_MODEL_NAME", "rust-deterministic");
+        }
 
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
@@ -17841,7 +18124,27 @@ mod tests {
         );
         println!("TECHNIQUE_RESEARCH_GENERATE_DRAFT_ID={draft_id}");
 
-        server.abort();
+        server.abort().await;
+        ai_server.abort().await;
+
+        unsafe {
+            match original_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
+        }
 
         assert_eq!(
             job_row
@@ -17901,10 +18204,99 @@ mod tests {
         let ai_app = axum::Router::new().route(
             "/v1/chat/completions",
             axum::routing::post(|| async move {
+                let content = serde_json::json!({
+                    "technique": {
+                        "name": "青木真诀",
+                        "type": "武技",
+                        "quality": "玄",
+                        "maxLayer": 5,
+                        "requiredRealm": "炼炁化神·结胎期",
+                        "attributeType": "physical",
+                        "attributeElement": "wood",
+                        "tags": ["洞府研修", "青木"],
+                        "description": "玄品武技草稿",
+                        "longDesc": "以青木真意推演而成的玄品武技草稿，可于洞府研修中进一步命名发布。"
+                    },
+                    "skills": [
+                        {
+                            "id": "mock-ai-skill-1",
+                            "name": "青木破风",
+                            "description": "引青木真意破风斩敌。",
+                            "icon": "/uploads/generated/mock-ai-skill-1.webp",
+                            "sourceType": "technique",
+                            "costLingqi": 12,
+                            "costLingqiRate": 0.0,
+                            "costQixue": 0,
+                            "costQixueRate": 0.0,
+                            "cooldown": 1,
+                            "targetType": "single_enemy",
+                            "targetCount": 1,
+                            "damageType": "physical",
+                            "element": "wood",
+                            "effects": [{"type": "damage", "value": 120}],
+                            "triggerType": "active",
+                            "aiPriority": 60,
+                            "upgrades": []
+                        }
+                    ],
+                    "layers": [
+                        {
+                            "layer": 1,
+                            "costSpiritStones": 100,
+                            "costExp": 50,
+                            "costMaterials": [],
+                            "passives": [{"key": "atk", "value": 6.0}],
+                            "unlockSkillIds": ["mock-ai-skill-1"],
+                            "upgradeSkillIds": [],
+                            "layerDesc": "青木初生，悟得破风之势。"
+                        },
+                        {
+                            "layer": 2,
+                            "costSpiritStones": 200,
+                            "costExp": 100,
+                            "costMaterials": [],
+                            "passives": [{"key": "def", "value": 4.0}],
+                            "unlockSkillIds": [],
+                            "upgradeSkillIds": ["mock-ai-skill-1"],
+                            "layerDesc": "枝叶成阵，劲力更稳。"
+                        },
+                        {
+                            "layer": 3,
+                            "costSpiritStones": 300,
+                            "costExp": 150,
+                            "costMaterials": [],
+                            "passives": [{"key": "speed", "value": 3.0}],
+                            "unlockSkillIds": [],
+                            "upgradeSkillIds": ["mock-ai-skill-1"],
+                            "layerDesc": "青木回旋，身法渐疾。"
+                        },
+                        {
+                            "layer": 4,
+                            "costSpiritStones": 400,
+                            "costExp": 200,
+                            "costMaterials": [],
+                            "passives": [{"key": "atk", "value": 8.0}],
+                            "unlockSkillIds": [],
+                            "upgradeSkillIds": ["mock-ai-skill-1"],
+                            "layerDesc": "真意入刃，攻势再涨。"
+                        },
+                        {
+                            "layer": 5,
+                            "costSpiritStones": 500,
+                            "costExp": 250,
+                            "costMaterials": [],
+                            "passives": [{"key": "max_qixue", "value": 60.0}],
+                            "unlockSkillIds": [],
+                            "upgradeSkillIds": ["mock-ai-skill-1"],
+                            "layerDesc": "青木成荫，气血绵长。"
+                        }
+                    ]
+                })
+                .to_string();
                 axum::Json(serde_json::json!({
                     "choices": [{
                         "message": {
-                            "content": "{\"suggestedName\":\"青木真诀\",\"description\":\"玄品武技草稿\",\"longDesc\":\"以青木真意推演而成的玄品武技草稿，可于洞府研修中进一步命名发布。\"}"
+                            "content": content
                         }
                     }]
                 }))
@@ -17979,8 +18371,8 @@ mod tests {
 
         println!("TECHNIQUE_AI_SUCCESS_ROUTE_RESPONSE={body}");
 
-        server.abort();
-        ai_server.abort();
+        server.abort().await;
+        ai_server.abort().await;
 
         assert_eq!(
             job_row
@@ -18168,8 +18560,8 @@ mod tests {
         println!("TECHNIQUE_AI_FAILURE_ROUTE_RESPONSE={body}");
         println!("TECHNIQUE_AI_FAILURE_FINAL_STATUS={final_status}");
 
-        server.abort();
-        ai_server.abort();
+        server.abort().await;
+        ai_server.abort().await;
 
         assert_eq!(
             job_row
@@ -18262,6 +18654,18 @@ mod tests {
             .await
             .expect("fragment item should insert");
 
+        let (ai_address, ai_server) = spawn_test_server(mock_technique_research_ai_app()).await;
+        let original_provider = std::env::var("AI_TECHNIQUE_MODEL_PROVIDER").ok();
+        let original_url = std::env::var("AI_TECHNIQUE_MODEL_URL").ok();
+        let original_key = std::env::var("AI_TECHNIQUE_MODEL_KEY").ok();
+        let original_name = std::env::var("AI_TECHNIQUE_MODEL_NAME").ok();
+        unsafe {
+            std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", "openai");
+            std::env::set_var("AI_TECHNIQUE_MODEL_URL", format!("http://{ai_address}/v1"));
+            std::env::set_var("AI_TECHNIQUE_MODEL_KEY", "mock-technique-key");
+            std::env::set_var("AI_TECHNIQUE_MODEL_NAME", "mock-technique-model");
+        }
+
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
@@ -18288,8 +18692,6 @@ mod tests {
             .as_str()
             .expect("generation id should exist")
             .to_string();
-
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
         let discard_response = client
             .post(format!(
@@ -18328,7 +18730,27 @@ mod tests {
 
         println!("TECHNIQUE_DISCARD_REFUND_ROUTE_RESPONSE={discard_body}");
 
-        server.abort();
+        server.abort().await;
+        ai_server.abort().await;
+
+        unsafe {
+            match original_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
+        }
 
         assert_eq!(
             job_row
@@ -18438,13 +18860,13 @@ mod tests {
 
         println!("TECHNIQUE_AI_CONFIG_ROUTE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
         assert_eq!(
             body["message"],
-            "configuration error: 缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置"
+            "configuration error: 缺少或无效 AI_TECHNIQUE_MODEL_KEY / AI_TECHNIQUE_MODEL_PROVIDER 配置"
         );
 
         unsafe {
@@ -18493,6 +18915,18 @@ mod tests {
             .await
             .expect("fragment item should insert");
 
+        let (ai_address, ai_server) = spawn_test_server(mock_technique_research_ai_app()).await;
+        let original_provider = std::env::var("AI_TECHNIQUE_MODEL_PROVIDER").ok();
+        let original_url = std::env::var("AI_TECHNIQUE_MODEL_URL").ok();
+        let original_key = std::env::var("AI_TECHNIQUE_MODEL_KEY").ok();
+        let original_name = std::env::var("AI_TECHNIQUE_MODEL_NAME").ok();
+        unsafe {
+            std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", "openai");
+            std::env::set_var("AI_TECHNIQUE_MODEL_URL", format!("http://{ai_address}/v1"));
+            std::env::set_var("AI_TECHNIQUE_MODEL_KEY", "mock-technique-key");
+            std::env::set_var("AI_TECHNIQUE_MODEL_NAME", "mock-technique-model");
+        }
+
         let app = build_router(state.clone()).expect("router should build");
         let (address, server) = spawn_test_server(app).await;
         let client = reqwest::Client::new();
@@ -18521,8 +18955,6 @@ mod tests {
             .as_str()
             .expect("generation id should exist")
             .to_string();
-
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
         let publish_response = client
             .post(format!(
@@ -18571,7 +19003,27 @@ mod tests {
         println!("TECHNIQUE_RESEARCH_PUBLISH_GENERATE_RESPONSE={generate_body}");
         println!("TECHNIQUE_RESEARCH_PUBLISH_ROUTE_RESPONSE={publish_body}");
 
-        server.abort();
+        server.abort().await;
+        ai_server.abort().await;
+
+        unsafe {
+            match original_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
+        }
 
         assert_eq!(
             job_row
@@ -18717,7 +19169,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_RECRUIT_MARK_VIEWED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_RECRUIT_MARK_VIEWED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerRecruit:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -18777,8 +19229,20 @@ mod tests {
             .as_str()
             .expect("generation id should exist")
             .to_string();
-
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        let preview_partner_def_id = format!("recruit-preview-{}", fixture.character_id);
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, innate_technique_ids, base_attrs, level_attr_gains, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·无相灵伴', '测试招募预览伙伴', '/uploads/generated/mock-partner.webp', '玄', 'mu', '灵植使', 1, ARRAY[]::text[], '{\"max_qixue\":120}'::jsonb, '{\"max_qixue\":8}'::jsonb, TRUE, $2, $3, NOW(), NOW())")
+            .bind(&preview_partner_def_id)
+            .bind(fixture.character_id)
+            .bind(&generation_id)
+            .execute(&pool)
+            .await
+            .expect("recruit preview partner def should insert");
+        sqlx::query("UPDATE partner_recruit_job SET status = 'generated_draft', preview_partner_def_id = $2, preview_avatar_url = '/uploads/generated/mock-partner.webp', error_message = NULL, updated_at = NOW() WHERE id = $1")
+            .bind(&generation_id)
+            .bind(&preview_partner_def_id)
+            .execute(&pool)
+            .await
+            .expect("recruit job should be made confirmable");
 
         let job_row = sqlx::query("SELECT status, preview_partner_def_id, preview_avatar_url FROM partner_recruit_job WHERE id = $1")
             .bind(&generation_id)
@@ -18830,7 +19294,7 @@ mod tests {
         println!("PARTNER_RECRUIT_GENERATE_ROUTE_RESPONSE={generate_body}");
         println!("PARTNER_RECRUIT_CONFIRM_ROUTE_RESPONSE={confirm_body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             job_row
@@ -18902,29 +19366,144 @@ mod tests {
             return;
         };
 
-        let ai_app = axum::Router::new().route(
-            "/v1/chat/completions",
-            axum::routing::post(|| async move {
-                axum::Json(serde_json::json!({
-                    "choices": [{
-                        "message": {
-                            "content": "{\"name\":\"青木灵伴\",\"description\":\"以青木为底模推演出的玄品质伙伴预览。\",\"attributeElement\":\"wood\",\"role\":\"support\"}"
-                        }
-                    }]
-                }))
-            }),
-        );
+        let ai_app = axum::Router::new()
+            .route(
+                "/v1/chat/completions",
+                axum::routing::post(|body: axum::body::Bytes| async move {
+                    let body_text = String::from_utf8_lossy(&body);
+                    let content = if body_text.contains("generate_complete_technique_candidate") {
+                        let layers = (1..=4)
+                            .map(|layer| {
+                                serde_json::json!({
+                                    "layer": layer,
+                                    "costSpiritStones": 100 * layer,
+                                    "costExp": 50 * layer,
+                                    "costMaterials": [],
+                                    "passives": [{"key": "atk", "value": 3.0 * layer as f64}],
+                                    "unlockSkillIds": if layer == 1 { vec!["mock-recruit-skill-1"] } else { Vec::<&str>::new() },
+                                    "upgradeSkillIds": if layer == 1 { Vec::<&str>::new() } else { vec!["mock-recruit-skill-1"] },
+                                    "layerDesc": format!("青木灵息第{layer}层。")
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        serde_json::json!({
+                            "technique": {
+                                "name": "青藤护心诀",
+                                "type": "辅修",
+                                "quality": "玄",
+                                "maxLayer": 4,
+                                "requiredRealm": "凡人",
+                                "attributeType": "magic",
+                                "attributeElement": "mu",
+                                "tags": ["伙伴天生", "青木"],
+                                "description": "以青藤灵息护住心脉。",
+                                "longDesc": "以青藤灵息护住心脉，并在战斗中缓慢滋养同伴气血。"
+                            },
+                            "skills": [{
+                                "id": "mock-recruit-skill-1",
+                                "name": "青藤护心",
+                                "description": "以青藤护住同伴心脉。",
+                                "icon": "/uploads/generated/mock-recruit-skill-1.webp",
+                                "sourceType": "technique",
+                                "costLingqi": 10,
+                                "costLingqiRate": 0.0,
+                                "costQixue": 0,
+                                "costQixueRate": 0.0,
+                                "cooldown": 1,
+                                "targetType": "single_ally",
+                                "targetCount": 1,
+                                "damageType": null,
+                                "element": "mu",
+                                "effects": [{"type": "heal", "value": 80}],
+                                "triggerType": "active",
+                                "aiPriority": 50,
+                                "upgrades": []
+                            }],
+                            "layers": layers
+                        })
+                    } else {
+                        serde_json::json!({
+                            "partner": {
+                                "name": "青木灵伴",
+                                "description": "以青木为底模推演出的玄品质伙伴预览。",
+                                "quality": "玄",
+                                "attributeElement": "mu",
+                                "role": "灵植使",
+                                "combatStyle": "magic",
+                                "baseAttrs": {
+                                    "max_qixue": 160, "max_lingqi": 80, "wugong": 20, "fagong": 48, "wufang": 24, "fafang": 40, "sudu": 18,
+                                    "mingzhong": 0.03, "shanbi": 0.02, "zhaojia": 0.01, "baoji": 0.02, "baoshang": 0.05, "jianbaoshang": 0.01,
+                                    "jianfantan": 0.0, "kangbao": 0.02, "zengshang": 0.03, "zhiliao": 0.04, "jianliao": 0.0, "xixue": 0.0,
+                                    "lengque": 0.0, "kongzhi_kangxing": 0.02, "jin_kangxing": 0.01, "mu_kangxing": 0.05, "shui_kangxing": 0.01,
+                                    "huo_kangxing": 0.01, "tu_kangxing": 0.01, "qixue_huifu": 4, "lingqi_huifu": 2
+                                },
+                                "levelAttrGains": {
+                                    "max_qixue": 8, "max_lingqi": 4, "wugong": 1, "fagong": 3, "wufang": 1, "fafang": 2, "sudu": 1,
+                                    "mingzhong": 0.001, "shanbi": 0.001, "zhaojia": 0.0, "baoji": 0.001, "baoshang": 0.001, "jianbaoshang": 0.0,
+                                    "jianfantan": 0.0, "kangbao": 0.001, "zengshang": 0.001, "zhiliao": 0.001, "jianliao": 0.0, "xixue": 0.0,
+                                    "lengque": 0.0, "kongzhi_kangxing": 0.001, "jin_kangxing": 0.0, "mu_kangxing": 0.001, "shui_kangxing": 0.0,
+                                    "huo_kangxing": 0.0, "tu_kangxing": 0.0, "qixue_huifu": 0, "lingqi_huifu": 0
+                                }
+                            },
+                            "innateTechniques": [{
+                                "name": "青藤护心诀",
+                                "description": "以青藤灵息护住心脉，并在战斗中缓慢滋养同伴气血。",
+                                "kind": "support",
+                                "passiveKey": "max_qixue",
+                                "passiveValue": 120
+                            }]
+                        })
+                    }
+                    .to_string();
+                    axum::Json(serde_json::json!({
+                        "choices": [{
+                            "message": {
+                                "content": content
+                            }
+                        }]
+                    }))
+                }),
+            )
+            .route(
+                "/v1/images/generations",
+                axum::routing::post(|| async move {
+                    axum::Json(serde_json::json!({
+                        "data": [{
+                            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+                        }]
+                    }))
+                }),
+            );
         let (ai_address, ai_server) = spawn_test_server(ai_app).await;
 
         let original_provider = std::env::var("AI_PARTNER_MODEL_PROVIDER").ok();
         let original_url = std::env::var("AI_PARTNER_MODEL_URL").ok();
         let original_key = std::env::var("AI_PARTNER_MODEL_KEY").ok();
         let original_name = std::env::var("AI_PARTNER_MODEL_NAME").ok();
+        let original_technique_provider = std::env::var("AI_TECHNIQUE_MODEL_PROVIDER").ok();
+        let original_technique_url = std::env::var("AI_TECHNIQUE_MODEL_URL").ok();
+        let original_technique_key = std::env::var("AI_TECHNIQUE_MODEL_KEY").ok();
+        let original_technique_name = std::env::var("AI_TECHNIQUE_MODEL_NAME").ok();
+        let original_partner_image_provider = std::env::var("AI_PARTNER_IMAGE_PROVIDER").ok();
+        let original_partner_image_url = std::env::var("AI_PARTNER_IMAGE_MODEL_URL").ok();
+        let original_partner_image_key = std::env::var("AI_PARTNER_IMAGE_MODEL_KEY").ok();
+        let original_partner_image_name = std::env::var("AI_PARTNER_IMAGE_MODEL_NAME").ok();
         unsafe {
             std::env::set_var("AI_PARTNER_MODEL_PROVIDER", "openai");
             std::env::set_var("AI_PARTNER_MODEL_URL", format!("http://{ai_address}/v1"));
             std::env::set_var("AI_PARTNER_MODEL_KEY", "mock-partner-key");
             std::env::set_var("AI_PARTNER_MODEL_NAME", "mock-partner-model");
+            std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", "openai");
+            std::env::set_var("AI_TECHNIQUE_MODEL_URL", format!("http://{ai_address}/v1"));
+            std::env::set_var("AI_TECHNIQUE_MODEL_KEY", "mock-technique-key");
+            std::env::set_var("AI_TECHNIQUE_MODEL_NAME", "mock-technique-model");
+            std::env::set_var("AI_PARTNER_IMAGE_PROVIDER", "openai");
+            std::env::set_var(
+                "AI_PARTNER_IMAGE_MODEL_URL",
+                format!("http://{ai_address}/v1"),
+            );
+            std::env::set_var("AI_PARTNER_IMAGE_MODEL_KEY", "mock-partner-image-key");
+            std::env::set_var("AI_PARTNER_IMAGE_MODEL_NAME", "mock-partner-image-model");
         }
 
         let suffix = format!("partner-ai-success-{}", super::chrono_like_timestamp_ms());
@@ -18949,7 +19528,7 @@ mod tests {
             .post(format!("http://{address}/api/partner/recruit/generate"))
             .header("authorization", format!("Bearer {}", fixture.token))
             .header("content-type", "application/json")
-            .body("{\"customBaseModelEnabled\":true,\"requestedBaseModel\":\"青木\"}")
+            .body("{}")
             .send()
             .await
             .expect("partner recruit generate should succeed");
@@ -18982,8 +19561,8 @@ mod tests {
 
         println!("PARTNER_AI_SUCCESS_ROUTE_RESPONSE={body}");
 
-        server.abort();
-        ai_server.abort();
+        server.abort().await;
+        ai_server.abort().await;
 
         assert_eq!(
             job_row
@@ -19011,14 +19590,14 @@ mod tests {
                 .try_get::<Option<String>, _>("attribute_element")
                 .unwrap_or(None)
                 .unwrap_or_default(),
-            "wood"
+            "mu"
         );
         assert_eq!(
             generated_row
                 .try_get::<Option<String>, _>("role")
                 .unwrap_or(None)
                 .unwrap_or_default(),
-            "support"
+            "灵植使"
         );
 
         unsafe {
@@ -19037,6 +19616,38 @@ mod tests {
             match original_name {
                 Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
                 None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
+            match original_technique_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_technique_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_technique_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_technique_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
+            match original_partner_image_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_PROVIDER"),
+            };
+            match original_partner_image_url {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_MODEL_URL"),
+            };
+            match original_partner_image_key {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_MODEL_KEY"),
+            };
+            match original_partner_image_name {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_MODEL_NAME"),
             };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
@@ -19132,8 +19743,8 @@ mod tests {
 
         println!("PARTNER_RECRUIT_AI_FAILURE_ROUTE_RESPONSE={body}");
 
-        server.abort();
-        ai_server.abort();
+        server.abort().await;
+        ai_server.abort().await;
 
         assert_eq!(
             job_row
@@ -19260,13 +19871,13 @@ mod tests {
 
         println!("PARTNER_AI_CONFIG_ROUTE_RESPONSE={body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["success"], false);
         assert_eq!(
             body["message"],
-            "configuration error: 缺少 AI_PARTNER_MODEL_URL 或 AI_PARTNER_MODEL_KEY 配置"
+            "configuration error: 缺少或无效 AI_PARTNER_MODEL_KEY / AI_PARTNER_MODEL_PROVIDER 配置"
         );
 
         unsafe {
@@ -19355,7 +19966,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_FUSION_MARK_VIEWED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_FUSION_MARK_VIEWED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerFusion:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -19432,8 +20043,21 @@ mod tests {
             .as_str()
             .expect("fusion id should exist")
             .to_string();
-
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        let preview_partner_def_id = format!("fusion-preview-{}", fixture.character_id);
+        sqlx::query("INSERT INTO generated_partner_def (id, name, description, avatar, quality, attribute_element, role, max_technique_slots, innate_technique_ids, base_attrs, level_attr_gains, enabled, created_by_character_id, source_job_id, created_at, updated_at) VALUES ($1, '玄·归契灵伴', '测试归契预览伙伴', NULL, $4, 'mu', '灵植使', 1, ARRAY[]::text[], '{\"max_qixue\":120}'::jsonb, '{\"max_qixue\":8}'::jsonb, TRUE, $2, $3, NOW(), NOW())")
+            .bind(&preview_partner_def_id)
+            .bind(fixture.character_id)
+            .bind(&fusion_id)
+            .bind(start_body["data"]["resultQuality"].as_str().unwrap_or("黄"))
+            .execute(&pool)
+            .await
+            .expect("fusion preview partner def should insert");
+        sqlx::query("UPDATE partner_fusion_job SET status = 'generated_preview', preview_partner_def_id = $2, error_message = NULL, updated_at = NOW() WHERE id = $1")
+            .bind(&fusion_id)
+            .bind(&preview_partner_def_id)
+            .execute(&pool)
+            .await
+            .expect("fusion job should be made confirmable");
 
         let job_row = sqlx::query(
             "SELECT status, preview_partner_def_id FROM partner_fusion_job WHERE id = $1",
@@ -19495,7 +20119,7 @@ mod tests {
         println!("PARTNER_FUSION_GENERATE_ROUTE_RESPONSE={start_body}");
         println!("PARTNER_FUSION_CONFIRM_ROUTE_RESPONSE={confirm_body}");
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             job_row
@@ -19557,29 +20181,152 @@ mod tests {
             return;
         };
 
-        let ai_app = axum::Router::new().route(
-            "/v1/chat/completions",
-            axum::routing::post(|| async move {
-                axum::Json(serde_json::json!({
-                    "choices": [{
-                        "message": {
-                            "content": "{\"name\":\"玄木归契灵伴\",\"description\":\"由归契之力凝成的玄品质伙伴预览。\",\"attributeElement\":\"wood\",\"role\":\"support\"}"
-                        }
-                    }]
-                }))
-            }),
-        );
+        let ai_app = axum::Router::new()
+            .route(
+                "/v1/chat/completions",
+                axum::routing::post(|body: axum::body::Bytes| async move {
+                    let body_text = String::from_utf8_lossy(&body);
+                    let content = if body_text.contains("generate_complete_technique_candidate") {
+                        let quality = if body_text.contains("\\\"quality\\\":\\\"玄\\\"")
+                            || body_text.contains("\"quality\":\"玄\"")
+                        {
+                            "玄"
+                        } else {
+                            "黄"
+                        };
+                        let max_layer = if quality == "玄" { 4 } else { 3 };
+                        let layers = (1..=max_layer)
+                            .map(|layer| {
+                                serde_json::json!({
+                                    "layer": layer,
+                                    "costSpiritStones": 100 * layer,
+                                    "costExp": 50 * layer,
+                                    "costMaterials": [],
+                                    "passives": [{"key": "atk", "value": 3.0 * layer as f64}],
+                                    "unlockSkillIds": if layer == 1 { vec!["mock-partner-skill-1"] } else { Vec::<&str>::new() },
+                                    "upgradeSkillIds": if layer == 1 { Vec::<&str>::new() } else { vec!["mock-partner-skill-1"] },
+                                    "layerDesc": format!("青藤灵息第{layer}层。")
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        serde_json::json!({
+                            "technique": {
+                                "name": "青藤护心诀",
+                                "type": "辅修",
+                                "quality": quality,
+                                "maxLayer": max_layer,
+                                "requiredRealm": "凡人",
+                                "attributeType": "magic",
+                                "attributeElement": "mu",
+                                "tags": ["伙伴天生", "青木"],
+                                "description": "以青藤灵息护住心脉。",
+                                "longDesc": "以青藤灵息护住心脉，并在战斗中缓慢滋养同伴气血。"
+                            },
+                            "skills": [{
+                                "id": "mock-partner-skill-1",
+                                "name": "青藤护心",
+                                "description": "以青藤护住同伴心脉。",
+                                "icon": "/uploads/generated/mock-partner-skill-1.webp",
+                                "sourceType": "technique",
+                                "costLingqi": 10,
+                                "costLingqiRate": 0.0,
+                                "costQixue": 0,
+                                "costQixueRate": 0.0,
+                                "cooldown": 1,
+                                "targetType": "single_ally",
+                                "targetCount": 1,
+                                "damageType": null,
+                                "element": "mu",
+                                "effects": [{"type": "heal", "value": 80}],
+                                "triggerType": "active",
+                                "aiPriority": 50,
+                                "upgrades": []
+                            }],
+                            "layers": layers
+                        })
+                    } else {
+                        serde_json::json!({
+                            "partner": {
+                                "name": "玄木归契灵伴",
+                                "description": "由归契之力凝成的玄品质伙伴预览。",
+                                "quality": "玄",
+                                "attributeElement": "mu",
+                                "role": "灵植使",
+                                "combatStyle": "magic",
+                                "baseAttrs": {
+                                    "max_qixue": 160, "max_lingqi": 80, "wugong": 20, "fagong": 48, "wufang": 24, "fafang": 40, "sudu": 18,
+                                    "mingzhong": 0.03, "shanbi": 0.02, "zhaojia": 0.01, "baoji": 0.02, "baoshang": 0.05, "jianbaoshang": 0.01,
+                                    "jianfantan": 0.0, "kangbao": 0.02, "zengshang": 0.03, "zhiliao": 0.04, "jianliao": 0.0, "xixue": 0.0,
+                                    "lengque": 0.0, "kongzhi_kangxing": 0.02, "jin_kangxing": 0.01, "mu_kangxing": 0.05, "shui_kangxing": 0.01,
+                                    "huo_kangxing": 0.01, "tu_kangxing": 0.01, "qixue_huifu": 4, "lingqi_huifu": 2
+                                },
+                                "levelAttrGains": {
+                                    "max_qixue": 8, "max_lingqi": 4, "wugong": 1, "fagong": 3, "wufang": 1, "fafang": 2, "sudu": 1,
+                                    "mingzhong": 0.001, "shanbi": 0.001, "zhaojia": 0.0, "baoji": 0.001, "baoshang": 0.001, "jianbaoshang": 0.0,
+                                    "jianfantan": 0.0, "kangbao": 0.001, "zengshang": 0.001, "zhiliao": 0.001, "jianliao": 0.0, "xixue": 0.0,
+                                    "lengque": 0.0, "kongzhi_kangxing": 0.001, "jin_kangxing": 0.0, "mu_kangxing": 0.001, "shui_kangxing": 0.0,
+                                    "huo_kangxing": 0.0, "tu_kangxing": 0.0, "qixue_huifu": 0, "lingqi_huifu": 0
+                                }
+                            },
+                            "innateTechniques": [{
+                                "name": "青藤护心诀",
+                                "description": "以青藤灵息护住心脉，并在战斗中缓慢滋养同伴气血。",
+                                "kind": "support",
+                                "passiveKey": "max_qixue",
+                                "passiveValue": 120
+                            }]
+                        })
+                    }
+                    .to_string();
+                    axum::Json(serde_json::json!({
+                        "choices": [{
+                            "message": {
+                                "content": content
+                            }
+                        }]
+                    }))
+                }),
+            )
+            .route(
+                "/v1/images/generations",
+                axum::routing::post(|| async move {
+                    axum::Json(serde_json::json!({
+                        "data": [{
+                            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+                        }]
+                    }))
+                }),
+            );
         let (ai_address, ai_server) = spawn_test_server(ai_app).await;
 
         let original_provider = std::env::var("AI_PARTNER_MODEL_PROVIDER").ok();
         let original_url = std::env::var("AI_PARTNER_MODEL_URL").ok();
         let original_key = std::env::var("AI_PARTNER_MODEL_KEY").ok();
         let original_name = std::env::var("AI_PARTNER_MODEL_NAME").ok();
+        let original_technique_provider = std::env::var("AI_TECHNIQUE_MODEL_PROVIDER").ok();
+        let original_technique_url = std::env::var("AI_TECHNIQUE_MODEL_URL").ok();
+        let original_technique_key = std::env::var("AI_TECHNIQUE_MODEL_KEY").ok();
+        let original_technique_name = std::env::var("AI_TECHNIQUE_MODEL_NAME").ok();
+        let original_partner_image_provider = std::env::var("AI_PARTNER_IMAGE_PROVIDER").ok();
+        let original_partner_image_url = std::env::var("AI_PARTNER_IMAGE_MODEL_URL").ok();
+        let original_partner_image_key = std::env::var("AI_PARTNER_IMAGE_MODEL_KEY").ok();
+        let original_partner_image_name = std::env::var("AI_PARTNER_IMAGE_MODEL_NAME").ok();
         unsafe {
             std::env::set_var("AI_PARTNER_MODEL_PROVIDER", "openai");
             std::env::set_var("AI_PARTNER_MODEL_URL", format!("http://{ai_address}/v1"));
             std::env::set_var("AI_PARTNER_MODEL_KEY", "mock-partner-key");
             std::env::set_var("AI_PARTNER_MODEL_NAME", "mock-partner-model");
+            std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", "openai");
+            std::env::set_var("AI_TECHNIQUE_MODEL_URL", format!("http://{ai_address}/v1"));
+            std::env::set_var("AI_TECHNIQUE_MODEL_KEY", "mock-technique-key");
+            std::env::set_var("AI_TECHNIQUE_MODEL_NAME", "mock-technique-model");
+            std::env::set_var("AI_PARTNER_IMAGE_PROVIDER", "openai");
+            std::env::set_var(
+                "AI_PARTNER_IMAGE_MODEL_URL",
+                format!("http://{ai_address}/v1"),
+            );
+            std::env::set_var("AI_PARTNER_IMAGE_MODEL_KEY", "mock-partner-image-key");
+            std::env::set_var("AI_PARTNER_IMAGE_MODEL_NAME", "mock-partner-image-model");
         }
 
         let suffix = format!(
@@ -19666,8 +20413,8 @@ mod tests {
 
         println!("PARTNER_FUSION_AI_SUCCESS_ROUTE_RESPONSE={body}");
 
-        server.abort();
-        ai_server.abort();
+        server.abort().await;
+        ai_server.abort().await;
 
         assert_eq!(
             job_row
@@ -19695,14 +20442,14 @@ mod tests {
                 .try_get::<Option<String>, _>("attribute_element")
                 .unwrap_or(None)
                 .unwrap_or_default(),
-            "wood"
+            "mu"
         );
         assert_eq!(
             generated_row
                 .try_get::<Option<String>, _>("role")
                 .unwrap_or(None)
                 .unwrap_or_default(),
-            "support"
+            "灵植使"
         );
 
         unsafe {
@@ -19721,6 +20468,38 @@ mod tests {
             match original_name {
                 Some(v) => std::env::set_var("AI_PARTNER_MODEL_NAME", v),
                 None => std::env::remove_var("AI_PARTNER_MODEL_NAME"),
+            };
+            match original_technique_provider {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_PROVIDER", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_PROVIDER"),
+            };
+            match original_technique_url {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_URL", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_URL"),
+            };
+            match original_technique_key {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_KEY"),
+            };
+            match original_technique_name {
+                Some(v) => std::env::set_var("AI_TECHNIQUE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_TECHNIQUE_MODEL_NAME"),
+            };
+            match original_partner_image_provider {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_PROVIDER", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_PROVIDER"),
+            };
+            match original_partner_image_url {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_MODEL_URL", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_MODEL_URL"),
+            };
+            match original_partner_image_key {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_MODEL_KEY", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_MODEL_KEY"),
+            };
+            match original_partner_image_name {
+                Some(v) => std::env::set_var("AI_PARTNER_IMAGE_MODEL_NAME", v),
+                None => std::env::remove_var("AI_PARTNER_IMAGE_MODEL_NAME"),
             };
         }
         cleanup_auth_fixture(&pool, fixture.character_id, fixture.user_id).await;
@@ -19825,8 +20604,8 @@ mod tests {
 
         println!("PARTNER_FUSION_AI_FAILURE_ROUTE_RESPONSE={body}");
 
-        server.abort();
-        ai_server.abort();
+        server.abort().await;
+        ai_server.abort().await;
 
         assert_eq!(
             job_row
@@ -19840,7 +20619,7 @@ mod tests {
                 .try_get::<Option<String>, _>("error_message")
                 .unwrap_or(None)
                 .unwrap_or_default()
-                .contains("伙伴 AI 返回错误状态")
+                .contains("文本模型 OpenAI 返回错误状态")
         );
 
         unsafe {
@@ -19928,7 +20707,7 @@ mod tests {
         println!("GAME_SOCKET_PARTNER_REBONE_MARK_VIEWED_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_PARTNER_REBONE_MARK_VIEWED_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("partnerRebone:update"));
         assert!(target_poll.contains(&format!("\"characterId\":{}", fixture.character_id)));
@@ -20035,7 +20814,7 @@ mod tests {
                 .unwrap_or_default()
         );
 
-        server.abort();
+        server.abort().await;
 
         assert_eq!(
             job_row
@@ -20131,7 +20910,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_CREATE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_TEAM_CREATE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("team:update"));
         assert!(target_poll.contains("\"source\":\"create_team\""));
@@ -20244,7 +21023,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_TRANSFER_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_TEAM_TRANSFER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"source\":\"transfer_team_leader\""));
@@ -20357,7 +21136,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_LEAVE_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_TEAM_LEAVE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"source\":\"leave_team\""));
@@ -20473,7 +21252,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_DISBAND_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_TEAM_DISBAND_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"source\":\"disband_team\""));
@@ -20589,7 +21368,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_KICK_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_TEAM_KICK_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"source\":\"kick_member\""));
@@ -20704,7 +21483,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_UPDATE_SETTINGS_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_TEAM_UPDATE_SETTINGS_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"source\":\"update_team_settings\""));
@@ -20854,7 +21633,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_HANDLE_APPLICATION_APPROVE_APPLICANT_POLL={applicant_poll}");
         println!("GAME_SOCKET_TEAM_HANDLE_APPLICATION_APPROVE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("team:update"));
         assert!(leader_poll.contains("\"source\":\"approve_application\""));
@@ -21009,7 +21788,7 @@ mod tests {
         println!("GAME_SOCKET_TEAM_HANDLE_APPLICATION_REJECT_APPLICANT_POLL={applicant_poll}");
         println!("GAME_SOCKET_TEAM_HANDLE_APPLICATION_REJECT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(!leader_poll.contains("team:update"));
         assert!(!member_poll.contains("team:update"));
@@ -21114,7 +21893,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_APPLY_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_SECT_APPLY_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("sect:update"));
         assert!(target_poll.contains("\"joined\":false"));
@@ -21207,7 +21986,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_CREATE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_SECT_CREATE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("sect:update"));
         assert!(target_poll.contains("\"joined\":true"));
@@ -21322,7 +22101,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_CANCEL_APPLICATION_APPLICANT_POLL={applicant_poll}");
         println!("GAME_SOCKET_SECT_CANCEL_APPLICATION_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(manager_poll.contains("sect:update"));
         assert!(manager_poll.contains("\"sectPendingApplicationCount\":0"));
@@ -21463,7 +22242,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_HANDLE_APPLICATION_APPROVE_APPLICANT_POLL={applicant_poll}");
         println!("GAME_SOCKET_SECT_HANDLE_APPLICATION_APPROVE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("sect:update"));
         assert!(leader_poll.contains("\"sectPendingApplicationCount\":0"));
@@ -21607,7 +22386,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_HANDLE_APPLICATION_REJECT_APPLICANT_POLL={applicant_poll}");
         println!("GAME_SOCKET_SECT_HANDLE_APPLICATION_REJECT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("sect:update"));
         assert!(leader_poll.contains("\"sectPendingApplicationCount\":0"));
@@ -21708,7 +22487,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_LEAVE_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_SECT_LEAVE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(member_poll.contains("sect:update"));
         assert!(member_poll.contains("\"joined\":false"));
@@ -21812,7 +22591,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_DISBAND_MEMBER_POLL={member_poll}");
         println!("GAME_SOCKET_SECT_DISBAND_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(leader_poll.contains("sect:update"));
         assert!(leader_poll.contains("\"joined\":false"));
@@ -21907,7 +22686,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_KICK_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_SECT_KICK_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("sect:update"));
         assert!(target_poll.contains("\"joined\":false"));
@@ -22013,7 +22792,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_TRANSFER_NEW_POLL={new_poll}");
         println!("GAME_SOCKET_SECT_TRANSFER_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(old_poll.contains("sect:update"));
         assert!(old_poll.contains("\"canManageApplications\":true"));
@@ -22111,7 +22890,7 @@ mod tests {
         println!("GAME_SOCKET_SECT_APPOINT_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_SECT_APPOINT_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("sect:update"));
         assert!(target_poll.contains("\"canManageApplications\":true"));
@@ -22199,7 +22978,7 @@ mod tests {
         println!("GAME_SOCKET_ARENA_CHALLENGE_TARGET_POLL={target_poll}");
         println!("GAME_SOCKET_ARENA_CHALLENGE_OTHER_POLL={other_poll}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(target_poll.contains("battle:update"));
         assert!(target_poll.contains("battle_started"));
@@ -22281,7 +23060,7 @@ mod tests {
 
         println!("ARENA_PERSISTENCE_BATTLE_ID={battle_id}");
 
-        server.abort();
+        server.abort().await;
 
         assert!(snapshot.is_some());
         assert!(projection.is_some());
@@ -22379,7 +23158,7 @@ mod tests {
             .await
             .expect("session should read");
 
-        server.abort();
+        server.abort().await;
 
         assert!(snapshot.is_none());
         assert!(projection_raw.is_none());

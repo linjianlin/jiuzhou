@@ -1,3 +1,5 @@
+#[cfg(test)]
+use axum::Extension;
 use axum::Router;
 use axum::http::{HeaderValue, Uri};
 use socketioxide::SocketIo;
@@ -23,13 +25,33 @@ pub fn build_router(state: AppState) -> Result<Router, AppError> {
     mount_public_socket(&game_socket_io, state.clone());
     mount_public_socket(&socket_io_fallback, state.clone());
 
-    Ok(http::router()
+    #[cfg(test)]
+    let detach_state = state.clone();
+
+    let router = http::router()
         .nest_service("/uploads", ServeDir::new(uploads_dir))
         .with_state(state)
         .layer(game_socket_layer)
         .layer(socket_io_fallback_layer)
         .layer(TraceLayer::new_for_http())
-        .layer(cors_layer))
+        .layer(cors_layer);
+
+    #[cfg(test)]
+    let router = router.layer(Extension(std::sync::Arc::new(SocketIoDetachGuard(
+        detach_state,
+    ))));
+
+    Ok(router)
+}
+
+#[cfg(test)]
+struct SocketIoDetachGuard(AppState);
+
+#[cfg(test)]
+impl Drop for SocketIoDetachGuard {
+    fn drop(&mut self) {
+        self.0.detach_socket_io();
+    }
 }
 
 fn build_cors_layer(cors_origin: &str) -> Result<CorsLayer, AppError> {

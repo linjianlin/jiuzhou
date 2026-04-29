@@ -31,8 +31,6 @@ pub struct AppState {
     pub online_players: Arc<OnlinePlayerRegistry>,
     pub realtime_sessions: Arc<RealtimeSessionRegistry>,
     pub realtime_io: Arc<Mutex<Option<SocketIo>>>,
-    #[cfg(test)]
-    pub test_runtime_slot: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,8 +263,6 @@ impl AppState {
             online_players: Arc::new(OnlinePlayerRegistry::default()),
             realtime_sessions: Arc::new(RealtimeSessionRegistry::default()),
             realtime_io: Arc::new(Mutex::new(None)),
-            #[cfg(test)]
-            test_runtime_slot: None,
         }
     }
 
@@ -275,6 +271,13 @@ impl AppState {
             .realtime_io
             .lock()
             .expect("realtime io lock should acquire") = Some(io);
+    }
+
+    pub fn detach_socket_io(&self) {
+        *self
+            .realtime_io
+            .lock()
+            .expect("realtime io lock should acquire") = None;
     }
 
     pub fn socket_io(&self) -> Option<SocketIo> {
