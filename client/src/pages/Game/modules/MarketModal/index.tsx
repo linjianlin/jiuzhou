@@ -62,7 +62,7 @@ import { usePagedRequestController } from './usePagedRequestController';
 import {
   buildMarketEquipmentSummary,
   type MarketEquipmentSummaryItem,
-} from './marketEquipmentSummary';
+} from './marketEquipmentSummaryData';
 import {
   buildMarketBuySummary,
   shouldPromptMarketBuyQuantity,

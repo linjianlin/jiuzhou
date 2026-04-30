@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import type { MarketEquipmentSummaryItem } from './marketEquipmentSummary';
+import type { MarketEquipmentSummaryItem } from './marketEquipmentSummaryData';
 
 /**
  * 作用：

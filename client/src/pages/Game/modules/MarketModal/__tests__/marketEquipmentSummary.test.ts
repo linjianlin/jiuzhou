@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMarketEquipmentSummary } from '../marketEquipmentSummary';
+import { buildMarketEquipmentSummary } from '../marketEquipmentSummaryData';
 
 describe('marketEquipmentSummary', () => {
   it('装备应输出强化精炼与宝石数量摘要', () => {
