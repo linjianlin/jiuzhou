@@ -56,7 +56,7 @@ import MarketBuyDialog from './MarketBuyDialog';
 import MarketPartnerPreviewSheet from './MarketPartnerPreviewSheet';
 import MarketPartnerBuyModal from './MarketPartnerBuyModal';
 import MarketPartnerTechniqueList from './MarketPartnerTechniqueList';
-import MarketEquipmentSummary from './MarketEquipmentSummary';
+import MarketEquipmentSummary from './MarketEquipmentSummaryView';
 import type { MarketPartnerTechniqueDetailSource } from './marketPartnerTechniqueDetailShared';
 import { usePagedRequestController } from './usePagedRequestController';
 import {
